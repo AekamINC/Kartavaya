@@ -126,11 +126,25 @@ function AppRouter() {
   );
 }
 
+function StagingBanner() {
+  if (import.meta.env.VITE_ENVIRONMENT !== 'staging') return null;
+  return (
+    <div style={{
+      background: '#f59e0b', color: '#000', textAlign: 'center',
+      padding: '4px 0', fontSize: '12px', fontWeight: 600,
+      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
+    }}>
+      STAGING ENVIRONMENT
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <CustomizeProvider>
       <ToastProvider>
         <BrowserRouter>
+          <StagingBanner />
           <AppRouter />
           <CustomizePanel />
           <CustomizeFAB />

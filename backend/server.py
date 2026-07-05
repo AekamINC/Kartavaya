@@ -108,7 +108,7 @@ if _SENTRY_DSN:
     sentry_sdk.init(
         dsn=_SENTRY_DSN,
         traces_sample_rate=0.1,
-        environment=os.environ.get("RAILWAY_ENVIRONMENT", "production"),
+        environment=os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "production")),
     )
 
 app = FastAPI(title="Kartavaya API v2", description="Team task management by Aekam Inc")
@@ -121,11 +121,13 @@ api_router = APIRouter(prefix="/api")
 DEFAULT_ORIGINS = [
     "https://kartavaya.com",
     "https://www.kartavaya.com",
-    "https://kartavya-aekam.vercel.app",
-    "https://kartavya-production.akeam.vercel.app",
-    "https://kartavya-kevalvshah03-6145s-projects.vercel.app",
-    "https://kartavya-git-main-kevalvshah03-6145s-projects.vercel.app",
-    "https://kartavya-git-v2-plan-kevalvshah03-6145s-projects.vercel.app",
+    "https://Kartavaya-aekam.vercel.app",
+    "https://Kartavaya-production.akeam.vercel.app",
+    "https://Kartavaya-kevalvshah03-6145s-projects.vercel.app",
+    "https://Kartavaya-git-main-kevalvshah03-6145s-projects.vercel.app",
+    "https://Kartavaya-git-v2-plan-kevalvshah03-6145s-projects.vercel.app",
+    "https://Kartavaya-git-staging-kevalvshah03-6145s-projects.vercel.app",
+    "https://staging.kartavaya.com",
     "http://localhost:3000",
     "http://localhost:8080",
 ]

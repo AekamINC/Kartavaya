@@ -1,6 +1,7 @@
-﻿from fastapi import APIRouter
+﻿import os
+from fastapi import APIRouter
 from datetime import datetime, timezone
-from db import get_pool
+from db import get_pool, DB_SCHEMA
 
 router = APIRouter(tags=["health"])
 
@@ -16,6 +17,8 @@ async def health():
     return {
         "status": "ok" if db_ok else "degraded",
         "db": "connected" if db_ok else "unreachable",
+        "schema": DB_SCHEMA,
+        "environment": os.getenv("ENVIRONMENT", "production"),
         "app": "Kartavaya",
         "by": "Aekam Inc",
         "time": datetime.now(timezone.utc).isoformat()
