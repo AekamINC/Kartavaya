@@ -52,6 +52,11 @@ const ClientProjectsPage    = lazy(() => import('./pages/ClientProjectsPage'));
 const ClientBoardPage       = lazy(() => import('./pages/ClientBoardPage'));
 const ClientPortal          = lazy(() => import('./pages/ClientPortal'));
 const InboxPage             = lazy(() => import('./pages/InboxPage'));
+const BillingPage           = lazy(() => import('./pages/BillingPage'));
+const AdminBillingPage      = lazy(() => import('./pages/AdminBillingPage'));
+const HubDashboardPage      = lazy(() => import('./pages/HubDashboardPage'));
+const HubClientsPage        = lazy(() => import('./pages/HubClientsPage'));
+const HubClientDetailPage   = lazy(() => import('./pages/HubClientDetailPage'));
 
 // ── Outlet context wrappers ────────────────────────────────────────────────────
 // Pages that need teamId or teams from AppShell's outlet context.
@@ -109,6 +114,15 @@ function AppRouter() {
 
           {/* Admin */}
           <Route path="admin"                  element={<AdminPage />} />
+          <Route path="admin/billing"          element={<AdminBillingPage />} />
+
+          {/* Billing */}
+          <Route path="billing"                element={<BillingPage />} />
+
+          {/* Srijan */}
+          <Route path="hub"                    element={<HubDashboardPage />} />
+          <Route path="hub/clients"            element={<HubClientsPage />} />
+          <Route path="hub/clients/:clientId"  element={<HubClientDetailPage />} />
 
           {/* Client portal */}
           <Route path="client"                          element={<ClientProjectsPage />} />

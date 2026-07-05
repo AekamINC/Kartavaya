@@ -21,6 +21,8 @@ const ICONS = {
   notifications:<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M13 11l-2-2H5L3 11V4a1 1 0 011-1h8a1 1 0 011 1v7z"/><path d="M6.5 13.5a1.5 1.5 0 003 0"/></svg>,
   inbox:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 11h3l1 2h4l1-2h3V4a1 1 0 00-1-1H3a1 1 0 00-1 1v7z"/><path d="M5.5 7.5h5"/><path d="M5.5 5.5h3"/></svg>,
   admin:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 2l5 2v4.5c0 3-2.2 5.2-5 5.8C5.2 13.7 3 11.5 3 8.5V4l5-2z"/><path d="M6 8.2l1.3 1.3L10 6.8"/></svg>,
+  billing:     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 6.5h12"/><path d="M5 10h3"/><path d="M10 10h1.5"/></svg>,
+  hub:         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 2v4M8 10v4M2 8h4M10 8h4M4 4l2.8 2.8M9.2 9.2L12 12M12 4l-2.8 2.8M6.8 9.2L4 12"/></svg>,
   logout:      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M11 11l3-3-3-3M14 8H6"/></svg>,
 };
 
@@ -54,10 +56,18 @@ const NAV_FULL = [
     ],
   },
   {
+    section: 'srijan', sans: 'सृजन',
+    items: [
+      { to: '/hub',         icon: 'hub',  en: 'Srijan',  hi: 'सृजन' },
+      { to: '/hub/clients', icon: 'teams', en: 'Clients', hi: 'ग्राहक' },
+    ],
+  },
+  {
     section: 'settings', sans: 'व्यवस्था',
     items: [
       { to: '/settings/categories',    icon: 'categories',    en: 'Categories',    hi: 'वर्ग' },
       { to: '/settings/notifications', icon: 'notifications', en: 'Notifications', hi: 'सूचना' },
+      { to: '/billing',               icon: 'billing',       en: 'Billing',       hi: 'बिलिंग' },
     ],
   },
 ];
@@ -106,7 +116,10 @@ export default function Sidebar({ inboxCount = 0 }) {
   const allGroups = isAdmin
     ? groups.map(g =>
         g.section === 'settings'
-          ? { ...g, items: [...g.items, { to: '/admin', icon: 'admin', en: 'Admin', hi: 'प्रशासन', adminOnly: true }] }
+          ? { ...g, items: [...g.items,
+              { to: '/admin', icon: 'admin', en: 'Admin', hi: 'प्रशासन', adminOnly: true },
+              { to: '/admin/billing', icon: 'billing', en: 'Admin Billing', hi: 'बिलिंग प्रशासन', adminOnly: true },
+            ] }
           : g
       )
     : groups;

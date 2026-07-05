@@ -19,6 +19,10 @@ const PAGE_META = {
   '/settings/categories':    { en: 'Categories',    hi: 'वर्ग' },
   '/settings/notifications': { en: 'Notifications', hi: 'सूचना' },
   '/admin':                  { en: 'Admin',         hi: 'प्रशासन' },
+  '/admin/billing':          { en: 'Admin Billing', hi: 'बिलिंग प्रशासन' },
+  '/billing':                { en: 'Billing',       hi: 'बिलिंग' },
+  '/hub':                    { en: 'Srijan',        hi: 'सृजन' },
+  '/hub/clients':            { en: 'Srijan Clients', hi: 'सृजन ग्राहक' },
   '/client':                 { en: 'Client Portal', hi: 'पोर्टल' },
 };
 

@@ -51,6 +51,8 @@ from routers.time_entries import router as time_router
 from routers.uploads     import router as uploads_router   # R2-backed upload
 from routers.reports        import router as reports_router
 from routers.task_reminders import router as task_reminders_router
+from routers.subscription   import router as subscription_router
+from routers.hub            import router as hub_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -2098,6 +2100,8 @@ app.include_router(time_router)
 app.include_router(uploads_router)   # R2-backed file upload (replaces old base64 /api/upload)
 app.include_router(reports_router)
 app.include_router(task_reminders_router)
+app.include_router(subscription_router)
+app.include_router(hub_router)
 
 
 # ── Verse of the day (public) ────────────────────────────────────────────────

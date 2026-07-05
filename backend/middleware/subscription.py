@@ -1,0 +1,70 @@
+"""
+subscription.py — Feature gating middleware.
+Use require_module("crm") as a FastAPI dependency to restrict endpoints
+to orgs that have activated that module.
+"""
+from datetime import datetime, timezone, timedelta
+from fastapi import Depends, HTTPException
+
+from db import get_pool
+from middleware.org_resolver import get_org_id
+
+_cache: dict = {}
+_CACHE_TTL = timedelta(minutes=5)
+
+
+def require_module(module_code: str):
+    """Returns a FastAPI dependency that checks if the org has the module active."""
+
+    async def _check(org_id: str = Depends(get_org_id)):
+        cache_key = f"{org_id}:{module_code}"
+        now = datetime.now(timezone.utc)
+
+        if cache_key in _cache:
+            cached_at, is_active = _cache[cache_key]
+            if now - cached_at < _CACHE_TTL:
+                if not is_active:
+                    raise HTTPException(
+                        403,
+                        f"Module '{module_code}' is not active. "
+                        "Contact your administrator to activate it.",
+                    )
+                return
+
+        pool = await get_pool()
+
+        sub = await pool.fetchrow(
+            "SELECT status FROM staging.subscriptions WHERE org_id=$1::uuid",
+            org_id,
+        )
+        if not sub or sub["status"] in ("cancelled", "paused"):
+            _cache[cache_key] = (now, False)
+            raise HTTPException(403, "Subscription is not active")
+
+        mod = await pool.fetchval(
+            "SELECT 1 FROM staging.module_subscriptions "
+            "WHERE org_id=$1::uuid AND module_code=$2 AND is_active=TRUE",
+            org_id, module_code,
+        )
+
+        is_active = mod is not None
+        _cache[cache_key] = (now, is_active)
+
+        if not is_active:
+            raise HTTPException(
+                403,
+                f"Module '{module_code}' is not active. "
+                "Contact your administrator to activate it.",
+            )
+
+    return _check
+
+
+def clear_module_cache(org_id: str = None):
+    """Clear cache when subscription changes. Call after activate/deactivate."""
+    if org_id:
+        keys = [k for k in _cache if k.startswith(f"{org_id}:")]
+        for k in keys:
+            del _cache[k]
+    else:
+        _cache.clear()

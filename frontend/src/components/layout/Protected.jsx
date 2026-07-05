@@ -9,9 +9,9 @@ import { api } from '../../lib/api';
 import { KLogo } from '../../lib/brand';
 
 // Routes clients may NOT access (they are redirected to /client/projects)
-const CLIENT_BLOCKED = ['/automations', '/teams', '/time', '/templates', '/activity', '/admin'];
+const CLIENT_BLOCKED = ['/automations', '/teams', '/time', '/templates', '/activity', '/admin', '/admin/billing'];
 // Routes only admins may access
-const ADMIN_ONLY     = ['/admin'];
+const ADMIN_ONLY     = ['/admin', '/admin/billing'];
 
 export default function Protected({ children, requiredRole }) {
   const navigate = useNavigate();

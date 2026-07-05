@@ -5,7 +5,7 @@
       "name": "kartavya-frontend",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start", "--prefix", "frontend"],
-      "port": 3000
+      "port": 5173
     }
   ]
 }
