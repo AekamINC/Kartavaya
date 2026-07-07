@@ -314,6 +314,8 @@ async def generate_content(
         system=system_prompt,
         client_id=cid,
         max_tokens=2048 if body.agent_type != "blog" else 4096,
+        language=body.language,
+        agent_type=body.agent_type,
     )
 
     title = body.brief[:100] if body.brief else f"{body.agent_type} content"

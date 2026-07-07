@@ -1,7 +1,11 @@
 """
-ai_router.py — Multi-provider AI routing for Srijan (सृजन).
-Tries providers in priority order (Gemini → Groq → OpenRouter).
-Falls back automatically on failure.
+ai_router.py — Smart multi-provider AI routing for Srijan (सृजन).
+Routes by language + task type:
+  - Indic languages → Sarvam-M (free, purpose-built for 11 Indian languages)
+  - English bulk (social, ads) → GLM-4.5-Air (free)
+  - English quality (blog, email, lead magnet) → Qwen3.6 Flash
+  - Chatbot/RAG → Qwen3.5 Plus
+  - Fallback chain → Gemini Flash → Groq Llama
 """
 import json
 import logging
@@ -15,16 +19,22 @@ from db import get_pool
 
 log = logging.getLogger(__name__)
 
+INDIC_LANGS = {"hi", "gu", "bn", "ta", "te", "kn", "ml", "mr", "or", "pa"}
+QUALITY_AGENTS = {"blog", "email", "lead_magnet"}
+
 _PROVIDER_KEYS = {
+    "sarvam": "OPENROUTER_API_KEY",
+    "glm": "OPENROUTER_API_KEY",
+    "qwen_flash": "OPENROUTER_API_KEY",
+    "qwen_plus": "OPENROUTER_API_KEY",
     "gemini": "GEMINI_API_KEY",
     "groq": "GROQ_API_KEY",
-    "openrouter": "OPENROUTER_API_KEY",
 }
 
-_providers_cache: list | None = None
+_providers_cache: dict | None = None
 
 
-async def _get_providers() -> list[dict]:
+async def _get_providers() -> dict[str, dict]:
     global _providers_cache
     if _providers_cache is not None:
         return _providers_cache
@@ -33,13 +43,28 @@ async def _get_providers() -> list[dict]:
         "SELECT code, api_base_url, default_model, priority, config "
         "FROM staging.hub_ai_providers WHERE is_active=TRUE ORDER BY priority"
     )
-    _providers_cache = [dict(r) for r in rows]
+    _providers_cache = {r["code"]: dict(r) for r in rows}
     return _providers_cache
 
 
 def clear_provider_cache():
     global _providers_cache
     _providers_cache = None
+
+
+def _select_providers(language: str = "en", agent_type: str = "social_media", task: str = "content") -> list[str]:
+    """Return ordered list of provider codes based on language, agent type, and task."""
+    if task == "chatbot":
+        return ["qwen_plus", "qwen_flash", "sarvam", "gemini", "groq"]
+
+    if language in INDIC_LANGS:
+        return ["sarvam", "qwen_flash", "gemini", "groq"]
+
+    if agent_type in QUALITY_AGENTS:
+        return ["qwen_flash", "glm", "gemini", "groq"]
+
+    # English bulk (social_media, ad_copy, whatsapp)
+    return ["glm", "qwen_flash", "gemini", "groq"]
 
 
 async def _call_gemini(api_key: str, base_url: str, model: str, prompt: str, system: str = "", max_tokens: int = 2048) -> dict:
@@ -70,7 +95,7 @@ async def _call_gemini(api_key: str, base_url: str, model: str, prompt: str, sys
 
 
 async def _call_openai_compat(api_key: str, base_url: str, model: str, prompt: str, system: str = "", max_tokens: int = 2048) -> dict:
-    """OpenAI-compatible API call (works for Groq and OpenRouter)."""
+    """OpenAI-compatible API call (works for Groq, OpenRouter, and all OR-hosted models)."""
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
@@ -107,17 +132,26 @@ async def generate(
     system: str = "",
     client_id: Optional[str] = None,
     max_tokens: int = 2048,
+    language: str = "en",
+    agent_type: str = "social_media",
+    task: str = "content",
 ) -> dict:
-    """Generate text using the AI provider chain.
-    Returns {"text": str, "provider": str, "model": str, "prompt_tokens": int, "completion_tokens": int}.
-    Raises RuntimeError if all providers fail.
+    """Generate text using smart provider routing.
+    Routes based on language (Indic → Sarvam-M), task type (quality → Qwen),
+    and falls back through the chain on failure.
+    Returns {"text", "provider", "model", "prompt_tokens", "completion_tokens"}.
     """
-    providers = await _get_providers()
+    all_providers = await _get_providers()
     pool = await get_pool()
     last_error = None
 
-    for prov in providers:
-        code = prov["code"]
+    provider_order = _select_providers(language, agent_type, task)
+
+    for code in provider_order:
+        prov = all_providers.get(code)
+        if not prov:
+            continue
+
         env_key = _PROVIDER_KEYS.get(code)
         api_key = os.getenv(env_key, "") if env_key else ""
         if not api_key:

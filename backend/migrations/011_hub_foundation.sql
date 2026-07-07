@@ -157,10 +157,13 @@ CREATE TABLE staging.hub_ai_providers (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-INSERT INTO staging.hub_ai_providers (name, code, api_base_url, default_model, priority) VALUES
-('Google Gemini', 'gemini', 'https://generativelanguage.googleapis.com/v1beta', 'gemini-2.0-flash-lite', 1),
-('Groq', 'groq', 'https://api.groq.com/openai/v1', 'llama-3.3-70b-versatile', 2),
-('OpenRouter', 'openrouter', 'https://openrouter.ai/api/v1', 'google/gemini-2.0-flash-lite-001', 3);
+INSERT INTO staging.hub_ai_providers (name, code, api_base_url, default_model, priority, config) VALUES
+('Sarvam-M (Indic)', 'sarvam', 'https://openrouter.ai/api/v1', 'sarvamai/sarvam-m:free', 1, '{"use_for": ["hi", "gu", "bn", "ta", "te", "kn", "ml", "mr", "or", "pa"], "type": "indic"}'),
+('GLM-4.5-Air (English bulk)', 'glm', 'https://openrouter.ai/api/v1', 'thudm/glm-4.5-air:free', 2, '{"use_for": ["en"], "type": "bulk"}'),
+('Qwen3.6 Flash (Quality)', 'qwen_flash', 'https://openrouter.ai/api/v1', 'qwen/qwen3.6-flash', 3, '{"use_for": ["en"], "type": "quality"}'),
+('Qwen3.5 Plus (RAG/Chatbot)', 'qwen_plus', 'https://openrouter.ai/api/v1', 'qwen/qwen3.6-plus', 4, '{"use_for": ["chatbot", "rag"], "type": "reasoning"}'),
+('Gemini Flash (Fallback)', 'gemini', 'https://generativelanguage.googleapis.com/v1beta', 'gemini-2.0-flash-lite', 5, '{"type": "fallback"}'),
+('Groq Llama (Emergency)', 'groq', 'https://api.groq.com/openai/v1', 'llama-3.3-70b-versatile', 6, '{"type": "emergency"}');
 
 -- 9. AI Generation Log — every AI call for auditing
 CREATE TABLE staging.hub_ai_logs (
