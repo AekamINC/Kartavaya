@@ -21,12 +21,15 @@ log = logging.getLogger(__name__)
 
 INDIC_LANGS = {"hi", "gu", "bn", "ta", "te", "kn", "ml", "mr", "or", "pa"}
 QUALITY_AGENTS = {"blog", "email", "lead_magnet"}
+PREMIUM_AGENTS = {"campaign", "seo"}
 
 _PROVIDER_KEYS = {
     "sarvam": "OPENROUTER_API_KEY",
     "glm": "OPENROUTER_API_KEY",
     "qwen_flash": "OPENROUTER_API_KEY",
     "qwen_plus": "OPENROUTER_API_KEY",
+    "gemini_flash_or": "OPENROUTER_API_KEY",
+    "gemini_pro_or": "OPENROUTER_API_KEY",
     "gemini": "GEMINI_API_KEY",
     "groq": "GROQ_API_KEY",
 }
@@ -54,11 +57,19 @@ def clear_provider_cache():
 
 def _select_providers(language: str = "en", agent_type: str = "social_media", task: str = "content") -> list[str]:
     """Return ordered list of provider codes based on language, agent type, and task."""
+    # Campaign & SEO — always use best model regardless of language
+    if agent_type in PREMIUM_AGENTS:
+        return ["gemini_pro_or", "gemini_flash_or", "qwen_flash", "gemini", "groq"]
+
     if task == "chatbot":
         return ["qwen_plus", "qwen_flash", "sarvam", "gemini", "groq"]
 
     if language in INDIC_LANGS:
-        return ["sarvam", "qwen_flash", "gemini", "groq"]
+        # Deep Indic content (blog, email, lead magnet) → Gemini Flash for quality
+        if agent_type in QUALITY_AGENTS:
+            return ["gemini_flash_or", "sarvam", "qwen_flash", "gemini", "groq"]
+        # Bulk Indic (social, ads, whatsapp) → Sarvam free first
+        return ["sarvam", "gemini_flash_or", "qwen_flash", "gemini", "groq"]
 
     if agent_type in QUALITY_AGENTS:
         return ["qwen_flash", "glm", "gemini", "groq"]
@@ -207,6 +218,8 @@ CREDIT_COSTS = {
     "email": 2,
     "whatsapp": 1,
     "lead_magnet": 8,
+    "campaign": 10,
+    "seo": 8,
 }
 
 

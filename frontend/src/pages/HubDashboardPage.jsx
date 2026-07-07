@@ -7,6 +7,7 @@ import { PageHeader, StatTile } from '../components/editorial';
 const AGENT_LABELS = {
   social_media: 'Social Media', blog: 'Blog', ad_copy: 'Ad Copy',
   email: 'Email', whatsapp: 'WhatsApp', lead_magnet: 'Lead Magnet',
+  campaign: 'Campaign Strategy', seo: 'SEO Content',
 };
 
 const STATUS_COLORS = {

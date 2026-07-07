@@ -89,7 +89,7 @@ CREATE TABLE staging.hub_content_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id UUID NOT NULL REFERENCES staging.hub_clients(id) ON DELETE CASCADE,
     agent_type TEXT NOT NULL CHECK (agent_type IN (
-        'social_media', 'blog', 'ad_copy', 'email', 'whatsapp', 'lead_magnet'
+        'social_media', 'blog', 'ad_copy', 'email', 'whatsapp', 'lead_magnet', 'campaign', 'seo'
     )),
     title TEXT NOT NULL DEFAULT '',
     body TEXT NOT NULL DEFAULT '',
