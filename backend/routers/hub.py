@@ -75,6 +75,14 @@ class SkillAssign(BaseModel):
 class SkillRun(BaseModel):
     variables: dict = {}
 
+class SkillTemplateCreate(BaseModel):
+    name: str
+    description: str = ""
+    category: str = "general"
+    steps: list[dict]
+    estimated_credits: int = 0
+    icon: str = "star"
+
 class CreditTopup(BaseModel):
     amount: int
     notes: str = ""
@@ -578,6 +586,56 @@ async def get_skill_template(
     if not row:
         raise HTTPException(404, "Skill template not found")
     return dict(row)
+
+
+@router.post("/skills/templates")
+async def create_skill_template(
+    body: SkillTemplateCreate,
+    user=Depends(require_role("admin")),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    valid_categories = ("general", "festival", "launch", "engagement", "branding", "seasonal", "industry")
+    if body.category not in valid_categories:
+        raise HTTPException(400, f"Category must be one of: {', '.join(valid_categories)}")
+    if not body.steps:
+        raise HTTPException(400, "At least one step is required")
+    valid_agents = set(AGENT_PROMPTS.keys())
+    for i, step in enumerate(body.steps):
+        if "agent_type" not in step or step["agent_type"] not in valid_agents:
+            raise HTTPException(400, f"Step {i+1}: invalid agent_type. Must be one of: {', '.join(valid_agents)}")
+        if "prompt_template" not in step or not step["prompt_template"].strip():
+            raise HTTPException(400, f"Step {i+1}: prompt_template is required")
+
+    steps_with_order = [
+        {**s, "order": s.get("order", i + 1)} for i, s in enumerate(body.steps)
+    ]
+    estimated = body.estimated_credits or sum(
+        CREDIT_COSTS.get(s["agent_type"], 2) for s in steps_with_order
+    )
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.hub_skill_templates "
+        "(name, description, category, steps, estimated_credits, icon) "
+        "VALUES ($1, $2, $3, $4::jsonb, $5, $6) RETURNING *",
+        body.name, body.description, body.category,
+        json.dumps(steps_with_order), estimated, body.icon,
+    )
+    return dict(row)
+
+
+@router.delete("/skills/templates/{template_id}")
+async def delete_skill_template(
+    template_id: UUID,
+    user=Depends(require_role("admin")),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.hub_skill_templates SET is_active=FALSE, updated_at=NOW() WHERE id=$1",
+        template_id,
+    )
+    return {"status": "deactivated"}
 
 
 # ── Client Skills (per-client, isolated) ─────────────────────
