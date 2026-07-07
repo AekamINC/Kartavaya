@@ -68,6 +68,13 @@ class ContentReview(BaseModel):
     status: str
     review_notes: str = ""
 
+class SkillAssign(BaseModel):
+    custom_config: dict = {}
+    schedule: str = ""
+
+class SkillRun(BaseModel):
+    variables: dict = {}
+
 class CreditTopup(BaseModel):
     amount: int
     notes: str = ""
@@ -416,6 +423,12 @@ async def review_content(
     )
     if result == "UPDATE 0":
         raise HTTPException(404, "Content not found or not in reviewable state")
+
+    await pool.execute(
+        "INSERT INTO staging.hub_content_approvals "
+        "(content_item_id, action, reviewer_id, notes) VALUES ($1, $2, $3, $4)",
+        content_id, body.status, user["user_id"], body.review_notes,
+    )
     return {"status": body.status}
 
 
@@ -535,3 +548,274 @@ async def hub_dashboard(
         "recent_content": [dict(r) for r in recent_content],
         "credit_costs": CREDIT_COSTS,
     }
+
+
+# ── Skill Pack Templates (global catalog) ───────────────────
+
+@router.get("/skills/templates")
+async def list_skill_templates(
+    user=Depends(require_user),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM staging.hub_skill_templates WHERE is_active=TRUE ORDER BY category, name"
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.get("/skills/templates/{template_id}")
+async def get_skill_template(
+    template_id: UUID,
+    user=Depends(require_user),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM staging.hub_skill_templates WHERE id=$1 AND is_active=TRUE",
+        template_id,
+    )
+    if not row:
+        raise HTTPException(404, "Skill template not found")
+    return dict(row)
+
+
+# ── Client Skills (per-client, isolated) ─────────────────────
+
+@router.get("/clients/{client_id}/skills")
+async def list_client_skills(
+    client_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    await _verify_client_access(pool, str(client_id), org_id)
+
+    rows = await pool.fetch(
+        "SELECT cs.*, t.name as template_name, t.description as template_description, "
+        "t.category, t.estimated_credits, t.icon, t.steps "
+        "FROM staging.hub_client_skills cs "
+        "JOIN staging.hub_skill_templates t ON t.id = cs.template_id "
+        "WHERE cs.client_id=$1::uuid ORDER BY cs.created_at DESC",
+        str(client_id),
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/clients/{client_id}/skills/{template_id}")
+async def assign_skill(
+    client_id: UUID,
+    template_id: UUID,
+    body: SkillAssign,
+    user=Depends(require_role("admin")),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    await _verify_client_access(pool, str(client_id), org_id)
+
+    tmpl = await pool.fetchrow(
+        "SELECT id FROM staging.hub_skill_templates WHERE id=$1 AND is_active=TRUE",
+        template_id,
+    )
+    if not tmpl:
+        raise HTTPException(404, "Skill template not found")
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.hub_client_skills "
+        "(client_id, template_id, custom_config, schedule, assigned_by) "
+        "VALUES ($1::uuid, $2, $3::jsonb, $4, $5) "
+        "ON CONFLICT (client_id, template_id) DO UPDATE SET "
+        "custom_config=EXCLUDED.custom_config, schedule=EXCLUDED.schedule, "
+        "is_active=TRUE, updated_at=NOW() RETURNING *",
+        str(client_id), template_id, json.dumps(body.custom_config),
+        body.schedule or None, user["user_id"],
+    )
+    return dict(row)
+
+
+@router.delete("/clients/{client_id}/skills/{skill_id}")
+async def remove_skill(
+    client_id: UUID,
+    skill_id: UUID,
+    user=Depends(require_role("admin")),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    await _verify_client_access(pool, str(client_id), org_id)
+
+    await pool.execute(
+        "UPDATE staging.hub_client_skills SET is_active=FALSE, updated_at=NOW() "
+        "WHERE id=$1 AND client_id=$2::uuid",
+        skill_id, str(client_id),
+    )
+    return {"status": "removed"}
+
+
+@router.post("/clients/{client_id}/skills/{skill_id}/run")
+async def run_skill(
+    client_id: UUID,
+    skill_id: UUID,
+    body: SkillRun,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Execute a skill pack for a client. Runs each step sequentially,
+    generating content using the client's brand profile."""
+    pool = await get_pool()
+    client = await _verify_client_access(pool, str(client_id), org_id)
+    cid = str(client_id)
+
+    cs = await pool.fetchrow(
+        "SELECT cs.*, t.steps, t.name as template_name "
+        "FROM staging.hub_client_skills cs "
+        "JOIN staging.hub_skill_templates t ON t.id = cs.template_id "
+        "WHERE cs.id=$1 AND cs.client_id=$2::uuid AND cs.is_active=TRUE",
+        skill_id, cid,
+    )
+    if not cs:
+        raise HTTPException(404, "Client skill not found")
+
+    steps = cs["steps"] if isinstance(cs["steps"], list) else json.loads(cs["steps"])
+    custom_config = cs["custom_config"] if isinstance(cs["custom_config"], dict) else json.loads(cs["custom_config"] or "{}")
+
+    brand = await pool.fetchrow(
+        "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", cid
+    )
+    system_prompt = _build_system_prompt(dict(brand)) if brand else ""
+
+    # Merge variables: body.variables + custom_config
+    variables = {**custom_config, **body.variables}
+
+    run = await pool.fetchrow(
+        "INSERT INTO staging.hub_skill_runs "
+        "(client_skill_id, client_id, steps_total, triggered_by) "
+        "VALUES ($1, $2::uuid, $3, $4) RETURNING *",
+        skill_id, cid, len(steps), user["user_id"],
+    )
+    run_id = run["id"]
+
+    outputs = []
+    content_ids = []
+    total_credits = 0
+
+    for step in sorted(steps, key=lambda s: s.get("order", 0)):
+        agent_type = step["agent_type"]
+        prompt_template = step["prompt_template"]
+
+        # Substitute variables into prompt
+        prompt = prompt_template
+        for k, v in variables.items():
+            prompt = prompt.replace(f"{{{k}}}", str(v))
+
+        try:
+            new_balance = await deduct_credits(cid, agent_type, user["user_id"])
+        except Exception:
+            await pool.execute(
+                "UPDATE staging.hub_skill_runs SET status='failed', "
+                "error_message='Insufficient credits', completed_at=NOW(), "
+                "steps_completed=$1, credits_used=$2, outputs=$3::jsonb, "
+                "content_item_ids=$4 WHERE id=$5",
+                len(outputs), total_credits, json.dumps(outputs), content_ids, run_id,
+            )
+            raise
+
+        language = variables.get("language", "en")
+        if brand and brand.get("languages"):
+            langs = brand["languages"]
+            if isinstance(langs, list) and langs:
+                language = langs[0]
+
+        result = await generate(
+            prompt=prompt,
+            system=system_prompt,
+            client_id=cid,
+            max_tokens=4096 if agent_type in ("blog", "seo", "campaign") else 2048,
+            language=language,
+            agent_type=agent_type,
+        )
+
+        title = f"{cs['template_name']} — Step {step.get('order', 0)}"
+        credits_cost = CREDIT_COSTS.get(agent_type, 2)
+
+        row = await pool.fetchrow(
+            "INSERT INTO staging.hub_content_items "
+            "(client_id, agent_type, title, body, platform, status, credits_used, "
+            " metadata, created_by) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, 'draft', $6, $7::jsonb, $8) RETURNING id",
+            cid, agent_type, title, result["text"],
+            step.get("platform"), credits_cost,
+            json.dumps({"skill_run_id": str(run_id), "provider": result["provider"],
+                         "model": result["model"], "step": step.get("order")}),
+            user["user_id"],
+        )
+        content_ids.append(row["id"])
+        total_credits += credits_cost
+        outputs.append({
+            "step": step.get("order"),
+            "agent_type": agent_type,
+            "content_id": str(row["id"]),
+            "provider": result["provider"],
+        })
+
+        await pool.execute(
+            "UPDATE staging.hub_skill_runs SET steps_completed=$1 WHERE id=$2",
+            len(outputs), run_id,
+        )
+
+    await pool.execute(
+        "UPDATE staging.hub_skill_runs SET status='completed', completed_at=NOW(), "
+        "credits_used=$1, outputs=$2::jsonb, content_item_ids=$3 WHERE id=$4",
+        total_credits, json.dumps(outputs), content_ids, run_id,
+    )
+
+    return {
+        "run_id": str(run_id),
+        "status": "completed",
+        "steps_completed": len(outputs),
+        "credits_used": total_credits,
+        "content_ids": [str(c) for c in content_ids],
+    }
+
+
+@router.get("/clients/{client_id}/skills/{skill_id}/runs")
+async def list_skill_runs(
+    client_id: UUID,
+    skill_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    await _verify_client_access(pool, str(client_id), org_id)
+
+    rows = await pool.fetch(
+        "SELECT * FROM staging.hub_skill_runs "
+        "WHERE client_skill_id=$1 AND client_id=$2::uuid ORDER BY started_at DESC LIMIT 20",
+        skill_id, str(client_id),
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+# ── Content Approval History ─────────────────────────────────
+
+@router.get("/clients/{client_id}/content/{content_id}/approvals")
+async def list_approvals(
+    client_id: UUID,
+    content_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    await _verify_client_access(pool, str(client_id), org_id)
+
+    rows = await pool.fetch(
+        "SELECT * FROM staging.hub_content_approvals "
+        "WHERE content_item_id=$1 ORDER BY created_at DESC",
+        content_id,
+    )
+    return {"data": [dict(r) for r in rows]}

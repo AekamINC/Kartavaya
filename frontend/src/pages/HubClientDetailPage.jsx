@@ -25,7 +25,7 @@ function Badge({ status }) {
   );
 }
 
-const TABS = ['overview', 'content', 'generate', 'brand', 'credits'];
+const TABS = ['overview', 'content', 'generate', 'brand', 'credits', 'skills'];
 
 export default function HubClientDetailPage() {
   const { clientId } = useParams();
@@ -326,6 +326,16 @@ export default function HubClientDetailPage() {
 
       {/* Credits Tab */}
       {tab === 'credits' && <CreditTab clientId={clientId} wallet={wallet} onRefresh={loadClient} />}
+
+      {/* Skills Tab */}
+      {tab === 'skills' && (
+        <div style={{ textAlign: 'center', padding: 32 }}>
+          <p style={{ color: 'var(--ink-2)', fontSize: 14, marginBottom: 16 }}>Manage skill packs assigned to this client.</p>
+          <button className="k-btn k-btn--primary" onClick={() => navigate(`/hub/clients/${clientId}/skills`)}>
+            Open Skill Packs
+          </button>
+        </div>
+      )}
     </div>
   );
 }
