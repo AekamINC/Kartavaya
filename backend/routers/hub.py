@@ -877,3 +877,120 @@ async def list_approvals(
         content_id,
     )
     return {"data": [dict(r) for r in rows]}
+
+
+# ── AI Spend Analytics ─────────────────────────────────────────
+
+@router.get("/analytics/spend")
+async def ai_spend_analytics(
+    days: int = 30,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Org-wide AI spend analytics: cost by provider, model, agent type, and client."""
+    pool = await get_pool()
+
+    by_provider = await pool.fetch(
+        "SELECT l.provider, l.model, COUNT(*) as calls, "
+        "SUM(l.prompt_tokens) as total_prompt_tokens, "
+        "SUM(l.completion_tokens) as total_completion_tokens, "
+        "SUM(l.cost_usd) as total_cost_usd, "
+        "AVG(l.latency_ms)::int as avg_latency_ms "
+        "FROM staging.hub_ai_logs l "
+        "JOIN staging.hub_clients c ON c.id = l.client_id "
+        "WHERE c.org_id=$1::uuid AND l.status='success' "
+        "AND l.created_at >= NOW() - ($2 || ' days')::interval "
+        "GROUP BY l.provider, l.model ORDER BY total_cost_usd DESC",
+        org_id, str(days),
+    )
+
+    by_client = await pool.fetch(
+        "SELECT c.name as client_name, l.client_id, COUNT(*) as calls, "
+        "SUM(l.cost_usd) as total_cost_usd, "
+        "SUM(l.prompt_tokens + l.completion_tokens) as total_tokens "
+        "FROM staging.hub_ai_logs l "
+        "JOIN staging.hub_clients c ON c.id = l.client_id "
+        "WHERE c.org_id=$1::uuid AND l.status='success' "
+        "AND l.created_at >= NOW() - ($2 || ' days')::interval "
+        "GROUP BY c.name, l.client_id ORDER BY total_cost_usd DESC",
+        org_id, str(days),
+    )
+
+    totals = await pool.fetchrow(
+        "SELECT COUNT(*) as total_calls, "
+        "COALESCE(SUM(l.cost_usd), 0) as total_cost_usd, "
+        "COALESCE(SUM(l.prompt_tokens), 0) as total_prompt_tokens, "
+        "COALESCE(SUM(l.completion_tokens), 0) as total_completion_tokens, "
+        "COUNT(*) FILTER (WHERE l.status='error') as failed_calls "
+        "FROM staging.hub_ai_logs l "
+        "JOIN staging.hub_clients c ON c.id = l.client_id "
+        "WHERE c.org_id=$1::uuid "
+        "AND l.created_at >= NOW() - ($2 || ' days')::interval",
+        org_id, str(days),
+    )
+
+    return {
+        "period_days": days,
+        "totals": dict(totals) if totals else {},
+        "by_provider": [dict(r) for r in by_provider],
+        "by_client": [dict(r) for r in by_client],
+    }
+
+
+@router.get("/clients/{client_id}/analytics/spend")
+async def client_spend_analytics(
+    client_id: UUID,
+    days: int = 30,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Per-client AI spend breakdown by provider and agent type."""
+    pool = await get_pool()
+    await _verify_client_access(pool, str(client_id), org_id)
+    cid = str(client_id)
+
+    by_agent = await pool.fetch(
+        "SELECT ci.agent_type, COUNT(*) as calls, "
+        "SUM(l.cost_usd) as total_cost_usd, "
+        "SUM(l.prompt_tokens + l.completion_tokens) as total_tokens, "
+        "AVG(l.latency_ms)::int as avg_latency_ms "
+        "FROM staging.hub_ai_logs l "
+        "JOIN staging.hub_content_items ci ON ci.client_id = l.client_id "
+        "WHERE l.client_id=$1::uuid AND l.status='success' "
+        "AND l.created_at >= NOW() - ($2 || ' days')::interval "
+        "GROUP BY ci.agent_type ORDER BY total_cost_usd DESC",
+        cid, str(days),
+    )
+
+    by_provider = await pool.fetch(
+        "SELECT provider, model, COUNT(*) as calls, "
+        "SUM(cost_usd) as total_cost_usd, "
+        "SUM(prompt_tokens) as total_prompt_tokens, "
+        "SUM(completion_tokens) as total_completion_tokens, "
+        "AVG(latency_ms)::int as avg_latency_ms "
+        "FROM staging.hub_ai_logs "
+        "WHERE client_id=$1::uuid AND status='success' "
+        "AND created_at >= NOW() - ($2 || ' days')::interval "
+        "GROUP BY provider, model ORDER BY total_cost_usd DESC",
+        cid, str(days),
+    )
+
+    daily = await pool.fetch(
+        "SELECT created_at::date as date, COUNT(*) as calls, "
+        "SUM(cost_usd) as cost_usd "
+        "FROM staging.hub_ai_logs "
+        "WHERE client_id=$1::uuid AND status='success' "
+        "AND created_at >= NOW() - ($2 || ' days')::interval "
+        "GROUP BY created_at::date ORDER BY date",
+        cid, str(days),
+    )
+
+    return {
+        "client_id": cid,
+        "period_days": days,
+        "by_agent_type": [dict(r) for r in by_agent],
+        "by_provider": [dict(r) for r in by_provider],
+        "daily_spend": [dict(r) for r in daily],
+    }

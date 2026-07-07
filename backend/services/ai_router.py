@@ -5,7 +5,11 @@ Routes by language + task type:
   - English bulk (social, ads) → GLM-4.5-Air (free)
   - English quality (blog, email, lead magnet) → Qwen3.6 Flash
   - Chatbot/RAG → Qwen3.5 Plus
+  - Premium (campaign/SEO) → Gemini 2.5 Pro
   - Fallback chain → Gemini Flash → Groq Llama
+
+Cost tracking: actual USD cost is extracted from OpenRouter response headers
+and logged per generation for real spend analytics.
 """
 import json
 import logging
@@ -22,6 +26,18 @@ log = logging.getLogger(__name__)
 INDIC_LANGS = {"hi", "gu", "bn", "ta", "te", "kn", "ml", "mr", "or", "pa"}
 QUALITY_AGENTS = {"blog", "email", "lead_magnet"}
 PREMIUM_AGENTS = {"campaign", "seo"}
+
+# Per-token pricing (USD per 1 token) — updated from OpenRouter, used for estimation when headers missing
+MODEL_PRICING = {
+    "sarvam-m": {"prompt": 0.0, "completion": 0.0},
+    "glm-4-air": {"prompt": 0.0, "completion": 0.0},
+    "qwen/qwen3-30b-a3b": {"prompt": 0.0000001, "completion": 0.0000004},
+    "qwen/qwen-plus": {"prompt": 0.0000008, "completion": 0.0000020},
+    "google/gemini-2.5-flash-preview": {"prompt": 0.00000015, "completion": 0.0000006},
+    "google/gemini-2.5-pro-preview": {"prompt": 0.0000025, "completion": 0.000015},
+    "gemini-2.0-flash": {"prompt": 0.0000001, "completion": 0.0000004},
+    "llama-3.3-70b-versatile": {"prompt": 0.00000059, "completion": 0.00000079},
+}
 
 _PROVIDER_KEYS = {
     "sarvam": "OPENROUTER_API_KEY",
@@ -98,15 +114,28 @@ async def _call_gemini(api_key: str, base_url: str, model: str, prompt: str, sys
 
     text = data["candidates"][0]["content"]["parts"][0]["text"]
     usage = data.get("usageMetadata", {})
+    prompt_tokens = usage.get("promptTokenCount", 0)
+    completion_tokens = usage.get("candidatesTokenCount", 0)
     return {
         "text": text,
-        "prompt_tokens": usage.get("promptTokenCount", 0),
-        "completion_tokens": usage.get("candidatesTokenCount", 0),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "cost_usd": _estimate_cost(model, prompt_tokens, completion_tokens),
+        "generation_id": "",
     }
 
 
+def _estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    """Estimate USD cost from token counts when headers don't provide it."""
+    for key, prices in MODEL_PRICING.items():
+        if key in model.lower():
+            return (prompt_tokens * prices["prompt"]) + (completion_tokens * prices["completion"])
+    return 0.0
+
+
 async def _call_openai_compat(api_key: str, base_url: str, model: str, prompt: str, system: str = "", max_tokens: int = 2048) -> dict:
-    """OpenAI-compatible API call (works for Groq, OpenRouter, and all OR-hosted models)."""
+    """OpenAI-compatible API call (works for Groq, OpenRouter, and all OR-hosted models).
+    Extracts actual USD cost from OpenRouter response headers when available."""
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
@@ -131,10 +160,28 @@ async def _call_openai_compat(api_key: str, base_url: str, model: str, prompt: s
 
     choice = data["choices"][0]
     usage = data.get("usage", {})
+    prompt_tokens = usage.get("prompt_tokens", 0)
+    completion_tokens = usage.get("completion_tokens", 0)
+
+    # OpenRouter returns actual cost in usage.cost or total_cost
+    cost_usd = 0.0
+    if usage.get("cost") is not None:
+        cost_usd = float(usage["cost"])
+    elif usage.get("total_cost") is not None:
+        cost_usd = float(usage["total_cost"])
+    elif data.get("usage", {}).get("cost") is not None:
+        cost_usd = float(data["usage"]["cost"])
+    else:
+        cost_usd = _estimate_cost(model, prompt_tokens, completion_tokens)
+
+    generation_id = data.get("id", "")
+
     return {
         "text": choice["message"]["content"],
-        "prompt_tokens": usage.get("prompt_tokens", 0),
-        "completion_tokens": usage.get("completion_tokens", 0),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "cost_usd": cost_usd,
+        "generation_id": generation_id,
     }
 
 
@@ -178,13 +225,16 @@ async def generate(
                 result = await _call_openai_compat(api_key, prov["api_base_url"], model, prompt, system, max_tokens)
 
             latency = int((time.monotonic() - start) * 1000)
+            cost_usd = result.get("cost_usd", 0.0)
 
             await pool.execute(
                 "INSERT INTO staging.hub_ai_logs "
-                "(client_id, provider, model, prompt_tokens, completion_tokens, latency_ms, status) "
-                "VALUES ($1::uuid, $2, $3, $4, $5, $6, 'success')",
+                "(client_id, provider, model, prompt_tokens, completion_tokens, "
+                " latency_ms, status, cost_usd, generation_id) "
+                "VALUES ($1::uuid, $2, $3, $4, $5, $6, 'success', $7, $8)",
                 client_id, code, model,
-                result["prompt_tokens"], result["completion_tokens"], latency,
+                result["prompt_tokens"], result["completion_tokens"],
+                latency, cost_usd, result.get("generation_id", ""),
             )
 
             return {
@@ -193,6 +243,7 @@ async def generate(
                 "model": model,
                 "prompt_tokens": result["prompt_tokens"],
                 "completion_tokens": result["completion_tokens"],
+                "cost_usd": cost_usd,
             }
 
         except Exception as e:

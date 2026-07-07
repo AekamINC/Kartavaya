@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "openrouter": {
+      "command": "node",
+      "args": ["D:\\Projects\\Kartavya\\tools\\openrouter-mcp-server\\dist\\index.js"],
+      "env": {
+        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}"
+      }
+    }
+  }
+}
