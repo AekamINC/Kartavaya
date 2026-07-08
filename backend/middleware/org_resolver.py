@@ -50,7 +50,7 @@ async def get_org_id(request: Request, user=Depends(require_user)):
         org_id = str(row["id"])
 
         default_plan = await pool.fetchval(
-            "SELECT id FROM staging.plans WHERE code='starter' AND is_active=TRUE"
+            "SELECT id FROM staging.plans WHERE code='free' AND is_active=TRUE"
         )
         if default_plan:
             await pool.execute(

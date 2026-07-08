@@ -50,8 +50,17 @@ def require_module(module_code: str):
             raise HTTPException(403, "Subscription is not active")
 
         if module_code in BUNDLED_MODULES:
-            _cache[cache_key] = (now, True)
-            return
+            features = sub["features"] if isinstance(sub["features"], dict) else {}
+            if features.get(module_code):
+                _cache[cache_key] = (now, True)
+                return
+            else:
+                _cache[cache_key] = (now, False)
+                raise HTTPException(
+                    403,
+                    f"Module '{module_code}' requires a paid plan. "
+                    "Contact your administrator to upgrade.",
+                )
 
         mod = await pool.fetchval(
             "SELECT 1 FROM staging.module_subscriptions "
