@@ -1,7 +1,7 @@
 """
 ai_router.py — Smart multi-provider AI routing for Srijan (सृजन).
 Routes by language + task type:
-  - Indic languages → Sarvam-M (free, purpose-built for 11 Indian languages)
+  - Indic languages → Gemini 2.5 Flash Lite (free, strong Indic support)
   - English bulk (social, ads) → GLM-4.5-Air (free)
   - English quality (blog, email, lead magnet) → Qwen3.6 Flash
   - Chatbot/RAG → Qwen3.5 Plus
@@ -29,7 +29,7 @@ PREMIUM_AGENTS = {"campaign", "seo"}
 
 # Per-token pricing (USD per 1 token) — updated from OpenRouter, used for estimation when headers missing
 MODEL_PRICING = {
-    "sarvam-m": {"prompt": 0.0, "completion": 0.0},
+    "google/gemini-2.5-flash-lite-preview": {"prompt": 0.0, "completion": 0.0},
     "glm-4-air": {"prompt": 0.0, "completion": 0.0},
     "qwen/qwen3-30b-a3b": {"prompt": 0.0000001, "completion": 0.0000004},
     "qwen/qwen-plus": {"prompt": 0.0000008, "completion": 0.0000020},
@@ -40,7 +40,7 @@ MODEL_PRICING = {
 }
 
 _PROVIDER_KEYS = {
-    "sarvam": "OPENROUTER_API_KEY",
+    "gemini_lite_or": "OPENROUTER_API_KEY",
     "glm": "OPENROUTER_API_KEY",
     "qwen_flash": "OPENROUTER_API_KEY",
     "qwen_plus": "OPENROUTER_API_KEY",
@@ -78,14 +78,12 @@ def _select_providers(language: str = "en", agent_type: str = "social_media", ta
         return ["gemini_pro_or", "gemini_flash_or", "qwen_flash", "gemini", "groq"]
 
     if task == "chatbot":
-        return ["qwen_plus", "qwen_flash", "sarvam", "gemini", "groq"]
+        return ["qwen_plus", "qwen_flash", "gemini_lite_or", "gemini", "groq"]
 
     if language in INDIC_LANGS:
-        # Deep Indic content (blog, email, lead magnet) → Gemini Flash for quality
         if agent_type in QUALITY_AGENTS:
-            return ["gemini_flash_or", "sarvam", "qwen_flash", "gemini", "groq"]
-        # Bulk Indic (social, ads, whatsapp) → Sarvam free first
-        return ["sarvam", "gemini_flash_or", "qwen_flash", "gemini", "groq"]
+            return ["gemini_flash_or", "gemini_lite_or", "qwen_flash", "gemini", "groq"]
+        return ["gemini_lite_or", "gemini_flash_or", "qwen_flash", "gemini", "groq"]
 
     if agent_type in QUALITY_AGENTS:
         return ["qwen_flash", "glm", "gemini", "groq"]
