@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 from auth_router import require_user
 from db import get_pool
-from services.storage import upload_file
+from services.storage import upload_file, update_org_storage, check_storage_limit
 
 router = APIRouter(prefix="/api", tags=["uploads"])
 
@@ -140,6 +140,22 @@ async def upload(
         mime = "video/quicktime" if ext == ".mov" else f"video/{ext.lstrip('.')}"
 
     folder = f"projects/{team_id}" if team_id else None
+
+    org_id = None
+    if team_id:
+        org_row = await pool.fetchrow(
+            "SELECT id FROM staging.organisations "
+            "WHERE team_id=$1 AND is_active=TRUE",
+            team_id,
+        )
+        if org_row:
+            org_id = str(org_row["id"])
+            if not await check_storage_limit(org_id, total_size):
+                raise HTTPException(
+                    413,
+                    "Organisation storage limit reached. Contact your administrator to upgrade.",
+                )
+
     try:
         result = await upload_file(
             file_bytes=content,
@@ -147,6 +163,7 @@ async def upload(
             content_type=mime,
             user_id=user["user_id"],
             folder=folder,
+            org_id=org_id,
         )
     except Exception as exc:
         logger.exception(
@@ -156,4 +173,8 @@ async def upload(
             "project" if team_id else "personal",
         )
         raise HTTPException(503, "Upload service temporarily unavailable — please try again in a moment.") from exc
+
+    if org_id and result.get("key"):
+        await update_org_storage(org_id, total_size)
+
     return result

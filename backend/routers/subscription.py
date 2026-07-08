@@ -405,3 +405,28 @@ async def get_usage(user=Depends(require_user), org_id: str = Depends(get_org_id
         "user_count": user_count or 0,
         "max_users": sub["max_users"] if sub else None,
     }
+
+
+# ── User Roles ──────────────────────────────────────────────
+
+@router.get("/my-roles")
+async def get_my_roles(user=Depends(require_user)):
+    """Return all roles for the current user (platform + org-scoped)."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT ur.role_code, ur.org_id, o.name as org_name "
+        "FROM staging.user_roles ur "
+        "LEFT JOIN staging.organisations o ON o.id = ur.org_id "
+        "WHERE ur.user_id=$1",
+        user["user_id"],
+    )
+    platform_roles = [r["role_code"] for r in rows if r["org_id"] is None]
+    org_roles = [
+        {"org_id": str(r["org_id"]), "org_name": r["org_name"], "role": r["role_code"]}
+        for r in rows if r["org_id"] is not None
+    ]
+    return {
+        "platform_roles": platform_roles,
+        "org_roles": org_roles,
+        "is_platform_admin": "platform_admin" in platform_roles or user.get("role") == "admin",
+    }
