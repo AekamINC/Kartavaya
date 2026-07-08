@@ -49,14 +49,14 @@ async def get_org_id(request: Request, user=Depends(require_user)):
         )
         org_id = str(row["id"])
 
-        free_plan = await pool.fetchval(
-            "SELECT id FROM staging.plans WHERE code='free' AND is_active=TRUE"
+        default_plan = await pool.fetchval(
+            "SELECT id FROM staging.plans WHERE code='starter' AND is_active=TRUE"
         )
-        if free_plan:
+        if default_plan:
             await pool.execute(
                 "INSERT INTO staging.subscriptions (org_id, plan_id, status) "
                 "VALUES ($1, $2, 'active') ON CONFLICT (org_id) DO NOTHING",
-                row["id"], free_plan,
+                row["id"], default_plan,
             )
 
     request.state._org_id = org_id

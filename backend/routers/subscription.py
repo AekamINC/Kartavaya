@@ -56,7 +56,8 @@ async def _log_event(pool, org_id: str, event_type: str, metadata: dict):
 # ── Public ───────────────────────────────────────────────────
 
 @router.get("/plans")
-async def list_plans():
+async def list_plans(user=Depends(require_user)):
+    """List available plans. Pricing is only visible to admins."""
     pool = await get_pool()
     plans = await pool.fetch(
         "SELECT * FROM staging.plans WHERE is_active=TRUE ORDER BY price_monthly"
@@ -64,7 +65,24 @@ async def list_plans():
     modules = await pool.fetch(
         "SELECT * FROM staging.add_on_modules WHERE is_active=TRUE ORDER BY price_per_user_monthly"
     )
-    return {"plans": [dict(r) for r in plans], "modules": [dict(r) for r in modules]}
+
+    is_admin = user.get("role") == "admin"
+    plan_list = []
+    for r in plans:
+        p = dict(r)
+        if not is_admin:
+            p.pop("price_monthly", None)
+            p.pop("price_annual", None)
+        plan_list.append(p)
+
+    mod_list = []
+    for r in modules:
+        m = dict(r)
+        if not is_admin:
+            m.pop("price_per_user_monthly", None)
+        mod_list.append(m)
+
+    return {"plans": plan_list, "modules": mod_list}
 
 
 # ── Current Subscription ─────────────────────────────────────
@@ -123,7 +141,8 @@ async def admin_set_plan(
     )
     old_code = current["code"] if current else "none"
 
-    tier = {"none": -1, "free": 0, "professional": 1, "business": 2, "enterprise": 3}
+    tier = {"none": -1, "free": 0, "starter": 1, "growth": 2, "scale": 3,
+            "professional": 1, "business": 2, "enterprise": 3}
     direction = "upgraded" if tier.get(body.plan_code, 0) > tier.get(old_code, 0) else "downgraded"
 
     cycle_days = 30 if body.billing_cycle == "monthly" else 365
@@ -171,6 +190,10 @@ async def activate_module(
 ):
     pool = await get_pool()
 
+    from middleware.subscription import BUNDLED_MODULES
+    if body.module_code in BUNDLED_MODULES:
+        raise HTTPException(400, f"'{body.module_code}' is bundled with every plan — no activation needed")
+
     sub = await pool.fetchrow(
         "SELECT p.code FROM staging.subscriptions s "
         "JOIN staging.plans p ON p.id = s.plan_id "
@@ -178,10 +201,10 @@ async def activate_module(
         org_id,
     )
     if not sub or sub["code"] == "free":
-        raise HTTPException(403, "Add-on modules require Professional plan or higher")
+        raise HTTPException(403, "Add-on modules require a paid plan")
 
     mod = await pool.fetchrow(
-        "SELECT code, requires_module FROM staging.add_on_modules WHERE code=$1",
+        "SELECT code, requires_module FROM staging.add_on_modules WHERE code=$1 AND is_active=TRUE",
         body.module_code,
     )
     if not mod:

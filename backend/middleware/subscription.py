@@ -1,7 +1,10 @@
 """
 subscription.py — Feature gating middleware.
-Use require_module("crm") as a FastAPI dependency to restrict endpoints
-to orgs that have activated that module.
+Use require_module("srijan") as a FastAPI dependency to restrict endpoints
+to orgs that have that module active.
+
+Srijan is a bundled module — included in every paid plan. Other modules
+(graha, manav, etc.) are activated per-org by admin.
 """
 from datetime import datetime, timezone, timedelta
 from fastapi import Depends, HTTPException
@@ -12,9 +15,12 @@ from middleware.org_resolver import get_org_id
 _cache: dict = {}
 _CACHE_TTL = timedelta(minutes=5)
 
+BUNDLED_MODULES = {"srijan"}
+
 
 def require_module(module_code: str):
-    """Returns a FastAPI dependency that checks if the org has the module active."""
+    """Returns a FastAPI dependency that checks if the org has the module active.
+    Bundled modules (srijan) only need an active subscription — no separate activation."""
 
     async def _check(org_id: str = Depends(get_org_id)):
         cache_key = f"{org_id}:{module_code}"
@@ -34,12 +40,18 @@ def require_module(module_code: str):
         pool = await get_pool()
 
         sub = await pool.fetchrow(
-            "SELECT status FROM staging.subscriptions WHERE org_id=$1::uuid",
+            "SELECT s.status, p.features FROM staging.subscriptions s "
+            "JOIN staging.plans p ON p.id = s.plan_id "
+            "WHERE s.org_id=$1::uuid",
             org_id,
         )
         if not sub or sub["status"] in ("cancelled", "paused"):
             _cache[cache_key] = (now, False)
             raise HTTPException(403, "Subscription is not active")
+
+        if module_code in BUNDLED_MODULES:
+            _cache[cache_key] = (now, True)
+            return
 
         mod = await pool.fetchval(
             "SELECT 1 FROM staging.module_subscriptions "
