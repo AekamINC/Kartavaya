@@ -117,7 +117,8 @@ function PrivacyPicker({ file, members, currentUserId, onChange }) {
 
 function LightboxOverlay({ file, onClose }) {
   const name = file.name || file.url?.split('/').pop() || 'File';
-  const showDoc = isPdf(name) || isOffice(name);
+  const isHttp = /^https?:\/\//i.test(file.url || '');
+  const showDoc = (isPdf(name) || isOffice(name)) && isHttp;
   const viewerUrl = isOffice(name)
     ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url)}`
     : file.url;

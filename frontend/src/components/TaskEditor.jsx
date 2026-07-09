@@ -552,7 +552,8 @@ function PreviewOverlay({ file, onClose }) {
   const isVid = VIDEO_EXT.test(n);
   const isPdf = /\.pdf$/i.test(n);
   const isDoc = /\.(doc|docx|xls|xlsx|ppt|pptx)$/i.test(n);
-  const officeUrl = isDoc ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url)}` : null;
+  const isHttp = /^https?:\/\//i.test(file.url || '');
+  const officeUrl = isDoc && isHttp ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url)}` : null;
 
   return (
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
@@ -561,7 +562,7 @@ function PreviewOverlay({ file, onClose }) {
 
         {isImg && <img src={file.url} alt={n} style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, display: 'block', objectFit: 'contain' }} />}
         {isVid && <video src={file.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, display: 'block' }} />}
-        {isPdf && (
+        {isPdf && isHttp && (
           <object data={file.url} type="application/pdf" style={{ width: '100%', height: '100%', borderRadius: 8, border: 'none' }}>
             <iframe src={file.url} style={{ width: '100%', height: '100%', border: 'none', borderRadius: 8 }} title={n} />
           </object>
@@ -574,9 +575,9 @@ function PreviewOverlay({ file, onClose }) {
             </div>
           </div>
         )}
-        {!isImg && !isVid && !isPdf && !isDoc && (
+        {((!isImg && !isVid && !isPdf && !isDoc) || ((isPdf || isDoc) && !isHttp)) && (
           <div style={{ background: 'var(--surface, #fff)', borderRadius: 12, padding: 32, textAlign: 'center' }}>
-            <div style={{ fontSize: 14, marginBottom: 12 }}>Preview not available for this file type</div>
+            <div style={{ fontSize: 14, marginBottom: 12 }}>{(isPdf || isDoc) && !isHttp ? 'Preview requires a public URL — this file was stored differently' : 'Preview not available for this file type'}</div>
             <a href={file.url} target="_blank" rel="noreferrer" style={{ color: 'var(--k-primary)', fontWeight: 600 }}>Open in new tab</a>
           </div>
         )}
