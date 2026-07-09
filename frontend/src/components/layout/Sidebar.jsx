@@ -24,6 +24,9 @@ const ICONS = {
   billing:     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M2 6.5h12"/><path d="M5 10h3"/><path d="M10 10h1.5"/></svg>,
   hub:         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 2v4M8 10v4M2 8h4M10 8h4M4 4l2.8 2.8M9.2 9.2L12 12M12 4l-2.8 2.8M6.8 9.2L4 12"/></svg>,
   org:         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="4" y="2" width="8" height="12" rx="1"/><path d="M6 5h1.5M6 7.5h1.5M6 10h1.5M9 5h1M9 7.5h1"/></svg>,
+  graha:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="5" r="3"/><path d="M2.5 14c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/></svg>,
+  ganit:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6h12M6 6v8"/><path d="M9 9h2M9 11h2"/></svg>,
+  manav:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="6" cy="4.5" r="2"/><circle cx="11" cy="4.5" r="2"/><path d="M1.5 12c0-2.2 2-3.5 4.5-3.5s4.5 1.3 4.5 3.5"/><path d="M10 8.5c1.8 0 3.5 1 3.5 3"/></svg>,
   logout:      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M11 11l3-3-3-3M14 8H6"/></svg>,
 };
 
@@ -61,6 +64,14 @@ const NAV_FULL = [
     items: [
       { to: '/hub',         icon: 'hub',  en: 'Srijan',  hi: 'सृजन' },
       { to: '/hub/clients', icon: 'teams', en: 'Clients', hi: 'ग्राहक' },
+    ],
+  },
+  {
+    section: 'modules', sans: 'मॉड्यूल',
+    items: [
+      { to: '/graha', icon: 'graha', en: 'CRM',       hi: 'ग्राह' },
+      { to: '/ganit', icon: 'ganit', en: 'Invoicing',  hi: 'गणित' },
+      { to: '/manav', icon: 'manav', en: 'HRMS',       hi: 'मानव' },
     ],
   },
   {

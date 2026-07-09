@@ -56,6 +56,9 @@ from routers.hub            import router as hub_router
 from routers.admin_orgs     import router as admin_orgs_router
 from routers.hub_chat       import router as hub_chat_router
 from routers.hub_publish    import router as hub_publish_router
+from routers.graha          import router as graha_router
+from routers.ganit          import router as ganit_router
+from routers.manav          import router as manav_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -2108,6 +2111,9 @@ app.include_router(hub_router)
 app.include_router(admin_orgs_router)
 app.include_router(hub_chat_router)
 app.include_router(hub_publish_router)
+app.include_router(graha_router)
+app.include_router(ganit_router)
+app.include_router(manav_router)
 
 
 # ── Verse of the day (public) ────────────────────────────────────────────────
