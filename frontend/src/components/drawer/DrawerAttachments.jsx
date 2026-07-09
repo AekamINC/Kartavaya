@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Paperclip, ExternalLink, Trash2, Upload, Image, FileText, Film, Lock, Unlock, X } from 'lucide-react';
 import { avatarColor, userInitials } from '../../lib/utils';
 
@@ -117,6 +118,7 @@ function PrivacyPicker({ file, members, currentUserId, onChange }) {
 
 function LightboxOverlay({ file, onClose }) {
   const name = file.name || file.url?.split('/').pop() || 'File';
+  const [imgError, setImgError] = useState(false);
   const isHttp = /^https?:\/\//i.test(file.url || '');
   const showDoc = isPdf(name) || (isOffice(name) && isHttp);
   const viewerUrl = isOffice(name) && isHttp
@@ -143,8 +145,8 @@ function LightboxOverlay({ file, onClose }) {
       >
         <X size={20} />
       </button>
-      {isImage(name) && (
-        <img src={file.url} alt={name} style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, objectFit: 'contain' }} />
+      {isImage(name) && !imgError && (
+        <img src={file.url} alt={name} onError={() => setImgError(true)} style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, objectFit: 'contain' }} />
       )}
       {isVideo(name) && (
         <video src={file.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8 }} />
@@ -164,7 +166,20 @@ function LightboxOverlay({ file, onClose }) {
           </object>
         </div>
       )}
-      {/* Open in new tab fallback — always shown for docs */}
+      {/* Fallback for failed image or non-previewable Office without HTTP URL */}
+      {((isImage(name) && imgError) || (isOffice(name) && !isHttp) || (!isImage(name) && !isVideo(name) && !showDoc)) && (
+        <div style={{ background: '#fff', borderRadius: 12, padding: 32, textAlign: 'center', maxWidth: 360 }}>
+          <FileText size={32} style={{ color: 'var(--k-primary)', marginBottom: 12 }} />
+          <div style={{ fontSize: 14, color: '#333', marginBottom: 16 }}>
+            {imgError ? 'Image could not be loaded' : 'Preview not available for this file type'}
+          </div>
+          <a href={file.url} target="_blank" rel="noreferrer"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff', fontSize: 13, fontWeight: 600, background: 'var(--k-primary, #0082c6)', borderRadius: 8, padding: '10px 20px', textDecoration: 'none' }}>
+            <ExternalLink size={14} /> Open in new tab
+          </a>
+        </div>
+      )}
+      {/* Open in new tab — always shown for docs */}
       {showDoc && (
         <a
           href={file.url}
@@ -305,7 +320,10 @@ function FileChip({ file, onRemove, members, currentUserId, onPrivacyChange }) {
         </div>
       </div>
 
-      {lightbox && <LightboxOverlay file={file} onClose={() => setLightbox(false)} />}
+      {lightbox && createPortal(
+        <LightboxOverlay file={file} onClose={() => setLightbox(false)} />,
+        document.body,
+      )}
     </>
   );
 }

@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 import { api } from '../lib/api';
 
@@ -922,8 +923,11 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
       </div>
 
-      {/* Preview lightbox */}
-      {previewFile && <PreviewOverlay file={previewFile} onClose={() => setPreviewFile(null)} />}
+      {/* Preview lightbox — portalled to body to escape modal stacking context */}
+      {previewFile && createPortal(
+        <PreviewOverlay file={previewFile} onClose={() => setPreviewFile(null)} />,
+        document.body,
+      )}
 
     </div>
 
@@ -933,6 +937,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
 function PreviewOverlay({ file, onClose }) {
   const n = file.name || '';
+  const [imgError, setImgError] = useState(false);
   const isImg = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(n);
   const isVid = /\.(mov|mp4|webm|avi|mkv|m4v|3gp|3gpp|flv|wmv|asf|ogv|ts|mts|m2ts)$/i.test(n);
   const isPdf = /\.pdf$/i.test(n);
@@ -946,7 +951,7 @@ function PreviewOverlay({ file, onClose }) {
       <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh', width: canPreviewDoc ? '90vw' : undefined, height: canPreviewDoc ? '90vh' : undefined }}>
         <button onClick={onClose} style={{ position: 'absolute', top: -14, right: -14, zIndex: 10, width: 32, height: 32, borderRadius: '50%', background: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, fontWeight: 700, color: '#333', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
 
-        {isImg && <img src={file.url} alt={n} style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, display: 'block', objectFit: 'contain' }} />}
+        {isImg && !imgError && <img src={file.url} alt={n} onError={() => setImgError(true)} style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, display: 'block', objectFit: 'contain' }} />}
 
         {isVid && <video src={file.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, display: 'block' }} />}
 
@@ -965,10 +970,10 @@ function PreviewOverlay({ file, onClose }) {
           </div>
         )}
 
-        {(!isImg && !isVid && !canPreviewDoc) && (
-          <div style={{ background: 'var(--surface, #fff)', borderRadius: 12, padding: 32, textAlign: 'center' }}>
-            <div style={{ fontSize: 14, marginBottom: 12 }}>{isDoc && !isHttp ? 'Office preview requires a public URL — open in a new tab instead' : 'Preview not available for this file type'}</div>
-            <a href={file.url} target="_blank" rel="noreferrer" style={{ color: 'var(--k-primary)', fontWeight: 600 }}>Open in new tab</a>
+        {((isImg && imgError) || (!isImg && !isVid && !canPreviewDoc)) && (
+          <div style={{ background: '#fff', borderRadius: 12, padding: 32, textAlign: 'center' }}>
+            <div style={{ fontSize: 14, color: '#333', marginBottom: 16 }}>{imgError ? 'Image could not be loaded' : 'Preview not available for this file type'}</div>
+            <a href={file.url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff', fontSize: 13, fontWeight: 600, background: 'var(--k-primary, #0082c6)', borderRadius: 8, padding: '10px 20px', textDecoration: 'none' }}>Open in new tab</a>
           </div>
         )}
       </div>
