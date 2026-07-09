@@ -1915,6 +1915,49 @@ async def delete_task_attachment(
     return row_to_task(updated)
 
 
+@api_router.post("/admin/migrate-data-uris")
+async def migrate_data_uri_attachments(pool=Depends(get_db), user=Depends(require_admin)):
+    """Re-upload data: URI attachments to R2. One-time migration for old files."""
+    from services.storage import upload_file
+    import base64, mimetypes as _mt
+
+    rows = await pool.fetch("SELECT task_id, attachments FROM tasks WHERE attachments::text LIKE '%data:%'")
+    migrated = 0
+    errors = []
+    for row in rows:
+        atts = pj(row["attachments"], [])
+        changed = False
+        for att in atts:
+            url = att.get("url", "")
+            if not url.startswith("data:"):
+                continue
+            try:
+                header, b64 = url.split(",", 1)
+                mime = header.split(":")[1].split(";")[0] if ":" in header else "application/octet-stream"
+                content = base64.b64decode(b64)
+                fname = att.get("name", "file")
+                ext = "." + fname.rsplit(".", 1)[-1] if "." in fname else ""
+                if not ext:
+                    ext_guess = _mt.guess_extension(mime) or ""
+                    fname += ext_guess
+                result = await upload_file(
+                    file_bytes=content, filename=fname,
+                    content_type=mime, user_id="migration",
+                )
+                att["url"] = result["url"]
+                att["key"] = result.get("key")
+                changed = True
+                migrated += 1
+            except Exception as exc:
+                errors.append({"task_id": row["task_id"], "name": att.get("name"), "error": str(exc)})
+        if changed:
+            await pool.execute(
+                "UPDATE tasks SET attachments=$1::jsonb, updated_at=$2 WHERE task_id=$3",
+                json.dumps(atts), now_utc(), row["task_id"],
+            )
+    return {"migrated": migrated, "errors": errors}
+
+
 @api_router.delete("/tasks/{task_id}")
 async def delete_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
     """Permanently delete a task; only project admins/owners or the personal task owner may delete."""

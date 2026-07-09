@@ -170,12 +170,21 @@ function LightboxOverlay({ file, onClose }) {
       {((isImage(name) && imgError) || (isOffice(name) && !isHttp) || (!isImage(name) && !isVideo(name) && !showDoc)) && (
         <div style={{ background: '#fff', borderRadius: 12, padding: 32, textAlign: 'center', maxWidth: 360 }}>
           <FileText size={32} style={{ color: 'var(--k-primary)', marginBottom: 12 }} />
-          <div style={{ fontSize: 14, color: '#333', marginBottom: 16 }}>
-            {imgError ? 'Image could not be loaded' : 'Preview not available for this file type'}
+          <div style={{ fontSize: 14, color: '#333', marginBottom: 8 }}>
+            {imgError
+              ? 'Image could not be loaded'
+              : isOffice(name) && !isHttp
+              ? 'This file was saved before cloud storage was set up'
+              : 'Preview not available for this file type'}
           </div>
+          {isOffice(name) && !isHttp && (
+            <div style={{ fontSize: 12, color: '#666', marginBottom: 16 }}>
+              Delete and re-upload to enable preview
+            </div>
+          )}
           <a href={file.url} target="_blank" rel="noreferrer"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff', fontSize: 13, fontWeight: 600, background: 'var(--k-primary, #0082c6)', borderRadius: 8, padding: '10px 20px', textDecoration: 'none' }}>
-            <ExternalLink size={14} /> Open in new tab
+            <ExternalLink size={14} /> {file.url?.startsWith('data:') ? 'Download file' : 'Open in new tab'}
           </a>
         </div>
       )}
