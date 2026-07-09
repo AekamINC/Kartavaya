@@ -17,7 +17,7 @@ import DrawerApproval    from './drawer/DrawerApproval';
 import BrandKit          from './BrandKit';
 import { lbl }           from './drawer/constants';
 
-const MAX_FILES    = 5;
+const MAX_FILES    = 10;
 const MAX_MB       = 25;
 const MAX_MB_VIDEO = 50;
 const VIDEO_EXT    = /\.(mov|mp4|webm|avi|mkv|m4v|3gp|3gpp|flv|wmv|asf|ogv|ts|mts|m2ts)$/i;
@@ -329,7 +329,6 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
           fd.append('file', file);
           const url = teamId ? `/upload?team_id=${encodeURIComponent(teamId)}` : '/upload';
           const res = await api.post(url, fd, {
-            headers: { 'Content-Type': 'multipart/form-data' },
             signal: controller.signal,
             noRetry: true,
             onUploadProgress: (ev) => {

@@ -1,20 +1,24 @@
 import React, { useRef, useState } from 'react';
-import { Paperclip, ExternalLink, Trash2, Upload, Image, FileText, Film, Lock, Unlock } from 'lucide-react';
+import { Paperclip, ExternalLink, Trash2, Upload, Image, FileText, Film, Lock, Unlock, X } from 'lucide-react';
 import { avatarColor, userInitials } from '../../lib/utils';
 
-const MAX_FILES     = 5;
+const MAX_FILES     = 10;
 const MAX_MB        = 25;
 const MAX_MB_VIDEO  = 50;
 const VIDEO_EXT     = /\.(mov|mp4|webm|avi|mkv|m4v|3gp|3gpp|flv|wmv|asf|ogv|ts|mts|m2ts)$/i;
+const IMAGE_EXT     = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i;
 
 const DOC_ACCEPT  = '.jpg,.jpeg,.png,.gif,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt';
 const VIDEO_ACCEPT = 'video/*,.mov,.mp4,.webm,.avi,.mkv,.m4v,.3gp,.flv,.wmv,.ogv,.ts';
 
 function fileIcon(name) {
-  if (/\.(jpg|jpeg|png|gif|webp|heic)$/i.test(name)) return <Image size={13} style={{ color: 'var(--k-primary)', flexShrink: 0 }} />;
+  if (IMAGE_EXT.test(name)) return <Image size={13} style={{ color: 'var(--k-primary)', flexShrink: 0 }} />;
   if (VIDEO_EXT.test(name)) return <Film size={13} style={{ color: '#8b5cf6', flexShrink: 0 }} />;
   return <FileText size={13} style={{ color: 'var(--k-primary)', flexShrink: 0 }} />;
 }
+
+function isImage(name) { return IMAGE_EXT.test(name); }
+function isVideo(name) { return VIDEO_EXT.test(name); }
 
 function PrivacyPicker({ file, members, currentUserId, onChange }) {
   const [open, setOpen] = useState(false);
@@ -103,42 +107,131 @@ function PrivacyPicker({ file, members, currentUserId, onChange }) {
   );
 }
 
-function FileChip({ file, onRemove, members, currentUserId, onPrivacyChange }) {
+function LightboxOverlay({ file, onClose }) {
   const name = file.name || file.url?.split('/').pop() || 'File';
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      padding: '8px 12px',
-      background: 'var(--bg)', border: '1px solid var(--rule)',
-      borderRadius: 'var(--r-md)', fontSize: 13,
-    }}>
-      {fileIcon(name)}
-      <a
-        href={file.url}
-        target="_blank"
-        rel="noreferrer"
-        style={{ color: 'var(--ink-2)', textDecoration: 'none', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+    <div
+      onClick={e => e.target === e.currentTarget && onClose()}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.85)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24,
+      }}
+    >
+      <button
+        onClick={onClose}
+        style={{
+          position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.15)',
+          border: 'none', borderRadius: 8, padding: 8, cursor: 'pointer', color: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
       >
-        {name}
-      </a>
-      {file.is_private && (
-        <span style={{ fontSize: 10, fontWeight: 700, color: '#92400e', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 4, padding: '1px 5px', flexShrink: 0 }}>
-          Private
-        </span>
+        <X size={20} />
+      </button>
+      {isImage(name) && (
+        <img src={file.url} alt={name} style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, objectFit: 'contain' }} />
       )}
-      <ExternalLink size={11} style={{ color: 'var(--ink-3)', flexShrink: 0 }} />
-      {onPrivacyChange && members && (
-        <PrivacyPicker file={file} members={members} currentUserId={currentUserId} onChange={onPrivacyChange} />
-      )}
-      {onRemove && (
-        <button
-          onClick={onRemove}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', padding: 0, display: 'flex', marginLeft: 2 }}
-        >
-          <Trash2 size={12} />
-        </button>
+      {isVideo(name) && (
+        <video src={file.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8 }} />
       )}
     </div>
+  );
+}
+
+function FileChip({ file, onRemove, members, currentUserId, onPrivacyChange }) {
+  const name = file.name || file.url?.split('/').pop() || 'File';
+  const [lightbox, setLightbox] = useState(false);
+  const hasPreview = isImage(name) || isVideo(name);
+
+  return (
+    <>
+      <div style={{
+        background: 'var(--bg)', border: '1px solid var(--rule)',
+        borderRadius: 'var(--r-md)', fontSize: 13, overflow: 'hidden',
+      }}>
+        {/* Image preview thumbnail */}
+        {isImage(name) && file.url && (
+          <div
+            onClick={() => setLightbox(true)}
+            style={{
+              cursor: 'pointer', position: 'relative',
+              background: 'var(--rule-soft)', borderBottom: '1px solid var(--rule)',
+            }}
+          >
+            <img
+              src={file.url}
+              alt={name}
+              style={{ display: 'block', width: '100%', maxHeight: 180, objectFit: 'cover' }}
+              loading="lazy"
+            />
+          </div>
+        )}
+        {/* Video preview thumbnail */}
+        {isVideo(name) && file.url && (
+          <div
+            onClick={() => setLightbox(true)}
+            style={{
+              cursor: 'pointer', position: 'relative',
+              background: '#000', borderBottom: '1px solid var(--rule)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              minHeight: 100,
+            }}
+          >
+            <video
+              src={file.url}
+              preload="metadata"
+              style={{ display: 'block', width: '100%', maxHeight: 180, objectFit: 'cover' }}
+              muted
+            />
+            <div style={{
+              position: 'absolute', inset: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(0,0,0,0.3)',
+            }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%',
+                background: 'rgba(255,255,255,0.9)', display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Film size={18} style={{ color: '#8b5cf6', marginLeft: 2 }} />
+              </div>
+            </div>
+          </div>
+        )}
+        {/* File info row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px' }}>
+          {fileIcon(name)}
+          <a
+            href={file.url}
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: 'var(--ink-2)', textDecoration: 'none', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+          >
+            {name}
+          </a>
+          {file.is_private && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#92400e', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 4, padding: '1px 5px', flexShrink: 0 }}>
+              Private
+            </span>
+          )}
+          <ExternalLink size={11} style={{ color: 'var(--ink-3)', flexShrink: 0 }} />
+          {onPrivacyChange && members && (
+            <PrivacyPicker file={file} members={members} currentUserId={currentUserId} onChange={onPrivacyChange} />
+          )}
+          {onRemove && (
+            <button
+              onClick={onRemove}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', padding: 0, display: 'flex', marginLeft: 2 }}
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {lightbox && <LightboxOverlay file={file} onClose={() => setLightbox(false)} />}
+    </>
   );
 }
 
@@ -147,12 +240,36 @@ export default function DrawerAttachments({
   onPrivacyChange, members = [], currentUserId,
 }) {
   const [dragging, setDragging] = useState(false);
+  const dragCounter = useRef(0);
   const isProjectTask = members.length > 0;
+
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    setDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setDragging(false);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
 
   const handleDrop = (e) => {
     e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current = 0;
     setDragging(false);
-    if (!fileRef.current) return;
     const dt = e.dataTransfer;
     if (!dt?.files?.length) return;
     handleFileChange({ target: { files: dt.files, value: '' } });
@@ -161,7 +278,13 @@ export default function DrawerAttachments({
   const full = attachments.length >= MAX_FILES;
 
   return (
-    <div>
+    <div
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={!full ? handleDrop : undefined}
+      style={{ position: 'relative' }}
+    >
       {/* Hidden inputs — docs and video separate */}
       <input
         ref={fileRef}
@@ -179,6 +302,25 @@ export default function DrawerAttachments({
         style={{ display: 'none' }}
         onChange={handleFileChange}
       />
+
+      {/* Drag overlay — always visible when dragging, covers the whole section */}
+      {dragging && !full && (
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 50,
+          background: 'var(--k-primary-dim, rgba(0,130,198,0.08))',
+          border: '2px dashed var(--k-primary)',
+          borderRadius: 10,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: 'none',
+        }}>
+          <div style={{ textAlign: 'center' }}>
+            <Upload size={24} style={{ color: 'var(--k-primary)', marginBottom: 4 }} />
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--k-primary)' }}>
+              Drop files here
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Header row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
@@ -207,16 +349,13 @@ export default function DrawerAttachments({
 
       {/* Limit hints */}
       <div style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 10, lineHeight: 1.6 }}>
-        Docs &amp; images up to {MAX_MB} MB &nbsp;·&nbsp; Video (any format) up to {MAX_MB_VIDEO} MB
+        Docs &amp; images up to {MAX_MB} MB &nbsp;&middot;&nbsp; Video (any format) up to {MAX_MB_VIDEO} MB
       </div>
 
-      {/* Drop zone */}
+      {/* Drop zone — shown only when empty */}
       {attachments.length === 0 && !uploading && (
         <div
           onClick={() => !full && fileRef.current?.click()}
-          onDragOver={e => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={handleDrop}
           style={{
             border: `1.5px dashed ${dragging ? 'var(--k-primary)' : 'var(--rule-strong)'}`,
             borderRadius: 10,
@@ -232,8 +371,8 @@ export default function DrawerAttachments({
             Drop files here or use buttons above
           </div>
           <div style={{ fontSize: 11, color: 'var(--ink-3)', lineHeight: 1.6 }}>
-            Images, PDF, Word, Excel, PowerPoint · max {MAX_MB} MB<br />
-            Video: MOV, MP4, MKV and more · max {MAX_MB_VIDEO} MB
+            Images, PDF, Word, Excel, PowerPoint &middot; max {MAX_MB} MB<br />
+            Video: MOV, MP4, MKV and more &middot; max {MAX_MB_VIDEO} MB
           </div>
         </div>
       )}

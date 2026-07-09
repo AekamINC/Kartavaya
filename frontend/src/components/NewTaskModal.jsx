@@ -191,7 +191,6 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
           const fd = new FormData();
           fd.append('file', file);
           const res = await api.post('/upload', fd, {
-            headers: { 'Content-Type': 'multipart/form-data' },
             signal: controller.signal,
             noRetry: true,
             onUploadProgress: (ev) => {

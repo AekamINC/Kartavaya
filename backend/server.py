@@ -1597,7 +1597,7 @@ async def create_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(requi
     await log_event(pool,task_id=task_id,team_id=payload.team_id,actor_id=user["user_id"],event_type="created",data={"title":payload.title})
     from services.automation_engine import fire_automations
     _bg(fire_automations(pool,"task_created",{"task":{"task_id":task_id,"team_id":payload.team_id},"team_id":payload.team_id}), label="fire_automations")
-    out=row_to_task(row)
+    out=await _fetch_enriched_task(pool,task_id)
     out.reminders=await _replace_task_reminders(pool,task_id,due_dt,payload.reminders)
     return out
 
