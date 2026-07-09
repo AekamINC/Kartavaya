@@ -6,8 +6,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../lib/api';
 import { toLocal, fromLocal } from '../lib/auth';
 import { useToast } from './ui/toast';
-import { AVATAR_COLORS, userInitials } from '../lib/utils';
-import FilesField from './fields/FilesField';
+import { AVATAR_COLORS, userInitials, logger } from '../lib/utils';
+
+const MAX_FILES    = 10;
+const IMAGE_EXT    = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i;
+const VIDEO_EXT    = /\.(mov|mp4|webm|avi|mkv|m4v|3gp|3gpp|flv|wmv|asf|ogv|ts|mts|m2ts)$/i;
+const DOC_ACCEPT   = '.jpg,.jpeg,.png,.gif,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt';
+const VIDEO_ACCEPT = 'video/*,.mov,.mp4,.webm,.avi,.mkv,.m4v,.3gp,.flv,.wmv,.ogv,.ts';
 
 export default function TaskEditor({
   open,
@@ -25,6 +30,9 @@ export default function TaskEditor({
   const { pushToast } = useToast();
   const titleRef = useRef(null);
   const assigneeRef = useRef(null);
+  const fileRef = useRef(null);
+  const videoRef = useRef(null);
+  const dragCounter = useRef(0);
 
   const [form, setForm] = useState({
     title: '', description: '', priority: 'medium',
@@ -35,6 +43,10 @@ export default function TaskEditor({
   const [members, setMembers] = useState([]);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [attachments, setAttachments] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState('');
+  const [dragOver, setDragOver] = useState(false);
 
   // Fetch members when team changes
   useEffect(() => {
@@ -76,10 +88,68 @@ export default function TaskEditor({
       });
     }
     setAttachments([]);
+    setUploadError('');
     setTimeout(() => titleRef.current?.focus(), 60);
   }, [open, editing, defaultTeamId, defaultDueAt]);
 
   const upd = (k) => (e) => setForm(f => ({ ...f, [k]: e?.target ? e.target.value : e }));
+
+  const handleFileChange = async (e) => {
+    const picked = Array.from(e.target.files);
+    if (!picked.length) return;
+    const slots = MAX_FILES - attachments.length;
+    if (slots <= 0) { pushToast({ type: 'error', title: `Max ${MAX_FILES} files per task` }); return; }
+    const toUpload = picked.slice(0, slots);
+    if (toUpload.length < picked.length)
+      pushToast({ type: 'error', title: `Only ${slots} slot(s) remaining — uploading first ${slots}` });
+
+    setUploading(true);
+    setUploadProgress(0);
+    setUploadError('');
+    try {
+      for (let i = 0; i < toUpload.length; i++) {
+        const file = toUpload[i];
+        const controller = new AbortController();
+        let stallTimer = null;
+        const kickStall = () => {
+          clearTimeout(stallTimer);
+          stallTimer = setTimeout(() => controller.abort('stall'), 30_000);
+        };
+        kickStall();
+        try {
+          const fd = new FormData();
+          fd.append('file', file);
+          const res = await api.post('/upload', fd, {
+            signal: controller.signal,
+            noRetry: true,
+            onUploadProgress: (ev) => {
+              kickStall();
+              if (ev.total) {
+                const filePct = ev.loaded / ev.total;
+                setUploadProgress(Math.round(((i + filePct) / toUpload.length) * 100));
+              }
+            },
+          });
+          clearTimeout(stallTimer);
+          setAttachments(prev => [...prev, { name: file.name, url: res.data.url, key: res.data.key || null }]);
+          setUploadProgress(Math.round(((i + 1) / toUpload.length) * 100));
+        } catch (err) {
+          clearTimeout(stallTimer);
+          if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') {
+            setUploadError('Upload got stuck — no data for 30 s. Check your connection.');
+          } else {
+            setUploadError(err?.response?.data?.detail || 'Upload failed — please try again.');
+          }
+          return;
+        }
+      }
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+      if (fileRef.current) fileRef.current.value = '';
+      if (videoRef.current) videoRef.current.value = '';
+    }
+  };
 
   const toggleAssignee = (uid) => {
     setForm(f => {
@@ -320,13 +390,127 @@ export default function TaskEditor({
 
           {/* Attachments — shown for client requests and new tasks */}
           {(clientMode || !editing) && (
-            <div>
+            <div
+              onDragEnter={e => { e.preventDefault(); e.stopPropagation(); dragCounter.current++; setDragOver(true); }}
+              onDragLeave={e => { e.preventDefault(); e.stopPropagation(); dragCounter.current--; if (dragCounter.current <= 0) { dragCounter.current = 0; setDragOver(false); } }}
+              onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+              onDrop={e => {
+                e.preventDefault(); e.stopPropagation();
+                dragCounter.current = 0; setDragOver(false);
+                const dt = e.dataTransfer;
+                if (!dt?.files?.length || attachments.length >= MAX_FILES) return;
+                handleFileChange({ target: { files: dt.files, value: '' } });
+              }}
+              style={{ position: 'relative' }}
+            >
               <label style={lbl}>ATTACHMENTS · संलग्नक</label>
-              <FilesField
-                value={attachments}
-                onChange={setAttachments}
-                readOnly={false}
-              />
+              <input ref={fileRef} type="file" multiple accept={DOC_ACCEPT} style={{ display: 'none' }} onChange={handleFileChange} />
+              <input ref={videoRef} type="file" multiple accept={VIDEO_ACCEPT} style={{ display: 'none' }} onChange={handleFileChange} />
+
+              {/* Drop overlay */}
+              {dragOver && attachments.length < MAX_FILES && (
+                <div style={{
+                  position: 'absolute', inset: 0, zIndex: 50,
+                  background: 'var(--k-primary-dim, rgba(0,130,198,0.08))',
+                  border: '2px dashed var(--k-primary)', borderRadius: 10,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  pointerEvents: 'none',
+                }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="var(--k-primary)" strokeWidth="1.5" style={{ marginBottom: 4 }}><path d="M8 12V4M4 8l4-4 4 4"/><path d="M2 14h12"/></svg>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--k-primary)' }}>Drop files here</div>
+                  </div>
+                </div>
+              )}
+
+              {/* Upload progress */}
+              {uploading && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ink-3)', fontSize: 13, marginBottom: 6 }}>
+                    <div className="k-spinner" style={{ width: 14, height: 14, flexShrink: 0 }} />
+                    <span>Uploading{uploadProgress > 0 ? ` ${uploadProgress}%` : '…'}</span>
+                  </div>
+                  <div style={{ height: 4, background: 'var(--rule)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${uploadProgress || 0}%`, background: 'var(--k-primary)', borderRadius: 2, transition: 'width 0.25s ease', minWidth: uploadProgress > 0 ? undefined : '15%' }} />
+                  </div>
+                </div>
+              )}
+              {uploadError && (
+                <div style={{ fontSize: 12, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 8 }}>
+                  {uploadError}
+                </div>
+              )}
+
+              {/* File list with previews */}
+              {attachments.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+                  {attachments.map((f, i) => {
+                    const n = f.name || '';
+                    const isImg = IMAGE_EXT.test(n);
+                    const isVid = VIDEO_EXT.test(n);
+                    return (
+                      <div key={i} style={{ borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--rule)', fontSize: 13, overflow: 'hidden' }}>
+                        {isImg && f.url && (
+                          <div style={{ background: 'var(--rule-soft)', borderBottom: '1px solid var(--rule)' }}>
+                            <img src={f.url} alt={n} style={{ display: 'block', width: '100%', maxHeight: 140, objectFit: 'cover' }} loading="lazy" />
+                          </div>
+                        )}
+                        {isVid && f.url && (
+                          <div style={{ background: '#000', borderBottom: '1px solid var(--rule)', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 80 }}>
+                            <video src={f.url} preload="metadata" muted style={{ display: 'block', width: '100%', maxHeight: 140, objectFit: 'cover' }} />
+                            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
+                              <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(255,255,255,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8b5cf6" strokeWidth="1.8"><polygon points="5,3 13,8 5,13"/></svg>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px' }}>
+                          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="var(--k-primary)" strokeWidth="1.5"><path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1z"/><path d="M9 1v4h4"/></svg>
+                          <a href={f.url} target="_blank" rel="noreferrer" style={{ flex: 1, color: 'var(--ink-2)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</a>
+                          <button onClick={() => setAttachments(p => p.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {attachments.length < MAX_FILES && !uploading && (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button type="button" onClick={() => fileRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, border: '1.5px dashed var(--rule-strong)', background: 'transparent', color: 'var(--ink-3)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-ui)' }}>
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M8 3v10M3 8h10"/></svg>
+                        Add files
+                      </button>
+                      <button type="button" onClick={() => videoRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, border: '1.5px dashed var(--rule-strong)', background: 'transparent', color: '#8b5cf6', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-ui)' }}>
+                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#8b5cf6" strokeWidth="1.8"><polygon points="5,3 13,8 5,13"/></svg>
+                        Add video
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Empty state — upload buttons */}
+              {attachments.length === 0 && !uploading && (
+                <div style={{ display: 'flex', gap: 8, width: '100%', boxSizing: 'border-box' }}>
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '18px 10px', borderRadius: 10, border: `1.5px dashed ${dragOver ? 'var(--k-primary)' : 'var(--rule-strong)'}`, background: dragOver ? 'var(--k-primary-dim, rgba(0,130,198,0.06))' : 'transparent', color: 'var(--ink-3)', cursor: 'pointer', fontFamily: 'var(--font-ui)', transition: 'border-color 0.15s, background 0.15s' }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 12V4M4 8l4-4 4 4"/><path d="M2 14h12"/></svg>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }}>Files & Images</span>
+                    <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center', color: 'var(--ink-3)' }}>PDF, Word, Excel<br/>max 25 MB</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => videoRef.current?.click()}
+                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '18px 10px', borderRadius: 10, border: `1.5px dashed ${dragOver ? 'var(--k-primary)' : '#c4b5fd'}`, background: dragOver ? 'var(--k-primary-dim, rgba(0,130,198,0.06))' : 'transparent', color: '#8b5cf6', cursor: 'pointer', fontFamily: 'var(--font-ui)', transition: 'border-color 0.15s, background 0.15s' }}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="#8b5cf6" strokeWidth="1.5"><polygon points="4,2 14,8 4,14" fill="none"/></svg>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>Video</span>
+                    <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center' }}>Any format<br/>max 50 MB</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

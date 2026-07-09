@@ -17,8 +17,16 @@ function fileIcon(name) {
   return <FileText size={13} style={{ color: 'var(--k-primary)', flexShrink: 0 }} />;
 }
 
-function isImage(name) { return IMAGE_EXT.test(name); }
-function isVideo(name) { return VIDEO_EXT.test(name); }
+const PDF_EXT     = /\.pdf$/i;
+const OFFICE_EXT  = /\.(doc|docx|xls|xlsx|ppt|pptx)$/i;
+const TEXT_EXT    = /\.(txt|csv)$/i;
+
+function isImage(name)  { return IMAGE_EXT.test(name); }
+function isVideo(name)  { return VIDEO_EXT.test(name); }
+function isPdf(name)    { return PDF_EXT.test(name); }
+function isOffice(name) { return OFFICE_EXT.test(name); }
+function isText(name)   { return TEXT_EXT.test(name); }
+function hasPreview(name) { return isImage(name) || isVideo(name) || isPdf(name) || isOffice(name); }
 
 function PrivacyPicker({ file, members, currentUserId, onChange }) {
   const [open, setOpen] = useState(false);
@@ -109,14 +117,19 @@ function PrivacyPicker({ file, members, currentUserId, onChange }) {
 
 function LightboxOverlay({ file, onClose }) {
   const name = file.name || file.url?.split('/').pop() || 'File';
+  const showDoc = isPdf(name) || isOffice(name);
+  const viewerUrl = isOffice(name)
+    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url)}`
+    : file.url;
+
   return (
     <div
       onClick={e => e.target === e.currentTarget && onClose()}
       style={{
         position: 'fixed', inset: 0, zIndex: 9999,
         background: 'rgba(0,0,0,0.85)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 24,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: 24, gap: 12,
       }}
     >
       <button
@@ -135,6 +148,38 @@ function LightboxOverlay({ file, onClose }) {
       {isVideo(name) && (
         <video src={file.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8 }} />
       )}
+      {showDoc && (
+        <div style={{ width: '90vw', height: '82vh', position: 'relative', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
+          <object
+            data={viewerUrl}
+            type={isPdf(name) ? 'application/pdf' : undefined}
+            style={{ width: '100%', height: '100%', border: 'none' }}
+          >
+            <iframe
+              src={viewerUrl}
+              title={name}
+              style={{ width: '100%', height: '100%', border: 'none' }}
+            />
+          </object>
+        </div>
+      )}
+      {/* Open in new tab fallback — always shown for docs */}
+      {showDoc && (
+        <a
+          href={file.url}
+          target="_blank"
+          rel="noreferrer"
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            color: '#fff', fontSize: 13, fontWeight: 500,
+            background: 'rgba(255,255,255,0.15)', borderRadius: 8,
+            padding: '8px 16px', textDecoration: 'none',
+          }}
+        >
+          <ExternalLink size={14} />
+          Open in new tab
+        </a>
+      )}
     </div>
   );
 }
@@ -142,7 +187,7 @@ function LightboxOverlay({ file, onClose }) {
 function FileChip({ file, onRemove, members, currentUserId, onPrivacyChange }) {
   const name = file.name || file.url?.split('/').pop() || 'File';
   const [lightbox, setLightbox] = useState(false);
-  const hasPreview = isImage(name) || isVideo(name);
+  const previewable = hasPreview(name);
 
   return (
     <>
@@ -199,6 +244,22 @@ function FileChip({ file, onRemove, members, currentUserId, onPrivacyChange }) {
             </div>
           </div>
         )}
+        {/* Document preview banner — PDF & Office */}
+        {(isPdf(name) || isOffice(name)) && file.url && (
+          <div
+            onClick={() => setLightbox(true)}
+            style={{
+              cursor: 'pointer', padding: '14px 16px',
+              background: 'var(--bg-soft)', borderBottom: '1px solid var(--rule)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}
+          >
+            <FileText size={20} style={{ color: 'var(--k-primary)' }} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--k-primary)' }}>
+              Click to preview
+            </span>
+          </div>
+        )}
         {/* File info row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px' }}>
           {fileIcon(name)}
@@ -215,7 +276,20 @@ function FileChip({ file, onRemove, members, currentUserId, onPrivacyChange }) {
               Private
             </span>
           )}
-          <ExternalLink size={11} style={{ color: 'var(--ink-3)', flexShrink: 0 }} />
+          {previewable && (
+            <button
+              onClick={e => { e.preventDefault(); setLightbox(true); }}
+              title="Preview"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', padding: 0, display: 'flex', flexShrink: 0 }}
+            >
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <circle cx="8" cy="8" r="3"/><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/>
+              </svg>
+            </button>
+          )}
+          <a href={file.url} target="_blank" rel="noreferrer" title="Open in new tab" style={{ display: 'flex', flexShrink: 0, color: 'var(--ink-3)' }}>
+            <ExternalLink size={11} />
+          </a>
           {onPrivacyChange && members && (
             <PrivacyPicker file={file} members={members} currentUserId={currentUserId} onChange={onPrivacyChange} />
           )}
