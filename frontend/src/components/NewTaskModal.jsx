@@ -75,6 +75,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
 
   const [dragOver,         setDragOver]         = useState(false);
+  const [previewFile,      setPreviewFile]      = useState(null);
   const dragCounter = useRef(0);
 
   const titleRef    = useRef(null);
@@ -816,18 +817,21 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
                 {files.map((f, i) => {
                   const n = f.name || '';
                   const isImg = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(n);
-                  const isVid = /\.(mov|mp4|webm|avi|mkv|m4v|3gp|flv|wmv|ogv|ts)$/i.test(n);
+                  const isVid = /\.(mov|mp4|webm|avi|mkv|m4v|3gp|3gpp|flv|wmv|asf|ogv|ts|mts|m2ts)$/i.test(n);
+                  const isPdf = /\.pdf$/i.test(n);
+                  const isDoc = /\.(doc|docx|xls|xlsx|ppt|pptx)$/i.test(n);
+                  const canPreview = isImg || isVid || isPdf || isDoc;
                   return (
                     <div key={i} style={{ borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--rule)', fontSize: 13, overflow: 'hidden' }}>
                       {/* Image thumbnail */}
                       {isImg && f.url && (
-                        <div style={{ background: 'var(--rule-soft)', borderBottom: '1px solid var(--rule)' }}>
+                        <div onClick={() => setPreviewFile(f)} style={{ cursor: 'pointer', background: 'var(--rule-soft)', borderBottom: '1px solid var(--rule)' }}>
                           <img src={f.url} alt={n} style={{ display: 'block', width: '100%', maxHeight: 140, objectFit: 'cover' }} loading="lazy" />
                         </div>
                       )}
                       {/* Video thumbnail */}
                       {isVid && f.url && (
-                        <div style={{ background: '#000', borderBottom: '1px solid var(--rule)', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 80 }}>
+                        <div onClick={() => setPreviewFile(f)} style={{ cursor: 'pointer', background: '#000', borderBottom: '1px solid var(--rule)', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 80 }}>
                           <video src={f.url} preload="metadata" muted style={{ display: 'block', width: '100%', maxHeight: 140, objectFit: 'cover' }} />
                           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
                             <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(255,255,255,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -836,10 +840,22 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
                           </div>
                         </div>
                       )}
+                      {/* Doc preview banner */}
+                      {(isPdf || isDoc) && f.url && (
+                        <div onClick={() => setPreviewFile(f)} style={{ cursor: 'pointer', padding: '12px 16px', background: 'var(--bg-soft)', borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--k-primary)" strokeWidth="1.5"><path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1z"/><path d="M9 1v4h4"/></svg>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--k-primary)' }}>Click to preview</span>
+                        </div>
+                      )}
                       {/* File info row */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px' }}>
                         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="var(--k-primary)" strokeWidth="1.5"><path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1z"/><path d="M9 1v4h4"/></svg>
                         <a href={f.url} target="_blank" rel="noreferrer" style={{ flex: 1, color: 'var(--ink-2)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</a>
+                        {canPreview && (
+                          <button onClick={() => setPreviewFile(f)} title="Preview" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', padding: 0, display: 'flex', flexShrink: 0 }}>
+                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="3"/><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/></svg>
+                          </button>
+                        )}
                         <button onClick={() => setFiles(p => p.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
                       </div>
                     </div>
@@ -906,13 +922,58 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
       </div>
 
+      {/* Preview lightbox */}
+      {previewFile && <PreviewOverlay file={previewFile} onClose={() => setPreviewFile(null)} />}
+
     </div>
 
   );
 
 }
 
+function PreviewOverlay({ file, onClose }) {
+  const n = file.name || '';
+  const isImg = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i.test(n);
+  const isVid = /\.(mov|mp4|webm|avi|mkv|m4v|3gp|3gpp|flv|wmv|asf|ogv|ts|mts|m2ts)$/i.test(n);
+  const isPdf = /\.pdf$/i.test(n);
+  const isDoc = /\.(doc|docx|xls|xlsx|ppt|pptx)$/i.test(n);
+  const officeUrl = isDoc ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url)}` : null;
 
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh', width: (isPdf || isDoc) ? '90vw' : undefined, height: (isPdf || isDoc) ? '90vh' : undefined }}>
+        {/* Close */}
+        <button onClick={onClose} style={{ position: 'absolute', top: -14, right: -14, zIndex: 10, width: 32, height: 32, borderRadius: '50%', background: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, fontWeight: 700, color: '#333', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+
+        {isImg && <img src={file.url} alt={n} style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, display: 'block', objectFit: 'contain' }} />}
+
+        {isVid && <video src={file.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, display: 'block' }} />}
+
+        {isPdf && (
+          <object data={file.url} type="application/pdf" style={{ width: '100%', height: '100%', borderRadius: 8, border: 'none' }}>
+            <iframe src={file.url} style={{ width: '100%', height: '100%', border: 'none', borderRadius: 8 }} title={n} />
+          </object>
+        )}
+
+        {isDoc && officeUrl && (
+          <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <iframe src={officeUrl} style={{ flex: 1, width: '100%', border: 'none', borderRadius: 8 }} title={n} />
+            <div style={{ textAlign: 'center', marginTop: 10 }}>
+              <a href={file.url} target="_blank" rel="noreferrer" style={{ color: '#fff', fontSize: 13, textDecoration: 'underline', opacity: 0.8 }}>Open in new tab</a>
+            </div>
+          </div>
+        )}
+
+        {!isImg && !isVid && !isPdf && !isDoc && (
+          <div style={{ background: 'var(--surface, #fff)', borderRadius: 12, padding: 32, textAlign: 'center' }}>
+            <div style={{ fontSize: 14, marginBottom: 12 }}>Preview not available for this file type</div>
+            <a href={file.url} target="_blank" rel="noreferrer" style={{ color: 'var(--k-primary)', fontWeight: 600 }}>Open in new tab</a>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function FieldLabel({ children }) {
 
