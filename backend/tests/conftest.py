@@ -232,3 +232,15 @@ def as_client_user(app, client_user):
 
 def auth_header(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
+
+
+TEST_ORG_ID = "00000000-0000-0000-0000-000000000001"
+
+
+@pytest.fixture
+def with_org_id(app):
+    """Override get_org_id to return a fixed org UUID for module tests."""
+    from middleware.org_resolver import get_org_id
+    app.dependency_overrides[get_org_id] = lambda: TEST_ORG_ID
+    yield TEST_ORG_ID
+    app.dependency_overrides.pop(get_org_id, None)

@@ -1107,7 +1107,7 @@ def send_status_changed_email(user_email: str, user_name: str,
     """Notify an assignee that the status of one of their tasks has changed."""
     task_url   = f"{FRONTEND_URL}/tasks"
     first_name = _h(user_name.split()[0] if user_name else "there")
-    preheader  = f"{actor_name} updated "{task_title}" to {new_status}"
+    preheader  = f'{actor_name} updated “{task_title}” to {new_status}'
     card_rows  = [("TASK", task_title), ("NEW STATUS", new_status)]
     if project:
         card_rows.append(("PROJECT", project))

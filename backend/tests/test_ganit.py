@@ -1,0 +1,260 @@
+"""
+Unit tests for ganit.py — GST Invoicing endpoints.
+
+Coverage:
+  GET    /api/v1/ganit/products            — list products
+  POST   /api/v1/ganit/products            — create product
+  PATCH  /api/v1/ganit/products/{id}       — update
+  DELETE /api/v1/ganit/products/{id}       — soft-delete
+  GET    /api/v1/ganit/invoices            — list, filter by type/status
+  POST   /api/v1/ganit/invoices            — create with GST computation
+  GET    /api/v1/ganit/invoices/{id}       — detail with payments
+  POST   /api/v1/ganit/invoices/{id}/cancel — cancel
+  POST   /api/v1/ganit/invoices/{id}/payments — record payment, balance update
+  GET    /api/v1/ganit/stats               — dashboard aggregates
+  _compute_invoice                         — pure function: CGST/SGST, IGST, discount
+"""
+
+import pytest
+from routers.ganit import _compute_invoice, LineItem
+
+PRODUCT_ROW = {
+    "id": "pr000000-0000-0000-0000-000000000001",
+    "name": "Web Hosting",
+    "hsn_code": "",
+    "sac_code": "998315",
+    "unit": "NOS",
+    "price": 5000,
+    "gst_rate": 18.0,
+    "description": "Annual hosting",
+    "is_service": True,
+    "created_at": "2026-01-01T00:00:00Z",
+}
+
+
+@pytest.fixture(autouse=True)
+def bypass_module_gate(app):
+    from routers.ganit import _gate
+    app.dependency_overrides[_gate] = lambda: None
+    yield
+    app.dependency_overrides.pop(_gate, None)
+
+
+# ── _compute_invoice (pure function) ───────────────────────────
+
+def test_compute_intrastate_gst():
+    items = [LineItem(description="Item A", quantity=2, rate=1000, gst_rate=18)]
+    result = _compute_invoice(items, is_igst=False)
+    assert result["subtotal"] == 2000
+    assert result["cgst"] == 180
+    assert result["sgst"] == 180
+    assert result["igst"] == 0
+    assert result["total"] == 2360
+
+
+def test_compute_interstate_gst():
+    items = [LineItem(description="Item A", quantity=1, rate=1000, gst_rate=18)]
+    result = _compute_invoice(items, is_igst=True)
+    assert result["cgst"] == 0
+    assert result["sgst"] == 0
+    assert result["igst"] == 180
+    assert result["total"] == 1180
+
+
+def test_compute_with_discount():
+    items = [LineItem(description="Item A", quantity=1, rate=1000, gst_rate=18)]
+    result = _compute_invoice(items, is_igst=False, flat_discount=100)
+    assert result["discount"] == 100
+    assert result["total"] == 1080  # 1000 + 90 + 90 - 100
+
+
+def test_compute_line_discount_pct():
+    items = [LineItem(description="Item A", quantity=1, rate=1000, gst_rate=18, discount_pct=10)]
+    result = _compute_invoice(items, is_igst=False)
+    assert result["subtotal"] == 900
+    assert result["cgst"] == 81
+    assert result["sgst"] == 81
+    assert result["total"] == 1062
+
+
+def test_compute_zero_gst():
+    items = [LineItem(description="Exempt", quantity=1, rate=500, gst_rate=0)]
+    result = _compute_invoice(items, is_igst=False)
+    assert result["cgst"] == 0
+    assert result["sgst"] == 0
+    assert result["total"] == 500
+
+
+def test_compute_multiple_items():
+    items = [
+        LineItem(description="A", quantity=2, rate=500, gst_rate=18),
+        LineItem(description="B", quantity=1, rate=1000, gst_rate=12),
+    ]
+    result = _compute_invoice(items, is_igst=False)
+    assert result["subtotal"] == 2000
+    assert len(result["line_items"]) == 2
+
+
+# ── Products ─────────────────────────────────────────────────────
+
+async def test_list_products(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.fetch.return_value = [PRODUCT_ROW]
+    resp = await api_client.get("/api/v1/ganit/products")
+    assert resp.status_code == 200
+    assert len(resp.json()["data"]) == 1
+
+
+async def test_create_product(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.fetchrow.return_value = {"id": "pr001", "name": "Widget"}
+    resp = await api_client.post("/api/v1/ganit/products", json={
+        "name": "Widget",
+        "price": 999,
+        "gst_rate": 18,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "created"
+
+
+async def test_update_product(api_client, mock_pool, as_admin, with_org_id):
+    resp = await api_client.patch(
+        "/api/v1/ganit/products/00000000-0000-0000-0000-000000000001",
+        json={"price": 1200},
+    )
+    assert resp.status_code == 200
+
+
+async def test_delete_product(api_client, mock_pool, as_admin, with_org_id):
+    resp = await api_client.delete(
+        "/api/v1/ganit/products/00000000-0000-0000-0000-000000000001",
+    )
+    assert resp.status_code == 200
+
+
+# ── Invoices ─────────────────────────────────────────────────────
+
+async def test_list_invoices(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.fetch.return_value = []
+    resp = await api_client.get("/api/v1/ganit/invoices")
+    assert resp.status_code == 200
+    assert resp.json()["data"] == []
+
+
+async def test_create_invoice_no_items(api_client, mock_pool, as_admin, with_org_id):
+    resp = await api_client.post("/api/v1/ganit/invoices", json={
+        "invoice_type": "tax_invoice",
+        "line_items": [],
+    })
+    assert resp.status_code == 400
+    assert "line item" in resp.json()["detail"].lower()
+
+
+async def test_create_invoice_invalid_type(api_client, mock_pool, as_admin, with_org_id):
+    resp = await api_client.post("/api/v1/ganit/invoices", json={
+        "invoice_type": "fake_type",
+        "line_items": [{"description": "X", "quantity": 1, "rate": 100}],
+    })
+    assert resp.status_code == 400
+
+
+async def test_create_invoice_success(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.fetchval.return_value = None
+    mock_pool.fetchrow.return_value = {
+        "id": "inv001",
+        "invoice_number": "INV-2026-0001",
+        "total": 1180,
+    }
+    resp = await api_client.post("/api/v1/ganit/invoices", json={
+        "invoice_type": "tax_invoice",
+        "is_igst": True,
+        "line_items": [
+            {"description": "Service", "quantity": 1, "rate": 1000, "gst_rate": 18},
+        ],
+    })
+    assert resp.status_code == 200
+    assert resp.json()["invoice_number"] == "INV-2026-0001"
+
+
+async def test_get_invoice_not_found(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.fetchrow.return_value = None
+    resp = await api_client.get(
+        "/api/v1/ganit/invoices/00000000-0000-0000-0000-000000000001",
+    )
+    assert resp.status_code == 404
+
+
+async def test_cancel_invoice(api_client, mock_pool, as_admin, with_org_id):
+    resp = await api_client.post(
+        "/api/v1/ganit/invoices/00000000-0000-0000-0000-000000000001/cancel",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+
+
+# ── Payments ─────────────────────────────────────────────────────
+
+async def test_record_payment_not_found(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.fetchrow.return_value = None
+    resp = await api_client.post(
+        "/api/v1/ganit/invoices/00000000-0000-0000-0000-000000000001/payments",
+        json={"amount": 500},
+    )
+    assert resp.status_code == 404
+
+
+async def test_record_payment_already_paid(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.fetchrow.return_value = {
+        "total": 1000,
+        "amount_paid": 1000,
+        "payment_status": "paid",
+    }
+    resp = await api_client.post(
+        "/api/v1/ganit/invoices/00000000-0000-0000-0000-000000000001/payments",
+        json={"amount": 100},
+    )
+    assert resp.status_code == 400
+
+
+async def test_record_payment_partial(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.fetchrow.return_value = {
+        "total": 1000,
+        "amount_paid": 0,
+        "payment_status": "unpaid",
+    }
+    resp = await api_client.post(
+        "/api/v1/ganit/invoices/00000000-0000-0000-0000-000000000001/payments",
+        json={"amount": 500},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "partial"
+    assert data["amount_paid"] == 500
+    assert data["balance_due"] == 500
+
+
+async def test_record_payment_full(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.fetchrow.return_value = {
+        "total": 1000,
+        "amount_paid": 500,
+        "payment_status": "partial",
+    }
+    resp = await api_client.post(
+        "/api/v1/ganit/invoices/00000000-0000-0000-0000-000000000001/payments",
+        json={"amount": 500},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "paid"
+
+
+# ── Stats ────────────────────────────────────────────────────────
+
+async def test_invoice_stats(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.fetchrow.return_value = {
+        "unpaid_count": 3,
+        "total_outstanding": 50000,
+        "total_collected": 100000,
+        "overdue_count": 1,
+        "total_invoices": 10,
+    }
+    resp = await api_client.get("/api/v1/ganit/stats")
+    assert resp.status_code == 200
+    assert resp.json()["total_invoices"] == 10
