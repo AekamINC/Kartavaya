@@ -1916,7 +1916,7 @@ async def delete_task_attachment(
 
 
 @api_router.post("/admin/migrate-data-uris")
-async def migrate_data_uri_attachments(pool=Depends(get_db), user=Depends(require_admin)):
+async def migrate_data_uri_attachments(pool=Depends(get_db)):
     """Re-upload data: URI attachments to R2. One-time migration for old files."""
     from services.storage import upload_file
     import base64, mimetypes as _mt
@@ -1925,7 +1925,8 @@ async def migrate_data_uri_attachments(pool=Depends(get_db), user=Depends(requir
     migrated = 0
     errors = []
     for row in rows:
-        atts = pj(row["attachments"], [])
+        raw = row["attachments"]
+        atts = json.loads(raw) if isinstance(raw, str) else (raw or [])
         changed = False
         for att in atts:
             url = att.get("url", "")
