@@ -9,6 +9,7 @@ const ATT_STATUSES = ['present', 'absent', 'half_day', 'late', 'on_leave', 'holi
 const STATUS_COLORS = { active: '#10b981', on_notice: '#f59e0b', terminated: '#ef4444', resigned: '#9ca3af', absconding: '#ef4444' };
 const ATT_COLORS = { present: '#10b981', absent: '#ef4444', half_day: '#f59e0b', late: '#6366f1', on_leave: '#0082c6', holiday: '#8b5cf6', weekend: '#9ca3af' };
 const LEAVE_COLORS = { pending: '#f59e0b', approved: '#10b981', rejected: '#ef4444', cancelled: '#9ca3af' };
+const PRIORITY_COLORS = { low: '#6E7B91', normal: '#0082c6', high: '#f59e0b', urgent: '#ef4444' };
 
 function Badge({ text, color }) {
   return (
@@ -17,7 +18,7 @@ function Badge({ text, color }) {
   );
 }
 
-const TABS = ['employees', 'attendance', 'leaves', 'departments', 'holidays'];
+const TABS = ['employees', 'attendance', 'leaves', 'announcements', 'departments', 'holidays', 'performance'];
 
 export default function ManavPage() {
   const { pushToast } = useToast();
@@ -38,21 +39,24 @@ export default function ManavPage() {
       <PageHeader title="Manav · मानव" subtitle="HRMS — Employees, Attendance & Leave Management" />
 
       {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 24 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 16, marginBottom: 24 }}>
           <StatTile label="Employees" value={stats.total_employees} />
           <StatTile label="Departments" value={stats.departments} />
           <StatTile label="Present Today" value={stats.today_present} />
+          <StatTile label="Clocked In" value={stats.clocked_in_count ?? '—'} />
+          <StatTile label="On Leave" value={stats.on_leave_today ?? '—'} />
           <StatTile label="Pending Leaves" value={stats.pending_leaves} />
+          <StatTile label="Announcements" value={stats.announcements_count ?? '—'} />
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)' }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)', overflowX: 'auto' }}>
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)}
             style={{ padding: '8px 16px', fontSize: 13, fontWeight: tab === t ? 700 : 400,
               color: tab === t ? 'var(--k-primary)' : 'var(--ink-3)',
               borderBottom: tab === t ? '2px solid var(--k-primary)' : '2px solid transparent',
-              background: 'none', border: 'none', cursor: 'pointer', textTransform: 'capitalize' }}>
+              background: 'none', border: 'none', cursor: 'pointer', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
             {t}
           </button>
         ))}
@@ -61,8 +65,10 @@ export default function ManavPage() {
       {tab === 'employees' && <EmployeesTab onUpdate={loadStats} />}
       {tab === 'attendance' && <AttendanceTab />}
       {tab === 'leaves' && <LeavesTab />}
+      {tab === 'announcements' && <AnnouncementsTab />}
       {tab === 'departments' && <DepartmentsTab />}
       {tab === 'holidays' && <HolidaysTab />}
+      {tab === 'performance' && <PerformanceTab />}
     </div>
   );
 }
@@ -417,6 +423,9 @@ function LeavesTab() {
   const [statusFilter, setStatusFilter] = useState('');
   const [showRequest, setShowRequest] = useState(false);
   const [showType, setShowType] = useState(false);
+  const [showConflict, setShowConflict] = useState(false);
+  const [conflicts, setConflicts] = useState(null);
+  const [conflictForm, setConflictForm] = useState({ start_date: '', end_date: '', department: '' });
   const [reqForm, setReqForm] = useState({ leave_type_id: '', start_date: '', end_date: '', days: 1, reason: '' });
   const [typeForm, setTypeForm] = useState({ name: '', code: '', annual_quota: 12, is_paid: true, carry_forward: false });
   const [saving, setSaving] = useState(false);
@@ -474,18 +483,67 @@ function LeavesTab() {
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
+  async function checkConflicts(e) {
+    e.preventDefault();
+    try {
+      let url = `/v1/manav/leaves/check-conflicts?start_date=${conflictForm.start_date}&end_date=${conflictForm.end_date}`;
+      if (conflictForm.department) url += `&department=${encodeURIComponent(conflictForm.department)}`;
+      const r = await api.get(url);
+      setConflicts(r.data);
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed to check', type: 'error' }); }
+  }
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <select className="k-input" style={{ width: 130 }} value={statusFilter} onChange={e => { setStatusFilter(e.target.value); }}>
           <option value="">All Status</option>
           {['pending', 'approved', 'rejected', 'cancelled'].map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Filter</button>
         <div style={{ flex: 1 }} />
+        <button className="k-btn k-btn--ghost" style={{ fontSize: 13 }} onClick={() => setShowConflict(true)}>Check Conflicts</button>
         <button className="k-btn k-btn--ghost" style={{ fontSize: 13 }} onClick={() => setShowType(true)}>+ Leave Type</button>
         <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowRequest(true)}>+ Request Leave</button>
       </div>
+
+      {showConflict && (
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--k-primary)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Check Leave Conflicts</h4>
+          <form onSubmit={checkConflicts} style={{ display: 'flex', gap: 12, alignItems: 'end', marginBottom: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Start *</span>
+              <input className="k-input" type="date" required value={conflictForm.start_date} onChange={e => setConflictForm({ ...conflictForm, start_date: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>End *</span>
+              <input className="k-input" type="date" required value={conflictForm.end_date} onChange={e => setConflictForm({ ...conflictForm, end_date: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Department</span>
+              <input className="k-input" placeholder="Optional" value={conflictForm.department} onChange={e => setConflictForm({ ...conflictForm, department: e.target.value })} /></label>
+            <button type="submit" className="k-btn k-btn--primary" style={{ fontSize: 12 }}>Check</button>
+            <button type="button" className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => { setShowConflict(false); setConflicts(null); }}>Close</button>
+          </form>
+          {conflicts && (
+            <div style={{ fontSize: 13 }}>
+              <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
+                <span><strong>Overlap:</strong> {conflicts.overlap_count} of {conflicts.department_size} ({conflicts.overlap_percentage}%)</span>
+                <Badge text={conflicts.has_conflict ? 'Conflict' : 'OK'} color={conflicts.has_conflict ? '#ef4444' : '#10b981'} />
+              </div>
+              {conflicts.has_conflict && (
+                <p style={{ color: '#ef4444', fontSize: 12, margin: '4px 0 0' }}>
+                  Over 30% of the department would be on leave. Consider rescheduling.
+                </p>
+              )}
+              {conflicts.overlapping_leaves?.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  {conflicts.overlapping_leaves.map((ol, i) => (
+                    <div key={i} style={{ fontSize: 12, color: 'var(--ink-2)', padding: '4px 0' }}>
+                      {ol.employee_name} — {ol.start_date} → {ol.end_date} ({ol.leave_type})
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {showType && (
         <form onSubmit={createType} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
@@ -560,6 +618,122 @@ function LeavesTab() {
                   <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px', color: '#ef4444' }} onClick={() => actionLeave(lr.id, 'rejected')}>Reject</button>
                 </div>
               )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function AnnouncementsTab() {
+  const { pushToast } = useToast();
+  const [announcements, setAnnouncements] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({ title: '', body: '', priority: 'normal', pinned: false, expires_at: '' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    try {
+      const r = await api.get('/v1/manav/announcements');
+      setAnnouncements(r.data.data || []);
+    } catch { pushToast({ title: 'Failed to load announcements', type: 'error' }); }
+    finally { setLoading(false); }
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      if (editing) {
+        await api.patch(`/v1/manav/announcements/${editing}`, form);
+        pushToast({ title: 'Announcement updated', type: 'success' });
+        setEditing(null);
+      } else {
+        await api.post('/v1/manav/announcements', form);
+        pushToast({ title: 'Announcement published', type: 'success' });
+      }
+      setShowForm(false);
+      setForm({ title: '', body: '', priority: 'normal', pinned: false, expires_at: '' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    finally { setSaving(false); }
+  }
+
+  async function remove(id) {
+    try {
+      await api.delete(`/v1/manav/announcements/${id}`);
+      pushToast({ title: 'Announcement removed', type: 'success' });
+      setAnnouncements(prev => prev.filter(a => a.id !== id));
+    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+  }
+
+  function startEdit(a) {
+    setEditing(a.id);
+    setForm({ title: a.title, body: a.body, priority: a.priority, pinned: a.pinned, expires_at: a.expires_at || '' });
+    setShowForm(true);
+  }
+
+  return (
+    <div>
+      <button className="k-btn k-btn--primary" style={{ fontSize: 13, marginBottom: 16 }} onClick={() => { setShowForm(true); setEditing(null); setForm({ title: '', body: '', priority: 'normal', pinned: false, expires_at: '' }); }}>
+        + New Announcement
+      </button>
+
+      {showForm && (
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>{editing ? 'Edit' : 'New'} Announcement</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
+              <input className="k-input" required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></label>
+            <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Body *</span>
+              <textarea className="k-input" required rows={4} value={form.body}
+                onChange={e => setForm({ ...form, body: e.target.value })} style={{ resize: 'vertical' }} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Priority</span>
+              <select className="k-input" value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>
+                {['low', 'normal', 'high', 'urgent'].map(p => <option key={p} value={p}>{p}</option>)}
+              </select></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Expires At</span>
+              <input className="k-input" type="datetime-local" value={form.expires_at} onChange={e => setForm({ ...form, expires_at: e.target.value })} /></label>
+            <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input type="checkbox" checked={form.pinned} onChange={e => setForm({ ...form, pinned: e.target.checked })} />
+              <span style={{ fontWeight: 600 }}>Pin to top</span></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => { setShowForm(false); setEditing(null); }}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Saving…' : editing ? 'Update' : 'Publish'}</button>
+          </div>
+        </form>
+      )}
+
+      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
+        announcements.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No announcements.</p> : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {announcements.map(a => (
+            <div key={a.id} style={{ background: 'var(--surface-1)', border: `1px solid ${a.pinned ? 'var(--k-primary)' : 'var(--rule-soft)'}`, borderRadius: 12, padding: '16px 20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {a.pinned && <span style={{ fontSize: 14 }}>📌</span>}
+                  <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{a.title}</h4>
+                </div>
+                <Badge text={a.priority} color={PRIORITY_COLORS[a.priority] || '#6E7B91'} />
+              </div>
+              <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--ink-2)', whiteSpace: 'pre-wrap' }}>{a.body}</p>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                  {new Date(a.published_at || a.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                  {a.expires_at && ` · Expires: ${new Date(a.expires_at).toLocaleDateString('en-IN')}`}
+                </span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => startEdit(a)}>Edit</button>
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => remove(a.id)}>Delete</button>
+                </div>
+              </div>
             </div>
           ))}
         </div>
@@ -716,6 +890,70 @@ function HolidaysTab() {
                 </td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+
+function PerformanceTab() {
+  const { pushToast } = useToast();
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [month, setMonth] = useState(new Date().toISOString().substring(0, 7));
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    try {
+      const r = await api.get(`/v1/manav/performance/summary?month=${month}`);
+      setData(r.data.data || []);
+    } catch { pushToast({ title: 'Failed to load performance', type: 'error' }); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+        <input className="k-input" type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 180 }} />
+        <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={load}>Load</button>
+      </div>
+
+      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
+        data.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No performance data for this month.</p> : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+              {['Employee', 'Department', 'Present', 'Absent', 'Late', 'Leaves Used', 'Total Hours', 'Avg Hours/Day', 'Attendance %'].map(h => (
+                <th key={h} style={{ textAlign: ['Present', 'Absent', 'Late', 'Leaves Used', 'Total Hours', 'Avg Hours/Day', 'Attendance %'].includes(h) ? 'right' : 'left',
+                  padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.map(e => {
+              const attendance_pct = e.working_days > 0 ? ((e.present_days / e.working_days) * 100).toFixed(0) : '—';
+              const avg_hours = e.present_days > 0 ? (Number(e.total_hours || 0) / e.present_days).toFixed(1) : '—';
+              return (
+                <tr key={e.employee_id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                  <td style={{ padding: '10px', fontWeight: 600 }}>{e.employee_name}</td>
+                  <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{e.department || '—'}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#10b981' }}>{e.present_days}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#ef4444' }}>{e.absent_days}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#6366f1' }}>{e.late_days}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#0082c6' }}>{e.leaves_used}</td>
+                  <td style={{ padding: '10px', textAlign: 'right' }}>{Number(e.total_hours || 0).toFixed(1)}</td>
+                  <td style={{ padding: '10px', textAlign: 'right' }}>{avg_hours}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', fontWeight: 700 }}>
+                    <span style={{ color: Number(attendance_pct) >= 90 ? '#10b981' : Number(attendance_pct) >= 75 ? '#f59e0b' : '#ef4444' }}>
+                      {attendance_pct}%
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
