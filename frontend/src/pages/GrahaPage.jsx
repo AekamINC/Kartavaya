@@ -141,8 +141,16 @@ function ContactsTab() {
             <div><strong>GSTIN:</strong> {c.gstin || '—'}</div>
             <div><strong>PAN:</strong> {c.pan || '—'}</div>
             <div><strong>Source:</strong> {c.source || '—'}</div>
-            <div><strong>Lead Score:</strong> {c.lead_score ?? '—'}</div>
+            <div><strong>Lead Score:</strong> {c.lead_score ?? '—'}/100</div>
+            <div><strong>Assigned To:</strong> {c.assigned_to ? c.assigned_to.substring(0, 8) + '…' : '—'}</div>
+            <div><strong>Last Contacted:</strong> {c.last_contacted_at ? new Date(c.last_contacted_at).toLocaleDateString('en-IN') : '—'}</div>
+            <div><strong>Converted:</strong> {c.converted_at ? new Date(c.converted_at).toLocaleDateString('en-IN') : '—'}</div>
           </div>
+          {c.lead_score_reasons?.length > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 8 }}>
+              <strong>Score reasons:</strong> {(typeof c.lead_score_reasons === 'string' ? JSON.parse(c.lead_score_reasons) : c.lead_score_reasons).join(', ')}
+            </div>
+          )}
           {c.notes && <p style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 12 }}>{c.notes}</p>}
         </div>
 
@@ -456,7 +464,8 @@ function KanbanTab() {
               {deals.map(d => (
                 <div key={d.id} style={{ background: 'var(--bg)', border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 10 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{d.title}</div>
-                  {d.contact_name && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 4 }}>{d.contact_name}</div>}
+                  {d.contact_name && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 2 }}>{d.contact_name}</div>}
+                  {d.owner_id && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 4 }}>Owner: {d.owner_id.substring(0, 8)}…</div>}
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>₹{Number(d.value || 0).toLocaleString('en-IN')}</div>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {stages.filter(s => s !== stage).map(s => (

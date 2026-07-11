@@ -2,6 +2,7 @@
 graha.py — Graha · ग्राह (CRM) Router
 Contacts, deals, pipelines, activities.
 """
+import json
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -51,6 +52,9 @@ class ContactUpdate(BaseModel):
     notes: str | None = None
     contact_type: str | None = None
     source: str | None = None
+    lead_score: int | None = None
+    lead_score_reasons: list[str] | None = None
+    assigned_to: str | None = None
 
 
 class DealCreate(BaseModel):
@@ -239,12 +243,24 @@ async def update_contact(
     if not updates:
         raise HTTPException(400, "No fields to update")
 
+    if "lead_score" in updates:
+        score = updates["lead_score"]
+        if score < 0 or score > 100:
+            raise HTTPException(400, "lead_score must be 0–100")
+
     sets = []
     params = [str(contact_id), org_id]
     idx = 3
     for k, v in updates.items():
-        sets.append(f"{k}=${idx}")
-        params.append(v)
+        if k == "lead_score_reasons":
+            sets.append(f"{k}=${idx}::jsonb")
+            params.append(json.dumps(v))
+        elif k == "assigned_to":
+            sets.append(f"{k}=NULLIF(${idx},'')::uuid")
+            params.append(v)
+        else:
+            sets.append(f"{k}=${idx}")
+            params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
 

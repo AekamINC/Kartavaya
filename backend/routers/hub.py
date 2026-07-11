@@ -994,3 +994,156 @@ async def client_spend_analytics(
         "by_provider": [dict(r) for r in by_provider],
         "daily_spend": [dict(r) for r in daily],
     }
+
+
+# ── AI Feedback ─────────────────────────────────────────────
+
+class AIFeedbackCreate(BaseModel):
+    skill_type: str
+    context_type: str
+    action: str
+    ai_output: dict
+    edited_output: dict | None = None
+    model_used: str = ""
+    tokens_used: int = 0
+    cost_usd: float = 0
+
+
+@router.post("/ai-feedback")
+async def record_ai_feedback(
+    body: AIFeedbackCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    if body.action not in ("accept", "edit", "reject"):
+        raise HTTPException(400, "action must be accept, edit, or reject")
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.ai_feedback "
+        "(org_id, skill_type, context_type, action, ai_output, edited_output, "
+        " model_used, tokens_used, cost_usd, user_id) "
+        "VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10::uuid) "
+        "RETURNING id",
+        org_id, body.skill_type, body.context_type, body.action,
+        json.dumps(body.ai_output),
+        json.dumps(body.edited_output) if body.edited_output else None,
+        body.model_used, body.tokens_used, body.cost_usd, user["user_id"],
+    )
+    return {"status": "recorded", "id": str(row["id"])}
+
+
+@router.get("/ai-feedback")
+async def list_ai_feedback(
+    skill_type: Optional[str] = None,
+    action: Optional[str] = None,
+    limit: int = 50,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    query = (
+        "SELECT id, skill_type, context_type, action, model_used, "
+        "tokens_used, cost_usd, user_id, created_at "
+        "FROM staging.ai_feedback WHERE org_id=$1::uuid "
+    )
+    params: list = [org_id]
+    idx = 2
+    if skill_type:
+        query += f"AND skill_type=${idx} "
+        params.append(skill_type)
+        idx += 1
+    if action:
+        query += f"AND action=${idx} "
+        params.append(action)
+        idx += 1
+    query += f"ORDER BY created_at DESC LIMIT ${idx}"
+    params.append(min(limit, 200))
+    rows = await pool.fetch(query, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.get("/ai-feedback/stats")
+async def ai_feedback_stats(
+    days: int = 30,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT skill_type, action, COUNT(*) as count, "
+        "COALESCE(SUM(tokens_used), 0) as total_tokens, "
+        "COALESCE(SUM(cost_usd), 0) as total_cost "
+        "FROM staging.ai_feedback "
+        "WHERE org_id=$1::uuid AND created_at >= NOW() - ($2 || ' days')::interval "
+        "GROUP BY skill_type, action ORDER BY count DESC",
+        org_id, str(days),
+    )
+    accept_count = sum(r["count"] for r in rows if r["action"] == "accept")
+    total_count = sum(r["count"] for r in rows)
+    return {
+        "by_skill_action": [dict(r) for r in rows],
+        "total_feedback": total_count,
+        "acceptance_rate": round(accept_count / total_count * 100, 1) if total_count > 0 else 0,
+    }
+
+
+# ── AI Conversations (short-term memory) ─────────────────────
+
+@router.get("/ai-conversations/{context_type}")
+async def get_ai_conversation(
+    context_type: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT id, messages, updated_at FROM staging.ai_conversations "
+        "WHERE org_id=$1::uuid AND user_id=$2::uuid AND context_type=$3",
+        org_id, user["user_id"], context_type,
+    )
+    if not row:
+        return {"messages": [], "context_type": context_type}
+    return {"id": str(row["id"]), "messages": row["messages"], "context_type": context_type, "updated_at": row["updated_at"]}
+
+
+@router.put("/ai-conversations/{context_type}")
+async def upsert_ai_conversation(
+    context_type: str,
+    body: dict,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    messages = body.get("messages", [])
+    if not isinstance(messages, list):
+        raise HTTPException(400, "messages must be an array")
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.ai_conversations (org_id, user_id, context_type, messages) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4::jsonb) "
+        "ON CONFLICT (org_id, user_id, context_type) "
+        "DO UPDATE SET messages=$4::jsonb, updated_at=NOW() "
+        "RETURNING id",
+        org_id, user["user_id"], context_type, json.dumps(messages),
+    )
+    return {"status": "saved", "id": str(row["id"])}
+
+
+@router.delete("/ai-conversations/{context_type}")
+async def delete_ai_conversation(
+    context_type: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "DELETE FROM staging.ai_conversations "
+        "WHERE org_id=$1::uuid AND user_id=$2::uuid AND context_type=$3",
+        org_id, user["user_id"], context_type,
+    )
+    return {"status": "deleted"}

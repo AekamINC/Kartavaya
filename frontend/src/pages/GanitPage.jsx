@@ -232,6 +232,12 @@ function InvoicesTab() {
               <button className="k-btn k-btn--primary" style={{ fontSize: 12, background: '#10b981' }} onClick={convertToInvoice}>Convert to Invoice</button>
             )}
             {inv.estimate_status && <Badge text={`Estimate: ${inv.estimate_status}`} color={inv.estimate_status === 'accepted' ? '#10b981' : inv.estimate_status === 'rejected' ? '#ef4444' : '#6E7B91'} />}
+            {inv.converted_invoice_id && (
+              <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }}
+                onClick={() => { setDetail(null); setTimeout(() => loadDetail(inv.converted_invoice_id), 100); }}>
+                View Converted Invoice →
+              </button>
+            )}
           </div>
 
           {inv.contact_name && (
@@ -281,8 +287,11 @@ function InvoicesTab() {
             </div>
           </div>
 
-          {inv.sent_at && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 12 }}>Sent: {new Date(inv.sent_at).toLocaleString('en-IN')}</div>}
-          {inv.viewed_at && <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Viewed: {new Date(inv.viewed_at).toLocaleString('en-IN')}</div>}
+          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 12, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            {inv.sent_at && <span>Sent: {new Date(inv.sent_at).toLocaleString('en-IN')}</span>}
+            {inv.viewed_at && <span>Viewed: {new Date(inv.viewed_at).toLocaleString('en-IN')}</span>}
+            {inv.recurring_id && <span>Recurring: <Badge text="Auto-generated" color="#0082c6" /></span>}
+          </div>
 
           {inv.payment_status !== 'paid' && inv.payment_status !== 'cancelled' && (
             <div style={{ marginTop: 16 }}>
@@ -956,6 +965,14 @@ function RecurringTab() {
     } catch { pushToast({ title: 'Failed', type: 'error' }); }
   }
 
+  async function generateNow(id) {
+    try {
+      const r = await api.post(`/v1/ganit/recurring/${id}/generate`);
+      pushToast({ title: `Invoice ${r.data.invoice_number} generated`, type: 'success' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Generation failed', type: 'error' }); }
+  }
+
   return (
     <div>
       <button className="k-btn k-btn--primary" style={{ fontSize: 13, marginBottom: 16 }} onClick={() => { setShowForm(true); loadContacts(); }}>
@@ -1028,7 +1045,10 @@ function RecurringTab() {
               <div style={{ fontSize: 12, color: 'var(--ink-3)', display: 'flex', justifyContent: 'space-between' }}>
                 <span>Next: {r.next_date} {r.end_date && `· Ends: ${r.end_date}`} {r.auto_send && '· Auto-send'}</span>
                 {r.is_active && (
-                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444', padding: '2px 8px' }} onClick={() => deactivate(r.id)}>Deactivate</button>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 10px' }} onClick={() => generateNow(r.id)}>Generate Now</button>
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444', padding: '2px 8px' }} onClick={() => deactivate(r.id)}>Deactivate</button>
+                  </div>
                 )}
               </div>
             </div>

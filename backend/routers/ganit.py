@@ -999,6 +999,90 @@ async def create_recurring(
     return {"status": "created", **dict(row)}
 
 
+@router.post("/recurring/{recurring_id}/generate")
+async def generate_recurring_invoice(
+    recurring_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rec = await pool.fetchrow(
+        "SELECT * FROM staging.ganit_recurring "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        str(recurring_id), org_id,
+    )
+    if not rec:
+        raise HTTPException(404, "Recurring invoice not found")
+
+    items = rec["template_items"] if isinstance(rec["template_items"], list) else json.loads(rec["template_items"])
+    subtotal = float(rec["subtotal"])
+    gst_rate = float(rec["gst_rate"])
+    is_igst = rec["is_igst"]
+    gst_total = round(subtotal * gst_rate / 100, 2)
+
+    if is_igst:
+        cgst, sgst, igst = 0, 0, gst_total
+    else:
+        half = round(gst_total / 2, 2)
+        cgst, sgst, igst = half, gst_total - half, 0
+
+    total = round(subtotal + gst_total, 2)
+    inv_number = await _next_invoice_number(pool, org_id, "INV")
+    inv_date = date.today().isoformat()
+    due_date = date.today().isoformat()
+
+    for li in items:
+        qty = float(li.get("quantity", 1))
+        rate = float(li.get("rate", 0))
+        li_gst = float(li.get("gst_rate", gst_rate))
+        taxable = qty * rate
+        li["line_total"] = round(taxable + taxable * li_gst / 100, 2)
+
+    new_inv = await pool.fetchrow(
+        "INSERT INTO staging.ganit_invoices "
+        "(org_id, contact_id, invoice_number, invoice_type, invoice_date, due_date, "
+        " is_igst, line_items, subtotal, cgst, sgst, igst, total, balance_due, "
+        " notes, terms, recurring_id, doc_status, created_by) "
+        "VALUES ($1::uuid, $2, $3, 'tax_invoice', $4::date, $5::date, "
+        " $6, $7::jsonb, $8, $9, $10, $11, $12, $12, $13, $14, $15::uuid, 'final', $16) "
+        "RETURNING id, invoice_number, total",
+        org_id, str(rec["contact_id"]) if rec["contact_id"] else None,
+        inv_number, inv_date, due_date,
+        is_igst, json.dumps(items), subtotal, cgst, sgst, igst, total,
+        rec["notes"], rec["terms"], str(recurring_id), user["user_id"],
+    )
+
+    freq_map = {"weekly": 7, "monthly": 1, "quarterly": 3, "yearly": 12}
+    freq = rec["frequency"]
+    next_dt = rec["next_date"]
+    if freq == "weekly":
+        from datetime import timedelta
+        new_next = next_dt + timedelta(days=7)
+    else:
+        month_add = freq_map.get(freq, 1)
+        new_month = next_dt.month + month_add
+        new_year = next_dt.year + (new_month - 1) // 12
+        new_month = ((new_month - 1) % 12) + 1
+        new_day = min(next_dt.day, 28)
+        new_next = date(new_year, new_month, new_day)
+
+    if rec["end_date"] and new_next > rec["end_date"]:
+        await pool.execute(
+            "UPDATE staging.ganit_recurring SET is_active=FALSE, next_date=$3::date "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            str(recurring_id), org_id, new_next,
+        )
+    else:
+        await pool.execute(
+            "UPDATE staging.ganit_recurring SET next_date=$3::date "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            str(recurring_id), org_id, new_next,
+        )
+
+    return {"status": "generated", **dict(new_inv)}
+
+
 @router.delete("/recurring/{recurring_id}")
 async def delete_recurring(
     recurring_id: UUID,
