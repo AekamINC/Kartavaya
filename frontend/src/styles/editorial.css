@@ -1897,14 +1897,31 @@ input, textarea, select { font-family: inherit; color: inherit; }
 /* ── Language show/hide ─────────────────────────────────────────────────── */
 .k-hi { display: inline; }
 .k-en { display: inline; }
+/* EN only — hide all secondary labels */
 [data-language="en"] .k-hi,
 [data-language="en"] .k-sidebar__hi-mute,
 [data-language="en"] .k-sidebar__section-hi,
 [data-language="en"] .k-crumb__hi,
 [data-language="en"] .k-pageh__sans,
 [data-language="en"] .k-wday__hi { display: none !important; }
+
+/* Hindi only — hide English */
 [data-language="hi"] .k-en,
 [data-language="hi"] .k-wday__en { display: none !important; }
+
+/* Gujarati only — hide English */
+[data-language="gu"] .k-en,
+[data-language="gu"] .k-wday__en { display: none !important; }
+
+/* Gujarati modes — use Gujarati font for indic labels */
+[data-language="gu"] .k-sidebar__hi-mute,
+[data-language="gu"] .k-sidebar__section-hi,
+[data-language="gu"] .k-crumb__hi,
+[data-language="gu"] .k-pageh__sans,
+[data-language="en+gu"] .k-sidebar__hi-mute,
+[data-language="en+gu"] .k-sidebar__section-hi,
+[data-language="en+gu"] .k-crumb__hi,
+[data-language="en+gu"] .k-pageh__sans { font-family: 'Noto Sans Gujarati', sans-serif !important; }
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
 @media (max-width: 1100px) {

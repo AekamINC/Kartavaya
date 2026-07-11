@@ -23,7 +23,7 @@ import './styles/editorial.css';
 import { ToastProvider }               from './components/ui/toast';
 import AppShell, { Protected }         from './components/layout/AppShell';
 import PageLoader                      from './components/layout/PageLoader';
-import { CustomizeProvider, CustomizePanel, CustomizeFAB } from './components/CustomizePanel';
+import { CustomizeProvider } from './components/CustomizePanel';
 
 // ── Auth pages (lazy — no reason to block the bundle for these) ────────────────
 const LoginPage           = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
@@ -66,6 +66,7 @@ const VikrayPage            = lazy(() => import('./pages/VikrayPage'));
 const VetanaPage            = lazy(() => import('./pages/VetanaPage'));
 const DristiPage            = lazy(() => import('./pages/DristiPage'));
 const PracharPage           = lazy(() => import('./pages/PracharPage'));
+const CustomizeSettingsPage = lazy(() => import('./pages/CustomizeSettingsPage'));
 
 // ── Outlet context wrappers ────────────────────────────────────────────────────
 // Pages that need teamId or teams from AppShell's outlet context.
@@ -120,6 +121,7 @@ function AppRouter() {
           {/* Settings */}
           <Route path="settings/categories"    element={<CategoriesPage />} />
           <Route path="settings/notifications" element={<NotificationsSettings />} />
+          <Route path="settings/customize"     element={<CustomizeSettingsPage />} />
 
           {/* Admin */}
           <Route path="admin"                  element={<AdminPage />} />
@@ -180,8 +182,6 @@ export default function App() {
         <BrowserRouter>
           <StagingBanner />
           <AppRouter />
-          <CustomizePanel />
-          <CustomizeFAB />
         </BrowserRouter>
       </ToastProvider>
     </CustomizeProvider>
