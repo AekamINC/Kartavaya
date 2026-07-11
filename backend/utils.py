@@ -67,6 +67,25 @@ async def get_db():
     return await get_pool()
 
 
+async def next_doc_number(pool, org_id: str, table: str, column: str, prefix: str) -> str:
+    """Generate next sequential document number: PREFIX-YYYY-0001.
+
+    Shared by Ganit (invoices), Vikray (orders), and Vetana (payslips).
+    """
+    last = await pool.fetchval(
+        f"SELECT {column} FROM staging.{table} "
+        "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 1",
+        org_id,
+    )
+    if last:
+        parts = last.rsplit("-", 1)
+        num = int(parts[-1]) + 1 if len(parts) == 2 and parts[-1].isdigit() else 1
+    else:
+        num = 1
+    fy = datetime.now().year
+    return f"{prefix}-{fy}-{num:04d}"
+
+
 # ── 3. DB helpers ─────────────────────────────────────────────────────────────
 
 async def get_visible_team_ids(pool, user_id: str) -> List[str]:

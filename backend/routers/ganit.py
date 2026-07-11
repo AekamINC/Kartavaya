@@ -16,6 +16,7 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
+from utils import next_doc_number
 
 router = APIRouter(prefix="/api/v1/ganit", tags=["ganit-invoicing"])
 
@@ -212,18 +213,7 @@ def _compute_invoice(items: list[LineItem], is_igst: bool, flat_discount: float 
 # ── Invoice Number Generation ───────────────────────────────
 
 async def _next_invoice_number(pool, org_id: str, prefix: str = "INV") -> str:
-    last = await pool.fetchval(
-        "SELECT invoice_number FROM staging.ganit_invoices "
-        "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 1",
-        org_id,
-    )
-    if last:
-        parts = last.rsplit("-", 1)
-        num = int(parts[-1]) + 1 if len(parts) == 2 and parts[-1].isdigit() else 1
-    else:
-        num = 1
-    fy = datetime.now().year
-    return f"{prefix}-{fy}-{num:04d}"
+    return await next_doc_number(pool, org_id, "ganit_invoices", "invoice_number", prefix)
 
 
 # ── Products / Services ─────────────────────────────────────

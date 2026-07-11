@@ -1,0 +1,600 @@
+"""
+prachar.py — Prachar · प्रचार (Marketing) Router
+Email templates, campaigns, automations, unsubscribes.
+Reads Graha contacts for audience targeting.
+"""
+import json
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
+from auth_router import require_user
+from db import get_pool
+from middleware.org_resolver import get_org_id
+from middleware.subscription import require_module
+
+router = APIRouter(prefix="/api/v1/prachar", tags=["prachar-marketing"])
+
+_gate = require_module("prachar")
+
+
+# ── Pydantic Models ──────────────────────────────────────────
+
+class TemplateCreate(BaseModel):
+    name: str
+    subject: str
+    body_html: str = ""
+    body_text: str = ""
+    category: str = "general"
+    variables: list[str] = []
+
+
+class TemplateUpdate(BaseModel):
+    name: str | None = None
+    subject: str | None = None
+    body_html: str | None = None
+    body_text: str | None = None
+    category: str | None = None
+    variables: list[str] | None = None
+
+
+class CampaignCreate(BaseModel):
+    name: str
+    template_id: str | None = None
+    subject: str = ""
+    body_html: str = ""
+    channel: str = "email"
+    audience_filter: dict = {}
+    scheduled_at: str | None = None
+
+
+class CampaignUpdate(BaseModel):
+    name: str | None = None
+    template_id: str | None = None
+    subject: str | None = None
+    body_html: str | None = None
+    channel: str | None = None
+    audience_filter: dict | None = None
+    scheduled_at: str | None = None
+
+
+class AutomationCreate(BaseModel):
+    name: str
+    trigger_type: str
+    trigger_config: dict = {}
+    action_type: str
+    action_config: dict = {}
+    is_active: bool = True
+
+
+class AutomationUpdate(BaseModel):
+    name: str | None = None
+    trigger_config: dict | None = None
+    action_config: dict | None = None
+    is_active: bool | None = None
+
+
+# ── Templates CRUD ───────────────────────────────────────────
+
+@router.get("/templates")
+async def list_templates(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM staging.prachar_templates "
+        "WHERE org_id=$1::uuid AND is_active=TRUE ORDER BY updated_at DESC",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/templates")
+async def create_template(
+    body: TemplateCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.prachar_templates "
+        "(org_id, name, subject, body_html, body_text, category, variables, created_by) "
+        "VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::jsonb,$8) RETURNING *",
+        org_id, body.name, body.subject, body.body_html, body.body_text,
+        body.category, json.dumps(body.variables), user["user_id"],
+    )
+    return dict(row)
+
+
+@router.get("/templates/{tmpl_id}")
+async def get_template(
+    tmpl_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM staging.prachar_templates WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        tmpl_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Template not found")
+    return dict(row)
+
+
+@router.patch("/templates/{tmpl_id}")
+async def update_template(
+    tmpl_id: str,
+    body: TemplateUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates, vals = [], []
+    for field in ["name", "subject", "body_html", "body_text", "category"]:
+        v = getattr(body, field)
+        if v is not None:
+            vals.append(v); updates.append(f"{field}=${len(vals)}")
+    if body.variables is not None:
+        vals.append(json.dumps(body.variables)); updates.append(f"variables=${len(vals)}::jsonb")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    updates.append("updated_at=NOW()")
+    vals += [tmpl_id, org_id]
+    row = await pool.fetchrow(
+        f"UPDATE staging.prachar_templates SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid AND is_active=TRUE RETURNING *",
+        *vals,
+    )
+    if not row:
+        raise HTTPException(404, "Template not found")
+    return dict(row)
+
+
+@router.delete("/templates/{tmpl_id}")
+async def delete_template(
+    tmpl_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE staging.prachar_templates SET is_active=FALSE, updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        tmpl_id, org_id,
+    )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "Template not found")
+    return {"ok": True}
+
+
+# ── Campaigns CRUD ───────────────────────────────────────────
+
+@router.get("/campaigns")
+async def list_campaigns(
+    status: str | None = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = "SELECT * FROM staging.prachar_campaigns WHERE org_id=$1::uuid AND is_active=TRUE"
+    params = [org_id]
+    if status:
+        params.append(status)
+        q += f" AND status=${len(params)}"
+    q += " ORDER BY created_at DESC"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/campaigns")
+async def create_campaign(
+    body: CampaignCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.prachar_campaigns "
+        "(org_id, name, template_id, subject, body_html, channel, audience_filter, scheduled_at, created_by) "
+        "VALUES ($1::uuid,$2,$3::uuid,$4,$5,$6,$7::jsonb,$8::timestamptz,$9) RETURNING *",
+        org_id, body.name, body.template_id, body.subject, body.body_html,
+        body.channel, json.dumps(body.audience_filter), body.scheduled_at, user["user_id"],
+    )
+    return dict(row)
+
+
+@router.get("/campaigns/{camp_id}")
+async def get_campaign(
+    camp_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM staging.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        camp_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Campaign not found")
+    return dict(row)
+
+
+@router.patch("/campaigns/{camp_id}")
+async def update_campaign(
+    camp_id: str,
+    body: CampaignUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    current = await pool.fetchrow(
+        "SELECT status FROM staging.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        camp_id, org_id,
+    )
+    if not current:
+        raise HTTPException(404, "Campaign not found")
+    if current["status"] not in ("draft", "scheduled"):
+        raise HTTPException(400, "Cannot edit a campaign that is already sending or sent")
+
+    updates, vals = [], []
+    for field in ["name", "subject", "body_html", "channel"]:
+        v = getattr(body, field)
+        if v is not None:
+            vals.append(v); updates.append(f"{field}=${len(vals)}")
+    if body.template_id is not None:
+        vals.append(body.template_id); updates.append(f"template_id=${len(vals)}::uuid")
+    if body.audience_filter is not None:
+        vals.append(json.dumps(body.audience_filter)); updates.append(f"audience_filter=${len(vals)}::jsonb")
+    if body.scheduled_at is not None:
+        vals.append(body.scheduled_at); updates.append(f"scheduled_at=${len(vals)}::timestamptz")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    updates.append("updated_at=NOW()")
+    vals += [camp_id, org_id]
+    row = await pool.fetchrow(
+        f"UPDATE staging.prachar_campaigns SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
+        *vals,
+    )
+    return dict(row)
+
+
+@router.delete("/campaigns/{camp_id}")
+async def delete_campaign(
+    camp_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE staging.prachar_campaigns SET is_active=FALSE, updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND status IN ('draft','scheduled')",
+        camp_id, org_id,
+    )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "Campaign not found or already sent")
+    return {"ok": True}
+
+
+# ── Campaign Audience & Send ─────────────────────────────────
+
+@router.get("/campaigns/{camp_id}/audience")
+async def preview_audience(
+    camp_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    campaign = await pool.fetchrow(
+        "SELECT audience_filter FROM staging.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid",
+        camp_id, org_id,
+    )
+    if not campaign:
+        raise HTTPException(404, "Campaign not found")
+
+    contacts = await _resolve_audience(pool, org_id, campaign["audience_filter"] or {})
+    return {"count": len(contacts), "contacts": contacts[:50]}
+
+
+@router.post("/campaigns/{camp_id}/send")
+async def send_campaign(
+    camp_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    campaign = await pool.fetchrow(
+        "SELECT * FROM staging.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        camp_id, org_id,
+    )
+    if not campaign:
+        raise HTTPException(404, "Campaign not found")
+    if campaign["status"] not in ("draft", "scheduled"):
+        raise HTTPException(400, f"Campaign status is '{campaign['status']}', cannot send")
+
+    contacts = await _resolve_audience(pool, org_id, campaign["audience_filter"] or {})
+    if not contacts:
+        raise HTTPException(400, "No contacts match the audience filter")
+
+    unsubs = await pool.fetch(
+        "SELECT email FROM staging.prachar_unsubscribes WHERE org_id=$1::uuid", org_id
+    )
+    unsub_set = {r["email"].lower() for r in unsubs}
+    eligible = [c for c in contacts if c["email"] and c["email"].lower() not in unsub_set]
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            for c in eligible:
+                await conn.execute(
+                    "INSERT INTO staging.prachar_campaign_contacts (campaign_id, contact_id, email) "
+                    "VALUES ($1::uuid, $2::uuid, $3) ON CONFLICT DO NOTHING",
+                    str(campaign["id"]), str(c["id"]), c["email"],
+                )
+
+            await conn.execute(
+                "UPDATE staging.prachar_campaigns SET status='sending', "
+                "total_recipients=$1, sent_at=NOW(), updated_at=NOW() "
+                "WHERE id=$2::uuid",
+                len(eligible), str(campaign["id"]),
+            )
+
+    return {"ok": True, "recipients": len(eligible), "skipped_unsubscribed": len(contacts) - len(eligible)}
+
+
+@router.get("/campaigns/{camp_id}/stats")
+async def campaign_stats(
+    camp_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    stats = await pool.fetchrow(
+        "SELECT "
+        "COUNT(*) AS total, "
+        "COUNT(*) FILTER (WHERE status='sent' OR status='delivered') AS sent, "
+        "COUNT(*) FILTER (WHERE status='opened' OR status='clicked') AS opened, "
+        "COUNT(*) FILTER (WHERE status='clicked') AS clicked, "
+        "COUNT(*) FILTER (WHERE status='bounced') AS bounced, "
+        "COUNT(*) FILTER (WHERE status='failed') AS failed "
+        "FROM staging.prachar_campaign_contacts WHERE campaign_id=$1::uuid",
+        camp_id,
+    )
+    return dict(stats) if stats else {}
+
+
+# ── Automations CRUD ─────────────────────────────────────────
+
+@router.get("/automations")
+async def list_automations(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM staging.prachar_automations WHERE org_id=$1::uuid AND is_active=TRUE "
+        "ORDER BY created_at DESC",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/automations")
+async def create_automation(
+    body: AutomationCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.prachar_automations "
+        "(org_id, name, trigger_type, trigger_config, action_type, action_config, is_active, created_by) "
+        "VALUES ($1::uuid,$2,$3,$4::jsonb,$5,$6::jsonb,$7,$8) RETURNING *",
+        org_id, body.name, body.trigger_type, json.dumps(body.trigger_config),
+        body.action_type, json.dumps(body.action_config), body.is_active, user["user_id"],
+    )
+    return dict(row)
+
+
+@router.patch("/automations/{auto_id}")
+async def update_automation(
+    auto_id: str,
+    body: AutomationUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates, vals = [], []
+    if body.name is not None:
+        vals.append(body.name); updates.append(f"name=${len(vals)}")
+    if body.trigger_config is not None:
+        vals.append(json.dumps(body.trigger_config)); updates.append(f"trigger_config=${len(vals)}::jsonb")
+    if body.action_config is not None:
+        vals.append(json.dumps(body.action_config)); updates.append(f"action_config=${len(vals)}::jsonb")
+    if body.is_active is not None:
+        vals.append(body.is_active); updates.append(f"is_active=${len(vals)}")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    updates.append("updated_at=NOW()")
+    vals += [auto_id, org_id]
+    row = await pool.fetchrow(
+        f"UPDATE staging.prachar_automations SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
+        *vals,
+    )
+    if not row:
+        raise HTTPException(404, "Automation not found")
+    return dict(row)
+
+
+@router.delete("/automations/{auto_id}")
+async def delete_automation(
+    auto_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE staging.prachar_automations SET is_active=FALSE, updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        auto_id, org_id,
+    )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "Automation not found")
+    return {"ok": True}
+
+
+# ── Unsubscribes ─────────────────────────────────────────────
+
+@router.get("/unsubscribes")
+async def list_unsubscribes(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM staging.prachar_unsubscribes WHERE org_id=$1::uuid ORDER BY unsubscribed_at DESC",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/unsubscribes")
+async def add_unsubscribe(
+    email: str = Query(...),
+    reason: str = Query("manual"),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "INSERT INTO staging.prachar_unsubscribes (org_id, email, reason) "
+        "VALUES ($1::uuid, $2, $3) ON CONFLICT (org_id, email) DO NOTHING",
+        org_id, email.lower().strip(), reason,
+    )
+    return {"ok": True}
+
+
+@router.delete("/unsubscribes/{unsub_id}")
+async def remove_unsubscribe(
+    unsub_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    result = await pool.execute(
+        "DELETE FROM staging.prachar_unsubscribes WHERE id=$1::uuid AND org_id=$2::uuid",
+        unsub_id, org_id,
+    )
+    if result == "DELETE 0":
+        raise HTTPException(404, "Not found")
+    return {"ok": True}
+
+
+# ── Dashboard ────────────────────────────────────────────────
+
+@router.get("/dashboard")
+async def dashboard(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+
+    campaigns = await pool.fetchrow(
+        "SELECT COUNT(*) AS total, "
+        "COUNT(*) FILTER (WHERE status='sent') AS sent, "
+        "COUNT(*) FILTER (WHERE status='sending') AS sending, "
+        "COUNT(*) FILTER (WHERE status='draft') AS drafts, "
+        "COUNT(*) FILTER (WHERE status='scheduled') AS scheduled "
+        "FROM staging.prachar_campaigns WHERE org_id=$1::uuid AND is_active=TRUE",
+        org_id,
+    )
+
+    delivery = await pool.fetchrow(
+        "SELECT "
+        "COALESCE(SUM(total_recipients),0) AS total_sent, "
+        "COALESCE(SUM(total_opened),0) AS total_opened, "
+        "COALESCE(SUM(total_clicked),0) AS total_clicked, "
+        "COALESCE(SUM(total_bounced),0) AS total_bounced "
+        "FROM staging.prachar_campaigns WHERE org_id=$1::uuid AND status='sent'",
+        org_id,
+    )
+
+    templates = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.prachar_templates WHERE org_id=$1::uuid AND is_active=TRUE",
+        org_id,
+    )
+
+    automations = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.prachar_automations WHERE org_id=$1::uuid AND is_active=TRUE",
+        org_id,
+    )
+
+    unsubs = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.prachar_unsubscribes WHERE org_id=$1::uuid",
+        org_id,
+    )
+
+    recent = await pool.fetch(
+        "SELECT id, name, status, total_recipients, total_opened, total_clicked, sent_at "
+        "FROM staging.prachar_campaigns WHERE org_id=$1::uuid AND is_active=TRUE "
+        "ORDER BY created_at DESC LIMIT 5",
+        org_id,
+    )
+
+    return {
+        "campaigns": dict(campaigns) if campaigns else {},
+        "delivery": dict(delivery) if delivery else {},
+        "templates_count": templates or 0,
+        "automations_count": automations or 0,
+        "unsubscribes_count": unsubs or 0,
+        "recent_campaigns": [dict(r) for r in recent],
+    }
+
+
+# ── Helpers ──────────────────────────────────────────────────
+
+async def _resolve_audience(pool, org_id: str, filters: dict) -> list[dict]:
+    q = ("SELECT id, name, email, type, company FROM staging.graha_contacts "
+         "WHERE org_id=$1::uuid AND is_active=TRUE AND email IS NOT NULL AND email != ''")
+    params: list = [org_id]
+
+    if filters.get("type"):
+        params.append(filters["type"])
+        q += f" AND type=${len(params)}"
+    if filters.get("label"):
+        params.append(filters["label"])
+        q += f" AND ${{len(params)}} = ANY(labels)"
+    if filters.get("min_score"):
+        params.append(filters["min_score"])
+        q += f" AND lead_score >= ${len(params)}"
+    if filters.get("company"):
+        params.append(f"%{filters['company']}%")
+        q += f" AND company ILIKE ${len(params)}"
+
+    q += " ORDER BY name"
+    rows = await pool.fetch(q, *params)
+    return [dict(r) for r in rows]
