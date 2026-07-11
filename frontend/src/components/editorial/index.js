@@ -9,3 +9,4 @@ export { default as ProjectTag }  from './ProjectTag';
 export { default as AvatarStack } from './AvatarStack';
 export { default as WeekStrip }   from './WeekStrip';
 export { default as Citation }    from './Citation';
+export { TabBar, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from './ModuleUI';

@@ -4,6 +4,7 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { currentUser } from '../../lib/auth';
+import { useCustomize } from '../CustomizePanel';
 
 // ── Nav icons (inline SVG, stroke-based) ────────────────────────────────
 const ICONS = {
@@ -133,7 +134,9 @@ export default function Sidebar({ inboxCount = 0 }) {
   const isClient  = user?.role === 'client';
   const isMember  = !isAdmin && !isClient && user?.role !== 'owner';
 
-  const lang = document.documentElement.getAttribute('data-language') || 'en+sa';
+  const { prefs } = useCustomize();
+  const lang = prefs.language || 'en+sa';
+  const isRail = prefs.sidebar === 'rail';
   const showGu = lang === 'gu' || lang === 'en+gu';
   const showHi = lang === 'en+sa' || lang === 'en+hi' || lang === 'hi';
 
@@ -157,25 +160,29 @@ export default function Sidebar({ inboxCount = 0 }) {
     .split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase());
 
   return (
-    <aside className="k-sidebar">
+    <aside className={`k-sidebar${isRail ? ' k-sidebar--rail' : ''}`}>
       {/* Brand */}
       <div className="k-sidebar__brand">
-        <KMark size={32} />
-        <div className="k-wordmark">
-          <div className="k-wordmark__main">Kartavaya</div>
-          <div className="k-wordmark__sans">कर्तव्य</div>
-          <div className="k-wordmark__sub">by Aekam Inc</div>
-        </div>
+        <KMark size={isRail ? 28 : 32} />
+        {!isRail && (
+          <div className="k-wordmark">
+            <div className="k-wordmark__main">Kartavaya</div>
+            <div className="k-wordmark__sans">कर्तव्य</div>
+            <div className="k-wordmark__sub">by Aekam Inc</div>
+          </div>
+        )}
       </div>
 
       {/* Nav */}
       <nav className="k-sidebar__nav">
         {allGroups.map(({ section, sans, gu: guSec, items }) => (
           <div key={section} className="k-sidebar__group">
-            <div className="k-sidebar__section">
-              <span>{section}</span>
-              <span className="k-sidebar__section-hi">{showGu ? guSec : sans}</span>
-            </div>
+            {!isRail && (
+              <div className="k-sidebar__section">
+                <span>{section}</span>
+                <span className="k-sidebar__section-hi">{showGu ? guSec : sans}</span>
+              </div>
+            )}
             {items.filter(item => !item.ownerOnly || !isMember).map(({ to, icon, en, hi, gu: guLabel, adminOnly, badge }) => {
               const badgeCount = badge === 'unread' ? inboxCount : 0;
               const secondaryLabel = showGu ? guLabel : hi;
@@ -184,16 +191,17 @@ export default function Sidebar({ inboxCount = 0 }) {
                   key={en}
                   className={'k-sidebar__item' + (isActive(to) ? ' is-active' : '')}
                   onClick={() => navigate(to)}
+                  title={isRail ? en : undefined}
                 >
                   <span className="k-sidebar__icon">{ICONS[icon]}</span>
-                  <span>{en}</span>
-                  <span className="k-sidebar__hi-mute">{secondaryLabel}</span>
-                  {adminOnly && (
+                  {!isRail && <span>{en}</span>}
+                  {!isRail && <span className="k-sidebar__hi-mute">{secondaryLabel}</span>}
+                  {!isRail && adminOnly && (
                     <span className="k-sidebar__badge" style={{ fontSize: 9, letterSpacing: '0.1em' }}>
                       ADMIN
                     </span>
                   )}
-                  {badgeCount > 0 && (
+                  {!isRail && badgeCount > 0 && (
                     <span style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 4px', borderRadius: 99, background: '#dc2626', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {badgeCount > 9 ? '9+' : badgeCount}
                     </span>
@@ -206,25 +214,29 @@ export default function Sidebar({ inboxCount = 0 }) {
       </nav>
 
       {/* Footer */}
-      <div className="k-sidebar__foot">
+      <div className="k-sidebar__foot" style={isRail ? { justifyContent: 'center', padding: '12px 0' } : undefined}>
         <div className="k-avatar k-avatar--me">{initials}</div>
-        <div className="k-sidebar__me">
-          <div className="k-sidebar__me-name">{user?.full_name || user?.name || 'User'}</div>
-          <div className="k-sidebar__me-role" style={{ textTransform: 'capitalize' }}>
-            {user?.role || 'member'}
+        {!isRail && (
+          <div className="k-sidebar__me">
+            <div className="k-sidebar__me-name">{user?.full_name || user?.name || 'User'}</div>
+            <div className="k-sidebar__me-role" style={{ textTransform: 'capitalize' }}>
+              {user?.role || 'member'}
+            </div>
           </div>
-        </div>
-        <button
-          className="k-sidebar__foot-btn"
-          title="Sign out"
-          onClick={async () => {
-            const { apiLogout } = await import('../../lib/auth');
-            await apiLogout();
-            window.location.href = '/login';
-          }}
-        >
-          {ICONS.logout}
-        </button>
+        )}
+        {!isRail && (
+          <button
+            className="k-sidebar__foot-btn"
+            title="Sign out"
+            onClick={async () => {
+              const { apiLogout } = await import('../../lib/auth');
+              await apiLogout();
+              window.location.href = '/login';
+            }}
+          >
+            {ICONS.logout}
+          </button>
+        )}
       </div>
     </aside>
   );

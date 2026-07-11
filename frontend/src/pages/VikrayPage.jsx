@@ -1,17 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
-import { PageHeader, StatTile } from '../components/editorial';
+import { PageHeader, StatTile, TabBar, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
 
 const STATUS_COLORS = { draft: '#6E7B91', confirmed: '#0082c6', dispatched: '#8b5cf6', delivered: '#10b981', closed: '#05b7aa', cancelled: '#9ca3af' };
 const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
-
-function Badge({ text, color }) {
-  return (
-    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em',
-      padding: '2px 10px', borderRadius: 99, background: `${color}18`, color }}>{text}</span>
-  );
-}
 
 const TABS = ['dashboard', 'orders', 'pipeline', 'targets', 'customers'];
 
@@ -19,18 +12,8 @@ export default function VikrayPage() {
   const [tab, setTab] = useState('dashboard');
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px 48px' }}>
-      <PageHeader title="Vikray · विक्रय" subtitle="Sales — Orders, Targets & Pipeline" />
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)', overflowX: 'auto' }}>
-        {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            style={{ padding: '8px 16px', fontSize: 13, fontWeight: tab === t ? 700 : 400,
-              color: tab === t ? 'var(--k-primary)' : 'var(--ink-3)',
-              borderBottom: tab === t ? '2px solid var(--k-primary)' : '2px solid transparent',
-              background: 'none', border: 'none', cursor: 'pointer', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
-            {t}
-          </button>
-        ))}
-      </div>
+      <PageHeader title="Vikray" sanskrit="विक्रय" lede="Sales — Orders, Targets & Pipeline" />
+      <TabBar tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'dashboard' && <DashboardTab />}
       {tab === 'orders' && <OrdersTab />}
       {tab === 'pipeline' && <PipelineTab />}
@@ -44,18 +27,26 @@ export default function VikrayPage() {
 function DashboardTab() {
   const [data, setData] = useState(null);
   useEffect(() => { api.get('/v1/vikray/dashboard').then(r => setData(r.data)).catch(() => {}); }, []);
-  if (!data) return <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading dashboard…</p>;
+  if (!data) return <Shimmer count={8} />;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-      <StatTile label="Pipeline Value" value={FMT(data.pipeline_value)} />
-      <StatTile label="Open Deals" value={data.open_deals} />
-      <StatTile label="Order Value" value={FMT(data.order_value)} />
-      <StatTile label="Total Orders" value={data.total_orders} />
-      <StatTile label="Revenue" value={FMT(data.total_revenue)} />
-      <StatTile label="Collected" value={FMT(data.collected)} />
-      <StatTile label="Draft" value={data.draft_orders} />
-      <StatTile label="Dispatched" value={data.dispatched_orders} />
-    </div>
+    <>
+      <Section title="Revenue" hi="राजस्व">
+        <div className="k-stats">
+          <StatTile label="Pipeline Value" value={FMT(data.pipeline_value)} variant="blue" />
+          <StatTile label="Revenue" value={FMT(data.total_revenue)} variant="teal" />
+          <StatTile label="Order Value" value={FMT(data.order_value)} />
+          <StatTile label="Collected" value={FMT(data.collected)} variant="teal" />
+        </div>
+      </Section>
+      <Section title="Orders" hi="आदेश">
+        <div className="k-stats">
+          <StatTile label="Total Orders" value={data.total_orders} />
+          <StatTile label="Open Deals" value={data.open_deals} />
+          <StatTile label="Draft" value={data.draft_orders} />
+          <StatTile label="Dispatched" value={data.dispatched_orders} />
+        </div>
+      </Section>
+    </>
   );
 }
 
@@ -186,19 +177,19 @@ function OrdersTab() {
     const items = Array.isArray(o.line_items) ? o.line_items : JSON.parse(o.line_items || '[]');
     return (
       <div>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => setDetail(null)}>← Back to list</button>
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <BackButton onClick={() => setDetail(null)} label="Back to list" />
+        <div className="k-detail">
+          <div className="k-detail__header">
             <div>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{o.order_number}</h3>
-              <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--ink-2)' }}>
+              <h3 className="k-detail__title">{o.order_number}</h3>
+              <p className="k-detail__sub">
                 {o.order_date} {o.expected_delivery && `· Delivery: ${o.expected_delivery}`}
               </p>
             </div>
-            <Badge text={o.status} color={STATUS_COLORS[o.status] || '#6E7B91'} />
+            <Badge text={o.status} color={STATUS_COLORS[o.status]} />
           </div>
 
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          <div className="k-detail__actions">
             {NEXT_STATUS[o.status] && <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => updateStatus(NEXT_STATUS[o.status])}>{NEXT_LABEL[o.status]}</button>}
             {o.status !== 'draft' && !o.invoice_id && <button className="k-btn k-btn--primary" style={{ fontSize: 12, background: '#10b981' }} onClick={generateInvoice}>Generate Invoice</button>}
             {(o.status === 'draft' || o.status === 'confirmed') && <button className="k-btn k-btn--ghost" style={{ fontSize: 12, color: '#ef4444' }} onClick={cancelOrder}>Cancel</button>}
@@ -206,51 +197,42 @@ function OrdersTab() {
           </div>
 
           {o.contact_name && (
-            <div style={{ fontSize: 13, color: 'var(--ink-2)', marginBottom: 16 }}>
-              <strong>Customer:</strong> {o.contact_name} {o.contact_company && `(${o.contact_company})`}
+            <div className="k-metabar">
+              <span><strong>Customer:</strong> {o.contact_name} {o.contact_company && `(${o.contact_company})`}</span>
             </div>
           )}
 
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--rule-soft)' }}>
-                {['Description', 'HSN', 'Qty', 'Rate', 'GST%', 'Amount'].map(h => (
-                  <th key={h} style={{ textAlign: h === 'Description' ? 'left' : 'right', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((li, i) => {
-                const amt = li.quantity * li.rate * (1 - (li.discount_pct || 0) / 100);
-                return (
-                  <tr key={i} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                    <td style={{ padding: '8px 10px' }}>{li.description}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{li.hsn_code || '—'}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>{li.quantity} {li.unit}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>{FMT(li.rate)}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right' }}>{li.gst_rate}%</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600 }}>{FMT(amt)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <DataTable columns={['Description', 'HSN', { label: 'Qty', align: 'right' }, { label: 'Rate', align: 'right' }, { label: 'GST%', align: 'right' }, { label: 'Amount', align: 'right' }]}>
+            {items.map((li, i) => {
+              const amt = li.quantity * li.rate * (1 - (li.discount_pct || 0) / 100);
+              return (
+                <tr key={i}>
+                  <td>{li.description}</td>
+                  <Td align="right" mono>{li.hsn_code || '—'}</Td>
+                  <Td align="right">{li.quantity} {li.unit}</Td>
+                  <Td align="right" mono>{FMT(li.rate)}</Td>
+                  <Td align="right">{li.gst_rate}%</Td>
+                  <Td align="right" bold>{FMT(amt)}</Td>
+                </tr>
+              );
+            })}
+          </DataTable>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <div style={{ width: 280, fontSize: 13 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}><span>Subtotal</span><span>{FMT(o.subtotal)}</span></div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+            <div className="k-totals">
+              <div className="k-totals__row"><span>Subtotal</span><span>{FMT(o.subtotal)}</span></div>
               {!o.is_igst ? (<>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: 'var(--ink-3)' }}><span>CGST</span><span>{FMT(o.cgst)}</span></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: 'var(--ink-3)' }}><span>SGST</span><span>{FMT(o.sgst)}</span></div>
+                <div className="k-totals__row" style={{ color: 'var(--ink-3)' }}><span>CGST</span><span>{FMT(o.cgst)}</span></div>
+                <div className="k-totals__row" style={{ color: 'var(--ink-3)' }}><span>SGST</span><span>{FMT(o.sgst)}</span></div>
               </>) : (
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: 'var(--ink-3)' }}><span>IGST</span><span>{FMT(o.igst)}</span></div>
+                <div className="k-totals__row" style={{ color: 'var(--ink-3)' }}><span>IGST</span><span>{FMT(o.igst)}</span></div>
               )}
-              {Number(o.discount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: '#ef4444' }}><span>Discount</span><span>-{FMT(o.discount)}</span></div>}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontWeight: 700, borderTop: '2px solid var(--rule-soft)', marginTop: 4 }}><span>Total</span><span>{FMT(o.total)}</span></div>
+              {Number(o.discount) > 0 && <div className="k-totals__row" style={{ color: '#ef4444' }}><span>Discount</span><span>-{FMT(o.discount)}</span></div>}
+              <div className="k-totals__row k-totals__row--total"><span>Total</span><span>{FMT(o.total)}</span></div>
             </div>
           </div>
 
-          {o.notes && <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 12 }}>Notes: {o.notes}</p>}
+          {o.notes && <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 16 }}>Notes: {o.notes}</p>}
         </div>
       </div>
     );
@@ -258,10 +240,9 @@ function OrdersTab() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <div className="k-section__head" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', gap: 8 }}>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-            style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--rule-soft)', background: 'var(--surface-1)' }}>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="k-formpanel__input" style={{ width: 'auto', minWidth: 140 }}>
             <option value="">All statuses</option>
             {Object.keys(STATUS_COLORS).map(s => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -273,74 +254,65 @@ function OrdersTab() {
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 20, marginBottom: 20 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
-            <label style={{ fontSize: 12 }}>Customer
-              <select value={form.contact_id} onChange={e => setForm(f => ({ ...f, contact_id: e.target.value }))}
-                style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 4 }}>
+        <form onSubmit={save} className="k-formpanel">
+          <div className="k-formpanel__grid k-formpanel__grid--3">
+            <label className="k-formpanel__label">Customer
+              <select value={form.contact_id} onChange={e => setForm(f => ({ ...f, contact_id: e.target.value }))} className="k-formpanel__input">
                 <option value="">Select…</option>
                 {contacts.map(c => <option key={c.id} value={c.id}>{c.name} {c.company && `(${c.company})`}</option>)}
               </select>
             </label>
-            <label style={{ fontSize: 12 }}>Order Date
-              <input type="date" value={form.order_date} onChange={e => setForm(f => ({ ...f, order_date: e.target.value }))}
-                style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 4 }} />
+            <label className="k-formpanel__label">Order Date
+              <input type="date" value={form.order_date} onChange={e => setForm(f => ({ ...f, order_date: e.target.value }))} className="k-formpanel__input" />
             </label>
-            <label style={{ fontSize: 12 }}>Expected Delivery
-              <input type="date" value={form.expected_delivery} onChange={e => setForm(f => ({ ...f, expected_delivery: e.target.value }))}
-                style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 4 }} />
+            <label className="k-formpanel__label">Expected Delivery
+              <input type="date" value={form.expected_delivery} onChange={e => setForm(f => ({ ...f, expected_delivery: e.target.value }))} className="k-formpanel__input" />
             </label>
           </div>
 
-          <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
-            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
+            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--ink-2)' }}>
               <input type="checkbox" checked={form.is_igst} onChange={e => setForm(f => ({ ...f, is_igst: e.target.checked }))} /> Inter-state (IGST)
             </label>
           </div>
 
-          <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Line Items</h4>
-          {form.line_items.map((li, idx) => (
-            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr .8fr .8fr 1fr .8fr auto', gap: 8, marginBottom: 8, alignItems: 'end' }}>
-              <div>
-                <select onChange={e => fillFromProduct(idx, e.target.value)} style={{ width: '100%', padding: '6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--rule-soft)', marginBottom: 4 }}>
-                  <option value="">From product…</option>
-                  {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-                <input placeholder="Description" value={li.description} onChange={e => updateLine(idx, 'description', e.target.value)}
-                  style={{ width: '100%', padding: '6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--rule-soft)' }} />
+          <Section title="Line Items" hi="वस्तुएँ">
+            {form.line_items.map((li, idx) => (
+              <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr .8fr .8fr 1fr .8fr auto', gap: 8, marginBottom: 8, alignItems: 'end' }}>
+                <div>
+                  <select onChange={e => fillFromProduct(idx, e.target.value)} className="k-formpanel__input" style={{ marginBottom: 4, padding: '6px 10px' }}>
+                    <option value="">From product…</option>
+                    {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                  <input placeholder="Description" value={li.description} onChange={e => updateLine(idx, 'description', e.target.value)} className="k-formpanel__input" style={{ padding: '6px 10px' }} />
+                </div>
+                <input placeholder="HSN" value={li.hsn_code} onChange={e => updateLine(idx, 'hsn_code', e.target.value)} className="k-formpanel__input" style={{ padding: '6px 10px' }} />
+                <input type="number" min="1" value={li.quantity} onChange={e => updateLine(idx, 'quantity', Number(e.target.value))} className="k-formpanel__input" style={{ padding: '6px 10px' }} />
+                <input type="number" value={li.rate} onChange={e => updateLine(idx, 'rate', Number(e.target.value))} className="k-formpanel__input" style={{ padding: '6px 10px' }} />
+                <input type="number" value={li.gst_rate} onChange={e => updateLine(idx, 'gst_rate', Number(e.target.value))} className="k-formpanel__input" style={{ padding: '6px 10px' }} />
+                <span style={{ fontSize: 12, fontWeight: 600, padding: '8px 0', fontFamily: 'var(--font-mono)' }}>{FMT(li.quantity * li.rate * (1 - (li.discount_pct || 0) / 100))}</span>
+                {form.line_items.length > 1 && <button type="button" onClick={() => removeLine(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16 }}>×</button>}
               </div>
-              <input placeholder="HSN" value={li.hsn_code} onChange={e => updateLine(idx, 'hsn_code', e.target.value)}
-                style={{ padding: '6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--rule-soft)' }} />
-              <input type="number" min="1" value={li.quantity} onChange={e => updateLine(idx, 'quantity', Number(e.target.value))}
-                style={{ padding: '6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--rule-soft)' }} />
-              <input type="number" value={li.rate} onChange={e => updateLine(idx, 'rate', Number(e.target.value))}
-                style={{ padding: '6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--rule-soft)' }} />
-              <input type="number" value={li.gst_rate} onChange={e => updateLine(idx, 'gst_rate', Number(e.target.value))}
-                style={{ padding: '6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--rule-soft)' }} />
-              <span style={{ fontSize: 12, fontWeight: 600, padding: '8px 0' }}>{FMT(li.quantity * li.rate * (1 - (li.discount_pct || 0) / 100))}</span>
-              {form.line_items.length > 1 && <button type="button" onClick={() => removeLine(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16 }}>×</button>}
-            </div>
-          ))}
-          <button type="button" onClick={addLine} style={{ fontSize: 12, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 12 }}>+ Add line</button>
+            ))}
+            <button type="button" onClick={addLine} style={{ fontSize: 12, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, marginBottom: 12 }}>+ Add line item</button>
+          </Section>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-            <div style={{ fontSize: 13 }}>
-              <span>Subtotal: {FMT(computedSubtotal)}</span>
-              <span style={{ margin: '0 12px' }}>GST: {FMT(computedGst)}</span>
-              <strong>Total: {FMT(computedTotal)}</strong>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderTop: '1px solid var(--rule-soft)' }}>
+            <div style={{ fontSize: 13, display: 'flex', gap: 16 }}>
+              <span>Subtotal: <strong>{FMT(computedSubtotal)}</strong></span>
+              <span>GST: <strong>{FMT(computedGst)}</strong></span>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>Total: {FMT(computedTotal)}</span>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <label style={{ fontSize: 12 }}>Discount ₹
-                <input type="number" value={form.discount} onChange={e => setForm(f => ({ ...f, discount: Number(e.target.value) }))}
-                  style={{ width: 80, padding: '6px', fontSize: 12, borderRadius: 4, border: '1px solid var(--rule-soft)', marginLeft: 4 }} />
+              <label className="k-formpanel__label" style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>Discount ₹
+                <input type="number" value={form.discount} onChange={e => setForm(f => ({ ...f, discount: Number(e.target.value) }))} className="k-formpanel__input" style={{ width: 80, padding: '6px 10px' }} />
               </label>
             </div>
           </div>
 
-          <textarea placeholder="Notes" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-            style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 12, minHeight: 48 }} />
+          <textarea placeholder="Notes" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="k-formpanel__input" style={{ minHeight: 48, marginTop: 8 }} />
 
-          <div style={{ marginTop: 12 }}>
+          <div className="k-formpanel__actions">
             <button type="submit" className="k-btn k-btn--primary" disabled={saving} style={{ fontSize: 13 }}>
               {saving ? 'Saving…' : 'Create Order'}
             </button>
@@ -348,23 +320,22 @@ function OrdersTab() {
         </form>
       )}
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</p> : orders.length === 0 ? (
-        <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>No orders yet. Create your first sales order.</p>
+      {loading ? <Shimmer count={4} /> : orders.length === 0 ? (
+        <Empty icon="📦" title="No orders yet" sub="Create your first sales order to start tracking revenue and deliveries." cta="+ New Order" onCta={() => { setShowForm(true); loadOptions(); }} />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {orders.map(o => (
-            <div key={o.id} onClick={() => loadDetail(o.id)}
-              style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '14px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <ModCard key={o.id} onClick={() => loadDetail(o.id)}>
               <div>
                 <strong style={{ fontSize: 14 }}>{o.order_number}</strong>
-                <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{o.contact_name || o.contact_company || ''}</span>
+                {(o.contact_name || o.contact_company) && <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{o.contact_name || o.contact_company}</span>}
                 <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{o.order_date}</p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{FMT(o.total)}</span>
-                <Badge text={o.status} color={STATUS_COLORS[o.status] || '#6E7B91'} />
+                <span style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{FMT(o.total)}</span>
+                <Badge text={o.status} color={STATUS_COLORS[o.status]} />
               </div>
-            </div>
+            </ModCard>
           ))}
         </div>
       )}
@@ -384,20 +355,22 @@ function PipelineTab() {
       .catch(() => { pushToast({ title: 'Failed to load pipeline', type: 'error' }); setLoading(false); });
   }, []);
 
-  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading pipeline…</p>;
+  if (loading) return <Shimmer count={6} />;
+  if (deals.length === 0) return <Empty icon="📊" title="No pipeline data" sub="Add deals in the Graha (CRM) module to see your sales pipeline here." />;
+
   return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+    <Section title="Pipeline Stages" hi="चरण">
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
         {deals.map(s => (
-          <div key={s.stage} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: 16, textAlign: 'center' }}>
-            <Badge text={s.stage} color={STAGE_COLORS[s.stage] || '#6E7B91'} />
-            <p style={{ fontSize: 22, fontWeight: 700, margin: '8px 0 2px' }}>{s.count}</p>
-            <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: 0 }}>{FMT(s.total_value)}</p>
+          <div key={s.stage} className="k-stat">
+            <div style={{ marginBottom: 8 }}><Badge text={s.stage} color={STAGE_COLORS[s.stage]} /></div>
+            <div className="k-stat__val" style={{ fontSize: 28 }}>{s.count}</div>
+            <div className="k-stat__sub">{FMT(s.total_value)}</div>
           </div>
         ))}
       </div>
       <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>Full pipeline management is in Graha (CRM) module.</p>
-    </div>
+    </Section>
   );
 }
 
@@ -419,7 +392,7 @@ function TargetsTab() {
   }
 
   async function loadMembers() {
-    try { const r = await api.get('/teams'); const all = r.data || []; setMembers(all); } catch {}
+    try { const r = await api.get('/teams'); setMembers(r.data || []); } catch {}
   }
 
   async function save(e) {
@@ -437,7 +410,8 @@ function TargetsTab() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+      <div className="k-section__head" style={{ marginBottom: 20 }}>
+        <h3 className="k-section__title">Sales Targets<span className="k-section__title-hi">लक्ष्य</span></h3>
         <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
           onClick={() => { setShowForm(!showForm); if (!showForm) loadMembers(); }}>
           {showForm ? 'Cancel' : '+ Set Target'}
@@ -445,68 +419,57 @@ function TargetsTab() {
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 20, marginBottom: 20 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <label style={{ fontSize: 12 }}>Salesperson
+        <form onSubmit={save} className="k-formpanel">
+          <div className="k-formpanel__grid k-formpanel__grid--3">
+            <label className="k-formpanel__label">Salesperson
               <input value={form.salesperson_id} onChange={e => setForm(f => ({ ...f, salesperson_id: e.target.value }))}
-                placeholder="User ID" style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 4 }} />
+                placeholder="User ID" className="k-formpanel__input" />
             </label>
-            <label style={{ fontSize: 12 }}>Period Start
-              <input type="date" value={form.period_start} onChange={e => setForm(f => ({ ...f, period_start: e.target.value }))}
-                style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 4 }} />
+            <label className="k-formpanel__label">Period Start
+              <input type="date" value={form.period_start} onChange={e => setForm(f => ({ ...f, period_start: e.target.value }))} className="k-formpanel__input" />
             </label>
-            <label style={{ fontSize: 12 }}>Period End
-              <input type="date" value={form.period_end} onChange={e => setForm(f => ({ ...f, period_end: e.target.value }))}
-                style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 4 }} />
+            <label className="k-formpanel__label">Period End
+              <input type="date" value={form.period_end} onChange={e => setForm(f => ({ ...f, period_end: e.target.value }))} className="k-formpanel__input" />
             </label>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <label style={{ fontSize: 12 }}>Target Amount (₹)
-              <input type="number" value={form.target_amount} onChange={e => setForm(f => ({ ...f, target_amount: Number(e.target.value) }))}
-                style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 4 }} />
+          <div className="k-formpanel__grid k-formpanel__grid--2">
+            <label className="k-formpanel__label">Target Amount (₹)
+              <input type="number" value={form.target_amount} onChange={e => setForm(f => ({ ...f, target_amount: Number(e.target.value) }))} className="k-formpanel__input" />
             </label>
-            <label style={{ fontSize: 12 }}>Target Deals
-              <input type="number" value={form.target_deals} onChange={e => setForm(f => ({ ...f, target_deals: Number(e.target.value) }))}
-                style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 4 }} />
+            <label className="k-formpanel__label">Target Deals
+              <input type="number" value={form.target_deals} onChange={e => setForm(f => ({ ...f, target_deals: Number(e.target.value) }))} className="k-formpanel__input" />
             </label>
           </div>
-          <button type="submit" className="k-btn k-btn--primary" disabled={saving} style={{ fontSize: 13 }}>{saving ? 'Saving…' : 'Save Target'}</button>
+          <div className="k-formpanel__actions">
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving} style={{ fontSize: 13 }}>{saving ? 'Saving…' : 'Save Target'}</button>
+          </div>
         </form>
       )}
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</p> : targets.length === 0 ? (
-        <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>No targets set yet.</p>
+      {loading ? <Shimmer count={4} /> : targets.length === 0 ? (
+        <Empty icon="🎯" title="No targets set" sub="Set sales targets for your team to track performance and achievement." cta="+ Set Target" onCta={() => { setShowForm(true); loadMembers(); }} />
       ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid var(--rule-soft)' }}>
-              {['Salesperson', 'Period', 'Target', 'Actual', 'Achievement'].map(h => (
-                <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {targets.map(t => {
-              const pct = t.target_amount > 0 ? Math.round((t.actual_amount || 0) / t.target_amount * 100) : 0;
-              return (
-                <tr key={t.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                  <td style={{ padding: '10px' }}>{t.salesperson_name || t.salesperson_id}</td>
-                  <td style={{ padding: '10px', fontSize: 12 }}>{t.period_start} — {t.period_end}</td>
-                  <td style={{ padding: '10px' }}>{FMT(t.target_amount)}</td>
-                  <td style={{ padding: '10px' }}>{FMT(t.actual_amount)}</td>
-                  <td style={{ padding: '10px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 80, height: 6, background: 'var(--rule-soft)', borderRadius: 3, overflow: 'hidden' }}>
-                        <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pct >= 100 ? '#10b981' : '#0082c6', borderRadius: 3 }} />
-                      </div>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: pct >= 100 ? '#10b981' : 'var(--ink-2)' }}>{pct}%</span>
+        <DataTable columns={['Salesperson', 'Period', { label: 'Target', align: 'right' }, { label: 'Actual', align: 'right' }, 'Achievement']}>
+          {targets.map(t => {
+            const pct = t.target_amount > 0 ? Math.round((t.actual_amount || 0) / t.target_amount * 100) : 0;
+            return (
+              <tr key={t.id}>
+                <td>{t.salesperson_name || t.salesperson_id}</td>
+                <td style={{ fontSize: 12 }}>{t.period_start} — {t.period_end}</td>
+                <Td align="right" mono>{FMT(t.target_amount)}</Td>
+                <Td align="right" mono>{FMT(t.actual_amount)}</Td>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 80, height: 6, background: 'var(--rule-soft)', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pct >= 100 ? '#10b981' : 'var(--k-primary)', borderRadius: 3, transition: 'width .4s' }} />
                     </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)', color: pct >= 100 ? '#10b981' : 'var(--ink-2)' }}>{pct}%</span>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </DataTable>
       )}
     </div>
   );
@@ -523,22 +486,24 @@ function CustomersTab() {
       .catch(() => { pushToast({ title: 'Failed to load customers', type: 'error' }); setLoading(false); });
   }, []);
 
-  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</p>;
-  if (contacts.length === 0) return <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>No customers yet. Convert leads in the CRM module.</p>;
+  if (loading) return <Shimmer count={4} />;
+  if (contacts.length === 0) return <Empty icon="👥" title="No customers yet" sub="Convert leads in the CRM module to see your customers here." />;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {contacts.map(c => (
-        <div key={c.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <strong style={{ fontSize: 14 }}>{c.name}</strong>
-            {c.company && <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{c.company}</span>}
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{c.email} {c.phone && `· ${c.phone}`}</p>
-          </div>
-          <Badge text={c.type || 'customer'} color="#10b981" />
-        </div>
-      ))}
-      <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 8 }}>Full contact management is in Graha (CRM) module.</p>
-    </div>
+    <Section title="Customer List" hi="ग्राहक">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {contacts.map(c => (
+          <ModCard key={c.id} onClick={() => {}}>
+            <div>
+              <strong style={{ fontSize: 14 }}>{c.name}</strong>
+              {c.company && <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{c.company}</span>}
+              <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{c.email} {c.phone && `· ${c.phone}`}</p>
+            </div>
+            <Badge text={c.type || 'customer'} color="#10b981" />
+          </ModCard>
+        ))}
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 12 }}>Full contact management is in Graha (CRM) module.</p>
+    </Section>
   );
 }

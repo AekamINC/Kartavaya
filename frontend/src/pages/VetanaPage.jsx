@@ -1,18 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
-import { PageHeader, StatTile } from '../components/editorial';
+import { PageHeader, StatTile, TabBar, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
 
 const RUN_COLORS = { draft: '#6E7B91', processed: '#0082c6', approved: '#8b5cf6', disbursed: '#10b981' };
 const PS_COLORS = { generated: '#6E7B91', approved: '#8b5cf6', disbursed: '#10b981' };
 const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
-
-function Badge({ text, color }) {
-  return (
-    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em',
-      padding: '2px 10px', borderRadius: 99, background: `${color}18`, color }}>{text}</span>
-  );
-}
 
 const TABS = ['dashboard', 'structures', 'payroll', 'payslips', 'statutory'];
 
@@ -20,18 +13,8 @@ export default function VetanaPage() {
   const [tab, setTab] = useState('dashboard');
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px 48px' }}>
-      <PageHeader title="Vetana · वेतन" subtitle="Payroll — Salary Structures, Processing & Compliance" />
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)', overflowX: 'auto' }}>
-        {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            style={{ padding: '8px 16px', fontSize: 13, fontWeight: tab === t ? 700 : 400,
-              color: tab === t ? 'var(--k-primary)' : 'var(--ink-3)',
-              borderBottom: tab === t ? '2px solid var(--k-primary)' : '2px solid transparent',
-              background: 'none', border: 'none', cursor: 'pointer', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
-            {t}
-          </button>
-        ))}
-      </div>
+      <PageHeader title="Vetana" sanskrit="वेतन" lede="Payroll — Salary Structures, Processing & Compliance" />
+      <TabBar tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'dashboard' && <DashboardTab />}
       {tab === 'structures' && <StructuresTab />}
       {tab === 'payroll' && <PayrollTab />}
@@ -45,49 +28,45 @@ export default function VetanaPage() {
 function DashboardTab() {
   const [data, setData] = useState(null);
   useEffect(() => { api.get('/v1/vetana/dashboard').then(r => setData(r.data)).catch(() => {}); }, []);
-  if (!data) return <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading dashboard…</p>;
+  if (!data) return <Shimmer count={8} />;
   const run = data.latest_run;
   const ytd = data.ytd || {};
   return (
-    <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
-        <StatTile label="Headcount" value={data.headcount} />
-        {run && <>
-          <StatTile label={`Gross (${run.month})`} value={FMT(run.total_gross)} />
-          <StatTile label={`Net Pay (${run.month})`} value={FMT(run.total_net)} />
-          <StatTile label="Employees Processed" value={run.employee_count} />
-        </>}
-        <StatTile label="YTD Gross" value={FMT(ytd.ytd_gross)} />
-        <StatTile label="YTD PF" value={FMT(ytd.ytd_pf)} />
-        <StatTile label="YTD ESI" value={FMT(ytd.ytd_esi)} />
-        <StatTile label="YTD TDS" value={FMT(ytd.ytd_tds)} />
-      </div>
+    <>
+      {run && (
+        <Section title={`Current Month — ${run.month}`} hi="चालू माह">
+          <div className="k-stats">
+            <StatTile label="Headcount" value={data.headcount} />
+            <StatTile label="Gross Pay" value={FMT(run.total_gross)} />
+            <StatTile label="Net Pay" value={FMT(run.total_net)} variant="teal" />
+            <StatTile label="Processed" value={run.employee_count} sub="employees" />
+          </div>
+        </Section>
+      )}
+      <Section title="Year to Date" hi="वार्षिक">
+        <div className="k-stats">
+          <StatTile label="YTD Gross" value={FMT(ytd.ytd_gross)} />
+          <StatTile label="YTD PF" value={FMT(ytd.ytd_pf)} variant="amber" />
+          <StatTile label="YTD ESI" value={FMT(ytd.ytd_esi)} variant="amber" />
+          <StatTile label="YTD TDS" value={FMT(ytd.ytd_tds)} variant="red" />
+        </div>
+      </Section>
 
       {data.department_split.length > 0 && (
-        <div>
-          <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Department Split {run && `(${run.month})`}</h4>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--rule-soft)' }}>
-                {['Department', 'Employees', 'Gross', 'Net'].map(h => (
-                  <th key={h} style={{ textAlign: h === 'Department' ? 'left' : 'right', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-                ))}
+        <Section title="Department Split" hi="विभाग">
+          <DataTable columns={['Department', { label: 'Employees', align: 'right' }, { label: 'Gross', align: 'right' }, { label: 'Net', align: 'right' }]}>
+            {data.department_split.map((d, i) => (
+              <tr key={i}>
+                <td>{d.department || 'Unassigned'}</td>
+                <Td align="right">{d.employees}</Td>
+                <Td align="right" mono>{FMT(d.dept_gross)}</Td>
+                <Td align="right" mono>{FMT(d.dept_net)}</Td>
               </tr>
-            </thead>
-            <tbody>
-              {data.department_split.map((d, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                  <td style={{ padding: '8px 10px' }}>{d.department || 'Unassigned'}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{d.employees}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{FMT(d.dept_gross)}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{FMT(d.dept_net)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </DataTable>
+        </Section>
       )}
-    </div>
+    </>
   );
 }
 
@@ -151,37 +130,46 @@ function StructuresTab() {
     const monthly = Number(s.ctc_annual || 0) / 12;
     return (
       <div>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => setDetail(null)}>← Back to list</button>
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24 }}>
-          <h3 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700 }}>{s.employee_name}</h3>
-          <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--ink-3)' }}>Effective from: {s.effective_from} · CTC: {FMT(s.ctc_annual)}/yr ({FMT(monthly)}/mo)</p>
+        <BackButton onClick={() => setDetail(null)} label="Back to list" />
+        <div className="k-detail">
+          <div className="k-detail__header">
+            <div>
+              <h3 className="k-detail__title">{s.employee_name}</h3>
+              <p className="k-detail__sub">Effective from: {s.effective_from} · CTC: {FMT(s.ctc_annual)}/yr ({FMT(monthly)}/mo)</p>
+            </div>
+          </div>
 
-          <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Monthly Earnings</h4>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
-            <tbody>
+          <Section title="Monthly Earnings" hi="मासिक आय">
+            <DataTable columns={['Component', { label: 'Amount', align: 'right' }]}>
               {[['Basic', s.basic], ['HRA', s.hra], ['DA', s.da], ['Special Allowance', s.special_allowance],
                 ['Conveyance', s.conveyance], ['Medical', s.medical]].map(([label, val]) => (
-                <tr key={label} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                  <td style={{ padding: '6px 10px' }}>{label}</td>
-                  <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600 }}>{FMT(val)}</td>
+                <tr key={label}>
+                  <td>{label}</td>
+                  <Td align="right" mono bold>{FMT(val)}</Td>
                 </tr>
               ))}
-              <tr style={{ borderTop: '2px solid var(--rule-soft)' }}>
-                <td style={{ padding: '8px 10px', fontWeight: 700 }}>Total Monthly</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 700 }}>
+              <tr style={{ background: 'color-mix(in srgb, var(--k-primary) 4%, transparent)' }}>
+                <td style={{ fontWeight: 700 }}>Total Monthly</td>
+                <Td align="right" mono bold>
                   {FMT(Number(s.basic || 0) + Number(s.hra || 0) + Number(s.da || 0) + Number(s.special_allowance || 0) + Number(s.conveyance || 0) + Number(s.medical || 0))}
-                </td>
+                </Td>
               </tr>
-            </tbody>
-          </table>
+            </DataTable>
+          </Section>
 
-          <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Statutory Configuration</h4>
-          <div style={{ display: 'flex', gap: 16, fontSize: 13, flexWrap: 'wrap' }}>
-            <span>PF: {s.pf_enabled ? '✓ Enabled' : '✗ Disabled'}</span>
-            <span>ESI: {s.esi_enabled ? '✓ Enabled' : '✗ Disabled'}</span>
-            <span>PT: {s.pt_applicable ? '✓ Applicable' : '✗ N/A'}</span>
-            <span>TDS Regime: {s.tds_regime === 'new' ? 'New' : 'Old'}</span>
-          </div>
+          <Section title="Statutory Configuration" hi="वैधानिक">
+            <div style={{ display: 'flex', gap: 20, fontSize: 13, flexWrap: 'wrap' }}>
+              {[
+                ['PF', s.pf_enabled], ['ESI', s.esi_enabled], ['PT', s.pt_applicable],
+              ].map(([label, on]) => (
+                <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: on ? '#10b981' : 'var(--rule-soft)' }} />
+                  {label}: {on ? 'Enabled' : 'Disabled'}
+                </span>
+              ))}
+              <span>TDS Regime: <strong>{s.tds_regime === 'new' ? 'New' : 'Old'}</strong></span>
+            </div>
+          </Section>
         </div>
       </div>
     );
@@ -189,7 +177,8 @@ function StructuresTab() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+      <div className="k-section__head" style={{ marginBottom: 20 }}>
+        <h3 className="k-section__title">Salary Structures<span className="k-section__title-hi">वेतन ढाँचा</span></h3>
         <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
           onClick={() => { setShowForm(!showForm); if (!showForm) loadEmployees(); }}>
           {showForm ? 'Cancel' : '+ New Structure'}
@@ -197,75 +186,68 @@ function StructuresTab() {
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 20, marginBottom: 20 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <label style={{ fontSize: 12 }}>Employee
-              <select value={form.employee_id} onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))}
-                style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 4 }}>
+        <form onSubmit={save} className="k-formpanel">
+          <div className="k-formpanel__grid k-formpanel__grid--3">
+            <label className="k-formpanel__label">Employee
+              <select value={form.employee_id} onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))} className="k-formpanel__input">
                 <option value="">Select…</option>
                 {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name || `${emp.first_name} ${emp.last_name}`} ({emp.employee_code})</option>)}
               </select>
             </label>
-            <label style={{ fontSize: 12 }}>Effective From
-              <input type="date" value={form.effective_from} onChange={e => setForm(f => ({ ...f, effective_from: e.target.value }))}
-                style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 4 }} />
+            <label className="k-formpanel__label">Effective From
+              <input type="date" value={form.effective_from} onChange={e => setForm(f => ({ ...f, effective_from: e.target.value }))} className="k-formpanel__input" />
             </label>
-            <label style={{ fontSize: 12 }}>Annual CTC (₹)
-              <input type="number" value={form.ctc_annual} onChange={e => autoSplit(Number(e.target.value))}
-                style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 4 }} />
+            <label className="k-formpanel__label">Annual CTC (₹)
+              <input type="number" value={form.ctc_annual} onChange={e => autoSplit(Number(e.target.value))} className="k-formpanel__input" />
             </label>
           </div>
 
-          <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Monthly Breakdown</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
-            {[['Basic', 'basic'], ['HRA', 'hra'], ['DA', 'da'], ['Special Allowance', 'special_allowance'], ['Conveyance', 'conveyance'], ['Medical', 'medical']].map(([label, key]) => (
-              <label key={key} style={{ fontSize: 12 }}>{label}
-                <input type="number" value={form[key]} onChange={e => setForm(f => ({ ...f, [key]: Number(e.target.value) }))}
-                  style={{ width: '100%', padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)', marginTop: 4 }} />
+          <Section title="Monthly Breakdown" hi="मासिक विवरण">
+            <div className="k-formpanel__grid k-formpanel__grid--3">
+              {[['Basic', 'basic'], ['HRA', 'hra'], ['DA', 'da'], ['Special Allowance', 'special_allowance'], ['Conveyance', 'conveyance'], ['Medical', 'medical']].map(([label, key]) => (
+                <label key={key} className="k-formpanel__label">{label}
+                  <input type="number" value={form[key]} onChange={e => setForm(f => ({ ...f, [key]: Number(e.target.value) }))} className="k-formpanel__input" />
+                </label>
+              ))}
+            </div>
+          </Section>
+
+          <div style={{ display: 'flex', gap: 20, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+            {[['PF Enabled', 'pf_enabled'], ['ESI Enabled', 'esi_enabled'], ['Professional Tax', 'pt_applicable']].map(([label, key]) => (
+              <label key={key} style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--ink-2)' }}>
+                <input type="checkbox" checked={form[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.checked }))} /> {label}
               </label>
             ))}
-          </div>
-
-          <div style={{ display: 'flex', gap: 16, marginBottom: 12, flexWrap: 'wrap' }}>
-            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="checkbox" checked={form.pf_enabled} onChange={e => setForm(f => ({ ...f, pf_enabled: e.target.checked }))} /> PF Enabled
-            </label>
-            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="checkbox" checked={form.esi_enabled} onChange={e => setForm(f => ({ ...f, esi_enabled: e.target.checked }))} /> ESI Enabled
-            </label>
-            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="checkbox" checked={form.pt_applicable} onChange={e => setForm(f => ({ ...f, pt_applicable: e.target.checked }))} /> Professional Tax
-            </label>
-            <label style={{ fontSize: 12 }}>TDS Regime
-              <select value={form.tds_regime} onChange={e => setForm(f => ({ ...f, tds_regime: e.target.value }))}
-                style={{ marginLeft: 6, padding: '4px 8px', fontSize: 12, borderRadius: 4, border: '1px solid var(--rule-soft)' }}>
+            <label className="k-formpanel__label" style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>TDS Regime
+              <select value={form.tds_regime} onChange={e => setForm(f => ({ ...f, tds_regime: e.target.value }))} className="k-formpanel__input" style={{ width: 'auto' }}>
                 <option value="new">New</option>
                 <option value="old">Old</option>
               </select>
             </label>
           </div>
 
-          <button type="submit" className="k-btn k-btn--primary" disabled={saving} style={{ fontSize: 13 }}>{saving ? 'Saving…' : 'Save Structure'}</button>
+          <div className="k-formpanel__actions">
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving} style={{ fontSize: 13 }}>{saving ? 'Saving…' : 'Save Structure'}</button>
+          </div>
         </form>
       )}
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</p> : structures.length === 0 ? (
-        <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>No salary structures defined yet.</p>
+      {loading ? <Shimmer count={4} /> : structures.length === 0 ? (
+        <Empty icon="💰" title="No salary structures" sub="Define salary structures for your employees to enable payroll processing." cta="+ New Structure" onCta={() => { setShowForm(true); loadEmployees(); }} />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {structures.map(s => (
-            <div key={s.id} onClick={() => loadDetail(s.id)}
-              style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '14px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <ModCard key={s.id} onClick={() => loadDetail(s.id)}>
               <div>
                 <strong style={{ fontSize: 14 }}>{s.employee_name}</strong>
                 <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{s.employee_code}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>Effective: {s.effective_from}</p>
+                <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>Effective: {s.effective_from}</p>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{FMT(s.ctc_annual)}/yr</span>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{FMT(Number(s.ctc_annual || 0) / 12)}/mo</p>
+                <span style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{FMT(s.ctc_annual)}/yr</span>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>{FMT(Number(s.ctc_annual || 0) / 12)}/mo</p>
               </div>
-            </div>
+            </ModCard>
           ))}
         </div>
       )}
@@ -309,8 +291,7 @@ function PayrollTab() {
     try {
       await api.patch(`/v1/vetana/payroll/runs/${detail.id}/approve`);
       pushToast({ title: 'Payroll approved', type: 'success' });
-      loadDetail(detail.id);
-      load();
+      loadDetail(detail.id); load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
@@ -319,8 +300,7 @@ function PayrollTab() {
     try {
       await api.patch(`/v1/vetana/payroll/runs/${detail.id}/revert`);
       pushToast({ title: 'Payroll reverted to draft', type: 'success' });
-      loadDetail(detail.id);
-      load();
+      loadDetail(detail.id); load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
@@ -328,91 +308,85 @@ function PayrollTab() {
     const payslips = detail.payslips || [];
     return (
       <div>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => setDetail(null)}>← Back to runs</button>
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <BackButton onClick={() => setDetail(null)} label="Back to runs" />
+        <div className="k-detail">
+          <div className="k-detail__header">
             <div>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Payroll — {detail.month}</h3>
-              <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--ink-3)' }}>{detail.employee_count} employees</p>
+              <h3 className="k-detail__title">Payroll — {detail.month}</h3>
+              <p className="k-detail__sub">{detail.employee_count} employees</p>
             </div>
-            <Badge text={detail.status} color={RUN_COLORS[detail.status] || '#6E7B91'} />
+            <Badge text={detail.status} color={RUN_COLORS[detail.status]} />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
+          <div className="k-stats" style={{ marginBottom: 20 }}>
             <StatTile label="Gross" value={FMT(detail.total_gross)} />
-            <StatTile label="Deductions" value={FMT(detail.total_deductions)} />
-            <StatTile label="Net Pay" value={FMT(detail.total_net)} />
-            <StatTile label="PF (Total)" value={FMT(detail.total_pf)} />
-            <StatTile label="ESI (Total)" value={FMT(detail.total_esi)} />
-            <StatTile label="TDS" value={FMT(detail.total_tds)} />
+            <StatTile label="Deductions" value={FMT(detail.total_deductions)} variant="red" />
+            <StatTile label="Net Pay" value={FMT(detail.total_net)} variant="teal" />
+            <StatTile label="PF" value={FMT(detail.total_pf)} variant="amber" />
+          </div>
+          <div className="k-stats" style={{ marginBottom: 20 }}>
+            <StatTile label="ESI" value={FMT(detail.total_esi)} variant="amber" />
+            <StatTile label="TDS" value={FMT(detail.total_tds)} variant="red" />
           </div>
 
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-            {detail.status === 'processed' && <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={approveRun}>Approve Payroll</button>}
-            {detail.status === 'processed' && <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={revertRun}>Revert to Draft</button>}
-          </div>
+          {detail.status === 'processed' && (
+            <div className="k-detail__actions">
+              <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={approveRun}>Approve Payroll</button>
+              <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={revertRun}>Revert to Draft</button>
+            </div>
+          )}
         </div>
 
-        <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Employee Breakdown</h4>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '2px solid var(--rule-soft)' }}>
-              {['Employee', 'Days', 'Gross', 'PF', 'ESI', 'PT', 'TDS', 'Net Pay'].map(h => (
-                <th key={h} style={{ textAlign: h === 'Employee' ? 'left' : 'right', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
+        <Section title="Employee Breakdown" hi="कर्मचारी विवरण">
+          <DataTable columns={['Employee', { label: 'Days', align: 'right' }, { label: 'Gross', align: 'right' }, { label: 'PF', align: 'right' }, { label: 'ESI', align: 'right' }, { label: 'PT', align: 'right' }, { label: 'TDS', align: 'right' }, { label: 'Net Pay', align: 'right' }]}>
             {payslips.map(p => (
-              <tr key={p.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                <td style={{ padding: '8px 10px' }}>{p.employee_name} <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{p.employee_code}</span></td>
-                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.present_days}/{p.working_days}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{FMT(p.gross)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{FMT(p.pf_employee)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{FMT(p.esi_employee)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{FMT(p.professional_tax)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right' }}>{FMT(p.tds)}</td>
-                <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600 }}>{FMT(p.net_pay)}</td>
+              <tr key={p.id}>
+                <td>{p.employee_name} <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{p.employee_code}</span></td>
+                <Td align="right">{p.present_days}/{p.working_days}</Td>
+                <Td align="right" mono>{FMT(p.gross)}</Td>
+                <Td align="right" mono>{FMT(p.pf_employee)}</Td>
+                <Td align="right" mono>{FMT(p.esi_employee)}</Td>
+                <Td align="right" mono>{FMT(p.professional_tax)}</Td>
+                <Td align="right" mono>{FMT(p.tds)}</Td>
+                <Td align="right" mono bold>{FMT(p.net_pay)}</Td>
               </tr>
             ))}
-          </tbody>
-        </table>
+          </DataTable>
+        </Section>
       </div>
     );
   }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h4 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Payroll Runs</h4>
+      <div className="k-section__head" style={{ marginBottom: 20 }}>
+        <h3 className="k-section__title">Payroll Runs<span className="k-section__title-hi">वेतन संसाधन</span></h3>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-            style={{ padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)' }} />
+          <input type="month" value={month} onChange={e => setMonth(e.target.value)} className="k-formpanel__input" style={{ width: 'auto' }} />
           <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={processPayroll} disabled={processing}>
             {processing ? 'Processing…' : 'Process Payroll'}
           </button>
         </div>
       </div>
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</p> : runs.length === 0 ? (
-        <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>No payroll runs yet. Select a month and process.</p>
+      {loading ? <Shimmer count={4} /> : runs.length === 0 ? (
+        <Empty icon="📋" title="No payroll runs" sub="Select a month and process payroll to generate payslips for your team." />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {runs.map(r => (
-            <div key={r.id} onClick={() => loadDetail(r.id)}
-              style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '14px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <ModCard key={r.id} onClick={() => loadDetail(r.id)}>
               <div>
                 <strong style={{ fontSize: 14 }}>{r.month}</strong>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{r.employee_count} employees</p>
+                <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{r.employee_count} employees</p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ textAlign: 'right' }}>
-                  <span style={{ fontSize: 14, fontWeight: 600 }}>{FMT(r.total_net)}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{FMT(r.total_net)}</span>
                   <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--ink-3)' }}>Gross: {FMT(r.total_gross)}</p>
                 </div>
-                <Badge text={r.status} color={RUN_COLORS[r.status] || '#6E7B91'} />
+                <Badge text={r.status} color={RUN_COLORS[r.status]} />
               </div>
-            </div>
+            </ModCard>
           ))}
         </div>
       )}
@@ -449,8 +423,7 @@ function PayslipsTab() {
     try {
       await api.patch(`/v1/vetana/payslips/${detail.id}/disburse`);
       pushToast({ title: 'Payslip marked as disbursed', type: 'success' });
-      loadDetail(detail.id);
-      load();
+      loadDetail(detail.id); load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
@@ -458,76 +431,72 @@ function PayslipsTab() {
     const p = detail;
     return (
       <div>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => setDetail(null)}>← Back to list</button>
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <BackButton onClick={() => setDetail(null)} label="Back to list" />
+        <div className="k-detail">
+          <div className="k-detail__header">
             <div>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{p.payslip_number}</h3>
-              <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--ink-2)' }}>{p.employee_name} · {p.employee_code} · {p.month}</p>
+              <h3 className="k-detail__title">{p.payslip_number}</h3>
+              <p className="k-detail__sub">{p.employee_name} · {p.employee_code} · {p.month}</p>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <Badge text={p.status} color={PS_COLORS[p.status] || '#6E7B91'} />
+              <Badge text={p.status} color={PS_COLORS[p.status]} />
               {p.status === 'approved' && <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={disburse}>Mark Disbursed</button>}
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
-            <div>
-              <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Attendance</h4>
-              <div style={{ fontSize: 13 }}>
-                <p style={{ margin: '4px 0' }}>Working Days: {p.working_days} · Present: {p.present_days}</p>
-                <p style={{ margin: '4px 0' }}>Paid Leaves: {p.leaves_paid} · Unpaid: {p.leaves_unpaid}</p>
-                {Number(p.overtime_hours) > 0 && <p style={{ margin: '4px 0' }}>Overtime: {p.overtime_hours}h</p>}
-              </div>
+          <div className="k-metabar">
+            <span>Working Days: <strong>{p.working_days}</strong></span>
+            <span>Present: <strong>{p.present_days}</strong></span>
+            <span>Paid Leaves: <strong>{p.leaves_paid}</strong></span>
+            <span>Unpaid: <strong>{p.leaves_unpaid}</strong></span>
+            {Number(p.overtime_hours) > 0 && <span>Overtime: <strong>{p.overtime_hours}h</strong></span>}
+          </div>
 
-              <h4 style={{ fontSize: 13, fontWeight: 600, margin: '16px 0 8px' }}>Earnings</h4>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <tbody>
-                  {[['Basic', p.basic], ['HRA', p.hra], ['DA', p.da], ['Special Allowance', p.special_allowance],
-                    ['Conveyance', p.conveyance], ['Medical', p.medical], ['Overtime', p.overtime_pay]].filter(([, v]) => Number(v) > 0).map(([label, val]) => (
-                    <tr key={label} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                      <td style={{ padding: '4px 0' }}>{label}</td>
-                      <td style={{ padding: '4px 0', textAlign: 'right' }}>{FMT(val)}</td>
-                    </tr>
-                  ))}
-                  <tr style={{ borderTop: '2px solid var(--rule-soft)' }}>
-                    <td style={{ padding: '6px 0', fontWeight: 700 }}>Gross</td>
-                    <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700 }}>{FMT(p.gross)}</td>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 28 }}>
+            <Section title="Earnings" hi="आय">
+              <DataTable columns={['Component', { label: 'Amount', align: 'right' }]}>
+                {[['Basic', p.basic], ['HRA', p.hra], ['DA', p.da], ['Special Allowance', p.special_allowance],
+                  ['Conveyance', p.conveyance], ['Medical', p.medical], ['Overtime', p.overtime_pay]].filter(([, v]) => Number(v) > 0).map(([label, val]) => (
+                  <tr key={label}>
+                    <td>{label}</td>
+                    <Td align="right" mono>{FMT(val)}</Td>
                   </tr>
-                </tbody>
-              </table>
-            </div>
+                ))}
+                <tr style={{ background: 'color-mix(in srgb, var(--k-primary) 4%, transparent)' }}>
+                  <td style={{ fontWeight: 700 }}>Gross</td>
+                  <Td align="right" mono bold>{FMT(p.gross)}</Td>
+                </tr>
+              </DataTable>
+            </Section>
 
             <div>
-              <h4 style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Deductions</h4>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <tbody>
+              <Section title="Deductions" hi="कटौती">
+                <DataTable columns={['Component', { label: 'Amount', align: 'right' }]}>
                   {[['PF (Employee)', p.pf_employee], ['ESI (Employee)', p.esi_employee],
                     ['Professional Tax', p.professional_tax], ['TDS', p.tds]].filter(([, v]) => Number(v) > 0).map(([label, val]) => (
-                    <tr key={label} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                      <td style={{ padding: '4px 0' }}>{label}</td>
-                      <td style={{ padding: '4px 0', textAlign: 'right', color: '#ef4444' }}>{FMT(val)}</td>
+                    <tr key={label}>
+                      <td>{label}</td>
+                      <Td align="right" mono color="#ef4444">{FMT(val)}</Td>
                     </tr>
                   ))}
-                  <tr style={{ borderTop: '2px solid var(--rule-soft)' }}>
-                    <td style={{ padding: '6px 0', fontWeight: 700 }}>Total Deductions</td>
-                    <td style={{ padding: '6px 0', textAlign: 'right', fontWeight: 700, color: '#ef4444' }}>{FMT(p.total_deductions)}</td>
+                  <tr style={{ background: 'color-mix(in srgb, #ef4444 4%, transparent)' }}>
+                    <td style={{ fontWeight: 700 }}>Total Deductions</td>
+                    <Td align="right" mono bold color="#ef4444">{FMT(p.total_deductions)}</Td>
                   </tr>
-                </tbody>
-              </table>
+                </DataTable>
+              </Section>
 
-              <div style={{ marginTop: 16, padding: 16, background: 'var(--surface-2, #f9fafb)', borderRadius: 8, textAlign: 'center' }}>
-                <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 4px' }}>Net Pay</p>
-                <p style={{ fontSize: 24, fontWeight: 700, margin: 0, color: '#10b981' }}>{FMT(p.net_pay)}</p>
+              <div className="k-netbox">
+                <p className="k-netbox__label">Net Pay</p>
+                <p className="k-netbox__value">{FMT(p.net_pay)}</p>
               </div>
 
               <div style={{ marginTop: 16, fontSize: 12, color: 'var(--ink-3)' }}>
-                <p style={{ margin: '2px 0' }}>PF (Employer): {FMT(p.pf_employer)}</p>
-                <p style={{ margin: '2px 0' }}>ESI (Employer): {FMT(p.esi_employer)}</p>
+                <p style={{ margin: '3px 0' }}>PF (Employer): {FMT(p.pf_employer)}</p>
+                <p style={{ margin: '3px 0' }}>ESI (Employer): {FMT(p.esi_employer)}</p>
+                {p.pan && <p style={{ margin: '3px 0' }}>PAN: {p.pan} · UAN: {p.uan || '—'}</p>}
+                {p.bank_name && <p style={{ margin: '3px 0' }}>Bank: {p.bank_name} · A/C: {p.bank_account}</p>}
               </div>
-
-              {p.pan && <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 8 }}>PAN: {p.pan} · UAN: {p.uan || '—'}</p>}
-              {p.bank_name && <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>Bank: {p.bank_name} · A/C: {p.bank_account}</p>}
             </div>
           </div>
         </div>
@@ -537,29 +506,27 @@ function PayslipsTab() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h4 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Payslips</h4>
-        <input type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
-          style={{ padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)' }} />
+      <div className="k-section__head" style={{ marginBottom: 20 }}>
+        <h3 className="k-section__title">Payslips<span className="k-section__title-hi">वेतन पर्ची</span></h3>
+        <input type="month" value={monthFilter} onChange={e => setMonthFilter(e.target.value)} className="k-formpanel__input" style={{ width: 'auto' }} />
       </div>
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</p> : payslips.length === 0 ? (
-        <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>No payslips generated yet.</p>
+      {loading ? <Shimmer count={4} /> : payslips.length === 0 ? (
+        <Empty icon="📄" title="No payslips" sub="Process payroll to generate payslips for your employees." />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {payslips.map(p => (
-            <div key={p.id} onClick={() => loadDetail(p.id)}
-              style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '14px 18px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <ModCard key={p.id} onClick={() => loadDetail(p.id)}>
               <div>
                 <strong style={{ fontSize: 14 }}>{p.employee_name}</strong>
                 <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{p.payslip_number}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{p.month}</p>
+                <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{p.month}</p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{FMT(p.net_pay)}</span>
-                <Badge text={p.status} color={PS_COLORS[p.status] || '#6E7B91'} />
+                <span style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{FMT(p.net_pay)}</span>
+                <Badge text={p.status} color={PS_COLORS[p.status]} />
               </div>
-            </div>
+            </ModCard>
           ))}
         </div>
       )}
@@ -569,7 +536,6 @@ function PayslipsTab() {
 
 
 function StatutoryTab() {
-  const { pushToast } = useToast();
   const [data, setData] = useState(null);
   const [month, setMonth] = useState('');
 
@@ -584,56 +550,50 @@ function StatutoryTab() {
     } catch {}
   }
 
-  if (!data) return <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</p>;
+  if (!data) return <Shimmer count={6} />;
 
   const totals = data.totals || {};
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h4 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Statutory Summary — {data.month}</h4>
-        <input type="month" value={month} onChange={e => setMonth(e.target.value)}
-          style={{ padding: '8px 10px', fontSize: 13, borderRadius: 6, border: '1px solid var(--rule-soft)' }} />
+      <div className="k-section__head" style={{ marginBottom: 20 }}>
+        <h3 className="k-section__title">Statutory Summary — {data.month}<span className="k-section__title-hi">वैधानिक</span></h3>
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} className="k-formpanel__input" style={{ width: 'auto' }} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 24 }}>
-        <StatTile label="PF (Employee)" value={FMT(totals.total_pf_employee)} />
-        <StatTile label="PF (Employer)" value={FMT(totals.total_pf_employer)} />
-        <StatTile label="ESI (Employee)" value={FMT(totals.total_esi_employee)} />
-        <StatTile label="ESI (Employer)" value={FMT(totals.total_esi_employer)} />
-        <StatTile label="Professional Tax" value={FMT(totals.total_pt)} />
-        <StatTile label="TDS" value={FMT(totals.total_tds)} />
-      </div>
+      <Section title="Totals" hi="कुल">
+        <div className="k-stats">
+          <StatTile label="PF (Employee)" value={FMT(totals.total_pf_employee)} variant="amber" />
+          <StatTile label="PF (Employer)" value={FMT(totals.total_pf_employer)} variant="amber" />
+          <StatTile label="ESI (Employee)" value={FMT(totals.total_esi_employee)} />
+          <StatTile label="ESI (Employer)" value={FMT(totals.total_esi_employer)} />
+        </div>
+        <div className="k-stats" style={{ marginTop: 12 }}>
+          <StatTile label="Professional Tax" value={FMT(totals.total_pt)} />
+          <StatTile label="TDS" value={FMT(totals.total_tds)} variant="red" />
+        </div>
+      </Section>
 
       {data.employees && data.employees.length > 0 && (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 800 }}>
-            <thead>
-              <tr style={{ borderBottom: '2px solid var(--rule-soft)' }}>
-                {['Employee', 'Code', 'PAN', 'UAN', 'Basic', 'Gross', 'PF(E)', 'PF(R)', 'ESI(E)', 'ESI(R)', 'PT', 'TDS'].map(h => (
-                  <th key={h} style={{ textAlign: ['Employee', 'Code', 'PAN', 'UAN'].includes(h) ? 'left' : 'right', padding: '6px 8px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 10, textTransform: 'uppercase' }}>{h}</th>
-                ))}
+        <Section title="Employee-wise Breakdown" hi="कर्मचारी विवरण">
+          <DataTable columns={['Employee', 'Code', 'PAN', 'UAN', { label: 'Basic', align: 'right' }, { label: 'Gross', align: 'right' }, { label: 'PF(E)', align: 'right' }, { label: 'PF(R)', align: 'right' }, { label: 'ESI(E)', align: 'right' }, { label: 'ESI(R)', align: 'right' }, { label: 'PT', align: 'right' }, { label: 'TDS', align: 'right' }]}>
+            {data.employees.map((e, i) => (
+              <tr key={i}>
+                <td>{e.employee_name}</td>
+                <Td mono>{e.employee_code}</Td>
+                <Td mono>{e.pan || '—'}</Td>
+                <Td mono>{e.uan || '—'}</Td>
+                <Td align="right" mono>{FMT(e.basic)}</Td>
+                <Td align="right" mono>{FMT(e.gross)}</Td>
+                <Td align="right" mono>{FMT(e.pf_employee)}</Td>
+                <Td align="right" mono>{FMT(e.pf_employer)}</Td>
+                <Td align="right" mono>{FMT(e.esi_employee)}</Td>
+                <Td align="right" mono>{FMT(e.esi_employer)}</Td>
+                <Td align="right" mono>{FMT(e.professional_tax)}</Td>
+                <Td align="right" mono>{FMT(e.tds)}</Td>
               </tr>
-            </thead>
-            <tbody>
-              {data.employees.map((e, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                  <td style={{ padding: '6px 8px' }}>{e.employee_name}</td>
-                  <td style={{ padding: '6px 8px', fontFamily: 'var(--font-mono)' }}>{e.employee_code}</td>
-                  <td style={{ padding: '6px 8px', fontFamily: 'var(--font-mono)' }}>{e.pan || '—'}</td>
-                  <td style={{ padding: '6px 8px', fontFamily: 'var(--font-mono)' }}>{e.uan || '—'}</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>{FMT(e.basic)}</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>{FMT(e.gross)}</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>{FMT(e.pf_employee)}</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>{FMT(e.pf_employer)}</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>{FMT(e.esi_employee)}</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>{FMT(e.esi_employer)}</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>{FMT(e.professional_tax)}</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>{FMT(e.tds)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </DataTable>
+        </Section>
       )}
     </div>
   );
