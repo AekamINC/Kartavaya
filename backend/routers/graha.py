@@ -94,37 +94,62 @@ class ActivityCreate(BaseModel):
     scheduled_at: str = ""
 
 
+class FollowUpCreate(BaseModel):
+    title: str
+    description: str = ""
+    due_at: str
+    remind_at: str = ""
+    contact_id: str = ""
+    deal_id: str = ""
+    assigned_to: str = ""
+
+
+class LabelCreate(BaseModel):
+    name: str
+    color: str = "#6366f1"
+
+
 # ── Contacts ─────────────────────────────────────────────────
 
 @router.get("/contacts")
 async def list_contacts(
     contact_type: Optional[str] = None,
     search: Optional[str] = None,
+    label_id: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
     pool = await get_pool()
     query = (
-        "SELECT id, name, email, phone, company, designation, contact_type, "
-        "tags, source, created_at "
-        "FROM staging.graha_contacts "
-        "WHERE org_id=$1::uuid AND is_active=TRUE "
+        "SELECT c.id, c.name, c.email, c.phone, c.company, c.designation, c.contact_type, "
+        "c.tags, c.source, c.lead_score, c.assigned_to, c.last_contacted_at, c.created_at "
+        "FROM staging.graha_contacts c "
     )
+
+    if label_id:
+        query += "JOIN staging.graha_contact_labels cl ON cl.contact_id = c.id "
+
+    query += "WHERE c.org_id=$1::uuid AND c.is_active=TRUE "
     params: list = [org_id]
     idx = 2
 
+    if label_id:
+        query += f"AND cl.label_id=${idx}::uuid "
+        params.append(label_id)
+        idx += 1
+
     if contact_type:
-        query += f"AND contact_type=${idx} "
+        query += f"AND c.contact_type=${idx} "
         params.append(contact_type)
         idx += 1
 
     if search:
-        query += f"AND (name ILIKE '%' || ${idx} || '%' OR email ILIKE '%' || ${idx} || '%' OR company ILIKE '%' || ${idx} || '%') "
+        query += f"AND (c.name ILIKE '%' || ${idx} || '%' OR c.email ILIKE '%' || ${idx} || '%' OR c.company ILIKE '%' || ${idx} || '%') "
         params.append(search)
         idx += 1
 
-    query += "ORDER BY created_at DESC LIMIT 200"
+    query += "ORDER BY c.created_at DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
     return {"data": [dict(r) for r in rows]}
 
@@ -180,7 +205,25 @@ async def get_contact(
         "FROM staging.graha_activities WHERE contact_id=$1::uuid ORDER BY created_at DESC LIMIT 20",
         str(contact_id),
     )
-    return {"contact": dict(row), "deals": [dict(d) for d in deals], "activities": [dict(a) for a in activities]}
+    follow_ups = await pool.fetch(
+        "SELECT id, title, description, due_at, remind_at, is_completed, completed_at, "
+        "assigned_to, deal_id, created_at "
+        "FROM staging.graha_follow_ups WHERE contact_id=$1::uuid ORDER BY due_at ASC",
+        str(contact_id),
+    )
+    labels = await pool.fetch(
+        "SELECT l.id, l.name, l.color FROM staging.graha_labels l "
+        "JOIN staging.graha_contact_labels cl ON cl.label_id = l.id "
+        "WHERE cl.contact_id=$1::uuid ORDER BY l.name",
+        str(contact_id),
+    )
+    return {
+        "contact": dict(row),
+        "deals": [dict(d) for d in deals],
+        "activities": [dict(a) for a in activities],
+        "follow_ups": [dict(f) for f in follow_ups],
+        "labels": [dict(lb) for lb in labels],
+    }
 
 
 @router.patch("/contacts/{contact_id}")
@@ -343,6 +386,57 @@ async def create_deal(
     return {"status": "created", **dict(row)}
 
 
+@router.get("/deals/kanban")
+async def deals_kanban(
+    pipeline_id: Optional[str] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+
+    pid = pipeline_id
+    if not pid:
+        pid = await pool.fetchval(
+            "SELECT id::text FROM staging.graha_pipelines "
+            "WHERE org_id=$1::uuid AND is_default=TRUE AND is_active=TRUE",
+            org_id,
+        )
+    if not pid:
+        return {"stages": [], "columns": {}}
+
+    pipeline = await pool.fetchrow(
+        "SELECT stages FROM staging.graha_pipelines "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        pid, org_id,
+    )
+    if not pipeline:
+        raise HTTPException(404, "Pipeline not found")
+
+    stages = pipeline["stages"]
+
+    rows = await pool.fetch(
+        "SELECT d.id, d.title, d.value, d.stage, d.tags, d.assigned_to, "
+        "d.expected_close_date, d.owner_id, "
+        "c.name as contact_name, c.company as contact_company "
+        "FROM staging.graha_deals d "
+        "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+        "WHERE d.org_id=$1::uuid AND d.pipeline_id=$2::uuid AND d.is_active=TRUE "
+        "ORDER BY d.created_at DESC",
+        org_id, pid,
+    )
+
+    columns: dict[str, list] = {s: [] for s in stages}
+    for r in rows:
+        stage = r["stage"]
+        if stage in columns:
+            columns[stage].append(dict(r))
+        else:
+            columns.setdefault(stage, []).append(dict(r))
+
+    return {"stages": stages, "columns": columns}
+
+
 @router.get("/deals/{deal_id}")
 async def get_deal(
     deal_id: UUID,
@@ -468,3 +562,239 @@ async def complete_activity(
         str(activity_id), org_id,
     )
     return {"status": "completed"}
+
+
+# ── Follow-ups ──────────────────────────────────────────────
+
+@router.get("/follow-ups")
+async def list_follow_ups(
+    assigned_to: Optional[str] = None,
+    contact_id: Optional[str] = None,
+    deal_id: Optional[str] = None,
+    is_completed: Optional[bool] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    query = (
+        "SELECT f.id, f.title, f.description, f.due_at, f.remind_at, "
+        "f.is_completed, f.completed_at, f.assigned_to, f.contact_id, f.deal_id, "
+        "f.created_by, f.created_at, "
+        "c.name as contact_name, d.title as deal_title "
+        "FROM staging.graha_follow_ups f "
+        "LEFT JOIN staging.graha_contacts c ON c.id = f.contact_id "
+        "LEFT JOIN staging.graha_deals d ON d.id = f.deal_id "
+        "WHERE f.org_id=$1::uuid "
+    )
+    params: list = [org_id]
+    idx = 2
+
+    if is_completed is None:
+        query += "AND f.is_completed=FALSE "
+    else:
+        query += f"AND f.is_completed=${idx} "
+        params.append(is_completed)
+        idx += 1
+
+    if assigned_to:
+        query += f"AND f.assigned_to=${idx}::uuid "
+        params.append(assigned_to)
+        idx += 1
+
+    if contact_id:
+        query += f"AND f.contact_id=${idx}::uuid "
+        params.append(contact_id)
+        idx += 1
+
+    if deal_id:
+        query += f"AND f.deal_id=${idx}::uuid "
+        params.append(deal_id)
+        idx += 1
+
+    query += "ORDER BY f.due_at ASC LIMIT 200"
+    rows = await pool.fetch(query, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/follow-ups")
+async def create_follow_up(
+    body: FollowUpCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    assigned = body.assigned_to or user["user_id"]
+    row = await pool.fetchrow(
+        "INSERT INTO staging.graha_follow_ups "
+        "(org_id, contact_id, deal_id, title, description, due_at, remind_at, "
+        " assigned_to, created_by) "
+        "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, "
+        " $6::timestamptz, NULLIF($7,'')::timestamptz, $8::uuid, $9) "
+        "RETURNING id, title, due_at",
+        org_id, body.contact_id, body.deal_id, body.title, body.description,
+        body.due_at, body.remind_at, assigned, user["user_id"],
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.patch("/follow-ups/{follow_up_id}/complete")
+async def complete_follow_up(
+    follow_up_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.graha_follow_ups SET is_completed=TRUE, completed_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(follow_up_id), org_id,
+    )
+    return {"status": "completed"}
+
+
+@router.delete("/follow-ups/{follow_up_id}")
+async def delete_follow_up(
+    follow_up_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "DELETE FROM staging.graha_follow_ups WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(follow_up_id), org_id,
+    )
+    return {"status": "deleted"}
+
+
+# ── Labels ──────────────────────────────────────────────────
+
+@router.get("/labels")
+async def list_labels(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id, name, color, created_at FROM staging.graha_labels "
+        "WHERE org_id=$1::uuid ORDER BY name",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/labels")
+async def create_label(
+    body: LabelCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    try:
+        row = await pool.fetchrow(
+            "INSERT INTO staging.graha_labels (org_id, name, color) "
+            "VALUES ($1::uuid, $2, $3) RETURNING id, name, color",
+            org_id, body.name, body.color,
+        )
+    except Exception:
+        raise HTTPException(409, "Label with this name already exists")
+    return {"status": "created", **dict(row)}
+
+
+@router.delete("/labels/{label_id}")
+async def delete_label(
+    label_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "DELETE FROM staging.graha_labels WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(label_id), org_id,
+    )
+    return {"status": "deleted"}
+
+
+@router.post("/contacts/{contact_id}/labels/{label_id}")
+async def add_contact_label(
+    contact_id: UUID,
+    label_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    contact = await pool.fetchval(
+        "SELECT id FROM staging.graha_contacts WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        str(contact_id), org_id,
+    )
+    if not contact:
+        raise HTTPException(404, "Contact not found")
+    label = await pool.fetchval(
+        "SELECT id FROM staging.graha_labels WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(label_id), org_id,
+    )
+    if not label:
+        raise HTTPException(404, "Label not found")
+
+    try:
+        await pool.execute(
+            "INSERT INTO staging.graha_contact_labels (contact_id, label_id) VALUES ($1::uuid, $2::uuid) "
+            "ON CONFLICT DO NOTHING",
+            str(contact_id), str(label_id),
+        )
+    except Exception:
+        raise HTTPException(400, "Could not add label")
+    return {"status": "added"}
+
+
+@router.delete("/contacts/{contact_id}/labels/{label_id}")
+async def remove_contact_label(
+    contact_id: UUID,
+    label_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "DELETE FROM staging.graha_contact_labels WHERE contact_id=$1::uuid AND label_id=$2::uuid",
+        str(contact_id), str(label_id),
+    )
+    return {"status": "removed"}
+
+
+# ── Lead Conversion ─────────────────────────────────────────
+
+@router.post("/contacts/{contact_id}/convert")
+async def convert_lead(
+    contact_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT id, contact_type FROM staging.graha_contacts "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        str(contact_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Contact not found")
+    if row["contact_type"] == "customer":
+        raise HTTPException(400, "Contact is already a customer")
+
+    updated = await pool.fetchrow(
+        "UPDATE staging.graha_contacts "
+        "SET contact_type='customer', converted_at=NOW(), updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid "
+        "RETURNING *",
+        str(contact_id), org_id,
+    )
+    return {"status": "converted", "contact": dict(updated)}

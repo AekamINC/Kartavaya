@@ -112,6 +112,22 @@ class HolidayCreate(BaseModel):
     is_optional: bool = False
 
 
+class AnnouncementCreate(BaseModel):
+    title: str
+    body: str = ""
+    priority: str = "normal"
+    pinned: bool = False
+    expires_at: str = ""
+
+
+class AnnouncementUpdate(BaseModel):
+    title: str | None = None
+    body: str | None = None
+    priority: str | None = None
+    pinned: bool | None = None
+    expires_at: str | None = None
+
+
 # ── Employees ────────────────────────────────────────────────
 
 @router.get("/employees")
@@ -646,9 +662,229 @@ async def hrms_stats(
         "WHERE org_id=$1::uuid AND date=CURRENT_DATE AND status IN ('present','late')",
         org_id,
     )
+    announcements_count = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.manav_announcements "
+        "WHERE org_id=$1::uuid AND is_active=TRUE "
+        "AND (expires_at IS NULL OR expires_at > NOW())",
+        org_id,
+    )
+    pending_leaves_today = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.manav_leave_requests "
+        "WHERE org_id=$1::uuid AND status='pending' "
+        "AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE",
+        org_id,
+    )
+    clocked_in_count = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.manav_attendance "
+        "WHERE org_id=$1::uuid AND date=CURRENT_DATE "
+        "AND check_in IS NOT NULL AND check_out IS NULL",
+        org_id,
+    )
+    on_leave_today = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.manav_leave_requests "
+        "WHERE org_id=$1::uuid AND status='approved' "
+        "AND start_date <= CURRENT_DATE AND end_date >= CURRENT_DATE",
+        org_id,
+    )
     return {
         "total_employees": emp_count,
         "departments": dept_count,
         "pending_leaves": pending_leaves,
         "today_present": today_present,
+        "announcements_count": announcements_count,
+        "pending_leaves_today": pending_leaves_today,
+        "clocked_in_count": clocked_in_count,
+        "on_leave_today": on_leave_today,
     }
+
+
+# ── Announcements ───────────────────────────────────────────
+
+@router.get("/announcements")
+async def list_announcements(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT a.id, a.title, a.body, a.priority, a.pinned, "
+        "a.published_at, a.expires_at, a.created_at, "
+        "e.name as creator_name "
+        "FROM staging.manav_announcements a "
+        "LEFT JOIN staging.manav_employees e ON e.user_id = a.created_by AND e.org_id = a.org_id "
+        "WHERE a.org_id=$1::uuid AND a.is_active=TRUE "
+        "AND (a.expires_at IS NULL OR a.expires_at > NOW()) "
+        "ORDER BY a.pinned DESC, a.published_at DESC",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/announcements")
+async def create_announcement(
+    body: AnnouncementCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+
+    valid_priorities = ("low", "normal", "high", "urgent")
+    if body.priority not in valid_priorities:
+        raise HTTPException(400, f"priority must be one of: {', '.join(valid_priorities)}")
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_announcements "
+        "(org_id, title, body, priority, pinned, expires_at, published_at, created_by) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, NULLIF($6,'')::timestamptz, NOW(), $7) "
+        "RETURNING id, title",
+        org_id, body.title, body.body, body.priority,
+        body.pinned, body.expires_at, user["user_id"],
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.patch("/announcements/{announcement_id}")
+async def update_announcement(
+    announcement_id: UUID,
+    body: AnnouncementUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    sets = []
+    params = [str(announcement_id), org_id]
+    idx = 3
+    for k, v in updates.items():
+        if k == "expires_at":
+            sets.append(f"expires_at=NULLIF(${idx},'')::timestamptz")
+        else:
+            sets.append(f"{k}=${idx}")
+        params.append(v)
+        idx += 1
+
+    await pool.execute(
+        f"UPDATE staging.manav_announcements SET {', '.join(sets)} "
+        f"WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        *params,
+    )
+    return {"status": "updated"}
+
+
+@router.delete("/announcements/{announcement_id}")
+async def delete_announcement(
+    announcement_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.manav_announcements SET is_active=FALSE "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(announcement_id), org_id,
+    )
+    return {"status": "deleted"}
+
+
+# ── Leave Conflict Detection ────────────────────────────────
+
+@router.get("/leaves/check-conflicts")
+async def check_leave_conflicts(
+    employee_id: str,
+    start_date: str,
+    end_date: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+
+    emp = await pool.fetchrow(
+        "SELECT id, department FROM staging.manav_employees "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        employee_id, org_id,
+    )
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    if not emp["department"]:
+        return {"conflicts": [], "conflict_count": 0, "department_size": 0, "exceeds_threshold": False}
+
+    dept_size = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.manav_employees "
+        "WHERE org_id=$1::uuid AND department=$2 AND is_active=TRUE AND status='active'",
+        org_id, emp["department"],
+    )
+
+    conflicts = await pool.fetch(
+        "SELECT lr.id, lr.start_date, lr.end_date, lr.days, lr.status, "
+        "e.name as employee_name, e.employee_code "
+        "FROM staging.manav_leave_requests lr "
+        "JOIN staging.manav_employees e ON e.id = lr.employee_id "
+        "WHERE lr.org_id=$1::uuid AND lr.status IN ('approved','pending') "
+        "AND e.department=$2 AND e.is_active=TRUE "
+        "AND lr.employee_id != $3::uuid "
+        "AND lr.start_date <= $5::date AND lr.end_date >= $4::date "
+        "ORDER BY lr.start_date",
+        org_id, emp["department"], employee_id, start_date, end_date,
+    )
+
+    conflict_count = len(conflicts)
+    on_leave_count = conflict_count + 1
+    exceeds_threshold = dept_size > 0 and (on_leave_count / dept_size) > 0.30
+
+    return {
+        "conflicts": [dict(r) for r in conflicts],
+        "conflict_count": conflict_count,
+        "department": emp["department"],
+        "department_size": dept_size,
+        "on_leave_count": on_leave_count,
+        "exceeds_threshold": exceeds_threshold,
+    }
+
+
+# ── Team Performance Summary ────────────────────────────────
+
+@router.get("/performance/summary")
+async def performance_summary(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+
+    today = date.today()
+    if not from_date:
+        from_date = f"{today.year}-{today.month:02d}-01"
+    if not to_date:
+        to_date = today.isoformat()
+
+    rows = await pool.fetch(
+        "SELECT e.id, e.name, e.department, "
+        "COUNT(*) FILTER (WHERE a.status='present') as days_present, "
+        "COUNT(*) FILTER (WHERE a.status='absent') as days_absent, "
+        "COUNT(*) FILTER (WHERE a.status='late') as days_late, "
+        "COALESCE(SUM(a.work_hours),0) as total_work_hours, "
+        "COALESCE(ROUND(AVG(a.work_hours)::numeric,2),0) as avg_work_hours, "
+        "COALESCE(SUM(a.overtime_hours),0) as overtime_hours, "
+        "COALESCE(("
+        "  SELECT SUM(lr.days) FROM staging.manav_leave_requests lr "
+        "  WHERE lr.employee_id=e.id AND lr.status='approved' "
+        "  AND lr.start_date >= $2::date AND lr.end_date <= $3::date"
+        "),0) as leaves_taken "
+        "FROM staging.manav_employees e "
+        "LEFT JOIN staging.manav_attendance a ON a.employee_id=e.id "
+        "  AND a.date >= $2::date AND a.date <= $3::date "
+        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.status='active' "
+        "GROUP BY e.id, e.name, e.department ORDER BY e.name",
+        org_id, from_date, to_date,
+    )
+    return {"data": [dict(r) for r in rows], "from_date": from_date, "to_date": to_date}

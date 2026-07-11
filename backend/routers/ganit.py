@@ -70,6 +70,7 @@ class InvoiceCreate(BaseModel):
     discount: float = 0
     notes: str = ""
     terms: str = ""
+    doc_status: str = ""
 
 
 class PaymentRecord(BaseModel):
@@ -78,6 +79,85 @@ class PaymentRecord(BaseModel):
     payment_method: str = "bank_transfer"
     reference: str = ""
     notes: str = ""
+
+
+class ExpenseCreate(BaseModel):
+    title: str
+    category: str = "Miscellaneous"
+    amount: float = 0
+    tax_amount: float = 0
+    total: float = 0
+    expense_date: str = ""
+    vendor: str = ""
+    reference: str = ""
+    notes: str = ""
+    receipt_urls: list[str] = []
+    is_billable: bool = False
+    contact_id: str = ""
+    project_id: str = ""
+
+
+class ExpenseUpdate(BaseModel):
+    title: str | None = None
+    category: str | None = None
+    amount: float | None = None
+    tax_amount: float | None = None
+    total: float | None = None
+    expense_date: str | None = None
+    vendor: str | None = None
+    reference: str | None = None
+    notes: str | None = None
+    receipt_urls: list[str] | None = None
+    is_billable: bool | None = None
+    contact_id: str | None = None
+    project_id: str | None = None
+
+
+class ExpenseCategoryCreate(BaseModel):
+    name: str
+    icon: str = ""
+
+
+class ContractCreate(BaseModel):
+    title: str
+    description: str = ""
+    contract_value: float = 0
+    start_date: str = ""
+    end_date: str = ""
+    contact_id: str = ""
+    renewal_reminder_days: int = 30
+    notes: str = ""
+
+
+class ContractUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    contract_value: float | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    contact_id: str | None = None
+    status: str | None = None
+    renewal_reminder_days: int | None = None
+    file_url: str | None = None
+    notes: str | None = None
+
+
+class RecurringCreate(BaseModel):
+    contact_id: str = ""
+    template_items: list[dict] = []
+    subtotal: float = 0
+    gst_rate: float = 18.0
+    is_igst: bool = False
+    frequency: str = "monthly"
+    next_date: str
+    end_date: str = ""
+    auto_send: bool = False
+    notes: str = ""
+    terms: str = ""
+
+
+class DocStatusUpdate(BaseModel):
+    doc_status: str
 
 
 # ── Helper: compute GST breakdown ───────────────────────────
@@ -291,20 +371,27 @@ async def create_invoice(
     inv_date = body.invoice_date or date.today().isoformat()
     due = body.due_date or None
 
+    if body.doc_status and body.doc_status in ("draft", "final"):
+        doc_status = body.doc_status
+    elif body.invoice_type == "quotation":
+        doc_status = "draft"
+    else:
+        doc_status = "final"
+
     row = await pool.fetchrow(
         "INSERT INTO staging.ganit_invoices "
         "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
         " place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
-        " balance_due, notes, terms, created_by) "
+        " balance_due, notes, terms, created_by, doc_status) "
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6::date, $7::date, "
-        " $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $16, $17, $18, $19) "
-        "RETURNING id, invoice_number, total",
+        " $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $16, $17, $18, $19, $20) "
+        "RETURNING id, invoice_number, total, doc_status",
         org_id, body.contact_id, body.deal_id, inv_number, body.invoice_type,
         inv_date, due, body.place_of_supply, body.is_igst,
         json.dumps(computed["line_items"]),
         computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
         computed["discount"], computed["total"],
-        body.notes, body.terms, user["user_id"],
+        body.notes, body.terms, user["user_id"], doc_status,
     )
     return {"status": "created", **dict(row)}
 
@@ -418,3 +505,542 @@ async def invoice_stats(
         org_id,
     )
     return dict(totals)
+
+
+# ── Invoice Lifecycle ───────────────────────────────────────
+
+@router.patch("/invoices/{invoice_id}/status")
+async def update_invoice_status(
+    invoice_id: UUID,
+    body: DocStatusUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    valid = ("draft", "final", "sent", "viewed")
+    if body.doc_status not in valid:
+        raise HTTPException(400, f"doc_status must be one of: {', '.join(valid)}")
+
+    inv = await pool.fetchrow(
+        "SELECT doc_status FROM staging.ganit_invoices "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        str(invoice_id), org_id,
+    )
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+
+    extras = ""
+    if body.doc_status == "sent":
+        extras = ", sent_at=NOW()"
+    elif body.doc_status == "viewed":
+        extras = ", viewed_at=NOW()"
+
+    await pool.execute(
+        f"UPDATE staging.ganit_invoices SET doc_status=$1{extras}, updated_at=NOW() "
+        f"WHERE id=$2::uuid AND org_id=$3::uuid",
+        body.doc_status, str(invoice_id), org_id,
+    )
+    return {"status": "updated", "doc_status": body.doc_status}
+
+
+# ── Estimate Workflow ───────────────────────────────────────
+
+@router.post("/invoices/{invoice_id}/accept-estimate")
+async def accept_estimate(
+    invoice_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    inv = await pool.fetchrow(
+        "SELECT invoice_type, estimate_status FROM staging.ganit_invoices "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        str(invoice_id), org_id,
+    )
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv["invoice_type"] != "quotation":
+        raise HTTPException(400, "Only quotations can be accepted as estimates")
+    if inv["estimate_status"] == "converted":
+        raise HTTPException(400, "Estimate already converted to invoice")
+
+    await pool.execute(
+        "UPDATE staging.ganit_invoices SET estimate_status='accepted', updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(invoice_id), org_id,
+    )
+    return {"status": "accepted"}
+
+
+@router.post("/invoices/{invoice_id}/convert-to-invoice")
+async def convert_to_invoice(
+    invoice_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    inv = await pool.fetchrow(
+        "SELECT * FROM staging.ganit_invoices "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        str(invoice_id), org_id,
+    )
+    if not inv:
+        raise HTTPException(404, "Invoice not found")
+    if inv["invoice_type"] != "quotation":
+        raise HTTPException(400, "Only quotations can be converted to invoices")
+    if inv["estimate_status"] == "converted":
+        raise HTTPException(400, "Estimate already converted")
+
+    inv_number = await _next_invoice_number(pool, org_id, "INV")
+    inv_date = date.today().isoformat()
+
+    new_row = await pool.fetchrow(
+        "INSERT INTO staging.ganit_invoices "
+        "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
+        " place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
+        " balance_due, notes, terms, created_by, doc_status) "
+        "VALUES ($1::uuid, $2, $3, $4, 'tax_invoice', $5::date, $6, "
+        " $7, $8, $9, $10, $11, $12, $13, $14, $15, $15, $16, $17, $18, 'final') "
+        "RETURNING id, invoice_number, total",
+        org_id, inv["contact_id"], inv["deal_id"], inv_number,
+        inv_date, inv["due_date"],
+        inv["place_of_supply"], inv["is_igst"], inv["line_items"],
+        inv["subtotal"], inv["cgst"], inv["sgst"], inv["igst"],
+        inv["discount"], inv["total"],
+        inv["notes"], inv["terms"], user["user_id"],
+    )
+
+    await pool.execute(
+        "UPDATE staging.ganit_invoices SET estimate_status='converted', "
+        "converted_invoice_id=$1::uuid, updated_at=NOW() "
+        "WHERE id=$2::uuid AND org_id=$3::uuid",
+        str(new_row["id"]), str(invoice_id), org_id,
+    )
+    return {"status": "converted", **dict(new_row)}
+
+
+# ── Expenses ────────────────────────────────────────────────
+
+@router.get("/expenses")
+async def list_expenses(
+    category: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    is_billable: Optional[bool] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    query = (
+        "SELECT e.id, e.title, e.category, e.amount, e.tax_amount, e.total, "
+        "e.expense_date, e.vendor, e.reference, e.notes, e.receipt_urls, "
+        "e.is_billable, e.contact_id, e.project_id, e.created_at, "
+        "c.name as contact_name "
+        "FROM staging.ganit_expenses e "
+        "LEFT JOIN staging.graha_contacts c ON c.id = e.contact_id "
+        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
+    )
+    params: list = [org_id]
+    idx = 2
+
+    if category:
+        query += f"AND e.category=${idx} "
+        params.append(category)
+        idx += 1
+
+    if from_date:
+        query += f"AND e.expense_date >= ${idx}::date "
+        params.append(from_date)
+        idx += 1
+
+    if to_date:
+        query += f"AND e.expense_date <= ${idx}::date "
+        params.append(to_date)
+        idx += 1
+
+    if is_billable is not None:
+        query += f"AND e.is_billable=${idx} "
+        params.append(is_billable)
+        idx += 1
+
+    query += "ORDER BY e.expense_date DESC LIMIT 200"
+    rows = await pool.fetch(query, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/expenses")
+async def create_expense(
+    body: ExpenseCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    exp_date = body.expense_date or date.today().isoformat()
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.ganit_expenses "
+        "(org_id, title, category, amount, tax_amount, total, expense_date, "
+        " vendor, reference, notes, receipt_urls, is_billable, contact_id, project_id, created_by) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::date, "
+        " $8, $9, $10, $11, $12, NULLIF($13,'')::uuid, NULLIF($14,'')::uuid, $15) "
+        "RETURNING id, title, total",
+        org_id, body.title, body.category, body.amount, body.tax_amount, body.total,
+        exp_date, body.vendor, body.reference, body.notes,
+        body.receipt_urls, body.is_billable, body.contact_id, body.project_id,
+        user["user_id"],
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.patch("/expenses/{expense_id}")
+async def update_expense(
+    expense_id: UUID,
+    body: ExpenseUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    sets = []
+    params = [str(expense_id), org_id]
+    idx = 3
+    for k, v in updates.items():
+        if k in ("contact_id", "project_id"):
+            sets.append(f"{k}=NULLIF(${idx},'')::uuid")
+        elif k == "expense_date":
+            sets.append(f"{k}=${idx}::date")
+        else:
+            sets.append(f"{k}=${idx}")
+        params.append(v)
+        idx += 1
+    sets.append("updated_at=NOW()")
+
+    await pool.execute(
+        f"UPDATE staging.ganit_expenses SET {', '.join(sets)} "
+        f"WHERE id=$1::uuid AND org_id=$2::uuid",
+        *params,
+    )
+    return {"status": "updated"}
+
+
+@router.delete("/expenses/{expense_id}")
+async def delete_expense(
+    expense_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.ganit_expenses SET is_active=FALSE WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(expense_id), org_id,
+    )
+    return {"status": "deleted"}
+
+
+# ── Expense Categories ──────────────────────────────────────
+
+_DEFAULT_EXPENSE_CATEGORIES = [
+    ("Travel", "✈️"), ("Office Supplies", "📎"), ("Meals", "🍽️"),
+    ("Software", "💻"), ("Communication", "📞"), ("Rent", "🏢"),
+    ("Utilities", "💡"), ("Marketing", "📣"), ("Professional Fees", "⚖️"),
+    ("Miscellaneous", "📁"),
+]
+
+
+@router.get("/expense-categories")
+async def list_expense_categories(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id, name, icon, created_at "
+        "FROM staging.ganit_expense_categories WHERE org_id=$1::uuid AND is_active=TRUE "
+        "ORDER BY name",
+        org_id,
+    )
+
+    if not rows:
+        for name, icon in _DEFAULT_EXPENSE_CATEGORIES:
+            await pool.execute(
+                "INSERT INTO staging.ganit_expense_categories (org_id, name, icon) "
+                "VALUES ($1::uuid, $2, $3) ON CONFLICT (org_id, name) DO NOTHING",
+                org_id, name, icon,
+            )
+        rows = await pool.fetch(
+            "SELECT id, name, icon, created_at "
+            "FROM staging.ganit_expense_categories WHERE org_id=$1::uuid AND is_active=TRUE "
+            "ORDER BY name",
+            org_id,
+        )
+
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/expense-categories")
+async def create_expense_category(
+    body: ExpenseCategoryCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    icon = body.icon or "📁"
+    row = await pool.fetchrow(
+        "INSERT INTO staging.ganit_expense_categories (org_id, name, icon) "
+        "VALUES ($1::uuid, $2, $3) "
+        "ON CONFLICT (org_id, name) DO UPDATE SET is_active=TRUE, icon=EXCLUDED.icon "
+        "RETURNING id, name, icon",
+        org_id, body.name, icon,
+    )
+    return {"status": "created", **dict(row)}
+
+
+# ── Contracts ───────────────────────────────────────────────
+
+@router.get("/contracts")
+async def list_contracts(
+    status: Optional[str] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    query = (
+        "SELECT ct.id, ct.title, ct.description, ct.contract_value, "
+        "ct.start_date, ct.end_date, ct.status, ct.renewal_reminder_days, "
+        "ct.file_url, ct.notes, ct.created_at, "
+        "c.name as contact_name "
+        "FROM staging.ganit_contracts ct "
+        "LEFT JOIN staging.graha_contacts c ON c.id = ct.contact_id "
+        "WHERE ct.org_id=$1::uuid AND ct.is_active=TRUE "
+    )
+    params: list = [org_id]
+    idx = 2
+
+    if status:
+        query += f"AND ct.status=${idx} "
+        params.append(status)
+        idx += 1
+
+    query += "ORDER BY ct.created_at DESC LIMIT 200"
+    rows = await pool.fetch(query, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/contracts")
+async def create_contract(
+    body: ContractCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    start = body.start_date or None
+    end = body.end_date or None
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.ganit_contracts "
+        "(org_id, contact_id, title, description, contract_value, start_date, end_date, "
+        " renewal_reminder_days, notes, created_by) "
+        "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, $4, $5, $6::date, $7::date, $8, $9, $10) "
+        "RETURNING id, title, status",
+        org_id, body.contact_id, body.title, body.description, body.contract_value,
+        start, end, body.renewal_reminder_days, body.notes, user["user_id"],
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.patch("/contracts/{contract_id}")
+async def update_contract(
+    contract_id: UUID,
+    body: ContractUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    sets = []
+    params = [str(contract_id), org_id]
+    idx = 3
+    for k, v in updates.items():
+        if k == "contact_id":
+            sets.append(f"{k}=NULLIF(${idx},'')::uuid")
+        elif k in ("start_date", "end_date"):
+            sets.append(f"{k}=${idx}::date")
+        else:
+            sets.append(f"{k}=${idx}")
+        params.append(v)
+        idx += 1
+    sets.append("updated_at=NOW()")
+
+    await pool.execute(
+        f"UPDATE staging.ganit_contracts SET {', '.join(sets)} "
+        f"WHERE id=$1::uuid AND org_id=$2::uuid",
+        *params,
+    )
+    return {"status": "updated"}
+
+
+@router.get("/contracts/{contract_id}")
+async def get_contract(
+    contract_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT ct.*, c.name as contact_name, c.email as contact_email, "
+        "c.company as contact_company "
+        "FROM staging.ganit_contracts ct "
+        "LEFT JOIN staging.graha_contacts c ON c.id = ct.contact_id "
+        "WHERE ct.id=$1::uuid AND ct.org_id=$2::uuid",
+        str(contract_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Contract not found")
+
+    invoices = []
+    if row["contact_id"]:
+        inv_rows = await pool.fetch(
+            "SELECT id, invoice_number, invoice_type, invoice_date, total, payment_status "
+            "FROM staging.ganit_invoices "
+            "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active=TRUE "
+            "ORDER BY invoice_date DESC LIMIT 50",
+            org_id, str(row["contact_id"]),
+        )
+        invoices = [dict(r) for r in inv_rows]
+
+    return {"contract": dict(row), "invoices": invoices}
+
+
+# ── Recurring Invoices ──────────────────────────────────────
+
+@router.get("/recurring")
+async def list_recurring(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT r.id, r.contact_id, r.template_items, r.subtotal, r.gst_rate, "
+        "r.is_igst, r.frequency, r.next_date, r.end_date, r.auto_send, "
+        "r.notes, r.terms, r.is_active, r.created_at, "
+        "c.name as contact_name "
+        "FROM staging.ganit_recurring r "
+        "LEFT JOIN staging.graha_contacts c ON c.id = r.contact_id "
+        "WHERE r.org_id=$1::uuid AND r.is_active=TRUE "
+        "ORDER BY r.next_date",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/recurring")
+async def create_recurring(
+    body: RecurringCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    valid_freq = ("weekly", "monthly", "quarterly", "yearly")
+    if body.frequency not in valid_freq:
+        raise HTTPException(400, f"frequency must be one of: {', '.join(valid_freq)}")
+
+    end = body.end_date or None
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.ganit_recurring "
+        "(org_id, contact_id, template_items, subtotal, gst_rate, is_igst, "
+        " frequency, next_date, end_date, auto_send, notes, terms, created_by) "
+        "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3::jsonb, $4, $5, $6, "
+        " $7, $8::date, $9::date, $10, $11, $12, $13) "
+        "RETURNING id, frequency, next_date",
+        org_id, body.contact_id, json.dumps(body.template_items),
+        body.subtotal, body.gst_rate, body.is_igst,
+        body.frequency, body.next_date, end,
+        body.auto_send, body.notes, body.terms, user["user_id"],
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.delete("/recurring/{recurring_id}")
+async def delete_recurring(
+    recurring_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.ganit_recurring SET is_active=FALSE "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(recurring_id), org_id,
+    )
+    return {"status": "deleted"}
+
+
+# ── Expense Stats ───────────────────────────────────────────
+
+@router.get("/expense-stats")
+async def expense_stats(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+
+    cat_query = (
+        "SELECT category, COUNT(*) as count, "
+        "COALESCE(SUM(amount),0) as total_amount, "
+        "COALESCE(SUM(tax_amount),0) as total_tax, "
+        "COALESCE(SUM(total),0) as total "
+        "FROM staging.ganit_expenses "
+        "WHERE org_id=$1::uuid AND is_active=TRUE "
+    )
+    params: list = [org_id]
+    idx = 2
+
+    if from_date:
+        cat_query += f"AND expense_date >= ${idx}::date "
+        params.append(from_date)
+        idx += 1
+
+    if to_date:
+        cat_query += f"AND expense_date <= ${idx}::date "
+        params.append(to_date)
+        idx += 1
+
+    cat_query += "GROUP BY category ORDER BY total DESC"
+    cat_rows = await pool.fetch(cat_query, *params)
+
+    total_expenses = sum(float(r["total"]) for r in cat_rows)
+    total_tax = sum(float(r["total_tax"]) for r in cat_rows)
+    total_count = sum(r["count"] for r in cat_rows)
+
+    return {
+        "by_category": [dict(r) for r in cat_rows],
+        "total_expenses": round(total_expenses, 2),
+        "total_tax": round(total_tax, 2),
+        "count": total_count,
+    }
