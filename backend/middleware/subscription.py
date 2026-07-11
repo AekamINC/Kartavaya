@@ -7,7 +7,7 @@ Srijan is a bundled module — included in every paid plan. Other modules
 (graha, manav, etc.) are activated per-org by admin.
 """
 from datetime import datetime, timezone, timedelta
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 
 from db import get_pool
 from middleware.org_resolver import get_org_id
@@ -22,7 +22,11 @@ def require_module(module_code: str):
     """Returns a FastAPI dependency that checks if the org has the module active.
     Bundled modules (srijan) only need an active subscription — no separate activation."""
 
-    async def _check(org_id: str = Depends(get_org_id)):
+    async def _check(request: Request, org_id: str = Depends(get_org_id)):
+        user = getattr(request.state, "_auth_user", None)
+        if user and user.get("role") == "admin":
+            return
+
         cache_key = f"{org_id}:{module_code}"
         now = datetime.now(timezone.utc)
 
