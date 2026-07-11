@@ -530,6 +530,16 @@ async def update_invoice_status(
     if not inv:
         raise HTTPException(404, "Invoice not found")
 
+    allowed_transitions = {
+        "draft": ("final",),
+        "final": ("sent",),
+        "sent": ("viewed",),
+        "viewed": (),
+    }
+    current = inv["doc_status"] or "draft"
+    if body.doc_status not in allowed_transitions.get(current, ()):
+        raise HTTPException(400, f"Cannot transition from '{current}' to '{body.doc_status}'")
+
     extras = ""
     if body.doc_status == "sent":
         extras = ", sent_at=NOW()"
@@ -593,6 +603,8 @@ async def convert_to_invoice(
         raise HTTPException(400, "Only quotations can be converted to invoices")
     if inv["estimate_status"] == "converted":
         raise HTTPException(400, "Estimate already converted")
+    if inv["estimate_status"] != "accepted":
+        raise HTTPException(400, "Estimate must be accepted before converting to invoice")
 
     inv_number = await _next_invoice_number(pool, org_id, "INV")
     inv_date = date.today().isoformat()
@@ -874,6 +886,11 @@ async def update_contract(
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "No fields to update")
+
+    if "status" in updates:
+        valid_statuses = ("draft", "active", "expired", "cancelled", "renewed")
+        if updates["status"] not in valid_statuses:
+            raise HTTPException(400, f"status must be one of: {', '.join(valid_statuses)}")
 
     sets = []
     params = [str(contract_id), org_id]

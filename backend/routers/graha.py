@@ -764,8 +764,10 @@ async def remove_contact_label(
 ):
     pool = await get_pool()
     await pool.execute(
-        "DELETE FROM staging.graha_contact_labels WHERE contact_id=$1::uuid AND label_id=$2::uuid",
-        str(contact_id), str(label_id),
+        "DELETE FROM staging.graha_contact_labels "
+        "WHERE contact_id=$1::uuid AND label_id=$2::uuid "
+        "AND contact_id IN (SELECT id FROM staging.graha_contacts WHERE org_id=$3::uuid)",
+        str(contact_id), str(label_id), org_id,
     )
     return {"status": "removed"}
 

@@ -758,6 +758,11 @@ async def update_announcement(
     if not updates:
         raise HTTPException(400, "No fields to update")
 
+    if "priority" in updates:
+        valid_priorities = ("low", "normal", "high", "urgent")
+        if updates["priority"] not in valid_priorities:
+            raise HTTPException(400, f"priority must be one of: {', '.join(valid_priorities)}")
+
     sets = []
     params = [str(announcement_id), org_id]
     idx = 3
