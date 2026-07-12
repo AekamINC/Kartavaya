@@ -78,7 +78,7 @@ def _select_providers(language: str = "en", agent_type: str = "social_media", ta
         return ["gemini_pro_or", "gemini_flash_or", "qwen_flash", "gemini", "groq"]
 
     if task == "chatbot":
-        return ["qwen_plus", "qwen_flash", "gemini_lite_or", "gemini", "groq"]
+        return ["gemini", "qwen_plus", "qwen_flash", "gemini_lite_or", "groq"]
 
     if language in INDIC_LANGS:
         if agent_type in QUALITY_AGENTS:
@@ -92,7 +92,7 @@ def _select_providers(language: str = "en", agent_type: str = "social_media", ta
     return ["glm", "qwen_flash", "gemini", "groq"]
 
 
-async def _call_gemini(api_key: str, base_url: str, model: str, prompt: str, system: str = "", max_tokens: int = 2048) -> dict:
+async def _call_gemini(api_key: str, base_url: str, model: str, prompt: str, system: str = "", max_tokens: int = 2048, grounded: bool = False) -> dict:
     url = f"{base_url}/models/{model}:generateContent?key={api_key}"
     contents = []
     if system:
@@ -105,12 +105,26 @@ async def _call_gemini(api_key: str, base_url: str, model: str, prompt: str, sys
         "generationConfig": {"maxOutputTokens": max_tokens, "temperature": 0.7},
     }
 
+    if grounded:
+        payload["tools"] = [{"google_search": {}}]
+
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(url, json=payload)
         resp.raise_for_status()
         data = resp.json()
 
-    text = data["candidates"][0]["content"]["parts"][0]["text"]
+    candidate = data["candidates"][0]
+    parts = candidate["content"]["parts"]
+    text = "".join(p.get("text", "") for p in parts if "text" in p)
+
+    grounding_sources = []
+    if grounded:
+        grounding_meta = candidate.get("groundingMetadata", {})
+        for chunk in grounding_meta.get("groundingChunks", []):
+            web = chunk.get("web", {})
+            if web.get("uri"):
+                grounding_sources.append({"title": web.get("title", ""), "url": web["uri"]})
+
     usage = data.get("usageMetadata", {})
     prompt_tokens = usage.get("promptTokenCount", 0)
     completion_tokens = usage.get("candidatesTokenCount", 0)
@@ -120,6 +134,7 @@ async def _call_gemini(api_key: str, base_url: str, model: str, prompt: str, sys
         "completion_tokens": completion_tokens,
         "cost_usd": _estimate_cost(model, prompt_tokens, completion_tokens),
         "generation_id": "",
+        "grounding_sources": grounding_sources,
     }
 
 
@@ -218,7 +233,8 @@ async def generate(
 
         try:
             if code == "gemini":
-                result = await _call_gemini(api_key, prov["api_base_url"], model, prompt, system, max_tokens)
+                use_grounding = task == "chatbot"
+                result = await _call_gemini(api_key, prov["api_base_url"], model, prompt, system, max_tokens, grounded=use_grounding)
             else:
                 result = await _call_openai_compat(api_key, prov["api_base_url"], model, prompt, system, max_tokens)
 

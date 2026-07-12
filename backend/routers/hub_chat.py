@@ -301,6 +301,11 @@ async def send_chat_message(
         model_used = ai_result.get("model", "")
         cost = 0
 
+        grounding_sources = ai_result.get("grounding_sources", [])
+        if grounding_sources:
+            for gs in grounding_sources:
+                sources.append({"title": gs.get("title", "Web"), "url": gs.get("url", ""), "type": "web"})
+
         # Store assistant message
         await pool.execute(
             "INSERT INTO staging.hub_chat_messages "
