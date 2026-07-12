@@ -26,7 +26,7 @@ export default function CustomizeSettingsPage() {
   };
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <PageHeader title="Customize" sanskrit="सजावट" lede="Appearance — Theme, Typography, Layout & Language" />
 
       {/* ── Theme ──────────────────────────────────── */}

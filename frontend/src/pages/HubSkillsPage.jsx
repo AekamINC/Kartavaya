@@ -243,7 +243,7 @@ export default function HubSkillsPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <div style={{ marginBottom: 8 }}>
         <button onClick={() => navigate(`/hub/clients/${clientId}`)} className="k-btn k-btn--ghost" style={{ fontSize: 12 }}>← Back to Client</button>
       </div>

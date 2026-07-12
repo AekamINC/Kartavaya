@@ -22,7 +22,7 @@ export default function GanitPage() {
   const [tab, setTab] = useState('invoices');
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <PageHeader title="Ganit · गणित" subtitle="GST Invoicing — Tax Invoices, Quotations & Payments" />
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)', overflowX: 'auto' }}>

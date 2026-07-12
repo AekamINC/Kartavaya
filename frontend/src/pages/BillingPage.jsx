@@ -68,7 +68,7 @@ export default function BillingPage() {
   const userCount = usage?.user_count || 0;
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <PageHeader title="Billing & Subscription" subtitle="Manage your plan, modules, and invoices" />
 
       {/* Stats row */}

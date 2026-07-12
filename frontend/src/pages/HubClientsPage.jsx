@@ -49,7 +49,7 @@ export default function HubClientsPage() {
   if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>Loading…</div>;
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <PageHeader title="Hub Clients" subtitle="Manage your brand clients" />
 
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'flex-end' }}>

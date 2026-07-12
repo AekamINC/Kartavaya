@@ -10,7 +10,7 @@ const TABS = ['dashboard', 'campaigns', 'templates', 'automations', 'unsubscribe
 export default function PracharPage() {
   const [tab, setTab] = useState('dashboard');
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <PageHeader title="Prachar" sanskrit="प्रचार" lede="Marketing — Campaigns, Templates & Automations" />
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'dashboard' && <DashboardTab />}

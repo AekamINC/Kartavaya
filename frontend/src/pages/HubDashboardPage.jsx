@@ -120,7 +120,7 @@ export default function HubDashboardPage() {
   if (!clientId) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>Srijan module not available.</div>;
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <PageHeader title="Srijan · सृजन" subtitle="AI content, chatbot, knowledge base, social publishing" />
 
       {/* Tabs */}

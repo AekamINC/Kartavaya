@@ -21,7 +21,7 @@ export default function GrahaPage() {
   const [tab, setTab] = useState('contacts');
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <PageHeader title="Graha · ग्राह" subtitle="CRM — Contacts, Deals & Pipeline" />
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)', overflowX: 'auto' }}>

@@ -12,7 +12,7 @@ const TABS = ['dashboard', 'structures', 'payroll', 'payslips', 'statutory'];
 export default function VetanaPage() {
   const [tab, setTab] = useState('dashboard');
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <PageHeader title="Vetana" sanskrit="वेतन" lede="Payroll — Salary Structures, Processing & Compliance" />
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'dashboard' && <DashboardTab />}

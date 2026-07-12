@@ -11,7 +11,7 @@ const TABS = ['overview', 'revenue', 'pipeline', 'hr', 'sales', 'dashboards'];
 export default function DristiPage() {
   const [tab, setTab] = useState('overview');
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <PageHeader title="Dristi" sanskrit="दृष्टि" lede="Analytics — Cross-module KPIs & Trends" />
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'overview' && <OverviewTab />}

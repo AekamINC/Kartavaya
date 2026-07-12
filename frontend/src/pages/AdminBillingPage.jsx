@@ -181,7 +181,7 @@ export default function AdminBillingPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <PageHeader title="Billing Administration" subtitle="Manage subscriptions, modules, invoices, and payments" />
 
       {/* Tabs */}

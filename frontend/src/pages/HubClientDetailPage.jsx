@@ -118,7 +118,7 @@ export default function HubClientDetailPage() {
   if (!client) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>Client not found.</div>;
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <div style={{ marginBottom: 8 }}>
         <button onClick={() => navigate('/hub/clients')} className="k-btn k-btn--ghost" style={{ fontSize: 12 }}>← Back to Clients</button>
       </div>

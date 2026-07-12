@@ -35,7 +35,7 @@ export default function ManavPage() {
   }
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 24px 48px' }}>
+    <div style={{ padding: '0 0 48px' }}>
       <PageHeader title="Manav · मानव" subtitle="HRMS — Employees, Attendance & Leave Management" />
 
       {stats && (
