@@ -294,13 +294,12 @@ async def send_chat_message(
             system="\n".join(sys_parts),
             language="en",
             agent_type="chatbot",
-            org_id=org_id,
             client_id=client_id,
         )
 
         assistant_text = ai_result.get("text", "I couldn't generate a response.")
         model_used = ai_result.get("model", "")
-        cost = ai_result.get("cost_usd", 0)
+        cost = 0
 
         # Store assistant message
         await pool.execute(
