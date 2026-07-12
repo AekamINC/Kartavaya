@@ -133,6 +133,65 @@ async def _verify_client_access(pool, client_id: str, org_id: str) -> dict:
     return client
 
 
+# ── Org-level default client (auto-created) ─────────────────
+
+@router.get("/org-client")
+async def get_or_create_org_client(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Return the default org-level client, auto-creating it if needed.
+    This lets admin/members access Srijan features without manually creating a client."""
+    pool = await get_pool()
+
+    row = await pool.fetchrow(
+        "SELECT c.*, w.balance as credits, w.monthly_allocation "
+        "FROM staging.hub_clients c "
+        "LEFT JOIN staging.hub_credit_wallets w ON w.client_id = c.id "
+        "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE AND c.is_active=TRUE",
+        org_id,
+    )
+    if row:
+        brand = await pool.fetchrow(
+            "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", str(row["id"])
+        )
+        return {"client": dict(row), "brand": dict(brand) if brand else None}
+
+    org = await pool.fetchrow(
+        "SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id
+    )
+    org_name = org["name"] if org else "My Organisation"
+    slug = org_name.lower().replace(" ", "-")[:50]
+    import re
+    slug = re.sub(r'[^a-z0-9-]', '', slug) or "org"
+
+    existing_slug = await pool.fetchval("SELECT 1 FROM staging.hub_clients WHERE slug=$1", slug)
+    if existing_slug:
+        slug = f"{slug}-{org_id[:8]}"
+
+    client = await pool.fetchrow(
+        "INSERT INTO staging.hub_clients "
+        "(org_id, name, slug, is_internal) "
+        "VALUES ($1::uuid, $2, $3, TRUE) RETURNING *",
+        org_id, org_name, slug,
+    )
+    cid = str(client["id"])
+
+    await pool.execute(
+        "INSERT INTO staging.hub_brand_profiles (client_id) VALUES ($1::uuid)", cid
+    )
+    await pool.execute(
+        "INSERT INTO staging.hub_credit_wallets (client_id, balance, monthly_allocation) "
+        "VALUES ($1::uuid, 100, 100)", cid
+    )
+
+    brand = await pool.fetchrow(
+        "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", cid
+    )
+    return {"client": dict(client), "brand": dict(brand) if brand else None}
+
+
 # ── Client Management ────────────────────────────────────────
 
 @router.get("/clients")

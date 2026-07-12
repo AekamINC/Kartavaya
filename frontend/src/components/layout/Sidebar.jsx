@@ -68,8 +68,7 @@ const NAV_FULL = [
   {
     section: 'srijan', sans: 'सृजन', gu: 'સર્જન',
     items: [
-      { to: '/hub',         icon: 'hub',  en: 'Srijan',  hi: 'सृजन',  gu: 'સર્જન' },
-      { to: '/hub/clients', icon: 'teams', en: 'Clients', hi: 'ग्राहक', gu: 'ગ્રાહક' },
+      { to: '/hub', icon: 'hub', en: 'Srijan', hi: 'सृजन', gu: 'સર્જન' },
     ],
   },
   {
