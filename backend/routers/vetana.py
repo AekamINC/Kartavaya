@@ -315,7 +315,7 @@ async def process_payroll(
         ot_hours = float(att["ot"]) if att else 0
 
         paid_leaves = await pool.fetchval(
-            "SELECT COUNT(*) FROM staging.manav_leaves "
+            "SELECT COUNT(*) FROM staging.manav_leave_requests "
             "WHERE org_id=$1::uuid AND employee_id=$2::uuid "
             "AND status='approved' "
             "AND start_date <= $4 AND end_date >= $3 "
@@ -326,7 +326,7 @@ async def process_payroll(
         ) or 0
 
         unpaid_leaves = await pool.fetchval(
-            "SELECT COUNT(*) FROM staging.manav_leaves "
+            "SELECT COUNT(*) FROM staging.manav_leave_requests "
             "WHERE org_id=$1::uuid AND employee_id=$2::uuid "
             "AND status='approved' "
             "AND start_date <= $4 AND end_date >= $3 "

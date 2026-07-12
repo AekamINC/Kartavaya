@@ -268,7 +268,7 @@ async def hr_analytics(
         "COUNT(*) FILTER (WHERE status='approved') AS approved, "
         "COUNT(*) FILTER (WHERE status='pending') AS pending, "
         "COUNT(*) FILTER (WHERE status='rejected') AS rejected "
-        "FROM staging.manav_leaves WHERE org_id=$1::uuid "
+        "FROM staging.manav_leave_requests WHERE org_id=$1::uuid "
         "AND start_date >= DATE_TRUNC('year', CURRENT_DATE)",
         org_id,
     )
