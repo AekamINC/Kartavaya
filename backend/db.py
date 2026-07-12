@@ -48,8 +48,8 @@ async def get_pool() -> asyncpg.Pool:
                 raise RuntimeError("DATABASE_URL environment variable is not set")
             _pool = await asyncpg.create_pool(
                 dsn=dsn,
-                min_size=3,
-                max_size=15,
+                min_size=1,
+                max_size=8,
                 max_inactive_connection_lifetime=300,
                 command_timeout=60,
                 statement_cache_size=0,  # Required for PgBouncer transaction mode

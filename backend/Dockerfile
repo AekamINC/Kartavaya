@@ -24,4 +24,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 EXPOSE 8080
-CMD ["sh", "-c", "gunicorn server:app -k uvicorn.workers.UvicornWorker --workers 4 --worker-connections 1000 --backlog 2048 --timeout 120 --keep-alive 5 --bind 0.0.0.0:${PORT:-8080}"]
+CMD ["sh", "-c", "gunicorn server:app -k uvicorn.workers.UvicornWorker --workers ${WEB_CONCURRENCY:-2} --worker-connections 1000 --backlog 2048 --timeout 120 --keep-alive 5 --bind 0.0.0.0:${PORT:-8080}"]
