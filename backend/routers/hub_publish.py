@@ -1,24 +1,62 @@
 """
 hub_publish.py — Srijan P4: Social Publishing Router
-Connect social accounts, schedule content, publish to platforms.
+Connect social accounts via OAuth, schedule content, publish to platforms.
 """
 import json
+import logging
+import os
+import secrets
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlencode
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
-from services.social_publisher import publish_content
+from services.social_publisher import publish_content, process_scheduled_posts
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub-publish"])
 
 _hub_gate = require_module("srijan")
+log = logging.getLogger(__name__)
+
+_oauth_states: dict[str, dict] = {}
+
+OAUTH_CONFIGS = {
+    "facebook": {
+        "auth_url": "https://www.facebook.com/v21.0/dialog/oauth",
+        "token_url": "https://graph.facebook.com/v21.0/oauth/access_token",
+        "scopes": "pages_manage_posts,pages_read_engagement,pages_show_list,instagram_basic,instagram_content_publish",
+        "env_id": "META_APP_ID",
+        "env_secret": "META_APP_SECRET",
+    },
+    "instagram": {
+        "auth_url": "https://www.facebook.com/v21.0/dialog/oauth",
+        "token_url": "https://graph.facebook.com/v21.0/oauth/access_token",
+        "scopes": "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement",
+        "env_id": "META_APP_ID",
+        "env_secret": "META_APP_SECRET",
+    },
+    "linkedin": {
+        "auth_url": "https://www.linkedin.com/oauth/v2/authorization",
+        "token_url": "https://www.linkedin.com/oauth/v2/accessToken",
+        "scopes": "openid profile w_member_social",
+        "env_id": "LINKEDIN_CLIENT_ID",
+        "env_secret": "LINKEDIN_CLIENT_SECRET",
+    },
+    "google_business": {
+        "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "scopes": "https://www.googleapis.com/auth/business.manage",
+        "env_id": "GOOGLE_CLIENT_ID",
+        "env_secret": "GOOGLE_CLIENT_SECRET",
+    },
+}
 
 
 # ── Pydantic Models ──────────────────────────────────────────
@@ -43,7 +81,250 @@ class BulkSchedule(BaseModel):
     scheduled_for: datetime
 
 
-# ── Social Accounts ─────────────────────────────────────────
+# ── OAuth Flow ─────────────────────────────────────────────
+
+@router.get("/oauth/{platform}/authorize")
+async def oauth_authorize(
+    platform: str,
+    client_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _gate=Depends(_hub_gate),
+):
+    """Generate OAuth authorization URL for a platform."""
+    config = OAUTH_CONFIGS.get(platform)
+    if not config:
+        raise HTTPException(400, f"Unsupported platform: {platform}")
+
+    app_id = os.getenv(config["env_id"], "")
+    if not app_id:
+        raise HTTPException(500, f"{config['env_id']} not configured")
+
+    backend_url = os.getenv("BACKEND_URL", "").rstrip("/")
+    redirect_uri = f"{backend_url}/api/v1/hub/oauth/{platform}/callback"
+
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = {
+        "platform": platform,
+        "client_id": str(client_id),
+        "org_id": org_id,
+        "user_id": user["user_id"],
+    }
+
+    if platform in ("facebook", "instagram"):
+        params = {
+            "client_id": app_id,
+            "redirect_uri": redirect_uri,
+            "scope": config["scopes"],
+            "state": state,
+            "response_type": "code",
+        }
+    elif platform == "linkedin":
+        params = {
+            "client_id": app_id,
+            "redirect_uri": redirect_uri,
+            "scope": config["scopes"],
+            "state": state,
+            "response_type": "code",
+        }
+    elif platform == "google_business":
+        params = {
+            "client_id": app_id,
+            "redirect_uri": redirect_uri,
+            "scope": config["scopes"],
+            "state": state,
+            "response_type": "code",
+            "access_type": "offline",
+            "prompt": "consent",
+        }
+    else:
+        raise HTTPException(400, f"Unsupported platform: {platform}")
+
+    auth_url = f"{config['auth_url']}?{urlencode(params)}"
+    return {"auth_url": auth_url, "state": state}
+
+
+@router.get("/oauth/{platform}/callback")
+async def oauth_callback(
+    platform: str,
+    request: Request,
+    code: str = Query(...),
+    state: str = Query(...),
+):
+    """Handle OAuth callback — exchange code for tokens, store account."""
+    import httpx
+
+    state_data = _oauth_states.pop(state, None)
+    if not state_data or state_data["platform"] != platform:
+        raise HTTPException(400, "Invalid or expired OAuth state")
+
+    config = OAUTH_CONFIGS.get(platform)
+    app_id = os.getenv(config["env_id"], "")
+    app_secret = os.getenv(config["env_secret"], "")
+    backend_url = os.getenv("BACKEND_URL", "").rstrip("/")
+    redirect_uri = f"{backend_url}/api/v1/hub/oauth/{platform}/callback"
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        token_resp = await client.post(
+            config["token_url"],
+            data={
+                "code": code,
+                "client_id": app_id,
+                "client_secret": app_secret,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+            },
+        )
+        token_resp.raise_for_status()
+        tokens = token_resp.json()
+
+    access_token = tokens.get("access_token", "")
+    refresh_token = tokens.get("refresh_token", "")
+    expires_in = tokens.get("expires_in")
+
+    from datetime import timedelta
+    token_expires_at = None
+    if expires_in:
+        token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+
+    account_name = ""
+    account_id = ""
+    page_id = ""
+
+    if platform in ("facebook", "instagram"):
+        account_info = await _fetch_meta_accounts(access_token, platform)
+        account_name = account_info.get("name", "")
+        account_id = account_info.get("id", "")
+        page_id = account_info.get("page_id", "")
+        if account_info.get("page_token"):
+            access_token = account_info["page_token"]
+    elif platform == "linkedin":
+        account_info = await _fetch_linkedin_profile(access_token)
+        account_name = account_info.get("name", "")
+        account_id = account_info.get("id", "")
+    elif platform == "google_business":
+        account_info = await _fetch_google_locations(access_token)
+        account_name = account_info.get("name", "")
+        account_id = account_info.get("id", "")
+        page_id = account_info.get("location_name", "")
+
+    cid = state_data["client_id"]
+    pool = await get_pool()
+    await pool.execute(
+        "INSERT INTO staging.hub_social_accounts "
+        "(client_id, platform, account_name, account_id, page_id, "
+        " access_token, refresh_token, token_expires_at, scopes, connected_by) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10) "
+        "ON CONFLICT (client_id, platform, account_id) DO UPDATE SET "
+        "access_token=EXCLUDED.access_token, refresh_token=EXCLUDED.refresh_token, "
+        "token_expires_at=EXCLUDED.token_expires_at, account_name=EXCLUDED.account_name, "
+        "page_id=EXCLUDED.page_id, is_active=TRUE, updated_at=NOW()",
+        cid, platform, account_name, account_id, page_id,
+        access_token, refresh_token or None, token_expires_at,
+        config["scopes"].split(","), state_data["user_id"],
+    )
+
+    frontend_url = os.getenv("FRONTEND_URL", "").rstrip("/")
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(
+        f"{frontend_url}/hub?tab=publish&oauth=success&platform={platform}"
+    )
+
+
+async def _fetch_meta_accounts(token: str, platform: str) -> dict:
+    """Fetch the user's Facebook Pages (and linked Instagram accounts)."""
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as client:
+        me = await client.get(
+            "https://graph.facebook.com/v21.0/me",
+            params={"access_token": token, "fields": "id,name"},
+        )
+        me.raise_for_status()
+        user_data = me.json()
+
+        pages = await client.get(
+            "https://graph.facebook.com/v21.0/me/accounts",
+            params={"access_token": token, "fields": "id,name,access_token,instagram_business_account"},
+        )
+        pages.raise_for_status()
+        page_list = pages.json().get("data", [])
+
+    if not page_list:
+        return {"id": user_data["id"], "name": user_data.get("name", "")}
+
+    page = page_list[0]
+    result = {
+        "id": user_data["id"],
+        "name": page.get("name", user_data.get("name", "")),
+        "page_id": page["id"],
+        "page_token": page.get("access_token", ""),
+    }
+
+    if platform == "instagram":
+        ig = page.get("instagram_business_account", {})
+        if ig.get("id"):
+            result["page_id"] = ig["id"]
+
+    return result
+
+
+async def _fetch_linkedin_profile(token: str) -> dict:
+    """Fetch LinkedIn user profile."""
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://api.linkedin.com/v2/userinfo",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    return {
+        "id": data.get("sub", ""),
+        "name": data.get("name", ""),
+    }
+
+
+async def _fetch_google_locations(token: str) -> dict:
+    """Fetch first Google Business Profile location."""
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp.raise_for_status()
+        accounts = resp.json().get("accounts", [])
+
+    if not accounts:
+        return {"id": "", "name": "No account found"}
+
+    account = accounts[0]
+    account_name = account.get("name", "")
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        loc_resp = await client.get(
+            f"https://mybusinessbusinessinformation.googleapis.com/v1/{account_name}/locations",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if loc_resp.status_code == 200:
+            locations = loc_resp.json().get("locations", [])
+            if locations:
+                loc = locations[0]
+                return {
+                    "id": account_name,
+                    "name": loc.get("title", account.get("accountName", "")),
+                    "location_name": loc.get("name", ""),
+                }
+
+    return {
+        "id": account_name,
+        "name": account.get("accountName", ""),
+        "location_name": "",
+    }
+
+
+# ── Social Accounts (manual + list) ───────────────────────
 
 @router.get("/clients/{client_id}/social-accounts")
 async def list_social_accounts(
@@ -295,3 +576,23 @@ async def content_calendar(
         cid, start, end,
     )
     return {"data": [dict(r) for r in items]}
+
+
+# ── Cron: Process Scheduled Posts ──────────────────────────
+
+@router.post("/publish/dispatch")
+async def dispatch_scheduled_posts(
+    request: Request,
+    request_secret: str = Query(""),
+):
+    """Cron endpoint — process all posts whose scheduled_for has passed.
+    Secured by PUBLISH_DISPATCH_SECRET env var (same pattern as task-reminders).
+    """
+    expected = os.getenv("PUBLISH_DISPATCH_SECRET", "")
+    if not expected or request_secret != expected:
+        raise HTTPException(403, "Invalid dispatch secret")
+
+    results = await process_scheduled_posts()
+    published = sum(1 for r in results if r.get("status") == "published")
+    failed = sum(1 for r in results if r.get("status") == "failed")
+    return {"processed": len(results), "published": published, "failed": failed}

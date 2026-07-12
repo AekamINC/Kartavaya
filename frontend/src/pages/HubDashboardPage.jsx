@@ -749,16 +749,29 @@ function PublishTab({ clientId }) {
   const { pushToast } = useToast();
   const [accounts, setAccounts] = useState([]);
   const [queue, setQueue] = useState([]);
+  const [calendar, setCalendar] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showConnect, setShowConnect] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [showManualConnect, setShowManualConnect] = useState(false);
   const [connectForm, setConnectForm] = useState({ platform: 'facebook', account_name: '', account_id: '', page_id: '', access_token: '' });
   const [scheduleForm, setScheduleForm] = useState({ content_id: '', social_account_id: '', scheduled_for: '' });
   const [content, setContent] = useState([]);
   const [saving, setSaving] = useState(false);
   const [queueFilter, setQueueFilter] = useState('');
+  const [view, setView] = useState('queue');
+  const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; });
 
   useEffect(() => { loadData(); }, []);
+  useEffect(() => { if (view === 'calendar') loadCalendar(); }, [view, calMonth]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('oauth') === 'success') {
+      pushToast({ title: `${params.get('platform') || 'Account'} connected via OAuth`, type: 'success' });
+      window.history.replaceState({}, '', window.location.pathname);
+      loadData();
+    }
+  }, []);
 
   async function loadData() {
     try {
@@ -775,6 +788,15 @@ function PublishTab({ clientId }) {
     }
   }
 
+  async function loadCalendar() {
+    try {
+      const r = await api.get(`/v1/hub/clients/${clientId}/calendar?month=${calMonth}`);
+      setCalendar(r.data.data || []);
+    } catch {
+      pushToast({ title: 'Failed to load calendar', type: 'error' });
+    }
+  }
+
   async function loadContent() {
     try {
       const r = await api.get(`/v1/hub/clients/${clientId}/content`);
@@ -784,13 +806,28 @@ function PublishTab({ clientId }) {
     }
   }
 
-  async function connectAccount(e) {
+  async function connectViaOAuth(platform) {
+    try {
+      const r = await api.get(`/v1/hub/oauth/${platform}/authorize?client_id=${clientId}`);
+      window.open(r.data.auth_url, '_blank', 'width=600,height=700');
+    } catch (err) {
+      const detail = err.response?.data?.detail || '';
+      if (detail.includes('not configured')) {
+        pushToast({ title: `${platform} OAuth not configured yet — use manual connect`, type: 'error' });
+        setShowManualConnect(true);
+      } else {
+        pushToast({ title: detail || 'OAuth failed', type: 'error' });
+      }
+    }
+  }
+
+  async function connectManual(e) {
     e.preventDefault();
     setSaving(true);
     try {
       await api.post(`/v1/hub/clients/${clientId}/social-accounts`, connectForm);
       pushToast({ title: 'Account connected', type: 'success' });
-      setShowConnect(false);
+      setShowManualConnect(false);
       setConnectForm({ platform: 'facebook', account_name: '', account_id: '', page_id: '', access_token: '' });
       loadData();
     } catch (err) {
@@ -846,21 +883,59 @@ function PublishTab({ clientId }) {
     }
   }
 
-  const PLATFORM_COLORS = { facebook: '#1877F2', instagram: '#E4405F', linkedin: '#0A66C2', google_business: '#4285F4', twitter: '#1DA1F2' };
+  const PLATFORMS = [
+    { id: 'facebook', label: 'Facebook', color: '#1877F2', icon: 'f' },
+    { id: 'instagram', label: 'Instagram', color: '#E4405F', icon: 'ig' },
+    { id: 'linkedin', label: 'LinkedIn', color: '#0A66C2', icon: 'in' },
+    { id: 'google_business', label: 'Google Business', color: '#4285F4', icon: 'G' },
+  ];
+  const PLATFORM_COLORS = Object.fromEntries(PLATFORMS.map(p => [p.id, p.color]));
   const QUEUE_STATUS_COLORS = { scheduled: '#f59e0b', publishing: '#0082c6', published: '#10b981', failed: '#ef4444', cancelled: '#9ca3af' };
 
   if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 24, textAlign: 'center' }}>Loading…</p>;
 
+  const connectedPlatforms = new Set(accounts.map(a => a.platform));
+
   return (
     <div>
+      {/* Connected Accounts */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Connected Accounts</h3>
-          <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowConnect(true)}>+ Connect Account</button>
+          <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }}
+            onClick={() => setShowManualConnect(!showManualConnect)}>
+            {showManualConnect ? 'Hide Manual' : 'Manual Connect'}
+          </button>
         </div>
 
-        {showConnect && (
-          <form onSubmit={connectAccount} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 12 }}>
+        {/* OAuth connect buttons */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+          {PLATFORMS.map(p => {
+            const connected = connectedPlatforms.has(p.id);
+            return (
+              <button key={p.id}
+                onClick={() => !connected && connectViaOAuth(p.id)}
+                disabled={connected}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px',
+                  borderRadius: 10, border: connected ? '2px solid var(--rule-soft)' : `2px solid ${p.color}`,
+                  background: connected ? 'var(--surface-1)' : 'var(--surface-0)',
+                  cursor: connected ? 'default' : 'pointer', fontSize: 13, fontWeight: 600,
+                  color: connected ? 'var(--ink-3)' : p.color, opacity: connected ? 0.7 : 1,
+                }}>
+                <span style={{ width: 24, height: 24, borderRadius: 6, background: p.color,
+                  color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 11, fontWeight: 800 }}>{p.icon}</span>
+                {connected ? `${p.label} ✓` : `Connect ${p.label}`}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Manual connect form (fallback) */}
+        {showManualConnect && (
+          <form onSubmit={connectManual} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 12 }}>
+            <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Manual Token Connect</h4>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <label style={{ fontSize: 13 }}>
                 <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Platform *</span>
@@ -869,7 +944,6 @@ function PublishTab({ clientId }) {
                   <option value="instagram">Instagram</option>
                   <option value="linkedin">LinkedIn</option>
                   <option value="google_business">Google Business</option>
-                  <option value="twitter">Twitter / X</option>
                 </select>
               </label>
               <label style={{ fontSize: 13 }}>
@@ -894,15 +968,14 @@ function PublishTab({ clientId }) {
               </label>
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-              <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowConnect(false)}>Cancel</button>
+              <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowManualConnect(false)}>Cancel</button>
               <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Connecting…' : 'Connect'}</button>
             </div>
           </form>
         )}
 
-        {accounts.length === 0 ? (
-          <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16, textAlign: 'center' }}>No social accounts connected yet.</p>
-        ) : (
+        {/* Connected account chips */}
+        {accounts.length > 0 && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {accounts.map(a => (
               <div key={a.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '10px 16px',
@@ -910,6 +983,9 @@ function PublishTab({ clientId }) {
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: PLATFORM_COLORS[a.platform] || '#6E7B91' }} />
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{a.account_name || a.platform}</span>
                 <span style={{ fontSize: 11, color: 'var(--ink-3)', textTransform: 'capitalize' }}>{a.platform.replace('_', ' ')}</span>
+                {a.token_expires_at && new Date(a.token_expires_at) < new Date() && (
+                  <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 600 }}>EXPIRED</span>
+                )}
                 <button onClick={() => disconnectAccount(a.id)}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11 }}>Disconnect</button>
               </div>
@@ -918,96 +994,173 @@ function PublishTab({ clientId }) {
         )}
       </div>
 
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Publish Queue</h3>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <select className="k-input" style={{ width: 130, fontSize: 12 }} value={queueFilter} onChange={e => setQueueFilter(e.target.value)}>
-              <option value="">All Status</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="published">Published</option>
-              <option value="failed">Failed</option>
-            </select>
+      {/* View switcher: Queue / Calendar */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
+        {['queue', 'calendar'].map(v => (
+          <button key={v} className={`k-btn ${view === v ? 'k-btn--primary' : 'k-btn--ghost'}`}
+            style={{ fontSize: 12, padding: '6px 16px' }} onClick={() => setView(v)}>
+            {v === 'queue' ? 'Publish Queue' : 'Content Calendar'}
+          </button>
+        ))}
+      </div>
+
+      {/* Queue View */}
+      {view === 'queue' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <select className="k-input" style={{ width: 130, fontSize: 12 }} value={queueFilter} onChange={e => setQueueFilter(e.target.value)}>
+                <option value="">All Status</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="published">Published</option>
+                <option value="failed">Failed</option>
+              </select>
+            </div>
             <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => { setShowSchedule(true); loadContent(); }}>
               + Schedule Post
             </button>
           </div>
-        </div>
 
-        {showSchedule && (
-          <form onSubmit={schedulePost} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 12 }}>
-            <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Schedule a Post</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <label style={{ fontSize: 13 }}>
-                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Content *</span>
-                <select className="k-input" required value={scheduleForm.content_id}
-                  onChange={e => setScheduleForm({ ...scheduleForm, content_id: e.target.value })}>
-                  <option value="">Select content…</option>
-                  {content.filter(c => ['draft', 'approved'].includes(c.status)).map(c => (
-                    <option key={c.id} value={c.id}>{c.title} ({c.status})</option>
-                  ))}
-                </select>
-              </label>
-              <label style={{ fontSize: 13 }}>
-                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Account *</span>
-                <select className="k-input" required value={scheduleForm.social_account_id}
-                  onChange={e => setScheduleForm({ ...scheduleForm, social_account_id: e.target.value })}>
-                  <option value="">Select account…</option>
-                  {accounts.map(a => (
-                    <option key={a.id} value={a.id}>{a.account_name || a.platform} ({a.platform})</option>
-                  ))}
-                </select>
-              </label>
-              <label style={{ fontSize: 13, gridColumn: '1 / -1' }}>
-                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Schedule For *</span>
-                <input className="k-input" type="datetime-local" required value={scheduleForm.scheduled_for}
-                  onChange={e => setScheduleForm({ ...scheduleForm, scheduled_for: e.target.value })} />
-              </label>
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-              <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowSchedule(false)}>Cancel</button>
-              <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Scheduling…' : 'Schedule'}</button>
-            </div>
-          </form>
-        )}
-
-        {queue.filter(q => !queueFilter || q.status === queueFilter).length === 0 ? (
-          <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 24, textAlign: 'center' }}>No posts in queue{queueFilter ? ` with status "${queueFilter}"` : ''}.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {queue.filter(q => !queueFilter || q.status === queueFilter).map(q => (
-              <div key={q.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: PLATFORM_COLORS[q.platform] || '#6E7B91' }} />
-                    <span style={{ fontWeight: 700, fontSize: 14 }}>{q.content_title}</span>
-                    <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>→ {q.account_name} ({q.platform})</span>
-                  </div>
-                  <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', padding: '2px 10px', borderRadius: 99,
-                    background: `${QUEUE_STATUS_COLORS[q.status] || '#6E7B91'}18`, color: QUEUE_STATUS_COLORS[q.status] || '#6E7B91' }}>
-                    {q.status}
-                  </span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
-                  {q.scheduled_for && `Scheduled: ${new Date(q.scheduled_for).toLocaleString('en-IN')}`}
-                  {q.published_at && ` · Published: ${new Date(q.published_at).toLocaleString('en-IN')}`}
-                  {q.error_message && <span style={{ color: '#ef4444' }}> · Error: {q.error_message}</span>}
-                </div>
-                {q.status === 'scheduled' && (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="k-btn k-btn--primary" style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => publishNow(q.id)}>Publish Now</button>
-                    <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px', color: '#ef4444' }} onClick={() => cancelPost(q.id)}>Cancel</button>
-                  </div>
-                )}
-                {q.platform_url && (
-                  <a href={q.platform_url} target="_blank" rel="noopener noreferrer"
-                    style={{ fontSize: 12, color: 'var(--k-primary)' }}>View Post ↗</a>
-                )}
+          {showSchedule && (
+            <form onSubmit={schedulePost} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 12 }}>
+              <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Schedule a Post</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <label style={{ fontSize: 13 }}>
+                  <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Content *</span>
+                  <select className="k-input" required value={scheduleForm.content_id}
+                    onChange={e => setScheduleForm({ ...scheduleForm, content_id: e.target.value })}>
+                    <option value="">Select content…</option>
+                    {content.filter(c => ['draft', 'approved'].includes(c.status)).map(c => (
+                      <option key={c.id} value={c.id}>{c.title} ({c.status})</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ fontSize: 13 }}>
+                  <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Account *</span>
+                  <select className="k-input" required value={scheduleForm.social_account_id}
+                    onChange={e => setScheduleForm({ ...scheduleForm, social_account_id: e.target.value })}>
+                    <option value="">Select account…</option>
+                    {accounts.map(a => (
+                      <option key={a.id} value={a.id}>{a.account_name || a.platform} ({a.platform})</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ fontSize: 13, gridColumn: '1 / -1' }}>
+                  <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Schedule For *</span>
+                  <input className="k-input" type="datetime-local" required value={scheduleForm.scheduled_for}
+                    onChange={e => setScheduleForm({ ...scheduleForm, scheduled_for: e.target.value })} />
+                </label>
               </div>
-            ))}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowSchedule(false)}>Cancel</button>
+                <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Scheduling…' : 'Schedule'}</button>
+              </div>
+            </form>
+          )}
+
+          {queue.filter(q => !queueFilter || q.status === queueFilter).length === 0 ? (
+            <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 24, textAlign: 'center' }}>No posts in queue{queueFilter ? ` with status "${queueFilter}"` : ''}.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {queue.filter(q => !queueFilter || q.status === queueFilter).map(q => (
+                <div key={q.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: PLATFORM_COLORS[q.platform] || '#6E7B91' }} />
+                      <span style={{ fontWeight: 700, fontSize: 14 }}>{q.content_title}</span>
+                      <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>→ {q.account_name} ({q.platform})</span>
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', padding: '2px 10px', borderRadius: 99,
+                      background: `${QUEUE_STATUS_COLORS[q.status] || '#6E7B91'}18`, color: QUEUE_STATUS_COLORS[q.status] || '#6E7B91' }}>
+                      {q.status}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
+                    {q.scheduled_for && `Scheduled: ${new Date(q.scheduled_for).toLocaleString('en-IN')}`}
+                    {q.published_at && ` · Published: ${new Date(q.published_at).toLocaleString('en-IN')}`}
+                    {q.error_message && <span style={{ color: '#ef4444' }}> · Error: {q.error_message}</span>}
+                  </div>
+                  {q.status === 'scheduled' && (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="k-btn k-btn--primary" style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => publishNow(q.id)}>Publish Now</button>
+                      <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px', color: '#ef4444' }} onClick={() => cancelPost(q.id)}>Cancel</button>
+                    </div>
+                  )}
+                  {q.platform_url && (
+                    <a href={q.platform_url} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 12, color: 'var(--k-primary)' }}>View Post ↗</a>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Calendar View */}
+      {view === 'calendar' && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+            <button className="k-btn k-btn--ghost" style={{ padding: '4px 10px' }}
+              onClick={() => { const [y, m] = calMonth.split('-').map(Number); const d = new Date(y, m - 2, 1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`); }}>←</button>
+            <span style={{ fontSize: 15, fontWeight: 700 }}>
+              {new Date(calMonth + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}
+            </span>
+            <button className="k-btn k-btn--ghost" style={{ padding: '4px 10px' }}
+              onClick={() => { const [y, m] = calMonth.split('-').map(Number); const d = new Date(y, m, 1); setCalMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`); }}>→</button>
           </div>
-        )}
-      </div>
+
+          {(() => {
+            const [year, month] = calMonth.split('-').map(Number);
+            const firstDay = new Date(year, month - 1, 1).getDay();
+            const daysInMonth = new Date(year, month, 0).getDate();
+            const cells = [];
+            for (let i = 0; i < firstDay; i++) cells.push(null);
+            for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+            const dayItems = {};
+            calendar.forEach(item => {
+              const d = new Date(item.scheduled_for).getDate();
+              if (!dayItems[d]) dayItems[d] = [];
+              dayItems[d].push(item);
+            });
+
+            return (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1, marginBottom: 2 }}>
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                    <div key={d} style={{ textAlign: 'center', fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', padding: 6 }}>{d}</div>
+                  ))}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 1 }}>
+                  {cells.map((day, i) => (
+                    <div key={i} style={{
+                      minHeight: 80, padding: 4, background: day ? 'var(--surface-1)' : 'transparent',
+                      border: day ? '1px solid var(--rule-soft)' : 'none', borderRadius: 4,
+                    }}>
+                      {day && (
+                        <>
+                          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--ink-2)' }}>{day}</div>
+                          {(dayItems[day] || []).map((item, j) => (
+                            <div key={j} style={{
+                              fontSize: 10, padding: '2px 6px', borderRadius: 4, marginBottom: 2,
+                              background: `${PLATFORM_COLORS[item.platform] || '#6E7B91'}20`,
+                              color: PLATFORM_COLORS[item.platform] || '#6E7B91',
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}>
+                              {item.title || 'Post'}
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }

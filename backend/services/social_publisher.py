@@ -1,6 +1,7 @@
 """
 social_publisher.py — Post content to social platforms via OAuth APIs.
-Supports Facebook/Instagram (Meta Graph API), LinkedIn, Google Business.
+Supports Facebook/Instagram (Meta Graph API), LinkedIn, Google Business Profile.
+Includes token refresh for Meta and LinkedIn.
 """
 import logging
 import os
@@ -22,6 +23,84 @@ async def _get_account(account_id: str) -> dict | None:
     )
     return dict(row) if row else None
 
+
+async def _refresh_token_if_needed(account: dict) -> dict:
+    """Check if token is expired and refresh if possible. Returns updated account dict."""
+    expires = account.get("token_expires_at")
+    if not expires or expires > datetime.now(timezone.utc):
+        return account
+
+    platform = account["platform"]
+    refresh_token = account.get("refresh_token")
+    if not refresh_token:
+        log.warning("Token expired for %s account %s but no refresh token", platform, account["id"])
+        return account
+
+    try:
+        if platform in ("facebook", "instagram"):
+            new_token = await _refresh_meta_token(account["access_token"])
+        elif platform == "linkedin":
+            new_token = await _refresh_linkedin_token(refresh_token)
+        else:
+            return account
+
+        pool = await get_pool()
+        await pool.execute(
+            "UPDATE staging.hub_social_accounts SET access_token=$1, updated_at=NOW() "
+            "WHERE id=$2::uuid",
+            new_token, str(account["id"]),
+        )
+        account["access_token"] = new_token
+        log.info("Refreshed %s token for account %s", platform, account["id"])
+    except Exception as exc:
+        log.error("Token refresh failed for %s account %s: %s", platform, account["id"], exc)
+
+    return account
+
+
+async def _refresh_meta_token(current_token: str) -> str:
+    """Exchange a short-lived Meta token for a long-lived one."""
+    app_id = os.getenv("META_APP_ID", "")
+    app_secret = os.getenv("META_APP_SECRET", "")
+    if not app_id or not app_secret:
+        raise ValueError("META_APP_ID and META_APP_SECRET required for token refresh")
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://graph.facebook.com/v21.0/oauth/access_token",
+            params={
+                "grant_type": "fb_exchange_token",
+                "client_id": app_id,
+                "client_secret": app_secret,
+                "fb_exchange_token": current_token,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["access_token"]
+
+
+async def _refresh_linkedin_token(refresh_token: str) -> str:
+    """Refresh a LinkedIn OAuth2 token."""
+    client_id = os.getenv("LINKEDIN_CLIENT_ID", "")
+    client_secret = os.getenv("LINKEDIN_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        raise ValueError("LINKEDIN_CLIENT_ID and LINKEDIN_CLIENT_SECRET required for token refresh")
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            "https://www.linkedin.com/oauth/v2/accessToken",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()["access_token"]
+
+
+# ── Platform publishers ───────────────────────────────────
 
 async def publish_to_facebook(account: dict, text: str, media_urls: list = None) -> dict:
     """Post to a Facebook Page."""
@@ -120,13 +199,53 @@ async def publish_to_linkedin(account: dict, text: str, media_urls: list = None)
     }
 
 
+async def publish_to_google_business(account: dict, text: str, media_urls: list = None) -> dict:
+    """Post to Google Business Profile (local post)."""
+    token = account["access_token"]
+    location_id = account.get("page_id") or account.get("account_id")
+
+    post_body = {
+        "languageCode": "en",
+        "summary": text,
+        "topicType": "STANDARD",
+    }
+
+    if media_urls:
+        post_body["media"] = [
+            {"mediaFormat": "PHOTO", "sourceUrl": url}
+            for url in media_urls[:5]
+        ]
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"https://mybusiness.googleapis.com/v4/{location_id}/localPosts",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json=post_body,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    post_name = data.get("name", "")
+    search_url = data.get("searchUrl", "")
+    return {
+        "platform_post_id": post_name,
+        "platform_url": search_url or None,
+    }
+
+
+# ── Queue processor ───────────────────────────────────────
+
 async def publish_content(queue_id: str) -> dict:
     """Execute a publish from the queue."""
     pool = await get_pool()
 
     item = await pool.fetchrow(
         "SELECT q.*, c.body, c.title, c.media_urls, c.hashtags, "
-        "sa.platform, sa.access_token, sa.page_id, sa.account_id, sa.metadata as acct_meta "
+        "sa.platform, sa.access_token, sa.refresh_token, sa.token_expires_at, "
+        "sa.page_id, sa.account_id, sa.metadata as acct_meta "
         "FROM staging.hub_publish_queue q "
         "JOIN staging.hub_content_items c ON c.id = q.content_id "
         "JOIN staging.hub_social_accounts sa ON sa.id = q.social_account_id "
@@ -148,6 +267,8 @@ async def publish_content(queue_id: str) -> dict:
     media = item["media_urls"] or []
     account = dict(item)
 
+    account = await _refresh_token_if_needed(account)
+
     try:
         platform = item["platform"]
         if platform == "facebook":
@@ -156,6 +277,8 @@ async def publish_content(queue_id: str) -> dict:
             result = await publish_to_instagram(account, text, media)
         elif platform == "linkedin":
             result = await publish_to_linkedin(account, text, media)
+        elif platform == "google_business":
+            result = await publish_to_google_business(account, text, media)
         else:
             raise ValueError(f"Unsupported platform: {platform}")
 
