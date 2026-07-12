@@ -74,7 +74,7 @@ async def list_structures(
     pool = await get_pool()
     q = (
         "SELECT s.*, "
-        "COALESCE(e.full_name, e.first_name || ' ' || e.last_name) AS employee_name, "
+        "e.name AS employee_name, "
         "e.employee_code "
         "FROM staging.vetana_salary_structures s "
         "JOIN staging.manav_employees e ON e.id = s.employee_id "
@@ -125,7 +125,7 @@ async def get_structure(
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT s.*, "
-        "COALESCE(e.full_name, e.first_name || ' ' || e.last_name) AS employee_name "
+        "e.name AS employee_name "
         "FROM staging.vetana_salary_structures s "
         "JOIN staging.manav_employees e ON e.id = s.employee_id "
         "WHERE s.id=$1::uuid AND s.org_id=$2::uuid",
@@ -444,7 +444,7 @@ async def get_run(
         raise HTTPException(404, "Payroll run not found")
     payslips = await pool.fetch(
         "SELECT p.*, "
-        "COALESCE(e.full_name, e.first_name || ' ' || e.last_name) AS employee_name, "
+        "e.name AS employee_name, "
         "e.employee_code "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
@@ -521,7 +521,7 @@ async def list_payslips(
     pool = await get_pool()
     q = (
         "SELECT p.*, "
-        "COALESCE(e.full_name, e.first_name || ' ' || e.last_name) AS employee_name, "
+        "e.name AS employee_name, "
         "e.employee_code "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
@@ -549,8 +549,8 @@ async def get_payslip(
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT p.*, "
-        "COALESCE(e.full_name, e.first_name || ' ' || e.last_name) AS employee_name, "
-        "e.employee_code, e.pan, e.uan, e.bank_name, e.bank_account "
+        "e.name AS employee_name, "
+        "e.employee_code, e.pan, e.uan, e.bank_details "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
         "WHERE p.id=$1::uuid AND p.org_id=$2::uuid",
@@ -626,13 +626,13 @@ async def dashboard(
         org_id, f"{date.today().year}-%",
     )
     dept_split = await pool.fetch(
-        "SELECT d.name AS department, COUNT(DISTINCT p.employee_id) AS employees, "
+        "SELECT COALESCE(e.department, 'Unassigned') AS department, "
+        "COUNT(DISTINCT p.employee_id) AS employees, "
         "COALESCE(SUM(p.gross),0) AS dept_gross, COALESCE(SUM(p.net_pay),0) AS dept_net "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
-        "LEFT JOIN staging.manav_departments d ON d.id = e.department_id "
         "WHERE p.org_id=$1::uuid AND p.month=$2 "
-        "GROUP BY d.name ORDER BY dept_gross DESC",
+        "GROUP BY e.department ORDER BY dept_gross DESC",
         org_id, latest_run["month"] if latest_run else "",
     )
     return {
@@ -655,7 +655,7 @@ async def statutory_summary(
         month = f"{date.today().year}-{date.today().month:02d}"
     rows = await pool.fetch(
         "SELECT p.payslip_number, "
-        "COALESCE(e.full_name, e.first_name || ' ' || e.last_name) AS employee_name, "
+        "e.name AS employee_name, "
         "e.employee_code, e.pan, e.uan, "
         "p.basic, p.gross, p.pf_employee, p.pf_employer, "
         "p.esi_employee, p.esi_employer, p.professional_tax, p.tds "

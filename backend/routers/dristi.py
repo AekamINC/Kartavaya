@@ -99,7 +99,7 @@ async def overview(
 
     hr = await pool.fetchrow(
         "SELECT COUNT(*) AS headcount, "
-        "COUNT(*) FILTER (WHERE department_id IS NOT NULL) AS in_departments "
+        "COUNT(*) FILTER (WHERE department IS NOT NULL AND department != '') AS in_departments "
         "FROM staging.manav_employees WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
@@ -249,11 +249,10 @@ async def hr_analytics(
     pool = await get_pool()
 
     dept_breakdown = await pool.fetch(
-        "SELECT COALESCE(d.name, 'Unassigned') AS department, COUNT(*) AS count "
+        "SELECT COALESCE(NULLIF(e.department,''), 'Unassigned') AS department, COUNT(*) AS count "
         "FROM staging.manav_employees e "
-        "LEFT JOIN staging.manav_departments d ON d.id = e.department_id "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
-        "GROUP BY d.name ORDER BY count DESC",
+        "GROUP BY e.department ORDER BY count DESC",
         org_id,
     )
 
