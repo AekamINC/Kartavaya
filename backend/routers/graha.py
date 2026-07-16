@@ -504,7 +504,12 @@ async def update_deal(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    _DEAL_COLS = {
+        "title", "contact_id", "pipeline_id", "value", "stage", "probability",
+        "expected_close_date", "assigned_to", "notes", "tags", "custom_data",
+        "territory_id", "won_at", "lost_at",
+    }
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None and k in _DEAL_COLS}
     if not updates:
         raise HTTPException(400, "No fields to update")
 
@@ -1305,6 +1310,11 @@ async def compute_lead_score(pool, org_id: str, contact_id: str) -> tuple[int, l
                 reasons.append(f"+{pts} {sig}" if pts > 0 else f"{pts} {sig}")
 
     score = max(0, min(100, score))
+    await pool.execute(
+        "UPDATE staging.graha_contacts SET lead_score=$1, lead_score_reasons=$2::jsonb, updated_at=NOW() "
+        "WHERE id=$3::uuid AND org_id=$4::uuid",
+        score, json.dumps(reasons), contact_id, org_id,
+    )
     return score, reasons
 
 
@@ -1317,11 +1327,6 @@ async def rescore_contact(
 ):
     pool = await get_pool()
     score, reasons = await compute_lead_score(pool, org_id, str(contact_id))
-    await pool.execute(
-        "UPDATE staging.graha_contacts SET lead_score=$1, lead_score_reasons=$2::jsonb, updated_at=NOW() "
-        "WHERE id=$3::uuid AND org_id=$4::uuid",
-        score, json.dumps(reasons), str(contact_id), org_id,
-    )
     return {"score": score, "reasons": reasons}
 
 
@@ -1340,12 +1345,7 @@ async def rescore_all_contacts(
     )
     count = 0
     for c in contacts:
-        score, reasons = await compute_lead_score(pool, org_id, str(c["id"]))
-        await pool.execute(
-            "UPDATE staging.graha_contacts SET lead_score=$1, lead_score_reasons=$2::jsonb, updated_at=NOW() "
-            "WHERE id=$3::uuid",
-            score, json.dumps(reasons), str(c["id"]),
-        )
+        await compute_lead_score(pool, org_id, str(c["id"]))
         count += 1
     return {"status": "rescored", "count": count}
 
@@ -1381,7 +1381,8 @@ async def update_scoring_rule(
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin only")
     pool = await get_pool()
-    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    _RULE_COLS = {"points", "is_active"}
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None and k in _RULE_COLS}
     if not updates:
         raise HTTPException(400, "No fields to update")
     sets = []
@@ -1568,12 +1569,7 @@ async def fire_automations(pool, org_id: str, trigger_type: str, context: dict):
                         "system",
                     )
                 elif action == "update_score" and contact_id:
-                    score, reasons = await compute_lead_score(pool, org_id, contact_id)
-                    await pool.execute(
-                        "UPDATE staging.graha_contacts SET lead_score=$1, lead_score_reasons=$2::jsonb "
-                        "WHERE id=$3::uuid",
-                        score, json.dumps(reasons), contact_id,
-                    )
+                    await compute_lead_score(pool, org_id, contact_id)
                 elif action == "change_stage" and deal_id and data.get("stage"):
                     await pool.execute(
                         "UPDATE staging.graha_deals SET stage=$1, updated_at=NOW() "
