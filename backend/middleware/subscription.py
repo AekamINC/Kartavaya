@@ -17,15 +17,54 @@ _CACHE_TTL = timedelta(minutes=5)
 
 BUNDLED_MODULES = {"srijan"}
 
+SENSITIVE_MODULES = {"vetana", "ganit", "manav"}
+
 
 def require_module(module_code: str):
-    """Returns a FastAPI dependency that checks if the org has the module active.
-    Bundled modules (srijan) only need an active subscription — no separate activation."""
+    """Returns a FastAPI dependency that checks if the org has the module active
+    AND the user has been granted access to this module."""
 
     async def _check(request: Request, org_id: str = Depends(get_org_id)):
         user = getattr(request.state, "_auth_user", None)
         if user and user.get("role") == "admin":
             return
+
+        pool = await get_pool()
+
+        # Platform staff (account_manager+) bypass per-user module check
+        if user:
+            is_platform = await pool.fetchval(
+                "SELECT 1 FROM staging.user_roles "
+                "WHERE user_id=$1 AND org_id IS NULL "
+                "AND role_code IN ('platform_admin','account_manager')",
+                user.get("user_id"),
+            )
+            if is_platform:
+                return  # platform staff can access any module for support
+
+        # Gate 2: per-user module grant (before subscription check for fast 403)
+        if user:
+            user_id = user.get("user_id")
+            # org_owner and org_admin get all enabled modules
+            org_role = await pool.fetchval(
+                "SELECT role_code FROM staging.user_roles "
+                "WHERE user_id=$1 AND org_id=$2::uuid "
+                "AND role_code IN ('org_owner','org_admin')",
+                user_id, org_id,
+            )
+            if not org_role:
+                # org_member needs explicit grant
+                has_grant = await pool.fetchval(
+                    "SELECT 1 FROM staging.org_member_modules "
+                    "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
+                    user_id, org_id, module_code,
+                )
+                if not has_grant:
+                    raise HTTPException(
+                        403,
+                        f"You don't have access to the {module_code} module. "
+                        "Ask your org admin to grant it.",
+                    )
 
         cache_key = f"{org_id}:{module_code}"
         now = datetime.now(timezone.utc)
@@ -40,8 +79,6 @@ def require_module(module_code: str):
                         "Contact your administrator to activate it.",
                     )
                 return
-
-        pool = await get_pool()
 
         sub = await pool.fetchrow(
             "SELECT s.status, p.features FROM staging.subscriptions s "

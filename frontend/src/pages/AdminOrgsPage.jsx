@@ -159,22 +159,25 @@ function CreateOrgForm({ onCreated, pushToast }) {
 // ── Org Detail Slide-Over ───────────────────────────────────
 
 const ALL_MODULES = [
-  { code: 'graha', label: 'Graha · CRM' },
-  { code: 'ganit', label: 'Ganit · Invoicing' },
-  { code: 'manav', label: 'Manav · HRMS' },
-  { code: 'vikray', label: 'Vikray · Sales' },
-  { code: 'vetana', label: 'Vetana · Payroll' },
-  { code: 'dristi', label: 'Dristi · Analytics' },
-  { code: 'prachar', label: 'Prachar · Marketing' },
-  { code: 'srijan', label: 'Srijan · AI Hub' },
+  { code: 'graha', label: 'Graha · CRM', sensitive: false },
+  { code: 'ganit', label: 'Ganit · Invoicing', sensitive: true },
+  { code: 'manav', label: 'Manav · HRMS', sensitive: true },
+  { code: 'vikray', label: 'Vikray · Sales', sensitive: false },
+  { code: 'vetana', label: 'Vetana · Payroll', sensitive: true },
+  { code: 'dristi', label: 'Dristi · Analytics', sensitive: false },
+  { code: 'prachar', label: 'Prachar · Marketing', sensitive: false },
+  { code: 'srijan', label: 'Srijan · AI Hub', sensitive: false },
 ];
 
 function OrgDetail({ orgId, onClose, pushToast }) {
   const [data, setData] = useState(null);
   const [addEmail, setAddEmail] = useState('');
   const [addRoles, setAddRoles] = useState(['org_member']);
+  const [addModules, setAddModules] = useState([]);
   const [adding, setAdding] = useState(false);
   const [togglingModule, setTogglingModule] = useState(null);
+  const [editingMemberModules, setEditingMemberModules] = useState(null); // user_id
+  const [savingMemberModules, setSavingMemberModules] = useState(false);
 
   // R2 config
   const [r2Form, setR2Form] = useState({ account_id: '', access_key_id: '', secret_access_key: '', bucket_name: 'kartavya-storage' });
@@ -188,9 +191,10 @@ function OrgDetail({ orgId, onClose, pushToast }) {
     if (!addEmail.trim()) return;
     setAdding(true);
     try {
-      await api.post(`/v1/admin/orgs/${orgId}/members`, { email: addEmail.trim(), roles: addRoles });
+      await api.post(`/v1/admin/orgs/${orgId}/members`, { email: addEmail.trim(), roles: addRoles, module_grants: addModules });
       pushToast({ type: 'success', title: `Added ${addEmail}` });
       setAddEmail('');
+      setAddModules([]);
       load();
     } catch (err) {
       pushToast({ type: 'error', title: err?.response?.data?.detail || 'Could not add member' });
@@ -235,8 +239,23 @@ function OrgDetail({ orgId, onClose, pushToast }) {
     } finally { setSavingR2(false); }
   };
 
+  const saveMemberModules = async (targetUserId, moduleCodes) => {
+    setSavingMemberModules(true);
+    try {
+      await api.put(`/v1/admin/orgs/${orgId}/members/${targetUserId}/modules`, { user_id: targetUserId, modules: moduleCodes });
+      pushToast({ type: 'success', title: 'Module access updated' });
+      load();
+    } catch (err) {
+      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Could not update modules' });
+    } finally { setSavingMemberModules(false); }
+  };
+
   if (!data) return null;
-  const { org, members, modules } = data;
+  const { org, members, modules, member_modules = [] } = data;
+
+  const getMemberModules = (userId) => member_modules.filter(mm => mm.user_id === userId).map(mm => mm.module_code);
+  const isAdminRole = (userId) => members.some(m => m.user_id === userId && (m.role_code === 'org_admin' || m.role_code === 'org_owner'));
+  const enabledModuleCodes = modules.filter(m => m.is_active).map(m => m.module_code);
 
   const labelSt = { fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 };
 
@@ -312,22 +331,72 @@ function OrgDetail({ orgId, onClose, pushToast }) {
         <div style={{ padding: '0 24px 16px' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 10 }}>Members ({members.length})</div>
 
-          {members.map(m => (
-            <div key={`${m.user_id}-${m.role_code}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px dashed var(--rule-soft)' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{m.full_name || m.email}</div>
-                {m.full_name && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{m.email}</div>}
+          {/* Dedupe members by user_id, show all roles */}
+          {Object.values(members.reduce((acc, m) => {
+            if (!acc[m.user_id]) acc[m.user_id] = { ...m, roles: [] };
+            acc[m.user_id].roles.push(m.role_code);
+            return acc;
+          }, {})).map(m => {
+            const isAdmin = m.roles.some(r => r === 'org_admin' || r === 'org_owner');
+            const userModules = getMemberModules(m.user_id);
+            const isEditing = editingMemberModules === m.user_id;
+            return (
+              <div key={m.user_id} style={{ padding: '10px 0', borderBottom: '1px dashed var(--rule-soft)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{m.full_name || m.email}</div>
+                    {m.full_name && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{m.email}</div>}
+                  </div>
+                  {m.roles.map(r => (
+                    <span key={r} style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em',
+                      padding: '2px 8px', borderRadius: 99, background: 'rgba(0,130,198,.1)', color: 'var(--k-primary)' }}>
+                      {r.replace('_', ' ')}
+                    </span>
+                  ))}
+                  {!isAdmin && (
+                    <button className="k-btn k-btn--ghost k-btn--sm" style={{ fontSize: 10, padding: '2px 8px' }}
+                      onClick={() => setEditingMemberModules(isEditing ? null : m.user_id)}>
+                      {isEditing ? 'Close' : 'Modules'}
+                    </button>
+                  )}
+                  <button className="k-iconbtn" style={{ color: 'var(--danger)' }}
+                    onClick={() => removeMember(m.user_id, m.email)} title="Remove">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 4h10M5 4V3h6v1M6 7v5M10 7v5M4 4l1 9h6l1-9"/></svg>
+                  </button>
+                </div>
+                {isAdmin && (
+                  <div style={{ fontSize: 10, color: 'var(--ink-faint)', marginTop: 4, fontStyle: 'italic' }}>
+                    Admin/Owner — access to all enabled modules
+                  </div>
+                )}
+                {isEditing && !isAdmin && (
+                  <div style={{ marginTop: 8, padding: 10, background: 'var(--bg-soft)', borderRadius: 'var(--r-md)', border: '1px solid var(--rule-soft)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 6 }}>MODULE ACCESS</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                      {ALL_MODULES.filter(mod => enabledModuleCodes.includes(mod.code)).map(mod => {
+                        const granted = userModules.includes(mod.code);
+                        return (
+                          <label key={mod.code} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: savingMemberModules ? 'wait' : 'pointer',
+                            padding: '4px 8px', borderRadius: 6, fontSize: 11, userSelect: 'none',
+                            border: `1px solid ${mod.sensitive ? (granted ? 'rgba(229,62,62,.3)' : 'var(--rule-soft)') : (granted ? 'rgba(5,183,170,.3)' : 'var(--rule-soft)')}`,
+                            background: granted ? (mod.sensitive ? 'rgba(229,62,62,.06)' : 'rgba(5,183,170,.06)') : 'transparent' }}>
+                            <input type="checkbox" checked={granted} disabled={savingMemberModules}
+                              onChange={() => {
+                                const next = granted ? userModules.filter(c => c !== mod.code) : [...userModules, mod.code];
+                                saveMemberModules(m.user_id, next);
+                              }}
+                              style={{ accentColor: mod.sensitive ? '#E53E3E' : '#05b7aa' }} />
+                            <span style={{ fontWeight: 600, color: granted ? 'var(--ink)' : 'var(--ink-3)' }}>{mod.label}</span>
+                            {mod.sensitive && <span style={{ fontSize: 9, color: '#E53E3E', fontWeight: 700 }}>SENSITIVE</span>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
-              <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em',
-                padding: '2px 8px', borderRadius: 99, background: 'rgba(0,130,198,.1)', color: 'var(--k-primary)' }}>
-                {m.role_code.replace('_', ' ')}
-              </span>
-              <button className="k-iconbtn" style={{ color: 'var(--danger)' }}
-                onClick={() => removeMember(m.user_id, m.email)} title="Remove">
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 4h10M5 4V3h6v1M6 7v5M10 7v5M4 4l1 9h6l1-9"/></svg>
-              </button>
-            </div>
-          ))}
+            );
+          })}
 
           {/* Add member */}
           <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'end' }}>
@@ -345,6 +414,41 @@ function OrgDetail({ orgId, onClose, pushToast }) {
               {adding ? '…' : 'Add'}
             </button>
           </div>
+
+          {/* Module access checkboxes for new member */}
+          {addRoles[0] === 'org_member' && enabledModuleCodes.length > 0 && (
+            <div style={{ marginTop: 10, padding: 10, background: 'var(--bg-soft)', borderRadius: 'var(--r-md)', border: '1px solid var(--rule-soft)' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
+                Module Access (non-sensitive auto-granted)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                {ALL_MODULES.filter(mod => enabledModuleCodes.includes(mod.code)).map(mod => {
+                  const checked = addModules.includes(mod.code) || (!mod.sensitive && addModules.length === 0);
+                  return (
+                    <label key={mod.code} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                      padding: '4px 8px', borderRadius: 6, fontSize: 11, userSelect: 'none',
+                      border: `1px solid ${mod.sensitive ? (checked ? 'rgba(229,62,62,.3)' : 'var(--rule-soft)') : 'rgba(5,183,170,.3)'}`,
+                      background: checked ? (mod.sensitive ? 'rgba(229,62,62,.06)' : 'rgba(5,183,170,.06)') : 'transparent' }}>
+                      <input type="checkbox" checked={checked}
+                        onChange={() => {
+                          if (addModules.length === 0) {
+                            // Initialize from defaults (non-sensitive = on)
+                            const defaults = ALL_MODULES.filter(m => enabledModuleCodes.includes(m.code) && !m.sensitive).map(m => m.code);
+                            if (mod.sensitive) setAddModules([...defaults, mod.code]);
+                            else setAddModules(defaults.filter(c => c !== mod.code));
+                          } else {
+                            setAddModules(prev => prev.includes(mod.code) ? prev.filter(c => c !== mod.code) : [...prev, mod.code]);
+                          }
+                        }}
+                        style={{ accentColor: mod.sensitive ? '#E53E3E' : '#05b7aa' }} />
+                      <span style={{ fontWeight: 600, color: checked ? 'var(--ink)' : 'var(--ink-3)' }}>{mod.label}</span>
+                      {mod.sensitive && <span style={{ fontSize: 9, color: '#E53E3E', fontWeight: 700 }}>SENSITIVE</span>}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Modules */}

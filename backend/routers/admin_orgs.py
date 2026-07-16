@@ -39,6 +39,7 @@ class OrgCreate(BaseModel):
 class OrgMemberAdd(BaseModel):
     email: EmailStr
     roles: list[str] = ["org_member"]
+    module_grants: list[str] = []
 
 class RoleAssign(BaseModel):
     user_id: str
@@ -198,10 +199,17 @@ async def get_org(
         org_id,
     )
 
+    member_modules = await pool.fetch(
+        "SELECT user_id, module_code FROM staging.org_member_modules "
+        "WHERE org_id=$1::uuid",
+        org_id,
+    )
+
     return {
         "org": dict(org),
         "members": [dict(m) for m in members],
         "modules": [dict(m) for m in modules],
+        "member_modules": [dict(mm) for mm in member_modules],
     }
 
 
@@ -273,13 +281,44 @@ async def add_member(
             target["user_id"], org_id, role, user["user_id"],
         )
 
+    # Module grants: if explicit list provided, use it;
+    # otherwise auto-grant non-sensitive modules that are enabled for this org
+    SENSITIVE = {"vetana", "ganit", "manav"}
+    target_uid = target["user_id"]
+
+    if body.module_grants:
+        grant_codes = body.module_grants
+    else:
+        # Auto-grant non-sensitive enabled modules for org_member
+        # org_admin/org_owner get all modules implicitly (checked at runtime)
+        if any(r in ("org_admin", "org_owner") for r in body.roles):
+            grant_codes = []  # admins don't need explicit grants
+        else:
+            enabled = await pool.fetch(
+                "SELECT module_code FROM staging.module_subscriptions "
+                "WHERE org_id=$1::uuid AND is_active=TRUE",
+                org_id,
+            )
+            grant_codes = [r["module_code"] for r in enabled if r["module_code"] not in SENSITIVE]
+
+    for mc in grant_codes:
+        if mc not in ALL_MODULES:
+            continue
+        await pool.execute(
+            "INSERT INTO staging.org_member_modules (user_id, org_id, module_code, granted_by) "
+            "VALUES ($1, $2::uuid, $3, $4) "
+            "ON CONFLICT (user_id, org_id, module_code) DO NOTHING",
+            target_uid, org_id, mc, user["user_id"],
+        )
+
     await _log_event(pool, org_id, "member_added", {
         "email": body.email,
         "roles": body.roles,
+        "modules": grant_codes,
         "added_by": user["user_id"],
     })
 
-    return {"status": "added", "email": body.email, "roles": body.roles}
+    return {"status": "added", "email": body.email, "roles": body.roles, "modules": grant_codes}
 
 
 @router.delete("/{org_id}/members/{user_id}")
@@ -395,6 +434,64 @@ async def disable_module(
         "module": module_code, "by": user["user_id"],
     })
     return {"status": "disabled", "module": module_code}
+
+
+# ── Per-user Module Grants ─────────────────────────────────
+
+
+class ModuleGrantBody(BaseModel):
+    user_id: str
+    modules: list[str]
+
+
+@router.put("/{org_id}/members/{target_user_id}/modules")
+async def set_member_modules(
+    org_id: str,
+    target_user_id: str,
+    body: ModuleGrantBody,
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
+):
+    """Replace a member's module grants with the given list."""
+    pool = await get_pool()
+    for mc in body.modules:
+        if mc not in ALL_MODULES:
+            raise HTTPException(400, f"Unknown module: {mc}")
+
+    await pool.execute(
+        "DELETE FROM staging.org_member_modules "
+        "WHERE user_id=$1 AND org_id=$2::uuid",
+        target_user_id, org_id,
+    )
+    for mc in body.modules:
+        await pool.execute(
+            "INSERT INTO staging.org_member_modules (user_id, org_id, module_code, granted_by) "
+            "VALUES ($1, $2::uuid, $3, $4)",
+            target_user_id, org_id, mc, user["user_id"],
+        )
+
+    await _log_event(pool, org_id, "member_modules_updated", {
+        "target": target_user_id,
+        "modules": body.modules,
+        "by": user["user_id"],
+    })
+
+    return {"status": "updated", "user_id": target_user_id, "modules": body.modules}
+
+
+@router.get("/{org_id}/members/{target_user_id}/modules")
+async def get_member_modules(
+    org_id: str,
+    target_user_id: str,
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
+):
+    """Get a member's module grants."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT module_code, granted_at FROM staging.org_member_modules "
+        "WHERE user_id=$1 AND org_id=$2::uuid",
+        target_user_id, org_id,
+    )
+    return {"user_id": target_user_id, "modules": [dict(r) for r in rows]}
 
 
 # ── R2 Credentials ──────────────────────────────────────────

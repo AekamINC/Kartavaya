@@ -15,7 +15,9 @@ from pydantic import BaseModel
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
+from middleware.roles import require_org_role
 from middleware.subscription import require_module
+from services.contact_dedupe import find_duplicates, merge_contacts, undo_merge
 from services.lead_parser import parse_lead_email
 
 log = logging.getLogger(__name__)
@@ -41,6 +43,10 @@ class ContactCreate(BaseModel):
     notes: str = ""
     contact_type: str = "lead"
     source: str = ""
+
+
+class ContactMerge(BaseModel):
+    merge_ids: list[UUID]
 
 
 class ContactUpdate(BaseModel):
@@ -190,6 +196,162 @@ async def create_contact(
             "contact_id": str(row["id"]), "source": body.source or "", "contact_type": "lead",
         }))
     return {"status": "created", **dict(row)}
+
+
+# ── Dedupe & Merge ───────────────────────────────────────────
+# NOTE: these literal paths MUST stay above /contacts/{contact_id}. FastAPI
+# matches in declaration order, and contact_id is typed UUID — "duplicates"
+# would fail validation with a 422 rather than falling through to here.
+
+@router.get("/contacts/duplicates")
+async def list_duplicate_groups(
+    limit: int = Query(50, ge=1, le=200),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """
+    Review queue: groups of live contacts sharing a normalized email or phone.
+    Exact keys only — fuzzy name matches are surfaced per-contact via
+    /contacts/{id}/duplicates, since they are too weak to queue org-wide.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """
+        WITH live AS (
+            SELECT * FROM staging.graha_contacts
+            WHERE org_id=$1::uuid AND is_active=TRUE AND merged_into_id IS NULL
+        ),
+        groups AS (
+            SELECT 'email' AS match_type, email_norm AS match_key,
+                   array_agg(id) AS ids, count(*) AS n
+            FROM live WHERE email_norm IS NOT NULL
+            GROUP BY email_norm HAVING count(*) > 1
+            UNION ALL
+            SELECT 'phone', phone_norm, array_agg(id), count(*)
+            FROM live WHERE phone_norm IS NOT NULL
+            GROUP BY phone_norm HAVING count(*) > 1
+        )
+        SELECT g.match_type, g.match_key, g.n,
+               (SELECT json_agg(json_build_object(
+                    'id', c.id, 'name', c.name, 'email', c.email,
+                    'phone', c.phone, 'company', c.company,
+                    'contact_type', c.contact_type, 'lead_score', c.lead_score,
+                    'source', c.source, 'created_at', c.created_at
+                ) ORDER BY c.created_at)
+                FROM staging.graha_contacts c WHERE c.id = ANY(g.ids)
+               ) AS contacts
+        FROM groups g
+        ORDER BY g.n DESC, g.match_type
+        LIMIT $2
+        """,
+        org_id, limit,
+    )
+    return {
+        "data": [
+            {
+                "match_type": r["match_type"],
+                "match_key": r["match_key"],
+                "count": r["n"],
+                "contacts": json.loads(r["contacts"]) if isinstance(r["contacts"], str) else r["contacts"],
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.get("/contacts/merges")
+async def list_merges(
+    limit: int = Query(50, ge=1, le=200),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Recent merges, for the undo window."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT m.id, m.survivor_id, m.merged_id, m.moved_rows, m.field_updates, "
+        "       m.actor_id, m.created_at, m.undone_at, "
+        "       s.name AS survivor_name, l.name AS merged_name "
+        "FROM staging.graha_contact_merges m "
+        "JOIN staging.graha_contacts s ON s.id = m.survivor_id "
+        "JOIN staging.graha_contacts l ON l.id = m.merged_id "
+        "WHERE m.org_id=$1::uuid "
+        "ORDER BY m.created_at DESC LIMIT $2",
+        org_id, limit,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/contacts/merges/{merge_id}/undo")
+async def undo_contact_merge(
+    merge_id: UUID,
+    user=Depends(require_org_role("org_admin")),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Reverse a merge and restore the merged contact."""
+    pool = await get_pool()
+    try:
+        return await undo_merge(pool, org_id, str(merge_id), user["user_id"])
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/contacts/{contact_id}/duplicates")
+async def contact_duplicates(
+    contact_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Candidate duplicates for one contact — exact and fuzzy."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT name, email, phone, company FROM staging.graha_contacts "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        str(contact_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Contact not found")
+
+    matches = await find_duplicates(
+        pool, org_id,
+        email=row["email"], phone=row["phone"],
+        name=row["name"], company=row["company"],
+        exclude_id=str(contact_id),
+    )
+    return {"data": matches}
+
+
+@router.post("/contacts/{contact_id}/merge")
+async def merge_into_contact(
+    contact_id: UUID,
+    body: ContactMerge,
+    user=Depends(require_org_role("org_admin")),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """
+    Merge other contacts into this one (the survivor).
+    Destructive enough to be admin-only, but reversible via
+    /contacts/merges/{merge_id}/undo.
+    """
+    if not body.merge_ids:
+        raise HTTPException(400, "merge_ids must not be empty")
+    if len(body.merge_ids) > 20:
+        raise HTTPException(400, "Cannot merge more than 20 contacts at once")
+
+    pool = await get_pool()
+    try:
+        result = await merge_contacts(
+            pool, org_id, str(contact_id),
+            [str(m) for m in body.merge_ids],
+            user["user_id"],
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"status": "merged", **result}
 
 
 @router.get("/contacts/{contact_id}")
@@ -1113,17 +1275,11 @@ async def inbound_leads(request: Request):
     company = _sanitize(parsed.get("company", parsed.get("city", "")))
     product = _sanitize(parsed.get("product", ""))
 
-    existing = None
-    if phone:
-        existing = await pool.fetchrow(
-            "SELECT id FROM staging.graha_contacts WHERE org_id=$1::uuid AND phone=$2",
-            org_id, phone,
-        )
-    if not existing and email:
-        existing = await pool.fetchrow(
-            "SELECT id FROM staging.graha_contacts WHERE org_id=$1::uuid AND email=$2",
-            org_id, email,
-        )
+    # Exact-key dedupe at write time. Raw equality missed +91/spacing variants
+    # of the same number; find_duplicates matches on the normalized keys.
+    # Exact matches only here — fuzzy is never auto-merged, only reviewed.
+    dupes = await find_duplicates(pool, org_id, email=email, phone=phone)
+    existing = dupes[0] if dupes else None
 
     if existing:
         await pool.execute(
@@ -1141,12 +1297,18 @@ async def inbound_leads(request: Request):
         )
         return {"status": "duplicate", "contact_id": str(existing["id"]), "email_id": str(email_row["id"])}
 
+    # No ON CONFLICT here. Migration 022 declared a unique index on
+    # (org_id, phone) that was never created in the live DB, so the old
+    # ON CONFLICT (org_id, phone) clause had no matching index and Postgres
+    # raised at plan time — every new inbound lead 500'd. Migration 024 drops
+    # the intent deliberately: phone is not unique in a CRM (shared landlines,
+    # soft-merged tombstones retain their number). The find_duplicates() check
+    # above handles the dedupe; anything that races past it is caught by the
+    # /contacts/duplicates review queue.
     contact_row = await pool.fetchrow(
         "INSERT INTO staging.graha_contacts "
         "(org_id, name, email, phone, company, contact_type, source, notes) "
         "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, $7) "
-        "ON CONFLICT (org_id, phone) WHERE phone IS NOT NULL AND phone != '' "
-        "DO UPDATE SET notes = staging.graha_contacts.notes "
         "RETURNING id",
         org_id, name, email, phone, company, source,
         parsed.get("message", ""),
