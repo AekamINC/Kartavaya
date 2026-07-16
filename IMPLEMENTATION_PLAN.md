@@ -1,271 +1,192 @@
-# 🚀 Implementation Summary
-**Feature: Role-Based Access + Approval Workflow + Mobile UI + Pagination**
+# Kartavya · Master Implementation Plan
 
-## 📋 Overview
-
-This branch implements:
-1. ✅ **Role-based project access** - Clients/members see only assigned projects
-2. ✅ **Enhanced approval workflow** - Status-based approval triggers  
-3. ✅ **Full-width layout** - No wasted screen space
-4. ✅ **Global pagination** - 25, 50, 100, All (not just mobile)
-5. ✅ **Mobile-responsive UI** - Collapsible sidebar, better navigation
+**Last updated:** 2026-07-16  
+**Branch:** staging  
+**Stack:** Vite+React / FastAPI+asyncpg / Supabase Postgres (Singapore) / Railway+Vercel  
 
 ---
 
-## 🗄️ DATABASE CHANGES
+## What Kartavya Is
 
-### Run Migration First!
-
-```bash
-# Set DATABASE_URL (Railway sets this automatically)
-export DATABASE_URL="postgresql://user:pass@host:port/db"
-
-# Run migration
-python backend/migrations/001_role_based_access.py
-```
-
-### What Gets Created:
-
-1. **`project_assignments` table** - Who can access which projects
-2. **Task approval fields** - `approval_status`, `approved_by`, `approval_notes`
-3. **`user_preferences` table** - Pagination defaults, sidebar state
-4. **Indexes** - Performance optimization
+All-in-one SaaS for Indian SMBs: CRM, invoicing, HR, payroll, AI content, marketing, project management — one login, flat INR pricing, no per-credit meters. Built by Aekam Inc.
 
 ---
 
-## 🔄 APPROVAL WORKFLOW (Enhanced)
+## Modules — Current Status
 
-### Status-Based Approval Triggers
-
-**Scenario 1: Member/Client requests approval**
-```
-Task in "In Progress" → Member changes to "Approval" column
-→ Sets approval_status = 'pending'
-→ Sends notification to Project Owner
-→ Owner sees in "Pending Approvals"
-```
-
-**Scenario 2: Owner approves**
-```
-Owner clicks "Approve" on pending task
-→ Sets approval_status = 'approved'
-→ Moves task to next column (e.g., "Ready for Review" or "Done")
-→ Sends notification to task creator
-```
-
-**Scenario 3: Owner/Member sends to client for approval**
-```
-Task in any status → Click "Request Client Approval"
-→ Sets approval_status = 'pending_client'
-→ Sends notification to client
-→ Client approves → moves to next status
-```
-
-**Scenario 4: Bypass approval**
-```
-Owner can move task directly to next column
-→ Skips approval process
-→ approval_status remains NULL
-```
-
-### API Endpoints (To Be Implemented)
-
-- `POST /api/tasks/{task_id}/request-approval` - Request approval from owner
-- `POST /api/tasks/{task_id}/approve` - Approve task (owner only)
-- `POST /api/tasks/{task_id}/reject` - Reject with reason
-- `POST /api/tasks/{task_id}/request-client-approval` - Request client approval
-- `GET /api/tasks/pending-approval` - Get all pending approvals for owner
+| Module | Code | Router | Status | Notes |
+|---|---|---|---|---|
+| **Project Management** | core | server.py | ✅ Production | Kanban, tasks, comments, attachments, approvals |
+| **Graha · CRM** | graha | graha.py | ✅ Production | Contacts, deals, pipeline, labels, web forms, lead scoring, dedupe/merge |
+| **Ganit · Invoicing** | ganit | ganit.py | ✅ Production | Invoices, payments, GST |
+| **Manav · HRMS** | manav | manav.py | ✅ Production | Employees, documents, leave |
+| **Vetana · Payroll** | vetana | vetana.py | ✅ Production | Salary, payslips, compliance |
+| **Vikray · Sales** | vikray | vikray.py | ✅ Production | Sales pipeline, territories, forecasts |
+| **Srijan · AI Hub** | srijan | hub.py, hub_chat.py, hub_publish.py | ✅ Production | Multi-provider AI (Gemini/OpenRouter/Groq), RAG chatbot, social publishing (Meta/Instagram/LinkedIn/Google Business), content generation, skill packs, credit system |
+| **Prachar · Marketing** | prachar | prachar.py | ⚠️ Partial | Campaign CRUD + audience, send is a stub (never delivers). Automations stored but not triggered. |
+| **Dristi · Analytics** | dristi | dristi.py | ⚠️ Partial | Dashboard table exists, no frontend |
+| **Sanvaad · Messaging** | — | — | 📋 Planned | Internal messaging + WhatsApp. Docs only (MESSAGING_WHATSAPP_PLAN.md, WHATSAPP_MODULE.md) |
+| **Pahchan · Attendance** | — | — | 📋 Planned | PWA biometric attendance, offline-first face-api.js. Spec in memory. |
 
 ---
 
-## 📐 LAYOUT CHANGES (Full-Width)
+## Architecture
 
-### Current Problem:
-```css
-/* Old - Wastes space with auto margins */
-.main-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 2rem;
-}
-```
+### Backend
+- **FastAPI** with asyncpg connection pool
+- **Supabase Postgres** (project `toacecaewujfxjfrjwco`, region `ap-southeast-1` Singapore)
+- All module tables in `staging` schema
+- Custom JWT auth (not Supabase Auth) — `auth_router.py`
+- Cloudflare R2 for file storage (not Supabase Storage)
+- Email via Resend (primary) / AWS SES (fallback) — `email_service.py`
 
-### New Solution:
-```css
-/* New - Full width */
-.main-content {
-  width: 100%;
-  padding: 0 1rem; /* Minimal padding for edge protection */
-}
+### Frontend
+- **Vite + React** (JSX, not TypeScript)
+- k-* design system (`editorial.css` tokens)
+- Bilingual labels (English + Sanskrit)
+- All pages fluid, left-aligned (no fixed-width centering)
 
-@media (min-width: 1920px) {
-  .main-content {
-    padding: 0 2rem; /* Slight padding on very large screens */
-  }
-}
-```
+### AI Routing (`services/ai_router.py`)
+- Indic languages → Gemini 2.5 Flash Lite (free)
+- English bulk → GLM-4.5-Air (free via OpenRouter)
+- English quality → Qwen3.6 Flash
+- Chatbot/RAG → Gemini direct with grounding (free web search)
+- Premium → Gemini 2.5 Pro
+- Cost tracked in `hub_ai_logs`, credits in `hub_credit_wallets`
 
 ---
 
-## 📄 PAGINATION (Global Implementation)
+## RBAC — Five-Layer Permission Model
 
-### Features:
-- **Options**: 25, 50, 100, All
-- **Persistent**: Saves user preference
-- **Global**: Applied to all task lists (not just mobile)
+Implemented 2026-07-16. Tables: `users`, `staging.user_roles`, `staging.org_member_modules`.
 
-### UI Component:
-```typescript
-<PaginationControls 
-  total={tasks.length}
-  pageSize={pageSize}
-  currentPage={currentPage}
-  onPageChange={setCurrentPage}
-  onPageSizeChange={setPageSize}
-/>
-```
+| Layer | Table | Roles | Purpose |
+|---|---|---|---|
+| **Platform** | `user_roles` (org_id NULL) | platform_admin, account_manager, account_finance, developer, srijan_admin | Who works at Aekam, what they can do across all orgs |
+| **Org** | `user_roles` (org_id set) | org_owner, org_admin, org_member | Which company you belong to, your rank |
+| **Module** | `org_member_modules` | per-user per-module grants | Which modules a user can access within their org |
+| **Project** | `team_members` | owner, admin, member, client | Which boards you can open (cross-org for clients) |
+| **Job Title** | `users.member_role` | free text | Display only, never a permission |
 
-### Implementation:
-```typescript
-// hooks/usePagination.ts
-export function usePagination(items, defaultPageSize = 25) {
-  const [pageSize, setPageSize] = useState(defaultPageSize);
-  const [currentPage, setCurrentPage] = useState(1);
-  
-  const paginatedItems = useMemo(() => {
-    if (pageSize === 'all') return items;
-    const start = (currentPage - 1) * pageSize;
-    return items.slice(start, start + pageSize);
-  }, [items, pageSize, currentPage]);
-  
-  return { paginatedItems, pageSize, setPageSize, currentPage, setCurrentPage };
-}
-```
+### Module Sensitivity
+- 🟢 **Auto-granted** to new org_members: graha, vikray, prachar, srijan, dristi
+- 🔴 **Require explicit grant**: vetana (payroll), ganit (finance), manav (HR)
+- org_owner/org_admin: auto-access to all enabled modules
+
+### Superadmins (all identical)
+- admin@aekaminc.com
+- bhoomi@aekaminc.com
+- sid@aekaminc.com
+- kevalvshah03@gmail.com
+
+### Org Resolution (`middleware/org_resolver.py`)
+1. `X-Org-Id` header (validated against user_roles)
+2. Fallback: first org from `user_roles` (ORDER BY granted_at)
+3. Legacy fallback: `team_members` (excludes `role='client'`)
 
 ---
 
-## 📱 MOBILE UI CHANGES
+## Tenancy Model
 
-### Collapsible Sidebar
-- **Desktop**: Always visible
-- **Mobile**: Hamburger menu → slide-out drawer
-- **State**: Persisted in `user_preferences`
+**Current state:** 31 orgs exist but are really project folders from PM-tool era. There is exactly one real tenant: Aekam Inc. All 31 orgs were bulk-created 12 July, 0 module data in any of them.
 
-### Better Navigation
-- No cascading menus on mobile
-- Flat, tappable menu items
-- Bottom navigation bar (optional)
+**Target:** Invert the FK — `teams.org_id` (many projects : 1 org) instead of `organisations.team_id` (1:1). Selling to a customer = create org #2.
 
----
-
-## 📂 FILES TO BE CREATED/MODIFIED
-
-### ✅ Already Created (Pushed to Branch):
-1. `backend/migrations/001_role_based_access.py` - Database migration
-2. `backend/migrations/README.md` - Migration documentation
-
-### 🔜 Next to Create (Backend):
-3. `backend/approvals_router.py` - NEW (approval endpoints)
-4. `backend/server.py` - MODIFY (integrate approval routes, filter projects)
-5. `backend/email_service.py` - MODIFY (approval notifications)
-
-### 🔜 Next to Create (Frontend):
-6. `frontend/hooks/usePagination.ts` - NEW (pagination logic)
-7. `frontend/components/PaginationControls.tsx` - NEW
-8. `frontend/components/MobileSidebar.tsx` - NEW
-9. `frontend/components/PendingApprovals.tsx` - NEW
-10. `frontend/components/TaskApprovalButton.tsx` - NEW
-11. `frontend/styles/full-width.css` - NEW (remove auto margins)
-12. `frontend/components/AllTasks.tsx` - MODIFY (add pagination)
-13. `frontend/components/Projects.tsx` - MODIFY (filter by assigned)
-14. `frontend/components/Dashboard.tsx` - MODIFY (add approvals section)
+**Founder rules (2026-07-16, do not relitigate):**
+- Aekam toggles modules on client request after payment agreement
+- Orgs are sales-provisioned, never self-signup
+- One person CAN work for two orgs → org switcher required
+- Clients must NOT see plan pricing (only integration costs + AI credits)
 
 ---
 
-## 🎯 IMPLEMENTATION PHASES
+## Security — Resolved & Active
 
-### Phase 1: Database ✅ (DONE)
-- Migration scripts created
-- Ready to run
+### Resolved (2026-06-21)
+All Phase 1–6 vulnerabilities fixed: SQL injection, XSS, CSRF, rate limiting, email escaping, column allowlists.
 
-### Phase 2: Backend API (Next - 30 min)
-- Approval endpoints
-- Project filtering
-- Email notifications
-
-### Phase 3: Frontend Core (Next - 30 min)
-- Pagination components
-- Full-width layout
-- Mobile sidebar
-
-### Phase 4: Approval UI (Next - 20 min)
-- Pending approvals widget
-- Approval buttons
-- Client approval flow
-
-### Phase 5: Testing & Polish (Next - 20 min)
-- E2E testing
-- Mobile responsive testing
-- Bug fixes
-
-**Total Estimated Time:** ~2 hours
+### Active Issues
+| ID | Issue | Severity | Status |
+|---|---|---|---|
+| G1 | Guest escalation: client role resolves to tenant org | Critical | **Mitigated** — `get_org_id` now rejects `role='client'` in team_members fallback |
+| L1 | `GET /users` returns all users across all orgs (no WHERE) | High | Open — needs org filter |
+| L2 | `PUT /users/{id}/role` has no ownership check | High | Open |
+| L3 | `require_module` admin bypass is load-bearing (0 subscriptions exist) | Medium | Open — need subscription row before removing |
+| L4 | `/subscription/current` leaks `price_monthly` | Medium | Open |
+| L5 | `/hub/analytics/spend` exposes AI cost_usd to any user | Medium | Open — move behind require_platform_role |
 
 ---
 
-## 🚀 DEPLOYMENT STEPS
+## Migrations
 
-### 1. Run Migration
-```bash
-# On Railway or local with DATABASE_URL set
-python backend/migrations/001_role_based_access.py
-```
-
-### 2. Deploy Backend
-```bash
-# Railway auto-deploys on push to main
-# Or merge this branch to main
-```
-
-### 3. Deploy Frontend
-```bash
-# Vercel auto-deploys on push
-```
-
-### 4. Verify
-- [ ] Migration completed successfully
-- [ ] Projects show only assigned (for members/clients)
-- [ ] Approval workflow functional
-- [ ] Pagination working on all pages
-- [ ] Full-width layout applied
-- [ ] Mobile UI responsive
+| # | File | What | Applied |
+|---|---|---|---|
+| 001–015 | Various | Core tables, teams, tasks, auth, projects | ✅ |
+| 016 | `016_multi_role_org_admin.sql` | user_roles table, platform role seeding | ✅ |
+| 017 | `017_srijan_p3_p4_chatbot_publishing.sql` | KB, chat, social accounts, publish queue | ✅ |
+| 018–020 | Various | Lead scoring, automations, reports, territories | ✅ |
+| 021 | `021_dristi_prachar.sql` | Dristi dashboards, Prachar tables | ✅ |
+| 022–023 | Various | Graha fields, web forms | ✅ |
+| 024 | `024_graha_dedupe_merge.sql` | pg_trgm, contact dedup, merge audit | ✅ |
+| 025 | `025_org_member_modules.sql` | Per-user module access, developer role | ✅ |
+| 026 | `026_prachar_ad_insights.sql` | Ad accounts, campaigns, insights | 📋 Scheduled |
 
 ---
 
-## 📝 CURRENT STATUS
+## What's Next — Priority Order
 
-✅ **Completed:**
-- Database migration scripts
-- Migration documentation
+### P0 — In Progress / Scheduled
 
-⏳ **In Progress:**
-- Backend approval API endpoints
-- Frontend components
+| Task | Status | ETA |
+|---|---|---|
+| Prachar ad insights pipeline (Meta ingest + AI analysis) | Scheduled 2am 17 July | ~22h |
+| Tenancy fix steps 1–6 (stop leaks, invert FK, org_members, org admin console) | Step 0 done, step 1 scheduled 1am 17 July | ~26h |
+| Replace `require_role("admin")` → `require_platform_role` across 20+ endpoints | Open | ~3h |
 
-❌ **Not Started:**
-- Testing
-- Documentation updates
+### P1 — Next Up
+
+| Task | Notes |
+|---|---|
+| Prachar campaign send worker | Wire SES/Resend into send flow (currently a stub) |
+| Prachar automations engine | Triggers exist in DB but nothing watches/executes them |
+| Google Ads ingest | Same pipeline as Meta, add adwords scope to Google OAuth |
+| Email white-label (org branding) | org_email_settings table, thread brand through send_email |
+| `internal_only` flag on tasks/comments | Required before first real client invitation |
+| Review-queue UI in GrahaPage | Contact dedupe review frontend |
+
+### P2 — Future
+
+| Task | Notes |
+|---|---|
+| Sanvaad (internal messaging) | Slack-like channels, DMs, threads |
+| WhatsApp integration (Meta Cloud API direct) | Not through BSP. Outbound notifications + inbound replies |
+| Pahchan (biometric attendance) | PWA, offline-first face-api.js |
+| In-house e-signature | IT Act §10A, OTP + SHA-256 + audit trail |
+| Mumbai migration | Move Supabase from Singapore to Mumbai (ap-south-1). pg_dump → restore. |
+| Click-to-call (Exotel/Knowlarity) | India VoIP providers |
+| Business card scan (on-device OCR) | Tesseract.js / Google Vision |
+| Data enrichment (BYO-key) | Apollo/Clay API integration, customer pays vendor |
 
 ---
 
-## 🐛 KNOWN ISSUES TO FIX
+## Related Planning Docs
 
-From previous QA audit:
-1. ⚠️ **Rate limiting not active** - SlowAPI middleware needs activation
-2. ⚠️ **Client email typo** - `06bhoomi@gmail.com` vs `o6bhoomi@gmail.com`
+| File | What |
+|---|---|
+| `PLAN_ALL_IN_ONE.md` | Competitive research (12 products), build/integrate/skip verdicts |
+| `PLAN_ROLES.md` | Four-level role model spec, client collaboration gaps |
+| `PLAN_VIKRAY.md` | Sales module spec |
+| `PLAN_VETANA.md` | Payroll module spec |
+| `docs/MARKETING_MODULE.md` | Ambitious marketing plan (not implemented) |
+| `docs/WHATSAPP_MODULE.md` | WhatsApp implementation guide (code in doc, not deployed) |
+| `docs/ANALYTICS_MODULE.md` | Analytics module plan (not implemented) |
 
 ---
 
-**Branch:** `feature/role-access-approval-mobile-ui`  
-**Base:** `main`  
-**Status:** 🚧 In Development  
-**Progress:** 15% (2/13 files created)
+## Dev Workflow
+
+- **Branch:** `staging` for all development
+- **Deploy:** Push to staging → Railway auto-deploys backend, Vercel auto-deploys frontend
+- **Tests:** `python -m pytest backend/tests/ -x -q` (138 tests, all passing)
+- **Build check:** `cd frontend && npx vite build --logLevel error`
+- **DB access:** Supabase MCP or direct asyncpg via DATABASE_URL
