@@ -1135,3 +1135,49 @@ async def expense_stats(
         "total_tax": round(total_tax, 2),
         "count": total_count,
     }
+
+
+# ── Create Invoice from Deal ──────────────────────────────
+
+@router.post("/invoices/from-deal/{deal_id}")
+async def create_invoice_from_deal(
+    deal_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    deal = await pool.fetchrow(
+        "SELECT id, title, value, contact_id FROM staging.graha_deals "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        str(deal_id), org_id,
+    )
+    if not deal:
+        raise HTTPException(404, "Deal not found")
+
+    existing = await pool.fetchrow(
+        "SELECT id FROM staging.ganit_invoices WHERE deal_id=$1::uuid AND org_id=$2::uuid LIMIT 1",
+        str(deal_id), org_id,
+    )
+    if existing:
+        return {"status": "exists", "invoice_id": str(existing["id"])}
+
+    inv_num = await next_doc_number(pool, org_id, "ganit_invoices", "invoice_number", "INV")
+    line_items = [{"description": deal["title"], "qty": 1, "rate": float(deal["value"] or 0)}]
+    subtotal = float(deal["value"] or 0)
+    gst_rate = 18.0
+    cgst = round(subtotal * gst_rate / 200, 2)
+    total = round(subtotal + cgst * 2, 2)
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.ganit_invoices "
+        "(org_id, contact_id, deal_id, invoice_number, line_items, subtotal, "
+        " gst_rate, cgst, sgst, total, doc_status, created_by) "
+        "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, $6, $7, $8, $8, $9, 'draft', $10) "
+        "RETURNING id",
+        org_id, str(deal["contact_id"]) if deal["contact_id"] else None,
+        str(deal_id), inv_num, json.dumps(line_items),
+        subtotal, gst_rate, cgst, total, user["user_id"],
+    )
+
+    return {"status": "created", "invoice_id": str(row["id"]), "invoice_number": inv_num}

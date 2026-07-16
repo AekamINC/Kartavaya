@@ -294,30 +294,34 @@ async def deduct_credits(client_id: str, agent_type: str, user_id: str = None) -
     cost = CREDIT_COSTS.get(agent_type, 2)
     pool = await get_pool()
 
-    wallet = await pool.fetchrow(
-        "SELECT balance FROM staging.hub_credit_wallets WHERE client_id=$1::uuid FOR UPDATE",
-        client_id,
-    )
-    if not wallet:
-        from fastapi import HTTPException
-        raise HTTPException(404, "Credit wallet not found")
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            wallet = await conn.fetchrow(
+                "SELECT balance FROM staging.hub_credit_wallets "
+                "WHERE client_id=$1::uuid FOR UPDATE",
+                client_id,
+            )
+            if not wallet:
+                from fastapi import HTTPException
+                raise HTTPException(404, "Credit wallet not found")
 
-    if wallet["balance"] < cost:
-        from fastapi import HTTPException
-        raise HTTPException(402, f"Insufficient credits. Need {cost}, have {wallet['balance']}")
+            if wallet["balance"] < cost:
+                from fastapi import HTTPException
+                raise HTTPException(402, f"Insufficient credits. Need {cost}, have {wallet['balance']}")
 
-    new_balance = wallet["balance"] - cost
+            new_balance = wallet["balance"] - cost
 
-    await pool.execute(
-        "UPDATE staging.hub_credit_wallets SET balance=$1, updated_at=NOW() WHERE client_id=$2::uuid",
-        new_balance, client_id,
-    )
+            await conn.execute(
+                "UPDATE staging.hub_credit_wallets SET balance=$1, updated_at=NOW() "
+                "WHERE client_id=$2::uuid",
+                new_balance, client_id,
+            )
 
-    await pool.execute(
-        "INSERT INTO staging.hub_credit_transactions "
-        "(client_id, amount, balance_after, tx_type, description, created_by) "
-        "VALUES ($1::uuid, $2, $3, 'debit', $4, $5)",
-        client_id, -cost, new_balance, f"{agent_type} generation", user_id,
-    )
+            await conn.execute(
+                "INSERT INTO staging.hub_credit_transactions "
+                "(client_id, amount, balance_after, tx_type, description, created_by) "
+                "VALUES ($1::uuid, $2, $3, 'debit', $4, $5)",
+                client_id, -cost, new_balance, f"{agent_type} generation", user_id,
+            )
 
     return new_balance

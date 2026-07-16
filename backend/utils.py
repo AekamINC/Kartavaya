@@ -67,11 +67,19 @@ async def get_db():
     return await get_pool()
 
 
+_ALLOWED_DOC_TABLES = {
+    ("ganit_invoices", "invoice_number"),
+    ("vikray_orders", "order_number"),
+    ("vetana_payslips", "payslip_number"),
+}
+
 async def next_doc_number(pool, org_id: str, table: str, column: str, prefix: str) -> str:
     """Generate next sequential document number: PREFIX-YYYY-0001.
 
     Shared by Ganit (invoices), Vikray (orders), and Vetana (payslips).
     """
+    if (table, column) not in _ALLOWED_DOC_TABLES:
+        raise ValueError(f"Disallowed table/column: {table}.{column}")
     last = await pool.fetchval(
         f"SELECT {column} FROM staging.{table} "
         "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 1",

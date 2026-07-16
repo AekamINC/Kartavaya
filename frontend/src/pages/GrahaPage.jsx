@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
-import { PageHeader, StatTile } from '../components/editorial';
+import { PageHeader, StatTile, Card } from '../components/editorial';
+import { relTime } from '../lib/utils';
 
 const CONTACT_TYPES = ['lead', 'customer', 'vendor', 'partner'];
 const ACTIVITY_TYPES = ['call', 'email', 'meeting', 'note', 'task'];
@@ -15,10 +17,13 @@ function Badge({ text, color }) {
   );
 }
 
-const TABS = ['contacts', 'deals', 'kanban', 'pipeline', 'follow-ups', 'labels', 'activities'];
+const TABS = ['today', 'contacts', 'deals', 'kanban', 'pipeline', 'follow-ups', 'labels', 'activities', 'reports', 'automations', 'territories', 'fields', 'web-forms'];
+const SOURCE_COLORS = { indiamart: '#2563eb', justdial: '#ea580c', manual: '#6b7280', website: '#10b981' };
+const ACT_ICONS = { call: '📞', email: '✉️', meeting: '📅', note: '📝', task: '✅' };
+const TL_ICONS = { activity: '●', followup: '⏰', invoice: '📄', deal: '💼' };
 
 export default function GrahaPage() {
-  const [tab, setTab] = useState('contacts');
+  const [tab, setTab] = useState('today');
 
   return (
     <div style={{ padding: '0 0 48px' }}>
@@ -36,6 +41,7 @@ export default function GrahaPage() {
         ))}
       </div>
 
+      {tab === 'today' && <TodayTab />}
       {tab === 'contacts' && <ContactsTab />}
       {tab === 'deals' && <DealsTab />}
       {tab === 'kanban' && <KanbanTab />}
@@ -43,6 +49,195 @@ export default function GrahaPage() {
       {tab === 'follow-ups' && <FollowUpsTab />}
       {tab === 'labels' && <LabelsTab />}
       {tab === 'activities' && <ActivitiesTab />}
+      {tab === 'reports' && <ReportsTab />}
+      {tab === 'automations' && <AutomationsTab />}
+      {tab === 'territories' && <TerritoriesTab />}
+      {tab === 'fields' && <CustomFieldsTab />}
+      {tab === 'web-forms' && <WebFormsTab />}
+    </div>
+  );
+}
+
+
+// ── Today Tab ──────────────────────────────────────────────
+
+function TodayTab() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/api/v1/graha/today')
+      .then(r => setData(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+  if (!data) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Could not load today view.</p>;
+
+  const sections = [
+    { key: 'overdue_followups', title: 'Overdue Follow-ups', color: '#ef4444', icon: '⏰', emptyMsg: 'No overdue follow-ups' },
+    { key: 'stale_deals', title: 'Deals Going Cold', color: '#f59e0b', icon: '🧊', emptyMsg: 'All deals are active' },
+    { key: 'new_leads', title: 'New Leads (24h)', color: '#10b981', icon: '🌱', emptyMsg: 'No new leads today' },
+    { key: 'todays_activities', title: "Today's Activities", color: '#6366f1', icon: '📋', emptyMsg: 'No activities today' },
+    { key: 'recent_closures', title: 'Recent Won/Lost (7d)', color: '#0082c6', icon: '🏁', emptyMsg: 'No recent closures' },
+  ];
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+      {sections.map(s => {
+        const items = data[s.key] || [];
+        return (
+          <div key={s.key} style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px',
+              borderBottom: '1px solid var(--rule-soft)', background: 'var(--bg-raised)' }}>
+              <span>{s.icon}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>{s.title}</span>
+              {items.length > 0 && (
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 99,
+                  background: `${s.color}18`, color: s.color }}>{items.length}</span>
+              )}
+            </div>
+            <div style={{ padding: '8px 14px', maxHeight: 280, overflowY: 'auto' }}>
+              {items.length === 0 ? (
+                <p style={{ fontSize: 12, color: 'var(--ink-3)', padding: '8px 0' }}>{s.emptyMsg}</p>
+              ) : items.map((item, i) => (
+                <TodayItem key={item.id || i} item={item} section={s.key} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TodayItem({ item, section }) {
+  const fmtDate = d => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+  const daysAgo = d => { if (!d) return ''; const ms = Date.now() - new Date(d).getTime(); return Math.floor(ms / 86400000) + 'd ago'; };
+
+  if (section === 'overdue_followups') {
+    const overdueDays = Math.floor((Date.now() - new Date(item.due_at).getTime()) / 86400000);
+    return (
+      <div style={{ padding: '6px 0', borderBottom: '1px solid var(--rule-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 600, minWidth: 36 }}>{overdueDays}d</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+          {item.contact_name && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{item.contact_name}</div>}
+        </div>
+        <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{fmtDate(item.due_at)}</span>
+      </div>
+    );
+  }
+
+  if (section === 'stale_deals') {
+    return (
+      <div style={{ padding: '6px 0', borderBottom: '1px solid var(--rule-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{item.contact_name} · {daysAgo(item.updated_at)} since activity</div>
+        </div>
+        {item.value && <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', whiteSpace: 'nowrap' }}>₹{Number(item.value).toLocaleString('en-IN')}</span>}
+      </div>
+    );
+  }
+
+  if (section === 'new_leads') {
+    return (
+      <div style={{ padding: '6px 0', borderBottom: '1px solid var(--rule-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>{item.name}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{item.company || item.email || item.phone}</div>
+        </div>
+        {item.source && <Badge text={item.source} color={SOURCE_COLORS[item.source] || '#6b7280'} />}
+      </div>
+    );
+  }
+
+  if (section === 'todays_activities') {
+    return (
+      <div style={{ padding: '6px 0', borderBottom: '1px solid var(--rule-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 14 }}>{ACT_ICONS[item.activity_type] || '●'}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, textDecoration: item.is_completed ? 'line-through' : 'none',
+            color: item.is_completed ? 'var(--ink-3)' : 'var(--ink)' }}>{item.title}</div>
+          {item.contact_name && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{item.contact_name}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  if (section === 'recent_closures') {
+    const won = item.stage === 'Won';
+    return (
+      <div style={{ padding: '6px 0', borderBottom: '1px solid var(--rule-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Badge text={item.stage} color={won ? '#10b981' : '#ef4444'} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>{item.title}</div>
+          {item.contact_name && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{item.contact_name}</div>}
+        </div>
+        {item.value && <span style={{ fontSize: 12, fontWeight: 600, color: won ? '#10b981' : '#ef4444', whiteSpace: 'nowrap' }}>₹{Number(item.value).toLocaleString('en-IN')}</span>}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+
+// ── Contact Timeline ──────────────────────────────────────
+
+function ContactTimeline({ contactId }) {
+  const [items, setItems] = useState([]);
+  const [cursor, setCursor] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+
+  const load = useCallback((cur) => {
+    const params = cur ? `?cursor=${encodeURIComponent(cur)}&limit=30` : '?limit=30';
+    api.get(`/api/v1/graha/contacts/${contactId}/timeline${params}`)
+      .then(r => {
+        setItems(prev => cur ? [...prev, ...r.data.data] : r.data.data);
+        setCursor(r.data.next_cursor);
+        setHasMore(!!r.data.next_cursor);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [contactId]);
+
+  useEffect(() => { load(null); }, [load]);
+
+  if (loading && items.length === 0) return <p style={{ fontSize: 12, color: 'var(--ink-3)', padding: 8 }}>Loading timeline...</p>;
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <h4 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--ink-3)', marginBottom: 8 }}>Timeline</h4>
+      {items.length === 0 ? (
+        <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>No activity yet.</p>
+      ) : (
+        <div style={{ position: 'relative', paddingLeft: 20 }}>
+          <div style={{ position: 'absolute', left: 5, top: 4, bottom: 4, width: 1, background: 'var(--rule-soft)' }} />
+          {items.map((it, i) => (
+            <div key={`${it.type}-${it.id}-${i}`} style={{ position: 'relative', paddingBottom: 12, paddingLeft: 8 }}>
+              <span style={{ position: 'absolute', left: -20, top: 3, fontSize: 12 }}>{TL_ICONS[it.type]}</span>
+              <div style={{ fontSize: 13, fontWeight: 500 }}>
+                {it.title}
+                {it.amount != null && <span style={{ marginLeft: 8, color: '#10b981', fontWeight: 600 }}>₹{Number(it.amount).toLocaleString('en-IN')}</span>}
+                {it.stage && <Badge text={it.stage} color={STAGE_COLORS[it.stage] || '#6b7280'} />}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                {it.type}{it.subtype ? ` · ${it.subtype}` : ''} · {it.ts ? new Date(it.ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+              </div>
+            </div>
+          ))}
+          {hasMore && (
+            <button onClick={() => load(cursor)}
+              style={{ fontSize: 12, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}>
+              Load more...
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -204,7 +399,7 @@ function ContactsTab() {
         )}
 
         {detail.activities?.length > 0 && (
-          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24 }}>
+          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
             <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Activities</h4>
             {detail.activities.map(a => (
               <div key={a.id} style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13, alignItems: 'center' }}>
@@ -215,6 +410,10 @@ function ContactsTab() {
             ))}
           </div>
         )}
+
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24 }}>
+          <ContactTimeline contactId={c.id} />
+        </div>
       </div>
     );
   }
@@ -267,7 +466,7 @@ function ContactsTab() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-              {['Name', 'Company', 'Email', 'Phone', 'Type', 'Score', ''].map(h => (
+              {['Name', 'Company', 'Email', 'Phone', 'Type', 'Source', 'Score', ''].map(h => (
                 <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
               ))}
             </tr>
@@ -280,6 +479,7 @@ function ContactsTab() {
                 <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{c.email || '—'}</td>
                 <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{c.phone || '—'}</td>
                 <td style={{ padding: '10px' }}><Badge text={c.contact_type} color={TYPE_COLORS[c.contact_type] || '#6E7B91'} /></td>
+                <td style={{ padding: '10px' }}>{c.source ? <Badge text={c.source} color={SOURCE_COLORS[c.source] || '#6b7280'} /> : '—'}</td>
                 <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{c.lead_score ?? '—'}</td>
                 <td style={{ padding: '10px' }}>
                   <button onClick={e => { e.stopPropagation(); deleteContact(c.id); }}
@@ -296,6 +496,7 @@ function ContactsTab() {
 
 
 function DealsTab() {
+  const navigate = useNavigate();
   const { pushToast } = useToast();
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -343,6 +544,18 @@ function DealsTab() {
       pushToast({ title: `Deal moved to ${stage}`, type: 'success' });
       load();
     } catch { pushToast({ title: 'Update failed', type: 'error' }); }
+  }
+
+  async function createInvoice(dealId) {
+    try {
+      const r = await api.post(`/v1/ganit/invoices/from-deal/${dealId}`);
+      if (r.data.status === 'exists') {
+        pushToast({ title: 'Invoice already exists for this deal', type: 'info' });
+      } else {
+        pushToast({ title: `Draft invoice ${r.data.invoice_number} created`, type: 'success' });
+      }
+      navigate(`/ganit`);
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed to create invoice', type: 'error' }); }
   }
 
   const stages = ['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
@@ -407,6 +620,10 @@ function DealsTab() {
                 <span>Probability: {d.probability}%</span>
                 {d.expected_close_date && <span>Close: {d.expected_close_date}</span>}
                 <div style={{ flex: 1 }} />
+                {d.stage === 'Won' && (
+                  <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 10px' }}
+                    onClick={() => createInvoice(d.id)}>Create Invoice</button>
+                )}
                 {stages.filter(s => s !== d.stage && s !== 'Lost').map(s => (
                   <button key={s} className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }}
                     onClick={() => updateStage(d.id, s)}>{s}</button>
@@ -860,6 +1077,578 @@ function ActivitiesTab() {
         <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>
           Activities are logged against contacts and deals. Open a contact or deal to see its full activity history.
         </p>
+      )}
+    </div>
+  );
+}
+
+
+// ── Reports Tab ──────────────────────────────────────────────
+
+function ReportsTab() {
+  const [conversion, setConversion] = useState(null);
+  const [forecast, setForecast] = useState(null);
+  const [velocity, setVelocity] = useState(null);
+  const [sources, setSources] = useState(null);
+  const [reps, setReps] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [days, setDays] = useState(90);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      api.get(`/api/v1/graha/reports/conversion?days=${days}`),
+      api.get('/api/v1/graha/reports/forecast'),
+      api.get(`/api/v1/graha/reports/pipeline-velocity?days=${days}`),
+      api.get(`/api/v1/graha/reports/source-analysis?days=${days}`),
+      api.get(`/api/v1/graha/reports/rep-performance?days=${days}`).catch(() => ({ data: null })),
+    ]).then(([c, f, v, s, r]) => {
+      setConversion(c.data);
+      setForecast(f.data);
+      setVelocity(v.data);
+      setSources(s.data);
+      setReps(r.data);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [days]);
+
+  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading reports...</p>;
+
+  const fmt = v => v != null ? `₹${Number(v).toLocaleString('en-IN')}` : '—';
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+        <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>Period:</span>
+        {[30, 60, 90, 180].map(d => (
+          <button key={d} className={`k-btn ${days === d ? 'k-btn--primary' : 'k-btn--ghost'}`}
+            style={{ fontSize: 11, padding: '2px 10px' }} onClick={() => setDays(d)}>{d}d</button>
+        ))}
+      </div>
+
+      {conversion && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, marginBottom: 24 }}>
+          <StatTile label="Total Deals" value={conversion.total_deals} />
+          <StatTile label="Won" value={conversion.won} />
+          <StatTile label="Lost" value={conversion.lost} />
+          <StatTile label="Open" value={conversion.open} />
+          <StatTile label="Win Rate" value={`${conversion.conversion_rate}%`} />
+          <StatTile label="Won Value" value={fmt(conversion.won_value)} />
+          <StatTile label="Avg Cycle" value={`${conversion.avg_cycle_days}d`} />
+        </div>
+      )}
+
+      {forecast && (
+        <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 24 }}>
+          <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Revenue Forecast</h4>
+          <div style={{ display: 'flex', gap: 24, marginBottom: 12 }}>
+            <div><div style={{ fontSize: 11, color: 'var(--ink-3)' }}>Pipeline</div><div style={{ fontSize: 18, fontWeight: 600 }}>{fmt(forecast.total_pipeline)}</div></div>
+            <div><div style={{ fontSize: 11, color: 'var(--ink-3)' }}>Weighted</div><div style={{ fontSize: 18, fontWeight: 600, color: '#10b981' }}>{fmt(forecast.weighted_forecast)}</div></div>
+          </div>
+          {forecast.stages?.map(s => (
+            <div key={s.stage} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', borderBottom: '1px solid var(--rule-soft)' }}>
+              <Badge text={s.stage} color={STAGE_COLORS[s.stage] || '#6b7280'} />
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>{s.count} deals</span>
+              <span style={{ fontSize: 12, fontWeight: 600, minWidth: 100, textAlign: 'right' }}>{fmt(s.total_value)}</span>
+              <span style={{ fontSize: 11, color: '#10b981', minWidth: 90, textAlign: 'right' }}>≈ {fmt(s.weighted_value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {velocity?.data?.length > 0 && (
+        <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 24 }}>
+          <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Pipeline Velocity</h4>
+          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+            <thead><tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+              {['Stage', 'Count', 'Total Value', 'Avg Value', 'Avg Days'].map(h =>
+                <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, fontSize: 11, color: 'var(--ink-3)', textTransform: 'uppercase' }}>{h}</th>
+              )}
+            </tr></thead>
+            <tbody>{velocity.data.map(r => (
+              <tr key={r.stage} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                <td style={{ padding: '6px 8px' }}><Badge text={r.stage} color={STAGE_COLORS[r.stage] || '#6b7280'} /></td>
+                <td style={{ padding: '6px 8px' }}>{r.count}</td>
+                <td style={{ padding: '6px 8px' }}>{fmt(r.total_value)}</td>
+                <td style={{ padding: '6px 8px' }}>{fmt(r.avg_value)}</td>
+                <td style={{ padding: '6px 8px' }}>{r.avg_days_in_stage ?? '—'}d</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+
+      {sources?.data?.length > 0 && (
+        <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 24 }}>
+          <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Lead Source Analysis</h4>
+          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+            <thead><tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+              {['Source', 'Leads', 'Deals', 'Won', 'Won Value'].map(h =>
+                <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, fontSize: 11, color: 'var(--ink-3)', textTransform: 'uppercase' }}>{h}</th>
+              )}
+            </tr></thead>
+            <tbody>{sources.data.map(r => (
+              <tr key={r.source} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                <td style={{ padding: '6px 8px' }}><Badge text={r.source} color={SOURCE_COLORS[r.source] || '#6b7280'} /></td>
+                <td style={{ padding: '6px 8px' }}>{r.leads}</td>
+                <td style={{ padding: '6px 8px' }}>{r.deals}</td>
+                <td style={{ padding: '6px 8px' }}>{r.won}</td>
+                <td style={{ padding: '6px 8px' }}>{fmt(r.won_value)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+
+      {reps?.data?.length > 0 && (
+        <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16 }}>
+          <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Rep Performance</h4>
+          <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+            <thead><tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+              {['Rep', 'Total', 'Won', 'Lost', 'Won Value', 'Avg Deal'].map(h =>
+                <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, fontSize: 11, color: 'var(--ink-3)', textTransform: 'uppercase' }}>{h}</th>
+              )}
+            </tr></thead>
+            <tbody>{reps.data.map(r => (
+              <tr key={r.assigned_to} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                <td style={{ padding: '6px 8px', fontSize: 11, fontFamily: 'var(--mono)' }}>{r.assigned_to?.slice(0, 12) || '—'}</td>
+                <td style={{ padding: '6px 8px' }}>{r.total_deals}</td>
+                <td style={{ padding: '6px 8px', color: '#10b981' }}>{r.won}</td>
+                <td style={{ padding: '6px 8px', color: '#ef4444' }}>{r.lost}</td>
+                <td style={{ padding: '6px 8px' }}>{fmt(r.won_value)}</td>
+                <td style={{ padding: '6px 8px' }}>{fmt(r.avg_deal_value)}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── Automations Tab ──────────────────────────────────────────
+
+function AutomationsTab() {
+  const { pushToast } = useToast();
+  const [automations, setAutomations] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: '', trigger_type: 'lead_created', action_type: 'create_followup', conditions: {}, action_data: {} });
+
+  useEffect(() => {
+    Promise.all([
+      api.get('/api/v1/graha/automations'),
+      api.get('/api/v1/graha/automation-logs').catch(() => ({ data: { data: [] } })),
+    ]).then(([a, l]) => {
+      setAutomations(a.data.data || []);
+      setLogs(l.data.data || []);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  async function create(e) {
+    e.preventDefault();
+    try {
+      await api.post('/api/v1/graha/automations', form);
+      pushToast({ title: 'Automation created', type: 'success' });
+      setShowForm(false);
+      const r = await api.get('/api/v1/graha/automations');
+      setAutomations(r.data.data || []);
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+  }
+
+  async function toggle(id) {
+    try {
+      await api.patch(`/api/v1/graha/automations/${id}/toggle`);
+      setAutomations(prev => prev.map(a => a.id === id ? { ...a, is_active: !a.is_active } : a));
+    } catch { pushToast({ title: 'Toggle failed', type: 'error' }); }
+  }
+
+  async function remove(id) {
+    try {
+      await api.delete(`/api/v1/graha/automations/${id}`);
+      setAutomations(prev => prev.filter(a => a.id !== id));
+    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+  }
+
+  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+
+  const TRIGGERS = ['lead_created', 'deal_stage_changed', 'deal_created', 'activity_created', 'contact_updated', 'deal_stale', 'followup_overdue'];
+  const ACTIONS = ['assign_to', 'create_followup', 'create_activity', 'update_score', 'change_stage', 'send_notification', 'add_label'];
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700 }}>Sales Automations ({automations.length})</h3>
+        <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => setShowForm(!showForm)}>+ New Rule</button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name</span>
+              <input className="k-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Trigger</span>
+              <select className="k-input" value={form.trigger_type} onChange={e => setForm({ ...form, trigger_type: e.target.value })}>
+                {TRIGGERS.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}</select></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Action</span>
+              <select className="k-input" value={form.action_type} onChange={e => setForm({ ...form, action_type: e.target.value })}>
+                {ACTIONS.map(a => <option key={a} value={a}>{a.replace(/_/g, ' ')}</option>)}</select></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary">Create</button>
+          </div>
+        </form>
+      )}
+
+      {automations.map(a => (
+        <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--rule-soft)' }}>
+          <span style={{ width: 8, height: 8, borderRadius: 99, background: a.is_active ? '#10b981' : '#6b7280', flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 500 }}>{a.name}</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+              When: <Badge text={a.trigger_type.replace(/_/g, ' ')} color="#6366f1" /> → <Badge text={a.action_type.replace(/_/g, ' ')} color="#0082c6" />
+              {a.run_count > 0 && <span style={{ marginLeft: 8 }}>· Ran {a.run_count}×</span>}
+            </div>
+          </div>
+          <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => toggle(a.id)}>{a.is_active ? 'Disable' : 'Enable'}</button>
+          <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => remove(a.id)}>Delete</button>
+        </div>
+      ))}
+
+      {logs.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Recent Logs</h4>
+          {logs.slice(0, 20).map(l => (
+            <div key={l.id} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid var(--rule-soft)', display: 'flex', gap: 8 }}>
+              <Badge text={l.result} color={l.result === 'success' ? '#10b981' : l.result === 'error' ? '#ef4444' : '#6b7280'} />
+              <span style={{ color: 'var(--ink-2)' }}>{l.automation_name}</span>
+              <span style={{ flex: 1 }} />
+              <span style={{ color: 'var(--ink-3)', fontSize: 11 }}>{new Date(l.created_at).toLocaleString('en-IN')}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── Territories Tab ──────────────────────────────────────────
+
+function TerritoriesTab() {
+  const { pushToast } = useToast();
+  const [territories, setTerritories] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: '', description: '', assigned_users: [] });
+  const [userInput, setUserInput] = useState('');
+
+  useEffect(() => {
+    api.get('/api/v1/graha/territories')
+      .then(r => setTerritories(r.data.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function create(e) {
+    e.preventDefault();
+    try {
+      await api.post('/api/v1/graha/territories', form);
+      pushToast({ title: 'Territory created', type: 'success' });
+      setShowForm(false);
+      setForm({ name: '', description: '', assigned_users: [] });
+      const r = await api.get('/api/v1/graha/territories');
+      setTerritories(r.data.data || []);
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+  }
+
+  async function remove(id) {
+    try {
+      await api.delete(`/api/v1/graha/territories/${id}`);
+      setTerritories(prev => prev.filter(t => t.id !== id));
+    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+  }
+
+  function addUser() {
+    const u = userInput.trim();
+    if (u && !form.assigned_users.includes(u)) {
+      setForm({ ...form, assigned_users: [...form.assigned_users, u] });
+      setUserInput('');
+    }
+  }
+
+  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700 }}>Territories ({territories.length})</h3>
+        <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => setShowForm(!showForm)}>+ New Territory</button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name</span>
+              <input className="k-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
+              <input className="k-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <span style={{ fontWeight: 600, display: 'block', marginBottom: 4, fontSize: 13 }}>Assigned Users</span>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              {form.assigned_users.map(u => (
+                <span key={u} style={{ fontSize: 11, background: 'var(--bg-raised)', padding: '2px 8px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {u.slice(0, 12)}
+                  <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#ef4444' }}
+                    onClick={() => setForm({ ...form, assigned_users: form.assigned_users.filter(x => x !== u) })}>×</button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input className="k-input" placeholder="User ID" value={userInput} onChange={e => setUserInput(e.target.value)} style={{ flex: 1 }} />
+              <button type="button" className="k-btn k-btn--ghost" onClick={addUser}>Add</button>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary">Create</button>
+          </div>
+        </form>
+      )}
+
+      {territories.map(t => (
+        <div key={t.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--rule-soft)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{t.name}</div>
+              {t.description && <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{t.description}</div>}
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{t.assigned_users?.length || 0} users</span>
+            <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => remove(t.id)}>Delete</button>
+          </div>
+          {t.assigned_users?.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+              {t.assigned_users.map(u => <Badge key={u} text={u.slice(0, 12)} color="#6366f1" />)}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+// ── Custom Fields Tab ────────────────────────────────────────
+
+function CustomFieldsTab() {
+  const { pushToast } = useToast();
+  const [fields, setFields] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ entity_type: 'contact', field_name: '', field_type: 'text', options: [], is_required: false, sort_order: 0 });
+
+  useEffect(() => {
+    api.get('/api/v1/graha/custom-fields')
+      .then(r => setFields(r.data.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function create(e) {
+    e.preventDefault();
+    try {
+      await api.post('/api/v1/graha/custom-fields', form);
+      pushToast({ title: 'Field created', type: 'success' });
+      setShowForm(false);
+      const r = await api.get('/api/v1/graha/custom-fields');
+      setFields(r.data.data || []);
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+  }
+
+  async function remove(id) {
+    try {
+      await api.delete(`/api/v1/graha/custom-fields/${id}`);
+      setFields(prev => prev.filter(f => f.id !== id));
+    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+  }
+
+  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+
+  const FIELD_TYPES = ['text', 'number', 'date', 'select', 'checkbox', 'url', 'email', 'phone'];
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700 }}>Custom Fields ({fields.length})</h3>
+        <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => setShowForm(!showForm)}>+ New Field</button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Entity</span>
+              <select className="k-input" value={form.entity_type} onChange={e => setForm({ ...form, entity_type: e.target.value })}>
+                <option value="contact">Contact</option><option value="deal">Deal</option></select></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Field Name</span>
+              <input className="k-input" value={form.field_name} onChange={e => setForm({ ...form, field_name: e.target.value })} required /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Type</span>
+              <select className="k-input" value={form.field_type} onChange={e => setForm({ ...form, field_type: e.target.value })}>
+                {FIELD_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></label>
+          </div>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+            <label style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input type="checkbox" checked={form.is_required} onChange={e => setForm({ ...form, is_required: e.target.checked })} />
+              Required</label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, marginRight: 4 }}>Order:</span>
+              <input type="number" className="k-input" style={{ width: 60 }} value={form.sort_order}
+                onChange={e => setForm({ ...form, sort_order: parseInt(e.target.value) || 0 })} /></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary">Create</button>
+          </div>
+        </form>
+      )}
+
+      {['contact', 'deal'].map(entity => {
+        const ef = fields.filter(f => f.entity_type === entity);
+        if (!ef.length) return null;
+        return (
+          <div key={entity} style={{ marginBottom: 20 }}>
+            <h4 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--ink-3)', marginBottom: 8 }}>
+              {entity} fields
+            </h4>
+            {ef.map(f => (
+              <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--rule-soft)' }}>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>{f.field_name}</span>
+                  <span style={{ fontSize: 11, color: 'var(--ink-3)', marginLeft: 8 }}>{f.field_type}</span>
+                  {f.is_required && <Badge text="required" color="#ef4444" />}
+                </div>
+                <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => remove(f.id)}>Delete</button>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+// ── Web Forms Tab ────────────────────────────────────────────
+
+function WebFormsTab() {
+  const { pushToast } = useToast();
+  const [forms, setForms] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ name: '', slug: '', auto_source: 'web_form' });
+  const [submissions, setSubmissions] = useState({});
+  const [openSubs, setOpenSubs] = useState(null);
+
+  useEffect(() => {
+    api.get('/api/v1/graha/web-forms')
+      .then(r => setForms(r.data.data || []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function create(e) {
+    e.preventDefault();
+    try {
+      await api.post('/api/v1/graha/web-forms', form);
+      pushToast({ title: 'Form created', type: 'success' });
+      setShowCreate(false);
+      const r = await api.get('/api/v1/graha/web-forms');
+      setForms(r.data.data || []);
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+  }
+
+  async function remove(id) {
+    try {
+      await api.delete(`/api/v1/graha/web-forms/${id}`);
+      setForms(prev => prev.filter(f => f.id !== id));
+    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+  }
+
+  async function loadSubs(formId) {
+    if (openSubs === formId) { setOpenSubs(null); return; }
+    try {
+      const r = await api.get(`/api/v1/graha/web-forms/${formId}/submissions`);
+      setSubmissions(prev => ({ ...prev, [formId]: r.data.data || [] }));
+      setOpenSubs(formId);
+    } catch { pushToast({ title: 'Failed to load submissions', type: 'error' }); }
+  }
+
+  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700 }}>Web-to-Lead Forms ({forms.length})</h3>
+        <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => setShowCreate(!showCreate)}>+ New Form</button>
+      </div>
+
+      {showCreate && (
+        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Form Name</span>
+              <input className="k-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Slug (URL path)</span>
+              <input className="k-input" value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value })} required placeholder="e.g. contact-us" /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Source Tag</span>
+              <input className="k-input" value={form.auto_source} onChange={e => setForm({ ...form, auto_source: e.target.value })} /></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowCreate(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary">Create</button>
+          </div>
+        </form>
+      )}
+
+      {forms.map(f => (
+        <div key={f.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--rule-soft)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{f.name}</div>
+              <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                /api/v1/graha/f/{f.slug} · {f.submission_count} submissions · source: {f.auto_source}
+              </div>
+            </div>
+            <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => loadSubs(f.id)}>
+              {openSubs === f.id ? 'Hide' : 'Submissions'}
+            </button>
+            <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => remove(f.id)}>Delete</button>
+          </div>
+          {openSubs === f.id && submissions[f.id] && (
+            <div style={{ marginTop: 8, paddingLeft: 12 }}>
+              {submissions[f.id].length === 0 ? (
+                <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>No submissions yet.</p>
+              ) : submissions[f.id].map(s => (
+                <div key={s.id} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid var(--rule-soft)' }}>
+                  <Badge text={s.status} color={s.status === 'processed' ? '#10b981' : '#6b7280'} />
+                  <span style={{ marginLeft: 8, color: 'var(--ink-2)' }}>
+                    {Object.entries(s.data || {}).slice(0, 3).map(([k, v]) => `${k}: ${String(v).slice(0, 30)}`).join(' · ')}
+                  </span>
+                  <span style={{ float: 'right', fontSize: 11, color: 'var(--ink-3)' }}>
+                    {new Date(s.created_at).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {forms.length > 0 && (
+        <div style={{ marginTop: 24, padding: 16, background: 'var(--bg-raised)', borderRadius: 8, fontSize: 12, color: 'var(--ink-3)' }}>
+          <strong>Embed code:</strong> POST your form data as JSON to <code>/api/v1/graha/f/{'<slug>'}</code> — fields: name, email, phone, company, message. No auth required.
+        </div>
       )}
     </div>
   );

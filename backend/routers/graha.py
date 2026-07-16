@@ -2,18 +2,23 @@
 graha.py — Graha · ग्राह (CRM) Router
 Contacts, deals, pipelines, activities.
 """
+import asyncio
 import json
-from datetime import datetime, timezone
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
+from services.lead_parser import parse_lead_email
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/graha", tags=["graha-crm"])
 
@@ -180,6 +185,10 @@ async def create_contact(
         body.gstin, body.pan, body.billing_address, body.shipping_address,
         body.tags, body.notes, body.contact_type, body.source, user["user_id"],
     )
+    if body.contact_type == "lead":
+        asyncio.ensure_future(fire_automations(pool, org_id, "lead_created", {
+            "contact_id": str(row["id"]), "source": body.source or "", "contact_type": "lead",
+        }))
     return {"status": "created", **dict(row)}
 
 
@@ -399,6 +408,12 @@ async def create_deal(
         body.stage, body.probability, body.expected_close_date,
         body.assigned_to, body.notes, body.tags, user["user_id"],
     )
+    asyncio.ensure_future(fire_automations(pool, org_id, "deal_created", {
+        "deal_id": str(row["id"]), "stage": body.stage or "New",
+        "contact_id": body.contact_id or "", "value": str(body.value or 0),
+    }))
+    if body.contact_id:
+        asyncio.ensure_future(compute_lead_score(pool, org_id, body.contact_id))
     return {"status": "created", **dict(row)}
 
 
@@ -514,6 +529,10 @@ async def update_deal(
         f"WHERE id=$1::uuid AND org_id=$2::uuid",
         *params,
     )
+    if "stage" in updates:
+        asyncio.ensure_future(fire_automations(pool, org_id, "deal_stage_changed", {
+            "deal_id": str(deal_id), "stage": updates["stage"],
+        }))
     return {"status": "updated"}
 
 
@@ -561,6 +580,12 @@ async def create_activity(
         org_id, body.deal_id, body.contact_id, body.activity_type,
         body.title, body.description, body.scheduled_at, user["user_id"],
     )
+    asyncio.ensure_future(fire_automations(pool, org_id, "activity_created", {
+        "activity_type": body.activity_type, "deal_id": body.deal_id or "",
+        "contact_id": body.contact_id or "",
+    }))
+    if body.contact_id:
+        asyncio.ensure_future(compute_lead_score(pool, org_id, body.contact_id))
     return {"status": "created", "id": str(row["id"])}
 
 
@@ -816,3 +841,1265 @@ async def convert_lead(
         str(contact_id), org_id,
     )
     return {"status": "converted", "contact": dict(updated)}
+
+
+# ── Today / Daily Action View ──────────────────────────────
+
+@router.get("/today")
+async def crm_today(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    role = user.get("role", "member")
+    uid = user["user_id"]
+    is_admin = role == "admin"
+
+    if is_admin:
+        overdue_q = pool.fetch(
+            "SELECT f.id, f.title, f.due_at, f.contact_id, c.name AS contact_name "
+            "FROM staging.graha_follow_ups f "
+            "LEFT JOIN staging.graha_contacts c ON c.id = f.contact_id "
+            "WHERE f.org_id=$1::uuid AND f.due_at < NOW() AND NOT f.is_completed "
+            "ORDER BY f.due_at ASC LIMIT 20",
+            org_id,
+        )
+    else:
+        overdue_q = pool.fetch(
+            "SELECT f.id, f.title, f.due_at, f.contact_id, c.name AS contact_name "
+            "FROM staging.graha_follow_ups f "
+            "LEFT JOIN staging.graha_contacts c ON c.id = f.contact_id "
+            "WHERE f.org_id=$1::uuid AND f.due_at < NOW() AND NOT f.is_completed "
+            "AND f.assigned_to=$2 "
+            "ORDER BY f.due_at ASC LIMIT 20",
+            org_id, uid,
+        )
+
+    if is_admin:
+        stale_q = pool.fetch(
+            "SELECT d.id, d.title, d.value, d.stage, d.probability, "
+            "d.updated_at, c.name AS contact_name "
+            "FROM staging.graha_deals d "
+            "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+            "LEFT JOIN LATERAL ("
+            "  SELECT MAX(a.created_at) AS last_act FROM staging.graha_activities a "
+            "  WHERE a.deal_id = d.id"
+            ") la ON TRUE "
+            "WHERE d.org_id=$1::uuid AND d.is_active=TRUE "
+            "AND d.stage NOT IN ('Won','Lost') "
+            "AND COALESCE(la.last_act, d.created_at) < NOW() - INTERVAL '7 days' "
+            "ORDER BY COALESCE(la.last_act, d.created_at) ASC LIMIT 15",
+            org_id,
+        )
+    else:
+        stale_q = pool.fetch(
+            "SELECT d.id, d.title, d.value, d.stage, d.probability, "
+            "d.updated_at, c.name AS contact_name "
+            "FROM staging.graha_deals d "
+            "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+            "LEFT JOIN LATERAL ("
+            "  SELECT MAX(a.created_at) AS last_act FROM staging.graha_activities a "
+            "  WHERE a.deal_id = d.id"
+            ") la ON TRUE "
+            "WHERE d.org_id=$1::uuid AND d.is_active=TRUE "
+            "AND d.stage NOT IN ('Won','Lost') AND d.assigned_to=$2 "
+            "AND COALESCE(la.last_act, d.created_at) < NOW() - INTERVAL '7 days' "
+            "ORDER BY COALESCE(la.last_act, d.created_at) ASC LIMIT 15",
+            org_id, uid,
+        )
+
+    if is_admin:
+        new_leads_q = pool.fetch(
+            "SELECT id, name, email, phone, company, source, created_at "
+            "FROM staging.graha_contacts "
+            "WHERE org_id=$1::uuid AND is_active=TRUE AND contact_type='lead' "
+            "AND created_at > NOW() - INTERVAL '24 hours' "
+            "ORDER BY created_at DESC LIMIT 20",
+            org_id,
+        )
+    else:
+        new_leads_q = pool.fetch(
+            "SELECT id, name, email, phone, company, source, created_at "
+            "FROM staging.graha_contacts "
+            "WHERE org_id=$1::uuid AND is_active=TRUE AND contact_type='lead' "
+            "AND created_at > NOW() - INTERVAL '24 hours' AND assigned_to=$2 "
+            "ORDER BY created_at DESC LIMIT 20",
+            org_id, uid,
+        )
+
+    today_act_q = pool.fetch(
+        "SELECT a.id, a.activity_type, a.title, a.scheduled_at, a.is_completed, "
+        "a.deal_id, a.contact_id, c.name AS contact_name "
+        "FROM staging.graha_activities a "
+        "LEFT JOIN staging.graha_contacts c ON c.id = a.contact_id "
+        "WHERE a.org_id=$1::uuid "
+        "AND (DATE(a.scheduled_at) = CURRENT_DATE OR DATE(a.created_at) = CURRENT_DATE) "
+        "ORDER BY COALESCE(a.scheduled_at, a.created_at) ASC LIMIT 30",
+        org_id,
+    )
+
+    closures_q = pool.fetch(
+        "SELECT d.id, d.title, d.value, d.stage, d.updated_at, c.name AS contact_name "
+        "FROM staging.graha_deals d "
+        "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+        "WHERE d.org_id=$1::uuid AND d.stage IN ('Won','Lost') "
+        "AND d.updated_at > NOW() - INTERVAL '7 days' "
+        "ORDER BY d.updated_at DESC LIMIT 15",
+        org_id,
+    )
+
+    overdue, stale, new_leads, today_act, closures = await asyncio.gather(
+        overdue_q, stale_q, new_leads_q, today_act_q, closures_q,
+    )
+
+    return {
+        "overdue_followups": [dict(r) for r in overdue],
+        "stale_deals": [dict(r) for r in stale],
+        "new_leads": [dict(r) for r in new_leads],
+        "todays_activities": [dict(r) for r in today_act],
+        "recent_closures": [dict(r) for r in closures],
+    }
+
+
+# ── Contact Timeline ──────────────────────────────────────
+
+@router.get("/contacts/{contact_id}/timeline")
+async def contact_timeline(
+    contact_id: UUID,
+    cursor: Optional[str] = None,
+    limit: int = Query(30, ge=1, le=100),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    cid = str(contact_id)
+
+    cursor_filter = ""
+    params: list = [cid, org_id]
+    if cursor:
+        params.append(cursor)
+        cursor_filter = f" AND ts < ${len(params)}::timestamptz"
+
+    params.append(limit)
+    limit_param = f"${len(params)}"
+
+    q = f"""
+    SELECT * FROM (
+        SELECT id, 'activity' AS type, title, activity_type AS subtype,
+            COALESCE(scheduled_at, created_at) AS ts, NULL::numeric AS amount, NULL AS stage
+        FROM staging.graha_activities
+        WHERE contact_id=$1::uuid AND org_id=$2::uuid
+
+        UNION ALL
+
+        SELECT id, 'followup' AS type, title, NULL AS subtype,
+            due_at AS ts, NULL::numeric AS amount, NULL AS stage
+        FROM staging.graha_follow_ups
+        WHERE contact_id=$1::uuid AND org_id=$2::uuid
+
+        UNION ALL
+
+        SELECT id, 'invoice' AS type, invoice_number AS title, status AS subtype,
+            created_at AS ts, total AS amount, NULL AS stage
+        FROM staging.ganit_invoices
+        WHERE contact_id=$1::uuid AND org_id=$2::uuid
+
+        UNION ALL
+
+        SELECT id, 'deal' AS type, title, NULL AS subtype,
+            created_at AS ts, value AS amount, stage
+        FROM staging.graha_deals
+        WHERE contact_id=$1::uuid AND org_id=$2::uuid
+    ) timeline
+    WHERE 1=1{cursor_filter}
+    ORDER BY ts DESC
+    LIMIT {limit_param}
+    """
+
+    rows = await pool.fetch(q, *params)
+    data = [dict(r) for r in rows]
+    next_cursor = str(data[-1]["ts"].isoformat()) if data and len(data) == limit else None
+
+    return {"data": data, "next_cursor": next_cursor}
+
+
+# ── Contact → Projects ─────────────────────────────────────
+
+@router.get("/contacts/{contact_id}/projects")
+async def contact_projects(
+    contact_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    cid = str(contact_id)
+    rows = await pool.fetch(
+        "SELECT p.id, p.name, p.status, p.created_at "
+        "FROM staging.projects p "
+        "WHERE p.org_id=$1::uuid AND p.contact_id=$2::uuid AND p.is_active=TRUE "
+        "ORDER BY p.created_at DESC LIMIT 20",
+        org_id, cid,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+# ── Inbound Lead Capture ──────────────────────────────────
+
+import hmac
+import hashlib
+import os
+
+_INBOUND_SECRET = os.environ.get("INBOUND_WEBHOOK_SECRET", "")
+
+def _sanitize(val: str, max_len: int = 500) -> str:
+    import re as _re
+    val = _re.sub(r"<[^>]+>", "", val or "")
+    return val.strip()[:max_len]
+
+
+@router.post("/inbound-leads")
+async def inbound_leads(request: Request):
+    if not _INBOUND_SECRET:
+        raise HTTPException(503, "Webhook not configured")
+    body_bytes = await request.body()
+    sig = request.headers.get("x-webhook-signature", "")
+    expected = hmac.new(_INBOUND_SECRET.encode(), body_bytes, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        raise HTTPException(403, "Invalid webhook signature")
+    payload = json.loads(body_bytes)
+
+    sender = payload.get("from", payload.get("sender", ""))
+    subject = payload.get("subject", "")
+    body_text = payload.get("text", payload.get("html", payload.get("body", "")))
+    to_addr = payload.get("to", "")
+
+    pool = await get_pool()
+
+    org_row = await pool.fetchrow(
+        "SELECT o.id FROM staging.organisations o "
+        "WHERE o.settings->>'lead_capture_email' = $1 AND o.is_active=TRUE",
+        to_addr.lower().strip(),
+    )
+    if not org_row:
+        raise HTTPException(400, "No org found for this inbound address")
+
+    org_id = str(org_row["id"])
+    source, parsed = parse_lead_email(sender, subject, body_text)
+
+    email_row = await pool.fetchrow(
+        "INSERT INTO staging.graha_inbound_emails "
+        "(org_id, sender, subject, body_text, parsed_data, status) "
+        "VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6) RETURNING id",
+        org_id, _sanitize(sender, 200), _sanitize(subject, 300),
+        body_text[:10000] if body_text else "",
+        json.dumps(parsed) if parsed else "{}",
+        "parsed" if parsed else "failed",
+    )
+
+    if not parsed:
+        return {"status": "stored", "parsed": False, "email_id": str(email_row["id"])}
+
+    name = _sanitize(parsed.get("name", "Unknown Lead"))
+    phone = _sanitize(parsed.get("phone", ""), 20)
+    email = _sanitize(parsed.get("email", ""), 200)
+    company = _sanitize(parsed.get("company", parsed.get("city", "")))
+    product = _sanitize(parsed.get("product", ""))
+
+    existing = None
+    if phone:
+        existing = await pool.fetchrow(
+            "SELECT id FROM staging.graha_contacts WHERE org_id=$1::uuid AND phone=$2",
+            org_id, phone,
+        )
+    if not existing and email:
+        existing = await pool.fetchrow(
+            "SELECT id FROM staging.graha_contacts WHERE org_id=$1::uuid AND email=$2",
+            org_id, email,
+        )
+
+    if existing:
+        await pool.execute(
+            "INSERT INTO staging.graha_activities "
+            "(org_id, contact_id, activity_type, title, description, created_by) "
+            "VALUES ($1::uuid, $2::uuid, 'note', $3, $4, $5)",
+            org_id, str(existing["id"]),
+            f"New {source} enquiry: {product}" if product else f"New {source} enquiry",
+            parsed.get("message", ""),
+            "system",
+        )
+        await pool.execute(
+            "UPDATE staging.graha_inbound_emails SET status='duplicate', contact_id=$1::uuid WHERE id=$2::uuid",
+            str(existing["id"]), str(email_row["id"]),
+        )
+        return {"status": "duplicate", "contact_id": str(existing["id"]), "email_id": str(email_row["id"])}
+
+    contact_row = await pool.fetchrow(
+        "INSERT INTO staging.graha_contacts "
+        "(org_id, name, email, phone, company, contact_type, source, notes) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, $7) "
+        "ON CONFLICT (org_id, phone) WHERE phone IS NOT NULL AND phone != '' "
+        "DO UPDATE SET notes = staging.graha_contacts.notes "
+        "RETURNING id",
+        org_id, name, email, phone, company, source,
+        parsed.get("message", ""),
+    )
+    contact_id = str(contact_row["id"])
+
+    await pool.execute(
+        "UPDATE staging.graha_inbound_emails SET contact_id=$1::uuid WHERE id=$2::uuid",
+        contact_id, str(email_row["id"]),
+    )
+
+    if product:
+        await pool.execute(
+            "INSERT INTO staging.graha_activities "
+            "(org_id, contact_id, activity_type, title, description, created_by) "
+            "VALUES ($1::uuid, $2::uuid, 'note', $3, $4, $5)",
+            org_id, contact_id,
+            f"{source} enquiry: {product}",
+            parsed.get("message", ""),
+            "system",
+        )
+
+    await pool.execute(
+        "INSERT INTO staging.graha_follow_ups "
+        "(org_id, contact_id, title, due_at, assigned_to, created_by) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $5)",
+        org_id, contact_id,
+        f"Follow up on {source} lead: {name}",
+        datetime.now(timezone.utc) + timedelta(days=3),
+        "system",
+    )
+
+    log.info("Created lead from %s: %s (org=%s)", source, name, org_id)
+    return {"status": "created", "contact_id": contact_id, "email_id": str(email_row["id"])}
+
+
+# ── Inbound Email Log (admin only) ────────────────────────
+
+@router.get("/inbound-emails")
+async def list_inbound_emails(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id, sender, subject, status, contact_id, created_at "
+        "FROM staging.graha_inbound_emails "
+        "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 100",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.get("/inbound-emails/{email_id}")
+async def get_inbound_email(
+    email_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM staging.graha_inbound_emails WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(email_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Email not found")
+    return dict(row)
+
+
+# ── Phase 1: Lead Scoring ──────────────────────────────────
+
+SCORING_SIGNALS = {
+    "has_phone": lambda c, **_: bool(c.get("phone")),
+    "has_email": lambda c, **_: bool(c.get("email")),
+    "source_indiamart": lambda c, **_: c.get("source") == "indiamart",
+    "source_justdial": lambda c, **_: c.get("source") == "justdial",
+    "source_website": lambda c, **_: c.get("source") in ("website", "web_form"),
+}
+
+
+async def compute_lead_score(pool, org_id: str, contact_id: str) -> tuple[int, list[str]]:
+    rules = await pool.fetch(
+        "SELECT signal, points FROM staging.graha_scoring_rules "
+        "WHERE org_id=$1::uuid AND is_active=TRUE",
+        org_id,
+    )
+    if not rules:
+        return 0, []
+
+    contact = await pool.fetchrow(
+        "SELECT * FROM staging.graha_contacts WHERE id=$1::uuid AND org_id=$2::uuid",
+        contact_id, org_id,
+    )
+    if not contact:
+        return 0, []
+    c = dict(contact)
+
+    deal_count = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.graha_deals WHERE contact_id=$1::uuid AND is_active=TRUE",
+        contact_id,
+    )
+    best_stage = await pool.fetchval(
+        "SELECT stage FROM staging.graha_deals WHERE contact_id=$1::uuid AND is_active=TRUE "
+        "ORDER BY CASE stage WHEN 'Negotiation' THEN 4 WHEN 'Proposal' THEN 3 "
+        "WHEN 'Qualified' THEN 2 WHEN 'New' THEN 1 ELSE 0 END DESC LIMIT 1",
+        contact_id,
+    )
+    has_high_value = await pool.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM staging.graha_deals WHERE contact_id=$1::uuid "
+        "AND is_active=TRUE AND value >= 100000)",
+        contact_id,
+    )
+    recent_activity = await pool.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM staging.graha_activities WHERE contact_id=$1::uuid "
+        "AND created_at > NOW() - INTERVAL '7 days')",
+        contact_id,
+    )
+    activity_types = await pool.fetch(
+        "SELECT DISTINCT activity_type FROM staging.graha_activities WHERE contact_id=$1::uuid",
+        contact_id,
+    )
+    act_set = {r["activity_type"] for r in activity_types}
+    overdue_fu = await pool.fetchval(
+        "SELECT EXISTS(SELECT 1 FROM staging.graha_follow_ups WHERE contact_id=$1::uuid "
+        "AND NOT is_completed AND due_at < NOW())",
+        contact_id,
+    )
+
+    dynamic_signals = {
+        "has_deal": deal_count > 0,
+        "multiple_deals": deal_count >= 2,
+        "deal_qualified": best_stage == "Qualified",
+        "deal_proposal": best_stage == "Proposal",
+        "deal_negotiation": best_stage == "Negotiation",
+        "high_value_deal": has_high_value,
+        "activity_recent_7d": recent_activity,
+        "activity_call": "call" in act_set,
+        "activity_meeting": "meeting" in act_set,
+        "followup_overdue": overdue_fu,
+    }
+
+    score = 0
+    reasons = []
+    for rule in rules:
+        sig = rule["signal"]
+        pts = rule["points"]
+        fn = SCORING_SIGNALS.get(sig)
+        if fn:
+            if fn(c):
+                score += pts
+                reasons.append(f"+{pts} {sig}" if pts > 0 else f"{pts} {sig}")
+        elif sig in dynamic_signals:
+            if dynamic_signals[sig]:
+                score += pts
+                reasons.append(f"+{pts} {sig}" if pts > 0 else f"{pts} {sig}")
+
+    score = max(0, min(100, score))
+    return score, reasons
+
+
+@router.post("/contacts/{contact_id}/rescore")
+async def rescore_contact(
+    contact_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    score, reasons = await compute_lead_score(pool, org_id, str(contact_id))
+    await pool.execute(
+        "UPDATE staging.graha_contacts SET lead_score=$1, lead_score_reasons=$2::jsonb, updated_at=NOW() "
+        "WHERE id=$3::uuid AND org_id=$4::uuid",
+        score, json.dumps(reasons), str(contact_id), org_id,
+    )
+    return {"score": score, "reasons": reasons}
+
+
+@router.post("/contacts/rescore-all")
+async def rescore_all_contacts(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    contacts = await pool.fetch(
+        "SELECT id FROM staging.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE",
+        org_id,
+    )
+    count = 0
+    for c in contacts:
+        score, reasons = await compute_lead_score(pool, org_id, str(c["id"]))
+        await pool.execute(
+            "UPDATE staging.graha_contacts SET lead_score=$1, lead_score_reasons=$2::jsonb, updated_at=NOW() "
+            "WHERE id=$3::uuid",
+            score, json.dumps(reasons), str(c["id"]),
+        )
+        count += 1
+    return {"status": "rescored", "count": count}
+
+
+@router.get("/scoring-rules")
+async def list_scoring_rules(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id, signal, points, description, is_active FROM staging.graha_scoring_rules "
+        "WHERE org_id=$1::uuid ORDER BY points DESC",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+class ScoringRuleUpdate(BaseModel):
+    points: int | None = None
+    is_active: bool | None = None
+
+
+@router.patch("/scoring-rules/{rule_id}")
+async def update_scoring_rule(
+    rule_id: UUID,
+    body: ScoringRuleUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+    sets = []
+    params = [str(rule_id), org_id]
+    idx = 3
+    for k, v in updates.items():
+        sets.append(f"{k}=${idx}")
+        params.append(v)
+        idx += 1
+    await pool.execute(
+        f"UPDATE staging.graha_scoring_rules SET {', '.join(sets)} "
+        f"WHERE id=$1::uuid AND org_id=$2::uuid",
+        *params,
+    )
+    return {"status": "updated"}
+
+
+# ── Phase 1: Sales Automations ─────────────────────────────
+
+class AutomationCreate(BaseModel):
+    name: str
+    trigger_type: str
+    conditions: dict = {}
+    action_type: str
+    action_data: dict = {}
+
+
+@router.get("/automations")
+async def list_automations(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id, name, trigger_type, conditions, action_type, action_data, "
+        "is_active, run_count, last_run_at, created_at "
+        "FROM staging.graha_automations WHERE org_id=$1::uuid ORDER BY created_at DESC",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/automations")
+async def create_automation(
+    body: AutomationCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    valid_triggers = (
+        "lead_created", "deal_stage_changed", "deal_created",
+        "activity_created", "contact_updated", "deal_stale", "followup_overdue",
+    )
+    valid_actions = (
+        "assign_to", "create_followup", "create_activity",
+        "update_score", "change_stage", "send_notification", "add_label",
+    )
+    if body.trigger_type not in valid_triggers:
+        raise HTTPException(400, f"Invalid trigger_type: {body.trigger_type}")
+    if body.action_type not in valid_actions:
+        raise HTTPException(400, f"Invalid action_type: {body.action_type}")
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.graha_automations "
+        "(org_id, name, trigger_type, conditions, action_type, action_data, created_by) "
+        "VALUES ($1::uuid, $2, $3, $4::jsonb, $5, $6::jsonb, $7) RETURNING id, name",
+        org_id, body.name, body.trigger_type, json.dumps(body.conditions),
+        body.action_type, json.dumps(body.action_data), user["user_id"],
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.patch("/automations/{auto_id}/toggle")
+async def toggle_automation(
+    auto_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.graha_automations SET is_active = NOT is_active "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(auto_id), org_id,
+    )
+    return {"status": "toggled"}
+
+
+@router.delete("/automations/{auto_id}")
+async def delete_automation(
+    auto_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    await pool.execute(
+        "DELETE FROM staging.graha_automations WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(auto_id), org_id,
+    )
+    return {"status": "deleted"}
+
+
+@router.get("/automation-logs")
+async def list_automation_logs(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT al.id, al.automation_id, a.name AS automation_name, "
+        "al.trigger_data, al.result, al.error_message, al.created_at "
+        "FROM staging.graha_automation_logs al "
+        "JOIN staging.graha_automations a ON a.id = al.automation_id "
+        "WHERE al.org_id=$1::uuid ORDER BY al.created_at DESC LIMIT 100",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+async def fire_automations(pool, org_id: str, trigger_type: str, context: dict):
+    rules = await pool.fetch(
+        "SELECT * FROM staging.graha_automations "
+        "WHERE org_id=$1::uuid AND trigger_type=$2 AND is_active=TRUE",
+        org_id, trigger_type,
+    )
+    for rule in rules:
+        r = dict(rule)
+        conditions = r.get("conditions", {})
+        skip = False
+        if conditions.get("stage") and context.get("stage") != conditions["stage"]:
+            skip = True
+        if conditions.get("source") and context.get("source") != conditions["source"]:
+            skip = True
+        if conditions.get("contact_type") and context.get("contact_type") != conditions["contact_type"]:
+            skip = True
+
+        result = "skipped" if skip else "success"
+        error_msg = None
+
+        if not skip:
+            try:
+                action = r["action_type"]
+                data = r.get("action_data", {})
+                contact_id = context.get("contact_id")
+                deal_id = context.get("deal_id")
+
+                if action == "assign_to" and contact_id and data.get("user_id"):
+                    await pool.execute(
+                        "UPDATE staging.graha_contacts SET assigned_to=$1::uuid, updated_at=NOW() "
+                        "WHERE id=$2::uuid AND org_id=$3::uuid",
+                        data["user_id"], contact_id, org_id,
+                    )
+                elif action == "create_followup" and contact_id:
+                    days = data.get("days", 3)
+                    await pool.execute(
+                        "INSERT INTO staging.graha_follow_ups "
+                        "(org_id, contact_id, deal_id, title, due_at, assigned_to, created_by) "
+                        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4, $5, $6, $6)",
+                        org_id, contact_id, deal_id or "",
+                        data.get("title", f"Auto follow-up: {r['name']}"),
+                        datetime.now(timezone.utc) + timedelta(days=days),
+                        data.get("user_id", "system"),
+                    )
+                elif action == "create_activity" and contact_id:
+                    await pool.execute(
+                        "INSERT INTO staging.graha_activities "
+                        "(org_id, contact_id, deal_id, activity_type, title, created_by) "
+                        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4, $5, $6)",
+                        org_id, contact_id, deal_id or "",
+                        data.get("activity_type", "note"),
+                        data.get("title", f"Auto: {r['name']}"),
+                        "system",
+                    )
+                elif action == "update_score" and contact_id:
+                    score, reasons = await compute_lead_score(pool, org_id, contact_id)
+                    await pool.execute(
+                        "UPDATE staging.graha_contacts SET lead_score=$1, lead_score_reasons=$2::jsonb "
+                        "WHERE id=$3::uuid",
+                        score, json.dumps(reasons), contact_id,
+                    )
+                elif action == "change_stage" and deal_id and data.get("stage"):
+                    await pool.execute(
+                        "UPDATE staging.graha_deals SET stage=$1, updated_at=NOW() "
+                        "WHERE id=$2::uuid AND org_id=$3::uuid",
+                        data["stage"], deal_id, org_id,
+                    )
+                elif action == "add_label" and contact_id and data.get("label_id"):
+                    await pool.execute(
+                        "INSERT INTO staging.graha_contact_labels (contact_id, label_id) "
+                        "VALUES ($1::uuid, $2::uuid) ON CONFLICT DO NOTHING",
+                        contact_id, data["label_id"],
+                    )
+            except Exception as e:
+                result = "error"
+                error_msg = str(e)[:500]
+                log.warning("Automation %s failed: %s", r["id"], e)
+
+        await pool.execute(
+            "INSERT INTO staging.graha_automation_logs "
+            "(org_id, automation_id, trigger_data, result, error_message) "
+            "VALUES ($1::uuid, $2::uuid, $3::jsonb, $4, $5)",
+            org_id, str(r["id"]), json.dumps(context, default=str),
+            result, error_msg,
+        )
+        if result == "success":
+            await pool.execute(
+                "UPDATE staging.graha_automations SET run_count=run_count+1, last_run_at=NOW() "
+                "WHERE id=$1::uuid",
+                str(r["id"]),
+            )
+
+
+# ── Phase 3: Sales Reports ─────────────────────────────────
+
+@router.get("/reports/pipeline-velocity")
+async def report_pipeline_velocity(
+    days: int = Query(30, ge=7, le=365),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT stage, COUNT(*) as count, COALESCE(SUM(value),0) as total_value, "
+        "COALESCE(AVG(value),0) as avg_value, "
+        "AVG(EXTRACT(EPOCH FROM (updated_at - created_at))/86400)::int as avg_days_in_stage "
+        "FROM staging.graha_deals "
+        "WHERE org_id=$1::uuid AND is_active=TRUE AND created_at > NOW() - ($2 || ' days')::interval "
+        "GROUP BY stage ORDER BY count DESC",
+        org_id, str(days),
+    )
+    return {"data": [dict(r) for r in rows], "period_days": days}
+
+
+@router.get("/reports/conversion")
+async def report_conversion(
+    days: int = Query(90, ge=7, le=365),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    total = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.graha_deals "
+        "WHERE org_id=$1::uuid AND created_at > $2",
+        org_id, cutoff,
+    )
+    won = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.graha_deals "
+        "WHERE org_id=$1::uuid AND created_at > $2 AND stage='Won'",
+        org_id, cutoff,
+    )
+    lost = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.graha_deals "
+        "WHERE org_id=$1::uuid AND created_at > $2 AND stage='Lost'",
+        org_id, cutoff,
+    )
+    won_value = await pool.fetchval(
+        "SELECT COALESCE(SUM(value),0) FROM staging.graha_deals "
+        "WHERE org_id=$1::uuid AND created_at > $2 AND stage='Won'",
+        org_id, cutoff,
+    )
+    avg_cycle = await pool.fetchval(
+        "SELECT AVG(EXTRACT(EPOCH FROM (won_at - created_at))/86400)::int "
+        "FROM staging.graha_deals "
+        "WHERE org_id=$1::uuid AND created_at > $2 AND stage='Won' AND won_at IS NOT NULL",
+        org_id, cutoff,
+    )
+
+    rate = round(won / total * 100, 1) if total > 0 else 0
+    return {
+        "total_deals": total, "won": won, "lost": lost,
+        "open": total - won - lost,
+        "conversion_rate": rate,
+        "won_value": float(won_value),
+        "avg_cycle_days": avg_cycle or 0,
+        "period_days": days,
+    }
+
+
+@router.get("/reports/rep-performance")
+async def report_rep_performance(
+    days: int = Query(30, ge=7, le=365),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = await pool.fetch(
+        "SELECT d.assigned_to, "
+        "COUNT(*) as total_deals, "
+        "COUNT(*) FILTER (WHERE d.stage='Won') as won, "
+        "COUNT(*) FILTER (WHERE d.stage='Lost') as lost, "
+        "COALESCE(SUM(d.value) FILTER (WHERE d.stage='Won'), 0) as won_value, "
+        "COALESCE(AVG(d.value), 0) as avg_deal_value "
+        "FROM staging.graha_deals d "
+        "WHERE d.org_id=$1::uuid AND d.created_at > $2 AND d.assigned_to IS NOT NULL "
+        "GROUP BY d.assigned_to ORDER BY won_value DESC",
+        org_id, cutoff,
+    )
+    return {"data": [dict(r) for r in rows], "period_days": days}
+
+
+@router.get("/reports/forecast")
+async def report_forecast(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT stage, COUNT(*) as count, "
+        "COALESCE(SUM(value),0) as total_value, "
+        "COALESCE(SUM(value * probability / 100.0),0) as weighted_value "
+        "FROM staging.graha_deals "
+        "WHERE org_id=$1::uuid AND is_active=TRUE AND stage NOT IN ('Won','Lost') "
+        "GROUP BY stage ORDER BY weighted_value DESC",
+        org_id,
+    )
+    total_weighted = sum(float(r["weighted_value"]) for r in rows)
+    total_pipeline = sum(float(r["total_value"]) for r in rows)
+    return {
+        "stages": [dict(r) for r in rows],
+        "total_pipeline": round(total_pipeline, 2),
+        "weighted_forecast": round(total_weighted, 2),
+    }
+
+
+@router.get("/reports/source-analysis")
+async def report_source_analysis(
+    days: int = Query(90, ge=7, le=365),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = await pool.fetch(
+        "SELECT COALESCE(c.source, 'unknown') as source, "
+        "COUNT(*) as leads, "
+        "COUNT(d.id) as deals, "
+        "COUNT(d.id) FILTER (WHERE d.stage='Won') as won, "
+        "COALESCE(SUM(d.value) FILTER (WHERE d.stage='Won'), 0) as won_value "
+        "FROM staging.graha_contacts c "
+        "LEFT JOIN staging.graha_deals d ON d.contact_id = c.id AND d.is_active=TRUE "
+        "WHERE c.org_id=$1::uuid AND c.created_at > $2 AND c.is_active=TRUE "
+        "GROUP BY COALESCE(c.source, 'unknown') ORDER BY leads DESC",
+        org_id, cutoff,
+    )
+    return {"data": [dict(r) for r in rows], "period_days": days}
+
+
+# ── Phase 3: Territories ──────────────────────────────────
+
+class TerritoryCreate(BaseModel):
+    name: str
+    description: str = ""
+    assigned_users: list[str] = []
+    rules: dict = {}
+
+
+@router.get("/territories")
+async def list_territories(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id, name, description, assigned_users, rules, round_robin_index, is_active "
+        "FROM staging.graha_territories WHERE org_id=$1::uuid AND is_active=TRUE ORDER BY name",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/territories")
+async def create_territory(
+    body: TerritoryCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.graha_territories (org_id, name, description, assigned_users, rules) "
+        "VALUES ($1::uuid, $2, $3, $4, $5::jsonb) RETURNING id, name",
+        org_id, body.name, body.description, body.assigned_users,
+        json.dumps(body.rules),
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.patch("/territories/{territory_id}")
+async def update_territory(
+    territory_id: UUID,
+    body: TerritoryCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.graha_territories SET name=$1, description=$2, assigned_users=$3, "
+        "rules=$4::jsonb WHERE id=$5::uuid AND org_id=$6::uuid",
+        body.name, body.description, body.assigned_users,
+        json.dumps(body.rules), str(territory_id), org_id,
+    )
+    return {"status": "updated"}
+
+
+@router.delete("/territories/{territory_id}")
+async def delete_territory(
+    territory_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.graha_territories SET is_active=FALSE "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(territory_id), org_id,
+    )
+    return {"status": "deleted"}
+
+
+@router.post("/territories/{territory_id}/assign-next")
+async def territory_round_robin(
+    territory_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    territory = await pool.fetchrow(
+        "SELECT assigned_users, round_robin_index FROM staging.graha_territories "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        str(territory_id), org_id,
+    )
+    if not territory:
+        raise HTTPException(404, "Territory not found")
+    users = territory["assigned_users"] or []
+    if not users:
+        raise HTTPException(400, "Territory has no assigned users")
+    idx = (territory["round_robin_index"] or 0) % len(users)
+    next_user = users[idx]
+    await pool.execute(
+        "UPDATE staging.graha_territories SET round_robin_index=$1 WHERE id=$2::uuid",
+        idx + 1, str(territory_id),
+    )
+    return {"assigned_user": next_user, "index": idx}
+
+
+# ── Phase 3: Custom Fields ────────────────────────────────
+
+class CustomFieldCreate(BaseModel):
+    entity_type: str
+    field_name: str
+    field_type: str
+    options: list = []
+    is_required: bool = False
+    sort_order: int = 0
+
+
+@router.get("/custom-fields")
+async def list_custom_fields(
+    entity_type: Optional[str] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = "SELECT * FROM staging.graha_custom_fields WHERE org_id=$1::uuid AND is_active=TRUE "
+    params: list = [org_id]
+    if entity_type:
+        params.append(entity_type)
+        q += f"AND entity_type=${len(params)} "
+    q += "ORDER BY sort_order, field_name"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/custom-fields")
+async def create_custom_field(
+    body: CustomFieldCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    valid_entities = ("contact", "deal")
+    valid_types = ("text", "number", "date", "select", "checkbox", "url", "email", "phone")
+    if body.entity_type not in valid_entities:
+        raise HTTPException(400, f"entity_type must be one of: {', '.join(valid_entities)}")
+    if body.field_type not in valid_types:
+        raise HTTPException(400, f"field_type must be one of: {', '.join(valid_types)}")
+    pool = await get_pool()
+    try:
+        row = await pool.fetchrow(
+            "INSERT INTO staging.graha_custom_fields "
+            "(org_id, entity_type, field_name, field_type, options, is_required, sort_order) "
+            "VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6, $7) RETURNING id, field_name",
+            org_id, body.entity_type, body.field_name, body.field_type,
+            json.dumps(body.options), body.is_required, body.sort_order,
+        )
+    except Exception:
+        raise HTTPException(409, "Field with this name already exists for this entity type")
+    return {"status": "created", **dict(row)}
+
+
+@router.delete("/custom-fields/{field_id}")
+async def delete_custom_field(
+    field_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.graha_custom_fields SET is_active=FALSE "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(field_id), org_id,
+    )
+    return {"status": "deleted"}
+
+
+# ── Phase 3: Web-to-Lead Forms ─────────────────────────────
+
+class WebFormCreate(BaseModel):
+    name: str
+    slug: str
+    fields: list = []
+    settings: dict = {}
+    auto_assign_to: str = ""
+    auto_source: str = "web_form"
+
+
+@router.get("/web-forms")
+async def list_web_forms(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id, name, slug, fields, settings, auto_assign_to, auto_source, "
+        "submission_count, is_active, created_at "
+        "FROM staging.graha_web_forms WHERE org_id=$1::uuid ORDER BY created_at DESC",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/web-forms")
+async def create_web_form(
+    body: WebFormCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    import re
+    slug = re.sub(r"[^a-z0-9-]", "", body.slug.lower().strip())
+    if not slug:
+        raise HTTPException(400, "Invalid slug")
+    try:
+        row = await pool.fetchrow(
+            "INSERT INTO staging.graha_web_forms "
+            "(org_id, name, slug, fields, settings, auto_assign_to, auto_source, created_by) "
+            "VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, NULLIF($6,'')::uuid, $7, $8) "
+            "RETURNING id, name, slug",
+            org_id, body.name, slug, json.dumps(body.fields),
+            json.dumps(body.settings),
+            body.auto_assign_to, body.auto_source, user["user_id"],
+        )
+    except Exception:
+        raise HTTPException(409, "A form with this slug already exists")
+    return {"status": "created", **dict(row)}
+
+
+@router.delete("/web-forms/{form_id}")
+async def delete_web_form(
+    form_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.graha_web_forms SET is_active=FALSE "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(form_id), org_id,
+    )
+    return {"status": "deleted"}
+
+
+@router.get("/web-forms/{form_id}/submissions")
+async def list_form_submissions(
+    form_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT s.id, s.data, s.contact_id, s.status, s.created_at "
+        "FROM staging.graha_web_form_submissions s "
+        "JOIN staging.graha_web_forms f ON f.id = s.form_id "
+        "WHERE s.form_id=$1::uuid AND f.org_id=$2::uuid "
+        "ORDER BY s.created_at DESC LIMIT 200",
+        str(form_id), org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/f/{slug}")
+async def submit_web_form(
+    slug: str,
+    request: Request,
+):
+    pool = await get_pool()
+    form = await pool.fetchrow(
+        "SELECT * FROM staging.graha_web_forms WHERE slug=$1 AND is_active=TRUE",
+        slug,
+    )
+    if not form:
+        raise HTTPException(404, "Form not found")
+
+    payload = await request.json()
+    org_id = str(form["org_id"])
+    form_id = str(form["id"])
+
+    name = str(payload.get("name", ""))[:200]
+    email = str(payload.get("email", ""))[:200]
+    phone = str(payload.get("phone", ""))[:20]
+    company = str(payload.get("company", ""))[:200]
+
+    existing = None
+    if email:
+        existing = await pool.fetchrow(
+            "SELECT id FROM staging.graha_contacts WHERE org_id=$1::uuid AND email=$2",
+            org_id, email,
+        )
+    if not existing and phone:
+        existing = await pool.fetchrow(
+            "SELECT id FROM staging.graha_contacts WHERE org_id=$1::uuid AND phone=$2",
+            org_id, phone,
+        )
+
+    contact_id = None
+    if existing:
+        contact_id = str(existing["id"])
+    elif name:
+        contact_row = await pool.fetchrow(
+            "INSERT INTO staging.graha_contacts "
+            "(org_id, name, email, phone, company, contact_type, source, "
+            " assigned_to, notes, created_by) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, "
+            " NULLIF($7,'')::uuid, $8, 'system') "
+            "ON CONFLICT (org_id, phone) WHERE phone IS NOT NULL AND phone != '' "
+            "DO UPDATE SET notes = staging.graha_contacts.notes "
+            "RETURNING id",
+            org_id, name, email, phone, company,
+            form["auto_source"] or "web_form",
+            str(form["auto_assign_to"]) if form["auto_assign_to"] else "",
+            str(payload.get("message", ""))[:2000],
+        )
+        contact_id = str(contact_row["id"])
+
+        await fire_automations(pool, org_id, "lead_created", {
+            "contact_id": contact_id,
+            "source": form["auto_source"] or "web_form",
+            "contact_type": "lead",
+        })
+
+    sub = await pool.fetchrow(
+        "INSERT INTO staging.graha_web_form_submissions "
+        "(org_id, form_id, data, contact_id, ip_address, status) "
+        "VALUES ($1::uuid, $2::uuid, $3::jsonb, NULLIF($4,'')::uuid, $5, 'processed') "
+        "RETURNING id",
+        org_id, form_id, json.dumps(payload, default=str),
+        contact_id or "", request.client.host if request.client else "",
+    )
+
+    await pool.execute(
+        "UPDATE staging.graha_web_forms SET submission_count=submission_count+1 "
+        "WHERE id=$1::uuid",
+        form_id,
+    )
+
+    return {"status": "submitted", "id": str(sub["id"])}

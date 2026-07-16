@@ -116,7 +116,7 @@ async def list_orders(
     if contact_id:
         params.append(contact_id)
         q += f" AND o.contact_id=${len(params)}::uuid"
-    q += " ORDER BY o.created_at DESC"
+    q += " ORDER BY o.created_at DESC LIMIT 200"
     rows = await pool.fetch(q, *params)
     return {"data": [dict(r) for r in rows]}
 

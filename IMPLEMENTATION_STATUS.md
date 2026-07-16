@@ -1,443 +1,118 @@
-﻿# Implementation Status - Kartavaya Features
+# Implementation Status — Kartavya by Aekam Inc
 
-## 🎯 Implementation Progress: 60% Complete
-
-### ✅ **COMPLETED** (8 files pushed to GitHub)
-
-#### Backend Files:
-1. **`backend/migrations/001_role_based_access.py`** ✅
-   - Creates `project_assignments` table for role-based access
-   - Adds approval fields to tasks table
-   - Creates `user_preferences` table for pagination/UI settings
-   - Migration includes rollback SQL
-
-2. **`backend/migrations/README.md`** ✅
-   - Migration execution instructions
-   - Railway deployment guide
-
-3. **`backend/approvals_router.py`** ✅
-   - `POST /api/tasks/{id}/request-approval` - Request owner approval
-   - `POST /api/tasks/{id}/approve` - Approve task, auto-move to next column
-   - `POST /api/tasks/{id}/reject` - Reject with reason
-   - `POST /api/tasks/{id}/request-client-approval` - Request client approval
-   - `GET /api/tasks/pending-approval` - List pending approvals
-   - Email notifications for all approval actions
-
-4. **`backend/email_service.py`** ✅ UPDATED
-   - `send_approval_notification_email()` for approval workflow
-   - AWS SES support with boto3 (preferred over SendGrid)
-   - Fallback to SendGrid if AWS SES unavailable
-
-5. **`backend/requirements.txt`** ✅ UPDATED
-   - Added `boto3==1.35.106` for AWS SDK
-
-#### Documentation Files:
-6. **`AWS_SES_SETUP_GUIDE.md`** ✅
-   - Complete AWS SES setup with DNS records
-   - SendGrid vs AWS SES comparison
-   - Step-by-step domain verification
-   - Production access request guide
-
-7. **`ANDROID_APK_BUILD_GUIDE.md`** ✅
-   - Expo EAS Build instructions
-   - 3 build profiles (development, preview, production)
-   - APK installation methods
-   - Troubleshooting guide
-
-8. **`IMPLEMENTATION_PLAN.md`** ✅
-   - Complete roadmap of all changes
-   - Database schema documentation
+**Last Updated:** 2026-07-16  
+**Branch:** `staging`  
+**Domain:** kartavaya.com
 
 ---
 
-### ⏳ **IN PROGRESS** (Next files to push)
+## Completed Modules
 
-#### Backend Files (2 remaining):
-9. **`backend/server.py`** - MODIFY
-   - Integrate `approvals_router`
-   - Add role-based project filtering:
-     - Client: Only assigned projects
-     - Member: Only assigned projects
-     - Admin: All projects
-   - Update `/api/projects` endpoint
-   - Update `/api/dashboard/summary` endpoint
-   - Update `/api/tasks` endpoint
+### Core Platform
+| Module | Status | Description |
+|--------|--------|-------------|
+| Auth & JWT | Done | HS256 tokens, PBKDF2 passwords, role-based (admin/member/client) |
+| Kanban Boards | Done | Real-time DnD (@hello-pangea/dnd), project switcher, column management |
+| Task Management | Done | CRUD, subtasks, checklists, file attachments, activity feed |
+| Approvals | Done | Owner + client approval workflow with magic-link emails |
+| Templates | Done | Task + project templates, apply-on-create |
+| Automations | Done | Trigger → filter → action rules engine |
+| Time Reports | Done | Daily/weekly/monthly PDF+Excel via Railway cron |
+| Inbox & Notifications | Done | VAPID web push + Expo push, in-app inbox |
+| Teams & Roles | Done | Admin/member/client access, team-scoped data |
+| Customize Settings | Done | Color picker, fonts, layout, language (EN/HI/GU), dark mode |
 
-#### Frontend Files (7 remaining):
-10. **`frontend/hooks/usePagination.ts`** - NEW
-    - Global pagination hook (25, 50, 100, All)
-    - Save user preference to localStorage
-    
-11. **`frontend/components/PaginationControls.tsx`** - NEW
-    - Reusable pagination UI component
-    - Page navigation + items per page selector
-    
-12. **`frontend/components/MobileSidebar.tsx`** - NEW
-    - Collapsible hamburger menu for mobile
-    - Non-cascading navigation
-    - Responsive breakpoints
-    
-13. **`frontend/components/PendingApprovals.tsx`** - NEW
-    - Display pending approvals for project owners
-    - Approve/Reject buttons with notes
-    - Real-time updates
-    
-14. **`frontend/styles/full-width.css`** - NEW
-    - Remove auto margins on left/right
-    - Use full screen width
-    
-15. **`frontend/components/Projects.tsx`** - MODIFY
-    - Filter projects by `project_assignments` table
-    - Show only assigned projects for Client/Member
-    - Show all projects for Admin
-    
-16. **`frontend/components/AllTasks.tsx`** - MODIFY
-    - Add pagination controls
-    - Integrate `usePagination` hook
+### Phase 0 — Multi-Tenant Middleware
+| Component | Status | Description |
+|-----------|--------|-------------|
+| org_resolver | Done | Middleware resolves org_id from JWT |
+| require_module | Done | Gate endpoints by org's subscription modules |
+| require_role | Done | Role-based endpoint access |
 
----
+### Phase 1 — Subscription & Billing
+| Component | Status | Description |
+|-----------|--------|-------------|
+| Migration 010 | Done | Subscription tables, billing, module registry |
+| Backend routes | Done | Plans, subscriptions, invoicing |
+| Frontend pages | Done | BillingPage, AdminBillingPage |
 
-## 📅 Timeline
+### Srijan (सृजन) — AI Marketing Hub
+| Phase | Status | Description |
+|-------|--------|-------------|
+| P1 — Foundation | Done | AI router (smart model routing), hub router, 3 frontend pages |
+| P2 — Content | Done | Content library, brand profiles, credit system, skill packs |
+| P3 — Chatbot | Done | RAG with pgvector, Gemini grounding (free web search), chat sessions |
+| P4 — Publishing | Done | Meta/LinkedIn/GBP API, scheduler, per-client OAuth |
 
-### **Phase 1: Backend** (Current)
-- [x] Database migration script
-- [x] Approval workflow router
-- [x] Email notification templates
-- [x] AWS SES integration
-- [ ] Server.py modifications (ETA: 10 minutes)
-
-### **Phase 2: Frontend** (Next)
-- [ ] Pagination hooks + components (ETA: 15 minutes)
-- [ ] Mobile sidebar component (ETA: 10 minutes)
-- [ ] Pending approvals UI (ETA: 10 minutes)
-- [ ] Full-width layout CSS (ETA: 5 minutes)
-- [ ] Projects + AllTasks modifications (ETA: 10 minutes)
-
-### **Phase 3: Testing & Deployment** (Final)
-- [ ] Run database migration on Railway
-- [ ] Deploy backend to Railway
-- [ ] Deploy frontend to Vercel
-- [ ] Test approval workflow end-to-end
-- [ ] Test role-based access
-- [ ] Test pagination on mobile/desktop
-- [ ] Build Android APK with EAS
-
-**Total Estimated Time:** 60 minutes remaining
+### Business Modules
+| Module | Sanskrit | Route | Status | Description |
+|--------|----------|-------|--------|-------------|
+| Graha | ग्राह | /graha | Done | CRM — leads, deals, contacts, quotations, lead scoring, automations, territories, custom fields, web forms, reports |
+| Ganit | गणित | /ganit | Done | GST invoicing — CGST/SGST/IGST, HSN, e-invoicing |
+| Manav | मानव | /manav | Done | HRMS — employees, attendance, leave management |
+| Vikray | विक्रय | /vikray | Done | Sales — pipeline, quotations, orders, fulfilment |
+| Vetana | वेतन | /vetana | Done | Payroll — salary, PF/ESI/TDS, payslips |
+| Dristi | दृष्टि | /dristi | Done | Analytics — dashboards, reports, export |
+| Prachar | प्रचार | /prachar | Done | Marketing — campaigns, email, automation |
+| Sanvaad | संवाद | — | **Not started** | WhatsApp — Business API, templates, broadcasts |
+| Pahchan | पहचान | — | **Not started** | Biometric — face/fingerprint, geo-fenced attendance |
 
 ---
 
-## 🛠️ Feature Breakdown
+## Remaining Work (2 items)
 
-### 1. **Global Pagination** ⏳
-**Status:** Backend ready, frontend pending
+### 1. Sanvaad (संवाद) — WhatsApp Module
+- WhatsApp Business API integration
+- Message templates (HSM)
+- Broadcast campaigns
+- Two-way messaging
+- Per-client WhatsApp Business Account
 
-**Implementation:**
-- Pagination options: 25, 50, 100, All
-- Apply to all task lists (My Tasks, All Tasks, Project Tasks)
-- Save user preference in `user_preferences` table
-- Frontend hook: `usePagination`
-- UI component: `PaginationControls`
-
-**Database:**
-```sql
-user_preferences {
-  user_id
-  pagination_default INT (25, 50, 100, -1 for All)
-  sidebar_collapsed BOOLEAN
-  theme VARCHAR
-}
-```
-
-### 2. **Full-Width Layout** ⏳
-**Status:** CSS file pending
-
-**Implementation:**
-- Remove auto margins on main content area
-- Use entire screen width
-- Update responsive breakpoints
-- File: `frontend/styles/full-width.css`
-
-### 3. **Enhanced Approval Workflow** ✅
-**Status:** Backend complete, frontend UI pending
-
-**Workflow:**
-```
-Member/Client moves task to "Approval" column
-  → approval_status = 'pending'
-  → Email sent to Project Owner
-  
-
-Owner clicks "Approve"
-  → approval_status = 'approved'
-  → Task auto-moves to next column (based on sort_order)
-  → Email sent to task creator
-  
-
-Owner clicks "Reject"
-  → approval_status = 'rejected'
-  → Task stays in Approval column
-  → Email sent with rejection reason
-  → Member must revise
-```
-
-**Database Fields:**
-```sql
-tasks {
-  approval_status ENUM('none', 'pending', 'approved', 'rejected', 'pending_client')
-  approved_by UUID (references users.user_id)
-  approval_notes TEXT
-  approval_requested_at TIMESTAMP
-  approval_decided_at TIMESTAMP
-}
-```
-
-**API Endpoints:**
-- `POST /api/tasks/{id}/request-approval`
-- `POST /api/tasks/{id}/approve`
-- `POST /api/tasks/{id}/reject`
-- `POST /api/tasks/{id}/request-client-approval`
-- `GET /api/tasks/pending-approval`
-
-### 4. **Role-Based Project Access** ⏳
-**Status:** Backend 50%, frontend pending
-
-**Access Rules:**
-- **Client:** ONLY assigned projects, CAN create tasks for change requests
-- **Member:** ONLY assigned projects
-- **Admin:** ALL projects (system-wide access)
-
-**Database:**
-```sql
-project_assignments {
-  team_id UUID
-  user_id UUID
-  role ENUM('owner', 'member', 'client')
-  assigned_at TIMESTAMP
-  assigned_by UUID
-}
-```
-
-**Modified Endpoints:**
-- `GET /api/projects` - Filter by assigned projects
-- `GET /api/dashboard/summary` - Count tasks from assigned projects only
-- `GET /api/tasks` - Show tasks from assigned projects
-
-### 5. **Mobile UI** ⏳
-**Status:** Component pending
-
-**Features:**
-- Collapsible sidebar with hamburger menu
-- Non-cascading navigation (flat structure)
-- Mobile-optimized task cards
-- Touch-friendly buttons (min 44x44px)
-- Responsive breakpoints:
-  - Mobile: < 768px
-  - Tablet: 768px - 1024px
-  - Desktop: > 1024px
-
-**Component:** `frontend/components/MobileSidebar.tsx`
+### 2. Pahchan (पहचान) — Biometric Module
+- Face recognition attendance
+- Fingerprint integration
+- Geo-fenced check-in/check-out
+- Integration with Manav (HRMS) attendance
 
 ---
 
-## 📧 Email Service Status
+## Infrastructure
 
-### **AWS SES Setup** ⏳
-**Status:** Code ready, DNS configuration pending
+### Current Stack & Costs
+| Service | Provider | Cost/mo | Notes |
+|---------|----------|---------|-------|
+| Backend | Railway Hobby | $5 (credit) | 2 workers, ~$1.70 actual usage |
+| Database | Supabase Free | $0 | Used as pure Postgres only |
+| Frontend | Vercel Free | $0 | React SPA, CDN-served |
+| File Storage | Cloudflare R2 | $0 | Per-client accounts |
+| AI Generation | OpenRouter | $5-15 | Smart routing, mostly free models |
+| Web Search | Gemini API | $0 | Chatbot grounding, 1,500 req/day free |
+| **TOTAL** | | **$10-20** | For 6 clients, 40 peak users |
 
-**Required Environment Variables:**
-```bash
-AWS_ACCESS_KEY_ID=AKIAxxxxxxxxxx
-AWS_SECRET_ACCESS_KEY=BGxxxxxxxxxxxxxxxxxx
-AWS_REGION=us-east-1
-FROM_EMAIL=noreply@yourdomain.com
-```
+### Optimizations Applied (2026-07-12)
+- Gunicorn workers: 4 → 2 (saves ~170 MB RAM)
+- asyncpg pool: min=3/max=15 → min=1/max=8 (saves connections)
+- WEB_CONCURRENCY env var for tuning without redeploy
+- AI routing: free models first, premium only when needed
 
-**DNS Records Needed:**
-1. TXT record for domain verification
-2. MX record for bounce handling
-3. 3x TXT records for DKIM authentication
-
-**Benefits:**
-- 3,000 emails/month FREE (vs SendGrid 100/day)
-- $0.10 per 1,000 emails (vs SendGrid $0.40)
-- Better deliverability
-
-**Fallback:** SendGrid still works if AWS SES not configured
-
----
-
-## 📱 Android APK Status
-
-### **Build Configuration** ✅
-**Status:** Ready to build
-
-**Your Setup:**
-- Platform: Expo
-- Build tool: EAS Build
-- Organization: `aekaminc`
-- Project: `Kartavaya`
-
-**Build Profiles:**
-1. **Preview** (Recommended for testing):
-   ```bash
-   cd mobile/
-   eas build --profile preview --platform android
-   ```
-   Output: `Kartavaya-preview.apk` (~40-60MB)
-
-2. **Development** (With dev tools):
-   ```bash
-   eas build --profile development --platform android
-   ```
-   Output: `Kartavaya-dev.apk` (~80-100MB)
-
-3. **Production** (For Play Store):
-   ```bash
-   eas build --profile production --platform android
-   ```
-   Output: `Kartavaya-release.aab` (App Bundle)
-
-**Next Steps:**
-1. Install EAS CLI: `npm install -g eas-cli`
-2. Login: `eas login`
-3. Build: `eas build --profile preview --platform android`
-4. Wait 5-15 minutes
-5. Download APK from link
-6. Install on Android phone
+### Pending Infra Tasks
+- [ ] Set `GEMINI_API_KEY` in Railway dashboard
+- [ ] Set `SENTRY_DSN` in Railway dashboard
+- [ ] Migrate database from Supabase → Neon (connection string swap)
 
 ---
 
-## 🔄 Deployment Steps (After All Files Pushed)
+## Security
+All Phase 1–6 vulnerabilities resolved (commit 212f867, 2026-06-21). See `security_issues.md` in memory for full list.
 
-### 1. **Run Database Migration**
-```bash
-# SSH into Railway container
-railway run python backend/migrations/001_role_based_access.py
-
-# Or run directly via Railway CLI
-python backend/migrations/001_role_based_access.py
-```
-
-### 2. **Update Environment Variables (Railway)**
-```bash
-# Add AWS SES credentials
-AWS_ACCESS_KEY_ID=...
-AWS_SECRET_ACCESS_KEY=...
-AWS_REGION=us-east-1
-FROM_EMAIL=noreply@yourdomain.com
-```
-
-### 3. **Deploy Backend**
-```bash
-git checkout feature/role-access-approval-mobile-ui
-git push origin feature/role-access-approval-mobile-ui
-
-# Merge to main when ready
-git checkout main
-git merge feature/role-access-approval-mobile-ui
-git push origin main
-```
-Railway auto-deploys on push to `main`.
-
-### 4. **Deploy Frontend**
-Vercel auto-deploys from GitHub:
-- Push to branch: Preview deployment
-- Merge to main: Production deployment
-
-### 5. **Build Android APK**
-```bash
-cd mobile/
-eas build --profile preview --platform android
-```
+Key conventions:
+- Email templates: always wrap user vars with `_h()` (html.escape)
+- Auth endpoints: always apply `@limiter.limit()` decorator
+- Background tasks: always use `_bg(coro, label=)`, never bare `asyncio.create_task()`
 
 ---
 
-## ✅ Testing Checklist (After Deployment)
-
-### Role-Based Access:
-- [ ] Client sees ONLY assigned projects
-- [ ] Member sees ONLY assigned projects
-- [ ] Admin sees ALL projects
-- [ ] Client CAN create tasks in assigned projects
-- [ ] Dashboard shows correct task count for role
-
-### Approval Workflow:
-- [ ] Moving task to "Approval" column triggers pending status
-- [ ] Owner receives email notification
-- [ ] Owner can approve/reject from pending approvals page
-- [ ] Approved task auto-moves to next column
-- [ ] Rejected task stays in Approval column
-- [ ] Email sent to task creator on approve/reject
-
-### Pagination:
-- [ ] Pagination controls appear on all task lists
-- [ ] Options: 25, 50, 100, All work correctly
-- [ ] User preference saves to database
-- [ ] Preference persists across sessions
-
-### Mobile UI:
-- [ ] Sidebar collapses on mobile (< 768px)
-- [ ] Hamburger menu toggles sidebar
-- [ ] Navigation is non-cascading (flat)
-- [ ] Task cards are touch-friendly
-
-### Full-Width Layout:
-- [ ] No auto margins on left/right
-- [ ] Content uses full screen width
-- [ ] Responsive on all screen sizes
-
----
-
-## 🐛 Known Issues
-
-1. **Rate Limiting NOT Active** (❌ Critical)
-   - SlowAPI installed but middleware not configured
-   - Backend vulnerable to DDoS
-   - **Fix:** Add SlowAPI middleware to `server.py`
-
-2. **Admin Login Email Typo** (✅ Verified)
-   - Database has: `06bhoomi@gmail.com` (zero)
-   - User tried: `o6bhoomi@gmail.com` (letter o)
-   - **Status:** Confirmed working with correct email
-
----
-
-## 📊 Metrics
-
-- **Total Files:** 16
-- **Completed:** 8 (50%)
-- **In Progress:** 8 (50%)
-- **Lines of Code Added:** ~2,500
-- **Database Tables Added:** 2 (project_assignments, user_preferences)
-- **API Endpoints Added:** 5
-- **Email Templates Added:** 3
-
----
-
-## 🚀 Next Actions
-
-**Immediate (Next 30 minutes):**
-1. Push remaining backend files (`server.py` modifications)
-2. Push all frontend files (7 files)
-3. Create Pull Request to merge branch to main
-
-**After Files Pushed (Next 2 hours):**
-1. Run database migration on Railway
-2. Test locally
-3. Merge PR and deploy to production
-4. Set up AWS SES with DNS records
-5. Build Android APK
-6. QA testing
-
-**Production Readiness (Next 1 week):**
-1. Full regression testing
-2. Fix rate limiting issue
-3. Monitor email delivery
-4. Collect user feedback
-5. Plan v1.1 features
-
----
-
-**Last Updated:** May 5, 2026
-**Branch:** `feature/role-access-approval-mobile-ui`
-**Status:** 60% Complete - Backend done, Frontend in progress
+## CI/CD
+- **GitHub Actions:** Python import smoke test + `tsc --noEmit` on push/PR
+- **Railway:** Auto-deploys from `main` branch
+- **Vercel:** Auto-deploys from GitHub (preview on branch, production on main)

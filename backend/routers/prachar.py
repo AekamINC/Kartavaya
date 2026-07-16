@@ -587,7 +587,7 @@ async def _resolve_audience(pool, org_id: str, filters: dict) -> list[dict]:
         q += f" AND type=${len(params)}"
     if filters.get("label"):
         params.append(filters["label"])
-        q += f" AND ${{len(params)}} = ANY(labels)"
+        q += f" AND ${len(params)} = ANY(labels)"
     if filters.get("min_score"):
         params.append(filters["min_score"])
         q += f" AND lead_score >= ${len(params)}"

@@ -34,6 +34,7 @@ async def _refresh_token_if_needed(account: dict) -> dict:
     refresh_token = account.get("refresh_token")
     if not refresh_token:
         log.warning("Token expired for %s account %s but no refresh token", platform, account["id"])
+        account["_token_expired"] = True
         return account
 
     try:
@@ -54,6 +55,7 @@ async def _refresh_token_if_needed(account: dict) -> dict:
         log.info("Refreshed %s token for account %s", platform, account["id"])
     except Exception as exc:
         log.error("Token refresh failed for %s account %s: %s", platform, account["id"], exc)
+        account["_token_expired"] = True
 
     return account
 
@@ -268,6 +270,15 @@ async def publish_content(queue_id: str) -> dict:
     account = dict(item)
 
     account = await _refresh_token_if_needed(account)
+
+    if account.get("_token_expired"):
+        await pool.execute(
+            "UPDATE staging.hub_publish_queue SET status='failed', "
+            "error_message='Token expired — please reconnect this social account', "
+            "retry_count=retry_count+1 WHERE id=$1::uuid",
+            queue_id,
+        )
+        return {"status": "failed", "error": f"Token expired for {item['platform']} account. Please reconnect."}
 
     try:
         platform = item["platform"]

@@ -25,7 +25,23 @@ router = APIRouter(prefix="/api/v1/hub", tags=["hub-publish"])
 _hub_gate = require_module("srijan")
 log = logging.getLogger(__name__)
 
-_oauth_states: dict[str, dict] = {}
+async def _store_oauth_state(state: str, data: dict):
+    pool = await get_pool()
+    await pool.execute(
+        "INSERT INTO staging.hub_oauth_states (state, data) VALUES ($1, $2::jsonb) "
+        "ON CONFLICT (state) DO UPDATE SET data=$2::jsonb, created_at=NOW()",
+        state, json.dumps(data),
+    )
+
+async def _pop_oauth_state(state: str) -> dict | None:
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "DELETE FROM staging.hub_oauth_states "
+        "WHERE state=$1 AND created_at > NOW() - INTERVAL '10 minutes' "
+        "RETURNING data",
+        state,
+    )
+    return json.loads(row["data"]) if row else None
 
 OAUTH_CONFIGS = {
     "facebook": {
@@ -104,12 +120,12 @@ async def oauth_authorize(
     redirect_uri = f"{backend_url}/api/v1/hub/oauth/{platform}/callback"
 
     state = secrets.token_urlsafe(32)
-    _oauth_states[state] = {
+    await _store_oauth_state(state, {
         "platform": platform,
         "client_id": str(client_id),
         "org_id": org_id,
         "user_id": user["user_id"],
-    }
+    })
 
     if platform in ("facebook", "instagram"):
         params = {
@@ -154,7 +170,7 @@ async def oauth_callback(
     """Handle OAuth callback — exchange code for tokens, store account."""
     import httpx
 
-    state_data = _oauth_states.pop(state, None)
+    state_data = await _pop_oauth_state(state)
     if not state_data or state_data["platform"] != platform:
         raise HTTPException(400, "Invalid or expired OAuth state")
 
@@ -394,11 +410,15 @@ async def disconnect_social_account(
     _gate=Depends(_hub_gate),
 ):
     pool = await get_pool()
-    await pool.execute(
-        "UPDATE staging.hub_social_accounts SET is_active=FALSE, updated_at=NOW() "
-        "WHERE id=$1::uuid AND client_id=$2::uuid",
-        str(account_id), str(client_id),
+    result = await pool.execute(
+        "UPDATE staging.hub_social_accounts sa SET is_active=FALSE, updated_at=NOW() "
+        "FROM staging.hub_clients c "
+        "WHERE sa.id=$1::uuid AND sa.client_id=$2::uuid "
+        "AND c.id = sa.client_id AND c.org_id=$3::uuid",
+        str(account_id), str(client_id), org_id,
     )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "Social account not found")
     return {"status": "disconnected"}
 
 
@@ -484,6 +504,15 @@ async def publish_now(
     _gate=Depends(_hub_gate),
 ):
     """Immediately publish a scheduled post."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT q.id FROM staging.hub_publish_queue q "
+        "JOIN staging.hub_clients c ON c.id = q.client_id "
+        "WHERE q.id=$1::uuid AND c.org_id=$2::uuid",
+        str(queue_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Queue item not found")
     result = await publish_content(str(queue_id))
     return result
 
@@ -496,11 +525,15 @@ async def cancel_scheduled(
     _gate=Depends(_hub_gate),
 ):
     pool = await get_pool()
-    await pool.execute(
-        "UPDATE staging.hub_publish_queue SET status='cancelled' "
-        "WHERE id=$1::uuid AND status='scheduled'",
-        str(queue_id),
+    result = await pool.execute(
+        "UPDATE staging.hub_publish_queue q SET status='cancelled' "
+        "FROM staging.hub_clients c "
+        "WHERE q.id=$1::uuid AND q.status='scheduled' "
+        "AND c.id = q.client_id AND c.org_id=$2::uuid",
+        str(queue_id), org_id,
     )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "Queue item not found")
     return {"status": "cancelled"}
 
 
