@@ -158,11 +158,23 @@ function CreateOrgForm({ onCreated, pushToast }) {
 
 // ── Org Detail Slide-Over ───────────────────────────────────
 
+const ALL_MODULES = [
+  { code: 'graha', label: 'Graha · CRM' },
+  { code: 'ganit', label: 'Ganit · Invoicing' },
+  { code: 'manav', label: 'Manav · HRMS' },
+  { code: 'vikray', label: 'Vikray · Sales' },
+  { code: 'vetana', label: 'Vetana · Payroll' },
+  { code: 'dristi', label: 'Dristi · Analytics' },
+  { code: 'prachar', label: 'Prachar · Marketing' },
+  { code: 'srijan', label: 'Srijan · AI Hub' },
+];
+
 function OrgDetail({ orgId, onClose, pushToast }) {
   const [data, setData] = useState(null);
   const [addEmail, setAddEmail] = useState('');
   const [addRoles, setAddRoles] = useState(['org_member']);
   const [adding, setAdding] = useState(false);
+  const [togglingModule, setTogglingModule] = useState(null);
 
   // R2 config
   const [r2Form, setR2Form] = useState({ account_id: '', access_key_id: '', secret_access_key: '', bucket_name: 'kartavya-storage' });
@@ -193,6 +205,22 @@ function OrgDetail({ orgId, onClose, pushToast }) {
     } catch (err) {
       pushToast({ type: 'error', title: err?.response?.data?.detail || 'Could not remove' });
     }
+  };
+
+  const toggleModule = async (code, currentlyActive) => {
+    setTogglingModule(code);
+    try {
+      if (currentlyActive) {
+        await api.delete(`/v1/admin/orgs/${orgId}/modules/${code}`);
+        pushToast({ type: 'success', title: `${code} disabled` });
+      } else {
+        await api.post(`/v1/admin/orgs/${orgId}/modules/${code}`);
+        pushToast({ type: 'success', title: `${code} enabled` });
+      }
+      load();
+    } catch (err) {
+      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Module toggle failed' });
+    } finally { setTogglingModule(null); }
   };
 
   const saveR2 = async () => {
@@ -319,20 +347,32 @@ function OrgDetail({ orgId, onClose, pushToast }) {
           </div>
         </div>
 
-        {/* Active Modules */}
-        {modules.length > 0 && (
-          <div style={{ padding: '0 24px 20px' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 8 }}>Active Modules</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {modules.filter(m => m.is_active).map(m => (
-                <span key={m.module_code} style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 99,
-                  background: 'rgba(5,183,170,.1)', color: '#05b7aa' }}>
-                  {m.module_code}
-                </span>
-              ))}
-            </div>
+        {/* Modules */}
+        <div style={{ padding: '0 24px 20px' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 10 }}>Modules</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+            {ALL_MODULES.map(m => {
+              const active = modules.some(mod => mod.module_code === m.code && mod.is_active);
+              const toggling = togglingModule === m.code;
+              return (
+                <div key={m.code} onClick={() => !toggling && toggleModule(m.code, active)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 'var(--r-md)',
+                    border: `1px solid ${active ? 'rgba(5,183,170,.3)' : 'var(--rule-soft)'}`,
+                    background: active ? 'rgba(5,183,170,.06)' : 'transparent',
+                    cursor: toggling ? 'wait' : 'pointer', opacity: toggling ? 0.5 : 1, transition: 'all .15s',
+                    userSelect: 'none' }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 4,
+                    border: `2px solid ${active ? '#05b7aa' : 'var(--ink-faint)'}`,
+                    background: active ? '#05b7aa' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {active && <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="#fff" strokeWidth="2"><path d="M2 6l3 3 5-5"/></svg>}
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: active ? 'var(--ink)' : 'var(--ink-3)' }}>{m.label}</span>
+                </div>
+              );
+            })}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

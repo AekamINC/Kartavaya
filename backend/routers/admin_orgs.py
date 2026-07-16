@@ -345,6 +345,58 @@ async def revoke_role(
     return {"status": "revoked"}
 
 
+# ── Module Management ──────────────────────────────────────
+
+ALL_MODULES = [
+    "graha", "ganit", "manav", "vikray", "vetana",
+    "dristi", "prachar", "srijan",
+]
+
+
+@router.post("/{org_id}/modules/{module_code}")
+async def enable_module(
+    org_id: str,
+    module_code: str,
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
+):
+    if module_code not in ALL_MODULES:
+        raise HTTPException(400, f"Unknown module: {module_code}. Valid: {', '.join(ALL_MODULES)}")
+    pool = await get_pool()
+    org = await pool.fetchval("SELECT id FROM staging.organisations WHERE id=$1::uuid", org_id)
+    if not org:
+        raise HTTPException(404, "Organisation not found")
+    await pool.execute(
+        "INSERT INTO staging.module_subscriptions (org_id, module_code, is_active) "
+        "VALUES ($1::uuid, $2, TRUE) "
+        "ON CONFLICT (org_id, module_code) DO UPDATE SET is_active=TRUE, activated_at=NOW()",
+        org_id, module_code,
+    )
+    await _log_event(pool, org_id, "module_enabled", {
+        "module": module_code, "by": user["user_id"],
+    })
+    return {"status": "enabled", "module": module_code}
+
+
+@router.delete("/{org_id}/modules/{module_code}")
+async def disable_module(
+    org_id: str,
+    module_code: str,
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
+):
+    if module_code not in ALL_MODULES:
+        raise HTTPException(400, f"Unknown module: {module_code}")
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.module_subscriptions SET is_active=FALSE "
+        "WHERE org_id=$1::uuid AND module_code=$2",
+        org_id, module_code,
+    )
+    await _log_event(pool, org_id, "module_disabled", {
+        "module": module_code, "by": user["user_id"],
+    })
+    return {"status": "disabled", "module": module_code}
+
+
 # ── R2 Credentials ──────────────────────────────────────────
 
 @router.post("/r2/verify")
