@@ -1612,15 +1612,21 @@ async def test_image_gen(
     _=Depends(_hub_gate),
 ):
     """Temporary debug endpoint — test image generation."""
+    import os as _os
+    env_check = {
+        "or_key_set": bool(_os.getenv("OPENROUTER_API_KEY", "")),
+        "gemini_key_set": bool(_os.getenv("GEMINI_API_KEY", "")),
+        "or_key_prefix": _os.getenv("OPENROUTER_API_KEY", "")[:10] + "..." if _os.getenv("OPENROUTER_API_KEY") else "MISSING",
+    }
     try:
         result = await generate_image(
             prompt="A simple blue circle on white background",
             org_id=org_id,
         )
-        return {"ok": True, "image_url": result["image_url"], "provider": result["provider"]}
+        return {"ok": True, "image_url": result["image_url"], "provider": result["provider"], "env": env_check}
     except Exception as e:
         import traceback
-        return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
+        return {"ok": False, "error": str(e), "traceback": traceback.format_exc(), "env": env_check}
 
 
 @router.post("/org/generate")
