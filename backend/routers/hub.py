@@ -1616,7 +1616,6 @@ async def test_image_gen(
     env_check = {
         "or_key_set": bool(_os.getenv("OPENROUTER_API_KEY", "")),
         "gemini_key_set": bool(_os.getenv("GEMINI_API_KEY", "")),
-        "or_key_prefix": _os.getenv("OPENROUTER_API_KEY", "")[:10] + "..." if _os.getenv("OPENROUTER_API_KEY") else "MISSING",
     }
     try:
         result = await generate_image(
