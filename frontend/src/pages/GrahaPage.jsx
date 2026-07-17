@@ -66,7 +66,7 @@ function TodayTab() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/api/v1/graha/today')
+    api.get('/v1/graha/today')
       .then(r => setData(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -195,7 +195,7 @@ function ContactTimeline({ contactId }) {
 
   const load = useCallback((cur) => {
     const params = cur ? `?cursor=${encodeURIComponent(cur)}&limit=30` : '?limit=30';
-    api.get(`/api/v1/graha/contacts/${contactId}/timeline${params}`)
+    api.get(`/v1/graha/contacts/${contactId}/timeline${params}`)
       .then(r => {
         setItems(prev => cur ? [...prev, ...r.data.data] : r.data.data);
         setCursor(r.data.next_cursor);
@@ -1097,11 +1097,11 @@ function ReportsTab() {
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      api.get(`/api/v1/graha/reports/conversion?days=${days}`),
-      api.get('/api/v1/graha/reports/forecast'),
-      api.get(`/api/v1/graha/reports/pipeline-velocity?days=${days}`),
-      api.get(`/api/v1/graha/reports/source-analysis?days=${days}`),
-      api.get(`/api/v1/graha/reports/rep-performance?days=${days}`).catch(() => ({ data: null })),
+      api.get(`/v1/graha/reports/conversion?days=${days}`),
+      api.get('/v1/graha/reports/forecast'),
+      api.get(`/v1/graha/reports/pipeline-velocity?days=${days}`),
+      api.get(`/v1/graha/reports/source-analysis?days=${days}`),
+      api.get(`/v1/graha/reports/rep-performance?days=${days}`).catch(() => ({ data: null })),
     ]).then(([c, f, v, s, r]) => {
       setConversion(c.data);
       setForecast(f.data);
@@ -1239,8 +1239,8 @@ function AutomationsTab() {
 
   useEffect(() => {
     Promise.all([
-      api.get('/api/v1/graha/automations'),
-      api.get('/api/v1/graha/automation-logs').catch(() => ({ data: { data: [] } })),
+      api.get('/v1/graha/automations'),
+      api.get('/v1/graha/automation-logs').catch(() => ({ data: { data: [] } })),
     ]).then(([a, l]) => {
       setAutomations(a.data.data || []);
       setLogs(l.data.data || []);
@@ -1250,24 +1250,24 @@ function AutomationsTab() {
   async function create(e) {
     e.preventDefault();
     try {
-      await api.post('/api/v1/graha/automations', form);
+      await api.post('/v1/graha/automations', form);
       pushToast({ title: 'Automation created', type: 'success' });
       setShowForm(false);
-      const r = await api.get('/api/v1/graha/automations');
+      const r = await api.get('/v1/graha/automations');
       setAutomations(r.data.data || []);
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
   async function toggle(id) {
     try {
-      await api.patch(`/api/v1/graha/automations/${id}/toggle`);
+      await api.patch(`/v1/graha/automations/${id}/toggle`);
       setAutomations(prev => prev.map(a => a.id === id ? { ...a, is_active: !a.is_active } : a));
     } catch { pushToast({ title: 'Toggle failed', type: 'error' }); }
   }
 
   async function remove(id) {
     try {
-      await api.delete(`/api/v1/graha/automations/${id}`);
+      await api.delete(`/v1/graha/automations/${id}`);
       setAutomations(prev => prev.filter(a => a.id !== id));
     } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
   }
@@ -1347,7 +1347,7 @@ function TerritoriesTab() {
   const [userInput, setUserInput] = useState('');
 
   useEffect(() => {
-    api.get('/api/v1/graha/territories')
+    api.get('/v1/graha/territories')
       .then(r => setTerritories(r.data.data || []))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -1356,18 +1356,18 @@ function TerritoriesTab() {
   async function create(e) {
     e.preventDefault();
     try {
-      await api.post('/api/v1/graha/territories', form);
+      await api.post('/v1/graha/territories', form);
       pushToast({ title: 'Territory created', type: 'success' });
       setShowForm(false);
       setForm({ name: '', description: '', assigned_users: [] });
-      const r = await api.get('/api/v1/graha/territories');
+      const r = await api.get('/v1/graha/territories');
       setTerritories(r.data.data || []);
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
   async function remove(id) {
     try {
-      await api.delete(`/api/v1/graha/territories/${id}`);
+      await api.delete(`/v1/graha/territories/${id}`);
       setTerritories(prev => prev.filter(t => t.id !== id));
     } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
   }
@@ -1452,7 +1452,7 @@ function CustomFieldsTab() {
   const [form, setForm] = useState({ entity_type: 'contact', field_name: '', field_type: 'text', options: [], is_required: false, sort_order: 0 });
 
   useEffect(() => {
-    api.get('/api/v1/graha/custom-fields')
+    api.get('/v1/graha/custom-fields')
       .then(r => setFields(r.data.data || []))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -1461,17 +1461,17 @@ function CustomFieldsTab() {
   async function create(e) {
     e.preventDefault();
     try {
-      await api.post('/api/v1/graha/custom-fields', form);
+      await api.post('/v1/graha/custom-fields', form);
       pushToast({ title: 'Field created', type: 'success' });
       setShowForm(false);
-      const r = await api.get('/api/v1/graha/custom-fields');
+      const r = await api.get('/v1/graha/custom-fields');
       setFields(r.data.data || []);
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
   async function remove(id) {
     try {
-      await api.delete(`/api/v1/graha/custom-fields/${id}`);
+      await api.delete(`/v1/graha/custom-fields/${id}`);
       setFields(prev => prev.filter(f => f.id !== id));
     } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
   }
@@ -1552,7 +1552,7 @@ function WebFormsTab() {
   const [openSubs, setOpenSubs] = useState(null);
 
   useEffect(() => {
-    api.get('/api/v1/graha/web-forms')
+    api.get('/v1/graha/web-forms')
       .then(r => setForms(r.data.data || []))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -1561,17 +1561,17 @@ function WebFormsTab() {
   async function create(e) {
     e.preventDefault();
     try {
-      await api.post('/api/v1/graha/web-forms', form);
+      await api.post('/v1/graha/web-forms', form);
       pushToast({ title: 'Form created', type: 'success' });
       setShowCreate(false);
-      const r = await api.get('/api/v1/graha/web-forms');
+      const r = await api.get('/v1/graha/web-forms');
       setForms(r.data.data || []);
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
   async function remove(id) {
     try {
-      await api.delete(`/api/v1/graha/web-forms/${id}`);
+      await api.delete(`/v1/graha/web-forms/${id}`);
       setForms(prev => prev.filter(f => f.id !== id));
     } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
   }
@@ -1579,7 +1579,7 @@ function WebFormsTab() {
   async function loadSubs(formId) {
     if (openSubs === formId) { setOpenSubs(null); return; }
     try {
-      const r = await api.get(`/api/v1/graha/web-forms/${formId}/submissions`);
+      const r = await api.get(`/v1/graha/web-forms/${formId}/submissions`);
       setSubmissions(prev => ({ ...prev, [formId]: r.data.data || [] }));
       setOpenSubs(formId);
     } catch { pushToast({ title: 'Failed to load submissions', type: 'error' }); }

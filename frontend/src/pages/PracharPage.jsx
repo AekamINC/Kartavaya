@@ -27,7 +27,7 @@ export default function PracharPage() {
 function DashboardTab() {
   const [data, setData] = useState(null);
   const toast = useToast();
-  useEffect(() => { api.get('/api/v1/prachar/dashboard').then(setData).catch(e => toast.error(e.message)); }, []);
+  useEffect(() => { api.get('/v1/prachar/dashboard').then(setData).catch(e => toast.error(e.message)); }, []);
   if (!data) return <Shimmer count={8} />;
   const { campaigns, delivery } = data;
   return (
@@ -84,18 +84,18 @@ function CampaignsTab() {
   const [detail, setDetail] = useState(null);
   const toast = useToast();
 
-  const load = () => api.get('/api/v1/prachar/campaigns').then(r => { setCampaigns(r.data); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
+  const load = () => api.get('/v1/prachar/campaigns').then(r => { setCampaigns(r.data); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
   useEffect(() => { load(); }, []);
 
   const save = async () => {
     if (!form.name.trim() || !form.subject.trim()) return toast.error('Name and subject required');
-    await api.post('/api/v1/prachar/campaigns', form);
+    await api.post('/v1/prachar/campaigns', form);
     setForm(null); load(); toast.success('Campaign created');
   };
 
   const send = async (id) => {
     try {
-      const r = await api.post(`/api/v1/prachar/campaigns/${id}/send`);
+      const r = await api.post(`/v1/prachar/campaigns/${id}/send`);
       toast.success(`Sent to ${r.recipients} recipients`);
       load();
     } catch (e) { toast.error(e.message); }
@@ -206,14 +206,14 @@ function AdsTab() {
     setLoading(true);
     if (view === 'overview') {
       Promise.all([
-        api.get('/api/v1/prachar/ads/overview'),
-        api.get('/api/v1/prachar/ads/accounts')
+        api.get('/v1/prachar/ads/overview'),
+        api.get('/v1/prachar/ads/accounts')
       ]).then(([ov, acc]) => { setOverview(ov); setAccounts(acc.data || acc); setLoading(false); })
         .catch(e => { toast.error(e.message); setLoading(false); });
     } else if (view === 'campaigns') {
-      api.get('/api/v1/prachar/ads/campaigns').then(r => { setCampaigns(r.data || r); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
+      api.get('/v1/prachar/ads/campaigns').then(r => { setCampaigns(r.data || r); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
     } else if (view === 'insights') {
-      api.get('/api/v1/prachar/ads/insights').then(r => { setInsights(r.data || r); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
+      api.get('/v1/prachar/ads/insights').then(r => { setInsights(r.data || r); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
     } else {
       setLoading(false);
     }
@@ -221,7 +221,7 @@ function AdsTab() {
 
   const syncAccount = async (id) => {
     try {
-      await api.post('/api/v1/prachar/ads/accounts/sync', { social_account_id: id });
+      await api.post('/v1/prachar/ads/accounts/sync', { social_account_id: id });
       toast.success('Sync started');
     } catch (e) { toast.error(e.message); }
   };
@@ -229,7 +229,7 @@ function AdsTab() {
   const runAnalysis = async () => {
     if (!brief.trim()) return toast.error('Enter a brief for analysis');
     try {
-      const r = await api.post('/api/v1/prachar/ads/analyse', { brief });
+      const r = await api.post('/v1/prachar/ads/analyse', { brief });
       setAnalysis(r.analysis || r.result || JSON.stringify(r, null, 2));
     } catch (e) { toast.error(e.message); }
   };
@@ -352,28 +352,28 @@ function SequencesTab() {
   const [enrollIds, setEnrollIds] = useState('');
   const toast = useToast();
 
-  const load = () => api.get('/api/v1/prachar/sequences').then(r => { setSequences(r.data || r); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
+  const load = () => api.get('/v1/prachar/sequences').then(r => { setSequences(r.data || r); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
   useEffect(() => { load(); }, []);
 
   const save = async () => {
     if (!form.name.trim()) return toast.error('Name required');
-    await api.post('/api/v1/prachar/sequences', form);
+    await api.post('/v1/prachar/sequences', form);
     setForm(null); load(); toast.success('Sequence created');
   };
 
   const openDetail = async (seq) => {
     setDetail(seq);
     try {
-      const r = await api.get(`/api/v1/prachar/sequences/${seq.id}/stats`);
+      const r = await api.get(`/v1/prachar/sequences/${seq.id}/stats`);
       setStats(r);
     } catch (e) { toast.error(e.message); }
   };
 
   const addStep = async () => {
     if (!stepForm.subject?.trim()) return toast.error('Subject required');
-    await api.post(`/api/v1/prachar/sequences/${detail.id}/steps`, stepForm);
+    await api.post(`/v1/prachar/sequences/${detail.id}/steps`, stepForm);
     toast.success('Step added');
-    const r = await api.get(`/api/v1/prachar/sequences/${detail.id}/stats`);
+    const r = await api.get(`/v1/prachar/sequences/${detail.id}/stats`);
     setStats(r);
     setStepForm(null);
   };
@@ -381,13 +381,13 @@ function SequencesTab() {
   const enroll = async () => {
     const ids = enrollIds.split(',').map(s => s.trim()).filter(Boolean);
     if (!ids.length) return toast.error('Enter contact IDs');
-    await api.post(`/api/v1/prachar/sequences/${detail.id}/enroll`, { contact_ids: ids });
+    await api.post(`/v1/prachar/sequences/${detail.id}/enroll`, { contact_ids: ids });
     toast.success(`Enrolled ${ids.length} contacts`);
     setEnrollIds('');
   };
 
   const pause = async () => {
-    await api.post(`/api/v1/prachar/sequences/${detail.id}/pause`);
+    await api.post(`/v1/prachar/sequences/${detail.id}/pause`);
     toast.success('Sequence paused');
     setDetail({ ...detail, status: 'paused' });
   };
@@ -541,17 +541,17 @@ function TemplatesTab() {
   const [form, setForm] = useState(null);
   const toast = useToast();
 
-  const load = () => api.get('/api/v1/prachar/templates').then(r => { setTemplates(r.data); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
+  const load = () => api.get('/v1/prachar/templates').then(r => { setTemplates(r.data); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
   useEffect(() => { load(); }, []);
 
   const save = async () => {
     if (!form.name.trim() || !form.subject.trim()) return toast.error('Name and subject required');
-    await api.post('/api/v1/prachar/templates', form);
+    await api.post('/v1/prachar/templates', form);
     setForm(null); load(); toast.success('Template created');
   };
 
   const remove = async (id) => {
-    await api.delete(`/api/v1/prachar/templates/${id}`);
+    await api.delete(`/v1/prachar/templates/${id}`);
     load(); toast.success('Deleted');
   };
 
@@ -625,17 +625,17 @@ function AutomationsTab() {
   const [form, setForm] = useState(null);
   const toast = useToast();
 
-  const load = () => api.get('/api/v1/prachar/automations').then(r => { setAutomations(r.data); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
+  const load = () => api.get('/v1/prachar/automations').then(r => { setAutomations(r.data); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
   useEffect(() => { load(); }, []);
 
   const save = async () => {
     if (!form.name.trim()) return toast.error('Name required');
-    await api.post('/api/v1/prachar/automations', form);
+    await api.post('/v1/prachar/automations', form);
     setForm(null); load(); toast.success('Automation created');
   };
 
   const remove = async (id) => {
-    await api.delete(`/api/v1/prachar/automations/${id}`);
+    await api.delete(`/v1/prachar/automations/${id}`);
     load(); toast.success('Deleted');
   };
 
@@ -718,17 +718,17 @@ function UnsubscribesTab() {
   const [email, setEmail] = useState('');
   const toast = useToast();
 
-  const load = () => api.get('/api/v1/prachar/unsubscribes').then(r => { setList(r.data); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
+  const load = () => api.get('/v1/prachar/unsubscribes').then(r => { setList(r.data); setLoading(false); }).catch(e => { toast.error(e.message); setLoading(false); });
   useEffect(() => { load(); }, []);
 
   const add = async () => {
     if (!email.trim()) return;
-    await api.post(`/api/v1/prachar/unsubscribes?email=${encodeURIComponent(email.trim())}&reason=manual`);
+    await api.post(`/v1/prachar/unsubscribes?email=${encodeURIComponent(email.trim())}&reason=manual`);
     setEmail(''); load(); toast.success('Added to unsubscribe list');
   };
 
   const remove = async (id) => {
-    await api.delete(`/api/v1/prachar/unsubscribes/${id}`);
+    await api.delete(`/v1/prachar/unsubscribes/${id}`);
     load(); toast.success('Removed');
   };
 
