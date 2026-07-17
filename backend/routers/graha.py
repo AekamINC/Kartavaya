@@ -190,7 +190,7 @@ async def create_contact(
             "RETURNING id, name, contact_type",
             org_id, body.name, body.email, body.phone, body.company, body.designation,
             body.gstin, body.pan, json.dumps(body.billing_address), json.dumps(body.shipping_address),
-            json.dumps(body.tags), body.notes, body.contact_type, body.source, user["user_id"],
+            body.tags, body.notes, body.contact_type, body.source, user["user_id"],
         )
     except Exception as e:
         logger.error("create_contact failed: %s", e, exc_info=True)
@@ -427,7 +427,7 @@ async def update_contact(
     params = [str(contact_id), org_id]
     idx = 3
     for k, v in updates.items():
-        if k in ("lead_score_reasons", "billing_address", "shipping_address", "tags"):
+        if k in ("lead_score_reasons", "billing_address", "shipping_address"):
             sets.append(f"{k}=${idx}::jsonb")
             params.append(json.dumps(v))
         elif k == "assigned_to":
@@ -572,7 +572,7 @@ async def create_deal(
         "RETURNING id, title, stage",
         org_id, pipeline_id, body.contact_id, body.title, body.value,
         body.stage, body.probability, body.expected_close_date,
-        body.assigned_to, body.notes, json.dumps(body.tags), user["user_id"],
+        body.assigned_to, body.notes, body.tags, user["user_id"],
     )
     asyncio.ensure_future(fire_automations(pool, org_id, "deal_created", {
         "deal_id": str(row["id"]), "stage": body.stage or "New",
