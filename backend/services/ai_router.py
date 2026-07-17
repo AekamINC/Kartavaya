@@ -275,6 +275,111 @@ async def generate(
     raise RuntimeError(f"All AI providers failed. Last error: {last_error}")
 
 
+# ── Image Generation ─────────────────────────────────────────
+
+async def generate_image(
+    prompt: str,
+    style: str = "auto",
+    aspect_ratio: str = "1:1",
+    org_id: Optional[str] = None,
+) -> dict:
+    """Generate an image using Flux (OpenRouter) or Gemini Imagen.
+    Returns {"image_url": "data:image/png;base64,...", "provider": ...}."""
+    pool = await get_pool()
+
+    # Try Flux via OpenRouter first
+    or_key = os.getenv("OPENROUTER_API_KEY", "")
+    if or_key:
+        try:
+            result = await _generate_flux(or_key, prompt, aspect_ratio)
+            await pool.execute(
+                "INSERT INTO staging.hub_ai_logs "
+                "(client_id, provider, model, prompt_tokens, completion_tokens, "
+                " latency_ms, status, cost_usd) "
+                "VALUES ($1::uuid, 'flux', 'black-forest-labs/flux-schnell', 0, 0, 0, 'success', $2)",
+                org_id, result.get("cost_usd", 0.0),
+            )
+            return result
+        except Exception as e:
+            log.warning("Flux image gen failed: %s", e)
+
+    # Fallback to Gemini Imagen
+    gemini_key = os.getenv("GEMINI_API_KEY", "")
+    if gemini_key:
+        try:
+            result = await _generate_gemini_imagen(gemini_key, prompt, aspect_ratio)
+            await pool.execute(
+                "INSERT INTO staging.hub_ai_logs "
+                "(client_id, provider, model, prompt_tokens, completion_tokens, "
+                " latency_ms, status, cost_usd) "
+                "VALUES ($1::uuid, 'gemini_imagen', 'imagen-3.0-generate-002', 0, 0, 0, 'success', 0)",
+                org_id,
+            )
+            return result
+        except Exception as e:
+            log.warning("Gemini Imagen failed: %s", e)
+
+    raise RuntimeError("No image generation provider available")
+
+
+async def _generate_flux(api_key: str, prompt: str, aspect_ratio: str = "1:1") -> dict:
+    """Generate image via Flux Schnell on OpenRouter."""
+    size_map = {
+        "1:1": (1024, 1024), "16:9": (1344, 768), "9:16": (768, 1344),
+        "4:3": (1152, 896), "3:4": (896, 1152),
+    }
+    w, h = size_map.get(aspect_ratio, (1024, 1024))
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            "https://openrouter.ai/api/v1/images/generations",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": "black-forest-labs/flux-schnell",
+                "prompt": prompt,
+                "n": 1,
+                "size": f"{w}x{h}",
+                "response_format": "b64_json",
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    b64 = data["data"][0]["b64_json"]
+    return {
+        "image_b64": b64,
+        "image_url": f"data:image/png;base64,{b64}",
+        "provider": "flux",
+        "model": "black-forest-labs/flux-schnell",
+        "cost_usd": 0.003,
+    }
+
+
+async def _generate_gemini_imagen(api_key: str, prompt: str, aspect_ratio: str = "1:1") -> dict:
+    """Generate image via Gemini Imagen 3."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key={api_key}"
+
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(url, json={
+            "instances": [{"prompt": prompt}],
+            "parameters": {
+                "sampleCount": 1,
+                "aspectRatio": aspect_ratio,
+            },
+        })
+        resp.raise_for_status()
+        data = resp.json()
+
+    b64 = data["predictions"][0]["bytesBase64Encoded"]
+    return {
+        "image_b64": b64,
+        "image_url": f"data:image/png;base64,{b64}",
+        "provider": "gemini_imagen",
+        "model": "imagen-3.0-generate-002",
+        "cost_usd": 0.0,
+    }
+
+
 # ── Credit cost per agent type ──────────────────────────────
 CREDIT_COSTS = {
     "social_media": 2,
@@ -286,6 +391,7 @@ CREDIT_COSTS = {
     "campaign": 10,
     "seo": 8,
     "ad_analysis": 5,
+    "image": 3,
 }
 
 
@@ -323,6 +429,59 @@ async def deduct_credits(client_id: str, agent_type: str, user_id: str = None) -
                 "(client_id, amount, balance_after, tx_type, description, created_by) "
                 "VALUES ($1::uuid, $2, $3, 'debit', $4, $5)",
                 client_id, -cost, new_balance, f"{agent_type} generation", user_id,
+            )
+
+    return new_balance
+
+
+async def deduct_org_credits(org_id: str, user_id: str, agent_type: str, description: str = "") -> int:
+    """Deduct credits from org wallet + user allocation. Returns new org balance.
+    Checks user allocation first, then deducts from org wallet."""
+    cost = CREDIT_COSTS.get(agent_type, 2)
+    pool = await get_pool()
+    from fastapi import HTTPException
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # Check user allocation
+            user_wallet = await conn.fetchrow(
+                "SELECT allocated, used FROM staging.hub_user_credits "
+                "WHERE org_id=$1::uuid AND user_id=$2 FOR UPDATE",
+                org_id, user_id,
+            )
+            if user_wallet:
+                remaining = user_wallet["allocated"] - user_wallet["used"]
+                if remaining < cost:
+                    raise HTTPException(402, f"Insufficient credits. Need {cost}, have {remaining} allocated")
+                await conn.execute(
+                    "UPDATE staging.hub_user_credits SET used=used+$1, updated_at=NOW() "
+                    "WHERE org_id=$2::uuid AND user_id=$3",
+                    cost, org_id, user_id,
+                )
+
+            # Deduct from org wallet
+            org_wallet = await conn.fetchrow(
+                "SELECT balance FROM staging.hub_org_credits "
+                "WHERE org_id=$1::uuid FOR UPDATE",
+                org_id,
+            )
+            if not org_wallet:
+                raise HTTPException(404, "Org credit wallet not found")
+            if org_wallet["balance"] < cost:
+                raise HTTPException(402, f"Org has insufficient credits. Need {cost}, have {org_wallet['balance']}")
+
+            new_balance = org_wallet["balance"] - cost
+            await conn.execute(
+                "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() "
+                "WHERE org_id=$2::uuid",
+                new_balance, org_id,
+            )
+            await conn.execute(
+                "INSERT INTO staging.hub_org_credit_transactions "
+                "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
+                "VALUES ($1::uuid, $2, $3, $4, 'debit', $5, $2)",
+                org_id, user_id, -cost, new_balance,
+                description or f"{agent_type} generation",
             )
 
     return new_balance

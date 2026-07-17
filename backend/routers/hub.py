@@ -1,12 +1,15 @@
 """
 hub.py — Srijan (सृजन) Router
-Client management, brand profiles, content generation, credit management.
+Org-level content generation, skill packs, credit management, brand profiles.
 All endpoints gated by require_module("srijan").
 """
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
+
+log = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -16,7 +19,7 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import require_platform_role
 from middleware.subscription import require_module
-from services.ai_router import generate, deduct_credits, CREDIT_COSTS
+from services.ai_router import generate, generate_image, deduct_credits, deduct_org_credits, CREDIT_COSTS
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
 
@@ -86,6 +89,26 @@ class SkillTemplateCreate(BaseModel):
 class CreditTopup(BaseModel):
     amount: int
     notes: str = ""
+
+class OrgSkillAssign(BaseModel):
+    custom_config: dict = {}
+
+class OrgCreditTopup(BaseModel):
+    amount: int
+    notes: str = ""
+
+class UserCreditAllocate(BaseModel):
+    amount: int
+
+class OrgContentGenerate(BaseModel):
+    agent_type: str
+    brief: str
+    platform: str = ""
+    language: str = "en"
+    extra_instructions: str = ""
+    generate_image: bool = False
+    image_prompt: str = ""
+    aspect_ratio: str = "1:1"
 
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -1207,3 +1230,537 @@ async def delete_ai_conversation(
         org_id, user["user_id"], context_type,
     )
     return {"status": "deleted"}
+
+
+# ══════════════════════════════════════════════════════════════
+# ORG-LEVEL SKILLS — Aekam assigns skills to orgs, orgs use them
+# ══════════════════════════════════════════════════════════════
+
+@router.get("/org/skills")
+async def list_org_skills(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """List all skills assigned to this org."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT os.*, t.name as template_name, t.description as template_description, "
+        "t.category, t.estimated_credits, t.icon, t.steps "
+        "FROM staging.hub_org_skills os "
+        "JOIN staging.hub_skill_templates t ON t.id = os.template_id "
+        "WHERE os.org_id=$1::uuid AND os.is_active=TRUE "
+        "ORDER BY t.category, t.name",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/org/skills/{template_id}")
+async def assign_skill_to_org(
+    template_id: UUID,
+    body: OrgSkillAssign,
+    user=Depends(require_platform_role("platform_admin", "account_manager", "srijan_admin")),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Aekam admin assigns a skill template to an org."""
+    pool = await get_pool()
+
+    tmpl = await pool.fetchrow(
+        "SELECT id FROM staging.hub_skill_templates WHERE id=$1 AND is_active=TRUE",
+        template_id,
+    )
+    if not tmpl:
+        raise HTTPException(404, "Skill template not found")
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.hub_org_skills "
+        "(org_id, template_id, custom_config, assigned_by) "
+        "VALUES ($1::uuid, $2, $3::jsonb, $4) "
+        "ON CONFLICT (org_id, template_id) DO UPDATE SET "
+        "custom_config=EXCLUDED.custom_config, is_active=TRUE, updated_at=NOW() "
+        "RETURNING *",
+        org_id, template_id, json.dumps(body.custom_config), user["user_id"],
+    )
+    return dict(row)
+
+
+@router.delete("/org/skills/{skill_id}")
+async def remove_skill_from_org(
+    skill_id: UUID,
+    user=Depends(require_platform_role("platform_admin", "account_manager", "srijan_admin")),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Aekam admin removes a skill from an org."""
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.hub_org_skills SET is_active=FALSE, updated_at=NOW() "
+        "WHERE id=$1 AND org_id=$2::uuid",
+        skill_id, org_id,
+    )
+    return {"status": "removed"}
+
+
+@router.post("/org/skills/{skill_id}/run")
+async def run_org_skill(
+    skill_id: UUID,
+    body: SkillRun,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Org user runs an assigned skill. Deducts from org credits + user allocation."""
+    pool = await get_pool()
+
+    os_row = await pool.fetchrow(
+        "SELECT os.*, t.steps, t.name as template_name "
+        "FROM staging.hub_org_skills os "
+        "JOIN staging.hub_skill_templates t ON t.id = os.template_id "
+        "WHERE os.id=$1 AND os.org_id=$2::uuid AND os.is_active=TRUE",
+        skill_id, org_id,
+    )
+    if not os_row:
+        raise HTTPException(404, "Org skill not found")
+
+    steps = os_row["steps"] if isinstance(os_row["steps"], list) else json.loads(os_row["steps"])
+    custom_config = os_row["custom_config"] if isinstance(os_row["custom_config"], dict) else json.loads(os_row["custom_config"] or "{}")
+
+    brand = await pool.fetchrow(
+        "SELECT * FROM staging.hub_brand_profiles WHERE org_id=$1::uuid", org_id
+    )
+    if not brand:
+        # Fallback to internal client brand
+        brand = await pool.fetchrow(
+            "SELECT bp.* FROM staging.hub_brand_profiles bp "
+            "JOIN staging.hub_clients c ON c.id = bp.client_id "
+            "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE", org_id
+        )
+    system_prompt = _build_system_prompt(dict(brand)) if brand else ""
+
+    variables = {**custom_config, **body.variables}
+
+    run = await pool.fetchrow(
+        "INSERT INTO staging.hub_org_skill_runs "
+        "(org_skill_id, org_id, steps_total, triggered_by) "
+        "VALUES ($1, $2::uuid, $3, $4) RETURNING *",
+        skill_id, org_id, len(steps), user["user_id"],
+    )
+    run_id = run["id"]
+
+    outputs = []
+    content_ids = []
+    total_credits = 0
+
+    for step in sorted(steps, key=lambda s: s.get("order", 0)):
+        agent_type = step["agent_type"]
+        prompt_template = step["prompt_template"]
+
+        prompt = prompt_template
+        for k, v in variables.items():
+            prompt = prompt.replace(f"{{{{{k}}}}}", str(v))
+
+        try:
+            await deduct_org_credits(org_id, user["user_id"], agent_type)
+        except Exception:
+            await pool.execute(
+                "UPDATE staging.hub_org_skill_runs SET status='failed', "
+                "error_message='Insufficient credits', completed_at=NOW(), "
+                "steps_completed=$1, credits_used=$2, outputs=$3::jsonb, "
+                "content_item_ids=$4 WHERE id=$5",
+                len(outputs), total_credits, json.dumps(outputs), content_ids, run_id,
+            )
+            raise
+
+        language = variables.get("language", "en")
+        result = await generate(
+            prompt=prompt,
+            system=system_prompt,
+            client_id=org_id,
+            max_tokens=4096 if agent_type in ("blog", "seo", "campaign") else 2048,
+            language=language,
+            agent_type=agent_type,
+        )
+
+        # Generate image if step requests it
+        image_url = None
+        if step.get("generate_image"):
+            img_prompt = step.get("image_prompt", prompt)
+            for k, v in variables.items():
+                img_prompt = img_prompt.replace(f"{{{{{k}}}}}", str(v))
+            try:
+                await deduct_org_credits(org_id, user["user_id"], "image")
+                img_result = await generate_image(
+                    prompt=img_prompt,
+                    aspect_ratio=step.get("aspect_ratio", "1:1"),
+                    org_id=org_id,
+                )
+                image_url = img_result["image_url"]
+                total_credits += CREDIT_COSTS.get("image", 3)
+            except Exception as e:
+                log.warning("Image generation failed for step %s: %s", step.get("order"), e)
+
+        title = f"{os_row['template_name']} — Step {step.get('order', 0)}"
+        credits_cost = CREDIT_COSTS.get(agent_type, 2)
+
+        import re
+        hashtags = re.findall(r'#\w+', result["text"]) if agent_type == "social_media" else []
+
+        row = await pool.fetchrow(
+            "INSERT INTO staging.hub_content_items "
+            "(org_id, client_id, agent_type, title, body, platform, hashtags, "
+            " image_url, status, credits_used, metadata, created_by) "
+            "VALUES ($1::uuid, $1::uuid, $2, $3, $4, $5, $6, $7, 'draft', $8, $9::jsonb, $10) "
+            "RETURNING id",
+            org_id, agent_type, title, result["text"],
+            step.get("platform"), hashtags,
+            image_url, credits_cost,
+            json.dumps({"skill_run_id": str(run_id), "provider": result["provider"],
+                         "model": result["model"], "step": step.get("order")}),
+            user["user_id"],
+        )
+        content_ids.append(row["id"])
+        total_credits += credits_cost
+        outputs.append({
+            "step": step.get("order"),
+            "agent_type": agent_type,
+            "content_id": str(row["id"]),
+            "provider": result["provider"],
+            "has_image": image_url is not None,
+        })
+
+        await pool.execute(
+            "UPDATE staging.hub_org_skill_runs SET steps_completed=$1 WHERE id=$2",
+            len(outputs), run_id,
+        )
+
+    await pool.execute(
+        "UPDATE staging.hub_org_skill_runs SET status='completed', completed_at=NOW(), "
+        "credits_used=$1, outputs=$2::jsonb, content_item_ids=$3 WHERE id=$4",
+        total_credits, json.dumps(outputs), content_ids, run_id,
+    )
+
+    return {
+        "run_id": str(run_id),
+        "status": "completed",
+        "steps_completed": len(outputs),
+        "credits_used": total_credits,
+        "content_ids": [str(c) for c in content_ids],
+    }
+
+
+@router.get("/org/skills/{skill_id}/runs")
+async def list_org_skill_runs(
+    skill_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM staging.hub_org_skill_runs "
+        "WHERE org_skill_id=$1 AND org_id=$2::uuid ORDER BY started_at DESC LIMIT 20",
+        skill_id, org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+# ══════════════════════════════════════════════════════════════
+# ORG CREDITS — Aekam → Org → User hierarchy
+# ══════════════════════════════════════════════════════════════
+
+@router.get("/org/credits")
+async def get_org_credits(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Get org credit balance and recent transactions."""
+    pool = await get_pool()
+
+    wallet = await pool.fetchrow(
+        "SELECT * FROM staging.hub_org_credits WHERE org_id=$1::uuid", org_id
+    )
+    if not wallet:
+        wallet = await pool.fetchrow(
+            "INSERT INTO staging.hub_org_credits (org_id) VALUES ($1::uuid) RETURNING *",
+            org_id,
+        )
+
+    recent_tx = await pool.fetch(
+        "SELECT * FROM staging.hub_org_credit_transactions "
+        "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 20",
+        org_id,
+    )
+
+    user_alloc = await pool.fetchrow(
+        "SELECT * FROM staging.hub_user_credits "
+        "WHERE org_id=$1::uuid AND user_id=$2",
+        org_id, user["user_id"],
+    )
+
+    return {
+        "org_balance": dict(wallet),
+        "user_allocation": dict(user_alloc) if user_alloc else {"allocated": 0, "used": 0},
+        "recent_transactions": [dict(r) for r in recent_tx],
+        "credit_costs": CREDIT_COSTS,
+    }
+
+
+@router.post("/org/credits/topup")
+async def topup_org_credits(
+    body: OrgCreditTopup,
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Aekam tops up org credits."""
+    pool = await get_pool()
+
+    if body.amount <= 0:
+        raise HTTPException(400, "Amount must be positive")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            wallet = await conn.fetchrow(
+                "SELECT balance FROM staging.hub_org_credits "
+                "WHERE org_id=$1::uuid FOR UPDATE", org_id
+            )
+            if not wallet:
+                await conn.execute(
+                    "INSERT INTO staging.hub_org_credits (org_id, balance) "
+                    "VALUES ($1::uuid, 0)", org_id
+                )
+                wallet = {"balance": 0}
+
+            new_balance = wallet["balance"] + body.amount
+            await conn.execute(
+                "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() "
+                "WHERE org_id=$2::uuid",
+                new_balance, org_id,
+            )
+            await conn.execute(
+                "INSERT INTO staging.hub_org_credit_transactions "
+                "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
+                "VALUES ($1::uuid, $2, $3, $4, 'topup', $5, $2)",
+                org_id, user["user_id"], body.amount, new_balance,
+                body.notes or "Aekam credit top-up",
+            )
+
+    return {"balance": new_balance}
+
+
+@router.post("/org/credits/allocate/{target_user_id}")
+async def allocate_user_credits(
+    target_user_id: str,
+    body: UserCreditAllocate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Org admin allocates credits to a user from org pool."""
+    pool = await get_pool()
+
+    # Verify caller is org_admin or org_owner
+    is_admin = await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code IN ('org_owner','org_admin')",
+        user["user_id"], org_id,
+    )
+    if not is_admin and user.get("role") != "admin":
+        raise HTTPException(403, "Only org admins can allocate credits")
+
+    if body.amount <= 0:
+        raise HTTPException(400, "Amount must be positive")
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.hub_user_credits (org_id, user_id, allocated) "
+        "VALUES ($1::uuid, $2, $3) "
+        "ON CONFLICT (org_id, user_id) DO UPDATE SET "
+        "allocated = staging.hub_user_credits.allocated + EXCLUDED.allocated, "
+        "updated_at=NOW() RETURNING *",
+        org_id, target_user_id, body.amount,
+    )
+    return {"user_id": target_user_id, "allocated": row["allocated"], "used": row["used"]}
+
+
+@router.get("/org/credits/users")
+async def list_user_credits(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """List all user credit allocations for this org."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM staging.hub_user_credits "
+        "WHERE org_id=$1::uuid ORDER BY allocated DESC",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+# ══════════════════════════════════════════════════════════════
+# ORG CONTENT — generate content at org level
+# ══════════════════════════════════════════════════════════════
+
+@router.post("/org/generate")
+async def generate_org_content(
+    body: OrgContentGenerate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Generate content at org level using org credits."""
+    pool = await get_pool()
+
+    if body.agent_type not in AGENT_PROMPTS:
+        raise HTTPException(400, f"Invalid agent type: {body.agent_type}")
+
+    await deduct_org_credits(org_id, user["user_id"], body.agent_type)
+
+    brand = await pool.fetchrow(
+        "SELECT * FROM staging.hub_brand_profiles WHERE org_id=$1::uuid", org_id
+    )
+    if not brand:
+        brand = await pool.fetchrow(
+            "SELECT bp.* FROM staging.hub_brand_profiles bp "
+            "JOIN staging.hub_clients c ON c.id = bp.client_id "
+            "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE", org_id
+        )
+    system_prompt = _build_system_prompt(dict(brand)) if brand else ""
+    if body.language != "en":
+        system_prompt += f"\nIMPORTANT: Write all content in {body.language}."
+
+    user_prompt = AGENT_PROMPTS[body.agent_type].format(
+        platform=body.platform or "general",
+        brief=body.brief,
+        extra=f"{body.extra_instructions}\n" if body.extra_instructions else "",
+    )
+
+    result = await generate(
+        prompt=user_prompt, system=system_prompt,
+        client_id=org_id,
+        max_tokens=2048 if body.agent_type != "blog" else 4096,
+        language=body.language, agent_type=body.agent_type,
+    )
+
+    # Image generation if requested
+    image_url = None
+    if body.generate_image:
+        try:
+            await deduct_org_credits(org_id, user["user_id"], "image")
+            img_prompt = body.image_prompt or f"Professional social media graphic for: {body.brief}"
+            img_result = await generate_image(
+                prompt=img_prompt, aspect_ratio=body.aspect_ratio, org_id=org_id,
+            )
+            image_url = img_result["image_url"]
+        except Exception as e:
+            log.warning("Image generation failed: %s", e)
+
+    title = body.brief[:100] if body.brief else f"{body.agent_type} content"
+    import re
+    hashtags = re.findall(r'#\w+', result["text"]) if body.agent_type == "social_media" else []
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.hub_content_items "
+        "(org_id, agent_type, title, body, platform, hashtags, image_url, "
+        " status, credits_used, metadata, created_by) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, 'draft', $8, $9::jsonb, $10) RETURNING *",
+        org_id, body.agent_type, title, result["text"],
+        body.platform or None, hashtags, image_url,
+        CREDIT_COSTS.get(body.agent_type, 2),
+        json.dumps({"provider": result["provider"], "model": result["model"],
+                     "language": body.language}),
+        user["user_id"],
+    )
+
+    return {
+        "content": dict(row),
+        "ai": {"provider": result["provider"], "model": result["model"]},
+    }
+
+
+@router.get("/org/content")
+async def list_org_content(
+    status: Optional[str] = None,
+    agent_type: Optional[str] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """List content generated at org level."""
+    pool = await get_pool()
+    query = "SELECT * FROM staging.hub_content_items WHERE org_id=$1::uuid"
+    params: list = [org_id]
+
+    if status:
+        params.append(status)
+        query += f" AND status=${len(params)}"
+    if agent_type:
+        params.append(agent_type)
+        query += f" AND agent_type=${len(params)}"
+
+    query += " ORDER BY created_at DESC LIMIT 100"
+    rows = await pool.fetch(query, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.get("/org/brand")
+async def get_org_brand(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Get org-level brand profile."""
+    pool = await get_pool()
+    brand = await pool.fetchrow(
+        "SELECT * FROM staging.hub_brand_profiles WHERE org_id=$1::uuid", org_id
+    )
+    if not brand:
+        brand = await pool.fetchrow(
+            "SELECT bp.* FROM staging.hub_brand_profiles bp "
+            "JOIN staging.hub_clients c ON c.id = bp.client_id "
+            "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE", org_id
+        )
+    return dict(brand) if brand else {}
+
+
+@router.put("/org/brand")
+async def update_org_brand(
+    body: BrandProfileUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Update org-level brand profile. Creates one if it doesn't exist."""
+    pool = await get_pool()
+
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    for k in ("social_handles",):
+        if k in updates and isinstance(updates[k], dict):
+            updates[k] = json.dumps(updates[k])
+    for k in ("sample_posts",):
+        if k in updates and isinstance(updates[k], list):
+            updates[k] = json.dumps(updates[k])
+
+    existing = await pool.fetchrow(
+        "SELECT id FROM staging.hub_brand_profiles WHERE org_id=$1::uuid", org_id
+    )
+    if not existing:
+        await pool.execute(
+            "INSERT INTO staging.hub_brand_profiles (org_id) VALUES ($1::uuid)", org_id
+        )
+
+    set_clauses = ", ".join(f"{k}=${i+2}" for i, k in enumerate(updates))
+    values = [org_id] + list(updates.values())
+    await pool.execute(
+        f"UPDATE staging.hub_brand_profiles SET {set_clauses}, updated_at=NOW() "
+        f"WHERE org_id=$1::uuid",
+        *values,
+    )
+    return {"status": "updated"}
