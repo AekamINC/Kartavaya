@@ -858,15 +858,17 @@ async def create_follow_up(
 ):
     pool = await get_pool()
     assigned = body.assigned_to or user["user_id"]
+    due = datetime.fromisoformat(body.due_at) if body.due_at else None
+    remind = datetime.fromisoformat(body.remind_at) if body.remind_at else None
     row = await pool.fetchrow(
         "INSERT INTO staging.graha_follow_ups "
         "(org_id, contact_id, deal_id, title, description, due_at, remind_at, "
         " assigned_to, created_by) "
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, "
-        " $6::timestamptz, NULLIF($7,'')::timestamptz, $8, $9) "
+        " $6::timestamptz, $7::timestamptz, $8, $9) "
         "RETURNING id, title, due_at",
         org_id, body.contact_id, body.deal_id, body.title, body.description,
-        body.due_at, body.remind_at, assigned, user["user_id"],
+        due, remind, assigned, user["user_id"],
     )
     return {"status": "created", **dict(row)}
 
