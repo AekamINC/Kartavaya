@@ -285,6 +285,7 @@ CREDIT_COSTS = {
     "lead_magnet": 8,
     "campaign": 10,
     "seo": 8,
+    "ad_analysis": 5,
 }
 
 

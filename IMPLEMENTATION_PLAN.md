@@ -1,6 +1,6 @@
 # Kartavya · Master Implementation Plan
 
-**Last updated:** 2026-07-16  
+**Last updated:** 2026-07-17  
 **Branch:** staging  
 **Stack:** Vite+React / FastAPI+asyncpg / Supabase Postgres (Singapore) / Railway+Vercel  
 
@@ -23,7 +23,7 @@ All-in-one SaaS for Indian SMBs: CRM, invoicing, HR, payroll, AI content, market
 | **Vetana · Payroll** | vetana | vetana.py | ✅ Production | Salary, payslips, compliance |
 | **Vikray · Sales** | vikray | vikray.py | ✅ Production | Sales pipeline, territories, forecasts |
 | **Srijan · AI Hub** | srijan | hub.py, hub_chat.py, hub_publish.py | ✅ Production | Multi-provider AI (Gemini/OpenRouter/Groq), RAG chatbot, social publishing (Meta/Instagram/LinkedIn/Google Business), content generation, skill packs, credit system |
-| **Prachar · Marketing** | prachar | prachar.py | ⚠️ Partial | Campaign CRUD + audience, send is a stub (never delivers). Automations stored but not triggered. |
+| **Prachar · Marketing** | prachar | prachar.py, prachar_ads.py | ⚠️ Partial | Campaign CRUD + audience + ad insights (Meta ingest + AI analysis). Send is a stub. Automations stored but not triggered. |
 | **Dristi · Analytics** | dristi | dristi.py | ⚠️ Partial | Dashboard table exists, no frontend |
 | **Sanvaad · Messaging** | — | — | 📋 Planned | Internal messaging + WhatsApp. Docs only (MESSAGING_WHATSAPP_PLAN.md, WHATSAPP_MODULE.md) |
 | **Pahchan · Attendance** | — | — | 📋 Planned | PWA biometric attendance, offline-first face-api.js. Spec in memory. |
@@ -129,7 +129,7 @@ All Phase 1–6 vulnerabilities fixed: SQL injection, XSS, CSRF, rate limiting, 
 | 022–023 | Various | Graha fields, web forms | ✅ |
 | 024 | `024_graha_dedupe_merge.sql` | pg_trgm, contact dedup, merge audit | ✅ |
 | 025 | `025_org_member_modules.sql` | Per-user module access, developer role | ✅ |
-| 026 | `026_prachar_ad_insights.sql` | Ad accounts, campaigns, insights | 📋 Scheduled |
+| 026 | `026_prachar_ad_insights.sql` | Ad accounts, campaigns, insights | ✅ |
 
 ---
 
@@ -139,7 +139,7 @@ All Phase 1–6 vulnerabilities fixed: SQL injection, XSS, CSRF, rate limiting, 
 
 | Task | Status | ETA |
 |---|---|---|
-| Prachar ad insights pipeline (Meta ingest + AI analysis) | Scheduled 2am 17 July | ~22h |
+| Prachar ad insights pipeline (Meta ingest + AI analysis) | ✅ Done 17 July | — |
 | Tenancy fix steps 1–6 (stop leaks, invert FK, org_members, org admin console) | Step 0 done, step 1 scheduled 1am 17 July | ~26h |
 | Replace `require_role("admin")` → `require_platform_role` across 20+ endpoints | Open | ~3h |
 

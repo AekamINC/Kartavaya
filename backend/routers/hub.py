@@ -119,6 +119,7 @@ AGENT_PROMPTS = {
     "lead_magnet": "Create content for a lead magnet. Brief: {brief}. {extra}This should be valuable, actionable content that demonstrates expertise. Output in structured markdown.",
     "campaign": "Create a complete marketing campaign strategy. Brief: {brief}. {extra}Include: campaign name, objective, target audience segments, key messages, channel strategy (social/email/ads), content calendar for 2 weeks, KPIs to track, and budget allocation suggestions. Output in structured markdown.",
     "seo": "Create SEO-optimized content. Brief: {brief}. {extra}Include: primary and secondary keywords, meta title (under 60 chars), meta description (under 155 chars), H1/H2/H3 heading structure, the full article body (1500+ words) with natural keyword placement, internal linking suggestions, and a FAQ section with schema-ready Q&As. Output in structured markdown.",
+    "ad_analysis": "Analyse the following ad performance data and provide actionable insights. Brief: {brief}. {extra}Include: top/bottom performing campaigns with reasons, budget reallocation recommendations, audience/creative suggestions, trend analysis, and a summary scorecard. Output in structured markdown with tables.",
 }
 
 

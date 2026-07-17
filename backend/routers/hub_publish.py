@@ -47,14 +47,14 @@ OAUTH_CONFIGS = {
     "facebook": {
         "auth_url": "https://www.facebook.com/v21.0/dialog/oauth",
         "token_url": "https://graph.facebook.com/v21.0/oauth/access_token",
-        "scopes": "pages_manage_posts,pages_read_engagement,pages_show_list,instagram_basic,instagram_content_publish",
+        "scopes": "pages_manage_posts,pages_read_engagement,pages_show_list,instagram_basic,instagram_content_publish,ads_read",
         "env_id": "META_APP_ID",
         "env_secret": "META_APP_SECRET",
     },
     "instagram": {
         "auth_url": "https://www.facebook.com/v21.0/dialog/oauth",
         "token_url": "https://graph.facebook.com/v21.0/oauth/access_token",
-        "scopes": "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement",
+        "scopes": "instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,ads_read",
         "env_id": "META_APP_ID",
         "env_secret": "META_APP_SECRET",
     },
