@@ -1409,9 +1409,9 @@ async def run_org_skill(
 
         row = await pool.fetchrow(
             "INSERT INTO staging.hub_content_items "
-            "(org_id, client_id, agent_type, title, body, platform, hashtags, "
+            "(org_id, agent_type, title, body, platform, hashtags, "
             " image_url, status, credits_used, metadata, created_by) "
-            "VALUES ($1::uuid, $1::uuid, $2, $3, $4, $5, $6, $7, 'draft', $8, $9::jsonb, $10) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, 'draft', $8, $9::jsonb, $10) "
             "RETURNING id",
             org_id, agent_type, title, result["text"],
             step.get("platform"), hashtags,
