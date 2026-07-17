@@ -295,9 +295,9 @@ async def generate_image(
     or_key = os.getenv("OPENROUTER_API_KEY", "")
     if or_key:
         try:
-            result = await _generate_gemini_flash_image(or_key, f"Generate an image: {prompt}")
+            result = await _generate_openrouter_image(or_key, prompt, aspect_ratio)
         except Exception as e:
-            log.warning("Gemini Flash Image gen failed: %s", e)
+            log.warning("OpenRouter image gen failed: %s", e)
 
     if result is None:
         gemini_key = os.getenv("GEMINI_API_KEY", "")
@@ -332,62 +332,59 @@ async def generate_image(
     return result
 
 
-async def _generate_gemini_flash_image(api_key: str, prompt: str) -> dict:
-    """Generate image via Gemini Flash Lite Image on OpenRouter."""
-    import base64 as b64mod
-
+async def _generate_openrouter_image(api_key: str, prompt: str, aspect_ratio: str = "1:1") -> dict:
+    """Generate image via OpenRouter Images API (seedream model — cheapest)."""
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
-            "https://openrouter.ai/api/v1/chat/completions",
+            "https://openrouter.ai/api/v1/images",
             headers={"Authorization": f"Bearer {api_key}"},
             json={
-                "model": "google/gemini-2.5-flash-image",
-                "messages": [{"role": "user", "content": prompt}],
-                "modalities": ["text", "image"],
+                "model": "bytedance-seed/seedream-4.5",
+                "prompt": prompt,
+                "n": 1,
+                "aspect_ratio": aspect_ratio,
+                "output_format": "png",
             },
         )
         resp.raise_for_status()
         data = resp.json()
 
-    for part in data["choices"][0]["message"].get("content", []):
-        if isinstance(part, dict) and part.get("type") == "image_url":
-            url = part["image_url"]["url"]
-            if url.startswith("data:"):
-                header, b64_str = url.split(",", 1)
-                return {
-                    "image_b64": b64_str,
-                    "image_url": url,
-                    "provider": "gemini_flash_image",
-                    "model": "google/gemini-2.5-flash-image",
-                    "cost_usd": 0.002,
-                }
-
-    raise RuntimeError("Gemini Flash Image returned no image in response")
+    b64 = data["data"][0]["b64_json"]
+    cost = data.get("usage", {}).get("cost", 0.04)
+    return {
+        "image_b64": b64,
+        "image_url": f"data:image/png;base64,{b64}",
+        "provider": "openrouter_seedream",
+        "model": "bytedance-seed/seedream-4.5",
+        "cost_usd": cost,
+    }
 
 
 async def _generate_gemini_imagen(api_key: str, prompt: str, aspect_ratio: str = "1:1") -> dict:
-    """Generate image via Gemini Imagen 3."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key={api_key}"
+    """Generate image via Gemini native image generation."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={api_key}"
 
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(url, json={
-            "instances": [{"prompt": prompt}],
-            "parameters": {
-                "sampleCount": 1,
-                "aspectRatio": aspect_ratio,
-            },
+            "contents": [{"parts": [{"text": f"Generate an image: {prompt}"}]}],
+            "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
         })
         resp.raise_for_status()
         data = resp.json()
 
-    b64 = data["predictions"][0]["bytesBase64Encoded"]
-    return {
-        "image_b64": b64,
-        "image_url": f"data:image/png;base64,{b64}",
-        "provider": "gemini_imagen",
-        "model": "imagen-3.0-generate-002",
-        "cost_usd": 0.0,
-    }
+    for part in data.get("candidates", [{}])[0].get("content", {}).get("parts", []):
+        if "inlineData" in part:
+            b64 = part["inlineData"]["data"]
+            mime = part["inlineData"].get("mimeType", "image/png")
+            return {
+                "image_b64": b64,
+                "image_url": f"data:{mime};base64,{b64}",
+                "provider": "gemini_native",
+                "model": "gemini-2.0-flash-exp",
+                "cost_usd": 0.0,
+            }
+
+    raise RuntimeError("Gemini returned no image in response")
 
 
 # ── Credit cost per agent type ──────────────────────────────
