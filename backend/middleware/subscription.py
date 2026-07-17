@@ -15,7 +15,7 @@ from middleware.org_resolver import get_org_id
 _cache: dict = {}
 _CACHE_TTL = timedelta(minutes=5)
 
-BUNDLED_MODULES = {"srijan"}
+BUNDLED_MODULES = {"srijan", "esign"}
 
 SENSITIVE_MODULES = {"vetana", "ganit", "manav"}
 

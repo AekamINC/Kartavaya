@@ -67,6 +67,7 @@ from routers.vetana         import router as vetana_router
 from routers.dristi         import router as dristi_router
 from routers.prachar        import router as prachar_router
 from routers.prachar_ads    import router as prachar_ads_router
+from routers.esign          import router as esign_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -2127,6 +2128,7 @@ app.include_router(vetana_router)
 app.include_router(dristi_router)
 app.include_router(prachar_router)
 app.include_router(prachar_ads_router)
+app.include_router(esign_router)
 
 
 # ── Verse of the day (public) ────────────────────────────────────────────────
