@@ -202,7 +202,7 @@ export default function AdminBillingPage() {
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
             <StatTile label="Plan" value={sub?.plan_name || 'Free'} />
-            <StatTile label="Users" value={`${usage?.user_count || 0} / ${sub?.max_users || 5}`} />
+            <StatTile label="Users" value={usage?.user_count || 0} />
             <StatTile label="Active Modules" value={activeModules.length} />
             <StatTile label="Overdue Invoices" value={overdue.length} />
           </div>
