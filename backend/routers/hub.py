@@ -1605,6 +1605,24 @@ async def list_user_credits(
 # ORG CONTENT — generate content at org level
 # ══════════════════════════════════════════════════════════════
 
+@router.post("/org/test-image")
+async def test_image_gen(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Temporary debug endpoint — test image generation."""
+    try:
+        result = await generate_image(
+            prompt="A simple blue circle on white background",
+            org_id=org_id,
+        )
+        return {"ok": True, "image_url": result["image_url"], "provider": result["provider"]}
+    except Exception as e:
+        import traceback
+        return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
+
+
 @router.post("/org/generate")
 async def generate_org_content(
     body: OrgContentGenerate,
