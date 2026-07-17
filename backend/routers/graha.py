@@ -188,8 +188,8 @@ async def create_contact(
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) "
         "RETURNING id, name, contact_type",
         org_id, body.name, body.email, body.phone, body.company, body.designation,
-        body.gstin, body.pan, body.billing_address, body.shipping_address,
-        body.tags, body.notes, body.contact_type, body.source, user["user_id"],
+        body.gstin, body.pan, json.dumps(body.billing_address), json.dumps(body.shipping_address),
+        json.dumps(body.tags), body.notes, body.contact_type, body.source, user["user_id"],
     )
     if body.contact_type == "lead":
         asyncio.ensure_future(fire_automations(pool, org_id, "lead_created", {
@@ -423,7 +423,7 @@ async def update_contact(
     params = [str(contact_id), org_id]
     idx = 3
     for k, v in updates.items():
-        if k == "lead_score_reasons":
+        if k in ("lead_score_reasons", "billing_address", "shipping_address", "tags"):
             sets.append(f"{k}=${idx}::jsonb")
             params.append(json.dumps(v))
         elif k == "assigned_to":
@@ -568,7 +568,7 @@ async def create_deal(
         "RETURNING id, title, stage",
         org_id, pipeline_id, body.contact_id, body.title, body.value,
         body.stage, body.probability, body.expected_close_date,
-        body.assigned_to, body.notes, body.tags, user["user_id"],
+        body.assigned_to, body.notes, json.dumps(body.tags), user["user_id"],
     )
     asyncio.ensure_future(fire_automations(pool, org_id, "deal_created", {
         "deal_id": str(row["id"]), "stage": body.stage or "New",

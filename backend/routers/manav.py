@@ -192,8 +192,8 @@ async def create_employee(
         "RETURNING id, name, employee_code",
         org_id, body.user_id, body.employee_code, body.name, body.email, body.phone,
         body.department, body.designation, body.date_of_joining, body.date_of_birth,
-        body.gender or None, body.blood_group, body.emergency_contact, body.address,
-        body.bank_details, body.pan, body.aadhaar, body.uan, body.esi_number,
+        body.gender or None, body.blood_group, body.emergency_contact, json.dumps(body.address),
+        json.dumps(body.bank_details), body.pan, body.aadhaar, body.uan, body.esi_number,
         body.employment_type, body.reporting_to, body.shift, user["user_id"],
     )
     return {"status": "created", **dict(row)}
@@ -241,9 +241,14 @@ async def update_employee(
     sets = []
     params = [str(employee_id), org_id]
     idx = 3
+    jsonb_fields = {"address", "bank_details"}
     for k, v in updates.items():
-        sets.append(f"{k}=${idx}")
-        params.append(v)
+        if k in jsonb_fields:
+            sets.append(f"{k}=${idx}::jsonb")
+            params.append(json.dumps(v))
+        else:
+            sets.append(f"{k}=${idx}")
+            params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
 
