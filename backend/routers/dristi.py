@@ -51,6 +51,50 @@ def _month_range(months_back: int = 6):
     return ranges
 
 
+async def _fetch_report_data(pool, org_id: str, report_type: str) -> dict:
+    """Fetch report data by type, reusing the same queries as the GET endpoints."""
+    today = date.today()
+    month_ago = today - timedelta(days=30)
+
+    if report_type == "overview":
+        tasks = await pool.fetchval(
+            "SELECT COUNT(*) FROM tasks t JOIN teams tm ON tm.id=t.team_id "
+            "JOIN staging.organisations o ON o.team_id=tm.id WHERE o.id=$1::uuid",
+            org_id,
+        )
+        contacts = await pool.fetchval(
+            "SELECT COUNT(*) FROM staging.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE", org_id)
+        revenue = await pool.fetchval(
+            "SELECT COALESCE(SUM(total),0) FROM staging.ganit_invoices "
+            "WHERE org_id=$1::uuid AND payment_status='paid'", org_id) or 0
+        return {"tasks": tasks, "contacts": contacts, "revenue": float(revenue)}
+    elif report_type == "revenue":
+        rows = await pool.fetch(
+            "SELECT DATE_TRUNC('month', invoice_date) AS month, "
+            "SUM(total) AS total, COUNT(*) AS count "
+            "FROM staging.ganit_invoices WHERE org_id=$1::uuid AND is_active=TRUE "
+            "GROUP BY 1 ORDER BY 1 DESC LIMIT 12", org_id)
+        return {"monthly": [dict(r) for r in rows]}
+    elif report_type == "pipeline":
+        rows = await pool.fetch(
+            "SELECT stage, COUNT(*) AS count, SUM(value) AS value "
+            "FROM staging.graha_deals WHERE org_id=$1::uuid AND is_active=TRUE "
+            "GROUP BY stage", org_id)
+        return {"stages": [dict(r) for r in rows]}
+    elif report_type == "hr":
+        count = await pool.fetchval(
+            "SELECT COUNT(*) FROM staging.manav_employees "
+            "WHERE org_id=$1::uuid AND is_active=TRUE AND status='active'", org_id)
+        return {"active_employees": count}
+    elif report_type == "sales":
+        rows = await pool.fetch(
+            "SELECT status, COUNT(*) AS count, SUM(total) AS total "
+            "FROM staging.vikray_orders WHERE org_id=$1::uuid "
+            "GROUP BY status", org_id)
+        return {"orders_by_status": [dict(r) for r in rows]}
+    return {"report_type": report_type}
+
+
 # ── Overview KPIs ────────────────────────────────────────────
 
 @router.get("/overview")
@@ -432,3 +476,219 @@ async def delete_dashboard(
     if result == "UPDATE 0":
         raise HTTPException(404, "Dashboard not found")
     return {"ok": True}
+
+
+# ── Scheduled Reports ───────────────────────────────────────
+
+class ScheduledReportCreate(BaseModel):
+    name: str
+    report_type: str = "overview"
+    frequency: str = "weekly"
+    day_of_week: int | None = None
+    day_of_month: int | None = None
+    time_utc: str = "08:00"
+    file_formats: list[str] = ["pdf"]
+    recipients: list[str]
+    dashboard_id: str | None = None
+    filters: dict = {}
+
+
+class ScheduledReportUpdate(BaseModel):
+    name: str | None = None
+    frequency: str | None = None
+    day_of_week: int | None = None
+    day_of_month: int | None = None
+    time_utc: str | None = None
+    file_formats: list[str] | None = None
+    recipients: list[str] | None = None
+    filters: dict | None = None
+    is_active: bool | None = None
+
+
+@router.get("/scheduled-reports", dependencies=[Depends(_gate)])
+async def list_scheduled_reports(user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT sr.*, d.name AS dashboard_name "
+        "FROM staging.dristi_scheduled_reports sr "
+        "LEFT JOIN staging.dristi_dashboards d ON d.id = sr.dashboard_id "
+        "WHERE sr.org_id=$1::uuid ORDER BY sr.created_at DESC",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/scheduled-reports", dependencies=[Depends(_gate)])
+async def create_scheduled_report(
+    body: ScheduledReportCreate,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    valid_types = ("overview", "revenue", "pipeline", "hr", "sales", "custom")
+    if body.report_type not in valid_types:
+        raise HTTPException(400, f"report_type must be one of: {', '.join(valid_types)}")
+    valid_freq = ("daily", "weekly", "monthly")
+    if body.frequency not in valid_freq:
+        raise HTTPException(400, f"frequency must be one of: {', '.join(valid_freq)}")
+    if not body.recipients:
+        raise HTTPException(400, "At least one recipient is required")
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.dristi_scheduled_reports "
+        "(org_id, dashboard_id, name, report_type, frequency, day_of_week, "
+        " day_of_month, time_utc, file_formats, recipients, filters, created_by) "
+        "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, $4, $5, $6, $7, $8::time, $9, $10, $11::jsonb, $12) "
+        "RETURNING id, name",
+        org_id, body.dashboard_id or "", body.name, body.report_type,
+        body.frequency, body.day_of_week, body.day_of_month,
+        body.time_utc, body.file_formats, body.recipients,
+        json.dumps(body.filters), user["user_id"],
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.patch("/scheduled-reports/{report_id}", dependencies=[Depends(_gate)])
+async def update_scheduled_report(
+    report_id: str,
+    body: ScheduledReportUpdate,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+    sets, params = [], [report_id, org_id]
+    idx = 3
+    for k, v in updates.items():
+        if k == "time_utc":
+            sets.append(f"{k}=${idx}::time")
+        elif k == "filters":
+            sets.append(f"{k}=${idx}::jsonb")
+            v = json.dumps(v)
+        elif k in ("file_formats", "recipients"):
+            sets.append(f"{k}=${idx}")
+        else:
+            sets.append(f"{k}=${idx}")
+        params.append(v)
+        idx += 1
+    await pool.execute(
+        f"UPDATE staging.dristi_scheduled_reports SET {', '.join(sets)} "
+        f"WHERE id=$1::uuid AND org_id=$2::uuid",
+        *params,
+    )
+    return {"status": "updated"}
+
+
+@router.delete("/scheduled-reports/{report_id}", dependencies=[Depends(_gate)])
+async def delete_scheduled_report(
+    report_id: str,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "DELETE FROM staging.dristi_scheduled_reports "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        report_id, org_id,
+    )
+    return {"status": "deleted"}
+
+
+@router.post("/scheduled-reports/{report_id}/run-now", dependencies=[Depends(_gate)])
+async def run_report_now(
+    report_id: str,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    report = await pool.fetchrow(
+        "SELECT * FROM staging.dristi_scheduled_reports "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        report_id, org_id,
+    )
+    if not report:
+        raise HTTPException(404, "Scheduled report not found")
+
+    try:
+        data = await _fetch_report_data(pool, org_id, report["report_type"])
+
+        from services.email_service import send_email
+        for recipient in report["recipients"]:
+            await send_email(
+                to=recipient,
+                subject=f"Report: {report['name']}",
+                html=f"<p>Your scheduled report <strong>{report['name']}</strong> is ready.</p>"
+                     f"<p>Report type: {report['report_type']}</p>"
+                     f"<pre>{json.dumps(data, indent=2, default=str)[:5000]}</pre>",
+            )
+
+        await pool.execute(
+            "INSERT INTO staging.dristi_report_logs "
+            "(scheduled_report_id, status, recipients_count) VALUES ($1::uuid, 'sent', $2)",
+            report_id, len(report["recipients"]),
+        )
+        await pool.execute(
+            "UPDATE staging.dristi_scheduled_reports SET last_sent_at=NOW() WHERE id=$1::uuid",
+            report_id,
+        )
+        return {"status": "sent", "recipients": len(report["recipients"])}
+    except Exception as e:
+        await pool.execute(
+            "INSERT INTO staging.dristi_report_logs "
+            "(scheduled_report_id, status, error) VALUES ($1::uuid, 'failed', $2)",
+            report_id, str(e),
+        )
+        raise HTTPException(500, f"Report generation failed: {e}")
+
+
+@router.get("/scheduled-reports/{report_id}/logs", dependencies=[Depends(_gate)])
+async def get_report_logs(
+    report_id: str,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM staging.dristi_report_logs "
+        "WHERE scheduled_report_id=$1::uuid ORDER BY sent_at DESC LIMIT 50",
+        report_id,
+    )
+    return {"logs": [dict(r) for r in rows]}
+
+
+@router.get("/exports/{report_type}", dependencies=[Depends(_gate)])
+async def export_report(
+    report_type: str,
+    format: str = "json",
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    valid_types = ("overview", "revenue", "pipeline", "hr", "sales")
+    if report_type not in valid_types:
+        raise HTTPException(400, f"report_type must be one of: {', '.join(valid_types)}")
+
+    data = await _fetch_report_data(pool, org_id, report_type)
+
+    if format == "csv":
+        import csv
+        import io
+        output = io.StringIO()
+        if isinstance(data, list) and data:
+            writer = csv.DictWriter(output, fieldnames=data[0].keys())
+            writer.writeheader()
+            writer.writerows(data)
+        elif isinstance(data, dict):
+            writer = csv.writer(output)
+            for k, v in data.items():
+                writer.writerow([k, v])
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={report_type}_export.csv"},
+        )
+
+    return {"data": data, "format": "json"}

@@ -893,3 +893,398 @@ async def performance_summary(
         org_id, from_date, to_date,
     )
     return {"data": [dict(r) for r in rows], "from_date": from_date, "to_date": to_date}
+
+
+# ── Shift Definitions ───────────────────────────────────────
+
+class ShiftCreate(BaseModel):
+    name: str
+    start_time: str
+    end_time: str
+    break_minutes: int = 0
+    color: str = "#3B82F6"
+
+
+class ShiftUpdate(BaseModel):
+    name: str | None = None
+    start_time: str | None = None
+    end_time: str | None = None
+    break_minutes: int | None = None
+    color: str | None = None
+    is_active: bool | None = None
+
+
+@router.get("/shifts", dependencies=[Depends(_gate)])
+async def list_shifts(user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM staging.manav_shift_definitions "
+        "WHERE org_id=$1::uuid ORDER BY start_time",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/shifts", dependencies=[Depends(_gate)])
+async def create_shift(body: ShiftCreate, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_shift_definitions "
+        "(org_id, name, start_time, end_time, break_minutes, color) "
+        "VALUES ($1::uuid, $2, $3::time, $4::time, $5, $6) "
+        "ON CONFLICT (org_id, name) DO UPDATE SET "
+        "start_time=$3::time, end_time=$4::time, break_minutes=$5, color=$6, is_active=TRUE "
+        "RETURNING id, name",
+        org_id, body.name, body.start_time, body.end_time, body.break_minutes, body.color,
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.patch("/shifts/{shift_id}", dependencies=[Depends(_gate)])
+async def update_shift(shift_id: UUID, body: ShiftUpdate, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+    sets, params = [], [str(shift_id), org_id]
+    idx = 3
+    for k, v in updates.items():
+        if k in ("start_time", "end_time"):
+            sets.append(f"{k}=${idx}::time")
+        else:
+            sets.append(f"{k}=${idx}")
+        params.append(v)
+        idx += 1
+    await pool.execute(
+        f"UPDATE staging.manav_shift_definitions SET {', '.join(sets)} "
+        f"WHERE id=$1::uuid AND org_id=$2::uuid",
+        *params,
+    )
+    return {"status": "updated"}
+
+
+# ── Schedules ───────────────────────────────────────────────
+
+class ScheduleAssign(BaseModel):
+    employee_id: str
+    shift_id: str
+    date: str
+    notes: str = ""
+
+
+class ScheduleBulkAssign(BaseModel):
+    assignments: list[ScheduleAssign]
+
+
+@router.get("/schedules", dependencies=[Depends(_gate)])
+async def list_schedules(
+    date_from: str | None = None,
+    date_to: str | None = None,
+    employee_id: str | None = None,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    query = (
+        "SELECT s.*, e.name AS employee_name, e.department, "
+        "sd.name AS shift_name, sd.start_time, sd.end_time, sd.color "
+        "FROM staging.manav_schedules s "
+        "JOIN staging.manav_employees e ON e.id = s.employee_id "
+        "JOIN staging.manav_shift_definitions sd ON sd.id = s.shift_id "
+        "WHERE s.org_id=$1::uuid "
+    )
+    params: list = [org_id]
+    idx = 2
+    if date_from:
+        query += f"AND s.date >= ${idx}::date "
+        params.append(date_from)
+        idx += 1
+    if date_to:
+        query += f"AND s.date <= ${idx}::date "
+        params.append(date_to)
+        idx += 1
+    if employee_id:
+        query += f"AND s.employee_id = ${idx}::uuid "
+        params.append(employee_id)
+        idx += 1
+    query += "ORDER BY s.date, sd.start_time LIMIT 500"
+    rows = await pool.fetch(query, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/schedules", dependencies=[Depends(_gate)])
+async def assign_schedule(body: ScheduleAssign, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_schedules "
+        "(org_id, employee_id, shift_id, date, notes, created_by) "
+        "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::date, $5, $6) "
+        "ON CONFLICT (employee_id, date) DO UPDATE SET "
+        "shift_id=$3::uuid, notes=$5, status='scheduled' "
+        "RETURNING id",
+        org_id, body.employee_id, body.shift_id, body.date, body.notes, user["user_id"],
+    )
+    return {"status": "assigned", "id": str(row["id"])}
+
+
+@router.post("/schedules/bulk", dependencies=[Depends(_gate)])
+async def bulk_assign(body: ScheduleBulkAssign, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    created = 0
+    for a in body.assignments:
+        await pool.execute(
+            "INSERT INTO staging.manav_schedules "
+            "(org_id, employee_id, shift_id, date, notes, created_by) "
+            "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::date, $5, $6) "
+            "ON CONFLICT (employee_id, date) DO UPDATE SET "
+            "shift_id=$3::uuid, notes=$5, status='scheduled'",
+            org_id, a.employee_id, a.shift_id, a.date, a.notes, user["user_id"],
+        )
+        created += 1
+    return {"status": "assigned", "count": created}
+
+
+@router.get("/schedules/coverage", dependencies=[Depends(_gate)])
+async def schedule_coverage(
+    date_from: str,
+    date_to: str,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT s.date, sd.name AS shift_name, sd.id AS shift_id, "
+        "COUNT(s.id) AS assigned_count "
+        "FROM staging.manav_schedules s "
+        "JOIN staging.manav_shift_definitions sd ON sd.id = s.shift_id "
+        "WHERE s.org_id=$1::uuid AND s.date >= $2::date AND s.date <= $3::date "
+        "GROUP BY s.date, sd.id, sd.name ORDER BY s.date, sd.name",
+        org_id, date_from, date_to,
+    )
+    # Also get employee count for gap detection
+    total_active = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.manav_employees "
+        "WHERE org_id=$1::uuid AND is_active=TRUE AND status='active'",
+        org_id,
+    )
+    return {"coverage": [dict(r) for r in rows], "total_employees": total_active}
+
+
+# ── Availability ────────────────────────────────────────────
+
+class AvailabilitySet(BaseModel):
+    date: str
+    is_available: bool = True
+    preferred_shift_id: str | None = None
+    notes: str = ""
+
+
+@router.get("/availability", dependencies=[Depends(_gate)])
+async def list_availability(
+    employee_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    query = "SELECT a.*, e.name AS employee_name FROM staging.manav_availability a " \
+            "JOIN staging.manav_employees e ON e.id = a.employee_id " \
+            "WHERE a.org_id=$1::uuid "
+    params: list = [org_id]
+    idx = 2
+    if employee_id:
+        query += f"AND a.employee_id=${idx}::uuid "
+        params.append(employee_id)
+        idx += 1
+    if date_from:
+        query += f"AND a.date >= ${idx}::date "
+        params.append(date_from)
+        idx += 1
+    if date_to:
+        query += f"AND a.date <= ${idx}::date "
+        params.append(date_to)
+        idx += 1
+    query += "ORDER BY a.date LIMIT 500"
+    rows = await pool.fetch(query, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/availability", dependencies=[Depends(_gate)])
+async def set_availability(body: AvailabilitySet, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    # Find employee by user_id
+    emp = await pool.fetchval(
+        "SELECT id FROM staging.manav_employees WHERE org_id=$1::uuid AND user_id=$2",
+        org_id, user["user_id"],
+    )
+    if not emp:
+        raise HTTPException(404, "Employee record not found for your account")
+    await pool.execute(
+        "INSERT INTO staging.manav_availability "
+        "(org_id, employee_id, date, is_available, preferred_shift_id, notes) "
+        "VALUES ($1::uuid, $2, $3::date, $4, NULLIF($5,'')::uuid, $6) "
+        "ON CONFLICT (employee_id, date) DO UPDATE SET "
+        "is_available=$4, preferred_shift_id=NULLIF($5,'')::uuid, notes=$6",
+        org_id, emp, body.date, body.is_available,
+        body.preferred_shift_id or "", body.notes,
+    )
+    return {"status": "saved"}
+
+
+# ── Shift Bids ──────────────────────────────────────────────
+
+class ShiftBidCreate(BaseModel):
+    shift_id: str
+    date: str
+    slots_needed: int = 1
+
+
+@router.get("/shift-bids", dependencies=[Depends(_gate)])
+async def list_bids(
+    status: str = "open",
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT b.*, sd.name AS shift_name, sd.start_time, sd.end_time, sd.color, "
+        "(SELECT COUNT(*) FROM staging.manav_shift_bid_responses WHERE bid_id=b.id) AS responses "
+        "FROM staging.manav_shift_bids b "
+        "JOIN staging.manav_shift_definitions sd ON sd.id = b.shift_id "
+        "WHERE b.org_id=$1::uuid AND b.status=$2 ORDER BY b.date",
+        org_id, status,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/shift-bids", dependencies=[Depends(_gate)])
+async def create_bid(body: ShiftBidCreate, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_shift_bids "
+        "(org_id, shift_id, date, slots_needed, created_by) "
+        "VALUES ($1::uuid, $2::uuid, $3::date, $4, $5) RETURNING id",
+        org_id, body.shift_id, body.date, body.slots_needed, user["user_id"],
+    )
+    return {"status": "created", "id": str(row["id"])}
+
+
+@router.post("/shift-bids/{bid_id}/apply", dependencies=[Depends(_gate)])
+async def apply_to_bid(bid_id: UUID, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    emp = await pool.fetchval(
+        "SELECT id FROM staging.manav_employees WHERE org_id=$1::uuid AND user_id=$2",
+        org_id, user["user_id"],
+    )
+    if not emp:
+        raise HTTPException(404, "Employee record not found")
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_shift_bid_responses (bid_id, employee_id) "
+        "VALUES ($1::uuid, $2) "
+        "ON CONFLICT (bid_id, employee_id) DO NOTHING RETURNING id",
+        str(bid_id), emp,
+    )
+    return {"status": "applied" if row else "already_applied"}
+
+
+@router.post("/shift-bids/{bid_id}/accept/{employee_id}", dependencies=[Depends(_gate)])
+async def accept_bid(bid_id: UUID, employee_id: UUID, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    bid = await pool.fetchrow(
+        "SELECT * FROM staging.manav_shift_bids WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(bid_id), org_id,
+    )
+    if not bid:
+        raise HTTPException(404, "Bid not found")
+    await pool.execute(
+        "UPDATE staging.manav_shift_bid_responses SET status='accepted' "
+        "WHERE bid_id=$1::uuid AND employee_id=$2::uuid",
+        str(bid_id), str(employee_id),
+    )
+    # Auto-create schedule
+    await pool.execute(
+        "INSERT INTO staging.manav_schedules "
+        "(org_id, employee_id, shift_id, date, created_by) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5) "
+        "ON CONFLICT (employee_id, date) DO UPDATE SET shift_id=$3, status='scheduled'",
+        org_id, str(employee_id), bid["shift_id"], bid["date"], user["user_id"],
+    )
+    return {"status": "accepted"}
+
+
+# ── Swap Requests ───────────────────────────────────────────
+
+class SwapCreate(BaseModel):
+    requester_schedule_id: str
+    target_employee_id: str = ""
+    reason: str = ""
+
+
+@router.post("/swaps", dependencies=[Depends(_gate)])
+async def create_swap(body: SwapCreate, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_swap_requests "
+        "(org_id, requester_schedule_id, target_employee_id, reason) "
+        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4) RETURNING id",
+        org_id, body.requester_schedule_id,
+        body.target_employee_id, body.reason,
+    )
+    return {"status": "requested", "id": str(row["id"])}
+
+
+@router.get("/swaps", dependencies=[Depends(_gate)])
+async def list_swaps(status: str = "pending", user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT sw.*, "
+        "e1.name AS requester_name, e2.name AS target_name, "
+        "s1.date AS schedule_date, sd.name AS shift_name "
+        "FROM staging.manav_swap_requests sw "
+        "JOIN staging.manav_schedules s1 ON s1.id = sw.requester_schedule_id "
+        "JOIN staging.manav_employees e1 ON e1.id = s1.employee_id "
+        "JOIN staging.manav_shift_definitions sd ON sd.id = s1.shift_id "
+        "LEFT JOIN staging.manav_employees e2 ON e2.id = sw.target_employee_id "
+        "WHERE sw.org_id=$1::uuid AND sw.status=$2 ORDER BY sw.created_at DESC",
+        org_id, status,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.patch("/swaps/{swap_id}", dependencies=[Depends(_gate)])
+async def action_swap(swap_id: UUID, action: str, user=Depends(require_user), org_id=Depends(get_org_id)):
+    if action not in ("approved", "rejected"):
+        raise HTTPException(400, "action must be 'approved' or 'rejected'")
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.manav_swap_requests SET status=$1, approved_by=$2 "
+        "WHERE id=$3::uuid AND org_id=$4::uuid",
+        action, user["user_id"], str(swap_id), org_id,
+    )
+    if action == "approved":
+        swap = await pool.fetchrow(
+            "SELECT * FROM staging.manav_swap_requests WHERE id=$1::uuid", str(swap_id)
+        )
+        if swap and swap["target_employee_id"]:
+            sched = await pool.fetchrow(
+                "SELECT * FROM staging.manav_schedules WHERE id=$1",
+                swap["requester_schedule_id"],
+            )
+            if sched:
+                # Swap shifts between requester and target
+                target_sched = await pool.fetchrow(
+                    "SELECT * FROM staging.manav_schedules "
+                    "WHERE employee_id=$1 AND date=$2",
+                    swap["target_employee_id"], sched["date"],
+                )
+                if target_sched:
+                    await pool.execute(
+                        "UPDATE staging.manav_schedules SET shift_id=$1, status='swapped' WHERE id=$2",
+                        target_sched["shift_id"], sched["id"],
+                    )
+                    await pool.execute(
+                        "UPDATE staging.manav_schedules SET shift_id=$1, status='swapped' WHERE id=$2",
+                        sched["shift_id"], target_sched["id"],
+                    )
+    return {"status": action}

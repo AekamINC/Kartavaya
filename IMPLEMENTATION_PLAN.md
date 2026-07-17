@@ -1,6 +1,6 @@
 # Kartavya · Master Implementation Plan
 
-**Last updated:** 2026-07-17  
+**Last updated:** 2026-07-17 (P0.3 + P1.1–P1.3 shipped)  
 **Branch:** staging  
 **Stack:** Vite+React / FastAPI+asyncpg / Supabase Postgres (Singapore) / Railway+Vercel  
 
@@ -18,13 +18,13 @@ All-in-one SaaS for Indian SMBs: CRM, invoicing, HR, payroll, AI content, market
 |---|---|---|---|---|
 | **Project Management** | core | server.py | ✅ Production | Kanban, tasks, comments, attachments, approvals |
 | **Graha · CRM** | graha | graha.py | ✅ Production | Contacts, deals, pipeline, labels, web forms, lead scoring, dedupe/merge |
-| **Ganit · Invoicing** | ganit | ganit.py | ✅ Production | Invoices, payments, GST |
-| **Manav · HRMS** | manav | manav.py | ✅ Production | Employees, documents, leave |
+| **Ganit · Invoicing** | ganit | ganit.py | ✅ Production | Invoices, payments, GST, e-signature on contracts (OTP + SHA-256 audit trail) |
+| **Manav · HRMS** | manav | manav.py | ✅ Production | Employees, documents, leave, shift scheduling + bidding + swaps |
 | **Vetana · Payroll** | vetana | vetana.py | ✅ Production | Salary, payslips, compliance |
 | **Vikray · Sales** | vikray | vikray.py | ✅ Production | Sales pipeline, territories, forecasts |
 | **Srijan · AI Hub** | srijan | hub.py, hub_chat.py, hub_publish.py | ✅ Production | Multi-provider AI (Gemini/OpenRouter/Groq), RAG chatbot, social publishing (Meta/Instagram/LinkedIn/Google Business), content generation, skill packs, credit system |
-| **Prachar · Marketing** | prachar | prachar.py, prachar_ads.py | ⚠️ Partial | Campaign CRUD + audience + ad insights (Meta ingest + AI analysis). Send is a stub. Automations stored but not triggered. |
-| **Dristi · Analytics** | dristi | dristi.py | ⚠️ Partial | Dashboard table exists, no frontend |
+| **Prachar · Marketing** | prachar | prachar.py, prachar_ads.py | ⚠️ Partial | Campaign CRUD + audience + ad insights + sequences/cadences (multi-channel). Send is a stub. |
+| **Dristi · Analytics** | dristi | dristi.py | ⚠️ Partial | Dashboards + scheduled report delivery + CSV/JSON export. No frontend yet. |
 | **Sanvaad · Messaging** | — | — | 📋 Planned | Internal messaging + WhatsApp. Docs only (MESSAGING_WHATSAPP_PLAN.md, WHATSAPP_MODULE.md) |
 | **Pahchan · Attendance** | — | — | 📋 Planned | PWA biometric attendance, offline-first face-api.js. Spec in memory. |
 
@@ -130,6 +130,7 @@ All Phase 1–6 vulnerabilities fixed: SQL injection, XSS, CSRF, rate limiting, 
 | 024 | `024_graha_dedupe_merge.sql` | pg_trgm, contact dedup, merge audit | ✅ |
 | 025 | `025_org_member_modules.sql` | Per-user module access, developer role | ✅ |
 | 026 | `026_prachar_ad_insights.sql` | Ad accounts, campaigns, insights | ✅ |
+| 027 | `027_esign_shifts_sequences_report_delivery.sql` | E-sign tables, shift scheduling, sequences, scheduled reports | ✅ |
 
 ---
 
@@ -153,6 +154,10 @@ All Phase 1–6 vulnerabilities fixed: SQL injection, XSS, CSRF, rate limiting, 
 | Email white-label (org branding) | org_email_settings table, thread brand through send_email |
 | `internal_only` flag on tasks/comments | Required before first real client invitation |
 | Review-queue UI in GrahaPage | Contact dedupe review frontend |
+| E-sign frontend (signing page + status UI) | Backend done, needs React signing flow |
+| Shift scheduling frontend (ManavPage) | Backend done, needs calendar/grid UI |
+| Sequences frontend (PracharPage) | Backend done, needs step builder + enrollment UI |
+| Scheduled reports frontend (DristiPage) | Backend done, needs config form + logs view |
 
 ### P2 — Future
 

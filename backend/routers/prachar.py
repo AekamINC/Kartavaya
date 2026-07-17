@@ -598,3 +598,214 @@ async def _resolve_audience(pool, org_id: str, filters: dict) -> list[dict]:
     q += " ORDER BY name"
     rows = await pool.fetch(q, *params)
     return [dict(r) for r in rows]
+
+
+# ── Sequences / Cadences ────────────────────────────────────
+
+class SequenceCreate(BaseModel):
+    name: str
+    description: str = ""
+    exit_on_reply: bool = True
+
+
+class SequenceUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    status: str | None = None
+    exit_on_reply: bool | None = None
+
+
+class StepCreate(BaseModel):
+    step_order: int
+    channel: str = "email"
+    delay_days: int = 1
+    subject: str = ""
+    body_html: str = ""
+    body_text: str = ""
+    notes: str = ""
+
+
+class EnrollBody(BaseModel):
+    contact_ids: list[str]
+
+
+@router.get("/sequences", dependencies=[Depends(_gate)])
+async def list_sequences(user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT s.*, "
+        "(SELECT COUNT(*) FROM staging.prachar_sequence_steps WHERE sequence_id=s.id) AS step_count, "
+        "(SELECT COUNT(*) FROM staging.prachar_sequence_enrollments WHERE sequence_id=s.id AND status='active') AS active_enrollments "
+        "FROM staging.prachar_sequences s WHERE s.org_id=$1::uuid ORDER BY s.created_at DESC",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/sequences", dependencies=[Depends(_gate)])
+async def create_sequence(body: SequenceCreate, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.prachar_sequences "
+        "(org_id, name, description, exit_on_reply, created_by) "
+        "VALUES ($1::uuid, $2, $3, $4, $5) RETURNING id, name, status",
+        org_id, body.name, body.description, body.exit_on_reply, user["user_id"],
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.get("/sequences/{seq_id}", dependencies=[Depends(_gate)])
+async def get_sequence(seq_id: str, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    seq = await pool.fetchrow(
+        "SELECT * FROM staging.prachar_sequences WHERE id=$1::uuid AND org_id=$2::uuid",
+        seq_id, org_id,
+    )
+    if not seq:
+        raise HTTPException(404, "Sequence not found")
+    steps = await pool.fetch(
+        "SELECT * FROM staging.prachar_sequence_steps WHERE sequence_id=$1::uuid ORDER BY step_order",
+        seq_id,
+    )
+    enrollments = await pool.fetch(
+        "SELECT e.*, c.name AS contact_name, c.email AS contact_email "
+        "FROM staging.prachar_sequence_enrollments e "
+        "JOIN staging.graha_contacts c ON c.id = e.contact_id "
+        "WHERE e.sequence_id=$1::uuid ORDER BY e.enrolled_at DESC LIMIT 100",
+        seq_id,
+    )
+    return {
+        "sequence": dict(seq),
+        "steps": [dict(s) for s in steps],
+        "enrollments": [dict(e) for e in enrollments],
+    }
+
+
+@router.patch("/sequences/{seq_id}", dependencies=[Depends(_gate)])
+async def update_sequence(seq_id: str, body: SequenceUpdate, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+    if "status" in updates:
+        valid = ("draft", "active", "paused", "archived")
+        if updates["status"] not in valid:
+            raise HTTPException(400, f"status must be one of: {', '.join(valid)}")
+    sets, params = [], [seq_id, org_id]
+    idx = 3
+    for k, v in updates.items():
+        sets.append(f"{k}=${idx}")
+        params.append(v)
+        idx += 1
+    sets.append("updated_at=NOW()")
+    await pool.execute(
+        f"UPDATE staging.prachar_sequences SET {', '.join(sets)} "
+        f"WHERE id=$1::uuid AND org_id=$2::uuid",
+        *params,
+    )
+    return {"status": "updated"}
+
+
+@router.post("/sequences/{seq_id}/steps", dependencies=[Depends(_gate)])
+async def add_step(seq_id: str, body: StepCreate, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    valid_channels = ("email", "whatsapp", "call_task", "manual")
+    if body.channel not in valid_channels:
+        raise HTTPException(400, f"channel must be one of: {', '.join(valid_channels)}")
+    row = await pool.fetchrow(
+        "INSERT INTO staging.prachar_sequence_steps "
+        "(sequence_id, step_order, channel, delay_days, subject, body_html, body_text, notes) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8) "
+        "ON CONFLICT (sequence_id, step_order) DO UPDATE SET "
+        "channel=$3, delay_days=$4, subject=$5, body_html=$6, body_text=$7, notes=$8 "
+        "RETURNING id",
+        seq_id, body.step_order, body.channel, body.delay_days,
+        body.subject, body.body_html, body.body_text, body.notes,
+    )
+    return {"status": "saved", "id": str(row["id"])}
+
+
+@router.delete("/sequences/{seq_id}/steps/{step_order}", dependencies=[Depends(_gate)])
+async def delete_step(seq_id: str, step_order: int, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    await pool.execute(
+        "DELETE FROM staging.prachar_sequence_steps "
+        "WHERE sequence_id=$1::uuid AND step_order=$2",
+        seq_id, step_order,
+    )
+    return {"status": "deleted"}
+
+
+@router.post("/sequences/{seq_id}/enroll", dependencies=[Depends(_gate)])
+async def enroll_contacts(seq_id: str, body: EnrollBody, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    seq = await pool.fetchrow(
+        "SELECT * FROM staging.prachar_sequences WHERE id=$1::uuid AND org_id=$2::uuid",
+        seq_id, org_id,
+    )
+    if not seq:
+        raise HTTPException(404, "Sequence not found")
+
+    first_step = await pool.fetchrow(
+        "SELECT delay_days FROM staging.prachar_sequence_steps "
+        "WHERE sequence_id=$1::uuid ORDER BY step_order LIMIT 1",
+        seq_id,
+    )
+    delay = first_step["delay_days"] if first_step else 1
+    enrolled = 0
+    for cid in body.contact_ids:
+        row = await pool.fetchrow(
+            "INSERT INTO staging.prachar_sequence_enrollments "
+            "(sequence_id, contact_id, current_step, next_step_at) "
+            "VALUES ($1::uuid, $2::uuid, 1, NOW() + ($3 || ' days')::interval) "
+            "ON CONFLICT (sequence_id, contact_id) DO NOTHING RETURNING id",
+            seq_id, cid, str(delay),
+        )
+        if row:
+            enrolled += 1
+    return {"enrolled": enrolled}
+
+
+@router.post("/sequences/{seq_id}/pause", dependencies=[Depends(_gate)])
+async def pause_sequence(seq_id: str, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.prachar_sequences SET status='paused', updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        seq_id, org_id,
+    )
+    await pool.execute(
+        "UPDATE staging.prachar_sequence_enrollments SET status='paused' "
+        "WHERE sequence_id=$1::uuid AND status='active'",
+        seq_id,
+    )
+    return {"status": "paused"}
+
+
+@router.get("/sequences/{seq_id}/stats", dependencies=[Depends(_gate)])
+async def sequence_stats(seq_id: str, user=Depends(require_user), org_id=Depends(get_org_id)):
+    pool = await get_pool()
+    steps = await pool.fetch(
+        "SELECT st.id, st.step_order, st.channel, st.subject, "
+        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id) AS total_sent, "
+        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='delivered') AS delivered, "
+        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='opened') AS opened, "
+        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='clicked') AS clicked, "
+        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='replied') AS replied, "
+        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='bounced') AS bounced "
+        "FROM staging.prachar_sequence_steps st "
+        "WHERE st.sequence_id=$1::uuid ORDER BY st.step_order",
+        seq_id,
+    )
+    totals = await pool.fetchrow(
+        "SELECT "
+        "COUNT(*) FILTER (WHERE status='active') AS active, "
+        "COUNT(*) FILTER (WHERE status='completed') AS completed, "
+        "COUNT(*) FILTER (WHERE status='replied') AS replied, "
+        "COUNT(*) FILTER (WHERE status='bounced') AS bounced, "
+        "COUNT(*) FILTER (WHERE status='unsubscribed') AS unsubscribed, "
+        "COUNT(*) AS total "
+        "FROM staging.prachar_sequence_enrollments WHERE sequence_id=$1::uuid",
+        seq_id,
+    )
+    return {"steps": [dict(s) for s in steps], "totals": dict(totals)}

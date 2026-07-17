@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from auth_router import require_user
@@ -935,6 +935,160 @@ async def get_contract(
         invoices = [dict(r) for r in inv_rows]
 
     return {"contract": dict(row), "invoices": invoices}
+
+
+# ── E-Signature ─────────────────────────────────────────────
+
+class SendForSignature(BaseModel):
+    signers: list[dict]
+
+
+class VerifyOTP(BaseModel):
+    otp: str
+
+
+class SubmitSignature(BaseModel):
+    signature_data_url: str
+    consent_text: str = "I intend to sign and be bound by this document."
+
+
+@router.post("/contracts/{contract_id}/send-for-signature")
+async def send_for_signature(
+    contract_id: UUID,
+    body: SendForSignature,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    from services.esign_service import send_for_signature as _send
+    pool = await get_pool()
+    ct = await pool.fetchval(
+        "SELECT id FROM staging.ganit_contracts WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(contract_id), org_id,
+    )
+    if not ct:
+        raise HTTPException(404, "Contract not found")
+    if not body.signers:
+        raise HTTPException(400, "At least one signer is required")
+    for s in body.signers:
+        if not s.get("name") or not s.get("email"):
+            raise HTTPException(400, "Each signer must have name and email")
+    result = await _send(pool, str(contract_id), body.signers, org_id, user["user_id"])
+    return {"status": "sent", "signers": result}
+
+
+@router.get("/sign/{token}")
+async def get_signing_page(token: str, request: Request):
+    """Public endpoint — no auth required. Returns contract info for signing."""
+    from services.esign_service import get_signer_by_token
+    pool = await get_pool()
+    signer = await get_signer_by_token(pool, token)
+    if not signer:
+        raise HTTPException(404, "Signing link expired or invalid")
+    return {
+        "signer_name": signer["name"],
+        "signer_email": signer["email"],
+        "contract_title": signer["contract_title"],
+        "contract_description": signer["contract_description"],
+        "contract_file_url": signer.get("contract_file_url"),
+        "contract_value": float(signer["contract_value"]) if signer.get("contract_value") else 0,
+        "status": signer["status"],
+        "otp_verified": signer.get("otp_verified_at") is not None,
+    }
+
+
+@router.post("/sign/{token}/otp")
+async def issue_otp(token: str, request: Request):
+    """Public — issue OTP to signer's email."""
+    from services.esign_service import issue_otp as _issue
+    pool = await get_pool()
+    ip = request.client.host if request.client else ""
+    ua = request.headers.get("user-agent", "")
+    ok = await _issue(pool, token, ip, ua)
+    if not ok:
+        raise HTTPException(400, "Unable to send OTP. Link may be expired or locked.")
+    return {"status": "otp_sent"}
+
+
+@router.post("/sign/{token}/verify")
+async def verify_otp_endpoint(token: str, body: VerifyOTP, request: Request):
+    """Public — verify OTP."""
+    from services.esign_service import verify_otp as _verify
+    pool = await get_pool()
+    ip = request.client.host if request.client else ""
+    ua = request.headers.get("user-agent", "")
+    ok = await _verify(pool, token, body.otp, ip, ua)
+    if not ok:
+        raise HTTPException(400, "Invalid or expired OTP")
+    return {"status": "verified"}
+
+
+@router.post("/sign/{token}/submit")
+async def submit_signature_endpoint(token: str, body: SubmitSignature, request: Request):
+    """Public — submit signature after OTP verification."""
+    from services.esign_service import submit_signature as _submit
+    pool = await get_pool()
+    ip = request.client.host if request.client else ""
+    ua = request.headers.get("user-agent", "")
+    result = await _submit(pool, token, body.signature_data_url, body.consent_text, ip, ua)
+    if not result:
+        raise HTTPException(400, "Unable to submit signature. OTP verification required.")
+    return result
+
+
+@router.get("/contracts/{contract_id}/signature-status")
+async def get_signature_status(
+    contract_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    ct = await pool.fetchrow(
+        "SELECT signature_status, signed_at FROM staging.ganit_contracts "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(contract_id), org_id,
+    )
+    if not ct:
+        raise HTTPException(404, "Contract not found")
+    signers = await pool.fetch(
+        "SELECT id, name, email, signing_order, status, sent_at, viewed_at, "
+        "signed_at, declined_at FROM staging.ganit_contract_signers "
+        "WHERE contract_id=$1::uuid ORDER BY signing_order",
+        str(contract_id),
+    )
+    return {
+        "signature_status": ct["signature_status"],
+        "signed_at": ct["signed_at"],
+        "signers": [dict(s) for s in signers],
+    }
+
+
+@router.post("/contracts/{contract_id}/cancel-signature")
+async def cancel_sig(
+    contract_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    from services.esign_service import cancel_signature as _cancel
+    pool = await get_pool()
+    await _cancel(pool, str(contract_id), org_id, user["user_id"])
+    return {"status": "cancelled"}
+
+
+@router.get("/contracts/{contract_id}/audit-trail")
+async def get_audit_trail_endpoint(
+    contract_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    from services.esign_service import get_audit_trail
+    pool = await get_pool()
+    trail = await get_audit_trail(pool, str(contract_id))
+    return {"audit_trail": trail}
 
 
 # ── Recurring Invoices ──────────────────────────────────────
