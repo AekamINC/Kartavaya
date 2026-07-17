@@ -563,18 +563,20 @@ async def create_deal(
         )
         pipeline_id = str(p["id"])
 
-    row = await pool.fetchrow(
-        "INSERT INTO staging.graha_deals "
-        "(org_id, pipeline_id, contact_id, title, value, stage, probability, "
-        " expected_close_date, assigned_to, notes, tags, created_by) "
-        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4, $5, $6, $7, "
-        " NULLIF($8,'')::date, NULLIF($9,''), $10, $11, $12) "
-        "RETURNING id, title, stage",
-        org_id, pipeline_id, body.contact_id, body.title, body.value,
-        body.stage, body.probability,
-        date.fromisoformat(body.expected_close_date) if body.expected_close_date else None,
-        body.assigned_to, body.notes, body.tags, user["user_id"],
-    )
+    try:
+        row = await pool.fetchrow(
+            "INSERT INTO staging.graha_deals "
+            "(org_id, pipeline_id, contact_id, title, value, stage, probability, "
+            " expected_close_date, assigned_to, notes, tags, created_by) "
+            "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4, $5, $6, $7, "
+            " NULLIF($8,'')::date, NULLIF($9,''), $10, $11, $12) "
+            "RETURNING id, title, stage",
+            org_id, pipeline_id, body.contact_id, body.title, body.value,
+            body.stage, body.probability, body.expected_close_date,
+            body.assigned_to, body.notes, body.tags, user["user_id"],
+        )
+    except Exception as e:
+        raise HTTPException(500, f"create_deal: {e}")
     asyncio.ensure_future(fire_automations(pool, org_id, "deal_created", {
         "deal_id": str(row["id"]), "stage": body.stage or "New",
         "contact_id": body.contact_id or "", "value": str(body.value or 0),
