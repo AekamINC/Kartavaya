@@ -29,7 +29,7 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Import smoke test
-        run: python -c "import auth_router, invite_router, approvals_router, limiter; from routers import graha, ganit, manav"
+        run: python -c "import auth_router, invite_router, approvals_router, limiter; from routers import activity, automations, dashboards, fields, reports, templates, time_entries, uploads, views, task_reminders"
         env:
           JWT_SECRET: ci-test-secret-minimum-32-chars-long
           REPORT_DISPATCH_SECRET: ci-test-dispatch-secret-minimum-32-chars
