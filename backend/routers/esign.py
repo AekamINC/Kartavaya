@@ -31,7 +31,7 @@ router = APIRouter(prefix="/api/v1/esign", tags=["esign"])
 
 _esign_gate = require_module("esign")
 
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://kartavaya.com")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://kartavya.com")
 
 BLOCKED_DOC_TYPES = [
     "negotiable_instrument", "power_of_attorney", "trust_deed",
