@@ -94,6 +94,7 @@ class LeaveTypeCreate(BaseModel):
 
 
 class LeaveRequest(BaseModel):
+    employee_id: str = ""
     leave_type_id: str
     start_date: str
     end_date: str
@@ -505,13 +506,29 @@ async def create_leave_request(
 ):
     pool = await get_pool()
 
-    emp = await pool.fetchrow(
-        "SELECT id FROM staging.manav_employees "
-        "WHERE org_id=$1::uuid AND user_id=$2 AND is_active=TRUE",
-        org_id, user["user_id"],
-    )
-    if not emp:
-        raise HTTPException(403, "No employee record found for your account")
+    if body.employee_id:
+        is_admin = user.get("role") == "admin" or await pool.fetchval(
+            "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND org_id=$2::uuid "
+            "AND role_code IN ('org_owner','org_admin')",
+            user["user_id"], org_id,
+        )
+        if not is_admin:
+            raise HTTPException(403, "Only admins can create leaves for other employees")
+        emp = await pool.fetchrow(
+            "SELECT id FROM staging.manav_employees "
+            "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+            body.employee_id, org_id,
+        )
+        if not emp:
+            raise HTTPException(404, "Employee not found")
+    else:
+        emp = await pool.fetchrow(
+            "SELECT id FROM staging.manav_employees "
+            "WHERE org_id=$1::uuid AND user_id=$2 AND is_active=TRUE",
+            org_id, user["user_id"],
+        )
+        if not emp:
+            raise HTTPException(403, "No employee record found for your account")
 
     bal = await pool.fetchrow(
         "SELECT allocated, used, carried_forward FROM staging.manav_leave_balances "

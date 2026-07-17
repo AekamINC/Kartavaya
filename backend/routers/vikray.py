@@ -50,6 +50,17 @@ class OrderStatusUpdate(BaseModel):
     status: str
 
 
+class OrderUpdate(BaseModel):
+    contact_id: Optional[str] = None
+    order_date: Optional[str] = None
+    expected_delivery: Optional[str] = None
+    is_igst: Optional[bool] = None
+    line_items: Optional[list[OrderLineItem]] = None
+    discount: Optional[float] = None
+    shipping_address: Optional[dict] = None
+    notes: Optional[str] = None
+
+
 class TargetCreate(BaseModel):
     salesperson_id: str
     period_start: str
@@ -173,35 +184,74 @@ async def get_order(
 @router.patch("/orders/{order_id}")
 async def update_order(
     order_id: str,
-    body: OrderCreate,
+    body: OrderUpdate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
     pool = await get_pool()
     existing = await pool.fetchrow(
-        "SELECT status FROM staging.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT * FROM staging.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
         order_id, org_id,
     )
     if not existing:
         raise HTTPException(404, "Order not found")
     if existing["status"] != "draft":
         raise HTTPException(400, "Only draft orders can be edited")
-    items = [li.model_dump() for li in body.line_items]
-    subtotal, cgst, sgst, igst, total = _compute_order_totals(items, body.discount, body.is_igst)
+
+    updates = body.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    if "line_items" in updates and updates["line_items"] is not None:
+        items = [li.model_dump() for li in body.line_items]
+        discount = updates.get("discount", existing["discount"])
+        is_igst = updates.get("is_igst", existing["is_igst"])
+        subtotal, cgst, sgst, igst, total = _compute_order_totals(items, discount, is_igst)
+        updates["line_items"] = json.dumps(items)
+        updates["subtotal"] = subtotal
+        updates["cgst"] = cgst
+        updates["sgst"] = sgst
+        updates["igst"] = igst
+        updates["total"] = total
+    elif "discount" in updates or "is_igst" in updates:
+        old_items = existing["line_items"]
+        items = json.loads(old_items) if isinstance(old_items, str) else old_items
+        discount = updates.get("discount", existing["discount"])
+        is_igst = updates.get("is_igst", existing["is_igst"])
+        subtotal, cgst, sgst, igst, total = _compute_order_totals(items, discount, is_igst)
+        updates["subtotal"] = subtotal
+        updates["cgst"] = cgst
+        updates["sgst"] = sgst
+        updates["igst"] = igst
+        updates["total"] = total
+
+    sets = []
+    params = [order_id, org_id]
+    idx = 3
+    for k, v in updates.items():
+        if k == "contact_id":
+            sets.append(f"{k}=NULLIF(${idx},'')::uuid")
+            params.append(v)
+        elif k in ("order_date", "expected_delivery"):
+            sets.append(f"{k}=${idx}::date")
+            params.append(date.fromisoformat(v) if v else None)
+        elif k == "line_items":
+            sets.append(f"{k}=${idx}::jsonb")
+            params.append(v)
+        elif k == "shipping_address":
+            sets.append(f"{k}=${idx}::jsonb")
+            params.append(json.dumps(v) if v else "{}")
+        else:
+            sets.append(f"{k}=${idx}")
+            params.append(v)
+        idx += 1
+    sets.append("updated_at=NOW()")
+
     row = await pool.fetchrow(
-        "UPDATE staging.vikray_orders SET "
-        "contact_id=NULLIF($1,'')::uuid, deal_id=NULLIF($2,'')::uuid, "
-        "order_date=COALESCE(NULLIF($3,'')::date, order_date), "
-        "expected_delivery=NULLIF($4,'')::date, "
-        "line_items=$5::jsonb, subtotal=$6, cgst=$7, sgst=$8, igst=$9, "
-        "discount=$10, total=$11, is_igst=$12, shipping_address=$13::jsonb, "
-        "notes=$14, updated_at=NOW() "
-        "WHERE id=$15::uuid AND org_id=$16::uuid RETURNING *",
-        body.contact_id, body.deal_id, body.order_date, body.expected_delivery,
-        json.dumps(items), subtotal, cgst, sgst, igst,
-        body.discount, total, body.is_igst, json.dumps(body.shipping_address),
-        body.notes, order_id, org_id,
+        f"UPDATE staging.vikray_orders SET {', '.join(sets)} "
+        f"WHERE id=$1::uuid AND org_id=$2::uuid RETURNING *",
+        *params,
     )
     return dict(row)
 

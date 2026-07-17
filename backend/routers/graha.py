@@ -779,6 +779,40 @@ async def create_activity(
     return {"status": "created", "id": str(row["id"])}
 
 
+@router.get("/activities")
+async def list_activities(
+    contact_id: Optional[str] = None,
+    deal_id: Optional[str] = None,
+    activity_type: Optional[str] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    query = (
+        "SELECT id, deal_id, contact_id, activity_type, title, description, "
+        "scheduled_at, completed_at, is_completed, created_by, created_at "
+        "FROM staging.graha_activities WHERE org_id=$1::uuid "
+    )
+    params: list = [org_id]
+    idx = 2
+    if contact_id:
+        query += f"AND contact_id=${idx}::uuid "
+        params.append(contact_id)
+        idx += 1
+    if deal_id:
+        query += f"AND deal_id=${idx}::uuid "
+        params.append(deal_id)
+        idx += 1
+    if activity_type:
+        query += f"AND activity_type=${idx} "
+        params.append(activity_type)
+        idx += 1
+    query += "ORDER BY created_at DESC LIMIT 100"
+    rows = await pool.fetch(query, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
 @router.patch("/activities/{activity_id}/complete")
 async def complete_activity(
     activity_id: UUID,
@@ -1632,9 +1666,9 @@ async def create_automation(
         "update_score", "change_stage", "send_notification", "add_label",
     )
     if body.trigger_type not in valid_triggers:
-        raise HTTPException(400, f"Invalid trigger_type: {body.trigger_type}")
+        raise HTTPException(400, f"trigger_type must be one of: {', '.join(valid_triggers)}")
     if body.action_type not in valid_actions:
-        raise HTTPException(400, f"Invalid action_type: {body.action_type}")
+        raise HTTPException(400, f"action_type must be one of: {', '.join(valid_actions)}")
 
     row = await pool.fetchrow(
         "INSERT INTO staging.graha_automations "
