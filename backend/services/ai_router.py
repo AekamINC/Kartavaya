@@ -295,9 +295,9 @@ async def generate_image(
     or_key = os.getenv("OPENROUTER_API_KEY", "")
     if or_key:
         try:
-            result = await _generate_flux(or_key, prompt, aspect_ratio)
+            result = await _generate_gemini_flash_image(or_key, f"Generate an image: {prompt}")
         except Exception as e:
-            log.warning("Flux image gen failed: %s", e)
+            log.warning("Gemini Flash Image gen failed: %s", e)
 
     if result is None:
         gemini_key = os.getenv("GEMINI_API_KEY", "")
@@ -332,37 +332,37 @@ async def generate_image(
     return result
 
 
-async def _generate_flux(api_key: str, prompt: str, aspect_ratio: str = "1:1") -> dict:
-    """Generate image via Flux Schnell on OpenRouter."""
-    size_map = {
-        "1:1": (1024, 1024), "16:9": (1344, 768), "9:16": (768, 1344),
-        "4:3": (1152, 896), "3:4": (896, 1152),
-    }
-    w, h = size_map.get(aspect_ratio, (1024, 1024))
+async def _generate_gemini_flash_image(api_key: str, prompt: str) -> dict:
+    """Generate image via Gemini Flash Lite Image on OpenRouter."""
+    import base64 as b64mod
 
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
-            "https://openrouter.ai/api/v1/images/generations",
+            "https://openrouter.ai/api/v1/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
             json={
-                "model": "black-forest-labs/flux-schnell",
-                "prompt": prompt,
-                "n": 1,
-                "size": f"{w}x{h}",
-                "response_format": "b64_json",
+                "model": "google/gemini-2.5-flash-image",
+                "messages": [{"role": "user", "content": prompt}],
+                "modalities": ["text", "image"],
             },
         )
         resp.raise_for_status()
         data = resp.json()
 
-    b64 = data["data"][0]["b64_json"]
-    return {
-        "image_b64": b64,
-        "image_url": f"data:image/png;base64,{b64}",
-        "provider": "flux",
-        "model": "black-forest-labs/flux-schnell",
-        "cost_usd": 0.003,
-    }
+    for part in data["choices"][0]["message"].get("content", []):
+        if isinstance(part, dict) and part.get("type") == "image_url":
+            url = part["image_url"]["url"]
+            if url.startswith("data:"):
+                header, b64_str = url.split(",", 1)
+                return {
+                    "image_b64": b64_str,
+                    "image_url": url,
+                    "provider": "gemini_flash_image",
+                    "model": "google/gemini-2.5-flash-image",
+                    "cost_usd": 0.002,
+                }
+
+    raise RuntimeError("Gemini Flash Image returned no image in response")
 
 
 async def _generate_gemini_imagen(api_key: str, prompt: str, aspect_ratio: str = "1:1") -> dict:
