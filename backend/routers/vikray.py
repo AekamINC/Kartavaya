@@ -319,7 +319,9 @@ async def create_target(
         "ON CONFLICT (org_id, salesperson_id, period_start) DO UPDATE SET "
         "target_amount=EXCLUDED.target_amount, target_deals=EXCLUDED.target_deals, notes=EXCLUDED.notes "
         "RETURNING *",
-        org_id, body.salesperson_id, body.period_start, body.period_end,
+        org_id, body.salesperson_id,
+        date.fromisoformat(body.period_start) if body.period_start else None,
+        date.fromisoformat(body.period_end) if body.period_end else None,
         body.target_amount, body.target_deals, body.notes, user["user_id"],
     )
     return dict(row)

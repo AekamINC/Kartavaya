@@ -324,8 +324,8 @@ async def list_attendance(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    d_from = date_from or date.today().isoformat()
-    d_to = date_to or d_from
+    d_from = date.fromisoformat(date_from) if date_from else date.today()
+    d_to = date.fromisoformat(date_to) if date_to else d_from
 
     query = (
         "SELECT a.id, a.date, a.check_in, a.check_out, a.status, "
@@ -356,7 +356,7 @@ async def mark_attendance(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    att_date = body.date or date.today().isoformat()
+    att_date = date.fromisoformat(body.date) if body.date else date.today()
 
     valid_statuses = ("present", "absent", "half_day", "late", "on_leave", "holiday", "weekend")
     if body.status not in valid_statuses:
@@ -873,9 +873,13 @@ async def performance_summary(
 
     today = date.today()
     if not from_date:
-        from_date = f"{today.year}-{today.month:02d}-01"
+        from_date = date(today.year, today.month, 1)
+    else:
+        from_date = date.fromisoformat(from_date)
     if not to_date:
-        to_date = today.isoformat()
+        to_date = today
+    else:
+        to_date = date.fromisoformat(to_date)
 
     rows = await pool.fetch(
         "SELECT e.id, e.name, e.department, "

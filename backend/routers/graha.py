@@ -5,7 +5,7 @@ Contacts, deals, pipelines, activities.
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -571,7 +571,8 @@ async def create_deal(
         " NULLIF($8,'')::date, NULLIF($9,''), $10, $11, $12) "
         "RETURNING id, title, stage",
         org_id, pipeline_id, body.contact_id, body.title, body.value,
-        body.stage, body.probability, body.expected_close_date,
+        body.stage, body.probability,
+        date.fromisoformat(body.expected_close_date) if body.expected_close_date else None,
         body.assigned_to, body.notes, body.tags, user["user_id"],
     )
     asyncio.ensure_future(fire_automations(pool, org_id, "deal_created", {
@@ -680,18 +681,37 @@ async def update_deal(
         raise HTTPException(400, "No fields to update")
 
     if "stage" in updates and updates["stage"] == "Won":
-        updates["won_at"] = datetime.now(timezone.utc).isoformat()
+        updates["won_at"] = datetime.now(timezone.utc)
         updates["probability"] = 100
     elif "stage" in updates and updates["stage"] == "Lost":
-        updates["lost_at"] = datetime.now(timezone.utc).isoformat()
+        updates["lost_at"] = datetime.now(timezone.utc)
         updates["probability"] = 0
 
+    date_fields = {"expected_close_date"}
+    ts_fields = {"won_at", "lost_at"}
+    jsonb_fields = {"custom_data"}
     sets = []
     params = [str(deal_id), org_id]
     idx = 3
     for k, v in updates.items():
-        sets.append(f"{k}=${idx}")
-        params.append(v)
+        if k in date_fields:
+            sets.append(f"{k}=${idx}::date")
+            params.append(date.fromisoformat(v) if isinstance(v, str) and v else v)
+        elif k in ts_fields:
+            sets.append(f"{k}=${idx}")
+            params.append(v)
+        elif k in jsonb_fields:
+            sets.append(f"{k}=${idx}::jsonb")
+            params.append(json.dumps(v) if v is not None else None)
+        elif k == "assigned_to":
+            sets.append(f"{k}=NULLIF(${idx},'')")
+            params.append(v)
+        elif k == "tags":
+            sets.append(f"{k}=${idx}")
+            params.append(v if isinstance(v, list) else [])
+        else:
+            sets.append(f"{k}=${idx}")
+            params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
 

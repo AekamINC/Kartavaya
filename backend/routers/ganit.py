@@ -362,8 +362,8 @@ async def create_invoice(
                   "debit_note": "DN", "quotation": "QTN"}
     inv_number = await _next_invoice_number(pool, org_id, prefix_map.get(body.invoice_type, "INV"))
 
-    inv_date = body.invoice_date or date.today().isoformat()
-    due = body.due_date or None
+    inv_date = date.fromisoformat(body.invoice_date) if body.invoice_date else date.today()
+    due = date.fromisoformat(body.due_date) if body.due_date else None
 
     if body.doc_status and body.doc_status in ("draft", "final"):
         doc_status = body.doc_status
@@ -390,7 +390,7 @@ async def create_invoice(
         )
     except Exception as e:
         logger.error("create_invoice failed: %s\n%s", e, traceback.format_exc())
-        raise HTTPException(500, f"create_invoice: {e}")
+        raise
     return {"status": "created", **dict(row)}
 
 
@@ -460,7 +460,7 @@ async def record_payment(
     if inv["payment_status"] in ("paid", "cancelled"):
         raise HTTPException(400, f"Cannot record payment: invoice is {inv['payment_status']}")
 
-    pay_date = body.payment_date or date.today().isoformat()
+    pay_date = date.fromisoformat(body.payment_date) if body.payment_date else date.today()
 
     await pool.execute(
         "INSERT INTO staging.ganit_payments "
@@ -605,7 +605,7 @@ async def convert_to_invoice(
         raise HTTPException(400, "Estimate must be accepted before converting to invoice")
 
     inv_number = await _next_invoice_number(pool, org_id, "INV")
-    inv_date = date.today().isoformat()
+    inv_date = date.today()
 
     new_row = await pool.fetchrow(
         "INSERT INTO staging.ganit_invoices "
@@ -664,12 +664,12 @@ async def list_expenses(
 
     if from_date:
         query += f"AND e.expense_date >= ${idx}::date "
-        params.append(from_date)
+        params.append(date.fromisoformat(from_date))
         idx += 1
 
     if to_date:
         query += f"AND e.expense_date <= ${idx}::date "
-        params.append(to_date)
+        params.append(date.fromisoformat(to_date))
         idx += 1
 
     if is_billable is not None:
@@ -690,7 +690,7 @@ async def create_expense(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    exp_date = body.expense_date or date.today().isoformat()
+    exp_date = date.fromisoformat(body.expense_date) if body.expense_date else date.today()
 
     row = await pool.fetchrow(
         "INSERT INTO staging.ganit_expenses "
@@ -726,11 +726,13 @@ async def update_expense(
     for k, v in updates.items():
         if k in ("contact_id", "project_id"):
             sets.append(f"{k}=NULLIF(${idx},'')::uuid")
+            params.append(v)
         elif k == "expense_date":
             sets.append(f"{k}=${idx}::date")
+            params.append(date.fromisoformat(v) if v else None)
         else:
             sets.append(f"{k}=${idx}")
-        params.append(v)
+            params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
 
@@ -857,8 +859,8 @@ async def create_contract(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    start = body.start_date or None
-    end = body.end_date or None
+    start = date.fromisoformat(body.start_date) if body.start_date else None
+    end = date.fromisoformat(body.end_date) if body.end_date else None
 
     row = await pool.fetchrow(
         "INSERT INTO staging.ganit_contracts "
@@ -896,11 +898,13 @@ async def update_contract(
     for k, v in updates.items():
         if k == "contact_id":
             sets.append(f"{k}=NULLIF(${idx},'')::uuid")
+            params.append(v)
         elif k in ("start_date", "end_date"):
             sets.append(f"{k}=${idx}::date")
+            params.append(date.fromisoformat(v) if v else None)
         else:
             sets.append(f"{k}=${idx}")
-        params.append(v)
+            params.append(v)
         idx += 1
     sets.append("updated_at=NOW()")
 
@@ -1134,7 +1138,8 @@ async def create_recurring(
     if body.frequency not in valid_freq:
         raise HTTPException(400, f"frequency must be one of: {', '.join(valid_freq)}")
 
-    end = body.end_date or None
+    end = date.fromisoformat(body.end_date) if body.end_date else None
+    next_dt = date.fromisoformat(body.next_date) if body.next_date else date.today()
 
     row = await pool.fetchrow(
         "INSERT INTO staging.ganit_recurring "
@@ -1145,7 +1150,7 @@ async def create_recurring(
         "RETURNING id, frequency, next_date",
         org_id, body.contact_id, json.dumps(body.template_items),
         body.subtotal, body.gst_rate, body.is_igst,
-        body.frequency, body.next_date, end,
+        body.frequency, next_dt, end,
         body.auto_send, body.notes, body.terms, user["user_id"],
     )
     return {"status": "created", **dict(row)}
@@ -1181,8 +1186,8 @@ async def generate_recurring_invoice(
 
     total = round(subtotal + gst_total, 2)
     inv_number = await _next_invoice_number(pool, org_id, "INV")
-    inv_date = date.today().isoformat()
-    due_date = date.today().isoformat()
+    inv_date = date.today()
+    due_date = date.today()
 
     for li in items:
         qty = float(li.get("quantity", 1))
@@ -1276,12 +1281,12 @@ async def expense_stats(
 
     if from_date:
         cat_query += f"AND expense_date >= ${idx}::date "
-        params.append(from_date)
+        params.append(date.fromisoformat(from_date))
         idx += 1
 
     if to_date:
         cat_query += f"AND expense_date <= ${idx}::date "
-        params.append(to_date)
+        params.append(date.fromisoformat(to_date))
         idx += 1
 
     cat_query += "GROUP BY category ORDER BY total DESC"
