@@ -181,16 +181,20 @@ async def create_contact(
     if body.contact_type not in valid_types:
         raise HTTPException(400, f"contact_type must be one of: {', '.join(valid_types)}")
 
-    row = await pool.fetchrow(
-        "INSERT INTO staging.graha_contacts "
-        "(org_id, name, email, phone, company, designation, gstin, pan, "
-        " billing_address, shipping_address, tags, notes, contact_type, source, created_by) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) "
-        "RETURNING id, name, contact_type",
-        org_id, body.name, body.email, body.phone, body.company, body.designation,
-        body.gstin, body.pan, json.dumps(body.billing_address), json.dumps(body.shipping_address),
-        json.dumps(body.tags), body.notes, body.contact_type, body.source, user["user_id"],
-    )
+    try:
+        row = await pool.fetchrow(
+            "INSERT INTO staging.graha_contacts "
+            "(org_id, name, email, phone, company, designation, gstin, pan, "
+            " billing_address, shipping_address, tags, notes, contact_type, source, created_by) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) "
+            "RETURNING id, name, contact_type",
+            org_id, body.name, body.email, body.phone, body.company, body.designation,
+            body.gstin, body.pan, json.dumps(body.billing_address), json.dumps(body.shipping_address),
+            json.dumps(body.tags), body.notes, body.contact_type, body.source, user["user_id"],
+        )
+    except Exception as e:
+        logger.error("create_contact failed: %s", e, exc_info=True)
+        raise
     if body.contact_type == "lead":
         asyncio.ensure_future(fire_automations(pool, org_id, "lead_created", {
             "contact_id": str(row["id"]), "source": body.source or "", "contact_type": "lead",
