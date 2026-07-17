@@ -390,7 +390,7 @@ async def create_invoice(
         )
     except Exception as e:
         logger.error("create_invoice failed: %s\n%s", e, traceback.format_exc())
-        raise
+        raise HTTPException(500, f"create_invoice: {e}")
     return {"status": "created", **dict(row)}
 
 
