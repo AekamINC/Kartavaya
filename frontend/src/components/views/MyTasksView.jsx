@@ -6,6 +6,7 @@ import { currentUser } from '../../lib/auth';
 import TaskDrawer from '../TaskDrawer';
 import { priorityColor } from '../../lib/utils';
 import { STATUS_COLORS, STATUS_LABELS } from '../drawer/constants';
+import { EmptyState } from '../ui/EmptyState';
 
 const GROUPS = [
   { id: 'overdue',  label: 'Overdue',   sans: 'विलंबित',  color: '#dc2626', border: '#dc2626' },
@@ -76,9 +77,11 @@ export default function MyTasksView({ tasks = [], teamMembers = [], onTasksChang
       </div>
 
       {myTasks.length === 0 && (
-        <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--ink-3)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>
-          No tasks assigned to you in this project
-        </div>
+        <EmptyState
+          illustration="tasks"
+          title="No tasks assigned to you"
+          description="Tasks assigned to you in this project will appear here."
+        />
       )}
 
       {/* Groups */}

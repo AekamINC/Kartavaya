@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import ConfirmDialog from './ui/ConfirmDialog';
+import { StatusBar } from './ui/StatusBar';
+import { Tabs } from './ui/Tabs';
 import FieldRenderer from './fields/FieldRenderer';
 import ActivityList from './ActivityList';
 import { useToast } from './ui/toast';
@@ -503,6 +505,19 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
             scrolled={scrolled}
           />
 
+          {/* Odoo-style status pipeline bar */}
+          {task && columns.length > 0 && (
+            <div style={{ padding: '0 16px 8px' }}>
+              <StatusBar
+                stages={columns
+                  .filter(c => !(c.name || '').toLowerCase().includes('approval'))
+                  .map(c => ({ value: c.column_id, label: c.name }))}
+                current={task.column_id}
+                onStageClick={colId => onColumnChange(colId)}
+              />
+            </div>
+          )}
+
           <DrawerMeta
             task={task} draft={draft} setDraft={setDraft} saveTask={saveTask}
             saveReminders={saveReminders}
@@ -512,7 +527,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
             assigneeRef={assigneeRef} toggleAssignee={toggleAssignee}
           />
 
-          {/* Single scrollable body — all sections stacked */}
+          {/* Tabbed body — Odoo notebook-style */}
           <div className="k-dr__body" ref={bodyRef} onScroll={handleBodyScroll}>
 
             {!task && (
@@ -524,128 +539,120 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
             )}
 
             {task && (
-              <>
-                {/* ── Description ── */}
-                <div style={{ marginBottom: 20 }}>
-                  <span style={lbl}>
-                    Description{' '}
-                    <span style={{ fontFamily: 'var(--font-hindi)', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-faint)', fontWeight: 400 }}>
-                      &#x0935;&#x093F;&#x0935;&#x0930;&#x0923;
-                    </span>
-                  </span>
-                  <textarea
-                    className="k-input"
-                    value={draft.description || ''}
-                    onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
-                    onBlur={() => draft.description !== task.description && saveTask({ description: draft.description })}
-                    rows={5}
-                    style={{ width: '100%', resize: 'vertical', lineHeight: 1.65, fontSize: 13 }}
-                    placeholder="Add a description&hellip;"
-                  />
-                </div>
-
-                {/* ── Subtasks ── */}
-                <DrawerSubtasks
-                  task={task} members={members}
-                  newSubtask={newSubtask} setNewSubtask={setNewSubtask}
-                  addingSubtask={addingSubtask}
-                  addSubtask={addSubtask} toggleSubtask={toggleSubtask}
-                  deleteSubtask={deleteSubtask} updateSubtaskAssignee={updateSubtaskAssignee}
-                />
-
-                {/* ── Custom fields ── */}
-                {fields.length > 0 && (
-                  <div style={{ marginBottom: 20 }}>
-                    <span style={lbl}>Custom Fields</span>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 12 }}>
-                      {fields.map(f => (
-                        <div key={f.field_id}>
-                          <span style={lbl}>{f.name}</span>
-                          <FieldRenderer field={f} value={fValues[f.field_id] ?? null} onChange={v => saveFieldValue(f.field_id, v)} />
+              <Tabs
+                defaultTab="details"
+                tabs={[
+                  {
+                    value: 'details', label: 'Details', count: (task.subtasks?.length || 0) + fields.length,
+                    content: (
+                      <>
+                        {/* ── Description ── */}
+                        <div style={{ marginBottom: 20 }}>
+                          <span style={lbl}>
+                            Description{' '}
+                            <span style={{ fontFamily: 'var(--font-hindi)', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-faint)', fontWeight: 400 }}>
+                              &#x0935;&#x093F;&#x0935;&#x0930;&#x0923;
+                            </span>
+                          </span>
+                          <textarea
+                            className="k-input"
+                            value={draft.description || ''}
+                            onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
+                            onBlur={() => draft.description !== task.description && saveTask({ description: draft.description })}
+                            rows={5}
+                            style={{ width: '100%', resize: 'vertical', lineHeight: 1.65, fontSize: 13 }}
+                            placeholder="Add a description&hellip;"
+                          />
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
-                {/* ── Approval ── */}
-                {task.team_id && (
-                  <DrawerApproval
-                    task={task}
-                    isOwnerAdmin={isOwnerAdmin} isClient={isClient}
-                    showApprovePanel={showApprovePanel}   setShowApprovePanel={setShowApprovePanel}
-                    showRequestPanel={showRequestPanel}   setShowRequestPanel={setShowRequestPanel}
-                    showRejectInput={showRejectInput}     setShowRejectInput={setShowRejectInput}
-                    approvalLoading={approvalLoading}
-                    approvalNotes={approvalNotes}         setApprovalNotes={setApprovalNotes}
-                    requestNotes={requestNotes}           setRequestNotes={setRequestNotes}
-                    rejectNote={rejectNote}               setRejectNote={setRejectNote}
-                    clientList={clientList}               clientUserId={clientUserId} setClientUserId={setClientUserId}
-                    requestApproval={requestApproval}     openApprovePanel={openApprovePanel}
-                    approveTask={approveTask}             rejectTask={rejectTask}
-                    clientApproveTask={clientApproveTask} clientRejectTask={clientRejectTask}
-                  />
-                )}
+                        {/* ── Subtasks ── */}
+                        <DrawerSubtasks
+                          task={task} members={members}
+                          newSubtask={newSubtask} setNewSubtask={setNewSubtask}
+                          addingSubtask={addingSubtask}
+                          addSubtask={addSubtask} toggleSubtask={toggleSubtask}
+                          deleteSubtask={deleteSubtask} updateSubtaskAssignee={updateSubtaskAssignee}
+                        />
 
-                {/* ── Comments ── */}
-                <DrawerComments
-                  comments={comments} comment={comment} setComment={setComment}
-                  postComment={postComment} deleteComment={deleteComment}
-                  editingComment={editingComment} editBody={editBody} setEditBody={setEditBody}
-                  startEditComment={startEditComment} saveEditComment={saveEditComment}
-                  me={me} isSystemAdmin={isSystemAdmin} mentionMembers={mentionMembers}
-                />
+                        {/* ── Custom fields ── */}
+                        {fields.length > 0 && (
+                          <div style={{ marginBottom: 20 }}>
+                            <span style={lbl}>Custom Fields</span>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 12 }}>
+                              {fields.map(f => (
+                                <div key={f.field_id}>
+                                  <span style={lbl}>{f.name}</span>
+                                  <FieldRenderer field={f} value={fValues[f.field_id] ?? null} onChange={v => saveFieldValue(f.field_id, v)} />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
 
-                {/* ── Files ── */}
-                <div className="k-dr__section">
-                  <div className="k-dr__sec-hd">
-                    Files <span className="k-dr__sec-hi">फ़ाइलें</span>
-                    {attachments.length > 0 && <span className="k-dr__sec-count">{attachments.length}</span>}
-                  </div>
-                  <DrawerAttachments
-                    attachments={attachments} uploading={uploading} uploadProgress={uploadProgress}
-                    fileRef={fileRef} videoRef={videoRef} handleFileChange={handleFileChange}
-                    removeAttachment={removeAttachment}
-                    onPrivacyChange={handlePrivacyChange}
-                    members={members}
-                    currentUserId={me?.user_id}
-                  />
-                </div>
-
-                {/* ── Activity ── */}
-                <div className="k-dr__section">
-                  <div className="k-dr__sec-hd">
-                    Activity <span className="k-dr__sec-hi">क्रिया</span>
-                  </div>
-                  <ActivityList events={activity} loading={actLoad} />
-                </div>
-
-                {/* ── Time (non-client) ── */}
-                {!isClient && (
-                  <div className="k-dr__section">
-                    <div className="k-dr__sec-hd">
-                      Time <span className="k-dr__sec-hi">काल</span>
-                    </div>
-                    <DrawerTimeEntries
-                      timer={timer} entries={entries}
-                      manualMin={manualMin} setManualMin={setManualMin}
-                      manualDesc={manualDesc} setManualDesc={setManualDesc}
-                      startTimer={startTimer} stopTimer={stopTimer}
-                      addManual={addManual} deleteEntry={deleteEntry}
-                    />
-                  </div>
-                )}
-
-                {/* ── Brand Kit (non-client) ── */}
-                {!isClient && (
-                  <div className="k-dr__section">
-                    <div className="k-dr__sec-hd">
-                      Brand Kit <span className="k-dr__sec-hi">ब्रांड</span>
-                    </div>
-                    <BrandKit mode="display" />
-                  </div>
-                )}
-              </>
+                        {/* ── Approval ── */}
+                        {task.team_id && (
+                          <DrawerApproval
+                            task={task}
+                            isOwnerAdmin={isOwnerAdmin} isClient={isClient}
+                            showApprovePanel={showApprovePanel}   setShowApprovePanel={setShowApprovePanel}
+                            showRequestPanel={showRequestPanel}   setShowRequestPanel={setShowRequestPanel}
+                            showRejectInput={showRejectInput}     setShowRejectInput={setShowRejectInput}
+                            approvalLoading={approvalLoading}
+                            approvalNotes={approvalNotes}         setApprovalNotes={setApprovalNotes}
+                            requestNotes={requestNotes}           setRequestNotes={setRequestNotes}
+                            rejectNote={rejectNote}               setRejectNote={setRejectNote}
+                            clientList={clientList}               clientUserId={clientUserId} setClientUserId={setClientUserId}
+                            requestApproval={requestApproval}     openApprovePanel={openApprovePanel}
+                            approveTask={approveTask}             rejectTask={rejectTask}
+                            clientApproveTask={clientApproveTask} clientRejectTask={clientRejectTask}
+                          />
+                        )}
+                      </>
+                    ),
+                  },
+                  {
+                    value: 'comments', label: 'Comments', count: comments.length,
+                    content: (
+                      <DrawerComments
+                        comments={comments} comment={comment} setComment={setComment}
+                        postComment={postComment} deleteComment={deleteComment}
+                        editingComment={editingComment} editBody={editBody} setEditBody={setEditBody}
+                        startEditComment={startEditComment} saveEditComment={saveEditComment}
+                        me={me} isSystemAdmin={isSystemAdmin} mentionMembers={mentionMembers}
+                      />
+                    ),
+                  },
+                  {
+                    value: 'files', label: 'Files', count: attachments.length,
+                    content: (
+                      <DrawerAttachments
+                        attachments={attachments} uploading={uploading} uploadProgress={uploadProgress}
+                        fileRef={fileRef} videoRef={videoRef} handleFileChange={handleFileChange}
+                        removeAttachment={removeAttachment}
+                        onPrivacyChange={handlePrivacyChange}
+                        members={members}
+                        currentUserId={me?.user_id}
+                      />
+                    ),
+                  },
+                  ...(!isClient ? [{
+                    value: 'time', label: 'Time', count: entries.length,
+                    content: (
+                      <DrawerTimeEntries
+                        timer={timer} entries={entries}
+                        manualMin={manualMin} setManualMin={setManualMin}
+                        manualDesc={manualDesc} setManualDesc={setManualDesc}
+                        startTimer={startTimer} stopTimer={stopTimer}
+                        addManual={addManual} deleteEntry={deleteEntry}
+                      />
+                    ),
+                  }] : []),
+                  {
+                    value: 'activity', label: 'Activity', count: activity.length,
+                    content: <ActivityList events={activity} loading={actLoad} />,
+                  },
+                ]}
+              />
             )}
           </div>
         </div>

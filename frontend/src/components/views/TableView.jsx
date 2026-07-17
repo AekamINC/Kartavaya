@@ -4,6 +4,7 @@
 import React, { useState, useMemo } from 'react';
 import TaskDrawer from '../TaskDrawer';
 import FieldRenderer from '../fields/FieldRenderer';
+import { EmptyState } from '../ui/EmptyState';
 
 import { priorityColor } from '../../lib/utils';
 
@@ -217,8 +218,12 @@ export default function TableView({ tasks, columns, fieldDefs, fieldValueMap, te
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5 + shownFields.length} style={{ padding: '32px', textAlign: 'center', color: 'var(--ink-faint)', fontStyle: 'italic', fontSize: 13 }}>
-                  No tasks match your filter.
+                <td colSpan={5 + shownFields.length}>
+                  <EmptyState
+                    illustration="search"
+                    title="No tasks found"
+                    description="Try adjusting your filter or create a new task."
+                  />
                 </td>
               </tr>
             )}
