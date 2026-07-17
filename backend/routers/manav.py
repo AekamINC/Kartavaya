@@ -507,7 +507,7 @@ async def create_leave_request(
 
     emp = await pool.fetchrow(
         "SELECT id FROM staging.manav_employees "
-        "WHERE org_id=$1::uuid AND user_id=$2::uuid AND is_active=TRUE",
+        "WHERE org_id=$1::uuid AND user_id=$2 AND is_active=TRUE",
         org_id, user["user_id"],
     )
     if not emp:
@@ -528,7 +528,8 @@ async def create_leave_request(
         "(org_id, employee_id, leave_type_id, start_date, end_date, days, reason) "
         "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::date, $5::date, $6, $7) RETURNING id",
         org_id, str(emp["id"]), body.leave_type_id,
-        body.start_date, body.end_date, body.days, body.reason,
+        date.fromisoformat(body.start_date), date.fromisoformat(body.end_date),
+        body.days, body.reason,
     )
     return {"status": "submitted", "id": str(row["id"])}
 
