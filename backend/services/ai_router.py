@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from typing import Optional
 
 import httpx
@@ -284,42 +285,51 @@ async def generate_image(
     org_id: Optional[str] = None,
 ) -> dict:
     """Generate an image using Flux (OpenRouter) or Gemini Imagen.
-    Returns {"image_url": "data:image/png;base64,...", "provider": ...}."""
-    pool = await get_pool()
+    Uploads to R2 if org has R2 configured, otherwise returns data URI."""
+    import base64 as b64mod
+    from services.storage import upload_file
 
-    # Try Flux via OpenRouter first
+    pool = await get_pool()
+    result = None
+
     or_key = os.getenv("OPENROUTER_API_KEY", "")
     if or_key:
         try:
             result = await _generate_flux(or_key, prompt, aspect_ratio)
-            await pool.execute(
-                "INSERT INTO staging.hub_ai_logs "
-                "(client_id, provider, model, prompt_tokens, completion_tokens, "
-                " latency_ms, status, cost_usd) "
-                "VALUES ($1::uuid, 'flux', 'black-forest-labs/flux-schnell', 0, 0, 0, 'success', $2)",
-                org_id, result.get("cost_usd", 0.0),
-            )
-            return result
         except Exception as e:
             log.warning("Flux image gen failed: %s", e)
 
-    # Fallback to Gemini Imagen
-    gemini_key = os.getenv("GEMINI_API_KEY", "")
-    if gemini_key:
-        try:
-            result = await _generate_gemini_imagen(gemini_key, prompt, aspect_ratio)
-            await pool.execute(
-                "INSERT INTO staging.hub_ai_logs "
-                "(client_id, provider, model, prompt_tokens, completion_tokens, "
-                " latency_ms, status, cost_usd) "
-                "VALUES ($1::uuid, 'gemini_imagen', 'imagen-3.0-generate-002', 0, 0, 0, 'success', 0)",
-                org_id,
-            )
-            return result
-        except Exception as e:
-            log.warning("Gemini Imagen failed: %s", e)
+    if result is None:
+        gemini_key = os.getenv("GEMINI_API_KEY", "")
+        if gemini_key:
+            try:
+                result = await _generate_gemini_imagen(gemini_key, prompt, aspect_ratio)
+            except Exception as e:
+                log.warning("Gemini Imagen failed: %s", e)
 
-    raise RuntimeError("No image generation provider available")
+    if result is None:
+        raise RuntimeError("No image generation provider available")
+
+    img_bytes = b64mod.b64decode(result["image_b64"])
+    upload = await upload_file(
+        file_bytes=img_bytes,
+        filename=f"srijan-{uuid.uuid4().hex[:8]}.png",
+        content_type="image/png",
+        user_id="system",
+        folder="srijan/images",
+        org_id=org_id,
+    )
+    result["image_url"] = upload["url"]
+    del result["image_b64"]
+
+    await pool.execute(
+        "INSERT INTO staging.hub_ai_logs "
+        "(org_id, provider, model, prompt_tokens, completion_tokens, "
+        " latency_ms, status, cost_usd) "
+        "VALUES ($1::uuid, $2, $3, 0, 0, 0, 'success', $4)",
+        org_id, result["provider"], result["model"], result.get("cost_usd", 0.0),
+    )
+    return result
 
 
 async def _generate_flux(api_key: str, prompt: str, aspect_ratio: str = "1:1") -> dict:

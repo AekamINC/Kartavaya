@@ -77,6 +77,7 @@ class SkillAssign(BaseModel):
 
 class SkillRun(BaseModel):
     variables: dict = {}
+    generate_images: bool = False
 
 class SkillTemplateCreate(BaseModel):
     name: str
@@ -1383,9 +1384,8 @@ async def run_org_skill(
             agent_type=agent_type,
         )
 
-        # Generate image if step requests it
         image_url = None
-        if step.get("generate_image"):
+        if step.get("generate_image") or body.generate_images:
             img_prompt = step.get("image_prompt", prompt)
             for k, v in variables.items():
                 img_prompt = img_prompt.replace(f"{{{{{k}}}}}", str(v))
