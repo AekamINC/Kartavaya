@@ -101,9 +101,9 @@ class LoginBody(BaseModel):
     password: str
 
 
-def _safe_user(u: dict) -> dict:
+def _safe_user(u: dict, platform_roles: list[str] | None = None) -> dict:
     """Return a public-safe subset of user fields for API responses."""
-    return {
+    out = {
         "id": u["user_id"],
         "user_id": u["user_id"],
         "name": u["name"],
@@ -111,6 +111,9 @@ def _safe_user(u: dict) -> dict:
         "role": u.get("role", "member"),
         "avatar": u.get("avatar"),
     }
+    if platform_roles:
+        out["platform_roles"] = platform_roles
+    return out
 
 
 @router.post("/accept-invite")
@@ -187,7 +190,12 @@ async def login(request: Request, body: LoginBody):
     user = await pool.fetchrow("SELECT * FROM users WHERE email=$1", body.email.lower())
     if not user or not _verify_password(body.password, user["salt"], user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    return {"token": _create_token(user["user_id"]), "user": _safe_user(dict(user))}
+    pr = await pool.fetch(
+        "SELECT role_code FROM staging.user_roles WHERE user_id=$1 AND org_id IS NULL",
+        user["user_id"],
+    )
+    platform_roles = [r["role_code"] for r in pr]
+    return {"token": _create_token(user["user_id"]), "user": _safe_user(dict(user), platform_roles)}
 
 
 @router.post("/logout")
@@ -250,4 +258,9 @@ async def reset_password(body: ResetPasswordBody):
 @router.get("/me")
 async def me(current_user: dict = Depends(require_user)):
     """Return the authenticated user's public profile."""
-    return _safe_user(current_user)
+    pool = await get_pool()
+    pr = await pool.fetch(
+        "SELECT role_code FROM staging.user_roles WHERE user_id=$1 AND org_id IS NULL",
+        current_user["user_id"],
+    )
+    return _safe_user(current_user, [r["role_code"] for r in pr])

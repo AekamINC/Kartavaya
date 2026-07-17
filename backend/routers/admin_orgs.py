@@ -6,7 +6,7 @@ import json
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr
 
 from auth_router import require_user
@@ -255,7 +255,7 @@ async def add_member(
     if not target:
         raise HTTPException(404, f"No user found with email '{body.email}'")
 
-    valid_org_roles = {"org_admin", "org_member", "srijan_admin"}
+    valid_org_roles = {"org_admin", "org_member"}
     for role in body.roles:
         if role not in valid_org_roles:
             raise HTTPException(400, f"Invalid org role: {role}. Valid: {', '.join(valid_org_roles)}")
@@ -337,6 +337,37 @@ async def remove_member(
 
 # ── Role Management ─────────────────────────────────────────
 
+@router.get("/users/search")
+async def search_user_by_email(
+    email: str = Query(...),
+    user=Depends(require_platform_role("platform_admin")),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT user_id, email, name AS full_name FROM users WHERE LOWER(email)=LOWER($1)",
+        email,
+    )
+    if not row:
+        raise HTTPException(404, "User not found")
+    return dict(row)
+
+
+@router.get("/roles/platform")
+async def list_platform_roles(
+    user=Depends(require_platform_role("platform_admin")),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT r.id, r.user_id, r.role_code, r.granted_at, "
+        "u.email, u.name AS full_name "
+        "FROM staging.user_roles r "
+        "JOIN users u ON u.user_id = r.user_id "
+        "WHERE r.org_id IS NULL "
+        "ORDER BY r.granted_at DESC"
+    )
+    return [dict(r) for r in rows]
+
+
 @router.post("/roles/assign")
 async def assign_role(
     body: RoleAssign,
@@ -349,8 +380,8 @@ async def assign_role(
     if not target:
         raise HTTPException(404, "User not found")
 
-    platform_roles = {"platform_admin", "account_manager", "account_finance"}
-    org_roles = {"org_admin", "org_member", "srijan_admin"}
+    platform_roles = {"platform_admin", "account_manager", "account_finance", "developer", "srijan_admin"}
+    org_roles = {"org_admin", "org_member"}
 
     if body.role_code in platform_roles:
         await pool.execute(

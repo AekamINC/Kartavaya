@@ -17,13 +17,14 @@ const PLAN_OPTIONS = [
 const ORG_ROLE_OPTIONS = [
   { code: 'org_admin', label: 'Org Admin' },
   { code: 'org_member', label: 'Org Member' },
-  { code: 'srijan_admin', label: 'Srijan Admin' },
 ];
 
 const PLATFORM_ROLE_OPTIONS = [
   { code: 'platform_admin', label: 'Platform Admin' },
   { code: 'account_manager', label: 'Account Manager' },
   { code: 'account_finance', label: 'Account / Finance' },
+  { code: 'developer', label: 'Developer' },
+  { code: 'srijan_admin', label: 'Srijan Admin' },
 ];
 
 function formatBytes(bytes) {
@@ -482,6 +483,121 @@ function OrgDetail({ orgId, onClose, pushToast }) {
   );
 }
 
+// ── Platform Roles ─────────────────────────────────────────
+
+function PlatformRoles({ pushToast }) {
+  const [roles, setRoles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [email, setEmail] = useState('');
+  const [roleCode, setRoleCode] = useState('developer');
+  const [assigning, setAssigning] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    api.get('/v1/admin/orgs/roles/platform')
+      .then(r => setRoles(r.data))
+      .catch(() => pushToast({ type: 'error', title: 'Could not load platform roles' }))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const assign = async () => {
+    if (!email.trim()) return;
+    setAssigning(true);
+    try {
+      const userRes = await api.get(`/v1/admin/orgs/users/search?email=${encodeURIComponent(email.trim())}`);
+      const userId = userRes.data?.user_id;
+      if (!userId) { pushToast({ type: 'error', title: 'User not found' }); return; }
+      await api.post('/v1/admin/orgs/roles/assign', { user_id: userId, role_code: roleCode });
+      pushToast({ type: 'success', title: `${roleCode} assigned to ${email}` });
+      setEmail('');
+      load();
+    } catch (err) {
+      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Could not assign role' });
+    } finally { setAssigning(false); }
+  };
+
+  const revoke = async (roleId, email, code) => {
+    try {
+      await api.delete(`/v1/admin/orgs/roles/${roleId}`);
+      pushToast({ type: 'success', title: `Revoked ${code} from ${email}` });
+      load();
+    } catch (err) {
+      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Could not revoke role' });
+    }
+  };
+
+  const roleColor = (code) => {
+    if (code === 'platform_admin') return '#E53E3E';
+    if (code === 'account_finance') return '#D69E2E';
+    if (code === 'srijan_admin') return '#805AD5';
+    return 'var(--k-primary)';
+  };
+
+  const labelSt = { fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 };
+
+  return (
+    <div className="k-card" style={{ marginBottom: 'var(--sp-5)' }}>
+      <div className="k-card__head">
+        <span className="k-card__title">Platform Roles</span>
+        <span className="k-card__sans">प्लेटफ़ॉर्म भूमिकाएँ</span>
+      </div>
+
+      {loading ? (
+        <div style={{ padding: 16, color: 'var(--ink-faint)', fontSize: 13 }}>Loading…</div>
+      ) : (
+        <>
+          {/* Group by user */}
+          {Object.values(roles.reduce((acc, r) => {
+            if (!acc[r.user_id]) acc[r.user_id] = { ...r, codes: [] };
+            acc[r.user_id].codes.push({ id: r.id, code: r.role_code });
+            return acc;
+          }, {})).map(u => (
+            <div key={u.user_id} style={{ padding: '10px 0', borderBottom: '1px dashed var(--rule-soft)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{u.full_name || u.email}</div>
+                {u.full_name && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{u.email}</div>}
+              </div>
+              {u.codes.map(c => (
+                <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+                  letterSpacing: '0.1em', padding: '2px 8px', borderRadius: 99,
+                  background: `${roleColor(c.code)}14`, color: roleColor(c.code) }}>
+                  {c.code.replace(/_/g, ' ')}
+                  <button onClick={() => revoke(c.id, u.email, c.code)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 12, padding: 0, lineHeight: 1 }}
+                    title="Revoke">×</button>
+                </span>
+              ))}
+            </div>
+          ))}
+
+          {roles.length === 0 && (
+            <div style={{ padding: 16, color: 'var(--ink-faint)', fontSize: 13, fontStyle: 'italic' }}>No platform roles assigned yet.</div>
+          )}
+        </>
+      )}
+
+      {/* Assign form */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'end' }}>
+        <div style={{ flex: 1 }}>
+          <label style={labelSt}>ASSIGN PLATFORM ROLE</label>
+          <input className="k-input" type="email" placeholder="user@aekam.com" value={email}
+            onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && assign()} />
+        </div>
+        <select className="k-select" style={{ width: 160 }} value={roleCode}
+          onChange={e => setRoleCode(e.target.value)}>
+          {PLATFORM_ROLE_OPTIONS.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
+        </select>
+        <button className="k-btn k-btn--primary k-btn--sm" onClick={assign} disabled={assigning}
+          style={{ height: 36, whiteSpace: 'nowrap' }}>
+          {assigning ? '…' : 'Assign'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ───────────────────────────────────────────────
 
 export default function AdminOrgsPage() {
@@ -505,6 +621,8 @@ export default function AdminOrgsPage() {
       <PageHeader kicker="ADMIN · ORGANISATIONS" title="Organisations" sanskrit="संगठन" lede="Create and manage client organisations, members, roles, and storage." />
 
       <CreateOrgForm onCreated={loadOrgs} pushToast={pushToast} />
+
+      <PlatformRoles pushToast={pushToast} />
 
       {/* Org List */}
       <div className="k-card" style={{ padding: 0, overflow: 'hidden' }}>

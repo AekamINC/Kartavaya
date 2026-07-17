@@ -129,7 +129,8 @@ export default function Sidebar({ inboxCount = 0 }) {
   const navigate  = useNavigate();
   const location  = useLocation();
   const user      = currentUser();
-  const isAdmin   = user?.role === 'admin';
+  const hasPlatformRole = Array.isArray(user?.platform_roles) && user.platform_roles.length > 0;
+  const isAdmin   = user?.role === 'admin' || hasPlatformRole;
   const isClient  = user?.role === 'client';
   const isMember  = !isAdmin && !isClient && user?.role !== 'owner';
 
