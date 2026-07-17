@@ -431,7 +431,7 @@ async def update_contact(
             sets.append(f"{k}=${idx}::jsonb")
             params.append(json.dumps(v))
         elif k == "assigned_to":
-            sets.append(f"{k}=NULLIF(${idx},'')::uuid")
+            sets.append(f"{k}=NULLIF(${idx},'')")
             params.append(v)
         else:
             sets.append(f"{k}=${idx}")
@@ -810,7 +810,7 @@ async def list_follow_ups(
         idx += 1
 
     if assigned_to:
-        query += f"AND f.assigned_to=${idx}::uuid "
+        query += f"AND f.assigned_to=${idx} "
         params.append(assigned_to)
         idx += 1
 
@@ -1709,7 +1709,7 @@ async def fire_automations(pool, org_id: str, trigger_type: str, context: dict):
 
                 if action == "assign_to" and contact_id and data.get("user_id"):
                     await pool.execute(
-                        "UPDATE staging.graha_contacts SET assigned_to=$1::uuid, updated_at=NOW() "
+                        "UPDATE staging.graha_contacts SET assigned_to=$1, updated_at=NOW() "
                         "WHERE id=$2::uuid AND org_id=$3::uuid",
                         data["user_id"], contact_id, org_id,
                     )

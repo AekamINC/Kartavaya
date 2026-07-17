@@ -117,8 +117,8 @@ async def overview(
 
     crm = await pool.fetchrow(
         "SELECT COUNT(*) AS total_contacts, "
-        "COUNT(*) FILTER (WHERE type='lead') AS leads, "
-        "COUNT(*) FILTER (WHERE type='customer') AS customers "
+        "COUNT(*) FILTER (WHERE contact_type='lead') AS leads, "
+        "COUNT(*) FILTER (WHERE contact_type='customer') AS customers "
         "FROM staging.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
