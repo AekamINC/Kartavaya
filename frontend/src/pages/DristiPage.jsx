@@ -27,8 +27,8 @@ export default function DristiPage() {
 
 function OverviewTab() {
   const [data, setData] = useState(null);
-  const toast = useToast();
-  useEffect(() => { api.get('/v1/dristi/overview').then(setData).catch(e => toast.error(e.message)); }, []);
+  const { pushToast } = useToast();
+  useEffect(() => { api.get('/v1/dristi/overview').then(setData).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
   if (!data) return <Shimmer count={8} />;
   const { crm, deals, revenue, hr, orders, payroll, tasks } = data;
   return (
@@ -82,8 +82,8 @@ function OverviewTab() {
 
 function RevenueTab() {
   const [data, setData] = useState(null);
-  const toast = useToast();
-  useEffect(() => { api.get('/v1/dristi/revenue').then(setData).catch(e => toast.error(e.message)); }, []);
+  const { pushToast } = useToast();
+  useEffect(() => { api.get('/v1/dristi/revenue').then(setData).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
   if (!data) return <Shimmer count={4} />;
   return (
     <Section title="Revenue Trend" hi="राजस्व रुझान">
@@ -104,8 +104,8 @@ function RevenueTab() {
 
 function PipelineTab() {
   const [data, setData] = useState(null);
-  const toast = useToast();
-  useEffect(() => { api.get('/v1/dristi/pipeline').then(setData).catch(e => toast.error(e.message)); }, []);
+  const { pushToast } = useToast();
+  useEffect(() => { api.get('/v1/dristi/pipeline').then(setData).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
   if (!data) return <Shimmer count={4} />;
   return (
     <>
@@ -148,8 +148,8 @@ function PipelineTab() {
 
 function HRTab() {
   const [data, setData] = useState(null);
-  const toast = useToast();
-  useEffect(() => { api.get('/v1/dristi/hr').then(setData).catch(e => toast.error(e.message)); }, []);
+  const { pushToast } = useToast();
+  useEffect(() => { api.get('/v1/dristi/hr').then(setData).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
   if (!data) return <Shimmer count={4} />;
   return (
     <>
@@ -194,8 +194,8 @@ function HRTab() {
 
 function SalesTab() {
   const [data, setData] = useState(null);
-  const toast = useToast();
-  useEffect(() => { api.get('/v1/dristi/sales').then(setData).catch(e => toast.error(e.message)); }, []);
+  const { pushToast } = useToast();
+  useEffect(() => { api.get('/v1/dristi/sales').then(setData).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
   if (!data) return <Shimmer count={4} />;
   return (
     <>
@@ -252,26 +252,26 @@ function ReportsTab() {
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState(null);
   const [logs, setLogs] = useState(null);
-  const toast = useToast();
+  const { pushToast } = useToast();
 
-  const load = () => api.get('/v1/dristi/scheduled-reports').then(r => { setReports(r.data); }).catch(e => toast.error(e.message));
+  const load = () => api.get('/v1/dristi/scheduled-reports').then(r => { setReports(r.data); }).catch(e => pushToast({ type: 'error', title: e.message }));
   useEffect(() => { load(); }, []);
 
   const runNow = async (id) => {
-    try { await api.post(`/v1/dristi/scheduled-reports/${id}/run-now`); toast.success('Report triggered'); } catch (e) { toast.error(e.message); }
+    try { await api.post(`/v1/dristi/scheduled-reports/${id}/run-now`); pushToast({ type: 'success', title: 'Report triggered' }); } catch (e) { pushToast({ type: 'error', title: e.message }); }
   };
 
   const remove = async (id) => {
-    try { await api.delete(`/v1/dristi/scheduled-reports/${id}`); toast.success('Deleted'); if (view === 'detail') { setView('list'); setSelected(null); } load(); } catch (e) { toast.error(e.message); }
+    try { await api.delete(`/v1/dristi/scheduled-reports/${id}`); pushToast({ type: 'success', title: 'Deleted' }); if (view === 'detail') { setView('list'); setSelected(null); } load(); } catch (e) { pushToast({ type: 'error', title: e.message }); }
   };
 
   const toggleActive = async (r) => {
-    try { await api.patch(`/v1/dristi/scheduled-reports/${r.id}`, { is_active: !r.is_active }); load(); } catch (e) { toast.error(e.message); }
+    try { await api.patch(`/v1/dristi/scheduled-reports/${r.id}`, { is_active: !r.is_active }); load(); } catch (e) { pushToast({ type: 'error', title: e.message }); }
   };
 
   const openDetail = async (r) => {
     setSelected(r); setView('detail'); setLogs(null);
-    api.get(`/v1/dristi/scheduled-reports/${r.id}/logs`).then(res => setLogs(res.logs)).catch(e => toast.error(e.message));
+    api.get(`/v1/dristi/scheduled-reports/${r.id}/logs`).then(res => setLogs(res.logs)).catch(e => pushToast({ type: 'error', title: e.message }));
   };
 
   const openCreate = () => {
@@ -281,7 +281,7 @@ function ReportsTab() {
 
   const submitCreate = async () => {
     const recipients = form.recipients.split('\n').map(s => s.trim()).filter(Boolean);
-    if (!form.name.trim() || recipients.length === 0) { toast.error('Name and at least one recipient required'); return; }
+    if (!form.name.trim() || recipients.length === 0) { pushToast({ type: 'error', title: 'Name and at least one recipient required' }); return; }
     try {
       await api.post('/v1/dristi/scheduled-reports', {
         name: form.name.trim(), report_type: form.report_type, frequency: form.frequency,
@@ -289,8 +289,8 @@ function ReportsTab() {
         day_of_month: form.frequency === 'monthly' ? Number(form.day_of_month) : null,
         time_utc: form.time_utc, file_formats: form.file_formats, recipients, dashboard_id: null, filters: {}
       });
-      toast.success('Report scheduled'); setView('list'); load();
-    } catch (e) { toast.error(e.message); }
+      pushToast({ type: 'success', title: 'Report scheduled' }); setView('list'); load();
+    } catch (e) { pushToast({ type: 'error', title: e.message }); }
   };
 
   const exportCSV = (type) => {
@@ -430,21 +430,21 @@ function ReportsTab() {
 function DashboardsTab() {
   const [dashboards, setDashboards] = useState([]);
   const [name, setName] = useState('');
-  const toast = useToast();
+  const { pushToast } = useToast();
 
-  const load = () => api.get('/v1/dristi/dashboards').then(r => setDashboards(r.data)).catch(e => toast.error(e.message));
+  const load = () => api.get('/v1/dristi/dashboards').then(r => setDashboards(r.data)).catch(e => pushToast({ type: 'error', title: e.message }));
   useEffect(() => { load(); }, []);
 
   const create = async () => {
     if (!name.trim()) return;
     await api.post('/v1/dristi/dashboards', { name: name.trim(), widgets: [] });
     setName(''); load();
-    toast.success('Dashboard created');
+    pushToast({ type: 'success', title: 'Dashboard created' });
   };
 
   const remove = async (id) => {
     await api.delete(`/v1/dristi/dashboards/${id}`);
-    load(); toast.success('Deleted');
+    load(); pushToast({ type: 'success', title: 'Deleted' });
   };
 
   return (
