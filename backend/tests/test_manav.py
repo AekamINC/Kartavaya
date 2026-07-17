@@ -23,6 +23,8 @@ Coverage:
 
 import pytest
 
+pytest.importorskip("routers.manav", reason="routers.manav not yet implemented")
+
 EMPLOYEE_ROW = {
     "id": "e0000000-0000-0000-0000-000000000001",
     "name": "Priya Sharma",

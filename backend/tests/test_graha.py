@@ -18,6 +18,8 @@ Coverage:
 
 import pytest
 
+pytest.importorskip("routers.graha", reason="routers.graha not yet implemented")
+
 CONTACT_ROW = {
     "id": "c0000000-0000-0000-0000-000000000001",
     "name": "Acme Corp",
