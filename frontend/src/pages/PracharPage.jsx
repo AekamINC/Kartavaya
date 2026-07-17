@@ -27,7 +27,7 @@ export default function PracharPage() {
 function DashboardTab() {
   const [data, setData] = useState(null);
   const { pushToast } = useToast();
-  useEffect(() => { api.get('/v1/prachar/dashboard').then(setData).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
+  useEffect(() => { api.get('/v1/prachar/dashboard').then(r => setData(r.data)).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
   if (!data) return <Shimmer count={8} />;
   const { campaigns, delivery } = data;
   return (

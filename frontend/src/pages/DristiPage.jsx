@@ -28,7 +28,7 @@ export default function DristiPage() {
 function OverviewTab() {
   const [data, setData] = useState(null);
   const { pushToast } = useToast();
-  useEffect(() => { api.get('/v1/dristi/overview').then(setData).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
+  useEffect(() => { api.get('/v1/dristi/overview').then(r => setData(r.data)).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
   if (!data) return <Shimmer count={8} />;
   const { crm, deals, revenue, hr, orders, payroll, tasks } = data;
   return (
@@ -83,7 +83,7 @@ function OverviewTab() {
 function RevenueTab() {
   const [data, setData] = useState(null);
   const { pushToast } = useToast();
-  useEffect(() => { api.get('/v1/dristi/revenue').then(setData).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
+  useEffect(() => { api.get('/v1/dristi/revenue').then(r => setData(r.data)).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
   if (!data) return <Shimmer count={4} />;
   return (
     <Section title="Revenue Trend" hi="राजस्व रुझान">
@@ -105,7 +105,7 @@ function RevenueTab() {
 function PipelineTab() {
   const [data, setData] = useState(null);
   const { pushToast } = useToast();
-  useEffect(() => { api.get('/v1/dristi/pipeline').then(setData).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
+  useEffect(() => { api.get('/v1/dristi/pipeline').then(r => setData(r.data)).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
   if (!data) return <Shimmer count={4} />;
   return (
     <>
@@ -149,7 +149,7 @@ function PipelineTab() {
 function HRTab() {
   const [data, setData] = useState(null);
   const { pushToast } = useToast();
-  useEffect(() => { api.get('/v1/dristi/hr').then(setData).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
+  useEffect(() => { api.get('/v1/dristi/hr').then(r => setData(r.data)).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
   if (!data) return <Shimmer count={4} />;
   return (
     <>
@@ -195,7 +195,7 @@ function HRTab() {
 function SalesTab() {
   const [data, setData] = useState(null);
   const { pushToast } = useToast();
-  useEffect(() => { api.get('/v1/dristi/sales').then(setData).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
+  useEffect(() => { api.get('/v1/dristi/sales').then(r => setData(r.data)).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
   if (!data) return <Shimmer count={4} />;
   return (
     <>
