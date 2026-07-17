@@ -1227,7 +1227,7 @@ async def contact_timeline(
 
         UNION ALL
 
-        SELECT id, 'invoice' AS type, invoice_number AS title, status AS subtype,
+        SELECT id, 'invoice' AS type, invoice_number AS title, payment_status AS subtype,
             created_at AS ts, total AS amount, NULL AS stage
         FROM staging.ganit_invoices
         WHERE contact_id=$1::uuid AND org_id=$2::uuid
