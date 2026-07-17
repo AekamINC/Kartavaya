@@ -372,25 +372,21 @@ async def create_invoice(
     else:
         doc_status = "final"
 
-    try:
-        row = await pool.fetchrow(
-            "INSERT INTO staging.ganit_invoices "
-            "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
-            " place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
-            " balance_due, notes, terms, created_by, doc_status) "
-            "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6::date, $7::date, "
-            " $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $16, $17, $18, $19, $20) "
-            "RETURNING id, invoice_number, total, doc_status",
-            org_id, body.contact_id, body.deal_id, inv_number, body.invoice_type,
-            inv_date, due, body.place_of_supply, body.is_igst,
-            json.dumps(computed["line_items"]),
-            computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
-            computed["discount"], computed["total"],
-            body.notes, body.terms, user["user_id"], doc_status,
-        )
-    except Exception as e:
-        logger.error("create_invoice failed: %s\n%s", e, traceback.format_exc())
-        raise
+    row = await pool.fetchrow(
+        "INSERT INTO staging.ganit_invoices "
+        "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
+        " place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
+        " balance_due, notes, terms, created_by, doc_status) "
+        "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6::date, $7::date, "
+        " $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $16, $17, $18, $19, $20) "
+        "RETURNING id, invoice_number, total, doc_status",
+        org_id, body.contact_id, body.deal_id, inv_number, body.invoice_type,
+        inv_date, due, body.place_of_supply, body.is_igst,
+        json.dumps(computed["line_items"]),
+        computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
+        computed["discount"], computed["total"],
+        body.notes, body.terms, user["user_id"], doc_status,
+    )
     return {"status": "created", **dict(row)}
 
 
