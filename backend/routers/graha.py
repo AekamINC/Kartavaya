@@ -568,7 +568,7 @@ async def create_deal(
         "(org_id, pipeline_id, contact_id, title, value, stage, probability, "
         " expected_close_date, assigned_to, notes, tags, created_by) "
         "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4, $5, $6, $7, "
-        " NULLIF($8,'')::date, NULLIF($9,'')::uuid, $10, $11, $12) "
+        " NULLIF($8,'')::date, NULLIF($9,''), $10, $11, $12) "
         "RETURNING id, title, stage",
         org_id, pipeline_id, body.contact_id, body.title, body.value,
         body.stage, body.probability, body.expected_close_date,
@@ -843,7 +843,7 @@ async def create_follow_up(
         "(org_id, contact_id, deal_id, title, description, due_at, remind_at, "
         " assigned_to, created_by) "
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, "
-        " $6::timestamptz, NULLIF($7,'')::timestamptz, $8::uuid, $9) "
+        " $6::timestamptz, NULLIF($7,'')::timestamptz, $8, $9) "
         "RETURNING id, title, due_at",
         org_id, body.contact_id, body.deal_id, body.title, body.description,
         body.due_at, body.remind_at, assigned, user["user_id"],

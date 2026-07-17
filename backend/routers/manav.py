@@ -186,9 +186,9 @@ async def create_employee(
         " date_of_joining, date_of_birth, gender, blood_group, emergency_contact, "
         " address, bank_details, pan, aadhaar, uan, esi_number, employment_type, "
         " reporting_to, shift, created_by) "
-        "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,''), $4, $5, $6, $7, $8, "
+        "VALUES ($1::uuid, NULLIF($2,''), NULLIF($3,''), $4, $5, $6, $7, $8, "
         " NULLIF($9,'')::date, NULLIF($10,'')::date, NULLIF($11,''), $12, $13, $14, $15, "
-        " $16, $17, $18, $19, $20, NULLIF($21,'')::uuid, $22, $23) "
+        " $16, $17, $18, $19, $20, NULLIF($21,''), $22, $23) "
         "RETURNING id, name, employee_code",
         org_id, body.user_id, body.employee_code, body.name, body.email, body.phone,
         body.department, body.designation, body.date_of_joining, body.date_of_birth,
