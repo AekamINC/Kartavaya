@@ -59,6 +59,7 @@ const HubDashboardPage      = lazy(() => import('./pages/HubDashboardPage'));
 const HubClientsPage        = lazy(() => import('./pages/HubClientsPage'));
 const HubClientDetailPage   = lazy(() => import('./pages/HubClientDetailPage'));
 const HubSkillsPage         = lazy(() => import('./pages/HubSkillsPage'));
+const OrgSrijanPage         = lazy(() => import('./pages/OrgSrijanPage'));
 const GrahaPage             = lazy(() => import('./pages/GrahaPage'));
 const GanitPage             = lazy(() => import('./pages/GanitPage'));
 const ManavPage             = lazy(() => import('./pages/ManavPage'));
@@ -136,6 +137,7 @@ function AppRouter() {
           <Route path="hub/clients"            element={<HubClientsPage />} />
           <Route path="hub/clients/:clientId"  element={<HubClientDetailPage />} />
           <Route path="hub/clients/:clientId/skills" element={<HubSkillsPage />} />
+          <Route path="hub/org"                 element={<OrgSrijanPage />} />
 
           {/* Add-on modules */}
           <Route path="graha"                  element={<GrahaPage />} />

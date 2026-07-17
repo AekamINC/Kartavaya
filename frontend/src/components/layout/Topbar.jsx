@@ -21,7 +21,8 @@ const PAGE_META = {
   '/admin':                  { en: 'Admin',         hi: 'प्रशासन' },
   '/admin/billing':          { en: 'Admin Billing', hi: 'बिलिंग प्रशासन' },
   '/billing':                { en: 'Billing',       hi: 'बिलिंग' },
-  '/hub':                    { en: 'Srijan',        hi: 'सृजन' },
+  '/hub':                    { en: 'Srijan Admin',  hi: 'सृजन व्यवस्था' },
+  '/hub/org':                { en: 'Srijan',        hi: 'सृजन' },
   '/hub/clients':            { en: 'Srijan Clients', hi: 'सृजन ग्राहक' },
   '/client':                 { en: 'Client Portal', hi: 'पोर्टल' },
 };

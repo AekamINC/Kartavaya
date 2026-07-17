@@ -68,7 +68,8 @@ const NAV_FULL = [
   {
     section: 'srijan', sans: 'सृजन', gu: 'સર્જન',
     items: [
-      { to: '/hub', icon: 'hub', en: 'Srijan', hi: 'सृजन', gu: 'સર્જન' },
+      { to: '/hub/org', icon: 'hub', en: 'Srijan', hi: 'सृजन', gu: 'સર્જન' },
+      { to: '/hub', icon: 'settings', en: 'Srijan Admin', hi: 'सृजन व्यवस्था', gu: 'સર્જન વ્યવસ્થા', adminOnly: true },
     ],
   },
   {
@@ -183,7 +184,7 @@ export default function Sidebar({ inboxCount = 0 }) {
                 <span className="k-sidebar__section-hi">{showGu ? guSec : sans}</span>
               </div>
             )}
-            {items.filter(item => !item.ownerOnly || !isMember).map(({ to, icon, en, hi, gu: guLabel, adminOnly, badge }) => {
+            {items.filter(item => (!item.ownerOnly || !isMember) && (!item.adminOnly || isAdmin)).map(({ to, icon, en, hi, gu: guLabel, adminOnly, badge }) => {
               const badgeCount = badge === 'unread' ? inboxCount : 0;
               const secondaryLabel = showGu ? guLabel : hi;
               return (
