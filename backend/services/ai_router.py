@@ -401,6 +401,8 @@ CREDIT_COSTS = {
     "image": 3,
 }
 
+CREDIT_PRICE_INR = 4
+
 
 async def deduct_credits(client_id: str, agent_type: str, user_id: str = None) -> int:
     """Deduct credits for an AI generation. Returns new balance.

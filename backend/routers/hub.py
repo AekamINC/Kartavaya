@@ -19,7 +19,7 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import require_platform_role
 from middleware.subscription import require_module
-from services.ai_router import generate, generate_image, deduct_credits, deduct_org_credits, CREDIT_COSTS
+from services.ai_router import generate, generate_image, deduct_credits, deduct_org_credits, CREDIT_COSTS, CREDIT_PRICE_INR
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
 
@@ -1505,6 +1505,7 @@ async def get_org_credits(
         "user_allocation": dict(user_alloc) if user_alloc else {"allocated": 0, "used": 0},
         "recent_transactions": [dict(r) for r in recent_tx],
         "credit_costs": CREDIT_COSTS,
+        "price_per_credit_inr": CREDIT_PRICE_INR,
     }
 
 

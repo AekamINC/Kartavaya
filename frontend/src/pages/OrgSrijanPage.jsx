@@ -462,6 +462,7 @@ function GenerateTab({ credits, onCreditsChange }) {
 
 function CreditsTab({ credits }) {
   const txns = credits?.recent_transactions || [];
+  const pricePerCredit = credits?.price_per_credit_inr || 4;
 
   return (
     <div>
@@ -469,6 +470,9 @@ function CreditsTab({ credits }) {
         <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: 16 }}>
           <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 4, fontWeight: 600 }}>Org Balance</div>
           <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--k-primary)' }}>{credits?.org_balance?.balance ?? 0}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>
+            ≈ ₹{((credits?.org_balance?.balance ?? 0) * pricePerCredit).toLocaleString('en-IN')}
+          </div>
         </div>
         <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: 16 }}>
           <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 4, fontWeight: 600 }}>Your Allocation</div>
@@ -486,12 +490,12 @@ function CreditsTab({ credits }) {
         </div>
       </div>
 
-      <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Credit Costs</h3>
+      <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Pricing — ₹{pricePerCredit} per credit</h3>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
         {Object.entries(credits?.credit_costs || {}).map(([k, v]) => (
           <span key={k} style={{ fontSize: 11, padding: '4px 12px', borderRadius: 99,
             background: 'var(--surface-1)', border: '1px solid var(--rule-soft)' }}>
-            <strong>{AGENT_LABELS[k] || k}</strong>: {v} cr
+            <strong>{AGENT_LABELS[k] || k}</strong>: {v} cr · ₹{v * pricePerCredit}
           </span>
         ))}
       </div>
