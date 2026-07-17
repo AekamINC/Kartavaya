@@ -18,7 +18,7 @@ function Badge({ text, color }) {
   );
 }
 
-const TABS = ['employees', 'attendance', 'leaves', 'announcements', 'departments', 'holidays', 'performance'];
+const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'announcements', 'departments', 'holidays', 'performance'];
 
 export default function ManavPage() {
   const { pushToast } = useToast();
@@ -64,6 +64,7 @@ export default function ManavPage() {
 
       {tab === 'employees' && <EmployeesTab onUpdate={loadStats} />}
       {tab === 'attendance' && <AttendanceTab />}
+      {tab === 'shifts' && <ShiftsTab />}
       {tab === 'leaves' && <LeavesTab />}
       {tab === 'announcements' && <AnnouncementsTab />}
       {tab === 'departments' && <DepartmentsTab />}
@@ -263,6 +264,444 @@ function EmployeesTab({ onUpdate }) {
   );
 }
 
+
+function ShiftsTab() {
+  const { pushToast } = useToast();
+  const [view, setView] = useState('definitions');
+  const SHIFT_VIEWS = ['definitions', 'schedules', 'bids', 'swaps'];
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20 }}>
+        {SHIFT_VIEWS.map(v => (
+          <button key={v} onClick={() => setView(v)}
+            style={{ padding: '6px 14px', fontSize: 12, fontWeight: view === v ? 700 : 400,
+              color: view === v ? 'var(--k-primary)' : 'var(--ink-3)',
+              borderBottom: view === v ? '2px solid var(--k-primary)' : '2px solid transparent',
+              background: 'none', border: 'none', cursor: 'pointer', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
+            {v}
+          </button>
+        ))}
+      </div>
+      {view === 'definitions' && <ShiftDefinitions pushToast={pushToast} />}
+      {view === 'schedules' && <ScheduleGrid pushToast={pushToast} />}
+      {view === 'bids' && <ShiftBids pushToast={pushToast} />}
+      {view === 'swaps' && <SwapRequests pushToast={pushToast} />}
+    </div>
+  );
+}
+
+function ShiftDefinitions({ pushToast }) {
+  const [shifts, setShifts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, color: '#3B82F6' });
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    try {
+      const r = await api.get('/v1/manav/shifts');
+      setShifts(r.data.data || r.data || []);
+    } catch { pushToast({ title: 'Failed to load shifts', type: 'error' }); }
+    finally { setLoading(false); }
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/v1/manav/shifts', { ...form, break_minutes: Number(form.break_minutes) });
+      pushToast({ title: 'Shift created', type: 'success' });
+      setShowForm(false);
+      setForm({ name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, color: '#3B82F6' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Shift Definitions</h3>
+        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ Add Shift</button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Shift</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
+              <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Start Time *</span>
+              <input className="k-input" type="time" required value={form.start_time} onChange={e => setForm({ ...form, start_time: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>End Time *</span>
+              <input className="k-input" type="time" required value={form.end_time} onChange={e => setForm({ ...form, end_time: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Break (mins)</span>
+              <input className="k-input" type="number" value={form.break_minutes} onChange={e => setForm({ ...form, break_minutes: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Color</span>
+              <input className="k-input" type="color" value={form.color} onChange={e => setForm({ ...form, color: e.target.value })} style={{ height: 36, padding: 2 }} /></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Creating…' : 'Create Shift'}</button>
+          </div>
+        </form>
+      )}
+
+      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
+        shifts.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No shifts defined.</p> : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
+          {shifts.map(s => (
+            <div key={s.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <span style={{ width: 10, height: 10, borderRadius: '50%', background: s.color || '#3B82F6', flexShrink: 0 }} />
+                <span style={{ fontSize: 14, fontWeight: 700 }}>{s.name}</span>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>
+                <div>{s.start_time} — {s.end_time}</div>
+                <div>Break: {s.break_minutes ?? 0} mins</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScheduleGrid({ pushToast }) {
+  const [schedules, setSchedules] = useState([]);
+  const [coverage, setCoverage] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [shifts, setShifts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [showCoverage, setShowCoverage] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
+  const [form, setForm] = useState({ employee_id: '', shift_id: '', date: today });
+
+  useEffect(() => { loadDropdowns(); }, []);
+
+  async function loadDropdowns() {
+    try {
+      const [e, s] = await Promise.all([api.get('/v1/manav/employees'), api.get('/v1/manav/shifts')]);
+      setEmployees(e.data.data || e.data || []);
+      setShifts(s.data.data || s.data || []);
+    } catch {}
+  }
+
+  async function loadSchedules() {
+    setLoading(true);
+    try {
+      const r = await api.get(`/v1/manav/schedules?date_from=${dateFrom}&date_to=${dateTo}`);
+      setSchedules(r.data.data || r.data || []);
+    } catch { pushToast({ title: 'Failed to load schedules', type: 'error' }); }
+    finally { setLoading(false); }
+  }
+
+  async function loadCoverage() {
+    try {
+      const r = await api.get(`/v1/manav/schedules/coverage?date_from=${dateFrom}&date_to=${dateTo}`);
+      setCoverage(r.data.data || r.data || []);
+      setShowCoverage(true);
+    } catch { pushToast({ title: 'Failed to load coverage', type: 'error' }); }
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/v1/manav/schedules', form);
+      pushToast({ title: 'Schedule assigned', type: 'success' });
+      setShowForm(false);
+      setForm({ employee_id: '', shift_id: '', date: today });
+      loadSchedules();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <label style={{ fontSize: 13 }}>From <input className="k-input" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></label>
+        <label style={{ fontSize: 13 }}>To <input className="k-input" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></label>
+        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={loadSchedules}>Load</button>
+        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={loadCoverage}>Coverage</button>
+        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ Assign Shift</button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Assign Shift</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee *</span>
+              <select className="k-input" required value={form.employee_id} onChange={e => setForm({ ...form, employee_id: e.target.value })}>
+                <option value="">— Select —</option>
+                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+              </select></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Shift *</span>
+              <select className="k-input" required value={form.shift_id} onChange={e => setForm({ ...form, shift_id: e.target.value })}>
+                <option value="">— Select —</option>
+                {shifts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Date *</span>
+              <input className="k-input" type="date" required value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Assigning…' : 'Assign'}</button>
+          </div>
+        </form>
+      )}
+
+      {showCoverage && coverage.length > 0 && (
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Coverage</h4>
+            <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => setShowCoverage(false)}>Close</button>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                {['Date', 'Shift', 'Assigned'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {coverage.map((c, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                  <td style={{ padding: '8px 10px' }}>{c.date}</td>
+                  <td style={{ padding: '8px 10px' }}>{c.shift_name}</td>
+                  <td style={{ padding: '8px 10px', fontWeight: 600 }}>{c.assigned_count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
+        schedules.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No schedules. Select dates and click Load.</p> : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+              {['Date', 'Employee', 'Shift', 'Start', 'End'].map(h => (
+                <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {schedules.map(s => (
+              <tr key={s.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                <td style={{ padding: '8px 10px' }}>{s.date}</td>
+                <td style={{ padding: '8px 10px' }}>{s.employee_name}</td>
+                <td style={{ padding: '8px 10px' }}><Badge text={s.shift_name} color={s.color || '#3B82F6'} /></td>
+                <td style={{ padding: '8px 10px' }}>{s.start_time}</td>
+                <td style={{ padding: '8px 10px' }}>{s.end_time}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+function ShiftBids({ pushToast }) {
+  const [bids, setBids] = useState([]);
+  const [shifts, setShifts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ shift_id: '', date: '', slots_needed: 1 });
+
+  useEffect(() => { load(); loadShifts(); }, []);
+
+  async function load() {
+    try {
+      const r = await api.get('/v1/manav/shift-bids?status=open');
+      setBids(r.data.data || r.data || []);
+    } catch { pushToast({ title: 'Failed to load bids', type: 'error' }); }
+    finally { setLoading(false); }
+  }
+
+  async function loadShifts() {
+    try {
+      const r = await api.get('/v1/manav/shifts');
+      setShifts(r.data.data || r.data || []);
+    } catch {}
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/v1/manav/shift-bids', { ...form, slots_needed: Number(form.slots_needed) });
+      pushToast({ title: 'Bid posted', type: 'success' });
+      setShowForm(false);
+      setForm({ shift_id: '', date: '', slots_needed: 1 });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    finally { setSaving(false); }
+  }
+
+  async function applyBid(id) {
+    try {
+      await api.post(`/v1/manav/shift-bids/${id}/apply`);
+      pushToast({ title: 'Applied to bid', type: 'success' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Shift Bids</h3>
+        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ Post Bid</button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Shift Bid</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Shift *</span>
+              <select className="k-input" required value={form.shift_id} onChange={e => setForm({ ...form, shift_id: e.target.value })}>
+                <option value="">— Select —</option>
+                {shifts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Date *</span>
+              <input className="k-input" type="date" required value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Slots Needed *</span>
+              <input className="k-input" type="number" min="1" required value={form.slots_needed} onChange={e => setForm({ ...form, slots_needed: e.target.value })} /></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Posting…' : 'Post Bid'}</button>
+          </div>
+        </form>
+      )}
+
+      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
+        bids.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No open bids.</p> : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          {bids.map(b => (
+            <div key={b.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{b.shift_name}</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-2)', marginBottom: 8 }}>
+                <div>Date: {b.date}</div>
+                <div>Slots needed: {b.slots_needed}</div>
+                <div>Responses: {b.responses ?? 0}</div>
+              </div>
+              <button className="k-btn k-btn--primary" style={{ fontSize: 12, width: '100%' }} onClick={() => applyBid(b.id)}>Apply</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SwapRequests({ pushToast }) {
+  const [swaps, setSwaps] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ requester_schedule_id: '', target_employee_id: '', reason: '' });
+  const [employees, setEmployees] = useState([]);
+
+  useEffect(() => { load(); loadEmployees(); }, []);
+
+  async function load() {
+    try {
+      const r = await api.get('/v1/manav/swaps?status=pending');
+      setSwaps(r.data.data || r.data || []);
+    } catch { pushToast({ title: 'Failed to load swaps', type: 'error' }); }
+    finally { setLoading(false); }
+  }
+
+  async function loadEmployees() {
+    try {
+      const r = await api.get('/v1/manav/employees');
+      setEmployees(r.data.data || r.data || []);
+    } catch {}
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/v1/manav/swaps', form);
+      pushToast({ title: 'Swap request created', type: 'success' });
+      setShowForm(false);
+      setForm({ requester_schedule_id: '', target_employee_id: '', reason: '' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    finally { setSaving(false); }
+  }
+
+  async function handleAction(id, action) {
+    try {
+      await api.patch(`/v1/manav/swaps/${id}?action=${action}`);
+      pushToast({ title: `Swap ${action}`, type: 'success' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Swap Requests</h3>
+        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ Request Swap</button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Swap Request</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Schedule ID *</span>
+              <input className="k-input" required placeholder="Your schedule ID" value={form.requester_schedule_id} onChange={e => setForm({ ...form, requester_schedule_id: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Target Employee *</span>
+              <select className="k-input" required value={form.target_employee_id} onChange={e => setForm({ ...form, target_employee_id: e.target.value })}>
+                <option value="">— Select —</option>
+                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+              </select></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Reason</span>
+              <input className="k-input" value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} /></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Submitting…' : 'Submit'}</button>
+          </div>
+        </form>
+      )}
+
+      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
+        swaps.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No pending swap requests.</p> : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+          {swaps.map(s => (
+            <div key={s.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 13, marginBottom: 8 }}>
+                <div><strong>{s.requester_name}</strong> wants to swap with <strong>{s.target_name}</strong></div>
+                <div style={{ color: 'var(--ink-2)', marginTop: 4 }}>{s.schedule_date} · {s.shift_name}</div>
+                {s.reason && <div style={{ color: 'var(--ink-2)', marginTop: 2, fontStyle: 'italic' }}>"{s.reason}"</div>}
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button className="k-btn k-btn--primary" style={{ fontSize: 12, flex: 1 }} onClick={() => handleAction(s.id, 'approved')}>Approve</button>
+                <button className="k-btn k-btn--ghost" style={{ fontSize: 12, flex: 1, color: '#ef4444' }} onClick={() => handleAction(s.id, 'rejected')}>Reject</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function AttendanceTab() {
   const { pushToast } = useToast();
