@@ -25,6 +25,7 @@ const PAGE_META = {
   '/hub/org':                { en: 'Srijan',        hi: 'सृजन' },
   '/hub/clients':            { en: 'Srijan Clients', hi: 'सृजन ग्राहक' },
   '/client':                 { en: 'Client Portal', hi: 'पोर्टल' },
+  '/esign':                  { en: 'E-Sign',        hi: 'प्रमाण' },
 };
 
 export default function Topbar({ unread = 0, onOpenNotifications, onNewTask }) {

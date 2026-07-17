@@ -32,6 +32,7 @@ const ICONS = {
   vetana:      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><rect x="2.5" y="2" width="11" height="12" rx="1.5"/><path d="M5.5 5.5h5M5.5 8h3M5.5 10.5h4"/><path d="M10 9l1.5 1.5L10 12" strokeWidth="1.2"/></svg>,
   dristi:      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 10l3-5 3 3 4-6"/><path d="M11 2h3v3"/><circle cx="5" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="11" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="9" r="1.2" fill="currentColor" stroke="none"/></svg>,
   prachar:     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 4h8v7H2z"/><path d="M10 6l4-2v9l-4-2"/><path d="M4 11v2.5"/><path d="M6 11v2.5"/></svg>,
+  esign:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M9.5 2.5l4 4-8 8H1.5v-4z"/><path d="M8 4l4 4"/></svg>,
   customize:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>,
   logout:      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M11 11l3-3-3-3M14 8H6"/></svg>,
 };
@@ -82,6 +83,7 @@ const NAV_FULL = [
       { to: '/vetana',  icon: 'vetana',  en: 'Payroll',    hi: 'वेतन',   gu: 'વેતન' },
       { to: '/dristi',  icon: 'dristi',  en: 'Analytics',  hi: 'दृष्टि', gu: 'દૃષ્ટિ' },
       { to: '/prachar', icon: 'prachar', en: 'Marketing',  hi: 'प्रचार', gu: 'પ્રચાર' },
+      { to: '/esign',   icon: 'esign',   en: 'E-Sign',     hi: 'प्रमाण', gu: 'પ્રમાણ' },
     ],
   },
   {

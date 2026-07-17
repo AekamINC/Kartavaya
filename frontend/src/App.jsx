@@ -67,6 +67,8 @@ const VikrayPage            = lazy(() => import('./pages/VikrayPage'));
 const VetanaPage            = lazy(() => import('./pages/VetanaPage'));
 const DristiPage            = lazy(() => import('./pages/DristiPage'));
 const PracharPage           = lazy(() => import('./pages/PracharPage'));
+const EsignPage             = lazy(() => import('./pages/EsignPage'));
+const SigningPage           = lazy(() => import('./pages/SigningPage'));
 const CustomizeSettingsPage = lazy(() => import('./pages/CustomizeSettingsPage'));
 
 // ── Outlet context wrappers ────────────────────────────────────────────────────
@@ -97,6 +99,7 @@ function AppRouter() {
         <Route path="/forgot-password"  element={<ForgotPasswordPage />} />
         <Route path="/reset-password"   element={<ResetPasswordPage />} />
         <Route path="/approve"          element={<ApprovePage />} />
+        <Route path="/sign/:token"      element={<SigningPage />} />
 
         {/* Protected shell — all child routes inherit auth + layout */}
         <Route path="/" element={<Protected><AppShell /></Protected>}>
@@ -147,6 +150,7 @@ function AppRouter() {
           <Route path="vetana"                 element={<VetanaPage />} />
           <Route path="dristi"                 element={<DristiPage />} />
           <Route path="prachar"                element={<PracharPage />} />
+          <Route path="esign"                  element={<EsignPage />} />
 
           {/* Client portal */}
           <Route path="client"                          element={<ClientProjectsPage />} />
