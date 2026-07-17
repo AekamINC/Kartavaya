@@ -11,8 +11,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 
-from auth_router import require_admin
 from db import get_pool
+from middleware.roles import require_platform_role
+
+_require_admin = require_platform_role("platform_admin", "account_manager")
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -69,7 +71,7 @@ class UserUpdate(BaseModel):
 # ── Users ─────────────────────────────────────────────────────────────────────
 
 @router.get("/users", response_model=List[UserOut])
-async def list_users(pool=Depends(get_pool), admin=Depends(require_admin)):
+async def list_users(pool=Depends(get_pool), admin=Depends(_require_admin)):
     rows = await pool.fetch(
         """SELECT user_id, email, name, full_name, role, position, company_name,
                   member_role, receives_approval_emails, avatar, created_at
@@ -79,7 +81,7 @@ async def list_users(pool=Depends(get_pool), admin=Depends(require_admin)):
 
 
 @router.patch("/users/{user_id}", response_model=UserOut)
-async def update_user(user_id: str, body: UserUpdate, pool=Depends(get_pool), admin=Depends(require_admin)):
+async def update_user(user_id: str, body: UserUpdate, pool=Depends(get_pool), admin=Depends(_require_admin)):
     """Edit a user's profile fields. Email is immutable."""
     # Build dynamic SET clause for only provided fields
     fields, vals = [], []
@@ -115,7 +117,7 @@ async def update_user(user_id: str, body: UserUpdate, pool=Depends(get_pool), ad
 
 
 @router.put("/users/{user_id}/role")
-async def change_user_role(user_id: str, body: dict, pool=Depends(get_pool), admin=Depends(require_admin)):
+async def change_user_role(user_id: str, body: dict, pool=Depends(get_pool), admin=Depends(_require_admin)):
     role = body.get("role")
     if role not in ("admin", "member", "client"):
         raise HTTPException(status_code=400, detail="Invalid role")
@@ -124,7 +126,7 @@ async def change_user_role(user_id: str, body: dict, pool=Depends(get_pool), adm
 
 
 @router.delete("/users/{user_id}")
-async def remove_user(user_id: str, reassign_to: Optional[str] = None, pool=Depends(get_pool), admin=Depends(require_admin)):
+async def remove_user(user_id: str, reassign_to: Optional[str] = None, pool=Depends(get_pool), admin=Depends(_require_admin)):
     if user_id == admin["user_id"]:
         raise HTTPException(status_code=400, detail="Cannot remove yourself")
     if reassign_to == user_id:
@@ -259,7 +261,7 @@ async def remove_user(user_id: str, reassign_to: Optional[str] = None, pool=Depe
 # ── Invites ───────────────────────────────────────────────────────────────────
 
 @router.post("/invites", response_model=InviteOut)
-async def create_invite(body: InviteCreate, pool=Depends(get_pool), admin=Depends(require_admin)):
+async def create_invite(body: InviteCreate, pool=Depends(get_pool), admin=Depends(_require_admin)):
     if body.role not in ("admin", "member", "client"):
         raise HTTPException(status_code=400, detail="Role must be 'admin', 'member', or 'client'")
 
@@ -326,7 +328,7 @@ async def create_invite(body: InviteCreate, pool=Depends(get_pool), admin=Depend
 
 
 @router.get("/invites", response_model=List[InviteOut])
-async def list_invites(pool=Depends(get_pool), admin=Depends(require_admin)):
+async def list_invites(pool=Depends(get_pool), admin=Depends(_require_admin)):
     rows = await pool.fetch(
         """SELECT i.invite_id, i.email, i.role, i.token, i.created_at, i.expires_at,
                   i.accepted_at, i.full_name, i.member_role, i.receives_approval_emails,
@@ -354,7 +356,7 @@ async def list_invites(pool=Depends(get_pool), admin=Depends(require_admin)):
 
 
 @router.post("/users/{user_id}/send-reset-link")
-async def admin_send_reset_link(user_id: str, pool=Depends(get_pool), admin=Depends(require_admin)):
+async def admin_send_reset_link(user_id: str, pool=Depends(get_pool), admin=Depends(_require_admin)):
     """Admin action: generate a password-reset link and email it to the user."""
     user = await pool.fetchrow("SELECT user_id, name, email FROM users WHERE user_id=$1", user_id)
     if not user:
@@ -376,7 +378,7 @@ async def admin_send_reset_link(user_id: str, pool=Depends(get_pool), admin=Depe
 
 
 @router.delete("/invites/{invite_id}")
-async def revoke_invite(invite_id: str, pool=Depends(get_pool), admin=Depends(require_admin)):
+async def revoke_invite(invite_id: str, pool=Depends(get_pool), admin=Depends(_require_admin)):
     await pool.execute("DELETE FROM invites WHERE invite_id=$1", invite_id)
     return {"ok": True}
 
@@ -390,7 +392,7 @@ class TeamFolderOut(BaseModel):
 
 
 @router.get("/teams", response_model=List[TeamFolderOut])
-async def list_team_folders(pool=Depends(get_pool), admin=Depends(require_admin)):
+async def list_team_folders(pool=Depends(get_pool), admin=Depends(_require_admin)):
     """team_id → project name lookup, so an admin can identify R2 folders
     (which are keyed by team_id, e.g. projects/{team_id}/...) without
     needing direct database access."""

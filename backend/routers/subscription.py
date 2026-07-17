@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
-from middleware.roles import require_role
+from middleware.roles import require_platform_role
 from middleware.subscription import clear_module_cache
 
 router = APIRouter(prefix="/api/v1/subscription", tags=["subscription"])
@@ -91,7 +91,7 @@ async def list_plans(user=Depends(require_user)):
 async def get_current(user=Depends(require_user), org_id: str = Depends(get_org_id)):
     pool = await get_pool()
     sub = await pool.fetchrow(
-        "SELECT s.*, p.name as plan_name, p.code as plan_code, p.price_monthly, "
+        "SELECT s.*, p.name as plan_name, p.code as plan_code, "
         "p.max_users, p.features "
         "FROM staging.subscriptions s "
         "JOIN staging.plans p ON p.id = s.plan_id "
@@ -121,7 +121,7 @@ async def get_current(user=Depends(require_user), org_id: str = Depends(get_org_
 @router.post("/admin/set-plan")
 async def admin_set_plan(
     body: PlanChange,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     org_id: str = Depends(get_org_id),
 ):
     pool = await get_pool()
@@ -185,7 +185,7 @@ async def admin_set_plan(
 @router.post("/modules/activate")
 async def activate_module(
     body: ModuleAction,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     org_id: str = Depends(get_org_id),
 ):
     pool = await get_pool()
@@ -237,7 +237,7 @@ async def activate_module(
 @router.post("/modules/deactivate")
 async def deactivate_module(
     body: ModuleAction,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     org_id: str = Depends(get_org_id),
 ):
     pool = await get_pool()
@@ -279,7 +279,7 @@ async def deactivate_module(
 @router.post("/admin/invoices")
 async def create_invoice(
     body: InvoiceCreate,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     org_id: str = Depends(get_org_id),
 ):
     pool = await get_pool()
@@ -320,7 +320,7 @@ async def create_invoice(
 async def record_payment(
     invoice_id: UUID,
     body: RecordPayment,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
 ):
     pool = await get_pool()
 
@@ -353,7 +353,7 @@ async def record_payment(
 
 
 @router.get("/admin/invoices/overdue")
-async def list_overdue(user=Depends(require_role("admin"))):
+async def list_overdue(user=Depends(require_platform_role("platform_admin", "account_manager"))):
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT i.*, o.name as org_name "

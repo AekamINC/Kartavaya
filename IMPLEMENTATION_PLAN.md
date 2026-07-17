@@ -109,11 +109,11 @@ All Phase 1–6 vulnerabilities fixed: SQL injection, XSS, CSRF, rate limiting, 
 | ID | Issue | Severity | Status |
 |---|---|---|---|
 | G1 | Guest escalation: client role resolves to tenant org | Critical | **Mitigated** — `get_org_id` now rejects `role='client'` in team_members fallback |
-| L1 | `GET /users` returns all users across all orgs (no WHERE) | High | Open — needs org filter |
-| L2 | `PUT /users/{id}/role` has no ownership check | High | Open |
+| L1 | `GET /users` returns all users across all orgs (no WHERE) | High | **Mitigated** — endpoint now behind `require_platform_role`, not global admin |
+| L2 | `PUT /users/{id}/role` has no ownership check | High | **Mitigated** — endpoint now behind `require_platform_role` |
 | L3 | `require_module` admin bypass is load-bearing (0 subscriptions exist) | Medium | Open — need subscription row before removing |
-| L4 | `/subscription/current` leaks `price_monthly` | Medium | Open |
-| L5 | `/hub/analytics/spend` exposes AI cost_usd to any user | Medium | Open — move behind require_platform_role |
+| L4 | `/subscription/current` leaks `price_monthly` | Medium | **Fixed** — `price_monthly` removed from SELECT |
+| L5 | `/hub/analytics/spend` exposes AI cost_usd to any user | Medium | **Fixed** — moved behind `require_platform_role` |
 
 ---
 
@@ -131,6 +131,7 @@ All Phase 1–6 vulnerabilities fixed: SQL injection, XSS, CSRF, rate limiting, 
 | 025 | `025_org_member_modules.sql` | Per-user module access, developer role | ✅ |
 | 026 | `026_prachar_ad_insights.sql` | Ad accounts, campaigns, insights | ✅ |
 | 027 | `027_esign_shifts_sequences_report_delivery.sql` | E-sign tables, shift scheduling, sequences, scheduled reports | ✅ |
+| 028 | `028_teams_org_id_fk_inversion.sql` | teams.org_id column, FK inversion prep | ✅ |
 
 ---
 
@@ -141,8 +142,8 @@ All Phase 1–6 vulnerabilities fixed: SQL injection, XSS, CSRF, rate limiting, 
 | Task | Status | ETA |
 |---|---|---|
 | Prachar ad insights pipeline (Meta ingest + AI analysis) | ✅ Done 17 July | — |
-| Tenancy fix steps 1–6 (stop leaks, invert FK, org_members, org admin console) | Step 0 done, step 1 scheduled 1am 17 July | ~26h |
-| Replace `require_role("admin")` → `require_platform_role` across 20+ endpoints | Open | ~3h |
+| Tenancy fix steps 1–6 (stop leaks, invert FK, org_members, org admin console) | ✅ Steps 0-5 done. FK inverted (teams.org_id). Org consolidation (31→1) deferred. | — |
+| Replace `require_role("admin")` → `require_platform_role` across 20+ endpoints | ✅ Done 17 July — 20+ endpoints migrated | — |
 
 ### P1 — Next Up
 

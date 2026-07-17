@@ -9,7 +9,7 @@ from typing import Optional, Any
 import uuid
 from datetime import datetime, timezone
 
-from auth_router import require_user, require_admin
+from auth_router import require_user
 from db import get_pool
 
 router = APIRouter(prefix="/api/fields", tags=["fields"])

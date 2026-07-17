@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
-from middleware.roles import require_role
+from middleware.roles import require_platform_role
 from middleware.subscription import require_module
 from services.ai_router import generate, deduct_credits, CREDIT_COSTS
 
@@ -215,7 +215,7 @@ async def list_clients(
 @router.post("/clients")
 async def create_client(
     body: ClientCreate,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -283,7 +283,7 @@ async def get_client(
 async def update_client(
     client_id: UUID,
     body: ClientUpdate,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -326,7 +326,7 @@ async def get_brand(
 async def update_brand(
     client_id: UUID,
     body: BrandProfileUpdate,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -472,7 +472,7 @@ async def review_content(
     client_id: UUID,
     content_id: UUID,
     body: ContentReview,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -531,7 +531,7 @@ async def get_credits(
 async def topup_credits(
     client_id: UUID,
     body: CreditTopup,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -651,7 +651,7 @@ async def get_skill_template(
 @router.post("/skills/templates")
 async def create_skill_template(
     body: SkillTemplateCreate,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     _=Depends(_hub_gate),
 ):
     pool = await get_pool()
@@ -687,7 +687,7 @@ async def create_skill_template(
 @router.delete("/skills/templates/{template_id}")
 async def delete_skill_template(
     template_id: UUID,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     _=Depends(_hub_gate),
 ):
     pool = await get_pool()
@@ -726,7 +726,7 @@ async def assign_skill(
     client_id: UUID,
     template_id: UUID,
     body: SkillAssign,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -757,7 +757,7 @@ async def assign_skill(
 async def remove_skill(
     client_id: UUID,
     skill_id: UUID,
-    user=Depends(require_role("admin")),
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -944,7 +944,7 @@ async def list_approvals(
 @router.get("/analytics/spend")
 async def ai_spend_analytics(
     days: int = 30,
-    user=Depends(require_user),
+    user=Depends(require_platform_role("platform_admin", "account_manager", "account_finance")),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -1002,7 +1002,7 @@ async def ai_spend_analytics(
 async def client_spend_analytics(
     client_id: UUID,
     days: int = 30,
-    user=Depends(require_user),
+    user=Depends(require_platform_role("platform_admin", "account_manager", "account_finance")),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):

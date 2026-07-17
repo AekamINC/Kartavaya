@@ -23,7 +23,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, field_validator, EmailStr
 from typing import Optional as _Optional
 
-from auth_router import require_user, require_admin, _decode_token as _auth_decode
+from auth_router import require_user, _decode_token as _auth_decode
 from db import get_pool
 from utils import log_safe as _log_safe
 

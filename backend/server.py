@@ -32,9 +32,12 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.cors import CORSMiddleware
 
-from auth_router import require_user, require_admin, JWT_SECRET as _JWT_SECRET
+from auth_router import require_user, JWT_SECRET as _JWT_SECRET
 from limiter import limiter
 from auth_router import router as auth_router
+from middleware.roles import require_platform_role
+
+_require_admin = require_platform_role("platform_admin", "account_manager")
 from invite_router import router as invite_router
 from approvals_router import router as approvals_router
 from db import close_pool, get_pool
@@ -696,13 +699,13 @@ async def client_approvals(pool=Depends(get_db), user=Depends(require_user)):
     return [dict(r) for r in approval_rows] + [dict(r) for r in task_rows]
 
 @api_router.post("/tasks/{task_id}/clients/{target_user_id}")
-async def add_client_to_task(task_id:str,target_user_id:str,pool=Depends(get_db),user=Depends(require_admin)):
+async def add_client_to_task(task_id:str,target_user_id:str,pool=Depends(get_db),user=Depends(_require_admin)):
     """Grant a client user access to a specific task."""
     await pool.execute("INSERT INTO task_clients (id,task_id,user_id,invited_by) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",f"tc_{uuid.uuid4().hex[:12]}",task_id,target_user_id,user["user_id"])
     return {"ok":True}
 
 @api_router.delete("/tasks/{task_id}/clients/{target_user_id}")
-async def remove_client_from_task(task_id:str,target_user_id:str,pool=Depends(get_db),user=Depends(require_admin)):
+async def remove_client_from_task(task_id:str,target_user_id:str,pool=Depends(get_db),user=Depends(_require_admin)):
     """Revoke a client user's access to a specific task."""
     await pool.execute("DELETE FROM task_clients WHERE task_id=$1 AND user_id=$2",task_id,target_user_id)
     return {"ok":True}
@@ -1232,7 +1235,7 @@ async def list_teams(pool=Depends(get_db),user=Depends(require_user)):
 
 # ── MUST be before GET /teams/{team_id} to avoid "bin" matching as a team_id ──
 @api_router.get("/teams/bin")
-async def list_deleted_teams(pool=Depends(get_db),user=Depends(require_admin)):
+async def list_deleted_teams(pool=Depends(get_db),user=Depends(_require_admin)):
     """List soft-deleted projects still within 30-day restore window."""
     rows = await pool.fetch("""
         SELECT t.*,
@@ -1380,7 +1383,7 @@ async def update_team_member(team_id:str,member_id:str,payload:TeamMemberUpdate,
     return TeamMemberOut(**dict(row))
 
 @api_router.delete("/teams/{team_id}")
-async def delete_team(team_id:str,pool=Depends(get_db),user=Depends(require_admin)):
+async def delete_team(team_id:str,pool=Depends(get_db),user=Depends(_require_admin)):
     """Soft-delete: move project to bin. Hard-purged after 30 days."""
     team = await pool.fetchrow("SELECT team_id FROM teams WHERE team_id=$1 AND deleted_at IS NULL", team_id)
     if not team: raise HTTPException(404, "Project not found")
@@ -1391,7 +1394,7 @@ async def delete_team(team_id:str,pool=Depends(get_db),user=Depends(require_admi
     return {"ok": True, "soft_deleted": True}
 
 @api_router.post("/teams/{team_id}/restore")
-async def restore_team(team_id:str,pool=Depends(get_db),user=Depends(require_admin)):
+async def restore_team(team_id:str,pool=Depends(get_db),user=Depends(_require_admin)):
     """Restore a soft-deleted project from the bin."""
     team = await pool.fetchrow(
         "SELECT team_id FROM teams WHERE team_id=$1 AND deleted_at IS NOT NULL AND deleted_at > NOW() - INTERVAL '30 days'",
@@ -1402,7 +1405,7 @@ async def restore_team(team_id:str,pool=Depends(get_db),user=Depends(require_adm
     return {"ok": True}
 
 @api_router.delete("/teams/{team_id}/purge")
-async def purge_team(team_id:str,pool=Depends(get_db),user=Depends(require_admin)):
+async def purge_team(team_id:str,pool=Depends(get_db),user=Depends(_require_admin)):
     """Permanently delete a project from the bin."""
     async with pool.acquire() as conn:
         async with conn.transaction():
