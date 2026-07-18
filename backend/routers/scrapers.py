@@ -96,7 +96,11 @@ async def run_scraper(
             json.dumps(body.inputs), float(scraper["price_inr"]),
         )
 
-        asyncio.ensure_future(_poll_run(str(row["id"]), run["run_id"], scraper["max_results"] or 100))
+        asyncio.ensure_future(_poll_run(
+            str(row["id"]), run["run_id"],
+            scraper["max_results"] or 100,
+            scraper.get("result_path"),
+        ))
 
         return {
             "status": "started",
@@ -114,7 +118,7 @@ async def run_scraper(
         raise HTTPException(502, f"Apify error: {msg}")
 
 
-async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int):
+async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_path: str = None):
     """Background task: poll Apify run until done, then fetch results."""
     from services.apify import get_run_status, get_dataset_items
     pool = await get_pool()
@@ -135,9 +139,17 @@ async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int):
                 except Exception as e:
                     log.warning("Dataset fetch failed: %s", e)
 
+            if result_path and results:
+                flat = []
+                for item in results:
+                    nested = item.get(result_path, [])
+                    if isinstance(nested, list):
+                        flat.extend(nested)
+                results = flat
+
             await pool.execute(
                 "UPDATE staging.hub_scraper_runs SET status='succeeded', "
-                "result_count=$2, cost_usd=$3, results=$4, finished_at=NOW() "
+                "result_count=$2, cost_usd=$3, results=$4::jsonb, finished_at=NOW() "
                 "WHERE id=$1::uuid",
                 db_run_id, len(results), float(info.get("usage_usd", 0)),
                 json.dumps(results[:max_items]),
