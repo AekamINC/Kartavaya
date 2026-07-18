@@ -427,6 +427,16 @@ class MarkReadIn(BaseModel):
     notification_ids:List[str]=[]; mark_all:bool=False
 
 
+def _refresh_attachment(a: dict) -> dict:
+    """If the attachment has an R2 key, regenerate its signed URL."""
+    key = a.get("key")
+    if key:
+        from services.storage import refresh_url
+        fresh = refresh_url(key)
+        if fresh:
+            a = {**a, "url": fresh}
+    return a
+
 def row_to_task(r) -> TaskOut:
     """Convert an asyncpg Record from the tasks table to a TaskOut Pydantic model."""
     def pj(v,d):
@@ -447,7 +457,7 @@ def row_to_task(r) -> TaskOut:
         due_at=r["due_at"],reminder_at=r["reminder_at"],reminder_sent_at=r["reminder_sent_at"],
         recurrence=Recurrence(rule=r["recurrence_rule"] or "none",interval=r["recurrence_interval"] or 1),
         estimated_minutes=r["estimated_minutes"],
-        attachments=[Attachment(**a) for a in pj(r["attachments"],[])],
+        attachments=[Attachment(**_refresh_attachment(a)) for a in pj(r["attachments"],[])],
         custom_fields=pj(r["custom_fields"],{}),
         subtasks=[Subtask(**s) for s in pj(r["subtasks"],[])],
         order=r["sort_order"] or 0,created_at=r["created_at"],updated_at=r["updated_at"],

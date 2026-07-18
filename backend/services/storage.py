@@ -102,6 +102,22 @@ async def upload_file(file_bytes: bytes, filename: str, content_type: str, user_
     return {"url": url, "name": filename, "key": key, "size": len(file_bytes)}
 
 
+def refresh_url(key: str) -> Optional[str]:
+    """Return a fresh signed URL for the given R2 key, or None if R2 is not configured."""
+    if not key:
+        return None
+    if PUB_URL:
+        return f"{PUB_URL}/{key}"
+    client = _client()
+    if client is None:
+        return None
+    return client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": BUCKET, "Key": key},
+        ExpiresIn=7 * 24 * 3600,
+    )
+
+
 async def delete_file(key: str) -> bool:
     """Delete a single object from R2 by key."""
     if not key:
