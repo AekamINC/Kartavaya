@@ -17,7 +17,7 @@ function Badge({ text, color }) {
   );
 }
 
-const TABS = ['today', 'contacts', 'deals', 'kanban', 'pipeline', 'follow-ups', 'labels', 'activities', 'reports', 'automations', 'territories', 'fields', 'web-forms'];
+const TABS = ['today', 'clients', 'contacts', 'deals', 'kanban', 'pipeline', 'follow-ups', 'labels', 'activities', 'reports', 'automations', 'territories', 'fields', 'web-forms'];
 const SOURCE_COLORS = { indiamart: '#2563eb', justdial: '#ea580c', manual: '#6b7280', website: '#10b981' };
 const ACT_ICONS = { call: '📞', email: '✉️', meeting: '📅', note: '📝', task: '✅' };
 const TL_ICONS = { activity: '●', followup: '⏰', invoice: '📄', deal: '💼' };
@@ -42,6 +42,7 @@ export default function GrahaPage() {
       </div>
 
       {tab === 'today' && <TodayTab />}
+      {tab === 'clients' && <ClientsTab />}
       {tab === 'contacts' && <ContactsTab />}
       {tab === 'deals' && <DealsTab />}
       {tab === 'kanban' && <KanbanTab />}
@@ -243,6 +244,188 @@ function ContactTimeline({ contactId }) {
 }
 
 
+// ── Clients Tab ───────────────────────────────────────────
+
+function ClientsTab() {
+  const { pushToast } = useToast();
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState({ name: '', ref_no: '', gstin: '', website: '', notes: '', address: {} });
+  const [search, setSearch] = useState('');
+  const [detail, setDetail] = useState(null);
+
+  const load = useCallback(() => {
+    const params = search ? `?search=${encodeURIComponent(search)}` : '';
+    api.get(`/v1/graha/clients${params}`)
+      .then(r => setClients(r.data.data || []))
+      .catch(() => pushToast({ title: 'Failed to load clients', type: 'error' }))
+      .finally(() => setLoading(false));
+  }, [search]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function save() {
+    if (!form.name.trim()) return pushToast({ title: 'Company name is required', type: 'error' });
+    try {
+      if (editId) {
+        await api.patch(`/v1/graha/clients/${editId}`, form);
+        pushToast({ title: 'Client updated', type: 'success' });
+      } else {
+        await api.post('/v1/graha/clients', form);
+        pushToast({ title: 'Client created', type: 'success' });
+      }
+      setShowForm(false); setEditId(null);
+      setForm({ name: '', ref_no: '', gstin: '', website: '', notes: '', address: {} });
+      load();
+    } catch { pushToast({ title: 'Save failed', type: 'error' }); }
+  }
+
+  function openEdit(c) {
+    setEditId(c.id);
+    setForm({ name: c.name, ref_no: c.ref_no || '', gstin: c.gstin || '', website: c.website || '', notes: c.notes || '', address: c.address || {} });
+    setShowForm(true);
+  }
+
+  async function openDetail(id) {
+    try {
+      const r = await api.get(`/v1/graha/clients/${id}`);
+      setDetail(r.data);
+    } catch { pushToast({ title: 'Failed to load client', type: 'error' }); }
+  }
+
+  async function remove(id) {
+    try {
+      await api.delete(`/v1/graha/clients/${id}`);
+      pushToast({ title: 'Client deleted', type: 'success' });
+      setDetail(null);
+      load();
+    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+  }
+
+  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+
+  if (detail) {
+    return (
+      <div>
+        <button onClick={() => setDetail(null)} style={{ fontSize: 12, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 12 }}>← Back to clients</button>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 340px', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{detail.name}</h3>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => openEdit(detail)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', cursor: 'pointer' }}>Edit</button>
+                <button onClick={() => remove(detail.id)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, background: '#ef444418', color: '#ef4444', border: 'none', cursor: 'pointer' }}>Delete</button>
+              </div>
+            </div>
+            {detail.ref_no && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>Ref: {detail.ref_no}</div>}
+            {detail.gstin && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>GSTIN: {detail.gstin}</div>}
+            {detail.website && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>Web: {detail.website}</div>}
+            {detail.address?.line1 && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>Address: {[detail.address.line1, detail.address.line2, detail.address.city, detail.address.state, detail.address.pincode].filter(Boolean).join(', ')}</div>}
+            {detail.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 8 }}>{detail.notes}</div>}
+          </div>
+          <div style={{ flex: '1 1 300px' }}>
+            <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Contacts ({detail.contacts?.length || 0})</h4>
+            {(detail.contacts || []).map(c => (
+              <div key={c.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13 }}>
+                <span style={{ fontWeight: 600 }}>{c.name}</span>
+                {c.designation && <span style={{ color: 'var(--ink-3)', fontSize: 11 }}> · {c.designation}</span>}
+                {c.email && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{c.email}</div>}
+              </div>
+            ))}
+            {(!detail.contacts || detail.contacts.length === 0) && <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>No contacts linked</p>}
+
+            <h4 style={{ fontSize: 13, fontWeight: 700, marginTop: 16, marginBottom: 8 }}>Deals ({detail.deals?.length || 0})</h4>
+            {(detail.deals || []).map(d => (
+              <div key={d.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13, display: 'flex', justifyContent: 'space-between' }}>
+                <span>{d.title}</span>
+                <span style={{ fontWeight: 600 }}>₹{Number(d.value || 0).toLocaleString('en-IN')}</span>
+              </div>
+            ))}
+            {(!detail.deals || detail.deals.length === 0) && <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>No deals linked</p>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const inputStyle = { width: '100%', padding: '6px 10px', fontSize: 13, border: '1px solid var(--rule-soft)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink-1)' };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients..."
+          style={{ ...inputStyle, maxWidth: 260 }} />
+        <button onClick={() => { setShowForm(true); setEditId(null); setForm({ name: '', ref_no: '', gstin: '', website: '', notes: '', address: {} }); }}
+          style={{ padding: '6px 16px', fontSize: 13, fontWeight: 600, borderRadius: 6, background: 'var(--k-primary)', color: '#fff', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          + Add Client
+        </button>
+      </div>
+
+      {showForm && (
+        <Card style={{ marginBottom: 16, padding: 16 }}>
+          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>{editId ? 'Edit' : 'New'} Client</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Company Name *" style={inputStyle} />
+            <input value={form.ref_no} onChange={e => setForm(f => ({ ...f, ref_no: e.target.value }))} placeholder="Ref No" style={inputStyle} />
+            <input value={form.gstin} onChange={e => setForm(f => ({ ...f, gstin: e.target.value }))} placeholder="GST No" style={inputStyle} />
+            <input value={form.website} onChange={e => setForm(f => ({ ...f, website: e.target.value }))} placeholder="Website" style={inputStyle} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10, marginTop: 10 }}>
+            <input value={form.address?.line1 || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, line1: e.target.value } }))} placeholder="Address Line 1" style={inputStyle} />
+            <input value={form.address?.line2 || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, line2: e.target.value } }))} placeholder="Address Line 2" style={inputStyle} />
+            <input value={form.address?.city || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, city: e.target.value } }))} placeholder="City" style={inputStyle} />
+            <input value={form.address?.state || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, state: e.target.value } }))} placeholder="State" style={inputStyle} />
+            <input value={form.address?.pincode || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, pincode: e.target.value } }))} placeholder="Pincode" style={inputStyle} />
+          </div>
+          <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes" rows={2}
+            style={{ ...inputStyle, marginTop: 10, resize: 'vertical' }} />
+          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <button onClick={save} style={{ padding: '6px 20px', fontSize: 13, fontWeight: 600, borderRadius: 6, background: 'var(--k-primary)', color: '#fff', border: 'none', cursor: 'pointer' }}>
+              {editId ? 'Update' : 'Create'}
+            </button>
+            <button onClick={() => { setShowForm(false); setEditId(null); }} style={{ padding: '6px 16px', fontSize: 13, borderRadius: 6, background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', cursor: 'pointer' }}>Cancel</button>
+          </div>
+        </Card>
+      )}
+
+      <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: 'var(--bg-raised)', textAlign: 'left' }}>
+              <th style={{ padding: '8px 12px', fontWeight: 600 }}>Company</th>
+              <th style={{ padding: '8px 12px', fontWeight: 600 }}>Ref No</th>
+              <th style={{ padding: '8px 12px', fontWeight: 600 }}>GSTIN</th>
+              <th style={{ padding: '8px 12px', fontWeight: 600 }}>Website</th>
+              <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'center' }}>Contacts</th>
+              <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'center' }}>Deals</th>
+            </tr>
+          </thead>
+          <tbody>
+            {clients.map(c => (
+              <tr key={c.id} onClick={() => openDetail(c.id)} style={{ cursor: 'pointer', borderTop: '1px solid var(--rule-soft)' }}>
+                <td style={{ padding: '8px 12px', fontWeight: 600 }}>{c.name}</td>
+                <td style={{ padding: '8px 12px', color: 'var(--ink-3)' }}>{c.ref_no || '—'}</td>
+                <td style={{ padding: '8px 12px', color: 'var(--ink-3)' }}>{c.gstin || '—'}</td>
+                <td style={{ padding: '8px 12px', color: 'var(--ink-3)' }}>{c.website || '—'}</td>
+                <td style={{ padding: '8px 12px', textAlign: 'center' }}>{c.contact_count}</td>
+                <td style={{ padding: '8px 12px', textAlign: 'center' }}>{c.deal_count}</td>
+              </tr>
+            ))}
+            {clients.length === 0 && (
+              <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No clients yet. Add your first company.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+
+// ── Contacts Tab ──────────────────────────────────────────
+
 function ContactsTab() {
   const { pushToast } = useToast();
   const [contacts, setContacts] = useState([]);
@@ -250,9 +433,14 @@ function ContactsTab() {
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', designation: '', contact_type: 'lead', gstin: '', source: '' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '' });
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState(null);
+  const [clientOptions, setClientOptions] = useState([]);
+
+  useEffect(() => {
+    api.get('/v1/graha/clients').then(r => setClientOptions(r.data.data || [])).catch(() => {});
+  }, []);
 
   useEffect(() => { load(); }, []);
 
@@ -274,7 +462,7 @@ function ContactsTab() {
       await api.post('/v1/graha/contacts', form);
       pushToast({ title: 'Contact created', type: 'success' });
       setShowForm(false);
-      setForm({ name: '', email: '', phone: '', company: '', designation: '', contact_type: 'lead', gstin: '', source: '' });
+      setForm({ name: '', email: '', phone: '', company: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '' });
       load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
@@ -453,6 +641,11 @@ function ContactsTab() {
               <input className="k-input" value={form.gstin} onChange={e => setForm({ ...form, gstin: e.target.value })} /></label>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Source</span>
               <input className="k-input" placeholder="e.g. Website, Referral" value={form.source} onChange={e => setForm({ ...form, source: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Client / Company</span>
+              <select className="k-input" value={form.client_id} onChange={e => setForm({ ...form, client_id: e.target.value })}>
+                <option value="">— None —</option>
+                {clientOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select></label>
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
@@ -503,7 +696,8 @@ function DealsTab() {
   const [showForm, setShowForm] = useState(false);
   const [stageFilter, setStageFilter] = useState('');
   const [contacts, setContacts] = useState([]);
-  const [form, setForm] = useState({ title: '', contact_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '' });
+  const [dealClients, setDealClients] = useState([]);
+  const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => { load(); }, []);
@@ -518,10 +712,11 @@ function DealsTab() {
     finally { setLoading(false); }
   }
 
-  async function loadContacts() {
+  async function loadFormData() {
     try {
-      const r = await api.get('/v1/graha/contacts');
-      setContacts(r.data.data || []);
+      const [cr, clr] = await Promise.all([api.get('/v1/graha/contacts'), api.get('/v1/graha/clients')]);
+      setContacts(cr.data.data || []);
+      setDealClients(clr.data.data || []);
     } catch {}
   }
 
@@ -532,7 +727,7 @@ function DealsTab() {
       await api.post('/v1/graha/deals', { ...form, value: parseFloat(form.value) || 0 });
       pushToast({ title: 'Deal created', type: 'success' });
       setShowForm(false);
-      setForm({ title: '', contact_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '' });
+      setForm({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '' });
       load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
@@ -569,7 +764,7 @@ function DealsTab() {
         </select>
         <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Filter</button>
         <div style={{ flex: 1 }} />
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => { setShowForm(true); loadContacts(); }}>+ New Deal</button>
+        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => { setShowForm(true); loadFormData(); }}>+ New Deal</button>
       </div>
 
       {showForm && (
@@ -578,6 +773,11 @@ function DealsTab() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
               <input className="k-input" required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Client / Company</span>
+              <select className="k-input" value={form.client_id} onChange={e => setForm({ ...form, client_id: e.target.value })}>
+                <option value="">— None —</option>
+                {dealClients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select></label>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Contact</span>
               <select className="k-input" value={form.contact_id} onChange={e => setForm({ ...form, contact_id: e.target.value })}>
                 <option value="">None</option>
@@ -609,6 +809,7 @@ function DealsTab() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <div>
                   <span style={{ fontWeight: 700, fontSize: 14 }}>{d.title}</span>
+                  {d.client_name && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--k-primary)', fontWeight: 600 }}>{d.client_name}</span>}
                   {d.contact_name && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--ink-3)' }}>{d.contact_name} {d.contact_company && `· ${d.contact_company}`}</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -648,7 +849,8 @@ function KanbanTab() {
   async function load() {
     try {
       const r = await api.get('/v1/graha/deals/kanban');
-      setKanban(r.data.stages || {});
+      setKanban(r.data.columns || {});
+      if (r.data.stages?.length) setStageList(r.data.stages);
     } catch { pushToast({ title: 'Failed to load kanban', type: 'error' }); }
     finally { setLoading(false); }
   }
@@ -661,7 +863,8 @@ function KanbanTab() {
     } catch { pushToast({ title: 'Move failed', type: 'error' }); }
   }
 
-  const stages = ['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
+  const [stageList, setStageList] = useState(['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost']);
+  const stages = stageList;
 
   if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p>;
 
@@ -681,6 +884,7 @@ function KanbanTab() {
               {deals.map(d => (
                 <div key={d.id} style={{ background: 'var(--bg)', border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 10 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{d.title}</div>
+                  {d.client_name && <div style={{ fontSize: 11, color: 'var(--k-primary)', fontWeight: 600, marginBottom: 2 }}>{d.client_name}</div>}
                   {d.contact_name && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 2 }}>{d.contact_name}</div>}
                   {d.owner_id && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 4 }}>Owner: {d.owner_id.substring(0, 8)}…</div>}
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>₹{Number(d.value || 0).toLocaleString('en-IN')}</div>

@@ -43,6 +43,7 @@ class ContactCreate(BaseModel):
     notes: str = ""
     contact_type: str = "lead"
     source: str = ""
+    client_id: str = ""
 
 
 class ContactMerge(BaseModel):
@@ -66,11 +67,13 @@ class ContactUpdate(BaseModel):
     lead_score: int | None = None
     lead_score_reasons: list[str] | None = None
     assigned_to: str | None = None
+    client_id: str | None = None
 
 
 class DealCreate(BaseModel):
     title: str
     contact_id: str = ""
+    client_id: str = ""
     pipeline_id: str = ""
     value: float = 0
     stage: str = "New"
@@ -88,6 +91,7 @@ class DealUpdate(BaseModel):
     probability: int | None = None
     expected_close_date: str | None = None
     assigned_to: str | None = None
+    client_id: str | None = None
     notes: str | None = None
     tags: list[str] | None = None
     won_at: str | None = None
@@ -124,6 +128,140 @@ class LabelCreate(BaseModel):
     color: str = "#6366f1"
 
 
+class ClientCreate(BaseModel):
+    name: str
+    ref_no: str = ""
+    gstin: str = ""
+    address: dict = {}
+    website: str = ""
+    notes: str = ""
+    tags: list[str] = []
+
+
+class ClientUpdate(BaseModel):
+    name: str | None = None
+    ref_no: str | None = None
+    gstin: str | None = None
+    address: dict | None = None
+    website: str | None = None
+    notes: str | None = None
+    tags: list[str] | None = None
+
+
+# ── Clients (Company entity) ────────────────────────────────
+
+@router.get("/clients")
+async def list_clients(
+    search: Optional[str] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    query = "SELECT cl.*, (SELECT COUNT(*) FROM staging.graha_contacts WHERE client_id=cl.id AND is_active=TRUE) AS contact_count, (SELECT COUNT(*) FROM staging.graha_deals WHERE client_id=cl.id AND is_active=TRUE) AS deal_count FROM staging.graha_clients cl WHERE cl.org_id=$1::uuid AND cl.is_active=TRUE "
+    params: list = [org_id]
+    if search:
+        query += "AND (cl.name ILIKE '%' || $2 || '%' OR cl.ref_no ILIKE '%' || $2 || '%' OR cl.gstin ILIKE '%' || $2 || '%') "
+        params.append(search)
+    query += "ORDER BY cl.created_at DESC LIMIT 200"
+    rows = await pool.fetch(query, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/clients")
+async def create_client(
+    body: ClientCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.graha_clients "
+        "(org_id, name, ref_no, gstin, address, website, notes, tags, created_by) "
+        "VALUES ($1::uuid, $2, NULLIF($3,''), NULLIF($4,''), $5, NULLIF($6,''), NULLIF($7,''), $8, $9) "
+        "RETURNING id, name, ref_no",
+        org_id, body.name, body.ref_no, body.gstin,
+        json.dumps(body.address), body.website, body.notes,
+        body.tags, user["user_id"],
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.get("/clients/{client_id}")
+async def get_client(
+    client_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT * FROM staging.graha_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(client_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Client not found")
+    contacts = await pool.fetch(
+        "SELECT id, name, email, phone, designation, contact_type FROM staging.graha_contacts "
+        "WHERE client_id=$1::uuid AND is_active=TRUE ORDER BY name",
+        str(client_id),
+    )
+    deals = await pool.fetch(
+        "SELECT id, title, value, stage FROM staging.graha_deals "
+        "WHERE client_id=$1::uuid AND is_active=TRUE ORDER BY created_at DESC LIMIT 50",
+        str(client_id),
+    )
+    return {**dict(row), "contacts": [dict(c) for c in contacts], "deals": [dict(d) for d in deals]}
+
+
+@router.patch("/clients/{client_id}")
+async def update_client(
+    client_id: UUID,
+    body: ClientUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    sets, vals, idx = [], [], 1
+    for field in ("name", "ref_no", "gstin", "website", "notes", "tags"):
+        v = getattr(body, field, None)
+        if v is not None:
+            idx += 1
+            sets.append(f"{field}=${idx}")
+            vals.append(v)
+    if body.address is not None:
+        idx += 1
+        sets.append(f"address=${idx}")
+        vals.append(json.dumps(body.address))
+    if not sets:
+        raise HTTPException(400, "Nothing to update")
+    sets.append("updated_at=NOW()")
+    await pool.execute(
+        f"UPDATE staging.graha_clients SET {', '.join(sets)} "
+        f"WHERE id=$1::uuid AND org_id=${idx + 1}::uuid",
+        str(client_id), *vals, org_id,
+    )
+    return {"status": "updated"}
+
+
+@router.delete("/clients/{client_id}")
+async def delete_client(
+    client_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.graha_clients SET is_active=FALSE, updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(client_id), org_id,
+    )
+    return {"status": "deleted"}
+
+
 # ── Contacts ─────────────────────────────────────────────────
 
 @router.get("/contacts")
@@ -138,8 +276,10 @@ async def list_contacts(
     pool = await get_pool()
     query = (
         "SELECT c.id, c.name, c.email, c.phone, c.company, c.designation, c.contact_type, "
-        "c.tags, c.source, c.lead_score, c.assigned_to, c.last_contacted_at, c.created_at "
+        "c.tags, c.source, c.lead_score, c.assigned_to, c.last_contacted_at, c.created_at, "
+        "c.client_id, cl2.name AS client_name "
         "FROM staging.graha_contacts c "
+        "LEFT JOIN staging.graha_clients cl2 ON cl2.id = c.client_id "
     )
 
     if label_id:
@@ -185,12 +325,12 @@ async def create_contact(
         row = await pool.fetchrow(
             "INSERT INTO staging.graha_contacts "
             "(org_id, name, email, phone, company, designation, gstin, pan, "
-            " billing_address, shipping_address, tags, notes, contact_type, source, created_by) "
-            "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) "
+            " billing_address, shipping_address, tags, notes, contact_type, source, created_by, client_id) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULLIF($16,'')::uuid) "
             "RETURNING id, name, contact_type",
             org_id, body.name, body.email, body.phone, body.company, body.designation,
             body.gstin, body.pan, json.dumps(body.billing_address), json.dumps(body.shipping_address),
-            body.tags, body.notes, body.contact_type, body.source, user["user_id"],
+            body.tags, body.notes, body.contact_type, body.source, user["user_id"], body.client_id,
         )
     except Exception as e:
         logger.error("create_contact failed: %s", e, exc_info=True)
@@ -433,6 +573,9 @@ async def update_contact(
         elif k == "assigned_to":
             sets.append(f"{k}=NULLIF(${idx},'')")
             params.append(v)
+        elif k == "client_id":
+            sets.append(f"{k}=NULLIF(${idx},'')::uuid")
+            params.append(v)
         else:
             sets.append(f"{k}=${idx}")
             params.append(v)
@@ -514,10 +657,12 @@ async def list_deals(
     pool = await get_pool()
     query = (
         "SELECT d.id, d.title, d.value, d.stage, d.probability, d.expected_close_date, "
-        "d.assigned_to, d.created_at, d.tags, "
-        "c.name as contact_name, c.company as contact_company "
+        "d.assigned_to, d.created_at, d.tags, d.client_id, "
+        "c.name as contact_name, c.company as contact_company, "
+        "cl.name as client_name "
         "FROM staging.graha_deals d "
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+        "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
         "WHERE d.org_id=$1::uuid AND d.is_active=TRUE "
     )
     params: list = [org_id]
@@ -565,12 +710,12 @@ async def create_deal(
 
     row = await pool.fetchrow(
         "INSERT INTO staging.graha_deals "
-        "(org_id, pipeline_id, contact_id, title, value, stage, probability, "
+        "(org_id, pipeline_id, contact_id, client_id, title, value, stage, probability, "
         " expected_close_date, assigned_to, notes, tags, created_by) "
-        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4, $5, $6, $7, "
-        " NULLIF($8,'')::date, NULLIF($9,''), $10, $11, $12) "
+        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, NULLIF($4,'')::uuid, $5, $6, $7, $8, "
+        " NULLIF($9,'')::date, NULLIF($10,''), $11, $12, $13) "
         "RETURNING id, title, stage",
-        org_id, pipeline_id, body.contact_id, body.title, body.value,
+        org_id, pipeline_id, body.contact_id, body.client_id, body.title, body.value,
         body.stage, body.probability, body.expected_close_date,
         body.assigned_to, body.notes, body.tags, user["user_id"],
     )
@@ -614,10 +759,12 @@ async def deals_kanban(
 
     rows = await pool.fetch(
         "SELECT d.id, d.title, d.value, d.stage, d.tags, d.assigned_to, "
-        "d.expected_close_date, d.owner_id, "
-        "c.name as contact_name, c.company as contact_company "
+        "d.expected_close_date, d.owner_id, d.client_id, "
+        "c.name as contact_name, c.company as contact_company, "
+        "cl.name as client_name "
         "FROM staging.graha_deals d "
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+        "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
         "WHERE d.org_id=$1::uuid AND d.pipeline_id=$2::uuid AND d.is_active=TRUE "
         "ORDER BY d.created_at DESC",
         org_id, pid,
