@@ -240,7 +240,6 @@ function RunsTab() {
         <div style={{ display: 'flex', gap: 16, fontSize: 13, color: 'var(--ink-3)', marginBottom: 16 }}>
           <span>Results: <strong style={{ color: 'var(--ink)' }}>{detail.result_count}</strong></span>
           <span>Billed: <strong style={{ color: 'var(--k-primary)' }}>₹{Number(detail.billed_inr).toFixed(0)}</strong></span>
-          <span>Cost: <strong>${Number(detail.cost_usd).toFixed(4)}</strong></span>
           <span>{new Date(detail.created_at).toLocaleString('en-IN')}</span>
         </div>
 
