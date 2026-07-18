@@ -26,7 +26,7 @@ import asyncpg
 import sentry_sdk
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, UploadFile, File
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -381,6 +381,14 @@ class TeamOut(BaseModel):
     team_id:str; name:str; created_by:str; created_at:datetime; updated_at:datetime
     task_count:int=0; done_count:int=0; color:Optional[str]=None
     brand_settings:Optional[dict]=None
+
+    @field_validator("brand_settings", mode="before")
+    @classmethod
+    def _parse_brand_settings(cls, v):
+        if isinstance(v, str):
+            return json.loads(v)
+        return v
+
 class TeamMemberAdd(BaseModel):
     email:str; role:str="member"
 class TeamMemberUpdate(BaseModel):
