@@ -1,0 +1,230 @@
+"""Scraper marketplace — curated Apify actors with margin billing."""
+import asyncio
+import json
+import logging
+from typing import Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
+from auth_router import require_user
+from db import get_pool
+from middleware.roles import require_platform_role, get_org_id, require_module
+
+log = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/v1/scrapers", tags=["scrapers"])
+_gate = require_module("srijan")
+
+
+class RunScraper(BaseModel):
+    scraper_id: str
+    inputs: dict = {}
+
+
+# ── Catalog ──────────────────────────────────────────────
+
+@router.get("/catalog")
+async def list_scrapers(
+    category: Optional[str] = None,
+    user=Depends(require_user),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = "SELECT * FROM staging.hub_scraper_catalog WHERE is_active=TRUE "
+    params = []
+    if category:
+        q += "AND category=$1 "
+        params.append(category)
+    q += "ORDER BY category, name"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+# ── Run a scraper ────────────────────────────────────────
+
+@router.post("/run")
+async def run_scraper(
+    body: RunScraper,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    from services.apify import start_actor
+
+    pool = await get_pool()
+    scraper = await pool.fetchrow(
+        "SELECT * FROM staging.hub_scraper_catalog WHERE id=$1 AND is_active=TRUE",
+        body.scraper_id,
+    )
+    if not scraper:
+        raise HTTPException(404, "Scraper not found")
+
+    # Build Apify input from schema + user inputs
+    actor_input = {}
+    for field in scraper["input_schema"]:
+        fname = field["name"]
+        val = body.inputs.get(fname, field.get("default", ""))
+        if field.get("type") == "textarea" and isinstance(val, str):
+            val = [line.strip() for line in val.split("\n") if line.strip()]
+        if field.get("type") == "number" and val:
+            val = int(val)
+        actor_input[fname] = val
+
+    # Start the actor
+    try:
+        run = await start_actor(scraper["apify_actor_id"], actor_input, scraper["max_results"] or 100)
+    except Exception as e:
+        raise HTTPException(502, f"Apify error: {e}")
+
+    # Create run record
+    row = await pool.fetchrow(
+        "INSERT INTO staging.hub_scraper_runs "
+        "(org_id, scraper_id, user_id, apify_run_id, inputs, status, billed_inr) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, 'running', $6) "
+        "RETURNING id",
+        org_id, body.scraper_id, user["user_id"], run["run_id"],
+        json.dumps(body.inputs), float(scraper["price_inr"]),
+    )
+
+    # Poll for results in background
+    asyncio.ensure_future(_poll_run(str(row["id"]), run["run_id"], scraper["max_results"] or 100))
+
+    return {
+        "status": "started",
+        "run_id": str(row["id"]),
+        "apify_run_id": run["run_id"],
+        "billed_inr": float(scraper["price_inr"]),
+    }
+
+
+async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int):
+    """Background task: poll Apify run until done, then fetch results."""
+    from services.apify import get_run_status, get_dataset_items
+    pool = await get_pool()
+
+    for _ in range(120):  # max 10 minutes
+        await asyncio.sleep(5)
+        try:
+            info = await get_run_status(apify_run_id)
+        except Exception as e:
+            log.warning("Poll failed for %s: %s", apify_run_id, e)
+            continue
+
+        if info["status"] in ("SUCCEEDED", "FINISHED"):
+            results = []
+            if info.get("dataset_id"):
+                try:
+                    results = await get_dataset_items(info["dataset_id"], max_items)
+                except Exception as e:
+                    log.warning("Dataset fetch failed: %s", e)
+
+            await pool.execute(
+                "UPDATE staging.hub_scraper_runs SET status='succeeded', "
+                "result_count=$2, cost_usd=$3, results=$4, finished_at=NOW() "
+                "WHERE id=$1::uuid",
+                db_run_id, len(results), float(info.get("usage_usd", 0)),
+                json.dumps(results[:max_items]),
+            )
+            return
+
+        if info["status"] in ("FAILED", "ABORTED", "TIMED-OUT"):
+            await pool.execute(
+                "UPDATE staging.hub_scraper_runs SET status='failed', "
+                "error=$2, cost_usd=$3, finished_at=NOW() WHERE id=$1::uuid",
+                db_run_id, f"Apify status: {info['status']}", float(info.get("usage_usd", 0)),
+            )
+            return
+
+    # Timed out polling
+    await pool.execute(
+        "UPDATE staging.hub_scraper_runs SET status='failed', error='Polling timeout' WHERE id=$1::uuid",
+        db_run_id,
+    )
+
+
+# ── Get run status / results ─────────────────────────────
+
+@router.get("/runs/{run_id}")
+async def get_run(
+    run_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT r.*, c.name as scraper_name, c.result_columns "
+        "FROM staging.hub_scraper_runs r "
+        "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
+        "WHERE r.id=$1::uuid AND r.org_id=$2::uuid",
+        str(run_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Run not found")
+    return dict(row)
+
+
+@router.get("/runs")
+async def list_runs(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT r.id, r.scraper_id, r.status, r.result_count, r.billed_inr, "
+        "r.cost_usd, r.created_at, r.finished_at, c.name as scraper_name, c.icon "
+        "FROM staging.hub_scraper_runs r "
+        "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
+        "WHERE r.org_id=$1::uuid ORDER BY r.created_at DESC LIMIT 50",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+# ── Admin: billing overview ──────────────────────────────
+
+_admin = require_platform_role("platform_admin", "account_manager")
+
+@router.get("/admin/usage")
+async def admin_usage(
+    user=Depends(require_user),
+    _a=Depends(_admin),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT o.name as org_name, r.org_id, "
+        "COUNT(*) as total_runs, "
+        "SUM(CASE WHEN r.status='succeeded' THEN 1 ELSE 0 END) as success_runs, "
+        "COALESCE(SUM(r.cost_usd), 0) as total_cost_usd, "
+        "COALESCE(SUM(r.billed_inr), 0) as total_billed_inr, "
+        "COALESCE(SUM(r.result_count), 0) as total_results "
+        "FROM staging.hub_scraper_runs r "
+        "JOIN staging.organisations o ON o.id = r.org_id "
+        "GROUP BY o.name, r.org_id "
+        "ORDER BY total_billed_inr DESC",
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.get("/admin/runs")
+async def admin_runs(
+    org_id: Optional[str] = None,
+    user=Depends(require_user),
+    _a=Depends(_admin),
+):
+    pool = await get_pool()
+    q = (
+        "SELECT r.*, c.name as scraper_name, c.icon, o.name as org_name "
+        "FROM staging.hub_scraper_runs r "
+        "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
+        "JOIN staging.organisations o ON o.id = r.org_id "
+    )
+    params = []
+    if org_id:
+        q += "WHERE r.org_id=$1::uuid "
+        params.append(org_id)
+    q += "ORDER BY r.created_at DESC LIMIT 100"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
