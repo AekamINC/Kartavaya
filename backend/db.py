@@ -68,8 +68,8 @@ async def get_pool() -> asyncpg.Pool:
                 try:
                     _pool = await asyncpg.create_pool(
                         dsn=attempt_dsn,
-                        min_size=1,
-                        max_size=5,
+                        min_size=2,
+                        max_size=10,
                         max_inactive_connection_lifetime=300,
                         command_timeout=60,
                         statement_cache_size=0,
