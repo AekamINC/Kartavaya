@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Paperclip, ExternalLink, Trash2, Upload, Image, FileText, Film, Lock, Unlock, X } from 'lucide-react';
+import { Paperclip, ExternalLink, Trash2, Upload, Image, FileText, Film, Lock, Unlock, X, Download } from 'lucide-react';
 import { avatarColor, userInitials } from '../../lib/utils';
 
 const MAX_FILES     = 10;
@@ -119,11 +119,30 @@ function PrivacyPicker({ file, members, currentUserId, onChange }) {
 function LightboxOverlay({ file, onClose }) {
   const name = file.name || file.url?.split('/').pop() || 'File';
   const [imgError, setImgError] = useState(false);
+  const [officeError, setOfficeError] = useState(false);
+  const [officeKey, setOfficeKey] = useState(0);
   const isHttp = /^https?:\/\//i.test(file.url || '');
-  const showDoc = isPdf(name) || (isOffice(name) && isHttp);
+  const showDoc = isPdf(name) || (isOffice(name) && isHttp && !officeError);
   const viewerUrl = isOffice(name) && isHttp
     ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(file.url)}`
     : file.url;
+
+  const handleDownload = async (e) => {
+    e.preventDefault();
+    try {
+      const resp = await fetch(file.url);
+      const blob = await resp.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+    } catch {
+      window.open(file.url, '_blank');
+    }
+  };
 
   return (
     <div
@@ -135,16 +154,30 @@ function LightboxOverlay({ file, onClose }) {
         padding: 24, gap: 12,
       }}
     >
-      <button
-        onClick={onClose}
-        style={{
-          position: 'absolute', top: 16, right: 16, background: 'rgba(255,255,255,0.15)',
-          border: 'none', borderRadius: 8, padding: 8, cursor: 'pointer', color: '#fff',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}
-      >
-        <X size={20} />
-      </button>
+      {/* Top-right actions */}
+      <div style={{ position: 'absolute', top: 16, right: 16, display: 'flex', gap: 8 }}>
+        <button
+          onClick={handleDownload}
+          title="Download"
+          style={{
+            background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 8,
+            padding: 8, cursor: 'pointer', color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <Download size={20} />
+        </button>
+        <button
+          onClick={onClose}
+          style={{
+            background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 8,
+            padding: 8, cursor: 'pointer', color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <X size={20} />
+        </button>
+      </div>
       {isImage(name) && !imgError && (
         <img src={file.url} alt={name} onError={() => setImgError(true)} style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, objectFit: 'contain' }} />
       )}
@@ -153,21 +186,37 @@ function LightboxOverlay({ file, onClose }) {
       )}
       {showDoc && (
         <div style={{ width: '90vw', height: '82vh', position: 'relative', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
-          <object
-            data={viewerUrl}
-            type={isPdf(name) ? 'application/pdf' : undefined}
-            style={{ width: '100%', height: '100%', border: 'none' }}
-          >
+          {isPdf(name) ? (
+            <object
+              data={file.url}
+              type="application/pdf"
+              style={{ width: '100%', height: '100%', border: 'none' }}
+            >
+              <iframe src={file.url} title={name} style={{ width: '100%', height: '100%', border: 'none' }} />
+            </object>
+          ) : (
             <iframe
+              key={officeKey}
               src={viewerUrl}
               title={name}
               style={{ width: '100%', height: '100%', border: 'none' }}
+              onLoad={(e) => {
+                setTimeout(() => {
+                  try {
+                    const doc = e.target.contentDocument;
+                    if (doc && doc.body && doc.body.innerText === '') {
+                      if (officeKey < 2) setOfficeKey(k => k + 1);
+                      else setOfficeError(true);
+                    }
+                  } catch { /* cross-origin — viewer loaded fine */ }
+                }, 4000);
+              }}
             />
-          </object>
+          )}
         </div>
       )}
-      {/* Fallback for failed image or non-previewable Office without HTTP URL */}
-      {((isImage(name) && imgError) || (isOffice(name) && !isHttp) || (!isImage(name) && !isVideo(name) && !showDoc)) && (
+      {/* Fallback for failed image, failed office, or non-previewable */}
+      {((isImage(name) && imgError) || (isOffice(name) && (!isHttp || officeError)) || (!isImage(name) && !isVideo(name) && !showDoc)) && (
         <div style={{ background: '#fff', borderRadius: 12, padding: 32, textAlign: 'center', maxWidth: 360 }}>
           <FileText size={32} style={{ color: 'var(--k-primary)', marginBottom: 12 }} />
           <div style={{ fontSize: 14, color: '#333', marginBottom: 8 }}>
@@ -175,6 +224,8 @@ function LightboxOverlay({ file, onClose }) {
               ? 'Image could not be loaded'
               : isOffice(name) && !isHttp
               ? 'This file was saved before cloud storage was set up'
+              : officeError
+              ? 'Office preview failed to load'
               : 'Preview not available for this file type'}
           </div>
           {isOffice(name) && !isHttp && (
@@ -182,28 +233,62 @@ function LightboxOverlay({ file, onClose }) {
               Delete and re-upload to enable preview
             </div>
           )}
-          <a href={file.url} target="_blank" rel="noreferrer"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff', fontSize: 13, fontWeight: 600, background: 'var(--k-primary, #0082c6)', borderRadius: 8, padding: '10px 20px', textDecoration: 'none' }}>
-            <ExternalLink size={14} /> {file.url?.startsWith('data:') ? 'Download file' : 'Open in new tab'}
-          </a>
+          {officeError && (
+            <button
+              onClick={() => { setOfficeError(false); setOfficeKey(0); }}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--k-primary, #0082c6)',
+                fontSize: 13, fontWeight: 600, background: 'transparent', border: '1px solid var(--k-primary, #0082c6)',
+                borderRadius: 8, padding: '8px 16px', cursor: 'pointer', marginBottom: 12,
+              }}
+            >
+              Retry preview
+            </button>
+          )}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+            <button
+              onClick={handleDownload}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff', fontSize: 13, fontWeight: 600, background: 'var(--k-primary, #0082c6)', borderRadius: 8, padding: '10px 20px', border: 'none', cursor: 'pointer' }}
+            >
+              <Download size={14} /> Download
+            </button>
+            <a href={file.url} target="_blank" rel="noreferrer"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff', fontSize: 13, fontWeight: 600, background: 'rgba(0,0,0,0.5)', borderRadius: 8, padding: '10px 20px', textDecoration: 'none' }}>
+              <ExternalLink size={14} /> Open in new tab
+            </a>
+          </div>
         </div>
       )}
-      {/* Open in new tab — always shown for docs */}
-      {showDoc && (
-        <a
-          href={file.url}
-          target="_blank"
-          rel="noreferrer"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            color: '#fff', fontSize: 13, fontWeight: 500,
-            background: 'rgba(255,255,255,0.15)', borderRadius: 8,
-            padding: '8px 16px', textDecoration: 'none',
-          }}
-        >
-          <ExternalLink size={14} />
-          Open in new tab
-        </a>
+      {/* Bottom bar for previewable content */}
+      {(showDoc || (isImage(name) && !imgError) || isVideo(name)) && (
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={handleDownload}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              color: '#fff', fontSize: 13, fontWeight: 500,
+              background: 'rgba(255,255,255,0.15)', borderRadius: 8,
+              padding: '8px 16px', border: 'none', cursor: 'pointer',
+            }}
+          >
+            <Download size={14} />
+            Download
+          </button>
+          <a
+            href={file.url}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              color: '#fff', fontSize: 13, fontWeight: 500,
+              background: 'rgba(255,255,255,0.15)', borderRadius: 8,
+              padding: '8px 16px', textDecoration: 'none',
+            }}
+          >
+            <ExternalLink size={14} />
+            Open in new tab
+          </a>
+        </div>
       )}
     </div>
   );
