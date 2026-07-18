@@ -19,7 +19,7 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import require_platform_role
 from middleware.subscription import require_module
-from services.ai_router import generate, generate_image, deduct_credits, deduct_org_credits, CREDIT_COSTS, CREDIT_PRICE_INR
+from services.ai_router import generate, generate_image, generate_rich_content, deduct_credits, deduct_org_credits, CREDIT_COSTS, CREDIT_PRICE_INR
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
 
@@ -66,6 +66,15 @@ class ContentGenerate(BaseModel):
     platform: str = ""
     language: str = "en"
     extra_instructions: str = ""
+
+class QuickGenerate(BaseModel):
+    skill: str
+    topic: str
+    platform: str = "Instagram"
+    tone: str = "Professional"
+    language: str = "en"
+    with_image: bool = True
+    extra: str = ""
 
 class ContentReview(BaseModel):
     status: str
@@ -1771,3 +1780,235 @@ async def update_org_brand(
         *values,
     )
     return {"status": "updated"}
+
+
+# ── Quick Generate (standalone, no skill/client overhead) ──
+
+QUICK_SKILL_PROMPTS = {
+    "social_post": {
+        "agent_type": "social_media",
+        "credits": 3,
+        "system": (
+            "You are an expert social media content creator for Indian businesses. "
+            "Create engaging, professional content with proper formatting.\n\n"
+            "IMPORTANT OUTPUT RULES:\n"
+            "- Use markdown formatting: **bold** for emphasis, headers for sections\n"
+            "- Include relevant emojis naturally\n"
+            "- Include 5-8 relevant hashtags at the end\n"
+            "- Keep the post concise but impactful\n"
+            "- If the platform is Instagram, include a caption + hashtags\n"
+            "- If LinkedIn, be more professional and longer\n"
+            "- If WhatsApp, keep it short and conversational\n"
+            "- Also generate a matching image that represents the post visually"
+        ),
+        "prompt": (
+            "Create a {platform} post about: {topic}\n"
+            "Tone: {tone}\n"
+            "Language: {language}\n"
+            "{extra}\n\n"
+            "Generate the complete post text with formatting AND a matching professional image."
+        ),
+    },
+    "email_campaign": {
+        "agent_type": "email",
+        "credits": 3,
+        "system": (
+            "You are a marketing email specialist for Indian businesses. "
+            "Create compelling email content with proper structure.\n\n"
+            "OUTPUT FORMAT:\n"
+            "## Subject Line\n"
+            "## Preview Text\n"
+            "## Email Body\n"
+            "(with proper formatting, headers, bullet points)\n"
+            "## Call to Action"
+        ),
+        "prompt": (
+            "Create a marketing email about: {topic}\n"
+            "Tone: {tone}\nLanguage: {language}\n{extra}"
+        ),
+    },
+    "ad_copy": {
+        "agent_type": "ad_copy",
+        "credits": 3,
+        "system": (
+            "You are an advertising copywriter for Indian market. "
+            "Create high-converting ad copy.\n\n"
+            "OUTPUT FORMAT:\n"
+            "## Headline Options (3 variants)\n"
+            "## Primary Text\n"
+            "## Description\n"
+            "## Call to Action Options\n"
+            "Also generate a matching ad creative image."
+        ),
+        "prompt": (
+            "Create {platform} ad copy about: {topic}\n"
+            "Tone: {tone}\nLanguage: {language}\n{extra}\n\n"
+            "Generate the complete ad copy AND a matching professional ad creative image."
+        ),
+    },
+    "blog_post": {
+        "agent_type": "blog",
+        "credits": 5,
+        "system": (
+            "You are a content writer for Indian businesses. "
+            "Create SEO-friendly blog content with proper structure.\n\n"
+            "OUTPUT FORMAT:\n"
+            "# Title\n"
+            "## Introduction\n"
+            "## Body (with H2/H3 subheadings, bullet points, bold key terms)\n"
+            "## Conclusion\n"
+            "## Meta Description (under 155 chars)\n"
+            "## Keywords"
+        ),
+        "prompt": (
+            "Write a blog post about: {topic}\n"
+            "Tone: {tone}\nLanguage: {language}\n{extra}"
+        ),
+    },
+    "whatsapp_broadcast": {
+        "agent_type": "whatsapp",
+        "credits": 1,
+        "system": (
+            "You are a WhatsApp marketing specialist for Indian businesses. "
+            "Create short, engaging broadcast messages.\n\n"
+            "RULES:\n"
+            "- Under 1000 characters\n"
+            "- Use emojis naturally\n"
+            "- Include a clear CTA\n"
+            "- Friendly, conversational tone\n"
+            "- No hashtags (not a WhatsApp thing)"
+        ),
+        "prompt": (
+            "Create a WhatsApp broadcast message about: {topic}\n"
+            "Tone: {tone}\nLanguage: {language}\n{extra}"
+        ),
+    },
+    "proposal": {
+        "agent_type": "lead_magnet",
+        "credits": 5,
+        "system": (
+            "You are a business proposal writer for Indian companies. "
+            "Create professional, structured proposals.\n\n"
+            "OUTPUT FORMAT:\n"
+            "# Proposal: [Title]\n"
+            "## Executive Summary\n"
+            "## Scope of Work\n"
+            "## Deliverables\n"
+            "## Timeline\n"
+            "## Investment / Pricing\n"
+            "## Terms & Conditions\n"
+            "## Next Steps"
+        ),
+        "prompt": (
+            "Write a business proposal for: {topic}\n"
+            "Tone: {tone}\nLanguage: {language}\n{extra}"
+        ),
+    },
+    "festival_campaign": {
+        "agent_type": "campaign",
+        "credits": 5,
+        "system": (
+            "You are an Indian festival marketing expert. "
+            "Create culturally appropriate, engaging festival campaigns.\n\n"
+            "OUTPUT FORMAT:\n"
+            "# Campaign: [Festival Name] 🎉\n"
+            "## Campaign Theme\n"
+            "## Key Messages (3-5)\n"
+            "## Social Media Posts (Instagram + WhatsApp)\n"
+            "## Email Template\n"
+            "## Offer/Discount Structure\n"
+            "## Timeline (1-2 weeks)\n\n"
+            "Also generate a festive, vibrant image that matches the campaign."
+        ),
+        "prompt": (
+            "Create a festival marketing campaign for: {topic}\n"
+            "Tone: {tone}\nLanguage: {language}\n{extra}\n\n"
+            "Generate the complete campaign plan AND a matching festive campaign image."
+        ),
+    },
+}
+
+
+@router.post("/org/quick-generate")
+async def quick_generate(
+    body: QuickGenerate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Quick content generation — standalone, no client/skill setup needed.
+    Supports text-only and text+image output."""
+    skill_cfg = QUICK_SKILL_PROMPTS.get(body.skill)
+    if not skill_cfg:
+        raise HTTPException(400, f"Unknown skill: {body.skill}. Available: {', '.join(QUICK_SKILL_PROMPTS)}")
+
+    pool = await get_pool()
+
+    # Deduct credits
+    try:
+        await deduct_org_credits(org_id, user["user_id"], skill_cfg["agent_type"],
+                                  f"Quick generate: {body.skill}")
+    except Exception:
+        raise HTTPException(402, "Insufficient credits")
+
+    # Build prompt from template
+    prompt = skill_cfg["prompt"].format(
+        topic=body.topic,
+        platform=body.platform,
+        tone=body.tone,
+        language=body.language,
+        extra=body.extra,
+    )
+
+    # Load brand profile for context
+    brand = await pool.fetchrow(
+        "SELECT * FROM staging.hub_brand_profiles WHERE org_id=$1::uuid", org_id
+    )
+    brand_system = _build_system_prompt(dict(brand)) if brand else ""
+    system = f"{brand_system}\n\n{skill_cfg['system']}" if brand_system else skill_cfg["system"]
+
+    # Generate: text+image or text-only
+    if body.with_image and body.skill in ("social_post", "ad_copy", "festival_campaign"):
+        result = await generate_rich_content(
+            prompt=prompt,
+            system=system,
+            max_tokens=4096,
+            org_id=org_id,
+        )
+    else:
+        text_result = await generate(
+            prompt=prompt,
+            system=system,
+            max_tokens=4096,
+            language=body.language,
+            agent_type=skill_cfg["agent_type"],
+        )
+        result = {**text_result, "images": []}
+
+    # Save to content items
+    content_row = await pool.fetchrow(
+        "INSERT INTO staging.hub_content_items "
+        "(org_id, agent_type, title, body, platform, status, credits_used, "
+        " metadata, created_by) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, 'draft', $6, $7::jsonb, $8) RETURNING id",
+        org_id, skill_cfg["agent_type"],
+        f"{body.skill}: {body.topic[:60]}",
+        result["text"],
+        body.platform,
+        skill_cfg["credits"],
+        json.dumps({
+            "skill": body.skill, "images": result.get("images", []),
+            "provider": result.get("provider"), "model": result.get("model"),
+        }),
+        user["user_id"],
+    )
+
+    return {
+        "content_id": str(content_row["id"]),
+        "text": result["text"],
+        "images": result.get("images", []),
+        "skill": body.skill,
+        "credits_used": skill_cfg["credits"],
+        "provider": result.get("provider"),
+        "model": result.get("model"),
+    }

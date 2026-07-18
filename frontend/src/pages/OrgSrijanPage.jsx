@@ -408,26 +408,82 @@ function ContentCard({ item }) {
 }
 
 
-// ── Generate Tab — standalone content generation ──────────────────────────────
+// ── Generate Tab — quick content generation with rich output ────────────────
+
+const QUICK_SKILLS = [
+  { id: 'social_post', icon: '📱', label: 'Social Post', hi: 'सोशल पोस्ट', credits: 3, hasImage: true,
+    desc: 'Instagram, LinkedIn, or WhatsApp post with image' },
+  { id: 'email_campaign', icon: '📧', label: 'Email Campaign', hi: 'ईमेल', credits: 3, hasImage: false,
+    desc: 'Marketing email with subject, preview text & body' },
+  { id: 'ad_copy', icon: '📢', label: 'Ad Copy', hi: 'विज्ञापन', credits: 3, hasImage: true,
+    desc: 'Ad headlines, copy & creative for any platform' },
+  { id: 'blog_post', icon: '✍️', label: 'Blog Post', hi: 'ब्लॉग', credits: 5, hasImage: false,
+    desc: 'SEO-friendly blog article with structure' },
+  { id: 'whatsapp_broadcast', icon: '💬', label: 'WhatsApp', hi: 'व्हाट्सएप', credits: 1, hasImage: false,
+    desc: 'Short broadcast message for WhatsApp Business' },
+  { id: 'proposal', icon: '📋', label: 'Proposal', hi: 'प्रस्ताव', credits: 5, hasImage: false,
+    desc: 'Professional business proposal with sections' },
+  { id: 'festival_campaign', icon: '🎉', label: 'Festival Campaign', hi: 'त्योहार', credits: 5, hasImage: true,
+    desc: 'Complete festival marketing campaign for Indian market' },
+];
+
+function renderMarkdown(text) {
+  if (!text) return null;
+  return text.split('\n').map((line, i) => {
+    if (line.startsWith('# ')) return <h1 key={i} style={{ fontSize: 22, fontWeight: 800, margin: '16px 0 8px', color: 'var(--ink)' }}>{line.slice(2)}</h1>;
+    if (line.startsWith('## ')) return <h2 key={i} style={{ fontSize: 17, fontWeight: 700, margin: '14px 0 6px', color: 'var(--ink)' }}>{line.slice(3)}</h2>;
+    if (line.startsWith('### ')) return <h3 key={i} style={{ fontSize: 14, fontWeight: 700, margin: '12px 0 4px', color: 'var(--ink-2)' }}>{line.slice(4)}</h3>;
+    if (line.startsWith('- ') || line.startsWith('* '))
+      return <div key={i} style={{ display: 'flex', gap: 8, fontSize: 14, lineHeight: 1.7, color: 'var(--ink-1)', paddingLeft: 8 }}>
+        <span style={{ color: 'var(--k-primary)', fontWeight: 700 }}>•</span>
+        <span dangerouslySetInnerHTML={{ __html: boldify(line.slice(2)) }} />
+      </div>;
+    if (/^\d+\.\s/.test(line)) {
+      const num = line.match(/^(\d+)\.\s/)[1];
+      return <div key={i} style={{ display: 'flex', gap: 8, fontSize: 14, lineHeight: 1.7, color: 'var(--ink-1)', paddingLeft: 8 }}>
+        <span style={{ color: 'var(--k-primary)', fontWeight: 700, minWidth: 18 }}>{num}.</span>
+        <span dangerouslySetInnerHTML={{ __html: boldify(line.replace(/^\d+\.\s/, '')) }} />
+      </div>;
+    }
+    if (line.startsWith('---')) return <hr key={i} style={{ border: 'none', borderTop: '1px solid var(--rule-soft)', margin: '12px 0' }} />;
+    if (line.trim() === '') return <div key={i} style={{ height: 8 }} />;
+    return <p key={i} style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--ink-1)', margin: '2px 0' }}
+      dangerouslySetInnerHTML={{ __html: boldify(line) }} />;
+  });
+}
+
+function boldify(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code style="background:var(--surface-0);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>');
+}
 
 function GenerateTab({ credits, onCreditsChange }) {
   const { pushToast } = useToast();
-  const [form, setForm] = useState({
-    agent_type: 'social_media', brief: '', platform: '', language: 'en',
-    extra_instructions: '', generate_image: false, image_prompt: '', aspect_ratio: '1:1',
-  });
+  const [selectedSkill, setSelectedSkill] = useState(null);
+  const [form, setForm] = useState({ topic: '', platform: 'Instagram', tone: 'Professional', language: 'en', extra: '', with_image: true });
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState(null);
 
+  const balance = credits?.user_allocation
+    ? (credits.user_allocation.allocated - credits.user_allocation.used)
+    : credits?.org_balance?.balance ?? 0;
+
   async function handleGenerate(e) {
     e.preventDefault();
+    if (!selectedSkill) return;
     setGenerating(true);
     setResult(null);
     try {
-      const r = await api.post('/v1/hub/org/generate', form);
+      const r = await api.post('/v1/hub/org/quick-generate', {
+        skill: selectedSkill.id,
+        ...form,
+        with_image: selectedSkill.hasImage && form.with_image,
+      });
       setResult(r.data);
       onCreditsChange();
-      pushToast({ title: 'Content generated!', type: 'success' });
+      pushToast({ title: `Generated! ${r.data.credits_used} credits used`, type: 'success' });
     } catch (err) {
       pushToast({ title: err.response?.data?.detail || 'Generation failed', type: 'error' });
     } finally {
@@ -435,120 +491,144 @@ function GenerateTab({ credits, onCreditsChange }) {
     }
   }
 
-  const balance = credits?.user_allocation
-    ? (credits.user_allocation.allocated - credits.user_allocation.used)
-    : credits?.org_balance?.balance ?? 0;
-
   return (
     <div>
-      <form onSubmit={handleGenerate} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 24 }}>
-        <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700 }}>Generate Content</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <label style={{ fontSize: 13 }}>
-            <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Agent Type</span>
-            <select className="k-input" value={form.agent_type}
-              onChange={e => setForm({ ...form, agent_type: e.target.value })}>
-              {Object.entries(AGENT_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-          </label>
-          <label style={{ fontSize: 13 }}>
-            <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Platform</span>
-            <input className="k-input" placeholder="e.g. Instagram, LinkedIn" value={form.platform}
-              onChange={e => setForm({ ...form, platform: e.target.value })} />
-          </label>
-          <label style={{ fontSize: 13, gridColumn: '1 / -1' }}>
-            <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Brief *</span>
-            <textarea className="k-input" rows={3} required placeholder="Describe what content you need…" value={form.brief}
-              onChange={e => setForm({ ...form, brief: e.target.value })} style={{ resize: 'vertical' }} />
-          </label>
-          <label style={{ fontSize: 13 }}>
-            <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Language</span>
-            <select className="k-input" value={form.language}
-              onChange={e => setForm({ ...form, language: e.target.value })}>
-              <option value="en">English</option>
-              <option value="hi">Hindi</option>
-              <option value="gu">Gujarati</option>
-              <option value="mr">Marathi</option>
-              <option value="ta">Tamil</option>
-            </select>
-          </label>
-          <label style={{ fontSize: 13 }}>
-            <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Extra Instructions</span>
-            <input className="k-input" placeholder="Any additional context…" value={form.extra_instructions}
-              onChange={e => setForm({ ...form, extra_instructions: e.target.value })} />
-          </label>
-        </div>
-
-        <div style={{ marginTop: 16, padding: 12, background: 'var(--surface-0)', borderRadius: 8, border: '1px solid var(--rule-soft)' }}>
-          <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-            <input type="checkbox" checked={form.generate_image} onChange={e => setForm({ ...form, generate_image: e.target.checked })} />
-            <span style={{ fontWeight: 600 }}>Generate image (+3 credits)</span>
-          </label>
-          {form.generate_image && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, marginTop: 8 }}>
-              <label style={{ fontSize: 12 }}>
-                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Image Prompt</span>
-                <input className="k-input" placeholder="Describe the image you want (optional — auto-generated from brief)" value={form.image_prompt}
-                  onChange={e => setForm({ ...form, image_prompt: e.target.value })} />
-              </label>
-              <label style={{ fontSize: 12 }}>
-                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Aspect Ratio</span>
-                <select className="k-input" value={form.aspect_ratio}
-                  onChange={e => setForm({ ...form, aspect_ratio: e.target.value })}>
-                  <option value="1:1">1:1 (Square)</option>
-                  <option value="16:9">16:9 (Landscape)</option>
-                  <option value="9:16">9:16 (Portrait)</option>
-                  <option value="4:3">4:3</option>
-                </select>
-              </label>
+      {/* Skill picker */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 24 }}>
+        {QUICK_SKILLS.map(s => (
+          <button key={s.id} onClick={() => { setSelectedSkill(s); setResult(null); }}
+            style={{ textAlign: 'left', padding: 14, borderRadius: 10, cursor: 'pointer',
+              background: selectedSkill?.id === s.id ? 'var(--k-primary)' : 'var(--surface-1)',
+              color: selectedSkill?.id === s.id ? '#fff' : 'var(--ink)',
+              border: selectedSkill?.id === s.id ? '2px solid var(--k-primary)' : '1px solid var(--rule-soft)',
+              transition: 'all .15s' }}>
+            <div style={{ fontSize: 20, marginBottom: 4 }}>{s.icon}</div>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>{s.label}</div>
+            <div style={{ fontSize: 10, opacity: .7, marginTop: 2 }}>{s.desc}</div>
+            <div style={{ fontSize: 10, fontWeight: 700, marginTop: 6, opacity: .6 }}>
+              {s.credits} credits{s.hasImage ? ' · + image' : ''}
             </div>
-          )}
-        </div>
-
-        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Credits available: <strong>{balance}</strong></span>
-          <button type="submit" className="k-btn k-btn--primary" disabled={generating}>
-            {generating ? 'Generating…' : 'Generate'}
           </button>
-        </div>
-      </form>
+        ))}
+      </div>
 
-      {result && (
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--k-primary)', borderRadius: 12, padding: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Generated Content</h3>
-            <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-              {result.ai?.provider} / {result.ai?.model}
-            </span>
+      {/* Input form */}
+      {selectedSkill && (
+        <form onSubmit={handleGenerate} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)',
+          borderRadius: 12, padding: 24, marginBottom: 24 }}>
+          <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700 }}>
+            {selectedSkill.icon} {selectedSkill.label}
+            <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{selectedSkill.hi}</span>
+          </h3>
+
+          <label style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
+            <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>What is this about? *</span>
+            <textarea className="k-input" rows={3} required
+              placeholder="e.g. Diwali sale — 30% off on all products, highlight festive collection"
+              value={form.topic} onChange={e => setForm({ ...form, topic: e.target.value })}
+              style={{ resize: 'vertical' }} />
+          </label>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <label style={{ fontSize: 13 }}>
+              <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Platform</span>
+              <select className="k-input" value={form.platform} onChange={e => setForm({ ...form, platform: e.target.value })}>
+                <option>Instagram</option><option>LinkedIn</option><option>WhatsApp</option>
+                <option>Facebook</option><option>Twitter / X</option><option>Email</option>
+                <option>Google Ads</option><option>Website</option>
+              </select>
+            </label>
+            <label style={{ fontSize: 13 }}>
+              <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Tone</span>
+              <select className="k-input" value={form.tone} onChange={e => setForm({ ...form, tone: e.target.value })}>
+                <option>Professional</option><option>Casual</option><option>Festive</option>
+                <option>Formal</option><option>Friendly</option><option>Urgent</option>
+              </select>
+            </label>
+            <label style={{ fontSize: 13 }}>
+              <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Language</span>
+              <select className="k-input" value={form.language} onChange={e => setForm({ ...form, language: e.target.value })}>
+                <option value="en">English</option><option value="hi">Hindi</option>
+                <option value="gu">Gujarati</option><option value="mr">Marathi</option>
+                <option value="ta">Tamil</option><option value="hinglish">Hinglish</option>
+              </select>
+            </label>
           </div>
-          {result.content?.image_url && (
-            <div style={{ position: 'relative', marginBottom: 12 }}>
-              <img src={result.content.image_url} alt="Generated" style={{ width: '100%', maxHeight: 300, objectFit: 'contain', borderRadius: 8, background: 'var(--surface-0)' }} />
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button onClick={async () => {
-                  try {
-                    const res = await fetch(result.content.image_url);
-                    const blob = await res.blob();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a'); a.href = url; a.download = 'generated-image.png'; a.click(); URL.revokeObjectURL(url);
-                  } catch { pushToast({ title: 'Download failed', type: 'error' }); }
-                }} className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '4px 12px' }}>
-                  Download Image
-                </button>
-                <button onClick={() => { navigator.clipboard.writeText(result.content.image_url); pushToast({ title: 'URL copied', type: 'success' }); }}
-                  className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '4px 12px' }}>
-                  Copy URL
-                </button>
-                <a href={result.content.image_url} target="_blank" rel="noopener noreferrer"
-                  className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '4px 12px', textDecoration: 'none' }}>
-                  Open Full Size
-                </a>
-              </div>
+
+          <label style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
+            <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Extra instructions (optional)</span>
+            <input className="k-input" placeholder="e.g. mention our website, use brand colors, target young professionals"
+              value={form.extra} onChange={e => setForm({ ...form, extra: e.target.value })} />
+          </label>
+
+          {selectedSkill.hasImage && (
+            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <input type="checkbox" checked={form.with_image} onChange={e => setForm({ ...form, with_image: e.target.checked })} />
+              <span style={{ fontWeight: 600 }}>Generate matching image</span>
+            </label>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+              Credits: <strong>{balance}</strong> available · <strong>{selectedSkill.credits}</strong> will be used
+            </span>
+            <button type="submit" className="k-btn k-btn--primary" disabled={generating || !form.topic.trim()}>
+              {generating ? 'Generating…' : `Generate ${selectedSkill.label}`}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Rich result */}
+      {result && (
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--k-primary)', borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--rule-soft)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
+              {selectedSkill?.icon} Generated Content
+            </h3>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <span style={{ fontSize: 10, color: 'var(--ink-3)' }}>{result.model}</span>
+              <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '4px 12px' }}
+                onClick={() => { navigator.clipboard.writeText(result.text); pushToast({ title: 'Copied!', type: 'success' }); }}>
+                Copy Text
+              </button>
+            </div>
+          </div>
+
+          {result.images?.length > 0 && (
+            <div style={{ padding: 24, borderBottom: '1px solid var(--rule-soft)', background: 'var(--surface-0)' }}>
+              {result.images.map((img, i) => (
+                <div key={i} style={{ position: 'relative' }}>
+                  <img src={img.url} alt="Generated visual"
+                    style={{ width: '100%', maxHeight: 400, objectFit: 'contain', borderRadius: 8 }} />
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button onClick={async () => {
+                      try {
+                        const res = await fetch(img.url); const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a'); a.href = url; a.download = `srijan-${Date.now()}.png`; a.click(); URL.revokeObjectURL(url);
+                      } catch { pushToast({ title: 'Download failed', type: 'error' }); }
+                    }} className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '4px 12px' }}>
+                      Download Image
+                    </button>
+                    <button onClick={() => { navigator.clipboard.writeText(img.url); pushToast({ title: 'URL copied', type: 'success' }); }}
+                      className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '4px 12px' }}>
+                      Copy URL
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
-          <div style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.7, color: 'var(--ink-1)', padding: 16,
-            background: 'var(--surface-0)', borderRadius: 8, border: '1px solid var(--rule-soft)' }}>
-            {result.content?.body}
+
+          <div style={{ padding: 24 }}>
+            {renderMarkdown(result.text)}
+          </div>
+
+          <div style={{ padding: '12px 24px', borderTop: '1px solid var(--rule-soft)', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            fontSize: 11, color: 'var(--ink-3)' }}>
+            <span>{result.credits_used} credits used</span>
+            <span>Content saved to library</span>
           </div>
         </div>
       )}

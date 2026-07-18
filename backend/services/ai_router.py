@@ -387,6 +387,134 @@ async def _generate_gemini_imagen(api_key: str, prompt: str, aspect_ratio: str =
     raise RuntimeError("Gemini returned no image in response")
 
 
+# ── Rich content generation (text + image in one call) ─────
+
+RICH_CONTENT_MODEL = "google/gemini-3.1-flash-lite-image"
+RICH_CONTENT_FALLBACK = "google/gemini-3.1-flash-image"
+
+
+async def generate_rich_content(
+    prompt: str,
+    system: str = "",
+    max_tokens: int = 4096,
+    org_id: Optional[str] = None,
+) -> dict:
+    """Generate rich content with text + image using Gemini's native image model.
+    Returns {"text": str, "images": [{"url": str, "mime": str}], ...}."""
+    import base64 as b64mod
+    from services.storage import upload_file
+
+    or_key = os.getenv("OPENROUTER_API_KEY", "")
+    if not or_key:
+        raise RuntimeError("OPENROUTER_API_KEY not set")
+
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    last_error = None
+    for model in [RICH_CONTENT_MODEL, RICH_CONTENT_FALLBACK]:
+        start = time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {or_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "max_tokens": max_tokens,
+                        "temperature": 0.8,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+
+            latency = int((time.monotonic() - start) * 1000)
+            choice = data["choices"][0]
+            usage = data.get("usage", {})
+            cost_usd = float(usage.get("cost", 0) or 0)
+            if not cost_usd:
+                cost_usd = _estimate_cost(model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+
+            content = choice["message"].get("content", "")
+            text_parts = []
+            images = []
+
+            if isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict):
+                        if part.get("type") == "text":
+                            text_parts.append(part["text"])
+                        elif part.get("type") == "image_url":
+                            img_url = part.get("image_url", {}).get("url", "")
+                            if img_url.startswith("data:"):
+                                mime, b64_data = img_url.split(";base64,", 1)
+                                mime = mime.replace("data:", "")
+                                ext = "png" if "png" in mime else "jpg"
+                                img_bytes = b64mod.b64decode(b64_data)
+                                upload = await upload_file(
+                                    file_bytes=img_bytes,
+                                    filename=f"srijan-{uuid.uuid4().hex[:8]}.{ext}",
+                                    content_type=mime,
+                                    user_id="system",
+                                    folder="srijan/images",
+                                    org_id=org_id,
+                                )
+                                images.append({"url": upload["url"], "mime": mime})
+                            else:
+                                images.append({"url": img_url, "mime": "image/png"})
+                    elif isinstance(part, str):
+                        text_parts.append(part)
+            else:
+                text_parts.append(str(content))
+
+            pool = await get_pool()
+            await pool.execute(
+                "INSERT INTO staging.hub_ai_logs "
+                "(org_id, provider, model, prompt_tokens, completion_tokens, "
+                " latency_ms, status, cost_usd, generation_id) "
+                "VALUES ($1::uuid, $2, $3, $4, $5, $6, 'success', $7, $8)",
+                org_id, "openrouter", model,
+                usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0),
+                latency, cost_usd, data.get("id", ""),
+            )
+
+            return {
+                "text": "\n".join(text_parts),
+                "images": images,
+                "provider": "openrouter",
+                "model": model,
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+                "cost_usd": cost_usd,
+            }
+
+        except Exception as e:
+            last_error = e
+            log.warning("Rich content model %s failed: %s", model, e)
+
+    # Fallback: generate text + image separately
+    log.info("Falling back to separate text + image generation")
+    text_result = await generate(prompt=prompt, system=system, max_tokens=max_tokens,
+                                  language="en", agent_type="social_media")
+    image_result = await generate_image(prompt=f"Create a professional image for: {prompt[:200]}",
+                                         org_id=org_id)
+    return {
+        "text": text_result["text"],
+        "images": [{"url": image_result["image_url"], "mime": "image/png"}],
+        "provider": text_result["provider"],
+        "model": text_result["model"],
+        "prompt_tokens": text_result["prompt_tokens"],
+        "completion_tokens": text_result["completion_tokens"],
+        "cost_usd": text_result.get("cost_usd", 0) + image_result.get("cost_usd", 0),
+    }
+
+
 # ── Credit cost per agent type ──────────────────────────────
 CREDIT_COSTS = {
     "social_media": 2,
