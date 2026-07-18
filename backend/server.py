@@ -137,16 +137,21 @@ api_router = APIRouter(prefix="/api")
 
 # ── CORS ──────────────────────────────────────────
 DEFAULT_ORIGINS = [
+    "https://kartavya.com",
+    "https://www.kartavya.com",
+    "https://staging.kartavya.com",
     "https://kartavaya.com",
     "https://www.kartavaya.com",
-    "https://Kartavaya-aekam.vercel.app",
-    "https://Kartavaya-production.akeam.vercel.app",
-    "https://Kartavaya-kevalvshah03-6145s-projects.vercel.app",
-    "https://Kartavaya-git-main-kevalvshah03-6145s-projects.vercel.app",
-    "https://Kartavaya-git-v2-plan-kevalvshah03-6145s-projects.vercel.app",
-    "https://Kartavaya-git-staging-kevalvshah03-6145s-projects.vercel.app",
     "https://staging.kartavaya.com",
+    "https://kartavya.vercel.app",
+    "https://kartavya-aekam.vercel.app",
+    "https://kartavya-production.akeam.vercel.app",
+    "https://kartavya-kevalvshah03-6145s-projects.vercel.app",
+    "https://kartavya-git-main-kevalvshah03-6145s-projects.vercel.app",
+    "https://kartavya-git-v2-plan-kevalvshah03-6145s-projects.vercel.app",
+    "https://kartavya-git-staging-kevalvshah03-6145s-projects.vercel.app",
     "http://localhost:3000",
+    "http://localhost:5173",
     "http://localhost:8080",
 ]
 _extra = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
