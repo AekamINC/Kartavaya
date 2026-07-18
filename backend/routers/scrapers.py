@@ -10,7 +10,8 @@ from pydantic import BaseModel
 
 from auth_router import require_user
 from db import get_pool
-from middleware.roles import require_platform_role, get_org_id, require_module
+from middleware.roles import require_platform_role, get_org_id
+from middleware.subscription import require_module
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/scrapers", tags=["scrapers"])
