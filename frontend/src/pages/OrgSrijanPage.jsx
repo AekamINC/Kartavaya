@@ -268,65 +268,142 @@ function ContentTab() {
 
 function ContentCard({ item }) {
   const [expanded, setExpanded] = useState(false);
+  const [lightbox, setLightbox] = useState(false);
+  const [imgError, setImgError] = useState(false);
+  const { pushToast } = useToast();
+
+  const handleDownload = async (e) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(item.image_url);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(item.title || 'image').replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      pushToast({ title: 'Download failed — image may have expired', type: 'error' });
+    }
+  };
+
+  const handleCopyUrl = (e) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(item.image_url);
+    pushToast({ title: 'Image URL copied', type: 'success' });
+  };
 
   return (
-    <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, overflow: 'hidden' }}>
-      {item.image_url && (
-        <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: 'var(--surface-0)' }}>
-          <img src={item.image_url} alt={item.title || 'Generated content'}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-            onError={e => { e.target.style.display = 'none'; }} />
-        </div>
-      )}
-      <div style={{ padding: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-          <div style={{ flex: 1 }}>
-            <span style={{ fontWeight: 700, fontSize: 13 }}>{item.title}</span>
-            <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
-              <span style={{ fontSize: 10, color: 'var(--ink-3)', background: 'var(--surface-0)',
-                padding: '1px 8px', borderRadius: 99 }}>
-                {AGENT_LABELS[item.agent_type] || item.agent_type}
-              </span>
-              {item.platform && (
-                <span style={{ fontSize: 10, color: 'var(--ink-3)', background: 'var(--surface-0)',
-                  padding: '1px 8px', borderRadius: 99 }}>
-                  {item.platform}
-                </span>
-              )}
+    <>
+      <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, overflow: 'hidden' }}>
+        {item.image_url && !imgError && (
+          <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', background: 'var(--surface-0)', cursor: 'pointer' }}
+            onClick={() => setLightbox(true)}>
+            <img src={item.image_url} alt={item.title || 'Generated content'}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              onError={() => setImgError(true)} />
+            <div style={{ position: 'absolute', bottom: 8, right: 8, display: 'flex', gap: 4 }}>
+              <button onClick={handleDownload} title="Download image"
+                style={{ background: 'rgba(0,0,0,.6)', color: '#fff', border: 'none', borderRadius: 6,
+                  padding: '4px 8px', fontSize: 11, cursor: 'pointer', fontWeight: 600, backdropFilter: 'blur(4px)' }}>
+                ↓ Download
+              </button>
+              <button onClick={handleCopyUrl} title="Copy image URL"
+                style={{ background: 'rgba(0,0,0,.6)', color: '#fff', border: 'none', borderRadius: 6,
+                  padding: '4px 8px', fontSize: 11, cursor: 'pointer', fontWeight: 600, backdropFilter: 'blur(4px)' }}>
+                Copy URL
+              </button>
             </div>
           </div>
-          <Badge status={item.status} />
-        </div>
-
-        <p style={{ fontSize: 12, color: 'var(--ink-2)', margin: '8px 0', whiteSpace: 'pre-wrap',
-          maxHeight: expanded ? 'none' : 80, overflow: 'hidden', lineHeight: 1.6 }}>
-          {item.body}
-        </p>
-
-        {item.body && item.body.length > 200 && (
-          <button onClick={() => setExpanded(!expanded)}
-            style={{ fontSize: 11, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 8 }}>
-            {expanded ? 'Show less' : 'Show more'}
-          </button>
         )}
-
-        {item.hashtags && item.hashtags.length > 0 && (
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
-            {item.hashtags.slice(0, 8).map((tag, i) => (
-              <span key={i} style={{ fontSize: 10, color: 'var(--k-primary)', background: 'var(--k-primary)10',
-                padding: '1px 6px', borderRadius: 4 }}>
-                {tag}
-              </span>
-            ))}
+        {item.image_url && imgError && (
+          <div style={{ padding: 16, background: 'var(--surface-0)', textAlign: 'center', fontSize: 12, color: 'var(--ink-3)' }}>
+            Image expired or unavailable — <button onClick={() => { setImgError(false); }}
+              style={{ color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
+              retry
+            </button>
           </div>
         )}
+        <div style={{ padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontWeight: 700, fontSize: 13 }}>{item.title}</span>
+              <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
+                <span style={{ fontSize: 10, color: 'var(--ink-3)', background: 'var(--surface-0)',
+                  padding: '1px 8px', borderRadius: 99 }}>
+                  {AGENT_LABELS[item.agent_type] || item.agent_type}
+                </span>
+                {item.platform && (
+                  <span style={{ fontSize: 10, color: 'var(--ink-3)', background: 'var(--surface-0)',
+                    padding: '1px 8px', borderRadius: 99 }}>
+                    {item.platform}
+                  </span>
+                )}
+              </div>
+            </div>
+            <Badge status={item.status} />
+          </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: 'var(--ink-4)', marginTop: 8 }}>
-          <span>{new Date(item.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
-          <span>{item.credits_used} credits</span>
+          <p style={{ fontSize: 12, color: 'var(--ink-2)', margin: '8px 0', whiteSpace: 'pre-wrap',
+            maxHeight: expanded ? 'none' : 80, overflow: 'hidden', lineHeight: 1.6 }}>
+            {item.body}
+          </p>
+
+          {item.body && item.body.length > 200 && (
+            <button onClick={() => setExpanded(!expanded)}
+              style={{ fontSize: 11, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 8 }}>
+              {expanded ? 'Show less' : 'Show more'}
+            </button>
+          )}
+
+          {item.hashtags && item.hashtags.length > 0 && (
+            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 8 }}>
+              {item.hashtags.slice(0, 8).map((tag, i) => (
+                <span key={i} style={{ fontSize: 10, color: 'var(--k-primary)', background: 'var(--k-primary)10',
+                  padding: '1px 6px', borderRadius: 4 }}>
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: 'var(--ink-4)', marginTop: 8 }}>
+            <span>{new Date(item.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</span>
+            <span>{item.credits_used} credits</span>
+          </div>
         </div>
       </div>
-    </div>
+
+      {lightbox && item.image_url && (
+        <div onClick={() => setLightbox(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,.85)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out',
+            backdropFilter: 'blur(8px)' }}>
+          <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+            <img src={item.image_url} alt={item.title || 'Full size'}
+              style={{ maxWidth: '90vw', maxHeight: '85vh', objectFit: 'contain', borderRadius: 8 }} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 12 }}>
+              <button onClick={handleDownload}
+                style={{ background: '#fff', color: '#111', border: 'none', borderRadius: 8,
+                  padding: '8px 24px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>
+                Download
+              </button>
+              <button onClick={handleCopyUrl}
+                style={{ background: 'rgba(255,255,255,.15)', color: '#fff', border: '1px solid rgba(255,255,255,.3)',
+                  borderRadius: 8, padding: '8px 24px', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
+                Copy URL
+              </button>
+              <button onClick={() => setLightbox(false)}
+                style={{ background: 'rgba(255,255,255,.15)', color: '#fff', border: '1px solid rgba(255,255,255,.3)',
+                  borderRadius: 8, padding: '8px 24px', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -445,7 +522,29 @@ function GenerateTab({ credits, onCreditsChange }) {
             </span>
           </div>
           {result.content?.image_url && (
-            <img src={result.content.image_url} alt="Generated" style={{ width: '100%', maxHeight: 300, objectFit: 'contain', borderRadius: 8, marginBottom: 12, background: 'var(--surface-0)' }} />
+            <div style={{ position: 'relative', marginBottom: 12 }}>
+              <img src={result.content.image_url} alt="Generated" style={{ width: '100%', maxHeight: 300, objectFit: 'contain', borderRadius: 8, background: 'var(--surface-0)' }} />
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button onClick={async () => {
+                  try {
+                    const res = await fetch(result.content.image_url);
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url; a.download = 'generated-image.png'; a.click(); URL.revokeObjectURL(url);
+                  } catch { pushToast({ title: 'Download failed', type: 'error' }); }
+                }} className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '4px 12px' }}>
+                  Download Image
+                </button>
+                <button onClick={() => { navigator.clipboard.writeText(result.content.image_url); pushToast({ title: 'URL copied', type: 'success' }); }}
+                  className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '4px 12px' }}>
+                  Copy URL
+                </button>
+                <a href={result.content.image_url} target="_blank" rel="noopener noreferrer"
+                  className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '4px 12px', textDecoration: 'none' }}>
+                  Open Full Size
+                </a>
+              </div>
+            </div>
           )}
           <div style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.7, color: 'var(--ink-1)', padding: 16,
             background: 'var(--surface-0)', borderRadius: 8, border: '1px solid var(--rule-soft)' }}>
