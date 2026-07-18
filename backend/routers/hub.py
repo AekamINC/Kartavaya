@@ -1967,23 +1967,32 @@ async def quick_generate(
     brand_system = _build_system_prompt(dict(brand)) if brand else ""
     system = f"{brand_system}\n\n{skill_cfg['system']}" if brand_system else skill_cfg["system"]
 
-    # Generate: text+image or text-only
-    if body.with_image and body.skill in ("social_post", "ad_copy", "festival_campaign"):
-        result = await generate_rich_content(
-            prompt=prompt,
-            system=system,
-            max_tokens=4096,
-            org_id=org_id,
-        )
-    else:
-        text_result = await generate(
-            prompt=prompt,
-            system=system,
-            max_tokens=4096,
-            language=body.language,
-            agent_type=skill_cfg["agent_type"],
-        )
-        result = {**text_result, "images": []}
+    # Generate text first (always reliable)
+    text_result = await generate(
+        prompt=prompt,
+        system=system,
+        max_tokens=4096,
+        language=body.language,
+        agent_type=skill_cfg["agent_type"],
+    )
+    result = {**text_result, "images": []}
+
+    # Generate image separately using Seedream (reliable, cheap)
+    image_skills = ("social_post", "ad_copy", "festival_campaign", "email_campaign", "blog_post")
+    if body.with_image and body.skill in image_skills:
+        try:
+            img_prompts = {
+                "social_post": "Engaging social media visual for: {t}. Modern, scroll-stopping, brand-quality image.",
+                "ad_copy": "High-converting advertisement creative for: {t}. Bold, eye-catching, professional product/service visual.",
+                "festival_campaign": "Vibrant festive Indian celebration image for: {t}. Colorful, culturally rich, celebratory mood.",
+                "email_campaign": "Professional email banner image for: {t}. Clean, modern, corporate marketing header visual.",
+                "blog_post": "Blog featured image for: {t}. Professional, editorial-quality, topic-relevant photograph or illustration.",
+            }
+            img_prompt = img_prompts.get(body.skill, "Professional marketing visual for: {t}. Clean, modern, corporate Indian business aesthetic.").format(t=body.topic[:200])
+            img_result = await generate_image(prompt=img_prompt, org_id=org_id)
+            result["images"] = [{"url": img_result["image_url"], "mime": "image/png"}]
+        except Exception as e:
+            log.warning("Image generation failed for %s: %s", body.skill, e)
 
     # Save to content items
     content_row = await pool.fetchrow(
