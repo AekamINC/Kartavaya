@@ -73,8 +73,12 @@ async def run_scraper(
         for field in (schema or []):
             fname = field["name"]
             val = body.inputs.get(fname, field.get("default", ""))
-            if field.get("type") == "textarea" and isinstance(val, str):
-                val = [line.strip() for line in val.split("\n") if line.strip()]
+            if field.get("type") == "textarea" and field.get("split_lines") and isinstance(val, str):
+                lines = [line.strip() for line in val.split("\n") if line.strip()]
+                if field.get("url_objects"):
+                    val = [{"url": u} for u in lines]
+                else:
+                    val = lines
             if field.get("type") == "number" and val:
                 val = int(val)
             actor_input[fname] = val
