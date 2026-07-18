@@ -119,8 +119,8 @@ api_router = APIRouter(prefix="/api")
 
 # ── CORS ──────────────────────────────────────────
 DEFAULT_ORIGINS = [
-    "https://kartavaya.com",
-    "https://www.kartavaya.com",
+    "https://kartavya.com",
+    "https://www.kartavya.com",
     "https://kartavya-aekam.vercel.app",
     "https://kartavya-production.akeam.vercel.app",
     "https://kartavya-kevalvshah03-6145s-projects.vercel.app",
