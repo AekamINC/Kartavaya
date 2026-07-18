@@ -30,22 +30,20 @@ def _json_decoder(value):
 
 
 async def _init_conn(conn):
-    for attempt in range(3):
+    try:
+        await conn.set_type_codec(
+            "jsonb", encoder=_json_encoder, decoder=_json_decoder, schema="pg_catalog", format="text"
+        )
+        await conn.set_type_codec(
+            "json", encoder=_json_encoder, decoder=_json_decoder, schema="pg_catalog", format="text"
+        )
+    except (asyncpg.ConnectionDoesNotExistError, asyncpg.InterfaceError) as exc:
+        logger.warning("set_type_codec skipped (PgBouncer): %s", exc)
+    if DB_SCHEMA == "staging":
         try:
-            await conn.set_type_codec(
-                "jsonb", encoder=_json_encoder, decoder=_json_decoder, schema="pg_catalog", format="text"
-            )
-            await conn.set_type_codec(
-                "json", encoder=_json_encoder, decoder=_json_decoder, schema="pg_catalog", format="text"
-            )
-            if DB_SCHEMA == "staging":
-                await conn.execute("SET search_path TO staging, public")
-            return
-        except (asyncpg.ConnectionDoesNotExistError, asyncpg.InterfaceError) as exc:
-            if attempt == 2:
-                raise
-            logger.warning("_init_conn attempt %d failed: %s", attempt + 1, exc)
-            await asyncio.sleep(0.5 * (attempt + 1))
+            await conn.execute("SET search_path TO staging, public")
+        except Exception as exc:
+            logger.warning("SET search_path failed: %s", exc)
 
 
 def _direct_dsn(dsn: str) -> str:
@@ -70,8 +68,8 @@ async def get_pool() -> asyncpg.Pool:
                 try:
                     _pool = await asyncpg.create_pool(
                         dsn=attempt_dsn,
-                        min_size=3,
-                        max_size=12,
+                        min_size=1,
+                        max_size=5,
                         max_inactive_connection_lifetime=300,
                         command_timeout=60,
                         statement_cache_size=0,
