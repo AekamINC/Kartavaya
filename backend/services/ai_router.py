@@ -284,21 +284,39 @@ async def generate_image(
     aspect_ratio: str = "1:1",
     org_id: Optional[str] = None,
 ) -> dict:
-    """Generate an image using Flux (OpenRouter) or Gemini Imagen.
-    Uploads to R2 if org has R2 configured, otherwise returns data URI."""
+    """Generate image via: HuggingFace Flux Dev (free) → OpenRouter Flux Pro →
+    OpenRouter Ideogram 3.0 → Gemini native. Uploads to R2."""
     import base64 as b64mod
     from services.storage import upload_file
 
     pool = await get_pool()
     result = None
+    start = time.monotonic()
 
-    or_key = os.getenv("OPENROUTER_API_KEY", "")
-    if or_key:
+    # 1. HuggingFace Flux Dev (free, high quality)
+    hf_key = os.getenv("HF_API_KEY", "")
+    if hf_key and result is None:
         try:
-            result = await _generate_openrouter_image(or_key, prompt, aspect_ratio)
+            result = await _generate_hf_image(hf_key, prompt)
         except Exception as e:
-            log.warning("OpenRouter image gen failed: %s", e)
+            log.warning("HuggingFace Flux Dev failed: %s", e)
 
+    # 2. OpenRouter Flux Pro 1.1
+    or_key = os.getenv("OPENROUTER_API_KEY", "")
+    if or_key and result is None:
+        try:
+            result = await _generate_openrouter_image(or_key, prompt, aspect_ratio, "black-forest-labs/flux-pro-1.1")
+        except Exception as e:
+            log.warning("OpenRouter Flux Pro failed: %s", e)
+
+    # 3. OpenRouter Ideogram 3.0 (great for text-in-images)
+    if or_key and result is None:
+        try:
+            result = await _generate_openrouter_image(or_key, prompt, aspect_ratio, "ideogram/ideogram-v3")
+        except Exception as e:
+            log.warning("OpenRouter Ideogram failed: %s", e)
+
+    # 4. Gemini native (last resort)
     if result is None:
         gemini_key = os.getenv("GEMINI_API_KEY", "")
         if gemini_key:
@@ -308,8 +326,9 @@ async def generate_image(
                 log.warning("Gemini Imagen failed: %s", e)
 
     if result is None:
-        raise RuntimeError("No image generation provider available")
+        raise RuntimeError("All image providers failed")
 
+    latency = int((time.monotonic() - start) * 1000)
     img_bytes = b64mod.b64decode(result["image_b64"])
     upload = await upload_file(
         file_bytes=img_bytes,
@@ -326,20 +345,40 @@ async def generate_image(
         "INSERT INTO staging.hub_ai_logs "
         "(org_id, provider, model, prompt_tokens, completion_tokens, "
         " latency_ms, status, cost_usd) "
-        "VALUES ($1::uuid, $2, $3, 0, 0, 0, 'success', $4)",
-        org_id, result["provider"], result["model"], result.get("cost_usd", 0.0),
+        "VALUES ($1::uuid, $2, $3, 0, 0, $4, 'success', $5)",
+        org_id, result["provider"], result["model"], latency, result.get("cost_usd", 0.0),
     )
     return result
 
 
-async def _generate_openrouter_image(api_key: str, prompt: str, aspect_ratio: str = "1:1") -> dict:
-    """Generate image via OpenRouter Images API (seedream model — cheapest)."""
+async def _generate_hf_image(api_key: str, prompt: str) -> dict:
+    """Generate image via HuggingFace Inference API — Flux Dev (free tier)."""
+    async with httpx.AsyncClient(timeout=180) as client:
+        resp = await client.post(
+            "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-dev",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"inputs": prompt},
+        )
+        resp.raise_for_status()
+        img_bytes = resp.content
+
+    import base64 as b64mod
+    return {
+        "image_b64": b64mod.b64encode(img_bytes).decode(),
+        "provider": "huggingface",
+        "model": "FLUX.1-dev",
+        "cost_usd": 0.0,
+    }
+
+
+async def _generate_openrouter_image(api_key: str, prompt: str, aspect_ratio: str = "1:1", model: str = "black-forest-labs/flux-pro-1.1") -> dict:
+    """Generate image via OpenRouter Images API — Flux Pro or Ideogram."""
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
             "https://openrouter.ai/api/v1/images",
             headers={"Authorization": f"Bearer {api_key}"},
             json={
-                "model": "bytedance-seed/seedream-4.5",
+                "model": model,
                 "prompt": prompt,
                 "n": 1,
                 "aspect_ratio": aspect_ratio,
@@ -353,15 +392,14 @@ async def _generate_openrouter_image(api_key: str, prompt: str, aspect_ratio: st
     cost = data.get("usage", {}).get("cost", 0.04)
     return {
         "image_b64": b64,
-        "image_url": f"data:image/png;base64,{b64}",
-        "provider": "openrouter_seedream",
-        "model": "bytedance-seed/seedream-4.5",
+        "provider": f"openrouter",
+        "model": model,
         "cost_usd": cost,
     }
 
 
 async def _generate_gemini_imagen(api_key: str, prompt: str, aspect_ratio: str = "1:1") -> dict:
-    """Generate image via Gemini native image generation."""
+    """Generate image via Gemini native image generation (last resort)."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={api_key}"
 
     async with httpx.AsyncClient(timeout=120) as client:
@@ -375,10 +413,8 @@ async def _generate_gemini_imagen(api_key: str, prompt: str, aspect_ratio: str =
     for part in data.get("candidates", [{}])[0].get("content", {}).get("parts", []):
         if "inlineData" in part:
             b64 = part["inlineData"]["data"]
-            mime = part["inlineData"].get("mimeType", "image/png")
             return {
                 "image_b64": b64,
-                "image_url": f"data:{mime};base64,{b64}",
                 "provider": "gemini_native",
                 "model": "gemini-2.0-flash-exp",
                 "cost_usd": 0.0,
