@@ -26,14 +26,21 @@ def _json_decoder(value):
 
 
 async def _init_conn(conn):
-    await conn.set_type_codec(
-        "jsonb", encoder=_json_encoder, decoder=_json_decoder, schema="pg_catalog", format="text"
-    )
-    await conn.set_type_codec(
-        "json", encoder=_json_encoder, decoder=_json_decoder, schema="pg_catalog", format="text"
-    )
-    if DB_SCHEMA == "staging":
-        await conn.execute("SET search_path TO staging, public")
+    for attempt in range(3):
+        try:
+            await conn.set_type_codec(
+                "jsonb", encoder=_json_encoder, decoder=_json_decoder, schema="pg_catalog", format="text"
+            )
+            await conn.set_type_codec(
+                "json", encoder=_json_encoder, decoder=_json_decoder, schema="pg_catalog", format="text"
+            )
+            if DB_SCHEMA == "staging":
+                await conn.execute("SET search_path TO staging, public")
+            return
+        except (asyncpg.ConnectionDoesNotExistError, asyncpg.InterfaceError):
+            if attempt == 2:
+                raise
+            await asyncio.sleep(0.5 * (attempt + 1))
 
 
 async def get_pool() -> asyncpg.Pool:
