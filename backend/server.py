@@ -1934,6 +1934,28 @@ async def delete_task_attachment(
     return row_to_task(updated)
 
 
+@api_router.get("/files/download/{key:path}")
+async def download_file(key: str, user=Depends(require_user)):
+    """Stream a file from R2 with Content-Disposition: attachment for browser download."""
+    from services.storage import _client, BUCKET
+    import mimetypes as _mt
+    client = _client()
+    if client is None:
+        raise HTTPException(503, "Storage not configured")
+    try:
+        obj = client.get_object(Bucket=BUCKET, Key=key)
+    except Exception:
+        raise HTTPException(404, "File not found")
+    fname = key.rsplit("/", 1)[-1]
+    ct = obj.get("ContentType") or _mt.guess_type(fname)[0] or "application/octet-stream"
+    from starlette.responses import StreamingResponse
+    return StreamingResponse(
+        obj["Body"].iter_chunks(8192),
+        media_type=ct,
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 @api_router.post("/admin/migrate-data-uris")
 async def migrate_data_uri_attachments(pool=Depends(get_db)):
     """Re-upload data: URI attachments to R2. One-time migration for old files."""

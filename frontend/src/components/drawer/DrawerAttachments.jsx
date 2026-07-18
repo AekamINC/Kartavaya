@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Paperclip, ExternalLink, Trash2, Upload, Image, FileText, Film, Lock, Unlock, X, Download } from 'lucide-react';
 import { avatarColor, userInitials } from '../../lib/utils';
+import { api } from '../../lib/api';
 
 const MAX_FILES     = 10;
 const MAX_MB        = 25;
@@ -130,8 +131,13 @@ function LightboxOverlay({ file, onClose }) {
   const handleDownload = async (e) => {
     e.preventDefault();
     try {
-      const resp = await fetch(file.url);
-      const blob = await resp.blob();
+      const url = file.key
+        ? `${api.defaults.baseURL}/files/download/${file.key}`
+        : file.url;
+      const resp = await (file.key
+        ? api.get(`/files/download/${file.key}`, { responseType: 'blob' })
+        : fetch(file.url).then(r => ({ data: r.blob() })));
+      const blob = file.key ? resp.data : await resp.data;
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = name;
