@@ -1521,7 +1521,18 @@ async def list_tasks(status:Optional[str]=None,category_id:Optional[str]=None,q:
     _lim_idx = len(vals) + 1
     _off_idx = len(vals) + 2
     rows=await pool.fetch(f"""
-        SELECT t.*,
+        SELECT t.task_id, t.user_id, t.team_id, t.column_id,
+               t.created_by_user_id, t.assigned_by_user_id, t.completed_by_user_id,
+               t.title, t.description, t.status, t.priority, t.category_id,
+               t.tags, t.assignee_user_ids, t.assignee_emails,
+               t.due_at, t.reminder_at, t.reminder_sent_at,
+               t.recurrence_rule, t.recurrence_interval, t.estimated_minutes,
+               '[]'::text AS attachments, t.custom_fields, t.subtasks,
+               t.sort_order, t.created_at, t.updated_at, t.completed_at,
+               t.board_id, t.column_slug, t.requires_approval,
+               t.approval_status, t.approved_by, t.approval_notes,
+               t.approval_requested_at, t.approval_decided_at, t.approval_id,
+               t.archived_at,
                COALESCE(cu.full_name,cu.name,cu.email) AS created_by_name,
                ARRAY(
                  SELECT COALESCE(au.full_name,au.name,au.email)
