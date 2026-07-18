@@ -134,9 +134,10 @@ export default function Sidebar({ inboxCount = 0 }) {
   const user      = currentUser();
   const hasPlatformRole = Array.isArray(user?.platform_roles) && user.platform_roles.length > 0;
   const isAdmin   = user?.role === 'admin' || hasPlatformRole;
-  const isClient  = user?.role === 'client';
-  const isMember  = !isAdmin && !isClient && user?.role !== 'owner';
   const isOrgAdmin = Array.isArray(user?.org_roles) && user.org_roles.some(r => r.role_code === 'org_admin' || r.role_code === 'org_owner');
+  const isOrgMember = Array.isArray(user?.org_roles) && user.org_roles.length > 0;
+  const isClient  = user?.role === 'client' && !isOrgMember;
+  const isMember  = !isAdmin && !isClient && user?.role !== 'owner';
 
   const { prefs } = useCustomize();
   const lang = prefs.language || 'en+sa';
