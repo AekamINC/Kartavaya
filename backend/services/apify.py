@@ -21,7 +21,7 @@ async def start_actor(actor_id: str, run_input: dict, max_items: int = 100) -> d
     """Start an Apify actor run. Returns {run_id, status}."""
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
-            f"{APIFY_BASE}/acts/{actor_id}/runs",
+            f"{APIFY_BASE}/acts/{actor_id.replace('/', '~')}/runs",
             params={"token": _token()},
             json=run_input,
         )

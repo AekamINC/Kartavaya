@@ -104,7 +104,10 @@ async def run_scraper(
         raise
     except Exception as e:
         log.error("scraper/run CRASH: %s\n%s", e, traceback.format_exc())
-        raise HTTPException(502, f"Apify error: {e}")
+        msg = str(e)
+        if "token=" in msg:
+            msg = msg.split("token=")[0] + "token=***"
+        raise HTTPException(502, f"Apify error: {msg}")
 
 
 async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int):
