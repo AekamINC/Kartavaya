@@ -52,51 +52,59 @@ async def run_scraper(
     _g=Depends(_gate),
 ):
     from services.apify import start_actor
+    import traceback
 
-    pool = await get_pool()
-    scraper = await pool.fetchrow(
-        "SELECT * FROM staging.hub_scraper_catalog WHERE id=$1 AND is_active=TRUE",
-        body.scraper_id,
-    )
-    if not scraper:
-        raise HTTPException(404, "Scraper not found")
-
-    # Build Apify input from schema + user inputs
-    actor_input = {}
-    for field in scraper["input_schema"]:
-        fname = field["name"]
-        val = body.inputs.get(fname, field.get("default", ""))
-        if field.get("type") == "textarea" and isinstance(val, str):
-            val = [line.strip() for line in val.split("\n") if line.strip()]
-        if field.get("type") == "number" and val:
-            val = int(val)
-        actor_input[fname] = val
-
-    # Start the actor
     try:
+        pool = await get_pool()
+        log.info("scraper/run: scraper_id=%s org=%s", body.scraper_id, org_id)
+
+        scraper = await pool.fetchrow(
+            "SELECT * FROM staging.hub_scraper_catalog WHERE id=$1 AND is_active=TRUE",
+            body.scraper_id,
+        )
+        if not scraper:
+            raise HTTPException(404, "Scraper not found")
+
+        # Build Apify input from schema + user inputs
+        actor_input = {}
+        schema = scraper["input_schema"]
+        if isinstance(schema, str):
+            schema = json.loads(schema)
+        for field in (schema or []):
+            fname = field["name"]
+            val = body.inputs.get(fname, field.get("default", ""))
+            if field.get("type") == "textarea" and isinstance(val, str):
+                val = [line.strip() for line in val.split("\n") if line.strip()]
+            if field.get("type") == "number" and val:
+                val = int(val)
+            actor_input[fname] = val
+
+        log.info("scraper/run: actor=%s input=%s", scraper["apify_actor_id"], json.dumps(actor_input)[:200])
+
         run = await start_actor(scraper["apify_actor_id"], actor_input, scraper["max_results"] or 100)
+
+        row = await pool.fetchrow(
+            "INSERT INTO staging.hub_scraper_runs "
+            "(org_id, scraper_id, user_id, apify_run_id, inputs, status, billed_inr) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, 'running', $6) "
+            "RETURNING id",
+            org_id, body.scraper_id, user["user_id"], run["run_id"],
+            json.dumps(body.inputs), float(scraper["price_inr"]),
+        )
+
+        asyncio.ensure_future(_poll_run(str(row["id"]), run["run_id"], scraper["max_results"] or 100))
+
+        return {
+            "status": "started",
+            "run_id": str(row["id"]),
+            "apify_run_id": run["run_id"],
+            "billed_inr": float(scraper["price_inr"]),
+        }
+    except HTTPException:
+        raise
     except Exception as e:
+        log.error("scraper/run CRASH: %s\n%s", e, traceback.format_exc())
         raise HTTPException(502, f"Apify error: {e}")
-
-    # Create run record
-    row = await pool.fetchrow(
-        "INSERT INTO staging.hub_scraper_runs "
-        "(org_id, scraper_id, user_id, apify_run_id, inputs, status, billed_inr) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, 'running', $6) "
-        "RETURNING id",
-        org_id, body.scraper_id, user["user_id"], run["run_id"],
-        json.dumps(body.inputs), float(scraper["price_inr"]),
-    )
-
-    # Poll for results in background
-    asyncio.ensure_future(_poll_run(str(row["id"]), run["run_id"], scraper["max_results"] or 100))
-
-    return {
-        "status": "started",
-        "run_id": str(row["id"]),
-        "apify_run_id": run["run_id"],
-        "billed_inr": float(scraper["price_inr"]),
-    }
 
 
 async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int):
