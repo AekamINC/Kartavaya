@@ -68,6 +68,7 @@ from routers.dristi         import router as dristi_router
 from routers.prachar        import router as prachar_router
 from routers.prachar_ads    import router as prachar_ads_router
 from routers.esign          import router as esign_router
+from routers.org_members    import router as org_members_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -224,6 +225,13 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None):
             SELECT team_id FROM project_assignments WHERE user_id=$1
             UNION
             SELECT team_id FROM team_members WHERE user_id=$1 AND status='active'
+            UNION
+            SELECT t.team_id FROM teams t
+            JOIN staging.user_roles ur ON ur.org_id = t.org_id
+            WHERE ur.user_id=$1
+              AND ur.role_code IN ('org_owner','org_admin','org_member')
+              AND t.org_id IS NOT NULL
+              AND t.deleted_at IS NULL
             """,
             user_id,
         )
@@ -651,8 +659,21 @@ async def client_tasks(pool=Depends(get_db),user=Depends(require_user)):
 
 @api_router.get("/client/projects")
 async def client_projects(pool=Depends(get_db),user=Depends(require_user)):
-    """Return all projects the authenticated client user is assigned to."""
-    rows=await pool.fetch("SELECT t.* FROM teams t JOIN project_assignments pa ON pa.team_id=t.team_id WHERE pa.user_id=$1 ORDER BY t.created_at DESC",user["user_id"])
+    """Return all projects the authenticated client user is assigned to, including org-level access."""
+    rows=await pool.fetch("""
+        SELECT DISTINCT ON (t.team_id) t.*
+        FROM teams t
+        WHERE t.deleted_at IS NULL AND (
+            EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1)
+            OR EXISTS (
+                SELECT 1 FROM staging.user_roles ur
+                WHERE ur.user_id=$1 AND ur.org_id=t.org_id
+                  AND ur.role_code IN ('org_owner','org_admin','org_member')
+                  AND t.org_id IS NOT NULL
+            )
+        )
+        ORDER BY t.team_id, t.created_at DESC
+    """,user["user_id"])
     return [dict(r) for r in rows]
 
 @api_router.get("/client/approvals")
@@ -2129,6 +2150,7 @@ app.include_router(dristi_router)
 app.include_router(prachar_router)
 app.include_router(prachar_ads_router)
 app.include_router(esign_router)
+app.include_router(org_members_router)
 
 
 # ── Verse of the day (public) ────────────────────────────────────────────────

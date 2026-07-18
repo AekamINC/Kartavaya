@@ -101,7 +101,7 @@ class LoginBody(BaseModel):
     password: str
 
 
-def _safe_user(u: dict, platform_roles: list[str] | None = None) -> dict:
+def _safe_user(u: dict, platform_roles: list[str] | None = None, org_roles: list[dict] | None = None) -> dict:
     """Return a public-safe subset of user fields for API responses."""
     out = {
         "id": u["user_id"],
@@ -113,6 +113,8 @@ def _safe_user(u: dict, platform_roles: list[str] | None = None) -> dict:
     }
     if platform_roles:
         out["platform_roles"] = platform_roles
+    if org_roles:
+        out["org_roles"] = org_roles
     return out
 
 
@@ -195,7 +197,16 @@ async def login(request: Request, body: LoginBody):
         user["user_id"],
     )
     platform_roles = [r["role_code"] for r in pr]
-    return {"token": _create_token(user["user_id"]), "user": _safe_user(dict(user), platform_roles)}
+    or_rows = await pool.fetch(
+        "SELECT ur.org_id::text, ur.role_code, o.name AS org_name "
+        "FROM staging.user_roles ur "
+        "JOIN staging.organisations o ON o.id = ur.org_id "
+        "WHERE ur.user_id=$1 AND ur.org_id IS NOT NULL "
+        "AND ur.role_code IN ('org_owner','org_admin','org_member')",
+        user["user_id"],
+    )
+    org_roles = [dict(r) for r in or_rows]
+    return {"token": _create_token(user["user_id"]), "user": _safe_user(dict(user), platform_roles, org_roles)}
 
 
 @router.post("/logout")
@@ -263,4 +274,12 @@ async def me(current_user: dict = Depends(require_user)):
         "SELECT role_code FROM staging.user_roles WHERE user_id=$1 AND org_id IS NULL",
         current_user["user_id"],
     )
-    return _safe_user(current_user, [r["role_code"] for r in pr])
+    or_rows = await pool.fetch(
+        "SELECT ur.org_id::text, ur.role_code, o.name AS org_name "
+        "FROM staging.user_roles ur "
+        "JOIN staging.organisations o ON o.id = ur.org_id "
+        "WHERE ur.user_id=$1 AND ur.org_id IS NOT NULL "
+        "AND ur.role_code IN ('org_owner','org_admin','org_member')",
+        current_user["user_id"],
+    )
+    return _safe_user(current_user, [r["role_code"] for r in pr], [dict(r) for r in or_rows])

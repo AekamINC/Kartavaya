@@ -136,6 +136,7 @@ export default function Sidebar({ inboxCount = 0 }) {
   const isAdmin   = user?.role === 'admin' || hasPlatformRole;
   const isClient  = user?.role === 'client';
   const isMember  = !isAdmin && !isClient && user?.role !== 'owner';
+  const isOrgAdmin = Array.isArray(user?.org_roles) && user.org_roles.some(r => r.role_code === 'org_admin' || r.role_code === 'org_owner');
 
   const { prefs } = useCustomize();
   const lang = prefs.language || 'en+sa';
@@ -144,17 +145,26 @@ export default function Sidebar({ inboxCount = 0 }) {
   const showHi = lang === 'en+sa' || lang === 'en+hi' || lang === 'hi';
 
   const groups = isClient ? NAV_CLIENT : NAV_FULL;
-  const allGroups = isAdmin
-    ? groups.map(g =>
-        g.section === 'settings'
-          ? { ...g, items: [...g.items,
-              { to: '/admin', icon: 'admin', en: 'Admin', hi: 'प्रशासन', gu: 'પ્રશાસન', adminOnly: true },
-              { to: '/admin/billing', icon: 'billing', en: 'Admin Billing', hi: 'बिलिंग प्रशासन', gu: 'બિલિંગ પ્રશાસન', adminOnly: true },
-              { to: '/admin/orgs', icon: 'org', en: 'Organisations', hi: 'संगठन', gu: 'સંગઠન', adminOnly: true },
-            ] }
-          : g
-      )
-    : groups;
+  let allGroups = groups;
+  if (isAdmin) {
+    allGroups = groups.map(g =>
+      g.section === 'settings'
+        ? { ...g, items: [...g.items,
+            { to: '/admin', icon: 'admin', en: 'Admin', hi: 'प्रशासन', gu: 'પ્રશાસન', adminOnly: true },
+            { to: '/admin/billing', icon: 'billing', en: 'Admin Billing', hi: 'बिलिंग प्रशासन', gu: 'બિલિંગ પ્રશાસન', adminOnly: true },
+            { to: '/admin/orgs', icon: 'org', en: 'Organisations', hi: 'संगठन', gu: 'સંગઠન', adminOnly: true },
+          ] }
+        : g
+    );
+  } else if (isOrgAdmin) {
+    allGroups = groups.map(g =>
+      g.section === 'settings'
+        ? { ...g, items: [...g.items,
+            { to: '/settings/organisation', icon: 'org', en: 'Organisation', hi: 'संगठन', gu: 'સંગઠન' },
+          ] }
+        : g
+    );
+  }
 
   const isActive = (to) =>
     location.pathname === to || location.pathname.startsWith(to + '/');

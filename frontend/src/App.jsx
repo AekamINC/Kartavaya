@@ -55,6 +55,7 @@ const InboxPage             = lazy(() => import('./pages/InboxPage'));
 const BillingPage           = lazy(() => import('./pages/BillingPage'));
 const AdminBillingPage      = lazy(() => import('./pages/AdminBillingPage'));
 const AdminOrgsPage         = lazy(() => import('./pages/AdminOrgsPage'));
+const OrgSettingsPage       = lazy(() => import('./pages/OrgSettingsPage'));
 const HubDashboardPage      = lazy(() => import('./pages/HubDashboardPage'));
 const HubClientsPage        = lazy(() => import('./pages/HubClientsPage'));
 const HubClientDetailPage   = lazy(() => import('./pages/HubClientDetailPage'));
@@ -126,6 +127,7 @@ function AppRouter() {
           <Route path="settings/categories"    element={<CategoriesPage />} />
           <Route path="settings/notifications" element={<NotificationsSettings />} />
           <Route path="settings/customize"     element={<CustomizeSettingsPage />} />
+          <Route path="settings/organisation" element={<OrgSettingsPage />} />
 
           {/* Admin */}
           <Route path="admin"                  element={<AdminPage />} />
