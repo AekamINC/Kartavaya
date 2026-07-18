@@ -284,14 +284,14 @@ async def generate_image(
     aspect_ratio: str = "1:1",
     org_id: Optional[str] = None,
 ) -> dict:
-    """Generate image via: HuggingFace Flux Dev (free) → OpenRouter Flux Pro →
-    OpenRouter Ideogram 3.0 → Gemini native. Uploads to R2."""
+    """Generate image via: HuggingFace → Gemini Flash Image → FLUX.2 Pro → Recraft → Gemini native. Uploads to R2."""
     import base64 as b64mod
     from services.storage import upload_file
 
     pool = await get_pool()
     result = None
     start = time.monotonic()
+    log.info("generate_image: prompt=%s, hf=%s, or=%s", prompt[:60], bool(os.getenv("HF_API_KEY")), bool(os.getenv("OPENROUTER_API_KEY")))
 
     # 1. HuggingFace Flux Dev (free, high quality)
     hf_key = os.getenv("HF_API_KEY", "")
@@ -301,22 +301,29 @@ async def generate_image(
         except Exception as e:
             log.warning("HuggingFace Flux Dev failed: %s", e)
 
-    # 2. OpenRouter Flux Pro 1.1
+    # 2. OpenRouter Gemini Flash Image (cheap, good quality)
     or_key = os.getenv("OPENROUTER_API_KEY", "")
     if or_key and result is None:
         try:
-            result = await _generate_openrouter_image(or_key, prompt, aspect_ratio, "black-forest-labs/flux-pro-1.1")
+            result = await _generate_openrouter_image(or_key, prompt, aspect_ratio, "google/gemini-3.1-flash-lite-image")
         except Exception as e:
-            log.warning("OpenRouter Flux Pro failed: %s", e)
+            log.warning("OpenRouter Gemini Flash Image failed: %s", e)
 
-    # 3. OpenRouter Ideogram 3.0 (great for text-in-images)
+    # 3. OpenRouter FLUX.2 Pro (high quality)
     if or_key and result is None:
         try:
-            result = await _generate_openrouter_image(or_key, prompt, aspect_ratio, "ideogram/ideogram-v3")
+            result = await _generate_openrouter_image(or_key, prompt, aspect_ratio, "black-forest-labs/flux.2-pro")
         except Exception as e:
-            log.warning("OpenRouter Ideogram failed: %s", e)
+            log.warning("OpenRouter FLUX.2 Pro failed: %s", e)
 
-    # 4. Gemini native (last resort)
+    # 4. OpenRouter Recraft V4 (good for marketing/design)
+    if or_key and result is None:
+        try:
+            result = await _generate_openrouter_image(or_key, prompt, aspect_ratio, "recraft/recraft-v4")
+        except Exception as e:
+            log.warning("OpenRouter Recraft V4 failed: %s", e)
+
+    # 5. Gemini native (last resort)
     if result is None:
         gemini_key = os.getenv("GEMINI_API_KEY", "")
         if gemini_key:
@@ -375,7 +382,7 @@ async def _generate_openrouter_image(api_key: str, prompt: str, aspect_ratio: st
     """Generate image via OpenRouter Images API — Flux Pro or Ideogram."""
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
-            "https://openrouter.ai/api/v1/images",
+            "https://openrouter.ai/api/v1/images/generations",
             headers={"Authorization": f"Bearer {api_key}"},
             json={
                 "model": model,
