@@ -165,6 +165,31 @@ async def upload_file(
     return {"url": url, "name": filename, "key": key, "size": len(file_bytes), "bucket": bucket}
 
 
+async def refresh_signed_url(org_id: str, old_url: str) -> str:
+    """Re-sign an R2 URL by extracting the key from the stored pre-signed URL."""
+    if not old_url or old_url.startswith("data:"):
+        return old_url
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(old_url)
+        key = parsed.path.lstrip("/").split("/", 1)[-1] if "/" in parsed.path.lstrip("/") else parsed.path.lstrip("/")
+        bucket_prefix = parsed.path.lstrip("/").split("/")[0]
+        client, bucket = await _get_org_r2(org_id)
+        if not client:
+            return old_url
+        full_key = parsed.path.lstrip("/")
+        if full_key.startswith(bucket + "/"):
+            full_key = full_key[len(bucket) + 1:]
+        return client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": full_key},
+            ExpiresIn=7 * 24 * 3600,
+        )
+    except Exception as e:
+        log.warning("Failed to refresh signed URL for org %s: %s", org_id, e)
+        return old_url
+
+
 async def update_org_storage(org_id: str, size_delta: int):
     """Update an org's storage_used_bytes. Positive = upload, negative = delete."""
     try:

@@ -1706,7 +1706,12 @@ async def list_org_content(
 
     query += " ORDER BY created_at DESC LIMIT 100"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    data = [dict(r) for r in rows]
+    from services.storage import refresh_signed_url
+    for item in data:
+        if item.get("image_url") and not item["image_url"].startswith("data:"):
+            item["image_url"] = await refresh_signed_url(org_id, item["image_url"])
+    return {"data": data}
 
 
 @router.get("/org/brand")
