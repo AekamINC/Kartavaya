@@ -40,6 +40,7 @@ class OrgMemberAdd(BaseModel):
     email: EmailStr
     roles: list[str] = ["org_member"]
     module_grants: list[str] = []
+    mobile_number: str = ""
 
 class RoleAssign(BaseModel):
     user_id: str
@@ -257,6 +258,12 @@ async def add_member(
     )
     if not target:
         raise HTTPException(404, f"No user found with email '{body.email}'")
+
+    if body.mobile_number:
+        await pool.execute(
+            "UPDATE users SET mobile_number=$1 WHERE user_id=$2",
+            body.mobile_number.strip(), target["user_id"],
+        )
 
     valid_org_roles = {"org_admin", "org_member"}
     for role in body.roles:

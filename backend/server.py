@@ -71,6 +71,7 @@ from routers.esign          import router as esign_router
 from routers.org_members    import router as org_members_router
 from routers.org_profile    import router as org_profile_router
 from routers.scrapers       import router as scrapers_router
+from routers.scheduler      import router as scheduler_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -2179,6 +2180,7 @@ app.include_router(esign_router)
 app.include_router(org_members_router)
 app.include_router(org_profile_router)
 app.include_router(scrapers_router)
+app.include_router(scheduler_router)
 
 
 # ── Verse of the day (public) ────────────────────────────────────────────────

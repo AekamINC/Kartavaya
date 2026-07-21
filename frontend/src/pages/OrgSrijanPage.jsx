@@ -463,6 +463,33 @@ function boldify(text) {
     .replace(/`(.+?)`/g, '<code style="background:var(--surface-0);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>');
 }
 
+const PLATFORM_HINTS = {
+  'Instagram': { icon: '📸', hint: 'Image required. No clickable links in captions — use "link in bio." Hashtags boost reach (5–15 recommended).', charLimit: 2200 },
+  'LinkedIn': { icon: '💼', hint: 'Professional tone works best. Tag companies with @. Articles get 3× more reach than plain text.', charLimit: 3000 },
+  'WhatsApp': { icon: '💬', hint: 'Keep it short and conversational. Emojis work well. Broadcast lists max 256 contacts.', charLimit: 1000 },
+  'Facebook': { icon: '👥', hint: 'Images/video boost engagement 2×. Links get auto-preview. Keep text under 80 chars for best reach.', charLimit: 63206 },
+  'Twitter / X': { icon: '𝕏', hint: '280 character limit per tweet. Threads for longer content. 1–2 hashtags max.', charLimit: 280 },
+  'Email': { icon: '📧', hint: 'Subject line is critical — keep under 50 chars. Preview text (first line) shows in inbox.', charLimit: null },
+  'Google Ads': { icon: '📢', hint: 'Headlines: 30 chars max. Descriptions: 90 chars max. Include keywords and a clear CTA.', charLimit: null },
+  'Website': { icon: '🌐', hint: 'SEO-friendly. Include meta description (155 chars). Use headers (H1, H2) for structure.', charLimit: null },
+};
+
+function PlatformHint({ platform }) {
+  const info = PLATFORM_HINTS[platform];
+  if (!info) return null;
+  return (
+    <div style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--surface-0)',
+      border: '1px solid var(--rule-soft)', borderRadius: 8, padding: '8px 12px', marginBottom: 12,
+      display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+      <span style={{ fontSize: 16 }}>{info.icon}</span>
+      <div>
+        <span>{info.hint}</span>
+        {info.charLimit && <span style={{ fontWeight: 600 }}> Max {info.charLimit.toLocaleString()} chars.</span>}
+      </div>
+    </div>
+  );
+}
+
 function GenerateTab({ credits, onCreditsChange }) {
   const { pushToast } = useToast();
   const [selectedSkill, setSelectedSkill] = useState(null);
@@ -558,6 +585,58 @@ function GenerateTab({ credits, onCreditsChange }) {
               </select>
             </label>
           </div>
+
+          {/* Platform-specific guidance */}
+          <PlatformHint platform={form.platform} />
+
+          {form.platform === 'Twitter / X' && (
+            <label style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
+              <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Thread count (optional)</span>
+              <select className="k-input" value={form.thread_count || '1'} onChange={e => setForm({ ...form, thread_count: e.target.value })}>
+                <option value="1">Single tweet</option>
+                <option value="3">3-tweet thread</option>
+                <option value="5">5-tweet thread</option>
+              </select>
+            </label>
+          )}
+
+          {form.platform === 'Email' && (
+            <label style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
+              <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Email subject line</span>
+              <input className="k-input" placeholder="e.g. Exclusive Diwali offer inside!"
+                value={form.email_subject || ''} onChange={e => setForm({ ...form, email_subject: e.target.value })} />
+            </label>
+          )}
+
+          {form.platform === 'Google Ads' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+              <label style={{ fontSize: 13 }}>
+                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Ad type</span>
+                <select className="k-input" value={form.ad_type || 'search'} onChange={e => setForm({ ...form, ad_type: e.target.value })}>
+                  <option value="search">Search ad</option>
+                  <option value="display">Display ad</option>
+                  <option value="pmax">Performance Max</option>
+                </select>
+              </label>
+              <label style={{ fontSize: 13 }}>
+                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Target URL</span>
+                <input className="k-input" placeholder="https://yoursite.com/landing"
+                  value={form.target_url || ''} onChange={e => setForm({ ...form, target_url: e.target.value })} />
+              </label>
+            </div>
+          )}
+
+          {form.platform === 'LinkedIn' && (
+            <label style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
+              <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Post type</span>
+              <select className="k-input" value={form.post_type || 'text'} onChange={e => setForm({ ...form, post_type: e.target.value })}>
+                <option value="text">Text post</option>
+                <option value="article">Article / long-form</option>
+                <option value="carousel">Carousel document</option>
+                <option value="poll">Poll</option>
+              </select>
+            </label>
+          )}
 
           <label style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
             <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Extra instructions (optional)</span>

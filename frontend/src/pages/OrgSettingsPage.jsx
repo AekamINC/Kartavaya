@@ -44,6 +44,7 @@ export default function OrgSettingsPage() {
 
   const [addEmail, setAddEmail] = useState('');
   const [addRole, setAddRole] = useState('org_member');
+  const [addMobile, setAddMobile] = useState('');
   const [adding, setAdding] = useState(false);
 
   const [editingModules, setEditingModules] = useState(null);
@@ -99,9 +100,9 @@ export default function OrgSettingsPage() {
     if (!addEmail.trim()) return;
     setAdding(true);
     try {
-      const res = await api.post('/v1/org/members', { email: addEmail.trim(), role: addRole });
+      const res = await api.post('/v1/org/members', { email: addEmail.trim(), role: addRole, mobile_number: addMobile.trim() });
       pushToast({ type: 'success', title: `${addEmail} added as ${res.data.role.replace('_', ' ')}` });
-      setAddEmail('');
+      setAddEmail(''); setAddMobile('');
       load();
     } catch (err) {
       pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to add member' });
@@ -266,7 +267,7 @@ export default function OrgSettingsPage() {
                   }
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{m.full_name || m.email}</div>
-                    {m.full_name && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{m.email}</div>}
+                    {m.full_name && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{m.email}{m.mobile_number ? ` · ${m.mobile_number}` : ''}</div>}
                   </div>
 
                   {isOwner ? (
@@ -345,10 +346,13 @@ export default function OrgSettingsPage() {
           <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 8 }}>
             The user must have an existing Kartavya account. Enter their email to add them.
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'end' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'end', flexWrap: 'wrap' }}>
             <input className="k-input" type="email" placeholder="user@company.com" value={addEmail}
               onChange={e => setAddEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && addMember()}
-              style={{ flex: 1 }} />
+              style={{ flex: 2, minWidth: 180 }} />
+            <input className="k-input" type="tel" placeholder="Mobile (optional)" value={addMobile}
+              onChange={e => setAddMobile(e.target.value)}
+              style={{ flex: 1, minWidth: 130 }} />
             <select className="k-select" style={{ width: 140 }} value={addRole}
               onChange={e => setAddRole(e.target.value)}>
               {ROLE_OPTIONS.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}

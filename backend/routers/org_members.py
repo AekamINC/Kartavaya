@@ -26,6 +26,7 @@ class AddMemberBody(BaseModel):
     email: EmailStr
     role: str = "org_member"
     module_grants: list[str] = []
+    mobile_number: str = ""
 
 
 class UpdateModulesBody(BaseModel):
@@ -42,7 +43,7 @@ async def list_members(
     rows = await pool.fetch("""
         SELECT ur.user_id, ur.role_code, ur.granted_at,
                u.email, COALESCE(u.full_name, u.name) AS full_name,
-               u.avatar_url
+               u.avatar_url, u.mobile_number
         FROM staging.user_roles ur
         JOIN users u ON u.user_id = ur.user_id
         WHERE ur.org_id = $1::uuid
@@ -86,6 +87,12 @@ async def add_member(
             404,
             f"No account found for '{body.email}'. "
             "The user must sign up first, then you can add them.",
+        )
+
+    if body.mobile_number:
+        await pool.execute(
+            "UPDATE users SET mobile_number=$1 WHERE user_id=$2",
+            body.mobile_number.strip(), target["user_id"],
         )
 
     existing = await pool.fetchval(
