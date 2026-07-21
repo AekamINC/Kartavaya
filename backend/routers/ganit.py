@@ -86,6 +86,40 @@ class PaymentRecord(BaseModel):
     notes: str = ""
 
 
+class VendorCreate(BaseModel):
+    name: str
+    gstin: str = ""
+    email: str = ""
+    phone: str = ""
+    address: dict = {}
+
+
+class VendorUpdate(BaseModel):
+    name: str | None = None
+    gstin: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    address: dict | None = None
+
+
+class VendorBillCreate(BaseModel):
+    vendor_id: str
+    bill_number: str = ""
+    bill_date: str = ""
+    due_date: str = ""
+    is_igst: bool = False
+    line_items: list[LineItem]
+    notes: str = ""
+    attachment_url: str = ""
+
+
+class VendorBillPayment(BaseModel):
+    amount: float
+    payment_date: str = ""
+    method: str = "bank_transfer"
+    reference: str = ""
+
+
 class ExpenseCreate(BaseModel):
     title: str
     category: str = "Miscellaneous"
@@ -1344,3 +1378,224 @@ async def create_invoice_from_deal(
     )
 
     return {"status": "created", "invoice_id": str(row["id"]), "invoice_number": inv_num}
+
+
+# ── Vendors & Vendor Bills (Accounts Payable) ────────────────
+
+@router.get("/vendors")
+async def list_vendors(
+    search: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = "SELECT * FROM staging.ganit_vendors WHERE org_id=$1::uuid AND is_active=TRUE"
+    params: list = [org_id]
+    if search:
+        params.append(search)
+        q += f" AND name ILIKE '%' || ${len(params)} || '%'"
+    q += " ORDER BY name"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/vendors")
+async def create_vendor(
+    body: VendorCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.ganit_vendors (org_id, name, gstin, email, phone, address) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6::jsonb) RETURNING *",
+        org_id, body.name, body.gstin, body.email, body.phone, json.dumps(body.address),
+    )
+    return dict(row)
+
+
+@router.patch("/vendors/{vendor_id}")
+async def update_vendor(
+    vendor_id: UUID,
+    body: VendorUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates, vals = [], []
+    for field in ("name", "gstin", "email", "phone"):
+        val = getattr(body, field)
+        if val is not None:
+            vals.append(val)
+            updates.append(f"{field}=${len(vals)}")
+    if body.address is not None:
+        vals.append(json.dumps(body.address))
+        updates.append(f"address=${len(vals)}::jsonb")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    vals += [str(vendor_id), org_id]
+    row = await pool.fetchrow(
+        f"UPDATE staging.ganit_vendors SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
+        *vals,
+    )
+    if not row:
+        raise HTTPException(404, "Vendor not found")
+    return dict(row)
+
+
+@router.get("/vendor-bills")
+async def list_vendor_bills(
+    status: str = "",
+    vendor_id: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = (
+        "SELECT b.*, v.name AS vendor_name "
+        "FROM staging.ganit_vendor_bills b "
+        "JOIN staging.ganit_vendors v ON v.id = b.vendor_id "
+        "WHERE b.org_id=$1::uuid AND b.is_active=TRUE"
+    )
+    params: list = [org_id]
+    if status:
+        params.append(status)
+        q += f" AND b.status=${len(params)}"
+    if vendor_id:
+        params.append(vendor_id)
+        q += f" AND b.vendor_id=${len(params)}::uuid"
+    q += " ORDER BY b.bill_date DESC LIMIT 200"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.get("/payables-summary")
+async def payables_summary(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    totals = await pool.fetchrow(
+        "SELECT COALESCE(SUM(total - amount_paid), 0) AS outstanding, "
+        "COALESCE(SUM(total - amount_paid) FILTER (WHERE due_date < CURRENT_DATE), 0) AS overdue, "
+        "COUNT(*) FILTER (WHERE status != 'paid' AND status != 'cancelled') AS open_bills "
+        "FROM staging.ganit_vendor_bills WHERE org_id=$1::uuid AND is_active=TRUE",
+        org_id,
+    )
+    aging = await pool.fetch(
+        "SELECT CASE "
+        "  WHEN due_date IS NULL OR due_date >= CURRENT_DATE THEN 'current' "
+        "  WHEN CURRENT_DATE - due_date <= 30 THEN '1-30' "
+        "  WHEN CURRENT_DATE - due_date <= 60 THEN '31-60' "
+        "  WHEN CURRENT_DATE - due_date <= 90 THEN '61-90' "
+        "  ELSE '90+' END AS bucket, "
+        "COALESCE(SUM(total - amount_paid), 0) AS amount "
+        "FROM staging.ganit_vendor_bills "
+        "WHERE org_id=$1::uuid AND is_active=TRUE AND status NOT IN ('paid', 'cancelled') "
+        "GROUP BY bucket",
+        org_id,
+    )
+    return {**dict(totals), "aging": [dict(r) for r in aging]}
+
+
+@router.get("/vendor-bills/{bill_id}")
+async def get_vendor_bill(
+    bill_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT b.*, v.name AS vendor_name, v.gstin AS vendor_gstin "
+        "FROM staging.ganit_vendor_bills b "
+        "JOIN staging.ganit_vendors v ON v.id = b.vendor_id "
+        "WHERE b.id=$1::uuid AND b.org_id=$2::uuid",
+        str(bill_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Vendor bill not found")
+    payments = await pool.fetch(
+        "SELECT * FROM staging.ganit_vendor_payments WHERE bill_id=$1::uuid ORDER BY payment_date",
+        str(bill_id),
+    )
+    return {**dict(row), "payments": [dict(p) for p in payments]}
+
+
+@router.post("/vendor-bills")
+async def create_vendor_bill(
+    body: VendorBillCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    if not body.line_items:
+        raise HTTPException(400, "At least one line item is required")
+
+    vendor = await pool.fetchrow(
+        "SELECT id FROM staging.ganit_vendors WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        body.vendor_id, org_id,
+    )
+    if not vendor:
+        raise HTTPException(404, "Vendor not found")
+
+    computed = _compute_invoice(body.line_items, body.is_igst, 0)
+    internal_ref = await next_doc_number(pool, org_id, "ganit_vendor_bills", "internal_ref", "VB")
+
+    bill_date = date.fromisoformat(body.bill_date) if body.bill_date else date.today()
+    due = date.fromisoformat(body.due_date) if body.due_date else None
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.ganit_vendor_bills "
+        "(org_id, vendor_id, bill_number, internal_ref, bill_date, due_date, line_items, "
+        " subtotal, cgst, sgst, igst, total, attachment_url, notes, created_by) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5::date, $6::date, $7::jsonb, "
+        " $8, $9, $10, $11, $12, $13, $14, $15) "
+        "RETURNING *",
+        org_id, body.vendor_id, body.bill_number, internal_ref, bill_date, due,
+        json.dumps(computed["line_items"]), computed["subtotal"], computed["cgst"],
+        computed["sgst"], computed["igst"], computed["total"],
+        body.attachment_url, body.notes, user["user_id"],
+    )
+    return dict(row)
+
+
+@router.post("/vendor-bills/{bill_id}/payments")
+async def record_vendor_payment(
+    bill_id: UUID,
+    body: VendorBillPayment,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    bill = await pool.fetchrow(
+        "SELECT total, amount_paid FROM staging.ganit_vendor_bills "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(bill_id), org_id,
+    )
+    if not bill:
+        raise HTTPException(404, "Vendor bill not found")
+    if body.amount <= 0:
+        raise HTTPException(400, "Amount must be positive")
+
+    pay_date = date.fromisoformat(body.payment_date) if body.payment_date else date.today()
+    await pool.execute(
+        "INSERT INTO staging.ganit_vendor_payments (org_id, bill_id, amount, payment_date, method, reference, created_by) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4::date, $5, $6, $7)",
+        org_id, str(bill_id), body.amount, pay_date, body.method, body.reference, user["user_id"],
+    )
+    new_paid = round(float(bill["amount_paid"]) + body.amount, 2)
+    new_status = "paid" if new_paid >= float(bill["total"]) else "partially_paid"
+    await pool.execute(
+        "UPDATE staging.ganit_vendor_bills SET amount_paid=$1, status=$2 WHERE id=$3::uuid",
+        new_paid, new_status, str(bill_id),
+    )
+    return {"ok": True, "amount_paid": new_paid, "status": new_status}

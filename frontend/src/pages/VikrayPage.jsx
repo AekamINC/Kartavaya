@@ -6,7 +6,7 @@ import { PageHeader, StatTile, TabBar, Section, Badge, Shimmer, Empty, BackButto
 const STATUS_COLORS = { draft: '#6E7B91', confirmed: '#0082c6', dispatched: '#8b5cf6', delivered: '#10b981', closed: '#05b7aa', cancelled: '#9ca3af' };
 const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
 
-const TABS = ['dashboard', 'orders', 'pipeline', 'targets', 'customers'];
+const TABS = ['dashboard', 'orders', 'stock', 'pipeline', 'targets', 'customers'];
 
 export default function VikrayPage() {
   const [tab, setTab] = useState('dashboard');
@@ -16,6 +16,7 @@ export default function VikrayPage() {
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'dashboard' && <DashboardTab />}
       {tab === 'orders' && <OrdersTab />}
+      {tab === 'stock' && <StockTab />}
       {tab === 'pipeline' && <PipelineTab />}
       {tab === 'targets' && <TargetsTab />}
       {tab === 'customers' && <CustomersTab />}
@@ -338,6 +339,83 @@ function OrdersTab() {
             </ModCard>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+
+function StockTab() {
+  const { pushToast } = useToast();
+  const [stock, setStock] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+  const [edits, setEdits] = useState({});
+
+  useEffect(() => { load(); }, [lowStockOnly]);
+
+  async function load() {
+    try {
+      const r = await api.get(`/v1/vikray/stock${lowStockOnly ? '?low_stock=true' : ''}`);
+      setStock(r.data.data || []);
+    } catch { pushToast({ title: 'Failed to load stock', type: 'error' }); }
+    finally { setLoading(false); }
+  }
+
+  async function adjust(productId, quantity_delta, reason) {
+    try {
+      await api.patch(`/v1/vikray/stock/${productId}`, { quantity_delta, reason });
+      pushToast({ title: 'Stock updated', type: 'success' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+  }
+
+  async function setThreshold(productId) {
+    const val = edits[productId];
+    if (val === undefined || val === '') return;
+    try {
+      await api.patch(`/v1/vikray/stock/${productId}`, { low_stock_threshold: Number(val) });
+      pushToast({ title: 'Threshold updated', type: 'success' });
+      setEdits(e => ({ ...e, [productId]: undefined }));
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+  }
+
+  if (loading) return <Shimmer count={6} />;
+
+  return (
+    <div>
+      <div className="k-section__head" style={{ marginBottom: 20 }}>
+        <h3 className="k-section__title">Stock Ledger<span className="k-section__title-hi">स्टॉक</span></h3>
+        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input type="checkbox" checked={lowStockOnly} onChange={e => setLowStockOnly(e.target.checked)} /> Low stock only
+        </label>
+      </div>
+
+      {stock.length === 0 ? (
+        <Empty icon="📦" title="No stock records" sub="Stock levels appear here once products are confirmed on orders or a threshold is set." />
+      ) : (
+        <DataTable columns={['Product', { label: 'On Hand', align: 'right' }, { label: 'Threshold', align: 'right' }, { label: 'Actions', align: 'right' }]}>
+          {stock.map(s => {
+            const low = Number(s.quantity_on_hand) <= Number(s.low_stock_threshold) && Number(s.low_stock_threshold) > 0;
+            return (
+              <tr key={s.product_id}>
+                <td>{s.name} {low && <Badge text="Low Stock" color="#ef4444" />}</td>
+                <Td align="right" mono bold>{s.quantity_on_hand} {s.unit}</Td>
+                <Td align="right">
+                  <input type="number" placeholder={s.low_stock_threshold} value={edits[s.product_id] ?? ''}
+                    onChange={e => setEdits(ed => ({ ...ed, [s.product_id]: e.target.value }))}
+                    onBlur={() => setThreshold(s.product_id)}
+                    className="k-formpanel__input" style={{ width: 80, display: 'inline-block' }} />
+                </Td>
+                <Td align="right">
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11, marginRight: 6 }} onClick={() => adjust(s.product_id, 1, 'restock')}>+1</button>
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => adjust(s.product_id, -1, 'manual_adjustment')}>-1</button>
+                </Td>
+              </tr>
+            );
+          })}
+        </DataTable>
       )}
     </div>
   );

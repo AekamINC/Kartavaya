@@ -76,6 +76,12 @@ class TargetUpdate(BaseModel):
     notes: str | None = None
 
 
+class StockAdjust(BaseModel):
+    low_stock_threshold: float | None = None
+    quantity_delta: float | None = None
+    reason: str = "manual_adjustment"
+
+
 # ── Helpers ──────────────────────────────────────────────────
 
 def _compute_order_totals(line_items: list[dict], discount: float, is_igst: bool):
@@ -101,6 +107,29 @@ _VALID_TRANSITIONS = {
     "dispatched": {"delivered"},
     "delivered": {"closed"},
 }
+
+
+async def _apply_stock_moves(pool, org_id: str, order_id: str, line_items, sign: int, reason: str, user_id: str):
+    """Adjust stock for every catalogued product on an order. sign=-1 to deduct, +1 to restock."""
+    items = json.loads(line_items) if isinstance(line_items, str) else line_items
+    for item in items:
+        product_id = item.get("product_id")
+        qty = item.get("quantity") or 0
+        if not product_id or not qty:
+            continue
+        delta = sign * float(qty)
+        await pool.execute(
+            "INSERT INTO staging.vikray_stock (org_id, product_id, quantity_on_hand) "
+            "VALUES ($1::uuid, $2::uuid, $3) "
+            "ON CONFLICT (org_id, product_id) DO UPDATE SET "
+            "quantity_on_hand = staging.vikray_stock.quantity_on_hand + $3, updated_at=NOW()",
+            org_id, product_id, delta,
+        )
+        await pool.execute(
+            "INSERT INTO staging.vikray_stock_moves (org_id, product_id, order_id, quantity_delta, reason, created_by) "
+            "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6)",
+            org_id, product_id, order_id, delta, reason, user_id,
+        )
 
 
 # ── Orders CRUD ──────────────────────────────────────────────
@@ -266,7 +295,7 @@ async def update_order_status(
 ):
     pool = await get_pool()
     existing = await pool.fetchrow(
-        "SELECT status, deal_id FROM staging.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT status, deal_id, line_items FROM staging.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
         order_id, org_id,
     )
     if not existing:
@@ -279,6 +308,10 @@ async def update_order_status(
         "WHERE id=$2::uuid AND org_id=$3::uuid RETURNING *",
         body.status, order_id, org_id,
     )
+    if body.status == "confirmed":
+        await _apply_stock_moves(pool, org_id, order_id, existing["line_items"], -1, "order_confirmed", user["user_id"])
+    elif body.status == "cancelled" and existing["status"] == "confirmed":
+        await _apply_stock_moves(pool, org_id, order_id, existing["line_items"], 1, "order_cancelled", user["user_id"])
     if body.status == "closed" and existing["deal_id"]:
         await pool.execute(
             "UPDATE staging.graha_deals SET stage='Won', updated_at=NOW() "
@@ -337,7 +370,7 @@ async def cancel_order(
 ):
     pool = await get_pool()
     existing = await pool.fetchrow(
-        "SELECT status FROM staging.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT status, line_items FROM staging.vikray_orders WHERE id=$1::uuid AND org_id=$2::uuid",
         order_id, org_id,
     )
     if not existing:
@@ -349,6 +382,8 @@ async def cancel_order(
         "WHERE id=$1::uuid",
         order_id,
     )
+    if existing["status"] == "confirmed":
+        await _apply_stock_moves(pool, org_id, order_id, existing["line_items"], 1, "order_cancelled", user["user_id"])
     return {"ok": True}
 
 
@@ -524,3 +559,85 @@ async def dashboard(
         "total_revenue": revenue["total_revenue"],
         "collected": revenue["collected"],
     }
+
+
+# ── Stock Ledger ─────────────────────────────────────────────
+
+@router.get("/stock")
+async def list_stock(
+    low_stock: bool = False,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = (
+        "SELECT p.id AS product_id, p.name, p.unit, "
+        "COALESCE(s.quantity_on_hand, 0) AS quantity_on_hand, "
+        "COALESCE(s.low_stock_threshold, 0) AS low_stock_threshold "
+        "FROM staging.ganit_products p "
+        "LEFT JOIN staging.vikray_stock s ON s.product_id = p.id AND s.org_id = p.org_id "
+        "WHERE p.org_id=$1::uuid AND p.is_active=TRUE"
+    )
+    if low_stock:
+        q += " AND COALESCE(s.quantity_on_hand, 0) <= COALESCE(s.low_stock_threshold, 0)"
+    q += " ORDER BY p.name"
+    rows = await pool.fetch(q, org_id)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.patch("/stock/{product_id}")
+async def adjust_stock(
+    product_id: str,
+    body: StockAdjust,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    product = await pool.fetchrow(
+        "SELECT id FROM staging.ganit_products WHERE id=$1::uuid AND org_id=$2::uuid",
+        product_id, org_id,
+    )
+    if not product:
+        raise HTTPException(404, "Product not found")
+
+    await pool.execute(
+        "INSERT INTO staging.vikray_stock (org_id, product_id, low_stock_threshold) "
+        "VALUES ($1::uuid, $2::uuid, COALESCE($3, 0)) "
+        "ON CONFLICT (org_id, product_id) DO UPDATE SET "
+        "low_stock_threshold = COALESCE($3, staging.vikray_stock.low_stock_threshold), updated_at=NOW()",
+        org_id, product_id, body.low_stock_threshold,
+    )
+    if body.quantity_delta:
+        await pool.execute(
+            "UPDATE staging.vikray_stock SET quantity_on_hand = quantity_on_hand + $1, updated_at=NOW() "
+            "WHERE org_id=$2::uuid AND product_id=$3::uuid",
+            body.quantity_delta, org_id, product_id,
+        )
+        await pool.execute(
+            "INSERT INTO staging.vikray_stock_moves (org_id, product_id, quantity_delta, reason, created_by) "
+            "VALUES ($1::uuid, $2::uuid, $3, $4, $5)",
+            org_id, product_id, body.quantity_delta, body.reason, user["user_id"],
+        )
+    row = await pool.fetchrow(
+        "SELECT * FROM staging.vikray_stock WHERE org_id=$1::uuid AND product_id=$2::uuid",
+        org_id, product_id,
+    )
+    return dict(row)
+
+
+@router.get("/stock/{product_id}/moves")
+async def stock_moves(
+    product_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM staging.vikray_stock_moves "
+        "WHERE org_id=$1::uuid AND product_id=$2::uuid ORDER BY created_at DESC LIMIT 100",
+        org_id, product_id,
+    )
+    return {"data": [dict(r) for r in rows]}

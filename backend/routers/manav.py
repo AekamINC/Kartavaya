@@ -129,6 +129,46 @@ class AnnouncementUpdate(BaseModel):
     expires_at: str | None = None
 
 
+class ExpenseClaimCreate(BaseModel):
+    employee_id: str = ""
+    category: str = "other"
+    expense_date: str
+    amount: float
+    description: str = ""
+    receipt_urls: list[str] = []
+
+
+class ExpenseClaimAction(BaseModel):
+    status: str
+    rejection_reason: str = ""
+
+
+class JobOpeningCreate(BaseModel):
+    title: str
+    department_id: str = ""
+    description: str = ""
+
+
+class JobOpeningUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    status: str | None = None
+
+
+class CandidateCreate(BaseModel):
+    job_opening_id: str
+    full_name: str
+    email: str = ""
+    phone: str = ""
+    resume_url: str = ""
+    notes: str = ""
+
+
+class CandidateStageUpdate(BaseModel):
+    stage: str
+    rejection_reason: str = ""
+
+
 # ── Employees ────────────────────────────────────────────────
 
 @router.get("/employees")
@@ -1315,3 +1355,308 @@ async def action_swap(swap_id: UUID, action: str, user=Depends(require_user), or
                         sched["shift_id"], target_sched["id"],
                     )
     return {"status": action}
+
+
+# ── Expense Claims & Reimbursement ───────────────────────────
+
+async def _is_org_admin(pool, user, org_id) -> bool:
+    return user.get("role") == "admin" or bool(await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND org_id=$2::uuid "
+        "AND role_code IN ('org_owner','org_admin')",
+        user["user_id"], org_id,
+    ))
+
+
+@router.get("/expense-claims")
+async def list_expense_claims(
+    employee_id: str = "",
+    status: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    is_admin = await _is_org_admin(pool, user, org_id)
+    q = (
+        "SELECT c.*, e.name AS employee_name, e.employee_code "
+        "FROM staging.manav_expense_claims c "
+        "JOIN staging.manav_employees e ON e.id = c.employee_id "
+        "WHERE c.org_id=$1::uuid AND c.is_active=TRUE"
+    )
+    params: list = [org_id]
+    if not is_admin:
+        params.append(user["user_id"])
+        q += f" AND e.user_id=${len(params)}"
+    elif employee_id:
+        params.append(employee_id)
+        q += f" AND c.employee_id=${len(params)}::uuid"
+    if status:
+        params.append(status)
+        q += f" AND c.status=${len(params)}"
+    q += " ORDER BY c.created_at DESC LIMIT 200"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.get("/expense-claims/pending-count")
+async def expense_claims_pending_count(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    count = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.manav_expense_claims "
+        "WHERE org_id=$1::uuid AND status='pending' AND is_active=TRUE",
+        org_id,
+    )
+    return {"count": count}
+
+
+@router.post("/expense-claims")
+async def create_expense_claim(
+    body: ExpenseClaimCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    if body.amount <= 0:
+        raise HTTPException(400, "Amount must be positive")
+
+    if body.employee_id:
+        if not await _is_org_admin(pool, user, org_id):
+            raise HTTPException(403, "Only admins can submit claims for other employees")
+        emp = await pool.fetchrow(
+            "SELECT id FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+            body.employee_id, org_id,
+        )
+    else:
+        emp = await pool.fetchrow(
+            "SELECT id FROM staging.manav_employees WHERE org_id=$1::uuid AND user_id=$2 AND is_active=TRUE",
+            org_id, user["user_id"],
+        )
+    if not emp:
+        raise HTTPException(404, "Employee record not found")
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_expense_claims "
+        "(org_id, employee_id, category, expense_date, amount, description, receipt_urls) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4::date, $5, $6, $7::jsonb) RETURNING *",
+        org_id, str(emp["id"]), body.category,
+        date.fromisoformat(body.expense_date), body.amount, body.description,
+        json.dumps(body.receipt_urls),
+    )
+    return dict(row)
+
+
+@router.patch("/expense-claims/{claim_id}/approve")
+async def approve_expense_claim(
+    claim_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    if not await _is_org_admin(pool, user, org_id):
+        raise HTTPException(403, "Only admins can approve expense claims")
+    row = await pool.fetchrow(
+        "UPDATE staging.manav_expense_claims SET status='approved', approved_by=$1, approved_at=NOW() "
+        "WHERE id=$2::uuid AND org_id=$3::uuid AND status='pending' RETURNING *",
+        user["user_id"], str(claim_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Pending claim not found")
+    return dict(row)
+
+
+@router.patch("/expense-claims/{claim_id}/reject")
+async def reject_expense_claim(
+    claim_id: UUID,
+    body: ExpenseClaimAction,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    if not await _is_org_admin(pool, user, org_id):
+        raise HTTPException(403, "Only admins can reject expense claims")
+    row = await pool.fetchrow(
+        "UPDATE staging.manav_expense_claims SET status='rejected', approved_by=$1, approved_at=NOW(), "
+        "rejection_reason=$2 WHERE id=$3::uuid AND org_id=$4::uuid AND status='pending' RETURNING *",
+        user["user_id"], body.rejection_reason, str(claim_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Pending claim not found")
+    return dict(row)
+
+
+# ── Recruitment / Applicant Tracking ─────────────────────────
+
+@router.get("/job-openings")
+async def list_job_openings(
+    status: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = (
+        "SELECT j.*, d.name AS department_name, "
+        "(SELECT COUNT(*) FROM staging.manav_candidates c WHERE c.job_opening_id = j.id) AS candidate_count "
+        "FROM staging.manav_job_openings j "
+        "LEFT JOIN staging.manav_departments d ON d.id = j.department_id "
+        "WHERE j.org_id=$1::uuid"
+    )
+    params: list = [org_id]
+    if status:
+        params.append(status)
+        q += f" AND j.status=${len(params)}"
+    q += " ORDER BY j.created_at DESC"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/job-openings")
+async def create_job_opening(
+    body: JobOpeningCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_job_openings (org_id, title, department_id, description, created_by) "
+        "VALUES ($1::uuid, $2, NULLIF($3,'')::uuid, $4, $5) RETURNING *",
+        org_id, body.title, body.department_id, body.description, user["user_id"],
+    )
+    return dict(row)
+
+
+@router.patch("/job-openings/{opening_id}")
+async def update_job_opening(
+    opening_id: UUID,
+    body: JobOpeningUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates, vals = [], []
+    for field in ("title", "description", "status"):
+        val = getattr(body, field)
+        if val is not None:
+            vals.append(val)
+            updates.append(f"{field}=${len(vals)}")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    vals += [str(opening_id), org_id]
+    row = await pool.fetchrow(
+        f"UPDATE staging.manav_job_openings SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
+        *vals,
+    )
+    if not row:
+        raise HTTPException(404, "Job opening not found")
+    return dict(row)
+
+
+@router.get("/candidates")
+async def list_candidates(
+    job_opening_id: str = "",
+    stage: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = "SELECT * FROM staging.manav_candidates WHERE org_id=$1::uuid"
+    params: list = [org_id]
+    if job_opening_id:
+        params.append(job_opening_id)
+        q += f" AND job_opening_id=${len(params)}::uuid"
+    if stage:
+        params.append(stage)
+        q += f" AND stage=${len(params)}"
+    q += " ORDER BY created_at DESC"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/candidates")
+async def create_candidate(
+    body: CandidateCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    opening = await pool.fetchrow(
+        "SELECT id FROM staging.manav_job_openings WHERE id=$1::uuid AND org_id=$2::uuid",
+        body.job_opening_id, org_id,
+    )
+    if not opening:
+        raise HTTPException(404, "Job opening not found")
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_candidates "
+        "(org_id, job_opening_id, full_name, email, phone, resume_url, notes) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7) RETURNING *",
+        org_id, body.job_opening_id, body.full_name, body.email, body.phone,
+        body.resume_url, body.notes,
+    )
+    return dict(row)
+
+
+@router.patch("/candidates/{candidate_id}/stage")
+async def update_candidate_stage(
+    candidate_id: UUID,
+    body: CandidateStageUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    valid_stages = ("applied", "screening", "interview", "offer", "hired", "rejected")
+    if body.stage not in valid_stages:
+        raise HTTPException(400, f"stage must be one of: {', '.join(valid_stages)}")
+    row = await pool.fetchrow(
+        "UPDATE staging.manav_candidates SET stage=$1, rejection_reason=$2, updated_at=NOW() "
+        "WHERE id=$3::uuid AND org_id=$4::uuid RETURNING *",
+        body.stage, body.rejection_reason if body.stage == "rejected" else None,
+        str(candidate_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Candidate not found")
+    return dict(row)
+
+
+@router.post("/candidates/{candidate_id}/hire")
+async def hire_candidate(
+    candidate_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    candidate = await pool.fetchrow(
+        "SELECT * FROM staging.manav_candidates WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(candidate_id), org_id,
+    )
+    if not candidate:
+        raise HTTPException(404, "Candidate not found")
+    if candidate["converted_employee_id"]:
+        raise HTTPException(400, "Candidate has already been converted to an employee")
+
+    emp = await pool.fetchrow(
+        "INSERT INTO staging.manav_employees "
+        "(org_id, name, email, phone, date_of_joining, employment_type, created_by) "
+        "VALUES ($1::uuid, $2, $3, $4, CURRENT_DATE, 'full_time', $5) "
+        "RETURNING id, name, employee_code",
+        org_id, candidate["full_name"], candidate["email"], candidate["phone"], user["user_id"],
+    )
+    await pool.execute(
+        "UPDATE staging.manav_candidates SET stage='hired', converted_employee_id=$1, updated_at=NOW() "
+        "WHERE id=$2::uuid",
+        emp["id"], str(candidate_id),
+    )
+    return {"ok": True, "employee_id": str(emp["id"])}

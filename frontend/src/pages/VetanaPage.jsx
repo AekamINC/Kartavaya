@@ -7,7 +7,8 @@ const RUN_COLORS = { draft: '#6E7B91', processed: '#0082c6', approved: '#8b5cf6'
 const PS_COLORS = { generated: '#6E7B91', approved: '#8b5cf6', disbursed: '#10b981' };
 const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
 
-const TABS = ['dashboard', 'structures', 'payroll', 'payslips', 'statutory'];
+const LOAN_COLORS = { active: '#0082c6', closed: '#10b981', written_off: '#6E7B91' };
+const TABS = ['dashboard', 'structures', 'payroll', 'payslips', 'loans', 'statutory'];
 
 export default function VetanaPage() {
   const [tab, setTab] = useState('dashboard');
@@ -19,6 +20,7 @@ export default function VetanaPage() {
       {tab === 'structures' && <StructuresTab />}
       {tab === 'payroll' && <PayrollTab />}
       {tab === 'payslips' && <PayslipsTab />}
+      {tab === 'loans' && <LoansTab />}
       {tab === 'statutory' && <StatutoryTab />}
     </div>
   );
@@ -473,7 +475,8 @@ function PayslipsTab() {
               <Section title="Deductions" hi="कटौती">
                 <DataTable columns={['Component', { label: 'Amount', align: 'right' }]}>
                   {[['PF (Employee)', p.pf_employee], ['ESI (Employee)', p.esi_employee],
-                    ['Professional Tax', p.professional_tax], ['TDS', p.tds]].filter(([, v]) => Number(v) > 0).map(([label, val]) => (
+                    ['Professional Tax', p.professional_tax], ['TDS', p.tds],
+                    ['Loan Repayment', p.loan_deduction]].filter(([, v]) => Number(v) > 0).map(([label, val]) => (
                     <tr key={label}>
                       <td>{label}</td>
                       <Td align="right" mono color="#ef4444">{FMT(val)}</Td>
@@ -485,6 +488,10 @@ function PayslipsTab() {
                   </tr>
                 </DataTable>
               </Section>
+
+              {Number(p.reimbursements) > 0 && (
+                <p style={{ margin: '8px 0', fontSize: 13, color: '#10b981' }}>+ Expense Reimbursement: <strong>{FMT(p.reimbursements)}</strong></p>
+              )}
 
               <div className="k-netbox">
                 <p className="k-netbox__label">Net Pay</p>
@@ -594,6 +601,116 @@ function StatutoryTab() {
             ))}
           </DataTable>
         </Section>
+      )}
+    </div>
+  );
+}
+
+
+function LoansTab() {
+  const { pushToast } = useToast();
+  const [loans, setLoans] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ employee_id: '', principal_amount: 0, emi_amount: 0, disbursed_date: '', notes: '' });
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    try { const r = await api.get('/v1/vetana/loans'); setLoans(r.data.data || []); } catch {}
+    finally { setLoading(false); }
+  }
+
+  async function loadEmployees() {
+    try { const r = await api.get('/v1/manav/employees'); setEmployees(r.data.data || []); } catch {}
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    if (!form.employee_id) { pushToast({ title: 'Select an employee', type: 'error' }); return; }
+    setSaving(true);
+    try {
+      await api.post('/v1/vetana/loans', form);
+      pushToast({ title: 'Loan recorded', type: 'success' });
+      setShowForm(false);
+      setForm({ employee_id: '', principal_amount: 0, emi_amount: 0, disbursed_date: '', notes: '' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    finally { setSaving(false); }
+  }
+
+  async function writeOff(id) {
+    try {
+      await api.patch(`/v1/vetana/loans/${id}`, { status: 'written_off' });
+      pushToast({ title: 'Loan written off', type: 'success' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+  }
+
+  return (
+    <div>
+      <div className="k-section__head" style={{ marginBottom: 20 }}>
+        <h3 className="k-section__title">Loans &amp; Advances<span className="k-section__title-hi">ऋण एवं अग्रिम</span></h3>
+        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
+          onClick={() => { setShowForm(!showForm); if (!showForm) loadEmployees(); }}>
+          {showForm ? 'Cancel' : '+ New Loan'}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={save} className="k-formpanel">
+          <div className="k-formpanel__grid k-formpanel__grid--3">
+            <label className="k-formpanel__label">Employee
+              <select value={form.employee_id} onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))} className="k-formpanel__input">
+                <option value="">Select…</option>
+                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name || `${emp.first_name} ${emp.last_name}`} ({emp.employee_code})</option>)}
+              </select>
+            </label>
+            <label className="k-formpanel__label">Principal Amount (₹)
+              <input type="number" value={form.principal_amount} onChange={e => setForm(f => ({ ...f, principal_amount: Number(e.target.value) }))} className="k-formpanel__input" />
+            </label>
+            <label className="k-formpanel__label">Monthly EMI (₹)
+              <input type="number" value={form.emi_amount} onChange={e => setForm(f => ({ ...f, emi_amount: Number(e.target.value) }))} className="k-formpanel__input" />
+            </label>
+            <label className="k-formpanel__label">Disbursed Date
+              <input type="date" value={form.disbursed_date} onChange={e => setForm(f => ({ ...f, disbursed_date: e.target.value }))} className="k-formpanel__input" />
+            </label>
+            <label className="k-formpanel__label">Notes
+              <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="k-formpanel__input" />
+            </label>
+          </div>
+          <div className="k-formpanel__actions">
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving} style={{ fontSize: 13 }}>{saving ? 'Saving…' : 'Save Loan'}</button>
+          </div>
+        </form>
+      )}
+
+      {loading ? <Shimmer count={4} /> : loans.length === 0 ? (
+        <Empty icon="🏦" title="No loans or advances" sub="Record a salary advance or loan — EMIs are auto-deducted from payroll each month." cta="+ New Loan" onCta={() => { setShowForm(true); loadEmployees(); }} />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {loans.map(l => (
+            <ModCard key={l.id}>
+              <div>
+                <strong style={{ fontSize: 14 }}>{l.employee_name}</strong>
+                <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{l.employee_code}</span>
+                <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>Disbursed {l.disbursed_date} · EMI {FMT(l.emi_amount)}/mo</p>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{FMT(l.balance_remaining)}</span>
+                  <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--ink-3)' }}>of {FMT(l.principal_amount)}</p>
+                </div>
+                <Badge text={l.status} color={LOAN_COLORS[l.status]} />
+                {l.status === 'active' && (
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => writeOff(l.id)}>Write Off</button>
+                )}
+              </div>
+            </ModCard>
+          ))}
+        </div>
       )}
     </div>
   );

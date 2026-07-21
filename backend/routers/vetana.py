@@ -62,6 +62,20 @@ class PayrollProcessRequest(BaseModel):
     month: str  # YYYY-MM
 
 
+class LoanCreate(BaseModel):
+    employee_id: str
+    principal_amount: float
+    emi_amount: float
+    disbursed_date: str = ""
+    notes: str = ""
+
+
+class LoanUpdate(BaseModel):
+    emi_amount: float | None = None
+    status: str | None = None
+    notes: str | None = None
+
+
 # ── Salary Structures CRUD ───────────────────────────────────
 
 @router.get("/salary-structures")
@@ -356,22 +370,47 @@ async def process_payroll(
         gross = round(basic_pay + hra_pay + da_pay + special_pay + conveyance_pay + medical_pay + ot_pay, 2)
 
         stat = _compute_statutory(basic_pay, gross, dict(s))
-        total_ded = stat["pf_employee"] + stat["esi_employee"] + stat["professional_tax"] + stat["tds"]
-        net = round(gross - total_ded, 2)
+
+        active_loans = await pool.fetch(
+            "SELECT id, emi_amount, balance_remaining FROM staging.vetana_loans "
+            "WHERE org_id=$1::uuid AND employee_id=$2::uuid AND status='active' "
+            "ORDER BY disbursed_date",
+            org_id, emp_id,
+        )
+        loan_deductions = []
+        loan_total = 0.0
+        for loan in active_loans:
+            amt = min(float(loan["emi_amount"]), float(loan["balance_remaining"]))
+            if amt > 0:
+                loan_deductions.append({"loan_id": str(loan["id"]), "amount": round(amt, 2)})
+                loan_total += amt
+
+        total_ded = stat["pf_employee"] + stat["esi_employee"] + stat["professional_tax"] + stat["tds"] + loan_total
+
+        approved_claims = await pool.fetch(
+            "SELECT id, amount FROM staging.manav_expense_claims "
+            "WHERE org_id=$1::uuid AND employee_id=$2::uuid "
+            "AND status='approved' AND payslip_id IS NULL",
+            org_id, emp_id,
+        )
+        reimbursement_total = sum(float(c["amount"]) for c in approved_claims)
+        claim_ids = [str(c["id"]) for c in approved_claims]
+
+        net = round(gross - total_ded + reimbursement_total, 2)
 
         ps_number = await next_doc_number(pool, org_id, "vetana_payslips", "payslip_number", "PS")
 
-        await pool.execute(
+        payslip_row = await pool.fetchrow(
             "INSERT INTO staging.vetana_payslips "
             "(org_id, run_id, employee_id, payslip_number, month, "
             "working_days, present_days, leaves_paid, leaves_unpaid, overtime_hours, "
             "basic, hra, da, special_allowance, conveyance, medical, overtime_pay, gross, "
             "pf_employee, pf_employer, esi_employee, esi_employer, "
-            "professional_tax, tds, total_deductions, net_pay) "
+            "professional_tax, tds, loan_deduction, loan_deductions, reimbursements, total_deductions, net_pay) "
             "VALUES ($1::uuid, $2, $3::uuid, $4, $5, "
             "$6, $7, $8, $9, $10, "
             "$11, $12, $13, $14, $15, $16, $17, $18, "
-            "$19, $20, $21, $22, $23, $24, $25, $26)",
+            "$19, $20, $21, $22, $23, $24, $25, $26::jsonb, $27, $28, $29) RETURNING id",
             org_id, run_id, emp_id, ps_number, month,
             working_days, present_days, paid_leaves, unpaid_leaves, ot_hours,
             round(basic_pay, 2), round(hra_pay, 2), round(da_pay, 2),
@@ -379,8 +418,15 @@ async def process_payroll(
             ot_pay, gross,
             stat["pf_employee"], stat["pf_employer"],
             stat["esi_employee"], stat["esi_employer"],
-            stat["professional_tax"], stat["tds"], round(total_ded, 2), net,
+            stat["professional_tax"], stat["tds"], round(loan_total, 2), json.dumps(loan_deductions),
+            round(reimbursement_total, 2), round(total_ded, 2), net,
         )
+        if claim_ids:
+            await pool.execute(
+                "UPDATE staging.manav_expense_claims SET payslip_id=$1::uuid "
+                "WHERE id = ANY($2::uuid[])",
+                payslip_row["id"], claim_ids,
+            )
 
         totals["gross"] += gross
         totals["deductions"] += total_ded
@@ -479,6 +525,28 @@ async def approve_run(
     await pool.execute(
         "UPDATE staging.vetana_payslips SET status='approved' WHERE run_id=$1::uuid",
         run_id,
+    )
+
+    payslip_loans = await pool.fetch(
+        "SELECT loan_deductions FROM staging.vetana_payslips "
+        "WHERE run_id=$1::uuid AND loan_deductions != '[]'::jsonb",
+        run_id,
+    )
+    for row in payslip_loans:
+        for entry in (row["loan_deductions"] or []):
+            loan_id, amt = entry["loan_id"], entry["amount"]
+            await pool.execute(
+                "UPDATE staging.vetana_loans SET balance_remaining = GREATEST(balance_remaining - $1, 0), "
+                "status = CASE WHEN balance_remaining - $1 <= 0 THEN 'closed' ELSE status END "
+                "WHERE id=$2::uuid AND org_id=$3::uuid",
+                amt, loan_id, org_id,
+            )
+
+    await pool.execute(
+        "UPDATE staging.manav_expense_claims SET status='paid' "
+        "WHERE org_id=$1::uuid AND status='approved' AND payslip_id IN "
+        "(SELECT id FROM staging.vetana_payslips WHERE run_id=$2::uuid)",
+        org_id, run_id,
     )
     return {"ok": True}
 
@@ -680,3 +748,83 @@ async def statutory_summary(
         "employees": [dict(r) for r in rows],
         "totals": dict(totals) if totals else {},
     }
+
+
+# ── Loans & Salary Advances ──────────────────────────────────
+
+@router.get("/loans")
+async def list_loans(
+    employee_id: str = "",
+    status: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = (
+        "SELECT l.*, e.name AS employee_name, e.employee_code "
+        "FROM staging.vetana_loans l "
+        "JOIN staging.manav_employees e ON e.id = l.employee_id "
+        "WHERE l.org_id=$1::uuid"
+    )
+    params: list = [org_id]
+    if employee_id:
+        params.append(employee_id)
+        q += f" AND l.employee_id=${len(params)}::uuid"
+    if status:
+        params.append(status)
+        q += f" AND l.status=${len(params)}"
+    q += " ORDER BY l.created_at DESC"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/loans")
+async def create_loan(
+    body: LoanCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    if body.principal_amount <= 0 or body.emi_amount <= 0:
+        raise HTTPException(400, "Principal and EMI amounts must be positive")
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.vetana_loans "
+        "(org_id, employee_id, principal_amount, emi_amount, balance_remaining, "
+        "disbursed_date, notes, created_by) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $3, "
+        "COALESCE(NULLIF($5,'')::date, CURRENT_DATE), $6, $7) "
+        "RETURNING *",
+        org_id, body.employee_id, body.principal_amount, body.emi_amount,
+        body.disbursed_date, body.notes, user["user_id"],
+    )
+    return dict(row)
+
+
+@router.patch("/loans/{loan_id}")
+async def update_loan(
+    loan_id: str,
+    body: LoanUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates, vals = [], []
+    for field in ("emi_amount", "status", "notes"):
+        val = getattr(body, field)
+        if val is not None:
+            vals.append(val)
+            updates.append(f"{field}=${len(vals)}")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    vals += [loan_id, org_id]
+    row = await pool.fetchrow(
+        f"UPDATE staging.vetana_loans SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
+        *vals,
+    )
+    if not row:
+        raise HTTPException(404, "Loan not found")
+    return dict(row)

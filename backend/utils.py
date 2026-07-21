@@ -71,6 +71,7 @@ _ALLOWED_DOC_TABLES = {
     ("ganit_invoices", "invoice_number"),
     ("vikray_orders", "order_number"),
     ("vetana_payslips", "payslip_number"),
+    ("ganit_vendor_bills", "internal_ref"),
 }
 
 async def next_doc_number(pool, org_id: str, table: str, column: str, prefix: str) -> str:
