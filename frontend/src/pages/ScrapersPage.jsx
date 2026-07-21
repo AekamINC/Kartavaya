@@ -3,11 +3,17 @@ import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
 import { PageHeader, Card } from '../components/editorial';
 
-const CATEGORY_LABELS = { social: 'Social Media', leads: 'Lead Generation', seo: 'SEO & Search' };
+const CATEGORY_LABELS = {
+  social: 'Social Media', leads: 'Lead Generation', seo: 'SEO & Search',
+  linkedin: 'LinkedIn', google_ads: 'Google Ads', meta_ads: 'Meta Ads',
+  ecommerce: 'E-commerce', govindia: 'GovIndia (MCA/GST)', whatsapp: 'WhatsApp',
+  enrichment: 'Contact Enrichment',
+};
 const STATUS_COLORS = { pending: '#f59e0b', running: '#0082c6', succeeded: '#10b981', failed: '#ef4444' };
 
 export default function ScrapersPage() {
   const [tab, setTab] = useState('catalog');
+  const [pendingRunId, setPendingRunId] = useState(null);
   const tabs = ['catalog', 'runs'];
 
   return (
@@ -24,19 +30,20 @@ export default function ScrapersPage() {
           </button>
         ))}
       </div>
-      {tab === 'catalog' && <CatalogTab />}
-      {tab === 'runs' && <RunsTab />}
+      {tab === 'catalog' && <CatalogTab onViewResult={id => { setPendingRunId(id); setTab('runs'); }} />}
+      {tab === 'runs' && <RunsTab initialRunId={pendingRunId} onConsumeInitial={() => setPendingRunId(null)} />}
     </div>
   );
 }
 
-function CatalogTab() {
+function CatalogTab({ onViewResult }) {
   const { pushToast } = useToast();
   const [scrapers, setScrapers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [inputs, setInputs] = useState({});
   const [running, setRunning] = useState(false);
+  const [activeRun, setActiveRun] = useState(null); // { id, status, error }
 
   useEffect(() => {
     api.get('/v1/scrapers/catalog')
@@ -58,13 +65,36 @@ function CatalogTab() {
     try {
       const r = await api.post('/v1/scrapers/run', { scraper_id: selected.id, inputs });
       pushToast({ title: `Started! Billed ₹${r.data.billed_inr}`, type: 'success' });
-      setSelected(null);
-      setInputs({});
+      setActiveRun({ id: r.data.run_id, status: 'running' });
     } catch (err) {
       pushToast({ title: err.response?.data?.detail || 'Failed to start', type: 'error' });
     } finally {
       setRunning(false);
     }
+  }
+
+  useEffect(() => {
+    if (!activeRun || activeRun.status !== 'running') return;
+    const interval = setInterval(async () => {
+      try {
+        const r = await api.get(`/v1/scrapers/runs/${activeRun.id}`);
+        if (r.data.status !== 'running' && r.data.status !== 'pending') {
+          setActiveRun({ id: activeRun.id, status: r.data.status, error: r.data.error, result_count: r.data.result_count });
+        }
+      } catch {}
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [activeRun]);
+
+  function closeModal() {
+    setSelected(null);
+    setInputs({});
+    setActiveRun(null);
+  }
+
+  function viewResult() {
+    onViewResult(activeRun.id);
+    closeModal();
   }
 
   if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
@@ -80,7 +110,7 @@ function CatalogTab() {
     <div>
       {selected && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.4)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onClick={e => { if (e.target === e.currentTarget) setSelected(null); }}>
+          onClick={e => { if (e.target === e.currentTarget && !activeRun) closeModal(); }}>
           <div style={{ background: 'var(--bg)', borderRadius: 16, padding: 28, width: '100%', maxWidth: 480,
             border: '1px solid var(--rule-soft)', maxHeight: '80vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
@@ -91,41 +121,81 @@ function CatalogTab() {
               </div>
             </div>
 
-            <div style={{ background: 'var(--surface-1)', borderRadius: 8, padding: '10px 14px', marginBottom: 16,
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
-              <span style={{ color: 'var(--ink-3)' }}>Price per run</span>
-              <span style={{ fontWeight: 700, color: 'var(--k-primary)', fontSize: 16 }}>₹{Number(selected.price_inr).toFixed(0)}</span>
-            </div>
-
-            {(selected.input_schema || []).map(field => (
-              <label key={field.name} style={{ display: 'block', marginBottom: 12, fontSize: 13 }}>
-                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                  {field.label} {field.required && <span style={{ color: '#ef4444' }}>*</span>}
-                </span>
-                {field.type === 'textarea' ? (
-                  <textarea className="k-input" rows={4} placeholder={field.placeholder || ''}
-                    value={inputs[field.name] || ''} onChange={e => setInputs({ ...inputs, [field.name]: e.target.value })} />
-                ) : field.type === 'number' ? (
-                  <input className="k-input" type="number" placeholder={field.placeholder || ''}
-                    value={inputs[field.name] || ''} onChange={e => setInputs({ ...inputs, [field.name]: e.target.value })} />
-                ) : (
-                  <input className="k-input" placeholder={field.placeholder || ''}
-                    value={inputs[field.name] || ''} onChange={e => setInputs({ ...inputs, [field.name]: e.target.value })} />
+            {activeRun ? (
+              <div style={{ textAlign: 'center', padding: '20px 8px' }}>
+                {activeRun.status === 'running' && (
+                  <>
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
+                    <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Running…</p>
+                    <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>This can take a minute or two. Feel free to close this and check the Runs tab later.</p>
+                  </>
                 )}
-              </label>
-            ))}
+                {activeRun.status === 'succeeded' && (
+                  <>
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
+                    <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Done — {activeRun.result_count} result{activeRun.result_count === 1 ? '' : 's'}</p>
+                  </>
+                )}
+                {activeRun.status === 'failed' && (
+                  <>
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>⚠️</div>
+                    <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4, color: '#ef4444' }}>Run failed</p>
+                    {activeRun.error && <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>{activeRun.error}</p>}
+                  </>
+                )}
 
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-              <button onClick={() => setSelected(null)}
-                style={{ padding: '8px 20px', fontSize: 13, borderRadius: 8, background: 'var(--surface-1)',
-                  border: '1px solid var(--rule-soft)', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={runScraper} disabled={running}
-                style={{ padding: '8px 24px', fontSize: 13, fontWeight: 700, borderRadius: 8,
-                  background: 'var(--k-primary)', color: '#fff', border: 'none', cursor: 'pointer',
-                  opacity: running ? 0.6 : 1 }}>
-                {running ? 'Starting...' : `Run · ₹${Number(selected.price_inr).toFixed(0)}`}
-              </button>
-            </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 20 }}>
+                  <button onClick={closeModal}
+                    style={{ padding: '8px 20px', fontSize: 13, borderRadius: 8, background: 'var(--surface-1)',
+                      border: '1px solid var(--rule-soft)', cursor: 'pointer' }}>Close</button>
+                  {activeRun.status === 'succeeded' && (
+                    <button onClick={viewResult}
+                      style={{ padding: '8px 24px', fontSize: 13, fontWeight: 700, borderRadius: 8,
+                        background: 'var(--k-primary)', color: '#fff', border: 'none', cursor: 'pointer' }}>
+                      View Result →
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div style={{ background: 'var(--surface-1)', borderRadius: 8, padding: '10px 14px', marginBottom: 16,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
+                  <span style={{ color: 'var(--ink-3)' }}>Price per run</span>
+                  <span style={{ fontWeight: 700, color: 'var(--k-primary)', fontSize: 16 }}>₹{Number(selected.price_inr).toFixed(0)}</span>
+                </div>
+
+                {(selected.input_schema || []).map(field => (
+                  <label key={field.name} style={{ display: 'block', marginBottom: 12, fontSize: 13 }}>
+                    <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                      {field.label} {field.required && <span style={{ color: '#ef4444' }}>*</span>}
+                    </span>
+                    {field.type === 'textarea' ? (
+                      <textarea className="k-input" rows={4} placeholder={field.placeholder || ''}
+                        value={inputs[field.name] || ''} onChange={e => setInputs({ ...inputs, [field.name]: e.target.value })} />
+                    ) : field.type === 'number' ? (
+                      <input className="k-input" type="number" placeholder={field.placeholder || ''}
+                        value={inputs[field.name] || ''} onChange={e => setInputs({ ...inputs, [field.name]: e.target.value })} />
+                    ) : (
+                      <input className="k-input" placeholder={field.placeholder || ''}
+                        value={inputs[field.name] || ''} onChange={e => setInputs({ ...inputs, [field.name]: e.target.value })} />
+                    )}
+                  </label>
+                ))}
+
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+                  <button onClick={closeModal}
+                    style={{ padding: '8px 20px', fontSize: 13, borderRadius: 8, background: 'var(--surface-1)',
+                      border: '1px solid var(--rule-soft)', cursor: 'pointer' }}>Cancel</button>
+                  <button onClick={runScraper} disabled={running}
+                    style={{ padding: '8px 24px', fontSize: 13, fontWeight: 700, borderRadius: 8,
+                      background: 'var(--k-primary)', color: '#fff', border: 'none', cursor: 'pointer',
+                      opacity: running ? 0.6 : 1 }}>
+                    {running ? 'Starting...' : `Run · ₹${Number(selected.price_inr).toFixed(0)}`}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -162,12 +232,13 @@ function CatalogTab() {
 }
 
 
-function RunsTab() {
+function RunsTab({ initialRunId, onConsumeInitial }) {
   const { pushToast } = useToast();
   const [runs, setRuns] = useState([]);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState(null);
   const [polling, setPolling] = useState(null);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(() => {
     api.get('/v1/scrapers/runs')
@@ -177,6 +248,13 @@ function RunsTab() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (initialRunId) {
+      openDetail(initialRunId);
+      onConsumeInitial?.();
+    }
+  }, [initialRunId]);
 
   async function openDetail(runId) {
     try {
@@ -223,6 +301,25 @@ function RunsTab() {
       URL.revokeObjectURL(url);
     }
 
+    async function importToGraha() {
+      setImporting(true);
+      try {
+        const r = await api.post(`/v1/scrapers/runs/${detail.id}/import-to-graha`);
+        const { imported, skipped_duplicate, skipped_unmappable } = r.data;
+        pushToast({
+          title: `Imported ${imported} lead${imported === 1 ? '' : 's'} to Graha` +
+            (skipped_duplicate ? ` · ${skipped_duplicate} duplicate${skipped_duplicate === 1 ? '' : 's'} skipped` : '') +
+            (skipped_unmappable ? ` · ${skipped_unmappable} skipped` : ''),
+          type: 'success',
+        });
+        setDetail({ ...detail, graha_imported_count: imported });
+      } catch (err) {
+        pushToast({ title: err.response?.data?.detail || 'Import failed', type: 'error' });
+      } finally {
+        setImporting(false);
+      }
+    }
+
     return (
       <div>
         <button onClick={() => { setDetail(null); if (polling) { clearInterval(polling); setPolling(null); } }}
@@ -247,7 +344,18 @@ function RunsTab() {
 
         {results.length > 0 && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              {detail.graha_imported_count > 0 && (
+                <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                  {detail.graha_imported_count} imported to Graha
+                </span>
+              )}
+              <button onClick={importToGraha} disabled={importing}
+                style={{ padding: '6px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6,
+                  background: 'var(--surface-1)', color: 'var(--k-primary)', border: '1px solid var(--k-primary)',
+                  cursor: 'pointer', opacity: importing ? 0.6 : 1 }}>
+                {importing ? 'Importing...' : 'Import to Graha'}
+              </button>
               <button onClick={exportCSV}
                 style={{ padding: '6px 16px', fontSize: 12, fontWeight: 600, borderRadius: 6,
                   background: 'var(--k-primary)', color: '#fff', border: 'none', cursor: 'pointer' }}>

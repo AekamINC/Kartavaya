@@ -70,9 +70,11 @@ function InvoicesTab() {
 
   const [form, setForm] = useState({
     contact_id: '', invoice_type: 'tax_invoice', invoice_date: '', due_date: '',
-    place_of_supply: '', is_igst: false, notes: '', terms: 'Payment due within 30 days.', discount: 0,
+    place_of_supply: '', is_igst: false, is_export: false, currency: 'INR',
+    notes: '', terms: 'Payment due within 30 days.', discount: 0,
     line_items: [{ description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 }],
   });
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -145,7 +147,8 @@ function InvoicesTab() {
       setShowForm(false);
       setForm({
         contact_id: '', invoice_type: 'tax_invoice', invoice_date: '', due_date: '',
-        place_of_supply: '', is_igst: false, notes: '', terms: 'Payment due within 30 days.', discount: 0,
+        place_of_supply: '', is_igst: false, is_export: false, currency: 'INR',
+        notes: '', terms: 'Payment due within 30 days.', discount: 0,
         line_items: [{ description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 }],
       });
       load();
@@ -203,6 +206,19 @@ function InvoicesTab() {
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
+  async function downloadPdf() {
+    if (!detail) return;
+    setDownloading(true);
+    try {
+      const res = await api.get(`/v1/ganit/invoices/${detail.invoice.id}/pdf`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${detail.invoice.invoice_number}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) { pushToast({ title: 'Failed to generate PDF', type: 'error' }); }
+    finally { setDownloading(false); }
+  }
+
   if (detail) {
     const inv = detail.invoice;
     const nextDocStatus = { draft: 'final', final: 'sent', sent: 'viewed' };
@@ -225,6 +241,9 @@ function InvoicesTab() {
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+            <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={downloadPdf} disabled={downloading}>
+              {downloading ? 'Generating…' : '⬇ Download PDF'}
+            </button>
             {nextDocStatus[inv.doc_status] && (
               <button className="k-btn k-btn--primary" style={{ fontSize: 12 }}
                 onClick={() => updateDocStatus(nextDocStatus[inv.doc_status])}>
@@ -383,8 +402,19 @@ function InvoicesTab() {
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Due Date</span>
               <input className="k-input" type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} /></label>
             <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, paddingTop: 20 }}>
-              <input type="checkbox" checked={form.is_igst} onChange={e => setForm({ ...form, is_igst: e.target.checked })} />
+              <input type="checkbox" checked={form.is_igst} onChange={e => setForm({ ...form, is_igst: e.target.checked })}
+                disabled={form.is_export} />
               <span style={{ fontWeight: 600 }}>Inter-state (IGST)</span></label>
+            <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, paddingTop: 20 }}>
+              <input type="checkbox" checked={form.is_export}
+                onChange={e => setForm({ ...form, is_export: e.target.checked, currency: e.target.checked ? form.currency : 'INR' })} />
+              <span style={{ fontWeight: 600 }}>Foreign / Export Invoice</span></label>
+            {form.is_export && (
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Currency</span>
+                <select className="k-input" value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}>
+                  {['USD', 'EUR', 'GBP', 'AED', 'SGD', 'INR'].map(c => <option key={c} value={c}>{c}</option>)}
+                </select></label>
+            )}
           </div>
 
           <h4 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700 }}>Line Items</h4>

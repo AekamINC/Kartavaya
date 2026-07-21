@@ -193,6 +193,130 @@ async def get_run(
     return dict(row)
 
 
+# ── Import results into Graha (CRM) ──────────────────────
+
+_ALIASES = {
+    "name": ("name", "fullName", "full_name", "displayName", "profileName", "authorName", "legalName", "companyName", "advertiserName"),
+    "email": ("email", "businessEmail", "contactEmail", "workEmail"),
+    "phone": ("phone", "phoneNumber", "businessPhoneNumber", "mobile", "number", "contactNumber", "whatsapp"),
+    "company": ("company", "companyName", "currentCompany", "organization", "business", "businessName", "advertiserName", "pageName", "legalName", "domain", "url"),
+    "designation": ("designation", "title", "headline", "jobTitle", "position"),
+}
+
+
+def _extract_lead_fields(item: dict, field_map: dict) -> Optional[dict]:
+    """Best-effort mapping of a scraper result row onto Graha contact fields.
+
+    `field_map` (from hub_scraper_catalog.graha_field_map) is tried first as an
+    admin-curated hint; each target field then falls back through a fixed
+    alias list since real Apify actor output shapes vary and can't all be
+    hand-verified up front. Rows with neither a name nor a company are
+    considered unusable and skipped by the caller.
+    """
+    if not isinstance(item, dict):
+        return None
+
+    out = {}
+    for target, aliases in _ALIASES.items():
+        val = None
+        mapped_key = (field_map or {}).get(target)
+        if mapped_key and item.get(mapped_key):
+            val = item.get(mapped_key)
+        else:
+            for key in aliases:
+                if item.get(key):
+                    val = item[key]
+                    break
+        if isinstance(val, dict):
+            val = val.get("url") or val.get("name") or json.dumps(val)
+        if isinstance(val, list):
+            val = ", ".join(str(v) for v in val[:3])
+        out[target] = str(val).strip() if val else ""
+
+    if not out["name"] and not out["company"]:
+        return None
+    if not out["name"]:
+        out["name"] = out["company"]
+    return out
+
+
+@router.post("/runs/{run_id}/import-to-graha")
+async def import_run_to_graha(
+    run_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    from services.contact_dedupe import find_duplicates
+    from routers.graha import fire_automations
+
+    pool = await get_pool()
+    run = await pool.fetchrow(
+        "SELECT r.*, c.graha_field_map, c.name as scraper_name "
+        "FROM staging.hub_scraper_runs r "
+        "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
+        "WHERE r.id=$1::uuid AND r.org_id=$2::uuid",
+        str(run_id), org_id,
+    )
+    if not run:
+        raise HTTPException(404, "Run not found")
+    if run["status"] != "succeeded":
+        raise HTTPException(400, "Run has not succeeded yet")
+
+    results = run["results"]
+    results = json.loads(results) if isinstance(results, str) else (results or [])
+    field_map = run["graha_field_map"]
+    field_map = json.loads(field_map) if isinstance(field_map, str) else (field_map or {})
+
+    imported, skipped_dupe, skipped_empty = 0, 0, 0
+
+    for item in results:
+        lead = _extract_lead_fields(item, field_map)
+        if not lead:
+            skipped_empty += 1
+            continue
+
+        dupes = await find_duplicates(
+            pool, org_id, email=lead["email"], phone=lead["phone"],
+            name=lead["name"], company=lead["company"],
+        )
+        if any(d["match_type"] in ("email", "phone") for d in dupes):
+            skipped_dupe += 1
+            continue
+
+        row = await pool.fetchrow(
+            "INSERT INTO staging.graha_contacts "
+            "(org_id, name, email, phone, company, designation, contact_type, source, created_by) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, $6, 'lead', $7, $8) "
+            "RETURNING id",
+            org_id, lead["name"], lead["email"], lead["phone"], lead["company"],
+            lead["designation"], f"scraper:{run['scraper_id']}", user["user_id"],
+        )
+        asyncio.ensure_future(fire_automations(pool, org_id, "lead_created", {
+            "contact_id": str(row["id"]), "source": f"scraper:{run['scraper_id']}", "contact_type": "lead",
+        }))
+        imported += 1
+
+    await pool.execute(
+        "UPDATE staging.hub_scraper_runs SET graha_imported_count=$2, graha_imported_at=NOW() "
+        "WHERE id=$1::uuid",
+        str(run_id), imported,
+    )
+
+    log.info(
+        "import-to-graha: run=%s org=%s imported=%d dupe=%d unmappable=%d",
+        run_id, org_id, imported, skipped_dupe, skipped_empty,
+    )
+
+    return {
+        "status": "done",
+        "imported": imported,
+        "skipped_duplicate": skipped_dupe,
+        "skipped_unmappable": skipped_empty,
+        "total_results": len(results),
+    }
+
+
 @router.get("/runs")
 async def list_runs(
     user=Depends(require_user),

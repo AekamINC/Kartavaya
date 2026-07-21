@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
 import { PageHeader, StatTile, Card } from '../components/editorial';
-import { relTime } from '../lib/utils';
+import { relTime, formatINR } from '../lib/utils';
 
 const CONTACT_TYPES = ['lead', 'customer', 'vendor', 'partner'];
 const ACTIVITY_TYPES = ['call', 'email', 'meeting', 'note', 'task'];
@@ -288,6 +288,7 @@ function ClientsTab() {
   function openEdit(c) {
     setEditId(c.id);
     setForm({ name: c.name, ref_no: c.ref_no || '', gstin: c.gstin || '', website: c.website || '', notes: c.notes || '', address: c.address || {} });
+    setDetail(null);
     setShowForm(true);
   }
 
@@ -1320,7 +1321,7 @@ function ReportsTab() {
 
   if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading reports...</p>;
 
-  const fmt = v => v != null ? `₹${Number(v).toLocaleString('en-IN')}` : '—';
+  const fmt = v => v != null ? formatINR(v) : '—';
 
   return (
     <div>

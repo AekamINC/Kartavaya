@@ -19,6 +19,8 @@ schema changes must be `.sql`.
 | `005_activity_and_time.sql` | ⏳ Pending | `activity_events` + `time_entries` tables |
 | `006_mentions.sql` | ⏳ Pending | `mentions` table |
 | `007_rls_and_indexes.sql` | ✅ Applied | Row-level security policies + performance indexes |
+| `046_leadgen_catalog.sql` | ⏳ Pending | Seeds `hub_scraper_catalog` with LinkedIn/Ads/SEO/social/e-commerce/GovIndia/WhatsApp/enrichment scrapers; adds `graha_field_map` + import-tracking columns |
+| `047_invoice_pdf.sql` | ⏳ Pending | Adds company-profile fields (logo/email/phone/website/bank_details/invoice_note) to `organisations` + `is_export`/`currency` to `ganit_invoices` for PDF generation |
 
 > Migrations 002–006 are defined in `V2_PLAN.md §4`. The SQL is the
 > source of truth — this table is a summary.

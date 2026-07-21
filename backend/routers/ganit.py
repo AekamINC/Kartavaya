@@ -11,7 +11,7 @@ from datetime import date, datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,8 @@ class InvoiceCreate(BaseModel):
     due_date: str = ""
     place_of_supply: str = ""
     is_igst: bool = False
+    is_export: bool = False
+    currency: str = "INR"
     line_items: list[LineItem]
     discount: float = 0
     notes: str = ""
@@ -409,13 +411,13 @@ async def create_invoice(
     row = await pool.fetchrow(
         "INSERT INTO staging.ganit_invoices "
         "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
-        " place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
+        " place_of_supply, is_igst, is_export, currency, line_items, subtotal, cgst, sgst, igst, discount, total, "
         " balance_due, notes, terms, created_by, doc_status) "
         "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6::date, $7::date, "
-        " $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $16, $17, $18, $19, $20) "
+        " $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $18, $19, $20, $21, $22) "
         "RETURNING id, invoice_number, total, doc_status",
         org_id, body.contact_id, body.deal_id, inv_number, body.invoice_type,
-        inv_date, due, body.place_of_supply, body.is_igst,
+        inv_date, due, body.place_of_supply, body.is_igst, body.is_export, body.currency or "INR",
         json.dumps(computed["line_items"]),
         computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
         computed["discount"], computed["total"],
@@ -450,6 +452,68 @@ async def get_invoice(
         str(invoice_id),
     )
     return {"invoice": dict(row), "payments": [dict(p) for p in payments]}
+
+
+@router.get("/invoices/{invoice_id}/pdf")
+async def download_invoice_pdf(
+    invoice_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    from services.invoice_pdf import generate_invoice_pdf
+
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT i.*, c.name as contact_name, c.email as contact_email, c.company as contact_company, "
+        "c.gstin as contact_gstin, c.billing_address as contact_billing_address "
+        "FROM staging.ganit_invoices i "
+        "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "WHERE i.id=$1::uuid AND i.org_id=$2::uuid",
+        str(invoice_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Invoice not found")
+
+    org = await pool.fetchrow(
+        "SELECT name, gstin, pan, billing_address, logo_url, email, phone, website, "
+        "bank_details, invoice_note FROM staging.organisations WHERE id=$1::uuid",
+        org_id,
+    )
+
+    invoice = dict(row)
+    for jsonb_field in ("line_items",):
+        if isinstance(invoice.get(jsonb_field), str):
+            invoice[jsonb_field] = json.loads(invoice[jsonb_field])
+
+    contact = {
+        "name": invoice.pop("contact_name", None),
+        "email": invoice.pop("contact_email", None),
+        "company": invoice.pop("contact_company", None),
+        "gstin": invoice.pop("contact_gstin", None),
+        "billing_address": invoice.pop("contact_billing_address", None),
+    }
+    if isinstance(contact.get("billing_address"), str):
+        contact["billing_address"] = json.loads(contact["billing_address"] or "{}")
+
+    org_dict = dict(org) if org else {}
+    for jsonb_field in ("billing_address", "bank_details"):
+        if isinstance(org_dict.get(jsonb_field), str):
+            org_dict[jsonb_field] = json.loads(org_dict[jsonb_field] or "{}")
+
+    try:
+        pdf_bytes = generate_invoice_pdf(invoice, org_dict, contact)
+    except Exception as e:
+        logger.error("invoice PDF generation failed: invoice=%s org=%s err=%s\n%s",
+                     invoice_id, org_id, e, traceback.format_exc())
+        raise HTTPException(500, "Failed to generate invoice PDF — please try again.")
+
+    filename = f"{invoice.get('invoice_number', 'invoice')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.post("/invoices/{invoice_id}/cancel")
@@ -1344,40 +1408,46 @@ async def create_invoice_from_deal(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    deal = await pool.fetchrow(
-        "SELECT id, title, value, contact_id FROM staging.graha_deals "
-        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
-        str(deal_id), org_id,
-    )
-    if not deal:
-        raise HTTPException(404, "Deal not found")
+    try:
+        deal = await pool.fetchrow(
+            "SELECT id, title, value, contact_id FROM staging.graha_deals "
+            "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+            str(deal_id), org_id,
+        )
+        if not deal:
+            raise HTTPException(404, "Deal not found")
 
-    existing = await pool.fetchrow(
-        "SELECT id FROM staging.ganit_invoices WHERE deal_id=$1::uuid AND org_id=$2::uuid LIMIT 1",
-        str(deal_id), org_id,
-    )
-    if existing:
-        return {"status": "exists", "invoice_id": str(existing["id"])}
+        existing = await pool.fetchrow(
+            "SELECT id FROM staging.ganit_invoices WHERE deal_id=$1::uuid AND org_id=$2::uuid LIMIT 1",
+            str(deal_id), org_id,
+        )
+        if existing:
+            return {"status": "exists", "invoice_id": str(existing["id"])}
 
-    inv_num = await next_doc_number(pool, org_id, "ganit_invoices", "invoice_number", "INV")
-    line_items = [{"description": deal["title"], "qty": 1, "rate": float(deal["value"] or 0)}]
-    subtotal = float(deal["value"] or 0)
-    gst_rate = 18.0
-    cgst = round(subtotal * gst_rate / 200, 2)
-    total = round(subtotal + cgst * 2, 2)
+        inv_num = await next_doc_number(pool, org_id, "ganit_invoices", "invoice_number", "INV")
+        computed = _compute_invoice(
+            [LineItem(description=deal["title"] or "Deal", quantity=1, rate=float(deal["value"] or 0))],
+            is_igst=False,
+        )
 
-    row = await pool.fetchrow(
-        "INSERT INTO staging.ganit_invoices "
-        "(org_id, contact_id, deal_id, invoice_number, line_items, subtotal, "
-        " gst_rate, cgst, sgst, total, doc_status, created_by) "
-        "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, $6, $7, $8, $8, $9, 'draft', $10) "
-        "RETURNING id",
-        org_id, str(deal["contact_id"]) if deal["contact_id"] else None,
-        str(deal_id), inv_num, json.dumps(line_items),
-        subtotal, gst_rate, cgst, total, user["user_id"],
-    )
+        row = await pool.fetchrow(
+            "INSERT INTO staging.ganit_invoices "
+            "(org_id, contact_id, deal_id, invoice_number, line_items, subtotal, "
+            " cgst, sgst, total, balance_due, doc_status, created_by) "
+            "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, $6, $7, $7, $8, $8, 'draft', $9) "
+            "RETURNING id",
+            org_id, str(deal["contact_id"]) if deal["contact_id"] else None,
+            str(deal_id), inv_num, json.dumps(computed["line_items"]),
+            computed["subtotal"], computed["cgst"], computed["total"], user["user_id"],
+        )
 
-    return {"status": "created", "invoice_id": str(row["id"]), "invoice_number": inv_num}
+        return {"status": "created", "invoice_id": str(row["id"]), "invoice_number": inv_num}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("create_invoice_from_deal failed: deal=%s org=%s err=%s\n%s",
+                     deal_id, org_id, e, traceback.format_exc())
+        raise HTTPException(500, "Failed to create invoice — please try again or contact support.")
 
 
 # ── Vendors & Vendor Bills (Accounts Payable) ────────────────

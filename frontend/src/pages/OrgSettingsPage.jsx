@@ -24,11 +24,23 @@ const ROLE_OPTIONS = [
   { code: 'org_member', label: 'Org Member' },
 ];
 
+const EMPTY_PROFILE = {
+  name: '', gstin: '', pan: '', logo_url: '', email: '', phone: '', website: '',
+  billing_address: { line1: '', line2: '', city: '', state: '', pincode: '', country: 'India' },
+  bank_details: { account_name: '', account_number: '', ifsc: '', bank_name: '', branch: '', upi_id: '' },
+  invoice_note: '',
+};
+
 export default function OrgSettingsPage() {
   const user = currentUser();
   const { pushToast } = useToast();
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const [profile, setProfile] = useState(EMPTY_PROFILE);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const [addEmail, setAddEmail] = useState('');
   const [addRole, setAddRole] = useState('org_member');
@@ -47,6 +59,41 @@ export default function OrgSettingsPage() {
   }, [pushToast]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    api.get('/v1/org/profile')
+      .then(r => setProfile({
+        ...EMPTY_PROFILE, ...r.data,
+        billing_address: { ...EMPTY_PROFILE.billing_address, ...(r.data.billing_address || {}) },
+        bank_details: { ...EMPTY_PROFILE.bank_details, ...(r.data.bank_details || {}) },
+      }))
+      .catch(() => {})
+      .finally(() => setProfileLoading(false));
+  }, []);
+
+  const saveProfile = async () => {
+    setSavingProfile(true);
+    try {
+      await api.patch('/v1/org/profile', profile);
+      pushToast({ type: 'success', title: 'Company profile saved' });
+    } catch (err) {
+      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to save profile' });
+    } finally { setSavingProfile(false); }
+  };
+
+  const uploadLogo = async (file) => {
+    if (!file) return;
+    setUploadingLogo(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setProfile(p => ({ ...p, logo_url: r.data.url }));
+      pushToast({ type: 'success', title: 'Logo uploaded — click Save to apply' });
+    } catch (err) {
+      pushToast({ type: 'error', title: 'Logo upload failed' });
+    } finally { setUploadingLogo(false); }
+  };
 
   const addMember = async () => {
     if (!addEmail.trim()) return;
@@ -115,6 +162,84 @@ export default function OrgSettingsPage() {
             <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>{orgRole.org_name}</div>
           </div>
         )}
+
+        {/* Company Profile — powers the invoice PDF letterhead */}
+        <div style={{ marginBottom: 24, padding: 18, background: 'var(--bg-soft)', borderRadius: 'var(--r-md)', border: '1px solid var(--rule-soft)' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', marginBottom: 4 }}>Company Profile</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 14 }}>
+            Shown on the letterhead of every invoice PDF (Ganit).
+          </div>
+
+          {profileLoading ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>Loading…</div> : (
+            <>
+              <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 14 }}>
+                {profile.logo_url
+                  ? <img src={profile.logo_url} alt="Logo" style={{ width: 56, height: 56, objectFit: 'contain', borderRadius: 8, border: '1px solid var(--rule-soft)', background: '#fff' }} />
+                  : <div style={{ width: 56, height: 56, borderRadius: 8, border: '1px dashed var(--rule-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'var(--ink-3)' }}>No logo</div>}
+                <label className="k-btn k-btn--ghost k-btn--sm" style={{ fontSize: 11, cursor: 'pointer' }}>
+                  {uploadingLogo ? 'Uploading…' : 'Upload logo'}
+                  <input type="file" accept="image/*" style={{ display: 'none' }}
+                    onChange={e => uploadLogo(e.target.files?.[0])} disabled={uploadingLogo} />
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <label style={{ fontSize: 12 }}><span style={labelSt}>Legal Name</span>
+                  <input className="k-input" value={profile.name} onChange={e => setProfile({ ...profile, name: e.target.value })} /></label>
+                <label style={{ fontSize: 12 }}><span style={labelSt}>GSTIN</span>
+                  <input className="k-input" value={profile.gstin || ''} onChange={e => setProfile({ ...profile, gstin: e.target.value })} /></label>
+                <label style={{ fontSize: 12 }}><span style={labelSt}>PAN</span>
+                  <input className="k-input" value={profile.pan || ''} onChange={e => setProfile({ ...profile, pan: e.target.value })} /></label>
+                <label style={{ fontSize: 12 }}><span style={labelSt}>Email</span>
+                  <input className="k-input" value={profile.email} onChange={e => setProfile({ ...profile, email: e.target.value })} /></label>
+                <label style={{ fontSize: 12 }}><span style={labelSt}>Phone</span>
+                  <input className="k-input" value={profile.phone} onChange={e => setProfile({ ...profile, phone: e.target.value })} /></label>
+                <label style={{ fontSize: 12 }}><span style={labelSt}>Website</span>
+                  <input className="k-input" value={profile.website} onChange={e => setProfile({ ...profile, website: e.target.value })} /></label>
+              </div>
+
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-2)', margin: '10px 0 6px' }}>Address</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <input className="k-input" placeholder="Address line 1" value={profile.billing_address.line1}
+                  onChange={e => setProfile({ ...profile, billing_address: { ...profile.billing_address, line1: e.target.value } })} />
+                <input className="k-input" placeholder="Address line 2" value={profile.billing_address.line2}
+                  onChange={e => setProfile({ ...profile, billing_address: { ...profile.billing_address, line2: e.target.value } })} />
+                <input className="k-input" placeholder="City" value={profile.billing_address.city}
+                  onChange={e => setProfile({ ...profile, billing_address: { ...profile.billing_address, city: e.target.value } })} />
+                <input className="k-input" placeholder="State" value={profile.billing_address.state}
+                  onChange={e => setProfile({ ...profile, billing_address: { ...profile.billing_address, state: e.target.value } })} />
+                <input className="k-input" placeholder="Pincode" value={profile.billing_address.pincode}
+                  onChange={e => setProfile({ ...profile, billing_address: { ...profile.billing_address, pincode: e.target.value } })} />
+                <input className="k-input" placeholder="Country" value={profile.billing_address.country}
+                  onChange={e => setProfile({ ...profile, billing_address: { ...profile.billing_address, country: e.target.value } })} />
+              </div>
+
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-2)', margin: '10px 0 6px' }}>Bank Details (shown on invoice for payment)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <input className="k-input" placeholder="Account name" value={profile.bank_details.account_name}
+                  onChange={e => setProfile({ ...profile, bank_details: { ...profile.bank_details, account_name: e.target.value } })} />
+                <input className="k-input" placeholder="Account number" value={profile.bank_details.account_number}
+                  onChange={e => setProfile({ ...profile, bank_details: { ...profile.bank_details, account_number: e.target.value } })} />
+                <input className="k-input" placeholder="IFSC" value={profile.bank_details.ifsc}
+                  onChange={e => setProfile({ ...profile, bank_details: { ...profile.bank_details, ifsc: e.target.value } })} />
+                <input className="k-input" placeholder="Bank name" value={profile.bank_details.bank_name}
+                  onChange={e => setProfile({ ...profile, bank_details: { ...profile.bank_details, bank_name: e.target.value } })} />
+                <input className="k-input" placeholder="Branch" value={profile.bank_details.branch}
+                  onChange={e => setProfile({ ...profile, bank_details: { ...profile.bank_details, branch: e.target.value } })} />
+                <input className="k-input" placeholder="UPI ID" value={profile.bank_details.upi_id}
+                  onChange={e => setProfile({ ...profile, bank_details: { ...profile.bank_details, upi_id: e.target.value } })} />
+              </div>
+
+              <label style={{ fontSize: 12, display: 'block', marginBottom: 12 }}><span style={labelSt}>Invoice footer note</span>
+                <input className="k-input" placeholder="e.g. Thank you for your business."
+                  value={profile.invoice_note} onChange={e => setProfile({ ...profile, invoice_note: e.target.value })} /></label>
+
+              <button className="k-btn k-btn--primary k-btn--sm" onClick={saveProfile} disabled={savingProfile}>
+                {savingProfile ? 'Saving…' : 'Save Company Profile'}
+              </button>
+            </>
+          )}
+        </div>
 
         {/* Members */}
         <div style={{ marginBottom: 20 }}>
