@@ -1,6 +1,7 @@
 # Odoo-Inspired Features — Implementation Plan
 
 **Generated:** 2026-07-21 (scheduled task: `plan-odoo-features`)
+**Tier 1 status (2026-07-21):** All 5 features implemented and migrated to the live DB — see migrations 033–037 and [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Tier 2/3 remain unbuilt.
 **Branch:** staging
 **Principle:** Same as Vetana/Vikray — new features are thin layers over existing modules, reusing existing endpoints/tables wherever possible. No new top-level modules; everything slots into the existing seven (Graha, Ganit, Manav, Vikray, Vetana, Dristi, Prachar).
 

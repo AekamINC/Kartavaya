@@ -18,10 +18,10 @@ All-in-one SaaS for Indian SMBs: CRM, invoicing, HR, payroll, AI content, market
 |---|---|---|---|---|
 | **Project Management** | core | server.py | ✅ Production | Kanban, tasks, comments, attachments, approvals |
 | **Graha · CRM** | graha | graha.py | ✅ Production | Contacts, deals, pipeline, labels, web forms, lead scoring, dedupe/merge |
-| **Ganit · Invoicing** | ganit | ganit.py | ✅ Production | Invoices, payments, GST, e-signature on contracts (OTP + SHA-256 audit trail) |
-| **Manav · HRMS** | manav | manav.py | ✅ Production | Employees, documents, leave, shift scheduling + bidding + swaps |
-| **Vetana · Payroll** | vetana | vetana.py | ✅ Production | Salary, payslips, compliance |
-| **Vikray · Sales** | vikray | vikray.py | ✅ Production | Sales pipeline, territories, forecasts |
+| **Ganit · Invoicing** | ganit | ganit.py | ✅ Production | Invoices, payments, GST, e-signature on contracts (OTP + SHA-256 audit trail), vendor bills/accounts payable |
+| **Manav · HRMS** | manav | manav.py | ✅ Production | Employees, documents, leave, shift scheduling + bidding + swaps, expense claims, recruitment/ATS |
+| **Vetana · Payroll** | vetana | vetana.py | ✅ Production | Salary, payslips, compliance, employee loans/advances, expense reimbursement |
+| **Vikray · Sales** | vikray | vikray.py | ✅ Production | Sales pipeline, territories, forecasts, product stock ledger |
 | **Srijan · AI Hub** | srijan | hub.py, hub_chat.py, hub_publish.py | ✅ Production | Multi-provider AI (Gemini/OpenRouter/Groq), RAG chatbot, social publishing (Meta/Instagram/LinkedIn/Google Business), content generation, skill packs, credit system |
 | **Prachar · Marketing** | prachar | prachar.py, prachar_ads.py | ⚠️ Partial | Campaign CRUD + audience + ad insights + sequences/cadences (multi-channel). Send is a stub. |
 | **Dristi · Analytics** | dristi | dristi.py | ⚠️ Partial | Dashboards + scheduled report delivery + CSV/JSON export. No frontend yet. |
@@ -132,6 +132,12 @@ All Phase 1–6 vulnerabilities fixed: SQL injection, XSS, CSRF, rate limiting, 
 | 026 | `026_prachar_ad_insights.sql` | Ad accounts, campaigns, insights | ✅ |
 | 027 | `027_esign_shifts_sequences_report_delivery.sql` | E-sign tables, shift scheduling, sequences, scheduled reports | ✅ |
 | 028 | `028_teams_org_id_fk_inversion.sql` | teams.org_id column, FK inversion prep | ✅ |
+| 029–032 | Various | Org consolidation, created_by TEXT migration, Graha clients, scraper marketplace | ✅ |
+| 033 | `033_vetana_loans.sql` | Employee loans/salary advances, EMI payslip deduction | ✅ |
+| 034 | `034_expense_claims.sql` | Manav expense claims → Vetana payroll reimbursement | ✅ |
+| 035 | `035_vendor_bills.sql` | Ganit vendors, vendor bills, vendor payments (accounts payable) | ✅ |
+| 036 | `036_vikray_stock.sql` | Vikray product stock ledger + stock moves | ✅ |
+| 037 | `037_recruitment.sql` | Manav job openings + candidates (ATS), hire→employee conversion | ✅ |
 
 ---
 
