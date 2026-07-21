@@ -272,7 +272,7 @@ function ReportsTab() {
 
   const openDetail = async (r) => {
     setSelected(r); setView('detail'); setLogs(null);
-    api.get(`/v1/dristi/scheduled-reports/${r.id}/logs`).then(res => setLogs(res.logs)).catch(e => pushToast({ type: 'error', title: e.message }));
+    api.get(`/v1/dristi/scheduled-reports/${r.id}/logs`).then(res => setLogs(res.data)).catch(e => pushToast({ type: 'error', title: e.message }));
   };
 
   const openCreate = () => {
