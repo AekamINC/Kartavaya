@@ -52,7 +52,6 @@ async def _get_org_r2(org_id: str) -> tuple[object, str] | tuple[None, None]:
         org_id,
     )
     if not row or not row["r2_account_id"] or not row["r2_access_key_id"]:
-        _org_clients[org_id] = (None, None)
         return None, None
 
     try:

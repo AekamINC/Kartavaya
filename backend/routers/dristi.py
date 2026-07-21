@@ -111,8 +111,9 @@ async def overview(
         "COUNT(*) FILTER (WHERE status='in_progress') AS active_tasks, "
         "COUNT(*) FILTER (WHERE due_at < NOW() AND status != 'done') AS overdue_tasks "
         "FROM tasks WHERE team_id IN ("
-        "  SELECT team_id FROM teams WHERE deleted_at IS NULL"
+        "  SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL"
         ") AND archived_at IS NULL",
+        org_id,
     )
 
     crm = await pool.fetchrow(

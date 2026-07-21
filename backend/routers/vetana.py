@@ -570,8 +570,8 @@ async def revert_run(
         raise HTTPException(400, "Can only revert a processed (not yet approved) payroll run")
     await pool.execute(
         "UPDATE staging.vetana_payroll_runs SET status='draft', "
-        "processed_at=NULL WHERE id=$1::uuid",
-        run_id,
+        "processed_at=NULL WHERE id=$1::uuid AND org_id=$2::uuid",
+        run_id, org_id,
     )
     return {"ok": True}
 
@@ -648,8 +648,8 @@ async def disburse_payslip(
         raise HTTPException(400, "Payslip must be approved before disbursement")
     await pool.execute(
         "UPDATE staging.vetana_payslips SET status='disbursed', disbursed_at=NOW() "
-        "WHERE id=$1::uuid",
-        payslip_id,
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        payslip_id, org_id,
     )
     undisbursed = await pool.fetchval(
         "SELECT COUNT(*) FROM staging.vetana_payslips "

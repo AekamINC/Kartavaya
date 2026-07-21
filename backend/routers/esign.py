@@ -347,7 +347,8 @@ async def send_otp(token: str, request: Request):
     if signer["status"] == "signed":
         raise HTTPException(400, "Already signed")
 
-    otp = f"{random.randint(100000, 999999)}"
+    import secrets as _secrets
+    otp = f"{_secrets.randbelow(900000) + 100000}"
     expires = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     await pool.execute(
@@ -359,7 +360,7 @@ async def send_otp(token: str, request: Request):
     html = _build_otp_email(signer["name"], otp, signer["title"])
     send_email(
         to_email=signer["email"],
-        subject=f"Your signing verification code — {otp}",
+        subject="Your signing verification code",
         html_content=html,
     )
 
@@ -388,6 +389,18 @@ async def verify_otp(token: str, body: OTPVerify, request: Request):
 
     if datetime.now(timezone.utc) > signer["otp_expires_at"]:
         raise HTTPException(400, "OTP expired. Request a new one.")
+
+    otp_attempts_key = f"otp_attempts:{token}"
+    attempts = getattr(verify_otp, '_attempts', {})
+    if not hasattr(verify_otp, '_attempts'):
+        verify_otp._attempts = attempts
+    current = attempts.get(otp_attempts_key, {"count": 0, "first_at": datetime.now(timezone.utc)})
+    if current["count"] >= 5 and (datetime.now(timezone.utc) - current["first_at"]).total_seconds() < 900:
+        raise HTTPException(429, "Too many attempts. Request a new OTP.")
+    current["count"] = current["count"] + 1
+    if current["count"] == 1:
+        current["first_at"] = datetime.now(timezone.utc)
+    attempts[otp_attempts_key] = current
 
     if body.otp != signer["otp_code"]:
         client_ip = request.client.host if request.client else "unknown"

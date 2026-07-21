@@ -379,8 +379,8 @@ async def cancel_order(
         raise HTTPException(400, "Only draft or confirmed orders can be cancelled")
     await pool.execute(
         "UPDATE staging.vikray_orders SET status='cancelled', is_active=FALSE, updated_at=NOW() "
-        "WHERE id=$1::uuid",
-        order_id,
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        order_id, org_id,
     )
     if existing["status"] == "confirmed":
         await _apply_stock_moves(pool, org_id, order_id, existing["line_items"], 1, "order_cancelled", user["user_id"])

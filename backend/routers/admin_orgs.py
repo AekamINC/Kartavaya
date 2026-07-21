@@ -171,7 +171,10 @@ async def get_org(
     """Get org details including members and roles."""
     pool = await get_pool()
     org = await pool.fetchrow(
-        "SELECT o.*, p.code as plan_code, p.name as plan_name, "
+        "SELECT o.id, o.team_id, o.name, o.owner_user_id, o.is_active, "
+        "o.r2_account_id, o.r2_bucket_name, o.storage_limit_bytes, "
+        "o.created_at, o.updated_at, "
+        "p.code as plan_code, p.name as plan_name, "
         "u.email as owner_email "
         "FROM staging.organisations o "
         "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "

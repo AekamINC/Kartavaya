@@ -78,21 +78,25 @@ async def next_doc_number(pool, org_id: str, table: str, column: str, prefix: st
     """Generate next sequential document number: PREFIX-YYYY-0001.
 
     Shared by Ganit (invoices), Vikray (orders), and Vetana (payslips).
+    Uses advisory lock to prevent race conditions producing duplicates.
     """
     if (table, column) not in _ALLOWED_DOC_TABLES:
         raise ValueError(f"Disallowed table/column: {table}.{column}")
-    last = await pool.fetchval(
-        f"SELECT {column} FROM staging.{table} "
-        "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 1",
-        org_id,
-    )
-    if last:
-        parts = last.rsplit("-", 1)
-        num = int(parts[-1]) + 1 if len(parts) == 2 and parts[-1].isdigit() else 1
-    else:
-        num = 1
-    fy = datetime.now().year
-    return f"{prefix}-{fy}-{num:04d}"
+    async with pool.acquire() as conn:
+        lock_key = hash((org_id, table)) & 0x7FFFFFFF
+        await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
+        last = await conn.fetchval(
+            f"SELECT {column} FROM staging.{table} "
+            "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 1",
+            org_id,
+        )
+        if last:
+            parts = last.rsplit("-", 1)
+            num = int(parts[-1]) + 1 if len(parts) == 2 and parts[-1].isdigit() else 1
+        else:
+            num = 1
+        fy = datetime.now().year
+        return f"{prefix}-{fy}-{num:04d}"
 
 
 # ── 3. DB helpers ─────────────────────────────────────────────────────────────

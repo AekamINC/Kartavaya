@@ -1331,7 +1331,7 @@ async def action_swap(swap_id: UUID, action: str, user=Depends(require_user), or
     )
     if action == "approved":
         swap = await pool.fetchrow(
-            "SELECT * FROM staging.manav_swap_requests WHERE id=$1::uuid", str(swap_id)
+            "SELECT * FROM staging.manav_swap_requests WHERE id=$1::uuid AND org_id=$2::uuid", str(swap_id), org_id
         )
         if swap and swap["target_employee_id"]:
             sched = await pool.fetchrow(

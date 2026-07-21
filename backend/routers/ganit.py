@@ -570,8 +570,8 @@ async def record_payment(
 
     await pool.execute(
         "UPDATE staging.ganit_invoices SET amount_paid=$1, balance_due=$2, "
-        "payment_status=$3, updated_at=NOW() WHERE id=$4::uuid",
-        round(new_paid, 2), round(max(new_balance, 0), 2), new_status, str(invoice_id),
+        "payment_status=$3, updated_at=NOW() WHERE id=$4::uuid AND org_id=$5::uuid",
+        round(new_paid, 2), round(max(new_balance, 0), 2), new_status, str(invoice_id), org_id,
     )
     return {"status": new_status, "amount_paid": round(new_paid, 2), "balance_due": round(max(new_balance, 0), 2)}
 
@@ -1665,8 +1665,8 @@ async def record_vendor_payment(
     new_paid = round(float(bill["amount_paid"]) + body.amount, 2)
     new_status = "paid" if new_paid >= float(bill["total"]) else "partially_paid"
     await pool.execute(
-        "UPDATE staging.ganit_vendor_bills SET amount_paid=$1, status=$2 WHERE id=$3::uuid",
-        new_paid, new_status, str(bill_id),
+        "UPDATE staging.ganit_vendor_bills SET amount_paid=$1, status=$2 WHERE id=$3::uuid AND org_id=$4::uuid",
+        new_paid, new_status, str(bill_id), org_id,
     )
     return {"ok": True, "amount_paid": new_paid, "status": new_status}
 
@@ -1910,7 +1910,7 @@ async def create_invoice_from_time_entries(
 
             for eid in entry_ids:
                 await conn.execute(
-                    "UPDATE time_entries SET is_billed=TRUE, invoice_id=$1 WHERE entry_id=$2",
+                    "UPDATE staging.time_entries SET is_billed=TRUE, invoice_id=$1 WHERE entry_id=$2",
                     inv["id"], eid,
                 )
 
