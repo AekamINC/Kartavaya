@@ -5,7 +5,7 @@ import { PageHeader, StatTile, TabBar, Section, Badge, Shimmer, Empty, BackButto
 
 const STATUS_COLORS = { draft: '#6E7B91', scheduled: '#0082c6', sending: '#8b5cf6', sent: '#10b981', paused: '#f59e0b', cancelled: '#9ca3af' };
 
-const TABS = ['dashboard', 'campaigns', 'ads', 'sequences', 'templates', 'automations', 'unsubscribes'];
+const TABS = ['dashboard', 'campaigns', 'ads', 'sequences', 'templates', 'automations', 'unsubscribes', 'events'];
 
 export default function PracharPage() {
   const [tab, setTab] = useState('dashboard');
@@ -20,6 +20,7 @@ export default function PracharPage() {
       {tab === 'templates' && <TemplatesTab />}
       {tab === 'automations' && <AutomationsTab />}
       {tab === 'unsubscribes' && <UnsubscribesTab />}
+      {tab === 'events' && <EventsTab />}
     </div>
   );
 }
@@ -754,6 +755,244 @@ function UnsubscribesTab() {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+const EVENT_STATUS_COLORS = { draft: '#6b7280', published: '#3b82f6', ongoing: '#f59e0b', completed: '#10b981', cancelled: '#ef4444' };
+const EVENT_TYPE_COLORS = { webinar: '#3b82f6', meetup: '#8b5cf6', workshop: '#f59e0b', conference: '#0ea5e9', other: '#6b7280' };
+
+function EventsTab() {
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [expanded, setExpanded] = useState(null);
+  const [regs, setRegs] = useState([]);
+  const [regsLoading, setRegsLoading] = useState(false);
+  const [regForm, setRegForm] = useState(null);
+  const { pushToast } = useToast();
+
+  const load = () => api.get('/v1/prachar/events').then(r => { setEvents(r.data); setLoading(false); }).catch(e => { pushToast({ type: 'error', title: e.message }); setLoading(false); });
+  useEffect(() => { load(); }, []);
+
+  const save = async () => {
+    if (!form.title.trim()) return pushToast({ type: 'error', title: 'Title required' });
+    if (!form.starts_at) return pushToast({ type: 'error', title: 'Start date required' });
+    try {
+      if (form.id) {
+        await api.patch(`/v1/prachar/events/${form.id}`, form);
+        pushToast({ type: 'success', title: 'Event updated' });
+      } else {
+        await api.post('/v1/prachar/events', form);
+        pushToast({ type: 'success', title: 'Event created' });
+      }
+      setForm(null); load();
+    } catch (e) { pushToast({ type: 'error', title: e.message }); }
+  };
+
+  const remove = async (id) => {
+    try {
+      await api.delete(`/v1/prachar/events/${id}`);
+      load(); pushToast({ type: 'success', title: 'Event deleted' });
+    } catch (e) { pushToast({ type: 'error', title: e.message }); }
+  };
+
+  const updateStatus = async (id, status) => {
+    try {
+      await api.patch(`/v1/prachar/events/${id}`, { status });
+      load(); pushToast({ type: 'success', title: `Status changed to ${status}` });
+    } catch (e) { pushToast({ type: 'error', title: e.message }); }
+  };
+
+  const toggleExpand = async (id) => {
+    if (expanded === id) { setExpanded(null); setRegs([]); return; }
+    setExpanded(id);
+    setRegsLoading(true);
+    try {
+      const r = await api.get(`/v1/prachar/events/${id}/registrations`);
+      setRegs(r.data);
+    } catch (e) { pushToast({ type: 'error', title: e.message }); setRegs([]); }
+    setRegsLoading(false);
+  };
+
+  const registerAttendee = async (eventId) => {
+    if (!regForm.name.trim() || !regForm.email.trim()) return pushToast({ type: 'error', title: 'Name and email required' });
+    try {
+      await api.post(`/v1/prachar/events/${eventId}/register`, regForm);
+      pushToast({ type: 'success', title: 'Registered' });
+      setRegForm(null);
+      const r = await api.get(`/v1/prachar/events/${eventId}/registrations`);
+      setRegs(r.data);
+      load();
+    } catch (e) { pushToast({ type: 'error', title: e.message }); }
+  };
+
+  const updateRegStatus = async (eventId, regId, status) => {
+    try {
+      await api.patch(`/v1/prachar/events/${eventId}/registrations/${regId}?status=${status}`);
+      pushToast({ type: 'success', title: `Marked as ${status}` });
+      const r = await api.get(`/v1/prachar/events/${eventId}/registrations`);
+      setRegs(r.data);
+    } catch (e) { pushToast({ type: 'error', title: e.message }); }
+  };
+
+  const filtered = statusFilter ? events.filter(e => e.status === statusFilter) : events;
+
+  if (form) {
+    return (
+      <div>
+        <BackButton onClick={() => setForm(null)} label="Back to events" />
+        <div className="k-formpanel">
+          <h3 style={{ fontSize: 16, fontWeight: 600, fontFamily: 'var(--font-display)', margin: '0 0 20px' }}>{form.id ? 'Edit Event' : 'New Event'}</h3>
+          <div className="k-formpanel__grid k-formpanel__grid--2">
+            <label className="k-formpanel__label">Title
+              <input placeholder="e.g. Product Launch Webinar" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="k-formpanel__input" />
+            </label>
+            <label className="k-formpanel__label">Event type
+              <select value={form.event_type} onChange={e => setForm({ ...form, event_type: e.target.value })} className="k-formpanel__input">
+                <option value="webinar">Webinar</option>
+                <option value="meetup">Meetup</option>
+                <option value="workshop">Workshop</option>
+                <option value="conference">Conference</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+          </div>
+          <label className="k-formpanel__label" style={{ marginBottom: 16 }}>Description
+            <textarea placeholder="Event description..." value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={4} className="k-formpanel__input" style={{ minHeight: 80 }} />
+          </label>
+          <div className="k-formpanel__grid k-formpanel__grid--2">
+            <label className="k-formpanel__label">Location
+              <input placeholder="e.g. Mumbai Convention Centre" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} className="k-formpanel__input" />
+            </label>
+            <label className="k-formpanel__label">Location URL
+              <input placeholder="e.g. https://zoom.us/j/..." value={form.location_url} onChange={e => setForm({ ...form, location_url: e.target.value })} className="k-formpanel__input" />
+            </label>
+          </div>
+          <div className="k-formpanel__grid k-formpanel__grid--2">
+            <label className="k-formpanel__label">Starts at
+              <input type="datetime-local" value={form.starts_at} onChange={e => setForm({ ...form, starts_at: e.target.value })} className="k-formpanel__input" />
+            </label>
+            <label className="k-formpanel__label">Ends at
+              <input type="datetime-local" value={form.ends_at} onChange={e => setForm({ ...form, ends_at: e.target.value })} className="k-formpanel__input" />
+            </label>
+          </div>
+          <div className="k-formpanel__grid k-formpanel__grid--2">
+            <label className="k-formpanel__label">Max attendees
+              <input type="number" placeholder="e.g. 100" value={form.max_attendees} onChange={e => setForm({ ...form, max_attendees: e.target.value ? +e.target.value : '' })} className="k-formpanel__input" />
+            </label>
+            <label className="k-formpanel__label" style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 24 }}>
+              <input type="checkbox" checked={form.registration_open} onChange={e => setForm({ ...form, registration_open: e.target.checked })} />
+              Registration open
+            </label>
+          </div>
+          <div className="k-formpanel__actions">
+            <button onClick={save} className="k-btn k-btn--primary" style={{ fontSize: 13 }}>{form.id ? 'Update Event' : 'Create Event'}</button>
+            <button onClick={() => setForm(null)} className="k-btn" style={{ fontSize: 13 }}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="k-section__head" style={{ marginBottom: 20 }}>
+        <h3 className="k-section__title">Events<span className="k-section__title-hi">कार्यक्रम</span></h3>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="k-formpanel__input" style={{ fontSize: 13, minWidth: 120 }}>
+            <option value="">All statuses</option>
+            <option value="draft">Draft</option>
+            <option value="published">Published</option>
+            <option value="ongoing">Ongoing</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
+            onClick={() => setForm({ title: '', description: '', event_type: 'webinar', location: '', location_url: '', starts_at: '', ends_at: '', max_attendees: '', registration_open: true, tags: [] })}>
+            + New Event
+          </button>
+        </div>
+      </div>
+
+      {loading ? <Shimmer count={4} /> : filtered.length === 0 ? (
+        <Empty icon="📅" title="No events yet" sub="Create events to engage your audience with webinars, meetups and more." cta="+ New Event" onCta={() => setForm({ title: '', description: '', event_type: 'webinar', location: '', location_url: '', starts_at: '', ends_at: '', max_attendees: '', registration_open: true, tags: [] })} />
+      ) : (
+        <DataTable columns={['Title', 'Type', 'Date', 'Status', { label: 'Registrations', align: 'right' }, 'Actions']}>
+          {filtered.map(ev => (
+            <React.Fragment key={ev.id}>
+              <tr style={{ cursor: 'pointer' }} onClick={() => toggleExpand(ev.id)}>
+                <td style={{ fontWeight: 500 }}>{ev.title}</td>
+                <td><Badge text={ev.event_type} color={EVENT_TYPE_COLORS[ev.event_type] || '#6b7280'} /></td>
+                <td>{ev.starts_at ? new Date(ev.starts_at).toLocaleDateString('en-IN') : '-'}</td>
+                <td><Badge text={ev.status} color={EVENT_STATUS_COLORS[ev.status] || '#6b7280'} /></td>
+                <Td align="right">{ev.reg_count || 0}</Td>
+                <td>
+                  <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                    <button className="k-btn" style={{ fontSize: 12 }} onClick={() => setForm({ ...ev, starts_at: ev.starts_at ? ev.starts_at.slice(0, 16) : '', ends_at: ev.ends_at ? ev.ends_at.slice(0, 16) : '' })}>Edit</button>
+                    {ev.status === 'draft' && <button className="k-btn" style={{ fontSize: 12 }} onClick={() => updateStatus(ev.id, 'published')}>Publish</button>}
+                    {ev.status === 'published' && <button className="k-btn" style={{ fontSize: 12 }} onClick={() => updateStatus(ev.id, 'cancelled')}>Cancel</button>}
+                    <button style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }} onClick={() => remove(ev.id)}>Delete</button>
+                  </div>
+                </td>
+              </tr>
+              {expanded === ev.id && (
+                <tr>
+                  <td colSpan={6} style={{ padding: '12px 16px', background: 'var(--surface-2)' }}>
+                    {ev.description && <p style={{ fontSize: 13, color: 'var(--ink-2)', margin: '0 0 12px' }}>{ev.description}</p>}
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                      {ev.location && <span>Location: <strong>{ev.location}</strong></span>}
+                      {ev.starts_at && <span>Starts: <strong>{new Date(ev.starts_at).toLocaleString('en-IN')}</strong></span>}
+                      {ev.ends_at && <span>Ends: <strong>{new Date(ev.ends_at).toLocaleString('en-IN')}</strong></span>}
+                      {ev.max_attendees && <span>Max: <strong>{ev.max_attendees}</strong></span>}
+                      <span>Registration: <strong>{ev.registration_open ? 'Open' : 'Closed'}</strong></span>
+                    </div>
+
+                    <div style={{ marginBottom: 8 }}>
+                      <strong style={{ fontSize: 13 }}>Registrations</strong>
+                      {!regForm && (
+                        <button className="k-btn" style={{ fontSize: 12, marginLeft: 8 }} onClick={() => setRegForm({ name: '', email: '', phone: '' })}>+ Register</button>
+                      )}
+                    </div>
+
+                    {regForm && (
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                        <input placeholder="Name" value={regForm.name} onChange={e => setRegForm({ ...regForm, name: e.target.value })} className="k-formpanel__input" style={{ flex: 1, minWidth: 120 }} />
+                        <input placeholder="Email" value={regForm.email} onChange={e => setRegForm({ ...regForm, email: e.target.value })} className="k-formpanel__input" style={{ flex: 1, minWidth: 120 }} />
+                        <input placeholder="Phone" value={regForm.phone} onChange={e => setRegForm({ ...regForm, phone: e.target.value })} className="k-formpanel__input" style={{ flex: 1, minWidth: 120 }} />
+                        <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => registerAttendee(ev.id)}>Submit</button>
+                        <button className="k-btn" style={{ fontSize: 12 }} onClick={() => setRegForm(null)}>Cancel</button>
+                      </div>
+                    )}
+
+                    {regsLoading ? <Shimmer count={2} /> : regs.length === 0 ? (
+                      <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>No registrations yet.</p>
+                    ) : (
+                      <DataTable columns={['Name', 'Email', 'Phone', 'Status', 'Registered', 'Actions']}>
+                        {regs.map(reg => (
+                          <tr key={reg.id}>
+                            <td style={{ fontSize: 13 }}>{reg.name}</td>
+                            <td style={{ fontSize: 13 }}>{reg.email}</td>
+                            <td style={{ fontSize: 13 }}>{reg.phone || '-'}</td>
+                            <td><Badge text={reg.status} color={reg.status === 'attended' ? '#10b981' : '#6b7280'} /></td>
+                            <td style={{ fontSize: 12 }}>{reg.registered_at ? new Date(reg.registered_at).toLocaleDateString('en-IN') : '-'}</td>
+                            <td>
+                              {reg.status !== 'attended' && (
+                                <button className="k-btn" style={{ fontSize: 12 }} onClick={() => updateRegStatus(ev.id, reg.id, 'attended')}>Mark Attended</button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </DataTable>
+                    )}
+                  </td>
+                </tr>
+              )}
+            </React.Fragment>
+          ))}
+        </DataTable>
       )}
     </div>
   );

@@ -641,3 +641,52 @@ async def stock_moves(
         org_id, product_id,
     )
     return {"data": [dict(r) for r in rows]}
+
+
+# ── POS Quick Sale ──────────────────────────────────────────
+
+class POSSale(BaseModel):
+    contact_id: str = ""
+    line_items: list[OrderLineItem]
+    is_igst: bool = False
+    notes: str = ""
+
+
+@router.post("/pos-sale")
+async def pos_quick_sale(
+    body: POSSale,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    if not body.line_items:
+        raise HTTPException(400, "At least one line item is required")
+
+    items = [li.model_dump() for li in body.line_items]
+    subtotal, cgst, sgst, igst, total = _compute_order_totals(items, 0, body.is_igst)
+
+    order_number = await next_doc_number(pool, org_id, "vikray_orders", "order_number", "POS")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            order = await conn.fetchrow(
+                "INSERT INTO staging.vikray_orders "
+                "(org_id, contact_id, order_number, order_date, line_items, "
+                "subtotal, cgst, sgst, igst, discount, total, is_igst, status, notes, created_by) "
+                "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, CURRENT_DATE, $4::jsonb, "
+                "$5, $6, $7, $8, 0, $9, $10, 'delivered', $11, $12) RETURNING id, order_number, total",
+                org_id, body.contact_id, order_number, json.dumps(items),
+                subtotal, cgst, sgst, igst, total, body.is_igst, body.notes, user["user_id"],
+            )
+
+            await _apply_stock_moves(
+                conn, org_id, str(order["id"]), items, -1, "pos_sale", user["user_id"],
+            )
+
+    return {
+        "ok": True,
+        "order_id": str(order["id"]),
+        "order_number": order["order_number"],
+        "total": float(order["total"]),
+    }

@@ -809,3 +809,251 @@ async def sequence_stats(seq_id: str, user=Depends(require_user), org_id=Depends
         seq_id,
     )
     return {"steps": [dict(s) for s in steps], "totals": dict(totals)}
+
+
+# ── Event Management ────────────────────────────────────────
+
+class EventCreate(BaseModel):
+    title: str
+    description: str = ""
+    event_type: str = "webinar"
+    location: str = ""
+    location_url: str = ""
+    starts_at: str
+    ends_at: str = ""
+    max_attendees: int | None = None
+    registration_open: bool = True
+    tags: list[str] = []
+
+
+class EventUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    event_type: str | None = None
+    location: str | None = None
+    location_url: str | None = None
+    starts_at: str | None = None
+    ends_at: str | None = None
+    max_attendees: int | None = None
+    registration_open: bool | None = None
+    status: str | None = None
+    tags: list[str] | None = None
+
+
+class EventRegistration(BaseModel):
+    name: str
+    email: str
+    phone: str = ""
+    contact_id: str = ""
+
+
+@router.get("/events")
+async def list_events(
+    status: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = (
+        "SELECT e.*, "
+        "(SELECT COUNT(*) FROM staging.prachar_event_registrations r WHERE r.event_id=e.id AND r.status != 'cancelled') AS reg_count "
+        "FROM staging.prachar_events e WHERE e.org_id=$1::uuid AND e.is_active=TRUE"
+    )
+    params: list = [org_id]
+    if status:
+        params.append(status)
+        q += f" AND e.status=${len(params)}"
+    q += " ORDER BY e.starts_at DESC"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/events")
+async def create_event(
+    body: EventCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    valid_types = ("webinar", "meetup", "workshop", "conference", "other")
+    if body.event_type not in valid_types:
+        raise HTTPException(400, f"event_type must be one of: {', '.join(valid_types)}")
+    row = await pool.fetchrow(
+        "INSERT INTO staging.prachar_events "
+        "(org_id, title, description, event_type, location, location_url, "
+        "starts_at, ends_at, max_attendees, registration_open, tags, created_by) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::timestamptz, "
+        "NULLIF($8,'')::timestamptz, $9, $10, $11::jsonb, $12) RETURNING *",
+        org_id, body.title, body.description, body.event_type,
+        body.location, body.location_url, body.starts_at,
+        body.ends_at, body.max_attendees, body.registration_open,
+        json.dumps(body.tags), user["user_id"],
+    )
+    return dict(row)
+
+
+@router.get("/events/{event_id}")
+async def get_event(
+    event_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT e.*, "
+        "(SELECT COUNT(*) FROM staging.prachar_event_registrations r WHERE r.event_id=e.id AND r.status != 'cancelled') AS reg_count "
+        "FROM staging.prachar_events e WHERE e.id=$1::uuid AND e.org_id=$2::uuid AND e.is_active=TRUE",
+        event_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Event not found")
+    return dict(row)
+
+
+@router.patch("/events/{event_id}")
+async def update_event(
+    event_id: str,
+    body: EventUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates, vals = [], []
+    for field in ("title", "description", "location", "location_url"):
+        v = getattr(body, field)
+        if v is not None:
+            vals.append(v); updates.append(f"{field}=${len(vals)}")
+    if body.event_type is not None:
+        valid = ("webinar", "meetup", "workshop", "conference", "other")
+        if body.event_type not in valid:
+            raise HTTPException(400, "Invalid event_type")
+        vals.append(body.event_type); updates.append(f"event_type=${len(vals)}")
+    if body.status is not None:
+        valid = ("draft", "published", "ongoing", "completed", "cancelled")
+        if body.status not in valid:
+            raise HTTPException(400, "Invalid status")
+        vals.append(body.status); updates.append(f"status=${len(vals)}")
+    if body.starts_at is not None:
+        vals.append(body.starts_at); updates.append(f"starts_at=${len(vals)}::timestamptz")
+    if body.ends_at is not None:
+        vals.append(body.ends_at); updates.append(f"ends_at=${len(vals)}::timestamptz")
+    if body.max_attendees is not None:
+        vals.append(body.max_attendees); updates.append(f"max_attendees=${len(vals)}")
+    if body.registration_open is not None:
+        vals.append(body.registration_open); updates.append(f"registration_open=${len(vals)}")
+    if body.tags is not None:
+        vals.append(json.dumps(body.tags)); updates.append(f"tags=${len(vals)}::jsonb")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    updates.append("updated_at=NOW()")
+    vals += [event_id, org_id]
+    row = await pool.fetchrow(
+        f"UPDATE staging.prachar_events SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid AND is_active=TRUE RETURNING *",
+        *vals,
+    )
+    if not row:
+        raise HTTPException(404, "Event not found")
+    return dict(row)
+
+
+@router.delete("/events/{event_id}")
+async def delete_event(
+    event_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE staging.prachar_events SET is_active=FALSE, updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        event_id, org_id,
+    )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "Event not found")
+    return {"ok": True}
+
+
+@router.post("/events/{event_id}/register")
+async def register_for_event(
+    event_id: str,
+    body: EventRegistration,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    event = await pool.fetchrow(
+        "SELECT id, registration_open, max_attendees FROM staging.prachar_events "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        event_id, org_id,
+    )
+    if not event:
+        raise HTTPException(404, "Event not found")
+    if not event["registration_open"]:
+        raise HTTPException(400, "Registration is closed")
+
+    if event["max_attendees"]:
+        current = await pool.fetchval(
+            "SELECT COUNT(*) FROM staging.prachar_event_registrations "
+            "WHERE event_id=$1::uuid AND status != 'cancelled'",
+            event_id,
+        )
+        if current >= event["max_attendees"]:
+            raise HTTPException(400, "Event is full")
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.prachar_event_registrations "
+        "(event_id, org_id, name, email, phone, contact_id) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, NULLIF($6,'')::uuid) "
+        "ON CONFLICT (event_id, email) DO UPDATE SET name=$3, phone=$5 "
+        "RETURNING *",
+        event_id, org_id, body.name, body.email, body.phone, body.contact_id,
+    )
+    return dict(row)
+
+
+@router.get("/events/{event_id}/registrations")
+async def list_registrations(
+    event_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT r.*, c.name AS contact_name "
+        "FROM staging.prachar_event_registrations r "
+        "LEFT JOIN staging.graha_contacts c ON c.id = r.contact_id "
+        "WHERE r.event_id=$1::uuid AND r.org_id=$2::uuid ORDER BY r.registered_at DESC",
+        event_id, org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.patch("/events/{event_id}/registrations/{reg_id}")
+async def update_registration(
+    event_id: str,
+    reg_id: str,
+    status: str = Query(...),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    valid = ("registered", "attended", "no_show", "cancelled")
+    if status not in valid:
+        raise HTTPException(400, f"status must be one of: {', '.join(valid)}")
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "UPDATE staging.prachar_event_registrations SET status=$1 "
+        "WHERE id=$2::uuid AND event_id=$3::uuid AND org_id=$4::uuid RETURNING *",
+        status, reg_id, event_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Registration not found")
+    return dict(row)

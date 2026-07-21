@@ -1660,3 +1660,224 @@ async def hire_candidate(
         emp["id"], str(candidate_id),
     )
     return {"ok": True, "employee_id": str(emp["id"])}
+
+
+# ── Asset Tracking ──────────────────────────────────────────
+
+class AssetCreate(BaseModel):
+    asset_tag: str
+    name: str
+    category: str = "other"
+    serial_number: str = ""
+    purchase_date: str = ""
+    purchase_cost: float = 0
+    condition: str = "good"
+    notes: str = ""
+
+
+class AssetUpdate(BaseModel):
+    name: str | None = None
+    category: str | None = None
+    serial_number: str | None = None
+    purchase_date: str | None = None
+    purchase_cost: float | None = None
+    condition: str | None = None
+    notes: str | None = None
+
+
+class AssetAssign(BaseModel):
+    employee_id: str
+
+
+@router.get("/assets")
+async def list_assets(
+    category: str = "",
+    assigned: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = (
+        "SELECT a.*, e.name AS employee_name "
+        "FROM staging.manav_assets a "
+        "LEFT JOIN staging.manav_employees e ON e.id = a.assigned_to "
+        "WHERE a.org_id=$1::uuid AND a.is_active=TRUE"
+    )
+    params: list = [org_id]
+    if category:
+        params.append(category)
+        q += f" AND a.category=${len(params)}"
+    if assigned == "yes":
+        q += " AND a.assigned_to IS NOT NULL"
+    elif assigned == "no":
+        q += " AND a.assigned_to IS NULL"
+    q += " ORDER BY a.created_at DESC"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/assets")
+async def create_asset(
+    body: AssetCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    valid_cats = ("laptop", "phone", "tablet", "vehicle", "furniture", "other")
+    if body.category not in valid_cats:
+        raise HTTPException(400, f"category must be one of: {', '.join(valid_cats)}")
+    valid_cond = ("new", "good", "fair", "poor", "disposed")
+    if body.condition not in valid_cond:
+        raise HTTPException(400, f"condition must be one of: {', '.join(valid_cond)}")
+    p_date = date.fromisoformat(body.purchase_date) if body.purchase_date else None
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_assets "
+        "(org_id, asset_tag, name, category, serial_number, purchase_date, "
+        "purchase_cost, condition, notes, created_by) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6::date, $7, $8, $9, $10) RETURNING *",
+        org_id, body.asset_tag, body.name, body.category, body.serial_number,
+        p_date, body.purchase_cost, body.condition, body.notes, user["user_id"],
+    )
+    return dict(row)
+
+
+@router.get("/assets/{asset_id}")
+async def get_asset(
+    asset_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT a.*, e.name AS employee_name "
+        "FROM staging.manav_assets a "
+        "LEFT JOIN staging.manav_employees e ON e.id = a.assigned_to "
+        "WHERE a.id=$1::uuid AND a.org_id=$2::uuid AND a.is_active=TRUE",
+        asset_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Asset not found")
+    return dict(row)
+
+
+@router.patch("/assets/{asset_id}")
+async def update_asset(
+    asset_id: str,
+    body: AssetUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates, vals = [], []
+    for field in ("name", "serial_number", "notes"):
+        v = getattr(body, field)
+        if v is not None:
+            vals.append(v); updates.append(f"{field}=${len(vals)}")
+    if body.category is not None:
+        valid = ("laptop", "phone", "tablet", "vehicle", "furniture", "other")
+        if body.category not in valid:
+            raise HTTPException(400, "Invalid category")
+        vals.append(body.category); updates.append(f"category=${len(vals)}")
+    if body.condition is not None:
+        valid = ("new", "good", "fair", "poor", "disposed")
+        if body.condition not in valid:
+            raise HTTPException(400, "Invalid condition")
+        vals.append(body.condition); updates.append(f"condition=${len(vals)}")
+    if body.purchase_cost is not None:
+        vals.append(body.purchase_cost); updates.append(f"purchase_cost=${len(vals)}")
+    if body.purchase_date is not None:
+        vals.append(date.fromisoformat(body.purchase_date)); updates.append(f"purchase_date=${len(vals)}::date")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    updates.append("updated_at=NOW()")
+    vals += [asset_id, org_id]
+    row = await pool.fetchrow(
+        f"UPDATE staging.manav_assets SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid AND is_active=TRUE RETURNING *",
+        *vals,
+    )
+    if not row:
+        raise HTTPException(404, "Asset not found")
+    return dict(row)
+
+
+@router.delete("/assets/{asset_id}")
+async def delete_asset(
+    asset_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE staging.manav_assets SET is_active=FALSE, updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        asset_id, org_id,
+    )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "Asset not found")
+    return {"ok": True}
+
+
+@router.post("/assets/{asset_id}/assign")
+async def assign_asset(
+    asset_id: str,
+    body: AssetAssign,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    emp = await pool.fetchrow(
+        "SELECT id FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        body.employee_id, org_id,
+    )
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    row = await pool.fetchrow(
+        "UPDATE staging.manav_assets SET assigned_to=$1::uuid, assigned_date=CURRENT_DATE, "
+        "returned_date=NULL, updated_at=NOW() "
+        "WHERE id=$2::uuid AND org_id=$3::uuid AND is_active=TRUE RETURNING *",
+        body.employee_id, asset_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Asset not found")
+    return dict(row)
+
+
+@router.post("/assets/{asset_id}/return")
+async def return_asset(
+    asset_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "UPDATE staging.manav_assets SET assigned_to=NULL, returned_date=CURRENT_DATE, updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE RETURNING *",
+        asset_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Asset not found")
+    return dict(row)
+
+
+@router.get("/employees/{employee_id}/assets")
+async def employee_assets(
+    employee_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT * FROM staging.manav_assets "
+        "WHERE org_id=$1::uuid AND assigned_to=$2::uuid AND is_active=TRUE ORDER BY assigned_date DESC",
+        org_id, employee_id,
+    )
+    return {"data": [dict(r) for r in rows]}

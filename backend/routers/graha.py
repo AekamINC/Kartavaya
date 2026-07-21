@@ -2467,3 +2467,537 @@ async def submit_web_form(
     )
 
     return {"status": "submitted", "id": str(sub["id"])}
+
+
+# ── Approval Chains ─────────────────────────────────────────
+
+class ApprovalRuleCreate(BaseModel):
+    entity_type: str
+    threshold_amount: float = 0
+    approver_role: str = ""
+
+
+class ApprovalRuleUpdate(BaseModel):
+    threshold_amount: float | None = None
+    approver_role: str | None = None
+
+
+@router.get("/approval-rules")
+async def list_approval_rules(
+    entity_type: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = "SELECT * FROM staging.graha_approval_rules WHERE org_id=$1::uuid AND is_active=TRUE"
+    params: list = [org_id]
+    if entity_type:
+        params.append(entity_type)
+        q += f" AND entity_type=${len(params)}"
+    q += " ORDER BY threshold_amount ASC"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/approval-rules")
+async def create_approval_rule(
+    body: ApprovalRuleCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    valid_types = ("deal", "vendor_bill", "expense_claim")
+    if body.entity_type not in valid_types:
+        raise HTTPException(400, f"entity_type must be one of: {', '.join(valid_types)}")
+    row = await pool.fetchrow(
+        "INSERT INTO staging.graha_approval_rules "
+        "(org_id, entity_type, threshold_amount, approver_role) "
+        "VALUES ($1::uuid, $2, $3, $4) RETURNING *",
+        org_id, body.entity_type, body.threshold_amount, body.approver_role,
+    )
+    return dict(row)
+
+
+@router.patch("/approval-rules/{rule_id}")
+async def update_approval_rule(
+    rule_id: str,
+    body: ApprovalRuleUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates, vals = [], []
+    if body.threshold_amount is not None:
+        vals.append(body.threshold_amount); updates.append(f"threshold_amount=${len(vals)}")
+    if body.approver_role is not None:
+        vals.append(body.approver_role); updates.append(f"approver_role=${len(vals)}")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    vals += [rule_id, org_id]
+    row = await pool.fetchrow(
+        f"UPDATE staging.graha_approval_rules SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid AND is_active=TRUE RETURNING *",
+        *vals,
+    )
+    if not row:
+        raise HTTPException(404, "Approval rule not found")
+    return dict(row)
+
+
+@router.delete("/approval-rules/{rule_id}")
+async def delete_approval_rule(
+    rule_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE staging.graha_approval_rules SET is_active=FALSE, updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        rule_id, org_id,
+    )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "Approval rule not found")
+    return {"ok": True}
+
+
+@router.get("/approval-requests")
+async def list_approval_requests(
+    status: str = "",
+    entity_type: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = (
+        "SELECT ar.*, ru.threshold_amount, ru.approver_role "
+        "FROM staging.graha_approval_requests ar "
+        "JOIN staging.graha_approval_rules ru ON ru.id = ar.rule_id "
+        "WHERE ar.org_id=$1::uuid"
+    )
+    params: list = [org_id]
+    if status:
+        params.append(status)
+        q += f" AND ar.status=${len(params)}"
+    if entity_type:
+        params.append(entity_type)
+        q += f" AND ar.entity_type=${len(params)}"
+    q += " ORDER BY ar.created_at DESC LIMIT 200"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/approval-requests/{req_id}/approve")
+async def approve_request(
+    req_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "UPDATE staging.graha_approval_requests "
+        "SET status='approved', approved_by=$1, decided_at=NOW() "
+        "WHERE id=$2::uuid AND org_id=$3::uuid AND status='pending' RETURNING *",
+        user["user_id"], req_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Approval request not found or already processed")
+    return dict(row)
+
+
+@router.post("/approval-requests/{req_id}/reject")
+async def reject_request(
+    req_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "UPDATE staging.graha_approval_requests "
+        "SET status='rejected', approved_by=$1, decided_at=NOW() "
+        "WHERE id=$2::uuid AND org_id=$3::uuid AND status='pending' RETURNING *",
+        user["user_id"], req_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Approval request not found or already processed")
+    return dict(row)
+
+
+# ── Helpdesk / Support Tickets ─────────────────────────────
+
+class TicketCreate(BaseModel):
+    contact_id: str = ""
+    subject: str
+    description: str = ""
+    priority: str = "medium"
+    category: str = ""
+    assigned_to: str = ""
+    sla_due_at: str = ""
+
+
+class TicketUpdate(BaseModel):
+    subject: str | None = None
+    description: str | None = None
+    priority: str | None = None
+    status: str | None = None
+    category: str | None = None
+    assigned_to: str | None = None
+    sla_due_at: str | None = None
+
+
+class TicketMessageCreate(BaseModel):
+    body: str
+    sender_type: str = "agent"
+    attachment_urls: list[str] = []
+
+
+@router.get("/tickets")
+async def list_tickets(
+    status: str = "",
+    priority: str = "",
+    assigned_to: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = (
+        "SELECT t.*, c.name AS contact_name "
+        "FROM staging.graha_tickets t "
+        "LEFT JOIN staging.graha_contacts c ON c.id = t.contact_id "
+        "WHERE t.org_id=$1::uuid AND t.is_active=TRUE"
+    )
+    params: list = [org_id]
+    if status:
+        params.append(status)
+        q += f" AND t.status=${len(params)}"
+    if priority:
+        params.append(priority)
+        q += f" AND t.priority=${len(params)}"
+    if assigned_to:
+        params.append(assigned_to)
+        q += f" AND t.assigned_to=${len(params)}"
+    q += " ORDER BY CASE t.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, t.created_at DESC"
+    q += " LIMIT 200"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/tickets")
+async def create_ticket(
+    body: TicketCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    valid_priorities = ("low", "medium", "high", "urgent")
+    if body.priority not in valid_priorities:
+        raise HTTPException(400, f"priority must be one of: {', '.join(valid_priorities)}")
+    row = await pool.fetchrow(
+        "INSERT INTO staging.graha_tickets "
+        "(org_id, contact_id, subject, description, priority, category, assigned_to, sla_due_at, created_by) "
+        "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, $4, $5, $6, NULLIF($7,''), "
+        "NULLIF($8,'')::timestamptz, $9) RETURNING *",
+        org_id, body.contact_id, body.subject, body.description,
+        body.priority, body.category, body.assigned_to,
+        body.sla_due_at, user["user_id"],
+    )
+    return dict(row)
+
+
+@router.get("/tickets/stats")
+async def ticket_stats(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT "
+        "COUNT(*) AS total, "
+        "COUNT(*) FILTER (WHERE status='open') AS open, "
+        "COUNT(*) FILTER (WHERE status='pending') AS pending, "
+        "COUNT(*) FILTER (WHERE status='resolved') AS resolved, "
+        "COUNT(*) FILTER (WHERE status='closed') AS closed, "
+        "COUNT(*) FILTER (WHERE priority='urgent' AND status NOT IN ('resolved','closed')) AS urgent_open, "
+        "COUNT(*) FILTER (WHERE sla_due_at IS NOT NULL AND sla_due_at < NOW() AND status NOT IN ('resolved','closed')) AS sla_breached "
+        "FROM staging.graha_tickets WHERE org_id=$1::uuid AND is_active=TRUE",
+        org_id,
+    )
+    return dict(row) if row else {}
+
+
+@router.get("/tickets/{ticket_id}")
+async def get_ticket(
+    ticket_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT t.*, c.name AS contact_name, c.email AS contact_email "
+        "FROM staging.graha_tickets t "
+        "LEFT JOIN staging.graha_contacts c ON c.id = t.contact_id "
+        "WHERE t.id=$1::uuid AND t.org_id=$2::uuid AND t.is_active=TRUE",
+        ticket_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Ticket not found")
+    messages = await pool.fetch(
+        "SELECT * FROM staging.graha_ticket_messages WHERE ticket_id=$1::uuid ORDER BY created_at",
+        ticket_id,
+    )
+    result = dict(row)
+    result["messages"] = [dict(m) for m in messages]
+    return result
+
+
+@router.patch("/tickets/{ticket_id}")
+async def update_ticket(
+    ticket_id: str,
+    body: TicketUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates, vals = [], []
+    for field in ("subject", "description", "category"):
+        v = getattr(body, field)
+        if v is not None:
+            vals.append(v); updates.append(f"{field}=${len(vals)}")
+    if body.priority is not None:
+        valid = ("low", "medium", "high", "urgent")
+        if body.priority not in valid:
+            raise HTTPException(400, "Invalid priority")
+        vals.append(body.priority); updates.append(f"priority=${len(vals)}")
+    if body.status is not None:
+        valid = ("open", "pending", "resolved", "closed")
+        if body.status not in valid:
+            raise HTTPException(400, "Invalid status")
+        vals.append(body.status); updates.append(f"status=${len(vals)}")
+        if body.status == "resolved":
+            updates.append("resolved_at=NOW()")
+        elif body.status == "closed":
+            updates.append("closed_at=NOW()")
+    if body.assigned_to is not None:
+        vals.append(body.assigned_to); updates.append(f"assigned_to=${len(vals)}")
+    if body.sla_due_at is not None:
+        vals.append(body.sla_due_at); updates.append(f"sla_due_at=${len(vals)}::timestamptz")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    updates.append("updated_at=NOW()")
+    vals += [ticket_id, org_id]
+    row = await pool.fetchrow(
+        f"UPDATE staging.graha_tickets SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid AND is_active=TRUE RETURNING *",
+        *vals,
+    )
+    if not row:
+        raise HTTPException(404, "Ticket not found")
+    return dict(row)
+
+
+@router.post("/tickets/{ticket_id}/messages")
+async def add_ticket_message(
+    ticket_id: str,
+    body: TicketMessageCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    ticket = await pool.fetchrow(
+        "SELECT id FROM staging.graha_tickets WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        ticket_id, org_id,
+    )
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    valid_types = ("agent", "contact")
+    if body.sender_type not in valid_types:
+        raise HTTPException(400, f"sender_type must be one of: {', '.join(valid_types)}")
+    row = await pool.fetchrow(
+        "INSERT INTO staging.graha_ticket_messages "
+        "(ticket_id, sender_type, sender_id, body, attachment_urls) "
+        "VALUES ($1::uuid, $2, $3, $4, $5::jsonb) RETURNING *",
+        ticket_id, body.sender_type, user["user_id"], body.body,
+        json.dumps(body.attachment_urls),
+    )
+    if body.sender_type == "agent":
+        await pool.execute(
+            "UPDATE staging.graha_tickets SET status='pending', updated_at=NOW() "
+            "WHERE id=$1::uuid AND status='open'",
+            ticket_id,
+        )
+    return dict(row)
+
+
+# ── Document Repository ────────────────────────────────────
+
+class DocumentCreate(BaseModel):
+    name: str
+    file_url: str
+    file_size: int = 0
+    mime_type: str = ""
+    folder: str = ""
+    tags: list[str] = []
+    contact_id: str = ""
+    deal_id: str = ""
+    description: str = ""
+
+
+class DocumentUpdate(BaseModel):
+    name: str | None = None
+    folder: str | None = None
+    tags: list[str] | None = None
+    description: str | None = None
+    contact_id: str | None = None
+    deal_id: str | None = None
+
+
+@router.get("/documents")
+async def list_documents(
+    folder: str = "",
+    contact_id: str = "",
+    deal_id: str = "",
+    search: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = "SELECT * FROM staging.graha_documents WHERE org_id=$1::uuid AND is_active=TRUE"
+    params: list = [org_id]
+    if folder:
+        params.append(folder)
+        q += f" AND folder=${len(params)}"
+    if contact_id:
+        params.append(contact_id)
+        q += f" AND contact_id=${len(params)}::uuid"
+    if deal_id:
+        params.append(deal_id)
+        q += f" AND deal_id=${len(params)}::uuid"
+    if search:
+        params.append(f"%{search}%")
+        q += f" AND (name ILIKE ${len(params)} OR description ILIKE ${len(params)})"
+    q += " ORDER BY created_at DESC LIMIT 200"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/documents")
+async def create_document(
+    body: DocumentCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.graha_documents "
+        "(org_id, name, file_url, file_size, mime_type, folder, tags, "
+        "contact_id, deal_id, description, uploaded_by) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb, "
+        "NULLIF($8,'')::uuid, NULLIF($9,'')::uuid, $10, $11) RETURNING *",
+        org_id, body.name, body.file_url, body.file_size, body.mime_type,
+        body.folder, json.dumps(body.tags),
+        body.contact_id, body.deal_id, body.description, user["user_id"],
+    )
+    return dict(row)
+
+
+@router.get("/documents/folders")
+async def list_document_folders(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT folder, COUNT(*) AS count "
+        "FROM staging.graha_documents WHERE org_id=$1::uuid AND is_active=TRUE AND folder != '' "
+        "GROUP BY folder ORDER BY folder",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.get("/documents/{doc_id}")
+async def get_document(
+    doc_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT d.*, c.name AS contact_name "
+        "FROM staging.graha_documents d "
+        "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+        "WHERE d.id=$1::uuid AND d.org_id=$2::uuid AND d.is_active=TRUE",
+        doc_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Document not found")
+    return dict(row)
+
+
+@router.patch("/documents/{doc_id}")
+async def update_document(
+    doc_id: str,
+    body: DocumentUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    updates, vals = [], []
+    for field in ("name", "folder", "description"):
+        v = getattr(body, field)
+        if v is not None:
+            vals.append(v); updates.append(f"{field}=${len(vals)}")
+    if body.tags is not None:
+        vals.append(json.dumps(body.tags)); updates.append(f"tags=${len(vals)}::jsonb")
+    if body.contact_id is not None:
+        vals.append(body.contact_id); updates.append(f"contact_id=NULLIF(${len(vals)},'')::uuid")
+    if body.deal_id is not None:
+        vals.append(body.deal_id); updates.append(f"deal_id=NULLIF(${len(vals)},'')::uuid")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    updates.append("updated_at=NOW()")
+    vals += [doc_id, org_id]
+    row = await pool.fetchrow(
+        f"UPDATE staging.graha_documents SET {', '.join(updates)} "
+        f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid AND is_active=TRUE RETURNING *",
+        *vals,
+    )
+    if not row:
+        raise HTTPException(404, "Document not found")
+    return dict(row)
+
+
+@router.delete("/documents/{doc_id}")
+async def delete_document(
+    doc_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE staging.graha_documents SET is_active=FALSE, updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        doc_id, org_id,
+    )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "Document not found")
+    return {"ok": True}

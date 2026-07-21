@@ -17,7 +17,7 @@ function Badge({ text, color }) {
   );
 }
 
-const TABS = ['today', 'clients', 'contacts', 'deals', 'kanban', 'pipeline', 'follow-ups', 'labels', 'activities', 'reports', 'automations', 'territories', 'fields', 'web-forms'];
+const TABS = ['today', 'clients', 'contacts', 'deals', 'kanban', 'pipeline', 'follow-ups', 'labels', 'activities', 'reports', 'automations', 'territories', 'fields', 'web-forms', 'approvals', 'tickets', 'documents'];
 const SOURCE_COLORS = { indiamart: '#2563eb', justdial: '#ea580c', manual: '#6b7280', website: '#10b981' };
 const ACT_ICONS = { call: '📞', email: '✉️', meeting: '📅', note: '📝', task: '✅' };
 const TL_ICONS = { activity: '●', followup: '⏰', invoice: '📄', deal: '💼' };
@@ -55,6 +55,9 @@ export default function GrahaPage() {
       {tab === 'territories' && <TerritoriesTab />}
       {tab === 'fields' && <CustomFieldsTab />}
       {tab === 'web-forms' && <WebFormsTab />}
+      {tab === 'approvals' && <ApprovalsTab />}
+      {tab === 'tickets' && <TicketsTab />}
+      {tab === 'documents' && <DocumentsTab />}
     </div>
   );
 }
@@ -1854,6 +1857,544 @@ function WebFormsTab() {
           <strong>Embed code:</strong> POST your form data as JSON to <code>/api/v1/graha/f/{'<slug>'}</code> — fields: name, email, phone, company, message. No auth required.
         </div>
       )}
+    </div>
+  );
+}
+
+
+// ── Approvals Tab ────────────────────────────────────────────
+
+function ApprovalsTab() {
+  const { pushToast } = useToast();
+  const [rules, setRules] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [ruleEntityFilter, setRuleEntityFilter] = useState('');
+  const [requestStatus, setRequestStatus] = useState('pending');
+  const [showRuleForm, setShowRuleForm] = useState(false);
+  const [ruleForm, setRuleForm] = useState({ entity_type: 'deal', threshold_amount: '', approver_role: '' });
+
+  const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+  const ENTITY_TYPES = ['deal', 'vendor_bill', 'expense_claim'];
+  const STATUS_COLORS = { pending: '#f59e0b', approved: '#10b981', rejected: '#ef4444' };
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    try {
+      const params = ruleEntityFilter ? `?entity_type=${ruleEntityFilter}` : '';
+      const [rulesR, reqR] = await Promise.all([
+        api.get(`/v1/graha/approval-rules${params}`),
+        api.get(`/v1/graha/approval-requests?status=${requestStatus}`),
+      ]);
+      setRules(rulesR.data.data || []);
+      setRequests(reqR.data.data || []);
+    } catch { pushToast({ title: 'Failed to load approvals', type: 'error' }); }
+    finally { setLoading(false); }
+  }
+
+  async function createRule(e) {
+    e.preventDefault();
+    try {
+      await api.post('/v1/graha/approval-rules', { ...ruleForm, threshold_amount: parseFloat(ruleForm.threshold_amount) || 0 });
+      pushToast({ title: 'Approval rule created', type: 'success' });
+      setShowRuleForm(false);
+      setRuleForm({ entity_type: 'deal', threshold_amount: '', approver_role: '' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+  }
+
+  async function deleteRule(id) {
+    try {
+      await api.delete(`/v1/graha/approval-rules/${id}`);
+      pushToast({ title: 'Rule deleted', type: 'success' });
+      setRules(prev => prev.filter(r => r.id !== id));
+    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+  }
+
+  async function approveRequest(id) {
+    try {
+      await api.post(`/v1/graha/approval-requests/${id}/approve`);
+      pushToast({ title: 'Request approved', type: 'success' });
+      load();
+    } catch { pushToast({ title: 'Approve failed', type: 'error' }); }
+  }
+
+  async function rejectRequest(id) {
+    try {
+      await api.post(`/v1/graha/approval-requests/${id}/reject`);
+      pushToast({ title: 'Request rejected', type: 'success' });
+      load();
+    } catch { pushToast({ title: 'Reject failed', type: 'error' }); }
+  }
+
+  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+
+  return (
+    <div>
+      {/* ── Approval Rules ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700 }}>Approval Rules ({rules.length})</h3>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <select className="k-input" style={{ width: 150 }} value={ruleEntityFilter} onChange={e => setRuleEntityFilter(e.target.value)}>
+            <option value="">All Entities</option>
+            {ENTITY_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+          </select>
+          <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Filter</button>
+          <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => setShowRuleForm(!showRuleForm)}>+ New Rule</button>
+        </div>
+      </div>
+
+      {showRuleForm && (
+        <form onSubmit={createRule} style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Entity Type</span>
+              <select className="k-input" value={ruleForm.entity_type} onChange={e => setRuleForm({ ...ruleForm, entity_type: e.target.value })}>
+                {ENTITY_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+              </select></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Threshold Amount</span>
+              <input className="k-input" type="number" value={ruleForm.threshold_amount} onChange={e => setRuleForm({ ...ruleForm, threshold_amount: e.target.value })} required /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Approver Role</span>
+              <input className="k-input" value={ruleForm.approver_role} onChange={e => setRuleForm({ ...ruleForm, approver_role: e.target.value })} required /></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowRuleForm(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary">Create Rule</button>
+          </div>
+        </form>
+      )}
+
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 32 }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+            {['Entity Type', 'Threshold', 'Approver Role', 'Status', 'Actions'].map(h => (
+              <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rules.map(r => (
+            <tr key={r.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+              <td style={{ padding: '10px', textTransform: 'capitalize' }}>{r.entity_type.replace(/_/g, ' ')}</td>
+              <td style={{ padding: '10px', fontWeight: 600 }}>{FMT(r.threshold_amount)}</td>
+              <td style={{ padding: '10px' }}>{r.approver_role}</td>
+              <td style={{ padding: '10px' }}><Badge text={r.is_active ? 'Active' : 'Inactive'} color={r.is_active ? '#10b981' : '#6b7280'} /></td>
+              <td style={{ padding: '10px' }}>
+                <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => deleteRule(r.id)}>Delete</button>
+              </td>
+            </tr>
+          ))}
+          {rules.length === 0 && (
+            <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No approval rules defined.</td></tr>
+          )}
+        </tbody>
+      </table>
+
+      {/* ── Pending Requests ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700 }}>Approval Requests</h3>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <select className="k-input" style={{ width: 130 }} value={requestStatus} onChange={e => setRequestStatus(e.target.value)}>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+          <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Filter</button>
+        </div>
+      </div>
+
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+            {['Entity Type', 'Amount', 'Status', 'Requested By', 'Approver Role', 'Created', 'Actions'].map(h => (
+              <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {requests.map(r => (
+            <tr key={r.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+              <td style={{ padding: '10px', textTransform: 'capitalize' }}>{r.entity_type.replace(/_/g, ' ')}</td>
+              <td style={{ padding: '10px', fontWeight: 600 }}>{FMT(r.amount)}</td>
+              <td style={{ padding: '10px' }}><Badge text={r.status} color={STATUS_COLORS[r.status] || '#6b7280'} /></td>
+              <td style={{ padding: '10px', fontSize: 11, fontFamily: 'var(--mono)' }}>{r.requested_by?.slice(0, 12) || '—'}</td>
+              <td style={{ padding: '10px' }}>{r.approver_role || '—'}</td>
+              <td style={{ padding: '10px', fontSize: 11, color: 'var(--ink-3)' }}>{r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '—'}</td>
+              <td style={{ padding: '10px' }}>
+                {r.status === 'pending' && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 10px' }} onClick={() => approveRequest(r.id)}>Approve</button>
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 10px', color: '#ef4444' }} onClick={() => rejectRequest(r.id)}>Reject</button>
+                  </div>
+                )}
+              </td>
+            </tr>
+          ))}
+          {requests.length === 0 && (
+            <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No {requestStatus} requests.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+// ── Tickets Tab ──────────────────────────────────────────────
+
+function TicketsTab() {
+  const { pushToast } = useToast();
+  const [stats, setStats] = useState(null);
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ subject: '', description: '', priority: 'medium', category: '' });
+  const [saving, setSaving] = useState(false);
+  const [detail, setDetail] = useState(null);
+  const [replyBody, setReplyBody] = useState('');
+
+  const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+  const STATUSES = ['open', 'pending', 'resolved', 'closed'];
+  const PRIORITY_COLORS = { low: '#6b7280', medium: '#3b82f6', high: '#f59e0b', urgent: '#ef4444' };
+  const STATUS_COLORS = { open: '#3b82f6', pending: '#f59e0b', resolved: '#10b981', closed: '#6b7280' };
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    try {
+      let url = '/v1/graha/tickets?';
+      if (statusFilter) url += `status=${statusFilter}&`;
+      if (priorityFilter) url += `priority=${priorityFilter}&`;
+      const [ticketsR, statsR] = await Promise.all([
+        api.get(url),
+        api.get('/v1/graha/tickets/stats'),
+      ]);
+      setTickets(ticketsR.data.data || []);
+      setStats(statsR.data);
+    } catch { pushToast({ title: 'Failed to load tickets', type: 'error' }); }
+    finally { setLoading(false); }
+  }
+
+  async function createTicket(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/v1/graha/tickets', form);
+      pushToast({ title: 'Ticket created', type: 'success' });
+      setShowForm(false);
+      setForm({ subject: '', description: '', priority: 'medium', category: '' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    finally { setSaving(false); }
+  }
+
+  async function openDetail(id) {
+    try {
+      const r = await api.get(`/v1/graha/tickets/${id}`);
+      setDetail(r.data);
+    } catch { pushToast({ title: 'Failed to load ticket', type: 'error' }); }
+  }
+
+  async function updateStatus(id, status) {
+    try {
+      await api.patch(`/v1/graha/tickets/${id}`, { status });
+      pushToast({ title: `Ticket ${status}`, type: 'success' });
+      if (detail?.id === id) openDetail(id);
+      load();
+    } catch { pushToast({ title: 'Update failed', type: 'error' }); }
+  }
+
+  async function sendReply(ticketId) {
+    if (!replyBody.trim()) return;
+    try {
+      await api.post(`/v1/graha/tickets/${ticketId}/messages`, { body: replyBody, sender_type: 'agent', attachment_urls: [] });
+      pushToast({ title: 'Reply sent', type: 'success' });
+      setReplyBody('');
+      openDetail(ticketId);
+    } catch { pushToast({ title: 'Reply failed', type: 'error' }); }
+  }
+
+  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+
+  if (detail) {
+    const t = detail;
+    return (
+      <div>
+        <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => setDetail(null)}>← Back to tickets</button>
+        <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{t.subject}</h3>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Badge text={t.priority} color={PRIORITY_COLORS[t.priority] || '#6b7280'} />
+              <Badge text={t.status} color={STATUS_COLORS[t.status] || '#6b7280'} />
+            </div>
+          </div>
+          {t.description && <p style={{ fontSize: 13, color: 'var(--ink-2)', marginBottom: 12 }}>{t.description}</p>}
+          <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--ink-3)', marginBottom: 16 }}>
+            {t.contact_name && <span>Contact: {t.contact_name}</span>}
+            {t.category && <span>Category: {t.category}</span>}
+            {t.assigned_to && <span>Assigned: {t.assigned_to.slice(0, 12)}</span>}
+            {t.sla_due_at && <span>SLA Due: {new Date(t.sla_due_at).toLocaleString('en-IN')}</span>}
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {STATUSES.filter(s => s !== t.status).map(s => (
+              <button key={s} className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 10px', textTransform: 'capitalize' }}
+                onClick={() => updateStatus(t.id, s)}>Mark {s}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Messages thread */}
+        <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24 }}>
+          <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Messages</h4>
+          {(t.messages || []).length === 0 ? (
+            <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>No messages yet.</p>
+          ) : (t.messages || []).map((m, i) => (
+            <div key={m.id || i} style={{ padding: '8px 0', borderBottom: '1px solid var(--rule-soft)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <Badge text={m.sender_type || 'user'} color={m.sender_type === 'agent' ? '#6366f1' : '#6b7280'} />
+                <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{m.created_at ? new Date(m.created_at).toLocaleString('en-IN') : ''}</span>
+              </div>
+              <p style={{ fontSize: 13, margin: 0, color: 'var(--ink-1)' }}>{m.body}</p>
+            </div>
+          ))}
+
+          <div style={{ marginTop: 16 }}>
+            <textarea className="k-input" rows={3} value={replyBody} onChange={e => setReplyBody(e.target.value)}
+              placeholder="Type a reply..." style={{ resize: 'vertical', marginBottom: 8 }} />
+            <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => sendReply(t.id)}>Send Reply</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Stats row */}
+      {stats && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, marginBottom: 24 }}>
+          <StatTile label="Open" value={stats.open ?? 0} />
+          <StatTile label="Pending" value={stats.pending ?? 0} />
+          <StatTile label="Resolved" value={stats.resolved ?? 0} />
+          <StatTile label="Urgent Open" value={stats.urgent_open ?? 0} />
+          <StatTile label="SLA Breached" value={stats.sla_breached ?? 0} />
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+        <select className="k-input" style={{ width: 130 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="">All Status</option>
+          {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select className="k-input" style={{ width: 130 }} value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)}>
+          <option value="">All Priority</option>
+          {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Filter</button>
+        <div style={{ flex: 1 }} />
+        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ New Ticket</button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={createTicket} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Ticket</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Subject *</span>
+              <input className="k-input" required value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Priority</span>
+              <select className="k-input" value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>
+                {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+              </select></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Category</span>
+              <input className="k-input" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} placeholder="e.g. billing, technical" /></label>
+            <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
+              <textarea className="k-input" rows={3} value={form.description}
+                onChange={e => setForm({ ...form, description: e.target.value })} style={{ resize: 'vertical' }} /></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Creating...' : 'Create Ticket'}</button>
+          </div>
+        </form>
+      )}
+
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+            {['Subject', 'Priority', 'Status', 'Contact', 'Created', 'Actions'].map(h => (
+              <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {tickets.map(t => (
+            <tr key={t.id} style={{ borderBottom: '1px solid var(--rule-soft)', cursor: 'pointer' }} onClick={() => openDetail(t.id)}>
+              <td style={{ padding: '10px', fontWeight: 600 }}>{t.subject}</td>
+              <td style={{ padding: '10px' }}><Badge text={t.priority} color={PRIORITY_COLORS[t.priority] || '#6b7280'} /></td>
+              <td style={{ padding: '10px' }}><Badge text={t.status} color={STATUS_COLORS[t.status] || '#6b7280'} /></td>
+              <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{t.contact_name || '—'}</td>
+              <td style={{ padding: '10px', fontSize: 11, color: 'var(--ink-3)' }}>{t.created_at ? new Date(t.created_at).toLocaleDateString('en-IN') : '—'}</td>
+              <td style={{ padding: '10px' }}>
+                {t.status === 'open' && (
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={e => { e.stopPropagation(); updateStatus(t.id, 'resolved'); }}>Resolve</button>
+                )}
+              </td>
+            </tr>
+          ))}
+          {tickets.length === 0 && (
+            <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No tickets found.</td></tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+
+// ── Documents Tab ────────────────────────────────────────────
+
+function DocumentsTab() {
+  const { pushToast } = useToast();
+  const [documents, setDocuments] = useState([]);
+  const [folders, setFolders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [folderFilter, setFolderFilter] = useState('');
+  const [search, setSearch] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: '', file_url: '', folder: '', description: '', tags: '' });
+  const [saving, setSaving] = useState(false);
+
+  const fmtSize = bytes => {
+    if (!bytes) return '—';
+    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+    return (bytes / 1024).toFixed(1) + ' KB';
+  };
+
+  useEffect(() => { load(); loadFolders(); }, []);
+
+  async function load() {
+    try {
+      let url = '/v1/graha/documents?';
+      if (folderFilter) url += `folder=${encodeURIComponent(folderFilter)}&`;
+      if (search) url += `search=${encodeURIComponent(search)}&`;
+      const r = await api.get(url);
+      setDocuments(r.data.data || []);
+    } catch { pushToast({ title: 'Failed to load documents', type: 'error' }); }
+    finally { setLoading(false); }
+  }
+
+  async function loadFolders() {
+    try {
+      const r = await api.get('/v1/graha/documents/folders');
+      setFolders(r.data.data || []);
+    } catch {}
+  }
+
+  async function createDocument(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const payload = { ...form, tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [] };
+      await api.post('/v1/graha/documents', payload);
+      pushToast({ title: 'Document added', type: 'success' });
+      setShowForm(false);
+      setForm({ name: '', file_url: '', folder: '', description: '', tags: '' });
+      load();
+      loadFolders();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    finally { setSaving(false); }
+  }
+
+  async function deleteDoc(id) {
+    try {
+      await api.delete(`/v1/graha/documents/${id}`);
+      pushToast({ title: 'Document deleted', type: 'success' });
+      setDocuments(prev => prev.filter(d => d.id !== id));
+      loadFolders();
+    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+  }
+
+  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+        <select className="k-input" style={{ width: 160 }} value={folderFilter} onChange={e => setFolderFilter(e.target.value)}>
+          <option value="">All Folders</option>
+          {folders.map(f => <option key={f.folder} value={f.folder}>{f.folder} ({f.count})</option>)}
+        </select>
+        <input className="k-input" style={{ flex: 1, maxWidth: 260 }} placeholder="Search documents..." value={search}
+          onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} />
+        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Search</button>
+        <div style={{ flex: 1 }} />
+        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ Add Document</button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={createDocument} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Add Document</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
+              <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>File URL *</span>
+              <input className="k-input" required value={form.file_url} onChange={e => setForm({ ...form, file_url: e.target.value })} placeholder="https://..." /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Folder</span>
+              <input className="k-input" value={form.folder} onChange={e => setForm({ ...form, folder: e.target.value })} placeholder="e.g. contracts, invoices" /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Tags (comma-separated)</span>
+              <input className="k-input" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} placeholder="e.g. legal, signed, 2026" /></label>
+            <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
+              <input className="k-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Saving...' : 'Add Document'}</button>
+          </div>
+        </form>
+      )}
+
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+            {['Name', 'Folder', 'Size', 'Type', 'Uploaded', 'Actions'].map(h => (
+              <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {documents.map(d => (
+            <tr key={d.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+              <td style={{ padding: '10px' }}>
+                <div style={{ fontWeight: 600 }}>{d.name}</div>
+                {d.description && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{d.description}</div>}
+                {d.tags?.length > 0 && (
+                  <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                    {d.tags.map(t => <Badge key={t} text={t} color="#6366f1" />)}
+                  </div>
+                )}
+              </td>
+              <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{d.folder || '—'}</td>
+              <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{fmtSize(d.file_size)}</td>
+              <td style={{ padding: '10px', color: 'var(--ink-2)', fontSize: 11 }}>{d.mime_type || '—'}</td>
+              <td style={{ padding: '10px', fontSize: 11, color: 'var(--ink-3)' }}>{d.created_at ? new Date(d.created_at).toLocaleDateString('en-IN') : '—'}</td>
+              <td style={{ padding: '10px' }}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {d.file_url && (
+                    <a href={d.file_url} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 11, color: 'var(--k-primary)', textDecoration: 'none' }}>Open</a>
+                  )}
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => deleteDoc(d.id)}>Delete</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+          {documents.length === 0 && (
+            <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No documents found.</td></tr>
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

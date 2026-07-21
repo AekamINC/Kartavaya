@@ -16,7 +16,7 @@ function Badge({ text, color }) {
   );
 }
 
-const TABS = ['invoices', 'products', 'expenses', 'payables', 'contracts', 'e-sign', 'recurring', 'stats'];
+const TABS = ['invoices', 'products', 'expenses', 'payables', 'contracts', 'e-sign', 'recurring', 'bank', 'timesheet', 'stats'];
 const BILL_STATUS_COLORS = { unpaid: '#f59e0b', partially_paid: '#6366f1', paid: '#10b981', cancelled: '#9ca3af' };
 const SIGN_STATUS_COLORS = { pending: '#f59e0b', otp_sent: '#6366f1', signed: '#10b981', expired: '#9ca3af', cancelled: '#ef4444' };
 
@@ -46,6 +46,8 @@ export default function GanitPage() {
       {tab === 'contracts' && <ContractsTab />}
       {tab === 'e-sign' && <ESignTab />}
       {tab === 'recurring' && <RecurringTab />}
+      {tab === 'bank' && <BankTab />}
+      {tab === 'timesheet' && <TimesheetTab />}
       {tab === 'stats' && <StatsTab />}
     </div>
   );
@@ -1522,6 +1524,206 @@ function StatsTab() {
       <StatTile label="Collected" value={`₹${Number(stats.total_collected).toLocaleString('en-IN')}`} />
       <StatTile label="Unpaid" value={stats.unpaid_count} />
       <StatTile label="Overdue" value={stats.overdue_count} />
+    </div>
+  );
+}
+
+
+function BankTab() {
+  const { pushToast } = useToast();
+  const [statements, setStatements] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('');
+  const [csvText, setCsvText] = useState('');
+  const [batchLabel, setBatchLabel] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+
+  const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+
+  useEffect(() => { load(); loadStats(); }, []);
+
+  async function load() {
+    try {
+      let url = '/v1/ganit/bank-statements?';
+      if (filter === 'matched') url += 'reconciled=true&';
+      if (filter === 'unmatched') url += 'reconciled=false&';
+      const r = await api.get(url);
+      setStatements(r.data.data || []);
+    } catch { pushToast({ title: 'Failed to load bank statements', type: 'error' }); }
+    finally { setLoading(false); }
+  }
+
+  async function loadStats() {
+    try {
+      const r = await api.get('/v1/ganit/bank-statements/stats');
+      setStats(r.data);
+    } catch {}
+  }
+
+  async function handleImport(e) {
+    e.preventDefault();
+    if (!csvText.trim()) { pushToast({ title: 'Paste CSV data first', type: 'error' }); return; }
+    const lines = csvText.trim().split('\n').map(line => {
+      const parts = line.split(',').map(s => s.trim());
+      return { statement_date: parts[0] || '', description: parts[1] || '', reference: parts[2] || '', amount: parseFloat(parts[3]) || 0, running_balance: parseFloat(parts[4]) || 0 };
+    });
+    if (lines.length === 0) { pushToast({ title: 'No valid lines found', type: 'error' }); return; }
+    setImporting(true);
+    try {
+      const r = await api.post('/v1/ganit/bank-statements/import', { lines, batch_label: batchLabel || undefined });
+      pushToast({ title: `Imported ${r.data.imported} lines, ${r.data.auto_matched} auto-matched`, type: 'success' });
+      setCsvText('');
+      setBatchLabel('');
+      setShowImport(false);
+      load();
+      loadStats();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Import failed', type: 'error' }); }
+    finally { setImporting(false); }
+  }
+
+  async function unmatch(id) {
+    try {
+      await api.post(`/v1/ganit/bank-statements/${id}/unmatch`);
+      pushToast({ title: 'Unmatched', type: 'success' });
+      load();
+      loadStats();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Unmatch failed', type: 'error' }); }
+  }
+
+  return (
+    <div>
+      {stats && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16, marginBottom: 20 }}>
+          <StatTile label="Total Lines" value={stats.total_lines} />
+          <StatTile label="Matched" value={stats.matched} />
+          <StatTile label="Unmatched" value={stats.unmatched} />
+          <StatTile label="Matched Amount" value={FMT(stats.matched_amount)} />
+          <StatTile label="Unmatched Amount" value={FMT(stats.unmatched_amount)} />
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
+        <select className="k-input" style={{ width: 150 }} value={filter} onChange={e => setFilter(e.target.value)}>
+          <option value="">All</option>
+          <option value="matched">Matched</option>
+          <option value="unmatched">Unmatched</option>
+        </select>
+        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Filter</button>
+        <div style={{ flex: 1 }} />
+        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowImport(true)}>Import CSV</button>
+      </div>
+
+      {showImport && (
+        <form onSubmit={handleImport} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Import Bank Statement</h4>
+          <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Batch Label</span>
+            <input className="k-input" placeholder="e.g. HDFC Jul-2026" value={batchLabel} onChange={e => setBatchLabel(e.target.value)} style={{ marginBottom: 12 }} /></label>
+          <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>CSV Data (date, description, reference, amount, balance — one per line)</span>
+            <textarea className="k-input" rows={6} value={csvText} onChange={e => setCsvText(e.target.value)}
+              placeholder="2026-07-01,Office rent,REF001,25000,475000&#10;2026-07-02,Client payment,UTR123,150000,625000"
+              style={{ resize: 'vertical', width: '100%', fontFamily: 'var(--font-mono)', fontSize: 12 }} /></label>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowImport(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={importing}>{importing ? 'Importing…' : 'Import'}</button>
+          </div>
+        </form>
+      )}
+
+      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
+        statements.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No bank statements imported.</p> : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+              {['Date', 'Description', 'Reference', 'Amount', 'Status', ''].map(h => (
+                <th key={h} style={{ textAlign: h === 'Amount' ? 'right' : 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {statements.map(s => (
+              <tr key={s.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                <td style={{ padding: '10px', fontSize: 12 }}>{s.statement_date}</td>
+                <td style={{ padding: '10px' }}>{s.description}</td>
+                <td style={{ padding: '10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{s.reference || '—'}</td>
+                <td style={{ padding: '10px', textAlign: 'right', fontWeight: 600 }}>{FMT(s.amount)}</td>
+                <td style={{ padding: '10px' }}>
+                  {s.is_reconciled ? <Badge text="Matched" color="#10b981" /> : <Badge text="Unmatched" color="#f59e0b" />}
+                </td>
+                <td style={{ padding: '10px' }}>
+                  {s.is_reconciled && (
+                    <button onClick={() => unmatch(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11 }}>Unmatch</button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+
+function TimesheetTab() {
+  const { pushToast } = useToast();
+  const [form, setForm] = useState({ date_from: '', date_to: '', contact_id: '', is_igst: false });
+  const [generating, setGenerating] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+
+  async function generate(e) {
+    e.preventDefault();
+    if (!form.date_from || !form.date_to) { pushToast({ title: 'Select date range', type: 'error' }); return; }
+    setGenerating(true);
+    setResult(null);
+    try {
+      const body = {
+        employee_ids: [],
+        date_from: form.date_from,
+        date_to: form.date_to,
+        is_igst: form.is_igst,
+      };
+      if (form.contact_id) body.contact_id = form.contact_id;
+      const r = await api.post('/v1/ganit/invoices/from-time-entries', body);
+      setResult(r.data);
+      pushToast({ title: `Invoice ${r.data.invoice_number} created`, type: 'success' });
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Generation failed', type: 'error' }); }
+    finally { setGenerating(false); }
+  }
+
+  return (
+    <div>
+      <form onSubmit={generate} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Generate Invoice from Timesheets</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>From Date *</span>
+            <input className="k-input" type="date" required value={form.date_from} onChange={e => setForm({ ...form, date_from: e.target.value })} /></label>
+          <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>To Date *</span>
+            <input className="k-input" type="date" required value={form.date_to} onChange={e => setForm({ ...form, date_to: e.target.value })} /></label>
+          <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Contact ID</span>
+            <input className="k-input" placeholder="Optional" value={form.contact_id} onChange={e => setForm({ ...form, contact_id: e.target.value })} /></label>
+        </div>
+        <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+          <input type="checkbox" checked={form.is_igst} onChange={e => setForm({ ...form, is_igst: e.target.checked })} />
+          <span style={{ fontWeight: 600 }}>Inter-state (IGST)</span></label>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+          <button type="submit" className="k-btn k-btn--primary" disabled={generating}>{generating ? 'Generating…' : 'Generate Invoice'}</button>
+        </div>
+      </form>
+
+      {result && (
+        <div style={{ background: 'var(--surface-1)', border: '1px solid #10b981', borderRadius: 12, padding: 24 }}>
+          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#10b981' }}>Invoice Created</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, fontSize: 13 }}>
+            <div><strong>Invoice #:</strong> <span style={{ fontFamily: 'var(--font-mono)' }}>{result.invoice_number}</span></div>
+            <div><strong>Total:</strong> <span style={{ fontWeight: 700 }}>{FMT(result.total)}</span></div>
+            <div><strong>Entries Billed:</strong> {result.entries_billed}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -692,3 +692,133 @@ async def export_report(
         )
 
     return {"data": data, "format": "json"}
+
+
+# ── Custom Dashboard / Pivot Query Builder ──────────────────
+
+_ALLOWED_QUERY_TABLES = {
+    "invoices": {
+        "table": "staging.ganit_invoices",
+        "columns": ["invoice_date", "invoice_type", "total", "subtotal", "amount_paid",
+                     "payment_status", "currency", "created_at"],
+        "date_col": "invoice_date",
+    },
+    "deals": {
+        "table": "staging.graha_deals",
+        "columns": ["stage", "value", "expected_close", "created_at", "updated_at"],
+        "date_col": "created_at",
+    },
+    "contacts": {
+        "table": "staging.graha_contacts",
+        "columns": ["contact_type", "source", "company", "lead_score", "created_at"],
+        "date_col": "created_at",
+    },
+    "orders": {
+        "table": "staging.vikray_orders",
+        "columns": ["order_date", "status", "total", "subtotal", "created_at"],
+        "date_col": "order_date",
+    },
+    "employees": {
+        "table": "staging.manav_employees",
+        "columns": ["department", "designation", "employment_type", "status",
+                     "date_of_joining", "created_at"],
+        "date_col": "date_of_joining",
+    },
+    "expenses": {
+        "table": "staging.ganit_expenses",
+        "columns": ["category", "amount", "total", "expense_date", "status", "created_at"],
+        "date_col": "expense_date",
+    },
+    "tickets": {
+        "table": "staging.graha_tickets",
+        "columns": ["priority", "status", "category", "created_at", "resolved_at"],
+        "date_col": "created_at",
+    },
+    "events": {
+        "table": "staging.prachar_events",
+        "columns": ["event_type", "status", "starts_at", "created_at"],
+        "date_col": "starts_at",
+    },
+}
+
+
+class PivotQuery(BaseModel):
+    source: str
+    group_by: str = ""
+    measure: str = "count"
+    date_from: str = ""
+    date_to: str = ""
+    filters: dict = {}
+
+
+@router.post("/query", dependencies=[Depends(_gate)])
+async def run_pivot_query(
+    body: PivotQuery,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    spec = _ALLOWED_QUERY_TABLES.get(body.source)
+    if not spec:
+        raise HTTPException(400, f"source must be one of: {', '.join(_ALLOWED_QUERY_TABLES)}")
+
+    table = spec["table"]
+    allowed = spec["columns"]
+
+    if body.group_by and body.group_by not in allowed:
+        raise HTTPException(400, f"group_by must be one of: {', '.join(allowed)}")
+
+    measure_sql = "COUNT(*)"
+    if body.measure == "sum" and "total" in allowed:
+        measure_sql = "COALESCE(SUM(total),0)"
+    elif body.measure == "sum" and "value" in allowed:
+        measure_sql = "COALESCE(SUM(value),0)"
+    elif body.measure == "avg" and "total" in allowed:
+        measure_sql = "COALESCE(AVG(total),0)"
+    elif body.measure == "avg" and "value" in allowed:
+        measure_sql = "COALESCE(AVG(value),0)"
+
+    where = ["org_id=$1::uuid"]
+    params: list = [org_id]
+
+    if "is_active" in [c for t in [spec] for c in ["is_active"]]:
+        where.append("is_active=TRUE")
+
+    date_col = spec.get("date_col", "created_at")
+    if body.date_from:
+        params.append(body.date_from)
+        where.append(f"{date_col} >= ${len(params)}::date")
+    if body.date_to:
+        params.append(body.date_to)
+        where.append(f"{date_col} <= ${len(params)}::date")
+
+    for fk, fv in body.filters.items():
+        if fk in allowed:
+            params.append(str(fv))
+            where.append(f"{fk} = ${len(params)}")
+
+    where_clause = " AND ".join(where)
+
+    pool = await get_pool()
+    if body.group_by:
+        rows = await pool.fetch(
+            f"SELECT {body.group_by} AS label, {measure_sql} AS value "
+            f"FROM {table} WHERE {where_clause} "
+            f"GROUP BY {body.group_by} ORDER BY value DESC LIMIT 50",
+            *params,
+        )
+        return {"data": [dict(r) for r in rows], "source": body.source, "measure": body.measure}
+    else:
+        row = await pool.fetchrow(
+            f"SELECT {measure_sql} AS value, COUNT(*) AS count FROM {table} WHERE {where_clause}",
+            *params,
+        )
+        return {"data": dict(row) if row else {}, "source": body.source, "measure": body.measure}
+
+
+@router.get("/widget-types", dependencies=[Depends(_gate)])
+async def widget_types(user=Depends(require_user)):
+    return {
+        "sources": list(_ALLOWED_QUERY_TABLES.keys()),
+        "measures": ["count", "sum", "avg"],
+        "widget_types": ["number", "bar", "pie", "line", "table"],
+    }

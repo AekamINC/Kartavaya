@@ -6,7 +6,7 @@ import { PageHeader, StatTile, TabBar, Section, Badge, Shimmer, Empty, DataTable
 const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
 const PCT = v => `${Number(v || 0).toFixed(1)}%`;
 
-const TABS = ['overview', 'revenue', 'pipeline', 'hr', 'sales', 'reports', 'dashboards'];
+const TABS = ['overview', 'revenue', 'pipeline', 'hr', 'sales', 'reports', 'dashboards', 'pivot'];
 
 export default function DristiPage() {
   const [tab, setTab] = useState('overview');
@@ -21,6 +21,7 @@ export default function DristiPage() {
       {tab === 'sales' && <SalesTab />}
       {tab === 'reports' && <ReportsTab />}
       {tab === 'dashboards' && <DashboardsTab />}
+      {tab === 'pivot' && <PivotTab />}
     </div>
   );
 }
@@ -470,5 +471,96 @@ function DashboardsTab() {
         </div>
       )}
     </div>
+  );
+}
+
+
+function PivotTab() {
+  const { pushToast } = useToast();
+  const [meta, setMeta] = useState(null);
+  const [source, setSource] = useState('invoices');
+  const [groupBy, setGroupBy] = useState('');
+  const [measure, setMeasure] = useState('count');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => { api.get('/v1/dristi/widget-types').then(r => setMeta(r.data)).catch(() => {}); }, []);
+
+  const sourceColumns = {
+    invoices: ['invoice_date','invoice_type','total','payment_status','currency'],
+    deals: ['stage','value','expected_close'],
+    contacts: ['contact_type','source','company','lead_score'],
+    orders: ['order_date','status','total'],
+    employees: ['department','designation','employment_type','status'],
+    expenses: ['category','amount','total','expense_date','status'],
+    tickets: ['priority','status','category'],
+    events: ['event_type','status'],
+  };
+
+  async function runQuery() {
+    setLoading(true);
+    try {
+      const r = await api.post('/v1/dristi/query', { source, group_by: groupBy, measure, date_from: dateFrom, date_to: dateTo });
+      setResult(r.data);
+    } catch (e) { pushToast({ title: e.response?.data?.detail || 'Query failed', type: 'error' }); }
+    setLoading(false);
+  }
+
+  return (
+    <Section title="Pivot Query Builder" hi="विश्लेषण निर्माता">
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }}>
+        <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          Source
+          <select value={source} onChange={e => { setSource(e.target.value); setGroupBy(''); }} className="k-input" style={{ minWidth: 140 }}>
+            {(meta?.sources || Object.keys(sourceColumns)).map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+        <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          Group By
+          <select value={groupBy} onChange={e => setGroupBy(e.target.value)} className="k-input" style={{ minWidth: 140 }}>
+            <option value="">— none —</option>
+            {(sourceColumns[source] || []).map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          Measure
+          <select value={measure} onChange={e => setMeasure(e.target.value)} className="k-input" style={{ minWidth: 100 }}>
+            <option value="count">Count</option>
+            <option value="sum">Sum</option>
+            <option value="avg">Average</option>
+          </select>
+        </label>
+        <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          From
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="k-input" />
+        </label>
+        <label style={{ fontSize: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          To
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="k-input" />
+        </label>
+        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+          <button onClick={runQuery} disabled={loading} className="k-btn k-btn--primary">{loading ? 'Running…' : 'Run Query'}</button>
+        </div>
+      </div>
+
+      {result && (
+        <div style={{ marginTop: 8 }}>
+          {Array.isArray(result.data) ? (
+            <DataTable cols={['Label', 'Value']}>
+              {result.data.map((r, i) => (
+                <tr key={i}><Td>{String(r.label ?? '—')}</Td><Td>{typeof r.value === 'number' && r.value > 100 ? FMT(r.value) : r.value}</Td></tr>
+              ))}
+            </DataTable>
+          ) : (
+            <div className="k-stats">
+              <StatTile label="Result" value={typeof result.data.value === 'number' && result.data.value > 100 ? FMT(result.data.value) : result.data.value} variant="blue" />
+              <StatTile label="Count" value={result.data.count || 0} />
+            </div>
+          )}
+        </div>
+      )}
+    </Section>
   );
 }

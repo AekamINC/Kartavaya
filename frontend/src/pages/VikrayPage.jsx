@@ -6,7 +6,7 @@ import { PageHeader, StatTile, TabBar, Section, Badge, Shimmer, Empty, BackButto
 const STATUS_COLORS = { draft: '#6E7B91', confirmed: '#0082c6', dispatched: '#8b5cf6', delivered: '#10b981', closed: '#05b7aa', cancelled: '#9ca3af' };
 const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
 
-const TABS = ['dashboard', 'orders', 'stock', 'pipeline', 'targets', 'customers'];
+const TABS = ['dashboard', 'orders', 'stock', 'pipeline', 'targets', 'customers', 'pos'];
 
 export default function VikrayPage() {
   const [tab, setTab] = useState('dashboard');
@@ -20,6 +20,7 @@ export default function VikrayPage() {
       {tab === 'pipeline' && <PipelineTab />}
       {tab === 'targets' && <TargetsTab />}
       {tab === 'customers' && <CustomersTab />}
+      {tab === 'pos' && <POSTab />}
     </div>
   );
 }
@@ -583,5 +584,101 @@ function CustomersTab() {
       </div>
       <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 12 }}>Full contact management is in Graha (CRM) module.</p>
     </Section>
+  );
+}
+
+
+function POSTab() {
+  const { pushToast } = useToast();
+  const [products, setProducts] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [lastSale, setLastSale] = useState(null);
+
+  useEffect(() => { api.get('/v1/ganit/products').then(r => setProducts(r.data.data || [])).catch(() => {}); }, []);
+
+  function addToCart(product) {
+    const existing = cart.find(c => c.product_id === product.id);
+    if (existing) {
+      setCart(cart.map(c => c.product_id === product.id ? { ...c, quantity: c.quantity + 1 } : c));
+    } else {
+      setCart([...cart, { product_id: product.id, description: product.name, hsn_code: product.hsn_code || '', quantity: 1, unit: product.unit || 'NOS', rate: product.price || 0, gst_rate: product.gst_rate || 18, discount_pct: 0 }]);
+    }
+  }
+
+  function removeFromCart(idx) { setCart(cart.filter((_, i) => i !== idx)); }
+  function updateQty(idx, qty) { setCart(cart.map((c, i) => i === idx ? { ...c, quantity: Math.max(1, qty) } : c)); }
+
+  const subtotal = cart.reduce((s, c) => s + c.quantity * c.rate, 0);
+  const tax = cart.reduce((s, c) => s + c.quantity * c.rate * (c.gst_rate / 100), 0);
+  const total = subtotal + tax;
+
+  async function completeSale() {
+    if (!cart.length) return;
+    setSaving(true);
+    try {
+      const r = await api.post('/v1/vikray/pos-sale', { line_items: cart, is_igst: false, notes: '' });
+      setLastSale(r.data);
+      setCart([]);
+      pushToast({ title: `Sale ${r.data.order_number} — ${FMT(r.data.total)}`, type: 'success' });
+    } catch (e) { pushToast({ title: e.response?.data?.detail || 'Sale failed', type: 'error' }); }
+    setSaving(false);
+  }
+
+  return (
+    <>
+      <Section title="Quick Sale · POS" hi="त्वरित बिक्री">
+        {lastSale && (
+          <div style={{ padding: '12px 16px', background: 'var(--teal-1, #d1fae5)', borderRadius: 8, marginBottom: 16, fontSize: 13 }}>
+            Last sale: <strong>{lastSale.order_number}</strong> — {FMT(lastSale.total)}
+          </div>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+          <div>
+            <h4 style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--ink-3)' }}>Products · उत्पाद</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {products.map(p => (
+                <ModCard key={p.id} onClick={() => addToCart(p)}>
+                  <div>
+                    <strong style={{ fontSize: 13 }}>{p.name}</strong>
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{FMT(p.price)}</span>
+                  </div>
+                  <span style={{ fontSize: 18, cursor: 'pointer' }}>+</span>
+                </ModCard>
+              ))}
+              {!products.length && <Empty icon="📦" title="No products" sub="Add products in Ganit module first" />}
+            </div>
+          </div>
+
+          <div>
+            <h4 style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--ink-3)' }}>Cart · कार्ट</h4>
+            {cart.length === 0 ? <Empty icon="🛒" title="Cart empty" sub="Click products to add" /> : (
+              <>
+                {cart.map((item, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border-1)' }}>
+                    <span style={{ flex: 1, fontSize: 13 }}>{item.description}</span>
+                    <input type="number" value={item.quantity} min={1} onChange={e => updateQty(i, parseInt(e.target.value) || 1)}
+                      style={{ width: 50, padding: '4px 6px', border: '1px solid var(--border-1)', borderRadius: 4, fontSize: 13 }} />
+                    <span style={{ fontSize: 13, minWidth: 70, textAlign: 'right' }}>{FMT(item.quantity * item.rate)}</span>
+                    <button onClick={() => removeFromCart(i)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#ef4444' }}>×</button>
+                  </div>
+                ))}
+                <div style={{ marginTop: 12, fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Subtotal</span><span>{FMT(subtotal)}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>GST</span><span>{FMT(tax)}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 15, borderTop: '2px solid var(--border-1)', paddingTop: 6 }}>
+                    <span>Total</span><span>{FMT(total)}</span>
+                  </div>
+                </div>
+                <button onClick={completeSale} disabled={saving} className="k-btn k-btn--primary" style={{ marginTop: 16, width: '100%' }}>
+                  {saving ? 'Processing…' : `Complete Sale — ${FMT(total)}`}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </Section>
+    </>
   );
 }

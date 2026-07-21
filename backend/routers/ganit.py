@@ -1599,3 +1599,255 @@ async def record_vendor_payment(
         new_paid, new_status, str(bill_id),
     )
     return {"ok": True, "amount_paid": new_paid, "status": new_status}
+
+
+# ── Bank Reconciliation ────────────────────────────────────
+
+class BankStatementLine(BaseModel):
+    statement_date: str
+    description: str = ""
+    reference: str = ""
+    amount: float = 0
+    running_balance: float | None = None
+
+
+class BankStatementImport(BaseModel):
+    lines: list[BankStatementLine]
+    batch_label: str = ""
+
+
+@router.post("/bank-statements/import")
+async def import_bank_statement(
+    body: BankStatementImport,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    if not body.lines:
+        raise HTTPException(400, "No lines to import")
+
+    batch_id = f"BSI-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    imported = 0
+    for line in body.lines:
+        stmt_date = date.fromisoformat(line.statement_date)
+        await pool.execute(
+            "INSERT INTO staging.ganit_bank_statement_lines "
+            "(org_id, statement_date, description, reference, amount, running_balance, batch_id) "
+            "VALUES ($1::uuid, $2::date, $3, $4, $5, $6, $7)",
+            org_id, stmt_date, line.description, line.reference,
+            line.amount, line.running_balance, batch_id,
+        )
+        imported += 1
+
+    auto_matched = 0
+    unmatched = await pool.fetch(
+        "SELECT id, amount, statement_date, reference FROM staging.ganit_bank_statement_lines "
+        "WHERE org_id=$1::uuid AND batch_id=$2 AND is_reconciled=FALSE",
+        org_id, batch_id,
+    )
+    for row in unmatched:
+        payment = await pool.fetchrow(
+            "SELECT id FROM staging.ganit_payments "
+            "WHERE org_id=$1::uuid AND amount=$2 AND payment_date=$3::date "
+            "AND id NOT IN (SELECT matched_payment_id FROM staging.ganit_bank_statement_lines "
+            "WHERE org_id=$1::uuid AND matched_payment_id IS NOT NULL) "
+            "LIMIT 1",
+            org_id, row["amount"], row["statement_date"],
+        )
+        if payment:
+            await pool.execute(
+                "UPDATE staging.ganit_bank_statement_lines "
+                "SET matched_payment_id=$1, matched_type='auto', is_reconciled=TRUE "
+                "WHERE id=$2::uuid",
+                payment["id"], row["id"],
+            )
+            auto_matched += 1
+
+    return {"ok": True, "imported": imported, "auto_matched": auto_matched, "batch_id": batch_id}
+
+
+@router.get("/bank-statements")
+async def list_bank_statements(
+    reconciled: str = "",
+    batch_id: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    q = "SELECT * FROM staging.ganit_bank_statement_lines WHERE org_id=$1::uuid"
+    params: list = [org_id]
+    if reconciled == "true":
+        q += " AND is_reconciled=TRUE"
+    elif reconciled == "false":
+        q += " AND is_reconciled=FALSE"
+    if batch_id:
+        params.append(batch_id)
+        q += f" AND batch_id=${len(params)}"
+    q += " ORDER BY statement_date DESC, created_at DESC LIMIT 500"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/bank-statements/{line_id}/match")
+async def match_bank_line(
+    line_id: str,
+    payment_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    line = await pool.fetchrow(
+        "SELECT id FROM staging.ganit_bank_statement_lines "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        line_id, org_id,
+    )
+    if not line:
+        raise HTTPException(404, "Statement line not found")
+    payment = await pool.fetchrow(
+        "SELECT id FROM staging.ganit_payments WHERE id=$1::uuid AND org_id=$2::uuid",
+        payment_id, org_id,
+    )
+    if not payment:
+        raise HTTPException(404, "Payment not found")
+    await pool.execute(
+        "UPDATE staging.ganit_bank_statement_lines "
+        "SET matched_payment_id=$1::uuid, matched_type='manual', is_reconciled=TRUE "
+        "WHERE id=$2::uuid",
+        payment_id, line_id,
+    )
+    return {"ok": True}
+
+
+@router.post("/bank-statements/{line_id}/unmatch")
+async def unmatch_bank_line(
+    line_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    result = await pool.execute(
+        "UPDATE staging.ganit_bank_statement_lines "
+        "SET matched_payment_id=NULL, matched_type=NULL, is_reconciled=FALSE "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        line_id, org_id,
+    )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "Statement line not found")
+    return {"ok": True}
+
+
+@router.get("/bank-statements/stats")
+async def bank_reconciliation_stats(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT "
+        "COUNT(*) AS total_lines, "
+        "COUNT(*) FILTER (WHERE is_reconciled=TRUE) AS matched, "
+        "COUNT(*) FILTER (WHERE is_reconciled=FALSE) AS unmatched, "
+        "COALESCE(SUM(amount) FILTER (WHERE is_reconciled=TRUE), 0) AS matched_amount, "
+        "COALESCE(SUM(amount) FILTER (WHERE is_reconciled=FALSE), 0) AS unmatched_amount "
+        "FROM staging.ganit_bank_statement_lines WHERE org_id=$1::uuid",
+        org_id,
+    )
+    return dict(row) if row else {}
+
+
+# ── Timesheet → Invoice Bridge ─────────────────────────────
+
+class TimesheetInvoiceCreate(BaseModel):
+    employee_ids: list[str] = []
+    date_from: str = ""
+    date_to: str = ""
+    contact_id: str = ""
+    is_igst: bool = False
+
+
+@router.post("/invoices/from-time-entries")
+async def create_invoice_from_time_entries(
+    body: TimesheetInvoiceCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+
+    q = (
+        "SELECT te.entry_id, te.task_id, te.minutes, te.description, te.user_id, "
+        "e.name AS employee_name, e.hourly_rate "
+        "FROM time_entries te "
+        "JOIN staging.manav_employees e ON e.user_id::text = te.user_id "
+        "WHERE e.org_id=$1::uuid AND te.is_billed=FALSE AND te.minutes IS NOT NULL AND te.minutes > 0"
+    )
+    params: list = [org_id]
+
+    if body.employee_ids:
+        employee_clause = ", ".join(f"${i+2}::uuid" for i in range(len(body.employee_ids)))
+        params.extend(body.employee_ids)
+        q += f" AND e.id IN ({employee_clause})"
+
+    if body.date_from:
+        params.append(body.date_from)
+        q += f" AND te.started_at >= ${len(params)}::date"
+    if body.date_to:
+        params.append(body.date_to)
+        q += f" AND te.started_at <= ${len(params)}::date + INTERVAL '1 day'"
+
+    entries = await pool.fetch(q, *params)
+    if not entries:
+        raise HTTPException(400, "No unbilled time entries found")
+
+    line_items = []
+    entry_ids = []
+    for e in entries:
+        hours = round(e["minutes"] / 60, 2)
+        rate = float(e["hourly_rate"]) if e["hourly_rate"] else 0
+        desc = f"{e['employee_name']}: {e['description'] or 'Time entry'} ({hours}h)"
+        line_items.append(LineItem(
+            description=desc,
+            quantity=hours,
+            rate=rate,
+            gst_rate=18.0,
+        ))
+        entry_ids.append(e["entry_id"])
+
+    computed = _compute_invoice(line_items, body.is_igst, 0)
+    inv_number = await _next_invoice_number(pool, org_id, "INV")
+    inv_date = date.today()
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            inv = await conn.fetchrow(
+                "INSERT INTO staging.ganit_invoices "
+                "(org_id, contact_id, invoice_number, invoice_type, invoice_date, "
+                "is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
+                "balance_due, notes, created_by) "
+                "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, 'tax_invoice', $4::date, "
+                "$5, $6::jsonb, $7, $8, $9, $10, 0, $11, $11, 'Generated from time entries', $12) "
+                "RETURNING id, invoice_number, total",
+                org_id, body.contact_id, inv_number, inv_date, body.is_igst,
+                json.dumps(computed["line_items"]),
+                computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
+                computed["total"], user["user_id"],
+            )
+
+            for eid in entry_ids:
+                await conn.execute(
+                    "UPDATE time_entries SET is_billed=TRUE, invoice_id=$1 WHERE entry_id=$2",
+                    inv["id"], eid,
+                )
+
+    return {
+        "ok": True,
+        "invoice_id": str(inv["id"]),
+        "invoice_number": inv["invoice_number"],
+        "total": float(inv["total"]),
+        "entries_billed": len(entry_ids),
+    }

@@ -20,7 +20,7 @@ function Badge({ text, color }) {
   );
 }
 
-const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'recruitment', 'announcements', 'departments', 'holidays', 'performance'];
+const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'recruitment', 'announcements', 'departments', 'holidays', 'performance', 'assets'];
 
 export default function ManavPage() {
   const { pushToast } = useToast();
@@ -74,6 +74,7 @@ export default function ManavPage() {
       {tab === 'departments' && <DepartmentsTab />}
       {tab === 'holidays' && <HolidaysTab />}
       {tab === 'performance' && <PerformanceTab />}
+      {tab === 'assets' && <AssetsTab />}
     </div>
   );
 }
@@ -1694,6 +1695,179 @@ function PerformanceTab() {
                 </tr>
               );
             })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+
+const ASSET_CATEGORIES = ['laptop', 'phone', 'tablet', 'vehicle', 'furniture', 'other'];
+const ASSET_CONDITIONS = ['new', 'good', 'fair', 'poor', 'disposed'];
+const CATEGORY_COLORS = { laptop: '#3b82f6', phone: '#8b5cf6', tablet: '#6366f1', vehicle: '#f59e0b', furniture: '#78716c', other: '#6b7280' };
+const CONDITION_COLORS = { new: '#10b981', good: '#0ea5e9', fair: '#f59e0b', poor: '#ef4444', disposed: '#9ca3af' };
+const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+
+function AssetsTab() {
+  const { pushToast } = useToast();
+  const [assets, setAssets] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [catFilter, setCatFilter] = useState('');
+  const [assigningId, setAssigningId] = useState(null);
+  const [assignEmployee, setAssignEmployee] = useState('');
+  const [form, setForm] = useState({
+    asset_tag: '', name: '', category: 'laptop', serial_number: '',
+    purchase_date: '', purchase_cost: '', condition: 'new', notes: '',
+  });
+
+  useEffect(() => { load(); loadEmployees(); }, []);
+
+  async function load() {
+    try {
+      const r = await api.get('/v1/manav/assets');
+      setAssets(r.data.data || []);
+    } catch { pushToast({ title: 'Failed to load assets', type: 'error' }); }
+    finally { setLoading(false); }
+  }
+
+  async function loadEmployees() {
+    try {
+      const r = await api.get('/v1/manav/employees');
+      setEmployees(r.data.data || r.data || []);
+    } catch {}
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/v1/manav/assets', { ...form, purchase_cost: parseFloat(form.purchase_cost) || 0 });
+      pushToast({ title: 'Asset created', type: 'success' });
+      setShowForm(false);
+      setForm({ asset_tag: '', name: '', category: 'laptop', serial_number: '', purchase_date: '', purchase_cost: '', condition: 'new', notes: '' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    finally { setSaving(false); }
+  }
+
+  async function remove(id) {
+    try {
+      await api.delete(`/v1/manav/assets/${id}`);
+      pushToast({ title: 'Asset removed', type: 'success' });
+      setAssets(prev => prev.filter(a => a.id !== id));
+    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+  }
+
+  async function assign(id) {
+    if (!assignEmployee) return;
+    try {
+      await api.post(`/v1/manav/assets/${id}/assign`, { employee_id: assignEmployee });
+      pushToast({ title: 'Asset assigned', type: 'success' });
+      setAssigningId(null);
+      setAssignEmployee('');
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Assign failed', type: 'error' }); }
+  }
+
+  async function returnAsset(id) {
+    try {
+      await api.post(`/v1/manav/assets/${id}/return`);
+      pushToast({ title: 'Asset returned', type: 'success' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Return failed', type: 'error' }); }
+  }
+
+  const filtered = catFilter ? assets.filter(a => a.category === catFilter) : assets;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+        <select className="k-input" style={{ width: 140 }} value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+          <option value="">All Categories</option>
+          {ASSET_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <div style={{ flex: 1 }} />
+        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ New Asset</button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Asset</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Asset Tag *</span>
+              <input className="k-input" required placeholder="e.g. AST-001" value={form.asset_tag} onChange={e => setForm({ ...form, asset_tag: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
+              <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Category</span>
+              <select className="k-input" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
+                {ASSET_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Serial Number</span>
+              <input className="k-input" value={form.serial_number} onChange={e => setForm({ ...form, serial_number: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Purchase Date</span>
+              <input className="k-input" type="date" value={form.purchase_date} onChange={e => setForm({ ...form, purchase_date: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Purchase Cost</span>
+              <input className="k-input" type="number" placeholder="0" value={form.purchase_cost} onChange={e => setForm({ ...form, purchase_cost: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Condition</span>
+              <select className="k-input" value={form.condition} onChange={e => setForm({ ...form, condition: e.target.value })}>
+                {ASSET_CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select></label>
+            <label style={{ fontSize: 13, gridColumn: '2 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes</span>
+              <input className="k-input" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Creating…' : 'Create Asset'}</button>
+          </div>
+        </form>
+      )}
+
+      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
+        filtered.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No assets found.</p> : (
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+              {['Tag', 'Name', 'Category', 'Condition', 'Assigned To', 'Actions'].map(h => (
+                <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(a => (
+              <tr key={a.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                <td style={{ padding: '10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{a.asset_tag || '—'}</td>
+                <td style={{ padding: '10px', fontWeight: 600 }}>{a.name}</td>
+                <td style={{ padding: '10px' }}><Badge text={a.category} color={CATEGORY_COLORS[a.category] || '#6b7280'} /></td>
+                <td style={{ padding: '10px' }}><Badge text={a.condition} color={CONDITION_COLORS[a.condition] || '#6b7280'} /></td>
+                <td style={{ padding: '10px', color: a.employee_name ? 'var(--ink-1)' : 'var(--ink-3)' }}>{a.employee_name || '—'}</td>
+                <td style={{ padding: '10px' }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {a.assigned_to ? (
+                      <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => returnAsset(a.id)}>Return</button>
+                    ) : (
+                      assigningId === a.id ? (
+                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                          <select className="k-input" style={{ fontSize: 11, padding: '2px 6px', width: 140 }} value={assignEmployee}
+                            onChange={e => setAssignEmployee(e.target.value)}>
+                            <option value="">Select…</option>
+                            {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                          </select>
+                          <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => assign(a.id)}>OK</button>
+                          <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => { setAssigningId(null); setAssignEmployee(''); }}>X</button>
+                        </div>
+                      ) : (
+                        <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => setAssigningId(a.id)}>Assign</button>
+                      )
+                    )}
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px', color: '#ef4444' }} onClick={() => remove(a.id)}>Delete</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       )}
