@@ -100,6 +100,7 @@ async def run_scraper(
             str(row["id"]), run["run_id"],
             scraper["max_results"] or 100,
             scraper.get("result_path"),
+            org_id=org_id,
         ))
 
         return {
@@ -118,8 +119,8 @@ async def run_scraper(
         raise HTTPException(502, f"Apify error: {msg}")
 
 
-async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_path: str = None):
-    """Background task: poll Apify run until done, then fetch results."""
+async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_path: str = None, org_id: str = None):
+    """Background task: poll Apify run until done, then store results in R2."""
     from services.apify import get_run_status, get_dataset_items
     pool = await get_pool()
 
@@ -147,12 +148,14 @@ async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_pa
                         flat.extend(nested)
                 results = flat
 
+            trimmed = results[:max_items]
+            r2_key = await _store_results_r2(org_id, db_run_id, trimmed)
+
             await pool.execute(
                 "UPDATE staging.hub_scraper_runs SET status='succeeded', "
-                "result_count=$2, cost_usd=$3, results=$4::jsonb, finished_at=NOW() "
+                "result_count=$2, cost_usd=$3, results_r2_key=$4, finished_at=NOW() "
                 "WHERE id=$1::uuid",
-                db_run_id, len(results), float(info.get("usage_usd", 0)),
-                json.dumps(results[:max_items]),
+                db_run_id, len(trimmed), float(info.get("usage_usd", 0)), r2_key,
             )
             return
 
@@ -171,6 +174,56 @@ async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_pa
     )
 
 
+async def _store_results_r2(org_id: str, run_id: str, results: list) -> str | None:
+    """Store scraper results as JSON in R2. Returns the key, or None if R2 unavailable."""
+    from services.storage import _get_org_r2
+    import asyncio as _aio
+
+    if not org_id:
+        return None
+    client, bucket = await _get_org_r2(org_id)
+    if not client:
+        return None
+
+    key = f"scraper-results/{run_id}.json"
+    body = json.dumps(results, default=str).encode()
+    loop = _aio.get_running_loop()
+    try:
+        await loop.run_in_executor(
+            None,
+            lambda: client.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/json"),
+        )
+        log.info("Stored scraper results in R2: %s (%d bytes)", key, len(body))
+        return key
+    except Exception as e:
+        log.warning("R2 upload failed for scraper results %s: %s", run_id, e)
+        return None
+
+
+async def _fetch_results_r2(org_id: str, r2_key: str) -> list:
+    """Fetch scraper results JSON from R2."""
+    from services.storage import _get_org_r2
+    import asyncio as _aio
+
+    if not r2_key or not org_id:
+        return []
+    client, bucket = await _get_org_r2(org_id)
+    if not client:
+        return []
+
+    loop = _aio.get_running_loop()
+    try:
+        resp = await loop.run_in_executor(
+            None,
+            lambda: client.get_object(Bucket=bucket, Key=r2_key),
+        )
+        body = resp["Body"].read()
+        return json.loads(body)
+    except Exception as e:
+        log.warning("R2 fetch failed for %s: %s", r2_key, e)
+        return []
+
+
 # ── Get run status / results ─────────────────────────────
 
 @router.get("/runs/{run_id}")
@@ -182,7 +235,10 @@ async def get_run(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT r.*, c.name as scraper_name, c.result_columns "
+        "SELECT r.id, r.org_id, r.scraper_id, r.user_id, r.status, r.result_count, "
+        "r.billed_inr, r.cost_usd, r.error, r.created_at, r.finished_at, "
+        "r.graha_imported_count, r.graha_imported_at, r.results_r2_key, r.results, "
+        "c.name as scraper_name, c.result_columns "
         "FROM staging.hub_scraper_runs r "
         "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
         "WHERE r.id=$1::uuid AND r.org_id=$2::uuid",
@@ -190,7 +246,12 @@ async def get_run(
     )
     if not row:
         raise HTTPException(404, "Run not found")
-    return dict(row)
+    out = dict(row)
+    # Prefer R2, fall back to legacy JSONB column
+    if out.get("results_r2_key"):
+        out["results"] = await _fetch_results_r2(org_id, out["results_r2_key"])
+    del out["results_r2_key"]
+    return out
 
 
 # ── Import results into Graha (CRM) ──────────────────────
@@ -252,7 +313,8 @@ async def import_run_to_graha(
 
     pool = await get_pool()
     run = await pool.fetchrow(
-        "SELECT r.*, c.graha_field_map, c.name as scraper_name "
+        "SELECT r.id, r.org_id, r.scraper_id, r.status, r.results_r2_key, r.results, "
+        "c.graha_field_map, c.name as scraper_name "
         "FROM staging.hub_scraper_runs r "
         "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
         "WHERE r.id=$1::uuid AND r.org_id=$2::uuid",
@@ -263,8 +325,11 @@ async def import_run_to_graha(
     if run["status"] != "succeeded":
         raise HTTPException(400, "Run has not succeeded yet")
 
-    results = run["results"]
-    results = json.loads(results) if isinstance(results, str) else (results or [])
+    if run.get("results_r2_key"):
+        results = await _fetch_results_r2(org_id, run["results_r2_key"])
+    else:
+        results = run["results"]
+        results = json.loads(results) if isinstance(results, str) else (results or [])
     field_map = run["graha_field_map"]
     field_map = json.loads(field_map) if isinstance(field_map, str) else (field_map or {})
 
@@ -368,7 +433,9 @@ async def admin_runs(
 ):
     pool = await get_pool()
     q = (
-        "SELECT r.*, c.name as scraper_name, c.icon, o.name as org_name "
+        "SELECT r.id, r.org_id, r.scraper_id, r.user_id, r.status, r.result_count, "
+        "r.billed_inr, r.cost_usd, r.error, r.created_at, r.finished_at, "
+        "c.name as scraper_name, c.icon, o.name as org_name "
         "FROM staging.hub_scraper_runs r "
         "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
         "JOIN staging.organisations o ON o.id = r.org_id "
