@@ -264,6 +264,12 @@ _ALIASES = {
     "designation": ("designation", "title", "headline", "jobTitle", "position"),
 }
 
+# LinkedIn scrapers return firstName/lastName instead of a single name field
+_FIRST_LAST_KEYS = [
+    ("firstName", "lastName"),
+    ("first_name", "last_name"),
+]
+
 
 def _extract_lead_fields(item: dict, field_map: dict) -> Optional[dict]:
     """Best-effort mapping of a scraper result row onto Graha contact fields.
@@ -293,6 +299,15 @@ def _extract_lead_fields(item: dict, field_map: dict) -> Optional[dict]:
         if isinstance(val, list):
             val = ", ".join(str(v) for v in val[:3])
         out[target] = str(val).strip() if val else ""
+
+    # Compose name from firstName+lastName if single-name aliases missed
+    if not out["name"]:
+        for fk, lk in _FIRST_LAST_KEYS:
+            first = str(item.get(fk, "")).strip()
+            last = str(item.get(lk, "")).strip()
+            if first or last:
+                out["name"] = f"{first} {last}".strip()
+                break
 
     if not out["name"] and not out["company"]:
         return None

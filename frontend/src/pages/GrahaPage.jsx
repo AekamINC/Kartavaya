@@ -330,6 +330,7 @@ function ClientsTab() {
   }
 
   async function remove(id) {
+    if (!window.confirm('Delete this client? This cannot be undone.')) return;
     try {
       await api.delete(`/v1/graha/clients/${id}`);
       pushToast({ title: 'Client deleted', type: 'success' });
@@ -535,6 +536,7 @@ function ContactsTab() {
   }
 
   async function deleteContact(id) {
+    if (!window.confirm('Delete this contact? This cannot be undone.')) return;
     try {
       await api.delete(`/v1/graha/contacts/${id}`);
       setContacts(prev => prev.filter(c => c.id !== id));
@@ -839,6 +841,15 @@ function DealsTab() {
     finally { setSaving(false); }
   }
 
+  async function deleteDeal(dealId, title) {
+    if (!window.confirm(`Delete deal "${title}"? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/v1/graha/deals/${dealId}`);
+      pushToast({ title: 'Deal deleted', type: 'success' });
+      load();
+    } catch { pushToast({ title: 'Could not delete deal', type: 'error' }); }
+  }
+
   async function updateStage(dealId, stage) {
     try {
       await api.patch(`/v1/graha/deals/${dealId}`, { stage });
@@ -872,7 +883,10 @@ function DealsTab() {
     setEditDealSaving(true);
     try {
       const { id, ...fields } = editDeal;
-      await api.patch(`/v1/graha/deals/${id}`, { ...fields, value: parseFloat(fields.value) || 0 });
+      const payload = { ...fields, value: parseFloat(fields.value) || 0 };
+      if (!payload.expected_close_date) delete payload.expected_close_date;
+      if (!payload.notes) delete payload.notes;
+      await api.patch(`/v1/graha/deals/${id}`, payload);
       pushToast({ title: 'Deal updated', type: 'success' });
       setEditDeal(null);
       load();
@@ -997,6 +1011,8 @@ function DealsTab() {
                       onClick={() => startEditDeal(d)}>Edit</button>
                     <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }}
                       onClick={() => { setNoteDeal(d.id); setNoteText(d.notes || ''); }}>Notes</button>
+                    <button className="k-btn k-btn--reject" style={{ fontSize: 11, padding: '2px 8px' }}
+                      onClick={() => deleteDeal(d.id, d.title)}>Delete</button>
                     {d.stage === 'Won' && (
                       <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 10px' }}
                         onClick={() => createInvoice(d.id)}>Create Invoice</button>
@@ -1208,6 +1224,7 @@ function FollowUpsTab() {
   }
 
   async function remove(id) {
+    if (!window.confirm('Delete this follow-up? This cannot be undone.')) return;
     try {
       await api.delete(`/v1/graha/follow-ups/${id}`);
       pushToast({ title: 'Follow-up deleted', type: 'success' });
@@ -1328,6 +1345,7 @@ function LabelsTab() {
   }
 
   async function remove(id) {
+    if (!window.confirm('Delete this label? This cannot be undone.')) return;
     try {
       await api.delete(`/v1/graha/labels/${id}`);
       pushToast({ title: 'Label deleted', type: 'success' });
@@ -1649,7 +1667,7 @@ function AutomationsTab() {
 
   useEffect(() => {
     Promise.all([
-      api.get('/v1/graha/automations'),
+      api.get('/v1/graha/automations').catch(() => ({ data: { data: [] } })),
       api.get('/v1/graha/automation-logs').catch(() => ({ data: { data: [] } })),
     ]).then(([a, l]) => {
       setAutomations(a.data.data || []);
@@ -1676,6 +1694,7 @@ function AutomationsTab() {
   }
 
   async function remove(id) {
+    if (!window.confirm('Delete this automation? This cannot be undone.')) return;
     try {
       await api.delete(`/v1/graha/automations/${id}`);
       setAutomations(prev => prev.filter(a => a.id !== id));
@@ -1776,6 +1795,7 @@ function TerritoriesTab() {
   }
 
   async function remove(id) {
+    if (!window.confirm('Delete this territory? This cannot be undone.')) return;
     try {
       await api.delete(`/v1/graha/territories/${id}`);
       setTerritories(prev => prev.filter(t => t.id !== id));
@@ -1880,6 +1900,7 @@ function CustomFieldsTab() {
   }
 
   async function remove(id) {
+    if (!window.confirm('Delete this custom field? This cannot be undone.')) return;
     try {
       await api.delete(`/v1/graha/custom-fields/${id}`);
       setFields(prev => prev.filter(f => f.id !== id));
@@ -1980,6 +2001,7 @@ function WebFormsTab() {
   }
 
   async function remove(id) {
+    if (!window.confirm('Delete this web form? This cannot be undone.')) return;
     try {
       await api.delete(`/v1/graha/web-forms/${id}`);
       setForms(prev => prev.filter(f => f.id !== id));
@@ -2108,6 +2130,7 @@ function ApprovalsTab() {
   }
 
   async function deleteRule(id) {
+    if (!window.confirm('Delete this approval rule? This cannot be undone.')) return;
     try {
       await api.delete(`/v1/graha/approval-rules/${id}`);
       pushToast({ title: 'Rule deleted', type: 'success' });
@@ -2298,6 +2321,7 @@ function DocumentsTab() {
   }
 
   async function deleteDoc(id) {
+    if (!window.confirm('Delete this document? This cannot be undone.')) return;
     try {
       await api.delete(`/v1/graha/documents/${id}`);
       pushToast({ title: 'Document deleted', type: 'success' });
@@ -2360,7 +2384,7 @@ function DocumentsTab() {
                 {d.description && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{d.description}</div>}
                 {d.tags?.length > 0 && (
                   <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                    {d.tags.map(t => <Badge key={t} text={t} color="#6366f1" />)}
+                    {(d.tags || []).map(t => <Badge key={t} text={t} color="#6366f1" />)}
                   </div>
                 )}
               </td>

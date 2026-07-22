@@ -873,6 +873,22 @@ async def update_deal(
     return {"status": "updated"}
 
 
+@router.delete("/deals/{deal_id}")
+async def delete_deal(
+    deal_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    await pool.execute(
+        "UPDATE staging.graha_deals SET is_active=FALSE, updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        deal_id, UUID(org_id),
+    )
+    return {"status": "deleted"}
+
+
 @router.get("/pipeline-summary")
 async def pipeline_summary(
     pipeline_id: Optional[str] = None,

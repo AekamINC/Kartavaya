@@ -306,11 +306,12 @@ function RunsTab({ initialRunId, onConsumeInitial }) {
       try {
         const r = await api.post(`/v1/scrapers/runs/${detail.id}/import-to-graha`);
         const { imported, skipped_duplicate, skipped_unmappable } = r.data;
+        const parts = [`Imported ${imported} lead${imported === 1 ? '' : 's'} to Graha`];
+        if (skipped_duplicate) parts.push(`${skipped_duplicate} duplicate${skipped_duplicate === 1 ? '' : 's'} skipped`);
+        if (skipped_unmappable) parts.push(`${skipped_unmappable} unmappable (missing name/company)`);
         pushToast({
-          title: `Imported ${imported} lead${imported === 1 ? '' : 's'} to Graha` +
-            (skipped_duplicate ? ` · ${skipped_duplicate} duplicate${skipped_duplicate === 1 ? '' : 's'} skipped` : '') +
-            (skipped_unmappable ? ` · ${skipped_unmappable} skipped` : ''),
-          type: 'success',
+          title: parts.join(' · '),
+          type: imported > 0 ? 'success' : (skipped_unmappable ? 'warning' : 'info'),
         });
         setDetail({ ...detail, graha_imported_count: imported });
       } catch (err) {
