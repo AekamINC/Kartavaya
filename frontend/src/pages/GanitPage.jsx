@@ -564,6 +564,9 @@ function ProductsTab() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', hsn_code: '', sac_code: '', unit: 'NOS', price: '', gst_rate: 18, description: '', is_service: false });
   const [saving, setSaving] = useState(false);
+  const [editProduct, setEditProduct] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -586,6 +589,23 @@ function ProductsTab() {
       load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
+  }
+
+  function startEdit(p) {
+    setEditProduct(p.id);
+    setEditForm({ name: p.name || '', hsn_code: p.hsn_code || '', sac_code: p.sac_code || '', unit: p.unit || 'NOS', price: p.price ?? '', gst_rate: p.gst_rate ?? 18, description: p.description || '', is_service: !!p.is_service });
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault();
+    setEditSaving(true);
+    try {
+      await api.patch(`/v1/ganit/products/${editProduct}`, { ...editForm, price: parseFloat(editForm.price) || 0 });
+      pushToast({ title: 'Product updated', type: 'success' });
+      setEditProduct(null);
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update product', type: 'error' }); }
+    finally { setEditSaving(false); }
   }
 
   async function deleteProduct(id) {
@@ -649,17 +669,53 @@ function ProductsTab() {
           </thead>
           <tbody>
             {products.map(p => (
-              <tr key={p.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                <td style={{ padding: '10px', fontWeight: 600 }}>{p.name}</td>
+              <React.Fragment key={p.id}>
+              <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                <td style={{ padding: '10px', fontWeight: 600 }}>
+                  <span style={{ cursor: 'pointer', color: 'var(--k-primary)', textDecoration: 'underline', textDecorationStyle: 'dotted' }} onClick={() => startEdit(p)}>{p.name}</span>
+                </td>
                 <td style={{ padding: '10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{p.hsn_code || p.sac_code || '—'}</td>
                 <td style={{ padding: '10px' }}>{p.unit}</td>
                 <td style={{ padding: '10px' }}>₹{Number(p.price).toLocaleString('en-IN')}</td>
                 <td style={{ padding: '10px' }}>{Number(p.gst_rate)}%</td>
                 <td style={{ padding: '10px' }}><Badge text={p.is_service ? 'Service' : 'Goods'} color={p.is_service ? '#6366f1' : '#0082c6'} /></td>
-                <td style={{ padding: '10px' }}>
+                <td style={{ padding: '10px', display: 'flex', gap: 8 }}>
+                  <button onClick={() => startEdit(p)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--k-primary)', fontSize: 11 }}>Edit</button>
                   <button onClick={() => deleteProduct(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11 }}>Delete</button>
                 </td>
               </tr>
+              {editProduct === p.id && (
+                <tr><td colSpan={7} style={{ padding: 0 }}>
+                  <form onSubmit={saveEdit} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, margin: '4px 0 8px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
+                        <input className="k-input" required value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></label>
+                      <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, paddingTop: 20 }}>
+                        <input type="checkbox" checked={editForm.is_service} onChange={e => setEditForm({ ...editForm, is_service: e.target.checked })} />
+                        <span style={{ fontWeight: 600 }}>This is a Service</span></label>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>HSN Code</span>
+                        <input className="k-input" value={editForm.hsn_code} onChange={e => setEditForm({ ...editForm, hsn_code: e.target.value })} /></label>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>SAC Code</span>
+                        <input className="k-input" value={editForm.sac_code} onChange={e => setEditForm({ ...editForm, sac_code: e.target.value })} /></label>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Unit</span>
+                        <input className="k-input" value={editForm.unit} onChange={e => setEditForm({ ...editForm, unit: e.target.value })} /></label>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Price</span>
+                        <input className="k-input" type="number" step="0.01" value={editForm.price} onChange={e => setEditForm({ ...editForm, price: e.target.value })} /></label>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>GST Rate (%)</span>
+                        <select className="k-input" value={editForm.gst_rate} onChange={e => setEditForm({ ...editForm, gst_rate: parseFloat(e.target.value) })}>
+                          {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
+                        </select></label>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
+                        <input className="k-input" value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} /></label>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                      <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditProduct(null)}>Cancel</button>
+                      <button type="submit" className="k-btn k-btn--primary" disabled={editSaving}>{editSaving ? 'Saving…' : 'Save'}</button>
+                    </div>
+                  </form>
+                </td></tr>
+              )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -681,6 +737,9 @@ function ExpensesTab() {
   const [saving, setSaving] = useState(false);
   const [showCatForm, setShowCatForm] = useState(false);
   const [catForm, setCatForm] = useState({ name: '', icon: '📁' });
+  const [editExpense, setEditExpense] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => { load(); loadCategories(); loadStats(); }, []);
 
@@ -731,6 +790,25 @@ function ExpensesTab() {
       pushToast({ title: 'Expense deleted', type: 'success' });
       loadStats();
     } catch { pushToast({ title: 'Could not delete expense', type: 'error' }); }
+  }
+
+  function startEditExpense(ex) {
+    setEditExpense(ex.id);
+    setEditForm({ title: ex.title || '', category: ex.category || 'general', amount: ex.amount ?? '', tax_amount: ex.tax_amount ?? 0, expense_date: ex.expense_date || '', vendor: ex.vendor || '', reference: ex.reference || '', notes: ex.notes || '', is_billable: !!ex.is_billable });
+  }
+
+  async function saveEditExpense(e) {
+    e.preventDefault();
+    setEditSaving(true);
+    try {
+      const amt = parseFloat(editForm.amount) || 0;
+      const tax = parseFloat(editForm.tax_amount) || 0;
+      await api.patch(`/v1/ganit/expenses/${editExpense}`, { ...editForm, amount: amt, tax_amount: tax, total: amt + tax });
+      pushToast({ title: 'Expense updated', type: 'success' });
+      setEditExpense(null);
+      load(); loadStats();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update expense', type: 'error' }); }
+    finally { setEditSaving(false); }
   }
 
   async function saveCat(e) {
@@ -831,19 +909,56 @@ function ExpensesTab() {
           </thead>
           <tbody>
             {expenses.map(ex => (
-              <tr key={ex.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+              <React.Fragment key={ex.id}>
+              <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
                 <td style={{ padding: '10px', fontSize: 12 }}>{ex.expense_date}</td>
-                <td style={{ padding: '10px', fontWeight: 600 }}>{ex.title}</td>
+                <td style={{ padding: '10px', fontWeight: 600 }}>
+                  <span style={{ cursor: 'pointer', color: 'var(--k-primary)', textDecoration: 'underline', textDecorationStyle: 'dotted' }} onClick={() => startEditExpense(ex)}>{ex.title}</span>
+                </td>
                 <td style={{ padding: '10px' }}><Badge text={ex.category} color="#6366f1" /></td>
                 <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{ex.vendor || '—'}</td>
                 <td style={{ padding: '10px', textAlign: 'right' }}>₹{Number(ex.amount).toLocaleString('en-IN')}</td>
                 <td style={{ padding: '10px', textAlign: 'right', color: 'var(--ink-3)' }}>₹{Number(ex.tax_amount || 0).toLocaleString('en-IN')}</td>
                 <td style={{ padding: '10px', textAlign: 'right', fontWeight: 600 }}>₹{Number(ex.total).toLocaleString('en-IN')}</td>
                 <td style={{ padding: '10px' }}>{ex.is_billable ? <Badge text="Yes" color="#10b981" /> : '—'}</td>
-                <td style={{ padding: '10px' }}>
+                <td style={{ padding: '10px', display: 'flex', gap: 8 }}>
+                  <button onClick={() => startEditExpense(ex)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--k-primary)', fontSize: 11 }}>Edit</button>
                   <button onClick={() => deleteExpense(ex.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11 }}>Delete</button>
                 </td>
               </tr>
+              {editExpense === ex.id && (
+                <tr><td colSpan={9} style={{ padding: 0 }}>
+                  <form onSubmit={saveEditExpense} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, margin: '4px 0 8px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
+                        <input className="k-input" required value={editForm.title} onChange={e => setEditForm({ ...editForm, title: e.target.value })} /></label>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Category</span>
+                        <select className="k-input" value={editForm.category} onChange={e => setEditForm({ ...editForm, category: e.target.value })}>
+                          <option value="general">General</option>
+                          {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                        </select></label>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Date *</span>
+                        <input className="k-input" type="date" required value={editForm.expense_date} onChange={e => setEditForm({ ...editForm, expense_date: e.target.value })} /></label>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Amount</span>
+                        <input className="k-input" type="number" step="0.01" required value={editForm.amount} onChange={e => setEditForm({ ...editForm, amount: e.target.value })} /></label>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Tax</span>
+                        <input className="k-input" type="number" step="0.01" value={editForm.tax_amount} onChange={e => setEditForm({ ...editForm, tax_amount: e.target.value })} /></label>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Vendor</span>
+                        <input className="k-input" value={editForm.vendor} onChange={e => setEditForm({ ...editForm, vendor: e.target.value })} /></label>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Reference</span>
+                        <input className="k-input" value={editForm.reference} onChange={e => setEditForm({ ...editForm, reference: e.target.value })} /></label>
+                      <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, paddingTop: 20 }}>
+                        <input type="checkbox" checked={editForm.is_billable} onChange={e => setEditForm({ ...editForm, is_billable: e.target.checked })} />
+                        <span style={{ fontWeight: 600 }}>Billable</span></label>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                      <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditExpense(null)}>Cancel</button>
+                      <button type="submit" className="k-btn k-btn--primary" disabled={editSaving}>{editSaving ? 'Saving…' : 'Save'}</button>
+                    </div>
+                  </form>
+                </td></tr>
+              )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -1120,6 +1235,9 @@ function ContractsTab() {
   const [detail, setDetail] = useState(null);
   const [form, setForm] = useState({ title: '', contact_id: '', description: '', contract_value: '', start_date: '', end_date: '', renewal_reminder_days: 30, notes: '' });
   const [saving, setSaving] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -1166,7 +1284,27 @@ function ContractsTab() {
     try {
       const r = await api.get(`/v1/ganit/contracts/${id}`);
       setDetail(r.data);
+      setEditMode(false);
     } catch { pushToast({ title: 'Failed to load contract', type: 'error' }); }
+  }
+
+  function startEditContract(c) {
+    setEditForm({ title: c.title || '', contact_id: c.contact_id || '', description: c.description || '', contract_value: c.contract_value ?? '', start_date: c.start_date || '', end_date: c.end_date || '', renewal_reminder_days: c.renewal_reminder_days ?? 30, notes: c.notes || '' });
+    setEditMode(true);
+    loadContacts();
+  }
+
+  async function saveEditContract(e) {
+    e.preventDefault();
+    setEditSaving(true);
+    try {
+      await api.patch(`/v1/ganit/contracts/${detail.contract.id}`, { ...editForm, contract_value: parseFloat(editForm.contract_value) || 0 });
+      pushToast({ title: 'Contract updated', type: 'success' });
+      setEditMode(false);
+      loadDetail(detail.contract.id);
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update contract', type: 'error' }); }
+    finally { setEditSaving(false); }
   }
 
   if (detail) {
@@ -1190,11 +1328,44 @@ function ContractsTab() {
           </div>
           {c.description && <p style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 12 }}>{c.description}</p>}
           <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => startEditContract(c)}>Edit</button>
             {['draft', 'active', 'expired', 'cancelled', 'renewed'].filter(s => s !== c.status).map(s => (
               <button key={s} className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => updateStatus(c.id, s)}>{s}</button>
             ))}
           </div>
         </div>
+
+        {editMode && (
+          <form onSubmit={saveEditContract} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+            <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Edit Contract</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
+                <input className="k-input" required value={editForm.title} onChange={e => setEditForm({ ...editForm, title: e.target.value })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Contact</span>
+                <select className="k-input" value={editForm.contact_id} onChange={e => setEditForm({ ...editForm, contact_id: e.target.value })}>
+                  <option value="">None</option>
+                  {contacts.map(ct => <option key={ct.id} value={ct.id}>{ct.name}</option>)}
+                </select></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Value</span>
+                <input className="k-input" type="number" step="0.01" value={editForm.contract_value} onChange={e => setEditForm({ ...editForm, contract_value: e.target.value })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Reminder (days)</span>
+                <input className="k-input" type="number" value={editForm.renewal_reminder_days} onChange={e => setEditForm({ ...editForm, renewal_reminder_days: parseInt(e.target.value) || 30 })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Start Date</span>
+                <input className="k-input" type="date" value={editForm.start_date} onChange={e => setEditForm({ ...editForm, start_date: e.target.value })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>End Date</span>
+                <input className="k-input" type="date" value={editForm.end_date} onChange={e => setEditForm({ ...editForm, end_date: e.target.value })} /></label>
+              <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
+                <textarea className="k-input" rows={2} value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} style={{ resize: 'vertical' }} /></label>
+              <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes</span>
+                <textarea className="k-input" rows={2} value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} style={{ resize: 'vertical' }} /></label>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+              <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditMode(false)}>Cancel</button>
+              <button type="submit" className="k-btn k-btn--primary" disabled={editSaving}>{editSaving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </form>
+        )}
+
         {detail.invoices?.length > 0 && (
           <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24 }}>
             <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Related Invoices ({detail.invoices.length})</h4>

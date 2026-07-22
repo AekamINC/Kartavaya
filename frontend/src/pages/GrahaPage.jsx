@@ -471,6 +471,8 @@ function ContactsTab() {
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState(null);
   const [clientOptions, setClientOptions] = useState([]);
+  const [editContact, setEditContact] = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => {
     api.get('/v1/graha/clients').then(r => setClientOptions(r.data.data || [])).catch(() => {});
@@ -500,6 +502,29 @@ function ContactsTab() {
       load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
+  }
+
+  function startEditContact(c) {
+    setEditContact({
+      id: c.id, name: c.name || '', email: c.email || '', phone: c.phone || '', mobile: c.mobile || '',
+      company: c.company || '', designation: c.designation || '', contact_type: c.contact_type || 'lead',
+      notes: c.notes || '', source: c.source || '', lead_score: c.lead_score ?? '', website: c.website || '',
+      gstin: c.gstin || '', pan: c.pan || '',
+    });
+  }
+
+  async function saveEditContact() {
+    if (!editContact) return;
+    setEditSaving(true);
+    try {
+      const { id, ...fields } = editContact;
+      await api.patch(`/v1/graha/contacts/${id}`, fields);
+      pushToast({ title: 'Contact updated', type: 'success' });
+      setEditContact(null);
+      loadDetail(id);
+      load();
+    } catch { pushToast({ title: 'Could not update contact', type: 'error' }); }
+    finally { setEditSaving(false); }
   }
 
   async function loadDetail(id) {
@@ -538,7 +563,47 @@ function ContactsTab() {
     const c = detail.contact;
     return (
       <div>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => setDetail(null)}>← Back to list</button>
+        <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => { setDetail(null); setEditContact(null); }}>← Back to list</button>
+
+        {editContact ? (
+          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700 }}>Edit Contact</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
+                <input className="k-input" value={editContact.name} onChange={e => setEditContact({ ...editContact, name: e.target.value })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Type</span>
+                <select className="k-input" value={editContact.contact_type} onChange={e => setEditContact({ ...editContact, contact_type: e.target.value })}>
+                  {CONTACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Email</span>
+                <input className="k-input" type="email" value={editContact.email} onChange={e => setEditContact({ ...editContact, email: e.target.value })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Phone</span>
+                <input className="k-input" type="tel" value={editContact.phone} onChange={e => setEditContact({ ...editContact, phone: e.target.value })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Mobile</span>
+                <input className="k-input" type="tel" value={editContact.mobile} onChange={e => setEditContact({ ...editContact, mobile: e.target.value })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Company</span>
+                <input className="k-input" value={editContact.company} onChange={e => setEditContact({ ...editContact, company: e.target.value })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Designation</span>
+                <input className="k-input" value={editContact.designation} onChange={e => setEditContact({ ...editContact, designation: e.target.value })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Source</span>
+                <input className="k-input" value={editContact.source} onChange={e => setEditContact({ ...editContact, source: e.target.value })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Lead Score</span>
+                <input className="k-input" type="number" min="0" max="100" value={editContact.lead_score} onChange={e => setEditContact({ ...editContact, lead_score: parseInt(e.target.value) || 0 })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Website</span>
+                <input className="k-input" value={editContact.website} onChange={e => setEditContact({ ...editContact, website: e.target.value })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>GSTIN</span>
+                <input className="k-input" value={editContact.gstin} onChange={e => setEditContact({ ...editContact, gstin: e.target.value })} /></label>
+              <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>PAN</span>
+                <input className="k-input" value={editContact.pan} onChange={e => setEditContact({ ...editContact, pan: e.target.value })} /></label>
+            </div>
+            <label style={{ fontSize: 13, display: 'block', marginTop: 12 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes</span>
+              <textarea className="k-input" rows={3} style={{ resize: 'vertical' }} value={editContact.notes} onChange={e => setEditContact({ ...editContact, notes: e.target.value })} /></label>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+              <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditContact(null)}>Cancel</button>
+              <button type="button" className="k-btn k-btn--primary" disabled={editSaving} onClick={saveEditContact}>{editSaving ? 'Saving...' : 'Save'}</button>
+            </div>
+          </div>
+        ) : (
         <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div>
@@ -546,6 +611,7 @@ function ContactsTab() {
               <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--ink-2)' }}>{c.company} {c.designation && `· ${c.designation}`}</p>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => startEditContact(c)}>Edit</button>
               {c.contact_type === 'lead' && (
                 <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => convertLead(c.id)}>Convert to Customer</button>
               )}
@@ -559,7 +625,7 @@ function ContactsTab() {
             <div><strong>PAN:</strong> {c.pan || '—'}</div>
             <div><strong>Source:</strong> {c.source || '—'}</div>
             <div><strong>Lead Score:</strong> {c.lead_score ?? '—'}/100</div>
-            <div><strong>Assigned To:</strong> {c.assigned_to ? c.assigned_to.substring(0, 8) + '…' : '—'}</div>
+            <div><strong>Assigned To:</strong> {c.assigned_to ? c.assigned_to.substring(0, 8) + '...' : '—'}</div>
             <div><strong>Last Contacted:</strong> {c.last_contacted_at ? new Date(c.last_contacted_at).toLocaleDateString('en-IN') : '—'}</div>
             <div><strong>Converted:</strong> {c.converted_at ? new Date(c.converted_at).toLocaleDateString('en-IN') : '—'}</div>
           </div>
@@ -570,6 +636,7 @@ function ContactsTab() {
           )}
           {c.notes && <p style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 12 }}>{c.notes}</p>}
         </div>
+        )}
 
         {detail.labels?.length > 0 && (
           <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
@@ -733,6 +800,11 @@ function DealsTab() {
   const [dealClients, setDealClients] = useState([]);
   const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '' });
   const [saving, setSaving] = useState(false);
+  const [editDeal, setEditDeal] = useState(null);
+  const [editDealSaving, setEditDealSaving] = useState(false);
+  const [noteDeal, setNoteDeal] = useState(null);
+  const [noteText, setNoteText] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -785,6 +857,38 @@ function DealsTab() {
       }
       navigate(`/ganit`);
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed to create invoice', type: 'error' }); }
+  }
+
+  function startEditDeal(d) {
+    setEditDeal({
+      id: d.id, title: d.title || '', value: d.value || '', stage: d.stage || 'New',
+      probability: d.probability ?? 20, expected_close_date: d.expected_close_date || '',
+      notes: d.notes || '',
+    });
+  }
+
+  async function saveEditDeal() {
+    if (!editDeal) return;
+    setEditDealSaving(true);
+    try {
+      const { id, ...fields } = editDeal;
+      await api.patch(`/v1/graha/deals/${id}`, { ...fields, value: parseFloat(fields.value) || 0 });
+      pushToast({ title: 'Deal updated', type: 'success' });
+      setEditDeal(null);
+      load();
+    } catch { pushToast({ title: 'Could not update deal', type: 'error' }); }
+    finally { setEditDealSaving(false); }
+  }
+
+  async function saveNote(dealId) {
+    setNoteSaving(true);
+    try {
+      await api.patch(`/v1/graha/deals/${dealId}`, { notes: noteText });
+      pushToast({ title: 'Notes updated', type: 'success' });
+      setNoteDeal(null);
+      load();
+    } catch { pushToast({ title: 'Could not update notes', type: 'error' }); }
+    finally { setNoteSaving(false); }
   }
 
   const stages = ['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
@@ -846,31 +950,80 @@ function DealsTab() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {deals.map(d => (
             <div key={d.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              {editDeal?.id === d.id ? (
                 <div>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>{d.title}</span>
-                  {d.client_name && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--k-primary)', fontWeight: 600 }}>{d.client_name}</span>}
-                  {d.contact_name && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--ink-3)' }}>{d.contact_name} {d.contact_company && `· ${d.contact_company}`}</span>}
+                  <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Edit Deal</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
+                      <input className="k-input" value={editDeal.title} onChange={e => setEditDeal({ ...editDeal, title: e.target.value })} /></label>
+                    <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Value (₹)</span>
+                      <input className="k-input" type="number" value={editDeal.value} onChange={e => setEditDeal({ ...editDeal, value: e.target.value })} /></label>
+                    <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Stage</span>
+                      <select className="k-input" value={editDeal.stage} onChange={e => setEditDeal({ ...editDeal, stage: e.target.value })}>
+                        {stages.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select></label>
+                    <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Probability (%)</span>
+                      <input className="k-input" type="number" min="0" max="100" value={editDeal.probability} onChange={e => setEditDeal({ ...editDeal, probability: parseInt(e.target.value) || 0 })} /></label>
+                    <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Expected Close</span>
+                      <input className="k-input" type="date" value={editDeal.expected_close_date} onChange={e => setEditDeal({ ...editDeal, expected_close_date: e.target.value })} /></label>
+                  </div>
+                  <label style={{ fontSize: 13, display: 'block', marginTop: 12 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes</span>
+                    <textarea className="k-input" rows={3} style={{ resize: 'vertical' }} value={editDeal.notes} onChange={e => setEditDeal({ ...editDeal, notes: e.target.value })} /></label>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                    <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditDeal(null)}>Cancel</button>
+                    <button type="button" className="k-btn k-btn--primary" disabled={editDealSaving} onClick={saveEditDeal}>{editDealSaving ? 'Saving...' : 'Save'}</button>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>₹{Number(d.value).toLocaleString('en-IN')}</span>
-                  <Badge text={d.stage} color={STAGE_COLORS[d.stage] || '#6E7B91'} />
-                  {d.stage !== 'Won' && d.stage !== 'Lost' && <RotBadge updatedAt={d.updated_at} />}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--ink-3)', alignItems: 'center' }}>
-                <span>Probability: {d.probability}%</span>
-                {d.expected_close_date && <span>Close: {d.expected_close_date}</span>}
-                <div style={{ flex: 1 }} />
-                {d.stage === 'Won' && (
-                  <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 10px' }}
-                    onClick={() => createInvoice(d.id)}>Create Invoice</button>
-                )}
-                {stages.filter(s => s !== d.stage && s !== 'Lost').map(s => (
-                  <button key={s} className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }}
-                    onClick={() => updateStage(d.id, s)}>{s}</button>
-                ))}
-              </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <div>
+                      <span style={{ fontWeight: 700, fontSize: 14, cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'var(--rule-soft)' }}
+                        onClick={() => startEditDeal(d)}>{d.title}</span>
+                      {d.client_name && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--k-primary)', fontWeight: 600 }}>{d.client_name}</span>}
+                      {d.contact_name && <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--ink-3)' }}>{d.contact_name} {d.contact_company && `· ${d.contact_company}`}</span>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span style={{ fontWeight: 700, fontSize: 14 }}>₹{Number(d.value).toLocaleString('en-IN')}</span>
+                      <Badge text={d.stage} color={STAGE_COLORS[d.stage] || '#6E7B91'} />
+                      {d.stage !== 'Won' && d.stage !== 'Lost' && <RotBadge updatedAt={d.updated_at} />}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--ink-3)', alignItems: 'center' }}>
+                    <span>Probability: {d.probability}%</span>
+                    {d.expected_close_date && <span>Close: {d.expected_close_date}</span>}
+                    <div style={{ flex: 1 }} />
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }}
+                      onClick={() => startEditDeal(d)}>Edit</button>
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }}
+                      onClick={() => { setNoteDeal(d.id); setNoteText(d.notes || ''); }}>Notes</button>
+                    {d.stage === 'Won' && (
+                      <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 10px' }}
+                        onClick={() => createInvoice(d.id)}>Create Invoice</button>
+                    )}
+                    {stages.filter(s => s !== d.stage && s !== 'Lost').map(s => (
+                      <button key={s} className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }}
+                        onClick={() => updateStage(d.id, s)}>{s}</button>
+                    ))}
+                  </div>
+                  {/* Inline notes section */}
+                  {noteDeal === d.id && (
+                    <div style={{ marginTop: 10, padding: '10px 0', borderTop: '1px solid var(--rule-soft)' }}>
+                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes</span>
+                        <textarea className="k-input" rows={3} style={{ resize: 'vertical' }} value={noteText} onChange={e => setNoteText(e.target.value)} /></label>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+                        <button type="button" className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => setNoteDeal(null)}>Cancel</button>
+                        <button type="button" className="k-btn k-btn--primary" style={{ fontSize: 12 }} disabled={noteSaving} onClick={() => saveNote(d.id)}>{noteSaving ? 'Saving...' : 'Save Notes'}</button>
+                      </div>
+                    </div>
+                  )}
+                  {noteDeal !== d.id && d.notes && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-3)', borderTop: '1px solid var(--rule-soft)', paddingTop: 6 }}>
+                      {d.notes}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           ))}
         </div>

@@ -174,12 +174,49 @@ function OrdersTab() {
   const NEXT_STATUS = { draft: 'confirmed', confirmed: 'dispatched', dispatched: 'delivered', delivered: 'closed' };
   const NEXT_LABEL = { draft: 'Confirm Order', confirmed: 'Mark Dispatched', dispatched: 'Mark Delivered', delivered: 'Close Order' };
 
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+
+  function startEdit() {
+    const o = detail;
+    const items = Array.isArray(o.line_items) ? o.line_items : JSON.parse(o.line_items || '[]');
+    setEditForm({
+      expected_delivery: o.expected_delivery || '',
+      discount: Number(o.discount || 0),
+      notes: o.notes || '',
+      line_items: items.map(li => ({ ...li })),
+    });
+    setEditing(true);
+  }
+
+  function editUpdateLine(idx, field, val) {
+    setEditForm(f => { const items = [...f.line_items]; items[idx] = { ...items[idx], [field]: val }; return { ...f, line_items: items }; });
+  }
+  function editRemoveLine(idx) { setEditForm(f => ({ ...f, line_items: f.line_items.filter((_, i) => i !== idx) })); }
+  function editAddLine() {
+    setEditForm(f => ({ ...f, line_items: [...f.line_items, { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 }] }));
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault();
+    setEditSaving(true);
+    try {
+      await api.patch(`/v1/vikray/orders/${detail.id}`, editForm);
+      pushToast({ title: 'Order updated', type: 'success' });
+      setEditing(false);
+      loadDetail(detail.id);
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update order', type: 'error' }); }
+    finally { setEditSaving(false); }
+  }
+
   if (detail) {
     const o = detail;
     const items = Array.isArray(o.line_items) ? o.line_items : JSON.parse(o.line_items || '[]');
     return (
       <div>
-        <BackButton onClick={() => setDetail(null)} label="Back to list" />
+        <BackButton onClick={() => { setDetail(null); setEditing(false); }} label="Back to list" />
         <div className="k-detail">
           <div className="k-detail__header">
             <div>
@@ -194,6 +231,7 @@ function OrdersTab() {
           <div className="k-detail__actions">
             {NEXT_STATUS[o.status] && <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => updateStatus(NEXT_STATUS[o.status])}>{NEXT_LABEL[o.status]}</button>}
             {o.status !== 'draft' && !o.invoice_id && <button className="k-btn k-btn--primary" style={{ fontSize: 12, background: '#10b981' }} onClick={generateInvoice}>Generate Invoice</button>}
+            {!editing && (o.status === 'draft' || o.status === 'confirmed') && <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={startEdit}>Edit</button>}
             {(o.status === 'draft' || o.status === 'confirmed') && <button className="k-btn k-btn--ghost" style={{ fontSize: 12, color: '#ef4444' }} onClick={cancelOrder}>Cancel</button>}
             {o.invoice_id && <Badge text="Invoiced" color="#10b981" />}
           </div>
@@ -234,7 +272,42 @@ function OrdersTab() {
             </div>
           </div>
 
-          {o.notes && <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 16 }}>Notes: {o.notes}</p>}
+          {o.notes && !editing && <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 16 }}>Notes: {o.notes}</p>}
+
+          {editing && (
+            <form onSubmit={saveEdit} className="k-formpanel" style={{ marginTop: 20 }}>
+              <Section title="Edit Order" hi="संपादन">
+                <div className="k-formpanel__grid k-formpanel__grid--3">
+                  <label className="k-formpanel__label">Expected Delivery
+                    <input type="date" value={editForm.expected_delivery} onChange={e => setEditForm(f => ({ ...f, expected_delivery: e.target.value }))} className="k-input" />
+                  </label>
+                  <label className="k-formpanel__label">Discount (₹)
+                    <input type="number" value={editForm.discount} onChange={e => setEditForm(f => ({ ...f, discount: Number(e.target.value) }))} className="k-input" />
+                  </label>
+                </div>
+
+                <p style={{ fontSize: 12, fontWeight: 600, margin: '16px 0 8px', color: 'var(--ink-2)' }}>Line Items</p>
+                {editForm.line_items.map((li, idx) => (
+                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr .8fr 1fr .8fr auto', gap: 8, marginBottom: 8, alignItems: 'end' }}>
+                    <input placeholder="Description" value={li.description} onChange={e => editUpdateLine(idx, 'description', e.target.value)} className="k-input" />
+                    <input placeholder="HSN" value={li.hsn_code || ''} onChange={e => editUpdateLine(idx, 'hsn_code', e.target.value)} className="k-input" />
+                    <input type="number" min="1" value={li.quantity} onChange={e => editUpdateLine(idx, 'quantity', Number(e.target.value))} className="k-input" />
+                    <input type="number" value={li.rate} onChange={e => editUpdateLine(idx, 'rate', Number(e.target.value))} className="k-input" />
+                    <input type="number" value={li.gst_rate} onChange={e => editUpdateLine(idx, 'gst_rate', Number(e.target.value))} className="k-input" />
+                    {editForm.line_items.length > 1 && <button type="button" onClick={() => editRemoveLine(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16 }}>×</button>}
+                  </div>
+                ))}
+                <button type="button" onClick={editAddLine} style={{ fontSize: 12, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, marginBottom: 12 }}>+ Add line item</button>
+
+                <textarea placeholder="Notes" value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} className="k-input" style={{ minHeight: 48, marginTop: 8, width: '100%' }} />
+
+                <div className="k-formpanel__actions" style={{ marginTop: 12 }}>
+                  <button type="submit" className="k-btn k-btn--primary" disabled={editSaving} style={{ fontSize: 13 }}>{editSaving ? 'Saving…' : 'Save Changes'}</button>
+                  <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditing(false)} style={{ fontSize: 13 }}>Cancel</button>
+                </div>
+              </Section>
+            </form>
+          )}
         </div>
       </div>
     );
@@ -462,6 +535,9 @@ function TargetsTab() {
   const [members, setMembers] = useState([]);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ salesperson_id: '', period_start: '', period_end: '', target_amount: 0, target_deals: 0, notes: '' });
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -485,6 +561,23 @@ function TargetsTab() {
       load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
+  }
+
+  function startEditTarget(t) {
+    setEditId(t.id);
+    setEditForm({ target_amount: t.target_amount || 0, target_deals: t.target_deals || 0, notes: t.notes || '' });
+  }
+
+  async function saveEditTarget(e) {
+    e.preventDefault();
+    setEditSaving(true);
+    try {
+      await api.patch(`/v1/vikray/targets/${editId}`, editForm);
+      pushToast({ title: 'Target updated', type: 'success' });
+      setEditId(null);
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update target', type: 'error' }); }
+    finally { setEditSaving(false); }
   }
 
   return (
@@ -528,9 +621,24 @@ function TargetsTab() {
       {loading ? <Shimmer count={4} /> : targets.length === 0 ? (
         <Empty icon="🎯" title="No targets set" sub="Set sales targets for your team to track performance and achievement." cta="+ Set Target" onCta={() => { setShowForm(true); loadMembers(); }} />
       ) : (
-        <DataTable columns={['Salesperson', 'Period', { label: 'Target', align: 'right' }, { label: 'Actual', align: 'right' }, 'Achievement']}>
+        <DataTable columns={['Salesperson', 'Period', { label: 'Target', align: 'right' }, { label: 'Actual', align: 'right' }, 'Achievement', '']}>
           {targets.map(t => {
             const pct = t.target_amount > 0 ? Math.round((t.actual_amount || 0) / t.target_amount * 100) : 0;
+            if (editId === t.id) {
+              return (
+                <tr key={t.id}>
+                  <td>{t.salesperson_name || t.salesperson_id}</td>
+                  <td style={{ fontSize: 12 }}>{t.period_start} — {t.period_end}</td>
+                  <Td align="right"><input type="number" value={editForm.target_amount} onChange={e => setEditForm(f => ({ ...f, target_amount: Number(e.target.value) }))} className="k-input" style={{ width: 100 }} /></Td>
+                  <Td align="right" mono>{FMT(t.actual_amount)}</Td>
+                  <td><input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} className="k-input" placeholder="Notes" style={{ width: 100 }} /></td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="k-btn k-btn--primary" style={{ fontSize: 11, marginRight: 4 }} disabled={editSaving} onClick={saveEditTarget}>{editSaving ? '…' : 'Save'}</button>
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => setEditId(null)}>Cancel</button>
+                  </td>
+                </tr>
+              );
+            }
             return (
               <tr key={t.id}>
                 <td>{t.salesperson_name || t.salesperson_id}</td>
@@ -545,6 +653,7 @@ function TargetsTab() {
                     <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)', color: pct >= 100 ? '#10b981' : 'var(--ink-2)' }}>{pct}%</span>
                   </div>
                 </td>
+                <td><button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => startEditTarget(t)}>Edit</button></td>
               </tr>
             );
           })}

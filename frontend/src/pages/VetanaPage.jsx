@@ -123,8 +123,35 @@ function StructuresTab() {
     finally { setSaving(false); }
   }
 
+  const [editingStruct, setEditingStruct] = useState(false);
+  const [structEditForm, setStructEditForm] = useState({});
+  const [structEditSaving, setStructEditSaving] = useState(false);
+
   async function loadDetail(id) {
-    try { const r = await api.get(`/v1/vetana/salary-structures/${id}`); setDetail(r.data); } catch { pushToast({ title: 'Failed to load', type: 'error' }); }
+    try { const r = await api.get(`/v1/vetana/salary-structures/${id}`); setDetail(r.data); setEditingStruct(false); } catch { pushToast({ title: 'Failed to load', type: 'error' }); }
+  }
+
+  function startStructEdit() {
+    const s = detail;
+    setStructEditForm({
+      ctc_annual: Number(s.ctc_annual || 0), basic: Number(s.basic || 0), hra: Number(s.hra || 0),
+      da: Number(s.da || 0), special_allowance: Number(s.special_allowance || 0),
+      conveyance: Number(s.conveyance || 0), medical: Number(s.medical || 0),
+      pf_enabled: !!s.pf_enabled, esi_enabled: !!s.esi_enabled,
+    });
+    setEditingStruct(true);
+  }
+
+  async function saveStructEdit(e) {
+    e.preventDefault();
+    setStructEditSaving(true);
+    try {
+      await api.patch(`/v1/vetana/salary-structures/${detail.id}`, structEditForm);
+      pushToast({ title: 'Salary structure updated', type: 'success' });
+      setEditingStruct(false);
+      loadDetail(detail.id);
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update salary structure', type: 'error' }); }
+    finally { setStructEditSaving(false); }
   }
 
   if (detail) {
@@ -132,46 +159,79 @@ function StructuresTab() {
     const monthly = Number(s.ctc_annual || 0) / 12;
     return (
       <div>
-        <BackButton onClick={() => setDetail(null)} label="Back to list" />
+        <BackButton onClick={() => { setDetail(null); setEditingStruct(false); }} label="Back to list" />
         <div className="k-detail">
           <div className="k-detail__header">
             <div>
               <h3 className="k-detail__title">{s.employee_name}</h3>
               <p className="k-detail__sub">Effective from: {s.effective_from} · CTC: {FMT(s.ctc_annual)}/yr ({FMT(monthly)}/mo)</p>
             </div>
+            {!editingStruct && <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={startStructEdit}>Edit</button>}
           </div>
 
-          <Section title="Monthly Earnings" hi="मासिक आय">
-            <DataTable columns={['Component', { label: 'Amount', align: 'right' }]}>
-              {[['Basic', s.basic], ['HRA', s.hra], ['DA', s.da], ['Special Allowance', s.special_allowance],
-                ['Conveyance', s.conveyance], ['Medical', s.medical]].map(([label, val]) => (
-                <tr key={label}>
-                  <td>{label}</td>
-                  <Td align="right" mono bold>{FMT(val)}</Td>
-                </tr>
-              ))}
-              <tr style={{ background: 'color-mix(in srgb, var(--k-primary) 4%, transparent)' }}>
-                <td style={{ fontWeight: 700 }}>Total Monthly</td>
-                <Td align="right" mono bold>
-                  {FMT(Number(s.basic || 0) + Number(s.hra || 0) + Number(s.da || 0) + Number(s.special_allowance || 0) + Number(s.conveyance || 0) + Number(s.medical || 0))}
-                </Td>
-              </tr>
-            </DataTable>
-          </Section>
+          {editingStruct ? (
+            <form onSubmit={saveStructEdit} className="k-formpanel" style={{ marginTop: 16 }}>
+              <div className="k-formpanel__grid k-formpanel__grid--3">
+                <label className="k-formpanel__label">Annual CTC (₹)
+                  <input type="number" value={structEditForm.ctc_annual} onChange={e => setStructEditForm(f => ({ ...f, ctc_annual: Number(e.target.value) }))} className="k-input" />
+                </label>
+              </div>
+              <Section title="Monthly Breakdown" hi="मासिक विवरण">
+                <div className="k-formpanel__grid k-formpanel__grid--3">
+                  {[['Basic', 'basic'], ['HRA', 'hra'], ['DA', 'da'], ['Special Allowance', 'special_allowance'], ['Conveyance', 'conveyance'], ['Medical', 'medical']].map(([label, key]) => (
+                    <label key={key} className="k-formpanel__label">{label}
+                      <input type="number" value={structEditForm[key]} onChange={e => setStructEditForm(f => ({ ...f, [key]: Number(e.target.value) }))} className="k-input" />
+                    </label>
+                  ))}
+                </div>
+              </Section>
+              <div style={{ display: 'flex', gap: 20, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                {[['PF Enabled', 'pf_enabled'], ['ESI Enabled', 'esi_enabled']].map(([label, key]) => (
+                  <label key={key} style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--ink-2)' }}>
+                    <input type="checkbox" checked={structEditForm[key]} onChange={e => setStructEditForm(f => ({ ...f, [key]: e.target.checked }))} /> {label}
+                  </label>
+                ))}
+              </div>
+              <div className="k-formpanel__actions">
+                <button type="submit" className="k-btn k-btn--primary" disabled={structEditSaving} style={{ fontSize: 13 }}>{structEditSaving ? 'Saving...' : 'Save Changes'}</button>
+                <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditingStruct(false)} style={{ fontSize: 13 }}>Cancel</button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <Section title="Monthly Earnings" hi="मासिक आय">
+                <DataTable columns={['Component', { label: 'Amount', align: 'right' }]}>
+                  {[['Basic', s.basic], ['HRA', s.hra], ['DA', s.da], ['Special Allowance', s.special_allowance],
+                    ['Conveyance', s.conveyance], ['Medical', s.medical]].map(([label, val]) => (
+                    <tr key={label}>
+                      <td>{label}</td>
+                      <Td align="right" mono bold>{FMT(val)}</Td>
+                    </tr>
+                  ))}
+                  <tr style={{ background: 'color-mix(in srgb, var(--k-primary) 4%, transparent)' }}>
+                    <td style={{ fontWeight: 700 }}>Total Monthly</td>
+                    <Td align="right" mono bold>
+                      {FMT(Number(s.basic || 0) + Number(s.hra || 0) + Number(s.da || 0) + Number(s.special_allowance || 0) + Number(s.conveyance || 0) + Number(s.medical || 0))}
+                    </Td>
+                  </tr>
+                </DataTable>
+              </Section>
 
-          <Section title="Statutory Configuration" hi="वैधानिक">
-            <div style={{ display: 'flex', gap: 20, fontSize: 13, flexWrap: 'wrap' }}>
-              {[
-                ['PF', s.pf_enabled], ['ESI', s.esi_enabled], ['PT', s.pt_applicable],
-              ].map(([label, on]) => (
-                <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: on ? '#10b981' : 'var(--rule-soft)' }} />
-                  {label}: {on ? 'Enabled' : 'Disabled'}
-                </span>
-              ))}
-              <span>TDS Regime: <strong>{s.tds_regime === 'new' ? 'New' : 'Old'}</strong></span>
-            </div>
-          </Section>
+              <Section title="Statutory Configuration" hi="वैधानिक">
+                <div style={{ display: 'flex', gap: 20, fontSize: 13, flexWrap: 'wrap' }}>
+                  {[
+                    ['PF', s.pf_enabled], ['ESI', s.esi_enabled], ['PT', s.pt_applicable],
+                  ].map(([label, on]) => (
+                    <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: on ? '#10b981' : 'var(--rule-soft)' }} />
+                      {label}: {on ? 'Enabled' : 'Disabled'}
+                    </span>
+                  ))}
+                  <span>TDS Regime: <strong>{s.tds_regime === 'new' ? 'New' : 'Old'}</strong></span>
+                </div>
+              </Section>
+            </>
+          )}
         </div>
       </div>
     );
@@ -615,6 +675,9 @@ function LoansTab() {
   const [employees, setEmployees] = useState([]);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ employee_id: '', principal_amount: 0, emi_amount: 0, disbursed_date: '', notes: '' });
+  const [editLoanId, setEditLoanId] = useState(null);
+  const [loanEditForm, setLoanEditForm] = useState({});
+  const [loanEditSaving, setLoanEditSaving] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -647,6 +710,23 @@ function LoansTab() {
       pushToast({ title: 'Loan written off', type: 'success' });
       load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+  }
+
+  function startLoanEdit(l) {
+    setEditLoanId(l.id);
+    setLoanEditForm({ emi_amount: Number(l.emi_amount || 0), notes: l.notes || '' });
+  }
+
+  async function saveLoanEdit(e) {
+    e.preventDefault();
+    setLoanEditSaving(true);
+    try {
+      await api.patch(`/v1/vetana/loans/${editLoanId}`, loanEditForm);
+      pushToast({ title: 'Loan updated', type: 'success' });
+      setEditLoanId(null);
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update loan', type: 'error' }); }
+    finally { setLoanEditSaving(false); }
   }
 
   return (
@@ -697,6 +777,18 @@ function LoansTab() {
                 <strong style={{ fontSize: 14 }}>{l.employee_name}</strong>
                 <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{l.employee_code}</span>
                 <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>Disbursed {l.disbursed_date} · EMI {FMT(l.emi_amount)}/mo</p>
+                {editLoanId === l.id && (
+                  <form onSubmit={saveLoanEdit} style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'end', flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: 12, color: 'var(--ink-2)' }}>EMI (₹)
+                      <input type="number" value={loanEditForm.emi_amount} onChange={e => setLoanEditForm(f => ({ ...f, emi_amount: Number(e.target.value) }))} className="k-input" style={{ width: 100 }} />
+                    </label>
+                    <label style={{ fontSize: 12, color: 'var(--ink-2)' }}>Notes
+                      <input value={loanEditForm.notes} onChange={e => setLoanEditForm(f => ({ ...f, notes: e.target.value }))} className="k-input" style={{ width: 160 }} />
+                    </label>
+                    <button type="submit" className="k-btn k-btn--primary" disabled={loanEditSaving} style={{ fontSize: 11 }}>{loanEditSaving ? '...' : 'Save'}</button>
+                    <button type="button" className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => setEditLoanId(null)}>Cancel</button>
+                  </form>
+                )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ textAlign: 'right' }}>
@@ -704,6 +796,9 @@ function LoansTab() {
                   <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--ink-3)' }}>of {FMT(l.principal_amount)}</p>
                 </div>
                 <Badge text={l.status} color={LOAN_COLORS[l.status]} />
+                {l.status === 'active' && editLoanId !== l.id && (
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => startLoanEdit(l)}>Edit</button>
+                )}
                 {l.status === 'active' && (
                   <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => writeOff(l.id)}>Write Off</button>
                 )}

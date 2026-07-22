@@ -89,6 +89,9 @@ function EmployeesTab({ onUpdate }) {
   const [deptFilter, setDeptFilter] = useState('');
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState(null);
+  const [editEmp, setEditEmp] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
   const [form, setForm] = useState({
     name: '', email: '', phone: '', employee_code: '', department: '', designation: '',
     date_of_joining: '', date_of_birth: '', gender: '', employment_type: 'full_time',
@@ -131,6 +134,29 @@ function EmployeesTab({ onUpdate }) {
     } catch { pushToast({ title: 'Failed to load employee', type: 'error' }); }
   }
 
+  function startEditEmp(emp) {
+    setEditEmp(emp.id);
+    setEditForm({
+      name: emp.name || '', email: emp.email || '', phone: emp.phone || '',
+      department: emp.department || '', designation: emp.designation || '',
+      employment_type: emp.employment_type || 'full_time',
+    });
+  }
+
+  async function saveEditEmp(e) {
+    e.preventDefault();
+    setEditSaving(true);
+    try {
+      await api.patch(`/v1/manav/employees/${editEmp}`, editForm);
+      pushToast({ title: 'Employee updated', type: 'success' });
+      setEditEmp(null);
+      load();
+      if (detail) loadDetail(editEmp);
+      onUpdate?.();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update employee', type: 'error' }); }
+    finally { setEditSaving(false); }
+  }
+
   if (detail) {
     const emp = detail.employee;
     return (
@@ -144,8 +170,37 @@ function EmployeesTab({ onUpdate }) {
                 {emp.employee_code && `${emp.employee_code} · `}{emp.designation} {emp.department && `· ${emp.department}`}
               </p>
             </div>
-            <Badge text={emp.status} color={STATUS_COLORS[emp.status] || '#6E7B91'} />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Badge text={emp.status} color={STATUS_COLORS[emp.status] || '#6E7B91'} />
+              <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => startEditEmp(emp)}>Edit</button>
+            </div>
           </div>
+
+          {editEmp === emp.id && (
+            <form onSubmit={saveEditEmp} style={{ background: 'var(--surface-0)', border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name</span>
+                  <input className="k-input" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></label>
+                <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Email</span>
+                  <input className="k-input" type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></label>
+                <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Phone</span>
+                  <input className="k-input" value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} /></label>
+                <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Department</span>
+                  <input className="k-input" value={editForm.department} onChange={e => setEditForm({ ...editForm, department: e.target.value })} /></label>
+                <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Designation</span>
+                  <input className="k-input" value={editForm.designation} onChange={e => setEditForm({ ...editForm, designation: e.target.value })} /></label>
+                <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employment Type</span>
+                  <select className="k-input" value={editForm.employment_type} onChange={e => setEditForm({ ...editForm, employment_type: e.target.value })}>
+                    {EMP_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+                  </select></label>
+              </div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditEmp(null)}>Cancel</button>
+                <button type="submit" className="k-btn k-btn--primary" disabled={editSaving}>{editSaving ? 'Saving…' : 'Save'}</button>
+              </div>
+            </form>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, fontSize: 13 }}>
             <div><strong>Email:</strong> {emp.email || '—'}</div>
             <div><strong>Phone:</strong> {emp.phone || '—'}</div>
@@ -307,6 +362,9 @@ function ShiftDefinitions({ pushToast }) {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [editingShift, setEditingShift] = useState(null);
+  const [editShiftForm, setEditShiftForm] = useState({});
+  const [editShiftSaving, setEditShiftSaving] = useState(false);
   const [form, setForm] = useState({ name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, color: '#3B82F6' });
 
   useEffect(() => { load(); }, []);
@@ -330,6 +388,23 @@ function ShiftDefinitions({ pushToast }) {
       load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
+  }
+
+  function startEditShift(s) {
+    setEditingShift(s.id);
+    setEditShiftForm({ name: s.name || '', start_time: s.start_time || '09:00', end_time: s.end_time || '17:00', break_minutes: s.break_minutes ?? 30, color: s.color || '#3B82F6' });
+  }
+
+  async function saveEditShift(e) {
+    e.preventDefault();
+    setEditShiftSaving(true);
+    try {
+      await api.patch(`/v1/manav/shifts/${editingShift}`, { ...editShiftForm, break_minutes: Number(editShiftForm.break_minutes) });
+      pushToast({ title: 'Shift updated', type: 'success' });
+      setEditingShift(null);
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update shift', type: 'error' }); }
+    finally { setEditShiftSaving(false); }
   }
 
   return (
@@ -372,14 +447,38 @@ function ShiftDefinitions({ pushToast }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
           {shifts.map(s => (
             <div key={s.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                <span style={{ width: 10, height: 10, borderRadius: '50%', background: s.color || '#3B82F6', flexShrink: 0 }} />
-                <span style={{ fontSize: 14, fontWeight: 700 }}>{s.name}</span>
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>
-                <div>{s.start_time} — {s.end_time}</div>
-                <div>Break: {s.break_minutes ?? 0} mins</div>
-              </div>
+              {editingShift === s.id ? (
+                <form onSubmit={saveEditShift}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <label style={{ fontSize: 12, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>Name</span>
+                      <input className="k-input" value={editShiftForm.name} onChange={e => setEditShiftForm({ ...editShiftForm, name: e.target.value })} /></label>
+                    <label style={{ fontSize: 12 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>Start</span>
+                      <input className="k-input" type="time" value={editShiftForm.start_time} onChange={e => setEditShiftForm({ ...editShiftForm, start_time: e.target.value })} /></label>
+                    <label style={{ fontSize: 12 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>End</span>
+                      <input className="k-input" type="time" value={editShiftForm.end_time} onChange={e => setEditShiftForm({ ...editShiftForm, end_time: e.target.value })} /></label>
+                    <label style={{ fontSize: 12 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>Break (mins)</span>
+                      <input className="k-input" type="number" value={editShiftForm.break_minutes} onChange={e => setEditShiftForm({ ...editShiftForm, break_minutes: e.target.value })} /></label>
+                    <label style={{ fontSize: 12 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>Color</span>
+                      <input className="k-input" type="color" value={editShiftForm.color} onChange={e => setEditShiftForm({ ...editShiftForm, color: e.target.value })} style={{ height: 32, padding: 2 }} /></label>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
+                    <button type="button" className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => setEditingShift(null)}>Cancel</button>
+                    <button type="submit" className="k-btn k-btn--primary" style={{ fontSize: 11 }} disabled={editShiftSaving}>{editShiftSaving ? 'Saving…' : 'Save'}</button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: s.color || '#3B82F6', flexShrink: 0 }} />
+                    <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{s.name}</span>
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => startEditShift(s)}>Edit</button>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>
+                    <div>{s.start_time} — {s.end_time}</div>
+                    <div>Break: {s.break_minutes ?? 0} mins</div>
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -1254,6 +1353,9 @@ function RecruitmentTab() {
   const [openingForm, setOpeningForm] = useState({ title: '', description: '' });
   const [candidateForm, setCandidateForm] = useState({ full_name: '', email: '', phone: '', resume_url: '' });
   const [saving, setSaving] = useState(false);
+  const [editingOpening, setEditingOpening] = useState(null);
+  const [editOpeningForm, setEditOpeningForm] = useState({});
+  const [editOpeningSaving, setEditOpeningSaving] = useState(false);
 
   useEffect(() => { loadOpenings(); }, []);
   useEffect(() => { if (activeOpening) loadCandidates(); }, [activeOpening]);
@@ -1318,6 +1420,25 @@ function RecruitmentTab() {
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
+  function startEditOpening() {
+    const o = openings.find(x => x.id === activeOpening);
+    if (!o) return;
+    setEditingOpening(o.id);
+    setEditOpeningForm({ title: o.title || '', description: o.description || '', status: o.status || 'open' });
+  }
+
+  async function saveEditOpening(e) {
+    e.preventDefault();
+    setEditOpeningSaving(true);
+    try {
+      await api.patch(`/v1/manav/job-openings/${editingOpening}`, editOpeningForm);
+      pushToast({ title: 'Job opening updated', type: 'success' });
+      setEditingOpening(null);
+      loadOpenings();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update job opening', type: 'error' }); }
+    finally { setEditOpeningSaving(false); }
+  }
+
   if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p>;
 
   return (
@@ -1327,6 +1448,7 @@ function RecruitmentTab() {
           <option value="">Select job opening…</option>
           {openings.map(o => <option key={o.id} value={o.id}>{o.title} ({o.candidate_count})</option>)}
         </select>
+        {activeOpening && <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={startEditOpening}>Edit Opening</button>}
         <div style={{ flex: 1 }} />
         <button className="k-btn k-btn--ghost" style={{ fontSize: 13 }} onClick={() => setShowOpeningForm(true)}>+ Job Opening</button>
         {activeOpening && <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowCandidateForm(true)}>+ Candidate</button>}
@@ -1344,6 +1466,26 @@ function RecruitmentTab() {
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowOpeningForm(false)}>Cancel</button>
             <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
+          </div>
+        </form>
+      )}
+
+      {editingOpening && (
+        <form onSubmit={saveEditOpening} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Edit Job Opening</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title</span>
+              <input className="k-input" value={editOpeningForm.title} onChange={e => setEditOpeningForm({ ...editOpeningForm, title: e.target.value })} /></label>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Status</span>
+              <select className="k-input" value={editOpeningForm.status} onChange={e => setEditOpeningForm({ ...editOpeningForm, status: e.target.value })}>
+                <option value="open">Open</option><option value="closed">Closed</option><option value="on_hold">On Hold</option>
+              </select></label>
+            <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
+              <textarea className="k-input" rows={2} value={editOpeningForm.description} onChange={e => setEditOpeningForm({ ...editOpeningForm, description: e.target.value })} style={{ resize: 'vertical', width: '100%' }} /></label>
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditingOpening(null)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={editOpeningSaving}>{editOpeningSaving ? 'Saving…' : 'Save'}</button>
           </div>
         </form>
       )}
@@ -1785,6 +1927,9 @@ function AssetsTab() {
   const [catFilter, setCatFilter] = useState('');
   const [assigningId, setAssigningId] = useState(null);
   const [assignEmployee, setAssignEmployee] = useState('');
+  const [editingAsset, setEditingAsset] = useState(null);
+  const [editAssetForm, setEditAssetForm] = useState({});
+  const [editAssetSaving, setEditAssetSaving] = useState(false);
   const [form, setForm] = useState({
     asset_tag: '', name: '', category: 'laptop', serial_number: '',
     purchase_date: '', purchase_cost: '', condition: 'new', notes: '',
@@ -1845,6 +1990,26 @@ function AssetsTab() {
       pushToast({ title: 'Asset returned', type: 'success' });
       load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Return failed', type: 'error' }); }
+  }
+
+  function startEditAsset(a) {
+    setEditingAsset(a.id);
+    setEditAssetForm({
+      name: a.name || '', category: a.category || 'laptop', serial_number: a.serial_number || '',
+      condition: a.condition || 'new', notes: a.notes || '',
+    });
+  }
+
+  async function saveEditAsset(e) {
+    e.preventDefault();
+    setEditAssetSaving(true);
+    try {
+      await api.patch(`/v1/manav/assets/${editingAsset}`, editAssetForm);
+      pushToast({ title: 'Asset updated', type: 'success' });
+      setEditingAsset(null);
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update asset', type: 'error' }); }
+    finally { setEditAssetSaving(false); }
   }
 
   const filtered = catFilter ? assets.filter(a => a.category === catFilter) : assets;
@@ -1910,35 +2075,64 @@ function AssetsTab() {
           </thead>
           <tbody>
             {filtered.map(a => (
-              <tr key={a.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                <td style={{ padding: '10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{a.asset_tag || '—'}</td>
-                <td style={{ padding: '10px', fontWeight: 600 }}>{a.name}</td>
-                <td style={{ padding: '10px' }}><Badge text={a.category} color={CATEGORY_COLORS[a.category] || '#6b7280'} /></td>
-                <td style={{ padding: '10px' }}><Badge text={a.condition} color={CONDITION_COLORS[a.condition] || '#6b7280'} /></td>
-                <td style={{ padding: '10px', color: a.employee_name ? 'var(--ink-1)' : 'var(--ink-3)' }}>{a.employee_name || '—'}</td>
-                <td style={{ padding: '10px' }}>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                    {a.assigned_to ? (
-                      <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => returnAsset(a.id)}>Return</button>
-                    ) : (
-                      assigningId === a.id ? (
-                        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                          <select className="k-input" style={{ fontSize: 11, padding: '2px 6px', width: 140 }} value={assignEmployee}
-                            onChange={e => setAssignEmployee(e.target.value)}>
-                            <option value="">Select…</option>
-                            {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-                          </select>
-                          <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => assign(a.id)}>OK</button>
-                          <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => { setAssigningId(null); setAssignEmployee(''); }}>X</button>
-                        </div>
+              <React.Fragment key={a.id}>
+                <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                  <td style={{ padding: '10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{a.asset_tag || '—'}</td>
+                  <td style={{ padding: '10px', fontWeight: 600 }}>{a.name}</td>
+                  <td style={{ padding: '10px' }}><Badge text={a.category} color={CATEGORY_COLORS[a.category] || '#6b7280'} /></td>
+                  <td style={{ padding: '10px' }}><Badge text={a.condition} color={CONDITION_COLORS[a.condition] || '#6b7280'} /></td>
+                  <td style={{ padding: '10px', color: a.employee_name ? 'var(--ink-1)' : 'var(--ink-3)' }}>{a.employee_name || '—'}</td>
+                  <td style={{ padding: '10px' }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => startEditAsset(a)}>Edit</button>
+                      {a.assigned_to ? (
+                        <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => returnAsset(a.id)}>Return</button>
                       ) : (
-                        <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => setAssigningId(a.id)}>Assign</button>
-                      )
-                    )}
-                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px', color: '#ef4444' }} onClick={() => remove(a.id)}>Delete</button>
-                  </div>
-                </td>
-              </tr>
+                        assigningId === a.id ? (
+                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            <select className="k-input" style={{ fontSize: 11, padding: '2px 6px', width: 140 }} value={assignEmployee}
+                              onChange={e => setAssignEmployee(e.target.value)}>
+                              <option value="">Select…</option>
+                              {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
+                            </select>
+                            <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => assign(a.id)}>OK</button>
+                            <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => { setAssigningId(null); setAssignEmployee(''); }}>X</button>
+                          </div>
+                        ) : (
+                          <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => setAssigningId(a.id)}>Assign</button>
+                        )
+                      )}
+                      <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px', color: '#ef4444' }} onClick={() => remove(a.id)}>Delete</button>
+                    </div>
+                  </td>
+                </tr>
+                {editingAsset === a.id && (
+                  <tr><td colSpan={6} style={{ padding: '0 10px 10px' }}>
+                    <form onSubmit={saveEditAsset} style={{ background: 'var(--surface-0)', border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                        <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name</span>
+                          <input className="k-input" value={editAssetForm.name} onChange={e => setEditAssetForm({ ...editAssetForm, name: e.target.value })} /></label>
+                        <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Category</span>
+                          <select className="k-input" value={editAssetForm.category} onChange={e => setEditAssetForm({ ...editAssetForm, category: e.target.value })}>
+                            {ASSET_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select></label>
+                        <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Serial Number</span>
+                          <input className="k-input" value={editAssetForm.serial_number} onChange={e => setEditAssetForm({ ...editAssetForm, serial_number: e.target.value })} /></label>
+                        <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Condition</span>
+                          <select className="k-input" value={editAssetForm.condition} onChange={e => setEditAssetForm({ ...editAssetForm, condition: e.target.value })}>
+                            {ASSET_CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select></label>
+                        <label style={{ fontSize: 13, gridColumn: '2 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes</span>
+                          <input className="k-input" value={editAssetForm.notes} onChange={e => setEditAssetForm({ ...editAssetForm, notes: e.target.value })} /></label>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                        <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditingAsset(null)}>Cancel</button>
+                        <button type="submit" className="k-btn k-btn--primary" disabled={editAssetSaving}>{editAssetSaving ? 'Saving…' : 'Save'}</button>
+                      </div>
+                    </form>
+                  </td></tr>
+                )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>

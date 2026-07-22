@@ -31,7 +31,8 @@ function OverviewTab() {
   const { pushToast } = useToast();
   useEffect(() => { api.get('/v1/dristi/overview').then(r => setData(r.data)).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
   if (!data) return <Shimmer count={8} />;
-  const { crm, deals, revenue, hr, orders, payroll, tasks } = data;
+  const crm = data.crm || {}, deals = data.deals || {}, revenue = data.revenue || {};
+  const hr = data.hr || {}, orders = data.orders || {}, payroll = data.payroll || {}, tasks = data.tasks || {};
   return (
     <>
       <Section title="CRM & Sales" hi="ग्राहक व बिक्री">
@@ -89,7 +90,7 @@ function RevenueTab() {
   return (
     <Section title="Revenue Trend" hi="राजस्व रुझान">
       <DataTable columns={['Month', { label: 'Invoiced', align: 'right' }, { label: 'Collected', align: 'right' }, { label: 'Expenses', align: 'right' }, { label: 'Profit', align: 'right' }]}>
-        {data.trend.map(r => (
+        {(data.trend || []).map(r => (
           <tr key={r.month}>
             <td>{r.month}</td>
             <Td align="right" mono>{FMT(r.invoiced)}</Td>
@@ -121,7 +122,7 @@ function PipelineTab() {
 
       <Section title="Stage Breakdown" hi="चरण विवरण">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12 }}>
-          {data.stages.map(s => (
+          {(data.stages || []).map(s => (
             <div key={s.stage} className="k-stat">
               <div className="k-stat__lbl"><span>{s.stage}</span></div>
               <div className="k-stat__val" style={{ fontSize: 28 }}>{s.count}</div>
@@ -133,7 +134,7 @@ function PipelineTab() {
 
       <Section title="Top Customers" hi="शीर्ष ग्राहक">
         <DataTable columns={['Name', 'Company', { label: 'Deals', align: 'right' }, { label: 'Total Value', align: 'right' }]}>
-          {data.top_contacts.map((c, i) => (
+          {(data.top_contacts || []).map((c, i) => (
             <tr key={i}>
               <td>{c.name}</td>
               <td>{c.company || '—'}</td>
@@ -165,7 +166,7 @@ function HRTab() {
 
       <Section title="Department Headcount" hi="विभाग संख्या">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 }}>
-          {data.departments.map(d => (
+          {(data.departments || []).map(d => (
             <div key={d.department} className="k-stat">
               <div className="k-stat__lbl"><span>{d.department}</span></div>
               <div className="k-stat__val" style={{ fontSize: 28 }}>{d.count}</div>
@@ -176,7 +177,7 @@ function HRTab() {
 
       <Section title="Payroll Trend" hi="वेतन रुझान">
         <DataTable columns={['Month', { label: 'Gross', align: 'right' }, { label: 'Net', align: 'right' }, { label: 'PF', align: 'right' }, { label: 'ESI', align: 'right' }, { label: 'TDS', align: 'right' }, { label: 'Employees', align: 'right' }]}>
-          {data.payroll_trend.map(r => (
+          {(data.payroll_trend || []).map(r => (
             <tr key={r.month}>
               <td>{r.month}</td>
               <Td align="right" mono>{FMT(r.total_gross)}</Td>
@@ -202,7 +203,7 @@ function SalesTab() {
     <>
       <Section title="Order Trend" hi="आदेश रुझान">
         <DataTable columns={['Month', { label: 'Orders', align: 'right' }, { label: 'Value', align: 'right' }]}>
-          {data.order_trend.map(r => (
+          {(data.order_trend || []).map(r => (
             <tr key={r.month}>
               <td>{r.month}</td>
               <Td align="right">{r.orders}</Td>
@@ -214,7 +215,7 @@ function SalesTab() {
 
       <Section title="Order Status Split" hi="स्थिति विभाजन">
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12 }}>
-          {data.status_split.map(s => (
+          {(data.status_split || []).map(s => (
             <div key={s.status} className="k-stat">
               <div className="k-stat__lbl"><span style={{ textTransform: 'capitalize' }}>{s.status}</span></div>
               <div className="k-stat__val" style={{ fontSize: 28 }}>{s.count}</div>
@@ -224,7 +225,7 @@ function SalesTab() {
         </div>
       </Section>
 
-      {data.leaderboard.length > 0 && (
+      {(data.leaderboard || []).length > 0 && (
         <Section title="Sales Leaderboard" hi="बिक्री नेता">
           <DataTable columns={['Name', { label: 'Target', align: 'right' }, { label: 'Actual', align: 'right' }, { label: 'Achievement', align: 'right' }]}>
             {data.leaderboard.map((r, i) => (
@@ -255,7 +256,7 @@ function ReportsTab() {
   const [logs, setLogs] = useState(null);
   const { pushToast } = useToast();
 
-  const load = () => api.get('/v1/dristi/scheduled-reports').then(r => { setReports(r.data); }).catch(e => pushToast({ type: 'error', title: e.message }));
+  const load = () => api.get('/v1/dristi/scheduled-reports').then(r => { setReports(Array.isArray(r.data) ? r.data : []); }).catch(() => setReports([]));
   useEffect(() => { load(); }, []);
 
   const runNow = async (id) => {
@@ -433,7 +434,7 @@ function DashboardsTab() {
   const [name, setName] = useState('');
   const { pushToast } = useToast();
 
-  const load = () => api.get('/v1/dristi/dashboards').then(r => setDashboards(r.data)).catch(e => pushToast({ type: 'error', title: e.message }));
+  const load = () => api.get('/v1/dristi/dashboards').then(r => setDashboards(Array.isArray(r.data) ? r.data : [])).catch(() => setDashboards([]));
   useEffect(() => { load(); }, []);
 
   const create = async () => {
