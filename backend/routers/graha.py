@@ -2046,8 +2046,6 @@ async def report_rep_performance(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
     pool = await get_pool()
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     rows = await pool.fetch(

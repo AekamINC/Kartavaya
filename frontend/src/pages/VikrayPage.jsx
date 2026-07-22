@@ -503,7 +503,7 @@ function PipelineTab() {
   const STAGE_COLORS = { Lead: '#6E7B91', Qualified: '#0082c6', Proposal: '#8b5cf6', Negotiation: '#f59e0b', Won: '#10b981', Lost: '#ef4444' };
 
   useEffect(() => {
-    api.get('/v1/graha/pipeline-summary').then(r => { setDeals(r.data.stages || []); setLoading(false); })
+    api.get('/v1/graha/pipeline-summary').then(r => { setDeals(r.data.data || r.data.stages || []); setLoading(false); })
       .catch(() => { pushToast({ title: 'Failed to load pipeline', type: 'error' }); setLoading(false); });
   }, []);
 

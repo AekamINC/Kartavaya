@@ -253,7 +253,7 @@ function StructuresTab() {
             <label className="k-formpanel__label">Employee
               <select value={form.employee_id} onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))} className="k-formpanel__input">
                 <option value="">Select…</option>
-                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name || `${emp.first_name} ${emp.last_name}`} ({emp.employee_code})</option>)}
+                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name || emp.full_name || `${emp.first_name} ${emp.last_name}`} ({emp.employee_code})</option>)}
               </select>
             </label>
             <label className="k-formpanel__label">Effective From
@@ -745,7 +745,7 @@ function LoansTab() {
             <label className="k-formpanel__label">Employee
               <select value={form.employee_id} onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))} className="k-formpanel__input">
                 <option value="">Select…</option>
-                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name || `${emp.first_name} ${emp.last_name}`} ({emp.employee_code})</option>)}
+                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name || emp.full_name || `${emp.first_name} ${emp.last_name}`} ({emp.employee_code})</option>)}
               </select>
             </label>
             <label className="k-formpanel__label">Principal Amount (₹)
