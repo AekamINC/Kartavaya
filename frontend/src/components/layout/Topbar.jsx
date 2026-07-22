@@ -1,7 +1,7 @@
 ﻿/**
  * Topbar.jsx — editorial header: "कर्तव्य / Page" breadcrumb, pill search, actions.
  */
-import React, { useState } from 'react';
+import React from 'react';
 import { useLocation } from 'react-router-dom';
 
 const PAGE_META = {
@@ -28,9 +28,8 @@ const PAGE_META = {
   '/esign':                  { en: 'E-Sign',        hi: 'प्रमाण' },
 };
 
-export default function Topbar({ unread = 0, onOpenNotifications, onNewTask }) {
+export default function Topbar({ unread = 0, onOpenNotifications, onNewTask, onOpenCmdk }) {
   const location = useLocation();
-  const [search, setSearch] = useState('');
 
   const meta = PAGE_META[location.pathname]
     || Object.entries(PAGE_META).find(([k]) => location.pathname.startsWith(k + '/'))?.[1]
@@ -47,16 +46,12 @@ export default function Topbar({ unread = 0, onOpenNotifications, onNewTask }) {
         </div>
       </div>
 
-      {/* Center: pill search */}
-      <div className="k-topbar__search">
+      {/* Center: pill search — opens command palette */}
+      <div className="k-topbar__search" onClick={onOpenCmdk} style={{ cursor: 'pointer' }}>
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
           <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
         </svg>
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search tasks, projects, people…"
-        />
+        <span style={{ flex: 1, color: 'var(--ink-faint)', fontSize: 13 }}>Search tasks, projects, people…</span>
         <kbd className="k-kbd">⌘K</kbd>
       </div>
 

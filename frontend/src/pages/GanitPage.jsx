@@ -9,6 +9,47 @@ const DOC_STATUS_COLORS = { draft: '#6E7B91', final: '#0082c6', sent: '#8b5cf6',
 const CONTRACT_COLORS = { draft: '#6E7B91', active: '#10b981', expired: '#f59e0b', cancelled: '#ef4444', renewed: '#0082c6' };
 const PAY_METHODS = ['cash', 'bank_transfer', 'upi', 'cheque', 'card', 'other'];
 
+function UpiPayBlock({ invoice }) {
+  const [upiId, setUpiId] = useState(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    api.get('/v1/org/profile').then(r => {
+      const id = r.data?.bank_details?.upi_id;
+      if (id) setUpiId(id);
+    }).catch(() => {});
+  }, []);
+  if (!upiId || invoice.payment_status === 'paid' || invoice.payment_status === 'cancelled') return null;
+  const amount = Number(invoice.balance_due || invoice.total || 0);
+  if (amount <= 0) return null;
+  const orgName = invoice.org_name || 'Merchant';
+  const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(orgName)}&am=${amount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Payment for ${invoice.invoice_number}`)}`;
+  return (
+    <div style={{ marginTop: 16, background: 'color-mix(in srgb, var(--surface) 82%, transparent)', backdropFilter: 'blur(12px)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <span style={{ fontSize: 20 }}>💳</span>
+        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>UPI Payment Link</h4>
+        <span style={{ fontFamily: 'var(--font-hindi)', fontSize: 12, color: 'var(--ink-3)' }}>यूपीआई भुगतान</span>
+      </div>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>Pay ₹{amount.toLocaleString('en-IN')} to</div>
+          <div style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{upiId}</div>
+          <div style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 4 }}>Ref: {invoice.invoice_number}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <a href={upiLink} className="k-btn k-btn--primary" style={{ fontSize: 12, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            Open in UPI App
+          </a>
+          <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }}
+            onClick={() => { navigator.clipboard.writeText(upiLink).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); }}>
+            {copied ? '✓ Copied' : 'Copy Link'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Badge({ text, color }) {
   return (
     <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em',
@@ -323,6 +364,8 @@ function InvoicesTab() {
               <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowPay(true)}>Record Payment</button>
             </div>
           )}
+
+          <UpiPayBlock invoice={inv} />
         </div>
 
         {showPay && (
@@ -472,7 +515,13 @@ function InvoicesTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        invoices.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No invoices yet.</p> : (
+        invoices.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🧾</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No invoices yet</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 320, margin: '0 auto' }}>Create your first invoice to start tracking payments. Add products first if you haven't already.</div>
+          </div>
+        ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
@@ -538,7 +587,7 @@ function ProductsTab() {
       await api.delete(`/v1/ganit/products/${id}`);
       setProducts(prev => prev.filter(p => p.id !== id));
       pushToast({ title: 'Product deleted', type: 'success' });
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not delete product', type: 'error' }); }
   }
 
   return (
@@ -577,7 +626,13 @@ function ProductsTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        products.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No products yet.</p> : (
+        products.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No products yet</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Add your products and services with HSN codes and GST rates to speed up invoicing.</div>
+          </div>
+        ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
@@ -669,7 +724,7 @@ function ExpensesTab() {
       setExpenses(prev => prev.filter(x => x.id !== id));
       pushToast({ title: 'Expense deleted', type: 'success' });
       loadStats();
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not delete expense', type: 'error' }); }
   }
 
   async function saveCat(e) {
@@ -753,7 +808,13 @@ function ExpensesTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        expenses.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No expenses recorded.</p> : (
+        expenses.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>💸</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No expenses recorded</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Log business expenses here to track spending and generate reports.</div>
+          </div>
+        ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
@@ -1015,7 +1076,13 @@ function PayablesTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        bills.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No vendor bills recorded.</p> : (
+        bills.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📋</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No vendor bills yet</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Record bills from your vendors and suppliers to track payables.</div>
+          </div>
+        ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {bills.map(b => (
             <div key={b.id} onClick={() => loadDetail(b.id)} style={{ cursor: 'pointer', background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1179,7 +1246,13 @@ function ContractsTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        contracts.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No contracts yet.</p> : (
+        contracts.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📄</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No contracts yet</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Create contracts for recurring services or long-term agreements with clients.</div>
+          </div>
+        ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {contracts.map(c => (
             <div key={c.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px', cursor: 'pointer' }}
@@ -1361,7 +1434,13 @@ function ESignTab() {
   return (
     <div>
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        contracts.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No contracts yet.</p> : (
+        contracts.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📄</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No contracts yet</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Create contracts for recurring services or long-term agreements with clients.</div>
+          </div>
+        ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {contracts.map(c => (
             <div key={c.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px', cursor: 'pointer' }}
@@ -1431,7 +1510,7 @@ function RecurringTab() {
       await api.delete(`/v1/ganit/recurring/${id}`);
       pushToast({ title: 'Deactivated', type: 'success' });
       load();
-    } catch { pushToast({ title: 'Failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not deactivate schedule', type: 'error' }); }
   }
 
   async function generateNow(id) {
@@ -1497,7 +1576,13 @@ function RecurringTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        items.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No recurring invoices.</p> : (
+        items.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🔄</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No recurring invoices</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Set up auto-generated invoices for retainers, subscriptions, or monthly services.</div>
+          </div>
+        ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {items.map(r => (
             <div key={r.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px' }}>
@@ -1662,7 +1747,13 @@ function BankTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        statements.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No bank statements imported.</p> : (
+        statements.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🏦</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No bank statements imported</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Import CSV statements from your bank to reconcile payments automatically.</div>
+          </div>
+        ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>

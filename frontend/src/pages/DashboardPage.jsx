@@ -17,6 +17,64 @@ const VIKRAM_MONTHS = ['Chaitra','Vaishākha','Jyēṣṭha','Āṣāḍha','Śr
   'Āśvina','Kārtika','Mārgaśīrṣa','Pauṣa','Māgha','Phālguna'];
 const STATUS_HI = { todo:'कार्य', in_progress:'चालू', in_review:'समीक्षा', done:'सम्पन्न', requested:'अनुरोध' };
 
+const ONBOARD_STEPS = [
+  { key: 'logo', label: 'Add your company logo', hi: 'लोगो जोड़ें', hint: 'You can always change this later', route: '/settings/organisation' },
+  { key: 'team', label: 'Invite your team', hi: 'टीम को आमंत्रित करें', hint: 'Get paid faster with collaboration', route: '/teams' },
+  { key: 'project', label: 'Create your first project', hi: 'पहली योजना बनाएं', hint: 'Organize work across boards', route: '/projects' },
+  { key: 'contact', label: 'Add a contact', hi: 'संपर्क जोड़ें', hint: 'Know your clients and leads', route: '/graha' },
+  { key: 'invoice', label: 'Send your first invoice', hi: 'पहला चालान भेजें', hint: 'Get paid faster', route: '/ganit' },
+];
+
+function OnboardingChecklist({ tasks, teams, navigate }) {
+  const storageKey = 'kv_onboard_dismissed';
+  const [dismissed, setDismissed] = useState(() => localStorage.getItem(storageKey) === '1');
+  if (dismissed) return null;
+
+  const done = {
+    logo: false,
+    team: (teams || []).length > 1,
+    project: (teams || []).length > 0,
+    contact: false,
+    invoice: false,
+  };
+  const taskCount = Array.isArray(tasks) ? tasks.length : 0;
+  if (taskCount > 0) done.project = true;
+
+  const doneCount = Object.values(done).filter(Boolean).length;
+  const total = ONBOARD_STEPS.length;
+  if (doneCount >= total) return null;
+
+  return (
+    <div className="k-onboard">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <h3 className="k-onboard__title">Get started with Kartavya</h3>
+          <p className="k-onboard__sub">{doneCount} of {total} steps complete · <span style={{ fontFamily: 'var(--font-hindi)' }}>{doneCount}/{total} चरण पूर्ण</span></p>
+        </div>
+        <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => { localStorage.setItem(storageKey, '1'); setDismissed(true); }}>
+          Dismiss
+        </button>
+      </div>
+      <div className="k-onboard__progress">
+        <div className="k-onboard__progress-fill" style={{ width: `${(doneCount / total) * 100}%` }} />
+      </div>
+      {ONBOARD_STEPS.map(s => (
+        <div key={s.key} className="k-onboard__step" onClick={() => navigate(s.route)}>
+          <div className={`k-onboard__check ${done[s.key] ? 'k-onboard__check--done' : ''}`}>
+            {done[s.key] ? '✓' : ''}
+          </div>
+          <div>
+            <div className={`k-onboard__step-label ${done[s.key] ? 'k-onboard__step-label--done' : ''}`}>
+              {s.label} <span style={{ fontFamily: 'var(--font-hindi)', fontSize: 12, color: 'var(--ink-faint)' }}>{s.hi}</span>
+            </div>
+            <div className="k-onboard__step-hint">{s.hint}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function vikramDate(now) {
   const year  = now.getFullYear() + 56 + (now.getMonth() >= 3 ? 1 : 0);
   const month = VIKRAM_MONTHS[(now.getMonth() + 1) % 12];
@@ -47,6 +105,7 @@ export default function DashboardPage({ teams = [] }) {
   const [activity, setActivity] = useState([]);
   const [verse,    setVerse]    = useState(null);
   const [teamId,   setTeamId]   = useState('');
+  const [finStats, setFinStats] = useState(null);
 
   // ── Fetch tasks ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -54,9 +113,11 @@ export default function DashboardPage({ teams = [] }) {
     Promise.all([
       api.get('/tasks'),
       api.get('/verse-of-the-day').catch(() => null),
-    ]).then(([tRes, vRes]) => {
+      api.get('/v1/ganit/stats').catch(() => null),
+    ]).then(([tRes, vRes, fRes]) => {
       setTasks(Array.isArray(tRes.data) ? tRes.data : []);
       if (vRes) setVerse(vRes.data);
+      if (fRes?.data) setFinStats(fRes.data);
     }).catch(logger.error).finally(() => setLoading(false));
   }, []);
 
@@ -148,12 +209,55 @@ export default function DashboardPage({ teams = [] }) {
         todayIdx={dayIdx}
       />
 
+      {/* Onboarding checklist — shown for new orgs */}
+      {!loading && <OnboardingChecklist tasks={tasks} teams={teams} navigate={navigate} />}
+
+      {/* Hero KPI — "How's my business?" */}
+      {finStats && (
+        <div className="k-hero-kpi">
+          <div className="k-hero-kpi__main">
+            <div className="k-hero-kpi__label">RECEIVABLES <span className="hi-mute">प्राप्य</span></div>
+            <div className="k-hero-kpi__value">₹{Number(finStats.total_outstanding || 0).toLocaleString('en-IN')}</div>
+            <div className="k-hero-kpi__sub">{finStats.unpaid_count || 0} unpaid invoice{(finStats.unpaid_count || 0) !== 1 ? 's' : ''}</div>
+          </div>
+          <div className="k-hero-kpi__secondary">
+            <div className="k-hero-kpi__card">
+              <div className="k-hero-kpi__card-val" style={{ color: 'var(--ok)' }}>₹{Number(finStats.total_collected || 0).toLocaleString('en-IN')}</div>
+              <div className="k-hero-kpi__card-lbl">Collected <span className="hi-mute">वसूला</span></div>
+            </div>
+            <div className="k-hero-kpi__card">
+              <div className="k-hero-kpi__card-val" style={{ color: 'var(--danger)' }}>{finStats.overdue_count || 0}</div>
+              <div className="k-hero-kpi__card-lbl">Overdue <span className="hi-mute">विलंबित</span></div>
+            </div>
+            <div className="k-hero-kpi__card">
+              <div className="k-hero-kpi__card-val">{finStats.total_invoices || 0}</div>
+              <div className="k-hero-kpi__card-lbl">Total invoices <span className="hi-mute">कुल चालान</span></div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Stat row */}
       <div className="k-stats">
-        <StatTile variant="blue"  label="OPEN"                sanskrit="खुला"      value={openTasks.length}     sub={`across ${openProjectCount} project${openProjectCount !== 1 ? 's' : ''}`} />
+        <StatTile variant="blue"  label="OPEN TASKS"          sanskrit="खुला"      value={openTasks.length}     sub={`across ${openProjectCount} project${openProjectCount !== 1 ? 's' : ''}`} />
         <StatTile variant="teal"  label="DUE TODAY"           sanskrit="आज"        value={dueToday.length}      sub={`${dueToday.filter(t=>t.priority==='high'||t.priority==='urgent').length} high priority`} />
         <StatTile variant="amber" label="OVERDUE"             sanskrit="विलंबित"   value={overdue.length}       sub={overdue.length > 0 ? 'needs attention' : 'all on track'} />
-        <StatTile variant="red"   label="COMPLETED THIS WEEK" sanskrit="इस सप्ताह" value={completedWeek.length} sub={completedWeek.length > 0 ? `↑ ${Math.round((completedWeek.length/(tasks.length||1))*100)}% on last week` : 'keep going'} />
+        <StatTile variant="red"   label="DONE THIS WEEK"      sanskrit="इस सप्ताह" value={completedWeek.length} sub={completedWeek.length > 0 ? `${Math.round((completedWeek.length/(tasks.length||1))*100)}% completion rate` : 'keep going'} />
+      </div>
+
+      {/* Quick actions */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+        {[
+          { label: '+ New Task', icon: '✏️', action: () => navigate('/tasks') },
+          { label: 'Create Invoice', icon: '🧾', action: () => navigate('/ganit') },
+          { label: 'Add Contact', icon: '👤', action: () => navigate('/graha') },
+          { label: 'Log Time', icon: '⏱️', action: () => navigate('/time') },
+        ].map(q => (
+          <button key={q.label} className="k-btn k-btn--ghost" onClick={q.action}
+            style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--rule-soft)' }}>
+            <span>{q.icon}</span> {q.label}
+          </button>
+        ))}
       </div>
 
       {/* Two-column body */}

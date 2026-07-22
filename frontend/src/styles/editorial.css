@@ -91,13 +91,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
 
 /* ── Sidebar ────────────────────────────────────────────────────────────── */
 .k-sidebar {
-  background: var(--side-bg);
+  background: color-mix(in srgb, var(--side-bg) 92%, transparent);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
   color: var(--side-fg);
   display: flex; flex-direction: column;
   width: 248px; flex-shrink: 0;
   position: relative;
   overflow: hidden;
-  border-right: 1px solid #000;
+  border-right: 1px solid color-mix(in srgb, #000 60%, transparent);
   height: 100vh;
 }
 .k-sidebar--rail { width: 64px; }
@@ -249,8 +251,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-topbar {
   display: flex; align-items: center; gap: var(--sp-5);
   height: 60px; padding: 0 var(--sp-6);
-  background: var(--surface);
-  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 60%, transparent);
   flex-shrink: 0;
 }
 .k-topbar__left { min-width: 0; }
@@ -530,12 +534,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
   gap: var(--sp-3);
 }
 .k-stat {
-  background: var(--surface);
-  border: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid color-mix(in srgb, var(--rule) 50%, transparent);
   border-radius: var(--r-md);
   padding: var(--sp-4) var(--sp-5);
   position: relative;
   overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04), 0 0 0 1px rgba(255,255,255,.03) inset;
 }
 .k-stat__lbl {
   display: flex; align-items: baseline; justify-content: space-between;
@@ -2501,3 +2508,228 @@ select.k-formpanel__input { appearance: none;
 }
 .k-tmpl-card__new-title { font-size: 14px; font-weight: 600; color: var(--ink-2); }
 .k-tmpl-card__new-sub { font-size: 12px; color: var(--ink-faint); line-height: 1.4; }
+
+/* ── Command Palette (⌘K) ─────────────────────────────────────────────── */
+.k-cmdk-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,.45); backdrop-filter: blur(4px);
+  display: flex; justify-content: center; padding-top: min(20vh, 140px);
+  animation: k-cmdk-fadeIn 120ms ease-out;
+}
+@keyframes k-cmdk-fadeIn { from { opacity: 0; } }
+@keyframes k-cmdk-slideIn { from { opacity: 0; transform: translateY(-8px) scale(.98); } }
+.k-cmdk {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(420px, 60vh);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid color-mix(in srgb, var(--rule) 60%, transparent);
+  border-radius: var(--r-xl);
+  box-shadow: 0 24px 64px rgba(0,0,0,.2), 0 8px 20px rgba(0,0,0,.08), 0 0 0 1px rgba(255,255,255,.06) inset;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  animation: k-cmdk-slideIn 150ms ease-out;
+}
+.k-cmdk__input-wrap {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--rule-soft);
+  color: var(--ink-3);
+}
+.k-cmdk__input {
+  flex: 1; border: none; outline: none; background: none;
+  font-size: 15px; color: var(--ink);
+  font-family: var(--font-ui);
+}
+.k-cmdk__input::placeholder { color: var(--ink-faint); }
+.k-cmdk__list {
+  flex: 1; overflow-y: auto; padding: 6px;
+}
+.k-cmdk__section {
+  font-size: 10px; font-weight: 600; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--ink-faint);
+  padding: 10px 10px 4px;
+}
+.k-cmdk__item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 8px 10px;
+  border: none; background: none; border-radius: var(--r-sm);
+  cursor: pointer; text-align: left; font-size: 14px;
+  color: var(--ink); transition: background 60ms;
+}
+.k-cmdk__item:hover, .k-cmdk__item--active {
+  background: color-mix(in srgb, var(--k-primary) 10%, transparent);
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+.k-cmdk__icon { color: var(--ink-3); flex-shrink: 0; display: flex; }
+.k-cmdk__label { flex: 1; font-weight: 500; }
+.k-cmdk__hi { font-family: var(--font-hindi); font-size: 12px; color: var(--ink-faint); }
+.k-cmdk__hint { margin-left: auto; }
+.k-cmdk__empty {
+  padding: 32px 16px; text-align: center;
+  color: var(--ink-faint); font-size: 13px;
+}
+
+/* ── Keyboard Shortcuts Overlay ───────────────────────────────────────── */
+.k-shortcuts {
+  width: min(480px, calc(100vw - 32px));
+  max-height: min(520px, 70vh);
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid color-mix(in srgb, var(--rule) 50%, transparent);
+  border-radius: var(--r-xl);
+  box-shadow: 0 24px 64px rgba(0,0,0,.22), 0 8px 20px rgba(0,0,0,.08), 0 0 0 1px rgba(255,255,255,.06) inset;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  animation: k-cmdk-slideIn 150ms ease-out;
+}
+.k-shortcuts__header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.k-shortcuts__body {
+  flex: 1; overflow-y: auto; padding: 8px 12px 16px;
+}
+.k-shortcuts__row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.k-shortcuts__keys {
+  display: flex; align-items: center; gap: 4px;
+  min-width: 100px;
+}
+.k-shortcuts__label { flex: 1; color: var(--ink); font-weight: 500; }
+.k-shortcuts__hi { font-family: var(--font-hindi); font-size: 12px; color: var(--ink-faint); }
+.k-shortcuts__footer {
+  padding: 10px 20px;
+  border-top: 1px solid var(--rule-soft);
+  font-size: 12px; color: var(--ink-3); text-align: center;
+}
+.k-kbd {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 6px;
+  font-size: 11px; font-weight: 600; font-family: var(--font-mono);
+  background: color-mix(in srgb, var(--surface) 90%, var(--ink) 10%);
+  border: 1px solid var(--rule-soft);
+  border-radius: 4px;
+  box-shadow: 0 1px 0 var(--rule-soft);
+  color: var(--ink-2);
+}
+
+/* ── Glass card effect ────────────────────────────────────────────────── */
+.k-glass {
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border: 1px solid color-mix(in srgb, var(--rule) 40%, transparent);
+  box-shadow: 0 4px 16px rgba(0,0,0,.06), 0 0 0 1px rgba(255,255,255,.04) inset;
+}
+
+/* ── Onboarding checklist ─────────────────────────────────────────────── */
+.k-onboard {
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  border: 1px solid color-mix(in srgb, var(--k-primary) 20%, var(--rule));
+  border-radius: var(--r-lg);
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.08), 0 0 0 1px rgba(255,255,255,.04) inset;
+  margin-bottom: 24px;
+}
+.k-onboard__title {
+  font-size: 16px; font-weight: 700; margin: 0 0 4px;
+  font-family: var(--font-display);
+}
+.k-onboard__sub {
+  font-size: 13px; color: var(--ink-3); margin: 0 0 16px;
+}
+.k-onboard__progress {
+  height: 6px; border-radius: 99px;
+  background: var(--rule-soft);
+  margin-bottom: 16px; overflow: hidden;
+}
+.k-onboard__progress-fill {
+  height: 100%; border-radius: 99px;
+  background: var(--k-primary);
+  transition: width .4s ease-out;
+}
+.k-onboard__step {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: 13px; cursor: pointer;
+}
+.k-onboard__step:last-child { border-bottom: none; }
+.k-onboard__check {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid var(--rule); display: flex;
+  align-items: center; justify-content: center;
+  font-size: 12px; flex-shrink: 0;
+  transition: all .2s;
+}
+.k-onboard__check--done {
+  background: var(--k-primary); border-color: var(--k-primary); color: #fff;
+}
+.k-onboard__step-label { flex: 1; }
+.k-onboard__step-label--done { text-decoration: line-through; color: var(--ink-3); }
+.k-onboard__step-hint {
+  font-size: 11px; color: var(--ink-faint);
+}
+
+/* ── Hero KPI — "How's my business?" ──────────────────────────────────── */
+.k-hero-kpi {
+  display: flex; gap: 16px; align-items: stretch;
+  margin-bottom: 20px;
+}
+.k-hero-kpi__main {
+  flex: 1.2;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  backdrop-filter: blur(16px) saturate(1.3);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  border: 1px solid color-mix(in srgb, var(--k-primary) 20%, var(--rule));
+  border-radius: var(--r-lg);
+  padding: 24px 28px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.06), 0 0 0 1px rgba(255,255,255,.04) inset;
+}
+.k-hero-kpi__label {
+  font-size: 11px; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px;
+}
+.k-hero-kpi__value {
+  font-family: var(--font-display);
+  font-size: 36px; font-weight: 400; line-height: 1.1;
+  color: var(--ink); letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+.k-hero-kpi__sub {
+  font-size: 13px; color: var(--ink-3);
+}
+.k-hero-kpi__secondary {
+  flex: 1; display: flex; flex-direction: column; gap: 8px;
+}
+.k-hero-kpi__card {
+  flex: 1;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid color-mix(in srgb, var(--rule) 50%, transparent);
+  border-radius: var(--r-md);
+  padding: 12px 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04), 0 0 0 1px rgba(255,255,255,.03) inset;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.k-hero-kpi__card-val {
+  font-family: var(--font-display);
+  font-size: 20px; font-weight: 400; color: var(--ink);
+}
+.k-hero-kpi__card-lbl {
+  font-size: 12px; color: var(--ink-3); text-align: right;
+}
+@media (max-width: 720px) {
+  .k-hero-kpi { flex-direction: column; }
+  .k-hero-kpi__value { font-size: 28px; }
+}

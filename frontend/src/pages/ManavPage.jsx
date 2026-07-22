@@ -242,7 +242,13 @@ function EmployeesTab({ onUpdate }) {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        employees.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No employees found.</p> : (
+        employees.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>👥</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No employees yet</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Add your team members to manage attendance, leaves, and payroll from one place.</div>
+          </div>
+        ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
@@ -356,7 +362,13 @@ function ShiftDefinitions({ pushToast }) {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        shifts.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No shifts defined.</p> : (
+        shifts.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🕐</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No shifts defined</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Create shift templates to schedule your team's working hours.</div>
+          </div>
+        ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
           {shifts.map(s => (
             <div key={s.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 16 }}>
@@ -593,7 +605,13 @@ function ShiftBids({ pushToast }) {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        bids.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No open bids.</p> : (
+        bids.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 24px' }}>
+            <div style={{ fontSize: 28, marginBottom: 6 }}>🙋</div>
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>No open bids</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Employees can bid for open shifts here.</div>
+          </div>
+        ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
           {bids.map(b => (
             <div key={b.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 16 }}>
@@ -687,7 +705,13 @@ function SwapRequests({ pushToast }) {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        swaps.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No pending swap requests.</p> : (
+        swaps.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 24px' }}>
+            <div style={{ fontSize: 28, marginBottom: 6 }}>🔄</div>
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>No pending swaps</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Shift swap requests between employees appear here.</div>
+          </div>
+        ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
           {swaps.map(s => (
             <div key={s.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 16 }}>
@@ -828,7 +852,13 @@ function AttendanceTab() {
       ) : (
         <>
           {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-            records.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No attendance records for this date range.</p> : (
+            records.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No attendance records</div>
+                <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>No records found for this date range. Try adjusting the filters above.</div>
+              </div>
+            ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
@@ -1040,7 +1070,13 @@ function LeavesTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        leaves.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No leave requests found.</p> : (
+        leaves.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🏖️</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No leave requests</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Leave requests from employees will appear here for approval.</div>
+          </div>
+        ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {leaves.map(lr => (
             <div key={lr.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px' }}>
@@ -1164,7 +1200,13 @@ function ExpensesTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        claims.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No expense claims found.</p> : (
+        claims.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🧾</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No expense claims</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Employee reimbursement requests will show up here.</div>
+          </div>
+        ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {claims.map(c => (
             <div key={c.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px' }}>
@@ -1411,7 +1453,7 @@ function AnnouncementsTab() {
       await api.delete(`/v1/manav/announcements/${id}`);
       pushToast({ title: 'Announcement removed', type: 'success' });
       setAnnouncements(prev => prev.filter(a => a.id !== id));
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not remove announcement', type: 'error' }); }
   }
 
   function startEdit(a) {
@@ -1453,7 +1495,13 @@ function AnnouncementsTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        announcements.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No announcements.</p> : (
+        announcements.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📢</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No announcements</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Post company-wide announcements that all employees will see.</div>
+          </div>
+        ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {announcements.map(a => (
             <div key={a.id} style={{ background: 'var(--surface-1)', border: `1px solid ${a.pinned ? 'var(--k-primary)' : 'var(--rule-soft)'}`, borderRadius: 12, padding: '16px 20px' }}>
@@ -1531,7 +1579,13 @@ function DepartmentsTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        departments.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No departments yet.</p> : (
+        departments.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🏢</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No departments yet</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Organise your team by department for easier reporting and shift management.</div>
+          </div>
+        ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
           {departments.map(d => (
             <div key={d.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 20 }}>
@@ -1585,7 +1639,7 @@ function HolidaysTab() {
       await api.delete(`/v1/manav/holidays/${id}`);
       setHolidays(prev => prev.filter(h => h.id !== id));
       pushToast({ title: 'Holiday removed', type: 'success' });
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not remove holiday', type: 'error' }); }
   }
 
   return (
@@ -1611,7 +1665,13 @@ function HolidaysTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        holidays.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No holidays configured for this year.</p> : (
+        holidays.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📅</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No holidays configured</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Add public holidays and company-wide days off for this year.</div>
+          </div>
+        ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
@@ -1663,7 +1723,13 @@ function PerformanceTab() {
       </div>
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        data.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No performance data for this month.</p> : (
+        data.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>📈</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No performance data</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Performance reviews for this period will appear here once submitted.</div>
+          </div>
+        ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
@@ -1759,7 +1825,7 @@ function AssetsTab() {
       await api.delete(`/v1/manav/assets/${id}`);
       pushToast({ title: 'Asset removed', type: 'success' });
       setAssets(prev => prev.filter(a => a.id !== id));
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not remove asset', type: 'error' }); }
   }
 
   async function assign(id) {
@@ -1827,7 +1893,13 @@ function AssetsTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        filtered.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No assets found.</p> : (
+        filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>💻</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No assets found</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Track company assets like laptops, phones, and equipment assigned to employees.</div>
+          </div>
+        ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>

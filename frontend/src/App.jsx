@@ -24,6 +24,7 @@ import { ToastProvider }               from './components/ui/toast';
 import AppShell, { Protected }         from './components/layout/AppShell';
 import PageLoader                      from './components/layout/PageLoader';
 import { CustomizeProvider } from './components/CustomizePanel';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // ── Auth pages (lazy — no reason to block the bundle for these) ────────────────
 const LoginPage           = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
@@ -187,13 +188,15 @@ function StagingBanner() {
 
 export default function App() {
   return (
-    <CustomizeProvider>
-      <ToastProvider>
-        <BrowserRouter>
-          <StagingBanner />
-          <AppRouter />
-        </BrowserRouter>
-      </ToastProvider>
-    </CustomizeProvider>
+    <ErrorBoundary>
+      <CustomizeProvider>
+        <ToastProvider>
+          <BrowserRouter>
+            <StagingBanner />
+            <AppRouter />
+          </BrowserRouter>
+        </ToastProvider>
+      </CustomizeProvider>
+    </ErrorBoundary>
   );
 }

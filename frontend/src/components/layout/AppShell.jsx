@@ -10,13 +10,15 @@
  *   Child pages should render a loading state while teamId === null.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { NotificationsModal } from '../NotificationsModal';
 import TaskEditor from '../TaskEditor';
 import Sidebar from './Sidebar';
 import Topbar  from './Topbar';
 import { NotifToastContainer, NotifPermissionPrompt } from './NotifToast';
+import CommandPalette from '../CommandPalette';
+import KeyboardShortcuts from '../KeyboardShortcuts';
 import { urlBase64ToUint8Array } from '../../lib/push';
 import { playNotifSound } from '../../lib/notifSound';
 import { Bell, Menu, X } from 'lucide-react';
@@ -63,6 +65,8 @@ function fireBrowserNotif(title, body) {
 export default function AppShell() {
   const [notifOpen,    setNotifOpen]    = useState(false);
   const [newTaskOpen,  setNewTaskOpen]  = useState(false);
+  const [cmdkOpen,     setCmdkOpen]     = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [unread,       setUnread]       = useState(0);
   const [sidebarOpen,  setSidebarOpen]  = useState(false);
   const [teams,        setTeams]        = useState([]);
@@ -71,6 +75,8 @@ export default function AppShell() {
   const [toasts,       setToasts]       = useState([]);
   const prevUnread = useRef(null);
   const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => { window.__kartavya_navigate = navigate; return () => { delete window.__kartavya_navigate; }; }, [navigate]);
 
   // Register SW and ask for browser notification permission after 4 s
   useEffect(() => {
@@ -150,6 +156,37 @@ export default function AppShell() {
 
   useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
 
+  const gPending = useRef(false);
+  useEffect(() => {
+    const isInput = () => {
+      const tag = document.activeElement?.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable;
+    };
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCmdkOpen(prev => !prev);
+        return;
+      }
+      if (isInput() || e.metaKey || e.ctrlKey || e.altKey) return;
+      const key = e.key;
+      if (key === '?') { e.preventDefault(); setShortcutsOpen(prev => !prev); return; }
+      if (key === 'Escape') { setShortcutsOpen(false); return; }
+      if (gPending.current) {
+        gPending.current = false;
+        const routes = { d: '/dashboard', t: '/tasks', c: '/graha', i: '/ganit', h: '/manav' };
+        if (routes[key]) { e.preventDefault(); window.__kartavya_navigate?.(routes[key]); }
+        return;
+      }
+      if (key === 'g') { gPending.current = true; setTimeout(() => { gPending.current = false; }, 800); return; }
+      if (key === 'n' || key === 'N') { e.preventDefault(); setNewTaskOpen(true); return; }
+      if (key === 'i' || key === 'I') { e.preventDefault(); window.__kartavya_navigate?.('/ganit'); return; }
+      if (key === 'c' || key === 'C') { e.preventDefault(); window.__kartavya_navigate?.('/graha'); return; }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   // FIX #3: null until loaded — child pages guard on null to avoid empty requests.
   const teamIdFromPath = location.pathname.match(/\/projects\/([^/]+)/)?.[1];
   const teamId = teamIdFromPath || (teamsLoaded ? (teams[0]?.team_id || '') : null);
@@ -195,7 +232,7 @@ export default function AppShell() {
 
         {/* Desktop topbar */}
         <div className="k-app__topbar">
-          <Topbar unread={unread} onOpenNotifications={() => setNotifOpen(true)} onNewTask={() => setNewTaskOpen(true)} />
+          <Topbar unread={unread} onOpenNotifications={() => setNotifOpen(true)} onNewTask={() => setNewTaskOpen(true)} onOpenCmdk={() => setCmdkOpen(true)} />
         </div>
 
 
@@ -207,6 +244,8 @@ export default function AppShell() {
 
       <NotificationsModal open={notifOpen} onOpenChange={setNotifOpen} />
       <TaskEditor open={newTaskOpen} onOpenChange={setNewTaskOpen} teams={teams} defaultTeamId={teamId ?? undefined} onSaved={() => setNewTaskOpen(false)} />
+      <CommandPalette open={cmdkOpen} onClose={() => setCmdkOpen(false)} onNewTask={() => { setCmdkOpen(false); setNewTaskOpen(true); }} />
+      <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
 
       {/* Corner notification permission prompt */}
       {notifPrompt && (

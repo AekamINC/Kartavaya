@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
 import { PageHeader, StatTile, TabBar, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
@@ -555,6 +556,7 @@ function TargetsTab() {
 
 
 function CustomersTab() {
+  const navigate = useNavigate();
   const { pushToast } = useToast();
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -571,7 +573,7 @@ function CustomersTab() {
     <Section title="Customer List" hi="ग्राहक">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {contacts.map(c => (
-          <ModCard key={c.id} onClick={() => {}}>
+          <ModCard key={c.id} onClick={() => navigate('/graha')} style={{ cursor: 'pointer' }}>
             <div>
               <strong style={{ fontSize: 14 }}>{c.name}</strong>
               {c.company && <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{c.company}</span>}
@@ -581,7 +583,7 @@ function CustomersTab() {
           </ModCard>
         ))}
       </div>
-      <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 12 }}>Full contact management is in Graha (CRM) module.</p>
+      <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 12 }}>Click any customer to view their full profile in Graha (CRM).</p>
     </Section>
   );
 }

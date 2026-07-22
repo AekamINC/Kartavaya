@@ -10,6 +10,29 @@ const ACTIVITY_TYPES = ['call', 'email', 'meeting', 'note', 'task'];
 const TYPE_COLORS = { lead: '#f59e0b', customer: '#10b981', vendor: '#6366f1', partner: '#0082c6' };
 const STAGE_COLORS = { New: '#6E7B91', Qualified: '#f59e0b', Proposal: '#0082c6', Negotiation: '#8b5cf6', Won: '#10b981', Lost: '#ef4444' };
 
+function dealStaleness(updatedAt) {
+  if (!updatedAt) return null;
+  const days = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86400000);
+  if (days >= 14) return { days, level: 'critical', color: '#dc2626', bg: '#dc262612', label: `${days}d stale` };
+  if (days >= 7) return { days, level: 'warning', color: '#d97706', bg: '#d9770612', label: `${days}d idle` };
+  if (days >= 3) return { days, level: 'mild', color: '#6E7B91', bg: '#6E7B9112', label: `${days}d ago` };
+  return null;
+}
+
+function RotBadge({ updatedAt }) {
+  const rot = dealStaleness(updatedAt);
+  if (!rot) return null;
+  return (
+    <span title={`No activity for ${rot.days} days`} style={{
+      fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
+      background: rot.bg, color: rot.color, whiteSpace: 'nowrap',
+      display: 'inline-flex', alignItems: 'center', gap: 3,
+    }}>
+      {rot.level === 'critical' ? '🔥' : rot.level === 'warning' ? '⏳' : '·'} {rot.label}
+    </span>
+  );
+}
+
 function Badge({ text, color }) {
   return (
     <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em',
@@ -21,6 +44,8 @@ const TABS = ['today', 'clients', 'contacts', 'deals', 'kanban', 'pipeline', 'fo
 const SOURCE_COLORS = { indiamart: '#2563eb', justdial: '#ea580c', manual: '#6b7280', website: '#10b981' };
 const ACT_ICONS = { call: '📞', email: '✉️', meeting: '📅', note: '📝', task: '✅' };
 const TL_ICONS = { activity: '●', followup: '⏰', invoice: '📄', deal: '💼' };
+const TL_SUB_ICONS = { call: '📞', email: '✉️', meeting: '📅', note: '📝', task: '✅' };
+const TL_COLORS = { activity: '#0082c6', followup: '#d97706', invoice: '#10b981', deal: '#8b5cf6', _default: '#6E7B91' };
 
 export default function GrahaPage() {
   const [tab, setTab] = useState('today');
@@ -218,21 +243,27 @@ function ContactTimeline({ contactId }) {
       {items.length === 0 ? (
         <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>No activity yet.</p>
       ) : (
-        <div style={{ position: 'relative', paddingLeft: 20 }}>
-          <div style={{ position: 'absolute', left: 5, top: 4, bottom: 4, width: 1, background: 'var(--rule-soft)' }} />
-          {items.map((it, i) => (
-            <div key={`${it.type}-${it.id}-${i}`} style={{ position: 'relative', paddingBottom: 12, paddingLeft: 8 }}>
-              <span style={{ position: 'absolute', left: -20, top: 3, fontSize: 12 }}>{TL_ICONS[it.type]}</span>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>
-                {it.title}
-                {it.amount != null && <span style={{ marginLeft: 8, color: '#10b981', fontWeight: 600 }}>₹{Number(it.amount).toLocaleString('en-IN')}</span>}
+        <div style={{ position: 'relative', paddingLeft: 24 }}>
+          <div style={{ position: 'absolute', left: 7, top: 4, bottom: 4, width: 2, background: 'var(--rule-soft)', borderRadius: 1 }} />
+          {items.map((it, i) => {
+            const icon = (it.type === 'activity' && it.subtype) ? (TL_SUB_ICONS[it.subtype] || TL_ICONS.activity) : TL_ICONS[it.type];
+            const color = TL_COLORS[it.type] || TL_COLORS._default;
+            return (
+            <div key={`${it.type}-${it.id}-${i}`} style={{ position: 'relative', paddingBottom: 14, paddingLeft: 12 }}>
+              <span style={{ position: 'absolute', left: -24, top: 1, width: 18, height: 18, borderRadius: 99,
+                background: `${color}14`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>{icon}</span>
+              <div style={{ fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span>{it.title}</span>
+                {it.amount != null && <span style={{ color: '#10b981', fontWeight: 600, fontSize: 12 }}>₹{Number(it.amount).toLocaleString('en-IN')}</span>}
                 {it.stage && <Badge text={it.stage} color={STAGE_COLORS[it.stage] || '#6b7280'} />}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                {it.type}{it.subtype ? ` · ${it.subtype}` : ''} · {it.ts ? new Date(it.ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
+              <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>
+                <span style={{ color, fontWeight: 600, textTransform: 'capitalize' }}>{it.subtype || it.type}</span>
+                {' · '}{it.ts ? new Date(it.ts).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
               </div>
             </div>
-          ))}
+            );
+          })}
           {hasMore && (
             <button onClick={() => load(cursor)}
               style={{ fontSize: 12, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}>
@@ -281,7 +312,7 @@ function ClientsTab() {
       setShowForm(false); setEditId(null);
       setForm({ name: '', ref_no: '', gstin: '', website: '', notes: '', address: {} });
       load();
-    } catch { pushToast({ title: 'Save failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not save client', type: 'error' }); }
   }
 
   function openEdit(c) {
@@ -304,7 +335,7 @@ function ClientsTab() {
       pushToast({ title: 'Client deleted', type: 'success' });
       setDetail(null);
       load();
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not delete client', type: 'error' }); }
   }
 
   if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
@@ -484,7 +515,7 @@ function ContactsTab() {
       setContacts(prev => prev.filter(c => c.id !== id));
       if (detail?.contact?.id === id) setDetail(null);
       pushToast({ title: 'Contact deleted', type: 'success' });
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not delete contact', type: 'error' }); }
   }
 
   async function convertLead(id) {
@@ -741,7 +772,7 @@ function DealsTab() {
       await api.patch(`/v1/graha/deals/${dealId}`, { stage });
       pushToast({ title: `Deal moved to ${stage}`, type: 'success' });
       load();
-    } catch { pushToast({ title: 'Update failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not update deal stage', type: 'error' }); }
   }
 
   async function createInvoice(dealId) {
@@ -805,7 +836,13 @@ function DealsTab() {
       )}
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        deals.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No deals found.</p> : (
+        deals.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>💼</div>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No deals yet</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Track your sales pipeline here. Click "+ New Deal" above to add your first opportunity.</div>
+          </div>
+        ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {deals.map(d => (
             <div key={d.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px' }}>
@@ -818,6 +855,7 @@ function DealsTab() {
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <span style={{ fontWeight: 700, fontSize: 14 }}>₹{Number(d.value).toLocaleString('en-IN')}</span>
                   <Badge text={d.stage} color={STAGE_COLORS[d.stage] || '#6E7B91'} />
+                  {d.stage !== 'Won' && d.stage !== 'Lost' && <RotBadge updatedAt={d.updated_at} />}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--ink-3)', alignItems: 'center' }}>
@@ -863,7 +901,7 @@ function KanbanTab() {
       await api.patch(`/v1/graha/deals/${dealId}`, { stage: newStage });
       pushToast({ title: `Moved to ${newStage}`, type: 'success' });
       load();
-    } catch { pushToast({ title: 'Move failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not move deal', type: 'error' }); }
   }
 
   const [stageList, setStageList] = useState(['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost']);
@@ -884,13 +922,24 @@ function KanbanTab() {
             </div>
             <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12 }}>₹{total.toLocaleString('en-IN')}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {deals.map(d => (
-                <div key={d.id} style={{ background: 'var(--bg)', border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 10 }}>
+              {deals.map(d => {
+                const rot = (stage !== 'Won' && stage !== 'Lost') ? dealStaleness(d.updated_at) : null;
+                return (
+                <div key={d.id} style={{
+                  background: rot?.level === 'critical' ? 'color-mix(in srgb, #dc2626 4%, var(--bg))' : 'var(--bg)',
+                  border: `1px solid ${rot?.level === 'critical' ? '#dc262630' : rot?.level === 'warning' ? '#d9770625' : 'var(--rule-soft)'}`,
+                  borderRadius: 10, padding: 10,
+                  boxShadow: '0 1px 3px rgba(0,0,0,.04), 0 0 0 0.5px rgba(0,0,0,.03)',
+                  transition: 'box-shadow 150ms, border-color 150ms',
+                }}>
                   <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{d.title}</div>
                   {d.client_name && <div style={{ fontSize: 11, color: 'var(--k-primary)', fontWeight: 600, marginBottom: 2 }}>{d.client_name}</div>}
                   {d.contact_name && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 2 }}>{d.contact_name}</div>}
                   {d.owner_id && <div style={{ fontSize: 10, color: 'var(--ink-3)', marginBottom: 4 }}>Owner: {d.owner_id.substring(0, 8)}…</div>}
-                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>₹{Number(d.value || 0).toLocaleString('en-IN')}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700 }}>₹{Number(d.value || 0).toLocaleString('en-IN')}</span>
+                    {stage !== 'Won' && stage !== 'Lost' && <RotBadge updatedAt={d.updated_at} />}
+                  </div>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {stages.filter(s => s !== stage).map(s => (
                       <button key={s} onClick={() => moveStage(d.id, s)}
@@ -899,7 +948,8 @@ function KanbanTab() {
                     ))}
                   </div>
                 </div>
-              ))}
+                );
+              })}
               {deals.length === 0 && <p style={{ fontSize: 12, color: 'var(--ink-3)', textAlign: 'center', padding: 12 }}>No deals</p>}
             </div>
           </div>
@@ -1001,7 +1051,7 @@ function FollowUpsTab() {
       await api.patch(`/v1/graha/follow-ups/${id}/complete`);
       pushToast({ title: 'Marked complete', type: 'success' });
       load();
-    } catch { pushToast({ title: 'Failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not complete follow-up', type: 'error' }); }
   }
 
   async function remove(id) {
@@ -1009,7 +1059,7 @@ function FollowUpsTab() {
       await api.delete(`/v1/graha/follow-ups/${id}`);
       pushToast({ title: 'Follow-up deleted', type: 'success' });
       setFollowUps(prev => prev.filter(f => f.id !== id));
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not delete follow-up', type: 'error' }); }
   }
 
   return (
@@ -1129,7 +1179,7 @@ function LabelsTab() {
       await api.delete(`/v1/graha/labels/${id}`);
       pushToast({ title: 'Label deleted', type: 'success' });
       setLabels(prev => prev.filter(l => l.id !== id));
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not delete label', type: 'error' }); }
   }
 
   async function loadContacts() {
@@ -1469,14 +1519,14 @@ function AutomationsTab() {
     try {
       await api.patch(`/v1/graha/automations/${id}/toggle`);
       setAutomations(prev => prev.map(a => a.id === id ? { ...a, is_active: !a.is_active } : a));
-    } catch { pushToast({ title: 'Toggle failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not toggle automation', type: 'error' }); }
   }
 
   async function remove(id) {
     try {
       await api.delete(`/v1/graha/automations/${id}`);
       setAutomations(prev => prev.filter(a => a.id !== id));
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not delete automation', type: 'error' }); }
   }
 
   if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
@@ -1576,7 +1626,7 @@ function TerritoriesTab() {
     try {
       await api.delete(`/v1/graha/territories/${id}`);
       setTerritories(prev => prev.filter(t => t.id !== id));
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not delete territory', type: 'error' }); }
   }
 
   function addUser() {
@@ -1680,7 +1730,7 @@ function CustomFieldsTab() {
     try {
       await api.delete(`/v1/graha/custom-fields/${id}`);
       setFields(prev => prev.filter(f => f.id !== id));
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not delete field', type: 'error' }); }
   }
 
   if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
@@ -1780,7 +1830,7 @@ function WebFormsTab() {
     try {
       await api.delete(`/v1/graha/web-forms/${id}`);
       setForms(prev => prev.filter(f => f.id !== id));
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not delete web form', type: 'error' }); }
   }
 
   async function loadSubs(formId) {
@@ -1909,7 +1959,7 @@ function ApprovalsTab() {
       await api.delete(`/v1/graha/approval-rules/${id}`);
       pushToast({ title: 'Rule deleted', type: 'success' });
       setRules(prev => prev.filter(r => r.id !== id));
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not delete approval rule', type: 'error' }); }
   }
 
   async function approveRequest(id) {
@@ -2100,7 +2150,7 @@ function DocumentsTab() {
       pushToast({ title: 'Document deleted', type: 'success' });
       setDocuments(prev => prev.filter(d => d.id !== id));
       loadFolders();
-    } catch { pushToast({ title: 'Delete failed', type: 'error' }); }
+    } catch { pushToast({ title: 'Could not delete document', type: 'error' }); }
   }
 
   if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;

@@ -153,7 +153,7 @@ export function AcceptInvitePage() {
       <form onSubmit={submit}>
         <div style={{ marginBottom: 14 }}>
           <label style={authLabel}>Your name</label>
-          <input name="name" type="text" value={form.name} onChange={set} required placeholder="Keval Shah" style={authInput} />
+          <input name="name" type="text" value={form.name} onChange={set} required placeholder="Your full name" style={authInput} />
         </div>
         <div style={{ marginBottom: 14 }}>
           <label style={authLabel}>Password</label>
