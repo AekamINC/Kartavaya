@@ -26,7 +26,12 @@ export function ToastProvider({ children }) {
     }, 3200);
   }, []);
 
-  const value = useMemo(() => ({ pushToast }), [pushToast]);
+  const error = useCallback((title) => pushToast({ title, type: 'error' }), [pushToast]);
+  const success = useCallback((title) => pushToast({ title, type: 'success' }), [pushToast]);
+  const warning = useCallback((title) => pushToast({ title, type: 'warning' }), [pushToast]);
+  const info = useCallback((title) => pushToast({ title, type: 'info' }), [pushToast]);
+
+  const value = useMemo(() => ({ pushToast, error, success, warning, info }), [pushToast, error, success, warning, info]);
 
   return (
     <ToastCtx.Provider value={value}>
