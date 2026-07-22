@@ -9,6 +9,12 @@ const DOC_STATUS_COLORS = { draft: '#6E7B91', final: '#0082c6', sent: '#8b5cf6',
 const CONTRACT_COLORS = { draft: '#6E7B91', active: '#10b981', expired: '#f59e0b', cancelled: '#ef4444', renewed: '#0082c6' };
 const PAY_METHODS = ['cash', 'bank_transfer', 'upi', 'cheque', 'card', 'other'];
 
+function safeArray(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string') try { const p = JSON.parse(v); if (Array.isArray(p)) return p; } catch {}
+  return [];
+}
+
 function UpiPayBlock({ invoice }) {
   const [upiId, setUpiId] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -322,7 +328,7 @@ function InvoicesTab() {
               </tr>
             </thead>
             <tbody>
-              {(inv.line_items || []).map((li, i) => (
+              {safeArray(inv.line_items).map((li, i) => (
                 <tr key={i} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
                   <td style={{ padding: '8px 10px' }}>{li.description}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{li.hsn_code || li.sac_code || '—'}</td>
@@ -968,7 +974,7 @@ function PayablesTab() {
             <th style={{ padding: 8 }}>Description</th><th style={{ padding: 8 }}>Qty</th><th style={{ padding: 8 }}>Rate</th><th style={{ padding: 8 }}>GST%</th><th style={{ padding: 8 }}>Line Total</th>
           </tr></thead>
           <tbody>
-            {(detail.line_items || []).map((li, i) => (
+            {safeArray(detail.line_items).map((li, i) => (
               <tr key={i} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
                 <td style={{ padding: 8 }}>{li.description}</td>
                 <td style={{ padding: 8 }}>{li.quantity} {li.unit}</td>
