@@ -1307,12 +1307,8 @@ async def list_users(pool=Depends(get_db),user=Depends(require_user)):
 @api_router.get("/teams/{team_id}")
 async def get_team(team_id:str,pool=Depends(get_db),user=Depends(require_user)):
     """Return a project with its member list and the caller's role."""
-    # Check project_assignments first, fall back to team_members
-    mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
-    if not mem:
-        tm=await pool.fetchrow("SELECT role FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'",team_id,user["user_id"])
-        if not tm: raise HTTPException(403,_NOT_TEAM_MEMBER)
-        mem=tm
+    mem=await is_project_member(pool,team_id,user)
+    if not mem: raise HTTPException(403,_NOT_TEAM_MEMBER)
     team=await pool.fetchrow("SELECT * FROM teams WHERE team_id=$1",team_id)
     members=await pool.fetch("""
         SELECT tm.*,COALESCE(u.full_name,u.name,u.email) AS display_name,

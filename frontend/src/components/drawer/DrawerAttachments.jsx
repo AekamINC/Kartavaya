@@ -380,10 +380,11 @@ function FileChip({ file, onRemove, members, currentUserId, onPrivacyChange }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px' }}>
           {fileIcon(name)}
           <a
-            href={file.url}
+            href={file.url || undefined}
             target="_blank"
             rel="noreferrer"
-            style={{ color: 'var(--ink-2)', textDecoration: 'none', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            onClick={e => { if (!file.url) { e.preventDefault(); if (previewable) setLightbox(true); } }}
+            style={{ color: 'var(--ink-2)', textDecoration: 'none', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
           >
             {name}
           </a>
@@ -403,7 +404,7 @@ function FileChip({ file, onRemove, members, currentUserId, onPrivacyChange }) {
               </svg>
             </button>
           )}
-          <a href={file.url} target="_blank" rel="noreferrer" title="Open in new tab" style={{ display: 'flex', flexShrink: 0, color: 'var(--ink-3)' }}>
+          <a href={file.url || undefined} onClick={e => { if (!file.url) e.preventDefault(); }} target="_blank" rel="noreferrer" title="Open in new tab" style={{ display: 'flex', flexShrink: 0, color: file.url ? 'var(--ink-3)' : 'var(--ink-faint)' }}>
             <ExternalLink size={11} />
           </a>
           {onPrivacyChange && members && (
