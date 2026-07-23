@@ -407,6 +407,190 @@ async def get_usage(user=Depends(require_user), org_id: str = Depends(get_org_id
     }
 
 
+# ── Client Cost Report ─────────────────────────────────────
+
+@router.get("/cost-report")
+async def cost_report(
+    period: str = "30d",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+):
+    """Client-facing cost report. Shows charged amounts (with markup), not raw costs."""
+    pool = await get_pool()
+    from routers.admin_orgs import MARKUP_PCT
+    from services.forex import get_usd_inr
+
+    period_map = {"7d": 7, "30d": 30, "90d": 90, "ytd": None}
+    days = period_map.get(period, 30)
+    if days:
+        start = date.today() - timedelta(days=days)
+    else:
+        start = date(date.today().year, 1, 1)
+    cutoff = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
+
+    org = await pool.fetchrow(
+        "SELECT o.name, p.name as plan_name FROM staging.organisations o "
+        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
+        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
+        "WHERE o.id = $1::uuid", org_id
+    )
+
+    # AI costs by provider+model
+    ai_rows = await pool.fetch(
+        "SELECT l.provider, l.model, "
+        "COALESCE(SUM(l.cost_usd), 0) as cost_usd, COUNT(*) as calls "
+        "FROM staging.hub_ai_logs l "
+        "JOIN staging.hub_clients c ON c.id = l.client_id "
+        "WHERE c.org_id = $1::uuid AND l.created_at >= $2 "
+        "GROUP BY l.provider, l.model ORDER BY cost_usd DESC",
+        org_id, cutoff,
+    )
+
+    # Scraper costs
+    scraper_rows = await pool.fetch(
+        "SELECT r.scraper_id, COALESCE(SUM(r.cost_usd), 0) as cost_usd, "
+        "COUNT(*) as runs "
+        "FROM staging.hub_scraper_runs r "
+        "WHERE r.org_id = $1::uuid AND r.created_at >= $2 "
+        "GROUP BY r.scraper_id ORDER BY cost_usd DESC",
+        org_id, cutoff,
+    )
+
+    # Credit usage
+    credits_used = await pool.fetchval(
+        "SELECT COALESCE(SUM(credits_used), 0) FROM staging.hub_content_items "
+        "WHERE org_id=$1::uuid AND created_at >= $2",
+        org_id, cutoff,
+    ) or 0
+
+    rate = await get_usd_inr()
+
+    def _charge(usd):
+        return round(float(usd) * rate * (1 + MARKUP_PCT), 2)
+
+    total_ai_usd = sum(float(r["cost_usd"]) for r in ai_rows)
+    total_scraper_usd = sum(float(r["cost_usd"]) for r in scraper_rows)
+    total_usd = total_ai_usd + total_scraper_usd
+
+    return {
+        "period": period,
+        "org_name": org["name"] if org else "",
+        "plan_name": org["plan_name"] if org else "Free",
+        "period_start": start.isoformat(),
+        "period_end": date.today().isoformat(),
+        "ai_services": [
+            {"service": f"{r['provider']} / {r['model']}", "calls": r["calls"],
+             "charge_inr": _charge(r["cost_usd"])}
+            for r in ai_rows
+        ],
+        "scraper_services": [
+            {"service": r["scraper_id"], "runs": r["runs"],
+             "charge_inr": _charge(r["cost_usd"])}
+            for r in scraper_rows
+        ],
+        "credits_used": credits_used,
+        "total_ai_inr": _charge(total_ai_usd),
+        "total_scraper_inr": _charge(total_scraper_usd),
+        "total_charge_inr": _charge(total_usd),
+    }
+
+
+@router.get("/cost-report/pdf")
+async def cost_report_pdf(
+    period: str = "30d",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+):
+    """Download client cost report as PDF."""
+    from fastapi.responses import Response
+    from services.cost_report_pdf import generate_cost_report_pdf
+    from routers.admin_orgs import MARKUP_PCT
+    from services.forex import get_usd_inr
+
+    pool = await get_pool()
+
+    period_map = {"7d": 7, "30d": 30, "90d": 90, "ytd": None}
+    days = period_map.get(period, 30)
+    if days:
+        start = date.today() - timedelta(days=days)
+    else:
+        start = date(date.today().year, 1, 1)
+    cutoff = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
+
+    org = await pool.fetchrow(
+        "SELECT o.name, o.authorized_signatory_name, o.authorized_signatory_designation, "
+        "p.name as plan_name "
+        "FROM staging.organisations o "
+        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
+        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
+        "WHERE o.id = $1::uuid", org_id
+    )
+
+    ai_rows = await pool.fetch(
+        "SELECT l.provider, l.model, "
+        "COALESCE(SUM(l.cost_usd), 0) as cost_usd, COUNT(*) as calls "
+        "FROM staging.hub_ai_logs l "
+        "JOIN staging.hub_clients c ON c.id = l.client_id "
+        "WHERE c.org_id = $1::uuid AND l.created_at >= $2 "
+        "GROUP BY l.provider, l.model ORDER BY cost_usd DESC",
+        org_id, cutoff,
+    )
+
+    scraper_rows = await pool.fetch(
+        "SELECT r.scraper_id, COALESCE(SUM(r.cost_usd), 0) as cost_usd, "
+        "COUNT(*) as runs "
+        "FROM staging.hub_scraper_runs r "
+        "WHERE r.org_id = $1::uuid AND r.created_at >= $2 "
+        "GROUP BY r.scraper_id ORDER BY cost_usd DESC",
+        org_id, cutoff,
+    )
+
+    credits_used = await pool.fetchval(
+        "SELECT COALESCE(SUM(credits_used), 0) FROM staging.hub_content_items "
+        "WHERE org_id=$1::uuid AND created_at >= $2",
+        org_id, cutoff,
+    ) or 0
+
+    rate = await get_usd_inr()
+
+    def _charge(usd):
+        return round(float(usd) * rate * (1 + MARKUP_PCT), 2)
+
+    report_data = {
+        "org_name": org["name"] if org else "",
+        "plan_name": org["plan_name"] if org else "Free",
+        "period_start": start.isoformat(),
+        "period_end": date.today().isoformat(),
+        "ai_services": [
+            {"service": f"{r['provider']} / {r['model']}", "calls": r["calls"],
+             "charge_inr": _charge(r["cost_usd"])}
+            for r in ai_rows
+        ],
+        "scraper_services": [
+            {"service": r["scraper_id"], "runs": r["runs"],
+             "charge_inr": _charge(r["cost_usd"])}
+            for r in scraper_rows
+        ],
+        "credits_used": credits_used,
+        "total_ai_inr": _charge(sum(float(r["cost_usd"]) for r in ai_rows)),
+        "total_scraper_inr": _charge(sum(float(r["cost_usd"]) for r in scraper_rows)),
+        "total_charge_inr": _charge(
+            sum(float(r["cost_usd"]) for r in ai_rows)
+            + sum(float(r["cost_usd"]) for r in scraper_rows)
+        ),
+        "signatory_name": org["authorized_signatory_name"] if org else "",
+        "signatory_designation": org["authorized_signatory_designation"] if org else "",
+    }
+
+    pdf_bytes = generate_cost_report_pdf(report_data)
+    filename = f"Cost-Report-{start.strftime('%b%Y')}-{date.today().strftime('%d%b%Y')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # ── User Roles ──────────────────────────────────────────────
 
 @router.get("/my-roles")

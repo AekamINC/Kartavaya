@@ -35,6 +35,7 @@ const ICONS = {
   esign:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M9.5 2.5l4 4-8 8H1.5v-4z"/><path d="M8 4l4 4"/></svg>,
   customize:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/></svg>,
   logout:      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M6 2H3a1 1 0 00-1 1v10a1 1 0 001 1h3M11 11l3-3-3-3M14 8H6"/></svg>,
+  chart:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 13V7M7 13V4M11 13V9M15 13V2"/><path d="M1 14h14"/></svg>,
 };
 
 // ── Nav structure ────────────────────────────────────────────────────────
@@ -155,6 +156,7 @@ export default function Sidebar({ inboxCount = 0 }) {
             { to: '/admin', icon: 'admin', en: 'Admin', hi: 'प्रशासन', gu: 'પ્રશાસન', adminOnly: true },
             { to: '/admin/billing', icon: 'billing', en: 'Admin Billing', hi: 'बिलिंग प्रशासन', gu: 'બિલિંગ પ્રશાસન', adminOnly: true },
             { to: '/admin/orgs', icon: 'org', en: 'Organisations', hi: 'संगठन', gu: 'સંગઠન', adminOnly: true },
+            { to: '/admin/costs', icon: 'chart', en: 'Cost Dashboard', hi: 'लागत', gu: 'ખર્ચ', adminOnly: true },
           ] }
         : g
     );

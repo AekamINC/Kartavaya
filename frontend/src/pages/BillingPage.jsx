@@ -95,7 +95,30 @@ export default function BillingPage() {
         )}
       </Card>
 
-      {/* Plan info — pricing hidden from clients */}
+      {/* Cost report download */}
+      <Card title="Usage Report" style={{ marginBottom: 24 }}>
+        <p style={{ color: 'var(--ink-3)', fontSize: 13, margin: '0 0 12px' }}>
+          Download a detailed report of your AI and data service charges.
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {['7d', '30d', '90d', 'ytd'].map(p => (
+            <button key={p} className="k-btn k-btn--sm k-btn--ghost"
+              onClick={async () => {
+                try {
+                  const res = await api.get(`/v1/subscription/cost-report/pdf?period=${p}`, { responseType: 'blob' });
+                  const url = URL.createObjectURL(res.data);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `UsageReport-${p}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                } catch { pushToast({ title: 'Report generation failed', type: 'error' }); }
+              }}>
+              ↓ {p === 'ytd' ? 'Year to Date' : p === '7d' ? 'Last 7 days' : p === '30d' ? 'Last 30 days' : 'Last 90 days'}
+            </button>
+          ))}
+        </div>
+      </Card>
 
       {/* Invoice history */}
       <Card title="Invoice History">
