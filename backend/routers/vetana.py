@@ -453,19 +453,44 @@ async def process_payroll(
         round(totals["tds"], 2), len(unique_structures), run_id,
     )
 
-    # ── Notify employees about payslips ──
-    payslip_list = await pool.fetch(
-        "SELECT p.payslip_number, p.gross, p.net_pay, p.month, e.name, e.email "
-        "FROM staging.vetana_payslips p JOIN staging.manav_employees e ON e.id = p.employee_id "
+    # ── Notify employees about payslips (with PDF attachment) ──
+    payslip_rows = await pool.fetch(
+        "SELECT p.*, e.name AS employee_name, e.email, e.employee_id AS emp_code, "
+        "e.pan, e.uan, e.bank_account, e.bank_name, e.designation, "
+        "COALESCE(d.name, '') AS department_name "
+        "FROM staging.vetana_payslips p "
+        "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "LEFT JOIN staging.manav_departments d ON d.id = e.department_id "
         "WHERE p.run_id=$1::uuid AND e.email IS NOT NULL AND e.email != ''",
         run_id,
     )
-    if payslip_list:
+    if payslip_rows:
+        org_row = await pool.fetchrow(
+            "SELECT name, gstin, pan, billing_address, logo_url, email, phone, website, "
+            "COALESCE(authorized_signatory_name, '') AS authorized_signatory_name, "
+            "COALESCE(authorized_signatory_designation, '') AS authorized_signatory_designation "
+            "FROM staging.organisations WHERE id=$1::uuid", org_id,
+        )
+        org_dict = dict(org_row) if org_row else {}
+        from services.payslip_pdf import generate_payslip_pdf
         from services.employee_email import send_payslip_email
-        for ps in payslip_list:
+        for ps in payslip_rows:
+            ps_dict = dict(ps)
+            emp_dict = {
+                "name": ps["employee_name"], "employee_id": ps.get("emp_code", ""),
+                "department_name": ps.get("department_name", ""), "designation": ps.get("designation", ""),
+                "pan": ps.get("pan", ""), "uan": ps.get("uan", ""),
+                "bank_account": ps.get("bank_account", ""), "bank_name": ps.get("bank_name", ""),
+                "email": ps["email"],
+            }
+            try:
+                pdf_bytes = generate_payslip_pdf(ps_dict, emp_dict, org_dict)
+            except Exception:
+                pdf_bytes = None
             send_payslip_email(
-                ps["email"], ps["name"], str(ps["month"]),
+                ps["email"], ps["employee_name"], str(ps["month"]),
                 float(ps["gross"]), float(ps["net_pay"]), ps["payslip_number"],
+                pdf_bytes=pdf_bytes,
             )
 
     return {

@@ -4,7 +4,14 @@ Fire-and-forget notifications using the shared email_service helpers.
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from email_service import send_email, _base, _body_text, _info_card, _cta_row, _safe_subject, FRONTEND_URL, _INK3
+from email_service import (
+    send_email, _base, _body_text, _info_card, _cta_row, _safe_subject,
+    FRONTEND_URL, _INK3, FROM_EMAIL, _resend_client, ses_client,
+)
+import logging
+import threading
+
+_log = logging.getLogger(__name__)
 
 
 def _skip(email):
@@ -147,7 +154,7 @@ def send_loan_email(employee_email, employee_name, loan_type, amount, emi, actio
 
 # ── 7. Payslip Ready ───────────────────────────────────────────
 
-def send_payslip_email(employee_email, employee_name, month, gross, net, payslip_number, org_name=""):
+def send_payslip_email(employee_email, employee_name, month, gross, net, payslip_number, org_name="", pdf_bytes=None):
     if _skip(employee_email):
         return
     card = _info_card([
@@ -157,15 +164,68 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
         ("Net Pay", f"₹{net:,.2f}" if isinstance(net, (int, float)) else f"₹{net}"),
     ])
     cta = _cta_row(f"{FRONTEND_URL}/vetana", "View Payslip")
-    html = _base(
+    attach_note = _body_text(f'<span style="font-size:12.5px;color:{_INK3};">Your payslip PDF is attached to this email.</span>') if pdf_bytes else ""
+    html_content = _base(
         preheader=f"Payslip ready for {month}",
         kicker="PAYSLIP · वेतन पर्ची",
         headline="Payslip Ready",
         sanskrit="वेतन पर्ची",
         lede=f"Hi {employee_name}, your payslip for {month} is now available.",
-        body_rows=card + cta,
+        body_rows=card + attach_note + cta,
     )
-    send_email(employee_email, _safe_subject(f"Payslip Ready — {month} ({payslip_number})"), html)
+    subject = _safe_subject(f"Payslip Ready — {month} ({payslip_number})")
+
+    if not pdf_bytes:
+        send_email(employee_email, subject, html_content)
+        return
+
+    def _send_with_attachment():
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        from email.mime.base import MIMEBase
+        from email import encoders
+
+        msg = MIMEMultipart("mixed")
+        msg["Subject"] = subject
+        msg["From"] = FROM_EMAIL
+        msg["To"] = employee_email
+
+        alt = MIMEMultipart("alternative")
+        alt.attach(MIMEText(html_content, "html", "utf-8"))
+        msg.attach(alt)
+
+        part = MIMEBase("application", "pdf")
+        part.set_payload(pdf_bytes)
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", "attachment", filename=f"Payslip-{payslip_number}.pdf")
+        msg.attach(part)
+
+        if _resend_client:
+            try:
+                _resend_client.Emails.send({
+                    "from": FROM_EMAIL,
+                    "to": [employee_email],
+                    "subject": subject,
+                    "html": html_content,
+                    "attachments": [{"filename": f"Payslip-{payslip_number}.pdf", "content": list(pdf_bytes)}],
+                })
+                _log.info("✅ Payslip email (Resend) → %s", employee_email)
+            except Exception as exc:
+                _log.error("❌ Payslip email (Resend) failed → %s: %s", employee_email, exc)
+        elif ses_client:
+            try:
+                ses_client.send_raw_email(
+                    Source=FROM_EMAIL,
+                    Destinations=[employee_email],
+                    RawMessage={"Data": msg.as_bytes()},
+                )
+                _log.info("✅ Payslip email (SES) → %s", employee_email)
+            except Exception as exc:
+                _log.error("❌ Payslip email (SES) failed → %s: %s", employee_email, exc)
+        else:
+            _log.info("[EMAIL-DEV] Payslip PDF email → %s | %s", employee_email, payslip_number)
+
+    threading.Thread(target=_send_with_attachment).start()
 
 
 # ── 8. Performance Review ──────────────────────────────────────
