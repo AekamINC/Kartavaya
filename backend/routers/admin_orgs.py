@@ -14,6 +14,7 @@ from pydantic import BaseModel, EmailStr
 from auth_router import require_user
 from db import get_pool
 from middleware.roles import require_platform_role
+from services.provider_costs import get_all_provider_costs
 from services.storage import create_org_bucket, verify_r2_credentials, clear_org_r2_cache
 
 router = APIRouter(prefix="/api/v1/admin/orgs", tags=["admin-orgs"])
@@ -164,6 +165,222 @@ async def list_orgs(
         "ORDER BY o.created_at DESC"
     )
     return {"data": [dict(r) for r in rows]}
+
+
+# ── Cost Aggregation (platform-wide) ──────────────────────
+# NOTE: These must be declared before /{org_id} to avoid
+# FastAPI matching "platform-analytics" as an org_id.
+
+def _period_start(period: str) -> date:
+    """Convert period string to a start date."""
+    today = date.today()
+    if period == "7d":
+        return today - timedelta(days=7)
+    if period == "90d":
+        return today - timedelta(days=90)
+    if period == "ytd":
+        return date(today.year, 1, 1)
+    return today - timedelta(days=30)  # default 30d
+
+
+@router.get("/platform-analytics")
+async def platform_analytics(
+    period: str = "30d",
+    user=Depends(require_platform_role("platform_admin", "account_finance")),
+):
+    """Platform-wide KPIs for Aekam super-admin dashboard."""
+    pool = await get_pool()
+    start = _period_start(period)
+
+    total_orgs = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.organisations WHERE is_active=TRUE"
+    )
+    total_users = await pool.fetchval(
+        "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+        "WHERE org_id IS NOT NULL"
+    )
+
+    total_revenue_inr = await pool.fetchval(
+        "SELECT COALESCE(SUM(total), 0) FROM staging.subscription_invoices "
+        "WHERE payment_status='paid' AND paid_at >= $1",
+        datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
+    ) or 0
+
+    ai_stats = await pool.fetchrow(
+        "SELECT COALESCE(SUM(l.cost_usd), 0) as total_cost, COUNT(*) as total_calls "
+        "FROM staging.hub_ai_logs l "
+        "WHERE l.created_at >= $1",
+        datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
+    )
+
+    total_scraper_cost = await pool.fetchval(
+        "SELECT COALESCE(SUM(cost_usd), 0) FROM staging.hub_scraper_runs "
+        "WHERE created_at >= $1",
+        datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
+    ) or 0
+
+    by_provider = await pool.fetch(
+        "SELECT l.provider, "
+        "COALESCE(SUM(l.cost_usd), 0) as cost_usd, "
+        "COUNT(*) as call_count "
+        "FROM staging.hub_ai_logs l "
+        "WHERE l.created_at >= $1 "
+        "GROUP BY l.provider ORDER BY cost_usd DESC",
+        datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
+    )
+
+    top_orgs = await pool.fetch(
+        "SELECT o.id as org_id, o.name as org_name, "
+        "COALESCE(ai.cost, 0) as ai_cost_usd, "
+        "COALESCE(sc.cost, 0) as scraper_cost_usd, "
+        "COALESCE(ai.cost, 0) + COALESCE(sc.cost, 0) as total_cost_usd "
+        "FROM staging.organisations o "
+        "LEFT JOIN LATERAL ("
+        "  SELECT SUM(l.cost_usd) as cost "
+        "  FROM staging.hub_ai_logs l "
+        "  JOIN staging.hub_clients c ON c.id = l.client_id "
+        "  WHERE c.org_id = o.id AND l.created_at >= $1"
+        ") ai ON TRUE "
+        "LEFT JOIN LATERAL ("
+        "  SELECT SUM(r.cost_usd) as cost "
+        "  FROM staging.hub_scraper_runs r "
+        "  WHERE r.org_id = o.id AND r.created_at >= $1"
+        ") sc ON TRUE "
+        "WHERE o.is_active=TRUE "
+        "ORDER BY total_cost_usd DESC NULLS LAST "
+        "LIMIT 10",
+        datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
+    )
+
+    return {
+        "period": period,
+        "total_orgs": total_orgs,
+        "total_users": total_users,
+        "total_revenue_inr": float(total_revenue_inr),
+        "total_ai_cost_usd": float(ai_stats["total_cost"]),
+        "total_scraper_cost_usd": float(total_scraper_cost),
+        "total_ai_calls": ai_stats["total_calls"],
+        "ai_cost_by_provider": [
+            {"provider": r["provider"], "cost_usd": float(r["cost_usd"]),
+             "call_count": r["call_count"]}
+            for r in by_provider
+        ],
+        "top_orgs_by_spend": [
+            {"org_id": str(r["org_id"]), "org_name": r["org_name"],
+             "ai_cost_usd": float(r["ai_cost_usd"]),
+             "scraper_cost_usd": float(r["scraper_cost_usd"]),
+             "total_cost_usd": float(r["total_cost_usd"])}
+            for r in top_orgs
+        ],
+    }
+
+
+@router.get("/cost-summary")
+async def all_orgs_cost_summary(
+    period: str = "30d",
+    user=Depends(require_platform_role("platform_admin", "account_finance")),
+):
+    """All orgs cost summary table for admin cost dashboard."""
+    pool = await get_pool()
+    start = _period_start(period)
+    cutoff = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
+
+    rows = await pool.fetch(
+        "SELECT o.id as org_id, o.name as org_name, "
+        "p.name as plan_name, "
+        "COALESCE(ai.cost, 0) as ai_cost_usd, "
+        "COALESCE(ai.calls, 0) as ai_calls, "
+        "COALESCE(sc.cost, 0) as scraper_cost_usd, "
+        "COALESCE(ai.cost, 0) + COALESCE(sc.cost, 0) as total_cost_usd, "
+        "GREATEST(ai.last_at, sc.last_at) as last_active "
+        "FROM staging.organisations o "
+        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
+        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
+        "LEFT JOIN LATERAL ("
+        "  SELECT SUM(l.cost_usd) as cost, COUNT(*) as calls, "
+        "  MAX(l.created_at) as last_at "
+        "  FROM staging.hub_ai_logs l "
+        "  JOIN staging.hub_clients c ON c.id = l.client_id "
+        "  WHERE c.org_id = o.id AND l.created_at >= $1"
+        ") ai ON TRUE "
+        "LEFT JOIN LATERAL ("
+        "  SELECT SUM(r.cost_usd) as cost, MAX(r.created_at) as last_at "
+        "  FROM staging.hub_scraper_runs r "
+        "  WHERE r.org_id = o.id AND r.created_at >= $1"
+        ") sc ON TRUE "
+        "WHERE o.is_active=TRUE "
+        "ORDER BY total_cost_usd DESC NULLS LAST",
+        cutoff,
+    )
+
+    return {
+        "period": period,
+        "data": [
+            {
+                "org_id": str(r["org_id"]),
+                "org_name": r["org_name"],
+                "plan_name": r["plan_name"],
+                "ai_cost_usd": float(r["ai_cost_usd"]),
+                "scraper_cost_usd": float(r["scraper_cost_usd"]),
+                "total_cost_usd": float(r["total_cost_usd"]),
+                "ai_calls": r["ai_calls"],
+                "last_active": r["last_active"].isoformat() if r["last_active"] else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/provider-costs")
+async def provider_costs(
+    user=Depends(require_platform_role("platform_admin", "account_finance")),
+):
+    """Real-time costs from provider accounts for reconciliation against tracked spend."""
+    pool = await get_pool()
+
+    # Tracked totals from internal logs (all-time)
+    ai_by_provider = await pool.fetch(
+        "SELECT provider, COALESCE(SUM(cost_usd), 0) as total "
+        "FROM staging.hub_ai_logs GROUP BY provider"
+    )
+    tracked_ai = {r["provider"]: float(r["total"]) for r in ai_by_provider}
+
+    tracked_scraper = await pool.fetchval(
+        "SELECT COALESCE(SUM(cost_usd), 0) FROM staging.hub_scraper_runs"
+    ) or 0
+
+    # Map internal provider names to reconciliation buckets
+    tracked_openrouter = sum(
+        v for k, v in tracked_ai.items()
+        if k in ("openrouter", "gemini_lite_or", "glm", "qwen_flash",
+                  "qwen_plus", "gemini_flash_or", "gemini_pro_or")
+    )
+    tracked_hf = tracked_ai.get("huggingface", 0)
+
+    tracked_totals = {
+        "openrouter": round(tracked_openrouter, 6),
+        "apify": round(float(tracked_scraper), 6),
+        "huggingface": round(tracked_hf, 6),
+    }
+
+    # Fetch real provider costs
+    providers = await get_all_provider_costs()
+
+    # Compute discrepancies where provider data is available
+    discrepancy = {}
+    for key in ("openrouter", "apify", "huggingface"):
+        provider_data = providers.get(key, {})
+        if "error" in provider_data:
+            discrepancy[key] = None
+        else:
+            provider_total = provider_data.get("total_spend_usd", 0)
+            discrepancy[key] = round(provider_total - tracked_totals[key], 6)
+
+    return {
+        "providers": providers,
+        "tracked_totals": tracked_totals,
+        "discrepancy": discrepancy,
+    }
 
 
 @router.get("/{org_id}")
@@ -619,167 +836,7 @@ async def get_storage_usage(
     }
 
 
-# ── Cost Aggregation ───────────────────────────────────────
-
-def _period_start(period: str) -> date:
-    """Convert period string to a start date."""
-    today = date.today()
-    if period == "7d":
-        return today - timedelta(days=7)
-    if period == "90d":
-        return today - timedelta(days=90)
-    if period == "ytd":
-        return date(today.year, 1, 1)
-    return today - timedelta(days=30)  # default 30d
-
-
-@router.get("/platform-analytics")
-async def platform_analytics(
-    period: str = "30d",
-    user=Depends(require_platform_role("platform_admin", "account_finance")),
-):
-    """Platform-wide KPIs for Aekam super-admin dashboard."""
-    pool = await get_pool()
-    start = _period_start(period)
-
-    total_orgs = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.organisations WHERE is_active=TRUE"
-    )
-    total_users = await pool.fetchval(
-        "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
-        "WHERE org_id IS NOT NULL"
-    )
-
-    total_revenue_inr = await pool.fetchval(
-        "SELECT COALESCE(SUM(total), 0) FROM staging.subscription_invoices "
-        "WHERE payment_status='paid' AND paid_at >= $1",
-        datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
-    ) or 0
-
-    ai_stats = await pool.fetchrow(
-        "SELECT COALESCE(SUM(l.cost_usd), 0) as total_cost, COUNT(*) as total_calls "
-        "FROM staging.hub_ai_logs l "
-        "WHERE l.created_at >= $1",
-        datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
-    )
-
-    total_scraper_cost = await pool.fetchval(
-        "SELECT COALESCE(SUM(cost_usd), 0) FROM staging.hub_scraper_runs "
-        "WHERE created_at >= $1",
-        datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
-    ) or 0
-
-    by_provider = await pool.fetch(
-        "SELECT l.provider, "
-        "COALESCE(SUM(l.cost_usd), 0) as cost_usd, "
-        "COUNT(*) as call_count "
-        "FROM staging.hub_ai_logs l "
-        "WHERE l.created_at >= $1 "
-        "GROUP BY l.provider ORDER BY cost_usd DESC",
-        datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
-    )
-
-    top_orgs = await pool.fetch(
-        "SELECT o.id as org_id, o.name as org_name, "
-        "COALESCE(ai.cost, 0) as ai_cost_usd, "
-        "COALESCE(sc.cost, 0) as scraper_cost_usd, "
-        "COALESCE(ai.cost, 0) + COALESCE(sc.cost, 0) as total_cost_usd "
-        "FROM staging.organisations o "
-        "LEFT JOIN LATERAL ("
-        "  SELECT SUM(l.cost_usd) as cost "
-        "  FROM staging.hub_ai_logs l "
-        "  JOIN staging.hub_clients c ON c.id = l.client_id "
-        "  WHERE c.org_id = o.id AND l.created_at >= $1"
-        ") ai ON TRUE "
-        "LEFT JOIN LATERAL ("
-        "  SELECT SUM(r.cost_usd) as cost "
-        "  FROM staging.hub_scraper_runs r "
-        "  WHERE r.org_id = o.id AND r.created_at >= $1"
-        ") sc ON TRUE "
-        "WHERE o.is_active=TRUE "
-        "ORDER BY total_cost_usd DESC NULLS LAST "
-        "LIMIT 10",
-        datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
-    )
-
-    return {
-        "period": period,
-        "total_orgs": total_orgs,
-        "total_users": total_users,
-        "total_revenue_inr": float(total_revenue_inr),
-        "total_ai_cost_usd": float(ai_stats["total_cost"]),
-        "total_scraper_cost_usd": float(total_scraper_cost),
-        "total_ai_calls": ai_stats["total_calls"],
-        "ai_cost_by_provider": [
-            {"provider": r["provider"], "cost_usd": float(r["cost_usd"]),
-             "call_count": r["call_count"]}
-            for r in by_provider
-        ],
-        "top_orgs_by_spend": [
-            {"org_id": str(r["org_id"]), "org_name": r["org_name"],
-             "ai_cost_usd": float(r["ai_cost_usd"]),
-             "scraper_cost_usd": float(r["scraper_cost_usd"]),
-             "total_cost_usd": float(r["total_cost_usd"])}
-            for r in top_orgs
-        ],
-    }
-
-
-@router.get("/cost-summary")
-async def all_orgs_cost_summary(
-    period: str = "30d",
-    user=Depends(require_platform_role("platform_admin", "account_finance")),
-):
-    """All orgs cost summary table for admin cost dashboard."""
-    pool = await get_pool()
-    start = _period_start(period)
-    cutoff = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
-
-    rows = await pool.fetch(
-        "SELECT o.id as org_id, o.name as org_name, "
-        "p.name as plan_name, "
-        "COALESCE(ai.cost, 0) as ai_cost_usd, "
-        "COALESCE(ai.calls, 0) as ai_calls, "
-        "COALESCE(sc.cost, 0) as scraper_cost_usd, "
-        "COALESCE(ai.cost, 0) + COALESCE(sc.cost, 0) as total_cost_usd, "
-        "GREATEST(ai.last_at, sc.last_at) as last_active "
-        "FROM staging.organisations o "
-        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
-        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
-        "LEFT JOIN LATERAL ("
-        "  SELECT SUM(l.cost_usd) as cost, COUNT(*) as calls, "
-        "  MAX(l.created_at) as last_at "
-        "  FROM staging.hub_ai_logs l "
-        "  JOIN staging.hub_clients c ON c.id = l.client_id "
-        "  WHERE c.org_id = o.id AND l.created_at >= $1"
-        ") ai ON TRUE "
-        "LEFT JOIN LATERAL ("
-        "  SELECT SUM(r.cost_usd) as cost, MAX(r.created_at) as last_at "
-        "  FROM staging.hub_scraper_runs r "
-        "  WHERE r.org_id = o.id AND r.created_at >= $1"
-        ") sc ON TRUE "
-        "WHERE o.is_active=TRUE "
-        "ORDER BY total_cost_usd DESC NULLS LAST",
-        cutoff,
-    )
-
-    return {
-        "period": period,
-        "data": [
-            {
-                "org_id": str(r["org_id"]),
-                "org_name": r["org_name"],
-                "plan_name": r["plan_name"],
-                "ai_cost_usd": float(r["ai_cost_usd"]),
-                "scraper_cost_usd": float(r["scraper_cost_usd"]),
-                "total_cost_usd": float(r["total_cost_usd"]),
-                "ai_calls": r["ai_calls"],
-                "last_active": r["last_active"].isoformat() if r["last_active"] else None,
-            }
-            for r in rows
-        ],
-    }
-
+# ── Cost Aggregation (per-org) ─────────────────────────────
 
 @router.get("/{org_id}/cost-breakdown")
 async def org_cost_breakdown(
