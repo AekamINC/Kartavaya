@@ -28,6 +28,48 @@ function Card({ title, children, style }) {
   );
 }
 
+function CreditUsage() {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    api.get('/v1/subscription/cost-report?period=30d')
+      .then(r => setData(r.data))
+      .catch(() => {});
+  }, []);
+  if (!data) return null;
+  const pct = data.plan_credits > 0 ? Math.min(100, Math.round((data.total_credits_used / data.plan_credits) * 100)) : 0;
+  return (
+    <Card title="Credit Usage — This Month" style={{ marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Plan Credits</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)' }}>{data.plan_credits}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Used</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: data.is_over_plan ? '#ef4444' : 'var(--ink)' }}>{data.total_credits_used}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Balance</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: data.current_balance <= 0 ? '#ef4444' : '#10b981' }}>{data.current_balance}</div>
+        </div>
+        {data.overage_credits > 0 && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '.06em' }}>Overage (Chargeable)</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: '#ef4444' }}>{data.overage_credits}</div>
+          </div>
+        )}
+      </div>
+      <div style={{ background: 'var(--bg-soft)', borderRadius: 6, height: 8, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: pct >= 100 ? '#ef4444' : 'var(--k-primary)', borderRadius: 6, transition: 'width 0.3s' }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-3)', marginTop: 6 }}>
+        <span>AI: {data.ai_credits_used} · Scraper: {data.scraper_credits_used}</span>
+        <span>{pct}% used</span>
+      </div>
+    </Card>
+  );
+}
+
 export default function BillingPage() {
   const { pushToast } = useToast();
   const [sub, setSub] = useState(null);
@@ -95,10 +137,13 @@ export default function BillingPage() {
         )}
       </Card>
 
-      {/* Cost report download */}
+      {/* Credit usage */}
+      <CreditUsage />
+
+      {/* Usage report download */}
       <Card title="Usage Report" style={{ marginBottom: 24 }}>
         <p style={{ color: 'var(--ink-3)', fontSize: 13, margin: '0 0 12px' }}>
-          Download a detailed report of your AI and data service charges.
+          Download a detailed credit usage report for your records.
         </p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {['7d', '30d', '90d', 'ytd'].map(p => (

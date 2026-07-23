@@ -163,3 +163,120 @@ td {{ padding: 5px 8px; border-bottom: 1px solid {_RULE_SOFT}; font-size: 10.5px
     except Exception as e:
         log.error("cost_report_pdf generation failed: %s", e)
         raise
+
+
+def generate_credit_report_pdf(data: dict) -> bytes:
+    """Client-facing credit usage report. No money disclosed — credits only."""
+    org_name = data.get("org_name", "Organisation")
+    plan = data.get("plan_name", "Free")
+    p_start = data.get("period_start", "")
+    p_end = data.get("period_end", "")
+    plan_credits = data.get("plan_credits", 0)
+    balance = data.get("current_balance", 0)
+    ai_used = data.get("ai_credits_used", 0)
+    scraper_used = data.get("scraper_credits_used", 0)
+    total_used = data.get("total_credits_used", 0)
+    overage = data.get("overage_credits", 0)
+    sig_name = data.get("signatory_name", "")
+    sig_desg = data.get("signatory_designation", "")
+
+    overage_row = ""
+    if overage > 0:
+        overage_row = f"""
+        <tr style="color:#ef4444">
+            <td style="font-weight:700">Overage Credits (Chargeable)</td>
+            <td style="text-align:right;font-family:{_FONT_MONO};font-weight:700">{overage}</td>
+        </tr>"""
+
+    sig_block = ""
+    if sig_name:
+        sig_block = f"""
+        <div style="margin-top:40px;text-align:right;">
+            <div style="font-size:11px;color:{_INK3};margin-bottom:24px;">Authorized by</div>
+            <div style="font-weight:600;color:{_INK}">{sig_name}</div>
+            <div style="font-size:10px;color:{_INK2}">{sig_desg}</div>
+        </div>"""
+
+    html_str = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+@page {{ size: A4; margin: 20mm 18mm; }}
+body {{ font-family: {_FONT_UI}; font-size: 11px; color: {_INK}; }}
+.header {{ display: flex; justify-content: space-between; align-items: flex-start;
+           border-bottom: 2px solid {_TEAL}; padding-bottom: 12px; margin-bottom: 20px; }}
+.header h1 {{ font-family: {_FONT_DISP}; font-size: 20px; margin: 0; color: {_INK}; }}
+.header .sub {{ font-size: 10px; color: {_INK3}; }}
+.meta {{ display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; margin-bottom: 20px;
+         background: {_BG_SOFT}; padding: 12px 16px; border-radius: 6px; font-size: 10px; }}
+.meta dt {{ font-weight: 600; color: {_INK2}; }}
+.meta dd {{ margin: 0; font-family: {_FONT_MONO}; }}
+.summary {{ background: {_SURFACE}; border: 1px solid {_RULE}; border-radius: 6px;
+            padding: 16px; margin-top: 20px; }}
+.summary table {{ width: 100%; border-collapse: collapse; }}
+.summary table td {{ border: none; padding: 6px 8px; font-size: 11px; }}
+.grand {{ font-family: {_FONT_DISP}; font-size: 18px; font-weight: 700; color: {_TEAL}; }}
+.footer {{ margin-top: 24px; font-size: 9px; color: {_INK3};
+           border-top: 1px solid {_RULE}; padding-top: 8px; text-align: center; }}
+</style></head><body>
+
+<div class="header">
+    <div>
+        <h1>Credit Usage Report</h1>
+        <div class="sub">क्रेडिट उपयोग प्रतिवेदन</div>
+    </div>
+    <div style="text-align:right">
+        <div style="font-weight:600">{org_name}</div>
+        <div class="sub">Generated {date.today().strftime('%d %b %Y')}</div>
+    </div>
+</div>
+
+<dl class="meta">
+    <dt>Organisation</dt><dd>{org_name}</dd>
+    <dt>Plan</dt><dd>{plan}</dd>
+    <dt>Report Period</dt><dd>{p_start} to {p_end}</dd>
+    <dt>Plan Credits (Monthly)</dt><dd>{plan_credits}</dd>
+</dl>
+
+<div class="summary">
+    <table>
+        <tr>
+            <td>Plan Credits (Monthly Allowance)</td>
+            <td style="text-align:right;font-family:{_FONT_MONO};font-weight:600">{plan_credits}</td>
+        </tr>
+        <tr>
+            <td>AI Credits Used</td>
+            <td style="text-align:right;font-family:{_FONT_MONO}">{ai_used}</td>
+        </tr>
+        <tr>
+            <td>Data & Scraper Credits Used</td>
+            <td style="text-align:right;font-family:{_FONT_MONO}">{scraper_used}</td>
+        </tr>
+        <tr><td colspan="2" style="border-top:1px solid {_RULE}"></td></tr>
+        <tr>
+            <td style="font-weight:700">Total Credits Used</td>
+            <td class="grand" style="text-align:right;font-family:{_FONT_MONO}">{total_used}</td>
+        </tr>
+        {overage_row}
+        <tr><td colspan="2" style="border-top:1px solid {_RULE}"></td></tr>
+        <tr>
+            <td>Current Balance</td>
+            <td style="text-align:right;font-family:{_FONT_MONO};font-weight:600;color:{'#ef4444' if balance <= 0 else _TEAL}">{balance}</td>
+        </tr>
+    </table>
+</div>
+
+{sig_block}
+
+<div class="footer">
+    Kartavaya by Aekam Inc &middot; System-generated credit usage report &middot;
+    Credits reset monthly per plan &middot; Overage credits are billed separately
+</div>
+
+</body></html>"""
+
+    try:
+        from weasyprint import HTML
+        return HTML(string=html_str).write_pdf()
+    except Exception as e:
+        log.error("credit_report_pdf generation failed: %s", e)
+        raise
