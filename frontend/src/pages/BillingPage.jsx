@@ -95,27 +95,7 @@ export default function BillingPage() {
         )}
       </Card>
 
-      {/* Available plans */}
-      <Card title="Available Plans" style={{ marginBottom: 24 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
-          {plans.map(p => (
-            <div key={p.id} style={{ border: '1px solid var(--rule-soft)', borderRadius: 10, padding: 16,
-              background: p.code === sub?.plan_code ? 'var(--k-primary-ghost)' : 'transparent' }}>
-              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{p.name}</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--k-primary)', marginBottom: 8 }}>
-                ₹{p.price_monthly?.toLocaleString('en-IN') || '0'}<span style={{ fontSize: 12, fontWeight: 400, color: 'var(--ink-3)' }}>/mo</span>
-              </div>
-              <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>Up to {p.max_users} users</div>
-              {p.code === sub?.plan_code && (
-                <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700, color: 'var(--k-primary)' }}>CURRENT PLAN</div>
-              )}
-            </div>
-          ))}
-        </div>
-        <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 12 }}>
-          To change your plan, contact your administrator.
-        </p>
-      </Card>
+      {/* Plan info — pricing hidden from clients */}
 
       {/* Invoice history */}
       <Card title="Invoice History">
