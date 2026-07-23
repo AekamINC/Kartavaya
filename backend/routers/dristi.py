@@ -4,7 +4,12 @@ Cross-module KPIs, trends, and saved dashboards.
 Reads from all modules: Graha, Ganit, Manav, Vikray, Vetana, tasks.
 """
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time as _dt_time, timedelta, timezone
+
+
+def _parse_time(s: str) -> _dt_time:
+    parts = s.split(":")
+    return _dt_time(int(parts[0]), int(parts[1]))
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -539,11 +544,11 @@ async def create_scheduled_report(
         "INSERT INTO staging.dristi_scheduled_reports "
         "(org_id, dashboard_id, name, report_type, frequency, day_of_week, "
         " day_of_month, time_utc, file_formats, recipients, filters, created_by) "
-        "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, $4, $5, $6, $7, $8::time, $9, $10, $11::jsonb, $12) "
+        "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12) "
         "RETURNING id, name",
         org_id, body.dashboard_id or "", body.name, body.report_type,
         body.frequency, body.day_of_week, body.day_of_month,
-        body.time_utc, body.file_formats, body.recipients,
+        _parse_time(body.time_utc), body.file_formats, body.recipients,
         json.dumps(body.filters), user["user_id"],
     )
     return {"status": "created", **dict(row)}
