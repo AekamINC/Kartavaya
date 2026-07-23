@@ -638,16 +638,52 @@ async def deduct_credits(client_id: str, agent_type: str, user_id: str = None) -
     return new_balance
 
 
+async def _maybe_reset_monthly_credits(conn, org_id: str):
+    """Reset credits to plan default if we've crossed into a new month. No carry-over."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    wallet = await conn.fetchrow(
+        "SELECT credits_reset_at FROM staging.hub_org_credits WHERE org_id=$1::uuid",
+        org_id,
+    )
+    if not wallet or not wallet["credits_reset_at"]:
+        return
+    last_reset = wallet["credits_reset_at"]
+    if last_reset.year == now.year and last_reset.month == now.month:
+        return
+    plan_credits = await conn.fetchval(
+        "SELECT p.default_credits FROM staging.plans p "
+        "JOIN staging.subscriptions s ON s.plan_id = p.id "
+        "WHERE s.org_id=$1::uuid AND s.status='active' LIMIT 1",
+        org_id,
+    )
+    if not plan_credits:
+        return
+    await conn.execute(
+        "UPDATE staging.hub_org_credits SET balance=$1, credits_reset_at=NOW(), updated_at=NOW() "
+        "WHERE org_id=$2::uuid",
+        plan_credits, org_id,
+    )
+    await conn.execute(
+        "INSERT INTO staging.hub_org_credit_transactions "
+        "(org_id, amount, balance_after, tx_type, description) "
+        "VALUES ($1::uuid, $2, $2, 'reset', 'Monthly credit reset')",
+        org_id, plan_credits,
+    )
+
+
 async def deduct_org_credits(org_id: str, user_id: str, agent_type: str, description: str = "") -> int:
     """Deduct credits from org wallet + user allocation. Returns new org balance.
-    Checks user allocation first, then deducts from org wallet."""
+    Checks user allocation first, then deducts from org wallet.
+    Auto-resets credits at month boundary (no carry-over)."""
     cost = CREDIT_COSTS.get(agent_type, 2)
     pool = await get_pool()
     from fastapi import HTTPException
 
     async with pool.acquire() as conn:
         async with conn.transaction():
-            # Check user allocation
+            await _maybe_reset_monthly_credits(conn, org_id)
+
             user_wallet = await conn.fetchrow(
                 "SELECT allocated, used FROM staging.hub_user_credits "
                 "WHERE org_id=$1::uuid AND user_id=$2 FOR UPDATE",
@@ -663,16 +699,15 @@ async def deduct_org_credits(org_id: str, user_id: str, agent_type: str, descrip
                     cost, org_id, user_id,
                 )
 
-            # Deduct from org wallet
             org_wallet = await conn.fetchrow(
                 "SELECT balance FROM staging.hub_org_credits "
                 "WHERE org_id=$1::uuid FOR UPDATE",
                 org_id,
             )
             if not org_wallet:
-                raise HTTPException(404, "Org credit wallet not found")
+                raise HTTPException(402, "No credit wallet — contact your admin to activate credits")
             if org_wallet["balance"] < cost:
-                raise HTTPException(402, f"Org has insufficient credits. Need {cost}, have {org_wallet['balance']}")
+                raise HTTPException(402, f"Credits exhausted. Contact Aekam to top up. Need {cost}, have {org_wallet['balance']}")
 
             new_balance = org_wallet["balance"] - cost
             await conn.execute(

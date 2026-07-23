@@ -65,6 +65,38 @@ async def run_scraper(
         if not scraper:
             raise HTTPException(404, "Scraper not found")
 
+        # Check & deduct org credits before running
+        credit_cost = scraper.get("credit_cost") or 2
+        org_wallet = await pool.fetchrow(
+            "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid",
+            org_id,
+        )
+        if not org_wallet or org_wallet["balance"] < credit_cost:
+            bal = org_wallet["balance"] if org_wallet else 0
+            raise HTTPException(402, f"Insufficient credits. Need {credit_cost}, have {bal}. Contact Aekam to top up.")
+        from services.ai_router import _maybe_reset_monthly_credits
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await _maybe_reset_monthly_credits(conn, org_id)
+                wallet = await conn.fetchrow(
+                    "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid FOR UPDATE",
+                    org_id,
+                )
+                if wallet["balance"] < credit_cost:
+                    raise HTTPException(402, f"Insufficient credits. Need {credit_cost}, have {wallet['balance']}")
+                new_bal = wallet["balance"] - credit_cost
+                await conn.execute(
+                    "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() WHERE org_id=$2::uuid",
+                    new_bal, org_id,
+                )
+                await conn.execute(
+                    "INSERT INTO staging.hub_org_credit_transactions "
+                    "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
+                    "VALUES ($1::uuid, $2, $3, $4, 'debit', $5, $2)",
+                    org_id, user["user_id"], -credit_cost, new_bal,
+                    f"scraper:{body.scraper_id}",
+                )
+
         # Build Apify input from schema + user inputs
         actor_input = {}
         schema = scraper["input_schema"]

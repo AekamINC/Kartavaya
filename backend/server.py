@@ -2417,6 +2417,17 @@ async def _run_startup_migrations():
         # AI logs org_id column (migration 053)
         await pool.execute("ALTER TABLE staging.hub_ai_logs ADD COLUMN IF NOT EXISTS org_id UUID")
         await pool.execute("CREATE INDEX IF NOT EXISTS idx_hub_ai_logs_org_id ON staging.hub_ai_logs(org_id)")
+        # Per-org markup percentage (migration 054)
+        await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS markup_pct NUMERIC(5,4) NOT NULL DEFAULT 0.30")
+        # Plan default credits & monthly reset tracking (migration 055)
+        await pool.execute("ALTER TABLE staging.plans ADD COLUMN IF NOT EXISTS default_credits INTEGER NOT NULL DEFAULT 0")
+        await pool.execute("ALTER TABLE staging.hub_org_credits ADD COLUMN IF NOT EXISTS credits_reset_at TIMESTAMPTZ DEFAULT NOW()")
+        await pool.execute("ALTER TABLE staging.hub_scraper_catalog ADD COLUMN IF NOT EXISTS credit_cost INTEGER NOT NULL DEFAULT 2")
+        await pool.execute("UPDATE staging.hub_scraper_catalog SET credit_cost = CASE WHEN cost_per_run <= 0.05 THEN 1 WHEN cost_per_run <= 0.15 THEN 2 WHEN cost_per_run <= 0.25 THEN 3 ELSE 5 END WHERE credit_cost = 2")
+        await pool.execute("UPDATE staging.plans SET default_credits=200 WHERE code='free' AND default_credits=0")
+        await pool.execute("UPDATE staging.plans SET default_credits=500 WHERE code='professional' AND default_credits=0")
+        await pool.execute("UPDATE staging.plans SET default_credits=1000 WHERE code='business' AND default_credits=0")
+        await pool.execute("UPDATE staging.plans SET default_credits=2000 WHERE code='enterprise' AND default_credits=0")
         # Ensure all users with role='admin' have platform_admin in user_roles
         await pool.execute("""
             INSERT INTO staging.user_roles (user_id, org_id, role_code)

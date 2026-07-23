@@ -102,7 +102,7 @@ async def create_org(
         raise HTTPException(409, "An organisation already exists for this team")
 
     plan = await pool.fetchrow(
-        "SELECT id, code FROM staging.plans WHERE code=$1 AND is_active=TRUE",
+        "SELECT id, code, default_credits FROM staging.plans WHERE code=$1 AND is_active=TRUE",
         body.plan_code,
     )
     if not plan:
@@ -135,6 +135,20 @@ async def create_org(
         "VALUES ($1, $2, 'active')",
         org_id, plan["id"],
     )
+
+    default_credits = plan["default_credits"] or 0
+    if default_credits > 0:
+        await pool.execute(
+            "INSERT INTO staging.hub_org_credits (org_id, balance, credits_reset_at) "
+            "VALUES ($1, $2, NOW())",
+            org_id, default_credits,
+        )
+        await pool.execute(
+            "INSERT INTO staging.hub_org_credit_transactions "
+            "(org_id, amount, balance_after, tx_type, description, created_by) "
+            "VALUES ($1, $2, $2, 'topup', 'Plan default credits', $3)",
+            org_id, default_credits, user["user_id"],
+        )
 
     await pool.execute(
         "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
@@ -1129,6 +1143,129 @@ async def admin_org_cost_report_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── Credit Management ──────────────────────────────────────
+
+@router.post("/{org_id}/credits/topup")
+async def admin_topup_credits(
+    org_id: str,
+    body: dict,
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
+):
+    """Aekam tops up org credits. Preset or custom amount."""
+    pool = await get_pool()
+    amount = body.get("amount")
+    if not amount or int(amount) <= 0:
+        raise HTTPException(400, "amount must be a positive integer")
+    amount = int(amount)
+    notes = body.get("notes", "")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            wallet = await conn.fetchrow(
+                "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid FOR UPDATE",
+                org_id,
+            )
+            if not wallet:
+                await conn.execute(
+                    "INSERT INTO staging.hub_org_credits (org_id, balance) VALUES ($1::uuid, 0)",
+                    org_id,
+                )
+                wallet = {"balance": 0}
+            new_balance = wallet["balance"] + amount
+            await conn.execute(
+                "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() WHERE org_id=$2::uuid",
+                new_balance, org_id,
+            )
+            await conn.execute(
+                "INSERT INTO staging.hub_org_credit_transactions "
+                "(org_id, amount, balance_after, tx_type, description, created_by) "
+                "VALUES ($1::uuid, $2, $3, 'topup', $4, $5)",
+                org_id, amount, new_balance,
+                notes or f"Admin top-up: {amount} credits",
+                user["user_id"],
+            )
+    return {"balance": new_balance, "added": amount}
+
+
+@router.get("/{org_id}/credits/usage")
+async def admin_credit_usage(
+    org_id: str,
+    start_date: str = None,
+    end_date: str = None,
+    user=Depends(require_platform_role("platform_admin", "account_manager", "account_finance")),
+):
+    """Credit usage report for an org. Date range filter."""
+    pool = await get_pool()
+    if not start_date:
+        s = date.today().replace(day=1)
+    else:
+        s = date.fromisoformat(start_date)
+    if not end_date:
+        e = date.today()
+    else:
+        e = date.fromisoformat(end_date)
+
+    cutoff_start = datetime.combine(s, datetime.min.time(), tzinfo=timezone.utc)
+    cutoff_end = datetime.combine(e + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
+
+    org = await pool.fetchrow(
+        "SELECT o.name, p.name as plan_name, p.default_credits "
+        "FROM staging.organisations o "
+        "LEFT JOIN staging.subscriptions sub ON sub.org_id = o.id "
+        "LEFT JOIN staging.plans p ON p.id = sub.plan_id "
+        "WHERE o.id=$1::uuid", org_id,
+    )
+    wallet = await pool.fetchrow(
+        "SELECT balance, credits_reset_at FROM staging.hub_org_credits WHERE org_id=$1::uuid",
+        org_id,
+    )
+
+    transactions = await pool.fetch(
+        "SELECT id, user_id, amount, balance_after, tx_type, description, created_at "
+        "FROM staging.hub_org_credit_transactions "
+        "WHERE org_id=$1::uuid AND created_at >= $2 AND created_at < $3 "
+        "ORDER BY created_at DESC",
+        org_id, cutoff_start, cutoff_end,
+    )
+
+    total_debits = sum(abs(r["amount"]) for r in transactions if r["tx_type"] == "debit")
+    total_topups = sum(r["amount"] for r in transactions if r["tx_type"] == "topup")
+    total_resets = sum(r["amount"] for r in transactions if r["tx_type"] == "reset")
+
+    by_type = {}
+    for r in transactions:
+        if r["tx_type"] == "debit" and r["description"]:
+            key = r["description"].replace(" generation", "")
+            by_type[key] = by_type.get(key, 0) + abs(r["amount"])
+
+    return {
+        "org_id": org_id,
+        "org_name": org["name"] if org else "",
+        "plan_name": org["plan_name"] if org else "Free",
+        "plan_default_credits": org["default_credits"] if org else 0,
+        "current_balance": wallet["balance"] if wallet else 0,
+        "last_reset": wallet["credits_reset_at"].isoformat() if wallet and wallet["credits_reset_at"] else None,
+        "period_start": s.isoformat(),
+        "period_end": e.isoformat(),
+        "total_debits": total_debits,
+        "total_topups": total_topups,
+        "total_resets": total_resets,
+        "usage_by_type": by_type,
+        "transactions": [
+            {
+                "id": str(r["id"]),
+                "user_id": r["user_id"],
+                "amount": r["amount"],
+                "balance_after": r["balance_after"],
+                "type": r["tx_type"],
+                "description": r["description"],
+                "created_at": r["created_at"].isoformat(),
+            }
+            for r in transactions
+        ],
+    }
 
 
 # ── Helpers ─────────────────────────────────────────────────

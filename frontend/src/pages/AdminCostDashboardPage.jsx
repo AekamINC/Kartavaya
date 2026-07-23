@@ -78,7 +78,7 @@ function PlatformOverview({ period }) {
         <StatTile label="Total AI Calls" value={fmtNum(data.total_ai_calls)} />
       </div>
 
-      <Section title={`Cost Summary · Markup ${fmtPct(data.markup_pct)} · ₹${data.usd_to_inr || 85}/USD`}>
+      <Section title={`Cost Summary · Default Markup ${fmtPct(data.default_markup_pct || data.markup_pct)} · Live Rate ₹${data.usd_to_inr ? data.usd_to_inr.toFixed(2) : '85.00'}/USD`}>
         <DataTable columns={['Category', 'Aekam Cost (USD)', 'Aekam Cost (INR)', 'Client Charge (INR)']}>
           <tr>
             <Td bold>AI Services</Td>
@@ -286,11 +286,40 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
         </DataTable>
       </Section>
 
-      <div className="k-stats">
-        <StatTile label="Credit Balance" value={fmtNum(data.credit_balance)} />
-        <StatTile label="Org Credits" value={fmtNum(data.org_credits_balance)} />
-        <StatTile label="Credits Used" value={fmtNum(data.credits_used_period)} />
-      </div>
+      <Section title="Credits">
+        <div className="k-stats" style={{ marginBottom: 16 }}>
+          <StatTile label="Current Balance" value={fmtNum(data.org_credits_balance)} />
+          <StatTile label="Used This Period" value={fmtNum(data.credits_used_period)} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>Top Up:</span>
+          {[100, 200, 500, 1000].map(amt => (
+            <button key={amt} className="k-btn k-btn--sm k-btn--ghost"
+              onClick={async () => {
+                try {
+                  const res = await api.post(`/v1/admin/orgs/${orgId}/credits/topup`, { amount: amt });
+                  pushToast({ type: 'success', title: `+${amt} credits added. Balance: ${res.data.balance}` });
+                  setData(d => ({ ...d, org_credits_balance: res.data.balance }));
+                } catch (e) { pushToast({ type: 'error', title: e?.response?.data?.detail || 'Top-up failed' }); }
+              }}>
+              +{amt}
+            </button>
+          ))}
+          <input className="k-input" type="number" min="1" placeholder="Custom"
+            style={{ width: 80, fontSize: 12 }}
+            onKeyDown={async e => {
+              if (e.key === 'Enter' && e.target.value > 0) {
+                try {
+                  const res = await api.post(`/v1/admin/orgs/${orgId}/credits/topup`, { amount: Number(e.target.value) });
+                  pushToast({ type: 'success', title: `+${e.target.value} credits. Balance: ${res.data.balance}` });
+                  setData(d => ({ ...d, org_credits_balance: res.data.balance }));
+                  e.target.value = '';
+                } catch (err) { pushToast({ type: 'error', title: err?.response?.data?.detail || 'Top-up failed' }); }
+              }
+            }} />
+          <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Enter + press Enter</span>
+        </div>
+      </Section>
 
       {(data.per_client || []).length > 0 && (
         <Section title="Per-Client Breakdown">
