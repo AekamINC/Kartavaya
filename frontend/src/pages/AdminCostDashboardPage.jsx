@@ -68,7 +68,7 @@ function PlatformOverview({ period }) {
       </div>
 
       <Section title="Cost by Provider">
-        <DataTable heads={['Provider', 'Cost (USD)', 'Calls']}>
+        <DataTable columns={['Provider', 'Cost (USD)', 'Calls']}>
           {data.ai_cost_by_provider.map((r, i) => (
             <tr key={i}>
               <Td>{r.provider}</Td>
@@ -83,7 +83,7 @@ function PlatformOverview({ period }) {
       </Section>
 
       <Section title="Top Spenders">
-        <DataTable heads={['Organisation', 'AI Cost', 'Scraper Cost', 'Total']}>
+        <DataTable columns={['Organisation', 'AI Cost', 'Scraper Cost', 'Total']}>
           {data.top_orgs_by_spend.map((r, i) => (
             <tr key={i}>
               <Td>{r.org_name}</Td>
@@ -120,7 +120,7 @@ function AllOrgs({ period, onSelectOrg }) {
 
   return (
     <Section title="All Organisations">
-      <DataTable heads={['Org Name', 'Plan', 'AI Cost ($)', 'Scraper Cost ($)', 'Total ($)', 'AI Calls', 'Last Active']}>
+      <DataTable columns={['Org Name', 'Plan', 'AI Cost ($)', 'Scraper Cost ($)', 'Total ($)', 'AI Calls', 'Last Active']}>
         {data.map(r => (
           <tr key={r.org_id} onClick={() => onSelectOrg(r.org_id, r.org_name)}
             style={{ cursor: 'pointer' }}
@@ -182,7 +182,7 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
       </div>
 
       <Section title="AI Costs by Model">
-        <DataTable heads={['Provider', 'Model', 'Cost (USD)', 'Calls', 'Prompt Tokens', 'Completion Tokens']}>
+        <DataTable columns={['Provider', 'Model', 'Cost (USD)', 'Calls', 'Prompt Tokens', 'Completion Tokens']}>
           {data.ai_costs.map((r, i) => (
             <tr key={i}>
               <Td>{r.provider}</Td>
@@ -200,7 +200,7 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
       </Section>
 
       <Section title="Scraper Costs">
-        <DataTable heads={['Scraper', 'Cost (USD)', 'Billed (INR)', 'Runs']}>
+        <DataTable columns={['Scraper', 'Cost (USD)', 'Billed (INR)', 'Runs']}>
           {data.scraper_costs.map((r, i) => (
             <tr key={i}>
               <Td>{r.scraper_id}</Td>
