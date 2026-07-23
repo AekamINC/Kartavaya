@@ -65,29 +65,8 @@ async def get_org_id(request: Request, user=Depends(require_user)):
             request.state._org_id = org_id
             return org_id
 
-    # Legacy fallback: team_members → teams.org_id (excludes clients)
-    tm = await pool.fetchrow(
-        "SELECT t.org_id FROM team_members tm "
-        "JOIN teams t ON t.team_id = tm.team_id "
-        "WHERE tm.user_id=$1 AND tm.status='active' AND tm.role <> 'client' "
-        "AND t.org_id IS NOT NULL "
-        "ORDER BY tm.created_at LIMIT 1",
-        user["user_id"],
+    raise HTTPException(
+        403,
+        "You are not a member of any organisation. "
+        "Contact your administrator to be added.",
     )
-    if not tm or not tm["org_id"]:
-        raise HTTPException(403, "You are not a member of any organisation")
-
-    resolved_org = await pool.fetchval(
-        "SELECT id FROM staging.organisations WHERE id=$1 AND is_active=TRUE",
-        tm["org_id"],
-    )
-    if not resolved_org:
-        raise HTTPException(
-            403,
-            "No organisation is set up for your team yet. "
-            "Contact your administrator.",
-        )
-
-    org_id = str(resolved_org)
-    request.state._org_id = org_id
-    return org_id

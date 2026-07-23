@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Header
 
 from services.reminder_service import scan_and_create_reminders, process_pending_reminders
 from services.social_publisher import process_scheduled_posts
+from db import get_pool
 
 router = APIRouter(prefix="/api/internal", tags=["scheduler"])
 log = logging.getLogger(__name__)
@@ -39,3 +40,14 @@ async def run_publish(x_cron_secret: str = Header("")):
     result = await process_scheduled_posts()
     log.info("Cron publish: %s", result)
     return {"result": result}
+
+
+@router.post("/cron/retention", dependencies=[])
+async def run_retention(x_cron_secret: str = Header("")):
+    """Delete old log/activity data per retention policy. Called daily."""
+    await _verify_cron(x_cron_secret)
+    pool = await get_pool()
+    rows = await pool.fetch("SELECT * FROM staging.cleanup_old_data()")
+    cleaned = {r["table_name"]: r["rows_deleted"] for r in rows}
+    log.info("Cron retention: %s", cleaned or "nothing to clean")
+    return {"cleaned": cleaned}

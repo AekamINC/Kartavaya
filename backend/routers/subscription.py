@@ -104,9 +104,9 @@ async def get_current(user=Depends(require_user), org_id: str = Depends(get_org_
         org_id,
     )
     user_count = await pool.fetchval(
-        "SELECT COUNT(*) FROM team_members tm "
-        "JOIN staging.organisations o ON o.team_id = tm.team_id "
-        "WHERE o.id=$1::uuid AND tm.status='active'",
+        "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+        "WHERE org_id=$1::uuid "
+        "AND role_code IN ('org_owner','org_admin','org_member')",
         org_id,
     )
     return {
@@ -395,9 +395,9 @@ async def get_usage(user=Depends(require_user), org_id: str = Depends(get_org_id
         org_id,
     )
     user_count = await pool.fetchval(
-        "SELECT COUNT(*) FROM team_members tm "
-        "JOIN staging.organisations o ON o.team_id = tm.team_id "
-        "WHERE o.id=$1::uuid AND tm.status='active'",
+        "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+        "WHERE org_id=$1::uuid "
+        "AND role_code IN ('org_owner','org_admin','org_member')",
         org_id,
     )
     return {
