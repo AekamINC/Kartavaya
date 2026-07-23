@@ -1996,6 +1996,94 @@ async def migrate_data_uri_attachments(pool=Depends(get_db)):
     return {"migrated": migrated, "errors": errors}
 
 
+@api_router.post("/admin/recover-attachments")
+async def recover_attachments(pool=Depends(get_db), user=Depends(require_admin)):
+    """Scan R2 bucket and re-link orphaned attachments by matching filenames to R2 keys."""
+    from services.storage import _client, BUCKET
+    client = _client()
+    if client is None:
+        raise HTTPException(503, "R2 not configured")
+
+    # List all objects in R2
+    r2_objects = []
+    params = {"Bucket": BUCKET}
+    while True:
+        resp = client.list_objects_v2(**params)
+        for obj in resp.get("Contents", []):
+            r2_objects.append(obj["Key"])
+        if resp.get("IsTruncated"):
+            params["ContinuationToken"] = resp["NextContinuationToken"]
+        else:
+            break
+
+    # Build a map: original filename extension + parent folder → full key
+    from pathlib import PurePosixPath
+    key_map = {}
+    for key in r2_objects:
+        fname = PurePosixPath(key).name
+        ext = PurePosixPath(key).suffix.lower()
+        key_map[key] = {"ext": ext, "fname": fname}
+
+    # Find tasks with empty key/url attachments
+    rows = await pool.fetch(
+        "SELECT task_id, team_id, user_id, attachments FROM tasks "
+        "WHERE attachments IS NOT NULL AND attachments::text LIKE '%\"key\": \"\"%'"
+    )
+
+    PUB_BASE = "https://pub-bf2d2af5de044466a0456010568b7fd6.r2.dev"
+    recovered = []
+    not_found = []
+
+    for row in rows:
+        atts = json.loads(row["attachments"]) if isinstance(row["attachments"], str) else (row["attachments"] or [])
+        changed = False
+        team_id = row["team_id"]
+        user_id = row["user_id"]
+
+        for att in atts:
+            if att.get("key"):
+                continue
+            name = att.get("name", "")
+            ext = ("." + name.rsplit(".", 1)[-1]).lower() if "." in name else ""
+
+            # Search R2 for matching extension in the expected folders
+            prefixes = []
+            if team_id:
+                prefixes.append(f"projects/{team_id}/")
+            prefixes.append(f"personal/{user_id}/")
+            prefixes.append(f"uploads/{user_id}/")
+
+            matched_key = None
+            for key in r2_objects:
+                if not any(key.startswith(p) for p in prefixes):
+                    continue
+                if PurePosixPath(key).suffix.lower() == ext:
+                    # Check if this key is already used by another attachment
+                    already_used = await pool.fetchval(
+                        "SELECT 1 FROM tasks WHERE attachments::text LIKE $1 LIMIT 1",
+                        f'%{key}%'
+                    )
+                    if not already_used:
+                        matched_key = key
+                        break
+
+            if matched_key:
+                att["key"] = matched_key
+                att["url"] = f"{PUB_BASE}/{matched_key}"
+                changed = True
+                recovered.append({"task_id": row["task_id"], "name": name, "key": matched_key})
+            else:
+                not_found.append({"task_id": row["task_id"], "name": name})
+
+        if changed:
+            await pool.execute(
+                "UPDATE tasks SET attachments=$1::jsonb WHERE task_id=$2",
+                json.dumps(atts), row["task_id"],
+            )
+
+    return {"recovered": len(recovered), "not_found": len(not_found), "details": recovered, "missing": not_found}
+
+
 @api_router.delete("/tasks/{task_id}")
 async def delete_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
     """Permanently delete a task; only project admins/owners or the personal task owner may delete."""
