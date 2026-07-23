@@ -657,7 +657,7 @@ async def action_leave_request(
         raise HTTPException(400, "Status must be 'approved' or 'rejected'")
 
     lr = await pool.fetchrow(
-        "SELECT employee_id, leave_type_id, days, status FROM staging.manav_leave_requests "
+        "SELECT employee_id, leave_type_id, days, status, start_date, end_date FROM staging.manav_leave_requests "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(leave_id), org_id,
     )
@@ -698,6 +698,22 @@ async def action_leave_request(
                 org_id, str(lr["employee_id"]), str(lr["leave_type_id"]),
                 year, lt["annual_quota"] if lt else 0, int(lr["days"]),
             )
+
+    # ── Notify employee ──
+    emp = await pool.fetchrow(
+        "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", str(lr["employee_id"]),
+    )
+    if emp and emp.get("email"):
+        lt_row = await pool.fetchrow(
+            "SELECT name FROM staging.manav_leave_types WHERE id=$1::uuid", str(lr["leave_type_id"]),
+        )
+        from services.employee_email import send_leave_decision_email
+        send_leave_decision_email(
+            emp["email"], emp["name"],
+            lt_row["name"] if lt_row else "Leave",
+            str(lr["start_date"]), str(lr["end_date"]),
+            body.status, user.get("name", "Admin"),
+        )
 
     return {"status": body.status}
 
@@ -858,6 +874,17 @@ async def create_announcement(
         org_id, body.title, body.body, body.priority,
         body.pinned, body.expires_at, user["user_id"],
     )
+    # ── Notify all active employees ──
+    employees = await pool.fetch(
+        "SELECT name, email FROM staging.manav_employees "
+        "WHERE org_id=$1::uuid AND is_active=TRUE AND email IS NOT NULL AND email != ''",
+        org_id,
+    )
+    if employees:
+        from services.employee_email import send_announcement_email
+        for e in employees:
+            send_announcement_email(e["email"], e["name"], body.title, body.body)
+
     return {"status": "created", **dict(row)}
 
 
@@ -1146,6 +1173,20 @@ async def assign_schedule(body: ScheduleAssign, user=Depends(require_user), org_
         "RETURNING id",
         org_id, body.employee_id, body.shift_id, _parse_date(body.date), body.notes, user["user_id"],
     )
+    # ── Notify employee ──
+    emp = await pool.fetchrow(
+        "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", body.employee_id,
+    )
+    shift = await pool.fetchrow(
+        "SELECT name, start_time, end_time FROM staging.manav_shift_definitions WHERE id=$1::uuid", body.shift_id,
+    )
+    if emp and emp.get("email") and shift:
+        from services.employee_email import send_shift_schedule_email
+        send_shift_schedule_email(
+            emp["email"], emp["name"], shift["name"],
+            body.date, str(shift["start_time"]), str(shift["end_time"]),
+        )
+
     return {"status": "assigned", "id": str(row["id"])}
 
 
@@ -1522,6 +1563,16 @@ async def approve_expense_claim(
     )
     if not row:
         raise HTTPException(404, "Pending claim not found")
+    # ── Notify employee ──
+    emp = await pool.fetchrow(
+        "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", str(row["employee_id"]),
+    )
+    if emp and emp.get("email"):
+        from services.employee_email import send_expense_decision_email
+        send_expense_decision_email(
+            emp["email"], emp["name"], row.get("category", "Expense"),
+            float(row["amount"]), "approved", user.get("name", "Admin"),
+        )
     return dict(row)
 
 
@@ -1543,6 +1594,16 @@ async def reject_expense_claim(
     )
     if not row:
         raise HTTPException(404, "Pending claim not found")
+    # ── Notify employee ──
+    emp = await pool.fetchrow(
+        "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", str(row["employee_id"]),
+    )
+    if emp and emp.get("email"):
+        from services.employee_email import send_expense_decision_email
+        send_expense_decision_email(
+            emp["email"], emp["name"], row.get("category", "Expense"),
+            float(row["amount"]), "rejected", user.get("name", "Admin"),
+        )
     return dict(row)
 
 
@@ -1901,6 +1962,16 @@ async def assign_asset(
     )
     if not row:
         raise HTTPException(404, "Asset not found")
+    # ── Notify employee ──
+    emp_info = await pool.fetchrow(
+        "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", body.employee_id,
+    )
+    if emp_info and emp_info.get("email"):
+        from services.employee_email import send_asset_email
+        send_asset_email(
+            emp_info["email"], emp_info["name"],
+            row.get("name", "Asset"), row.get("asset_type", ""), "assigned",
+        )
     return dict(row)
 
 
@@ -1912,6 +1983,13 @@ async def return_asset(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # Fetch current assignee before clearing
+    prev = await pool.fetchrow(
+        "SELECT a.assigned_to, a.name AS asset_name, a.asset_type, e.name, e.email "
+        "FROM staging.manav_assets a LEFT JOIN staging.manav_employees e ON e.id = a.assigned_to "
+        "WHERE a.id=$1::uuid AND a.org_id=$2::uuid AND a.is_active=TRUE",
+        asset_id, org_id,
+    )
     row = await pool.fetchrow(
         "UPDATE staging.manav_assets SET assigned_to=NULL, returned_date=CURRENT_DATE, updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE RETURNING *",
@@ -1919,6 +1997,13 @@ async def return_asset(
     )
     if not row:
         raise HTTPException(404, "Asset not found")
+    # ── Notify employee ──
+    if prev and prev.get("email"):
+        from services.employee_email import send_asset_email
+        send_asset_email(
+            prev["email"], prev["name"],
+            prev.get("asset_name", "Asset"), prev.get("asset_type", ""), "returned",
+        )
     return dict(row)
 
 

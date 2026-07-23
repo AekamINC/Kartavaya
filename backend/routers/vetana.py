@@ -8,7 +8,11 @@ import json
 from datetime import date, datetime, timezone
 from typing import Optional
 
+import traceback
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from auth_router import require_user
@@ -449,6 +453,21 @@ async def process_payroll(
         round(totals["tds"], 2), len(unique_structures), run_id,
     )
 
+    # ── Notify employees about payslips ──
+    payslip_list = await pool.fetch(
+        "SELECT p.payslip_number, p.gross, p.net_pay, p.month, e.name, e.email "
+        "FROM staging.vetana_payslips p JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "WHERE p.run_id=$1::uuid AND e.email IS NOT NULL AND e.email != ''",
+        run_id,
+    )
+    if payslip_list:
+        from services.employee_email import send_payslip_email
+        for ps in payslip_list:
+            send_payslip_email(
+                ps["email"], ps["name"], str(ps["month"]),
+                float(ps["gross"]), float(ps["net_pay"]), ps["payslip_number"],
+            )
+
     return {
         "ok": True,
         "run_id": str(run_id),
@@ -666,6 +685,76 @@ async def disburse_payslip(
     return {"ok": True}
 
 
+@router.get("/payslips/{payslip_id}/pdf")
+async def download_payslip_pdf(
+    payslip_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    from services.payslip_pdf import generate_payslip_pdf
+
+    logger = logging.getLogger(__name__)
+    pool = await get_pool()
+
+    row = await pool.fetchrow(
+        "SELECT p.*, "
+        "e.name AS employee_name, e.employee_code, e.designation, "
+        "e.pan AS emp_pan, e.uan, e.bank_details, e.email AS emp_email, "
+        "COALESCE(d.name, e.department, '') AS department_name "
+        "FROM staging.vetana_payslips p "
+        "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "LEFT JOIN staging.manav_departments d ON d.id = e.department_id "
+        "WHERE p.id=$1::uuid AND p.org_id=$2::uuid",
+        payslip_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Payslip not found")
+
+    org = await pool.fetchrow(
+        "SELECT name, gstin, pan, billing_address, logo_url, email, phone, website, "
+        "COALESCE(authorized_signatory_name, '') AS authorized_signatory_name, "
+        "COALESCE(authorized_signatory_designation, '') AS authorized_signatory_designation "
+        "FROM staging.organisations WHERE id=$1::uuid",
+        org_id,
+    )
+
+    payslip = dict(row)
+    bank_details = payslip.pop("bank_details", None) or {}
+    if isinstance(bank_details, str):
+        bank_details = json.loads(bank_details or "{}")
+
+    employee = {
+        "name": payslip.pop("employee_name", ""),
+        "employee_code": payslip.pop("employee_code", ""),
+        "department_name": payslip.pop("department_name", ""),
+        "designation": payslip.pop("designation", ""),
+        "pan": payslip.pop("emp_pan", ""),
+        "uan": payslip.pop("uan", ""),
+        "bank_account": bank_details.get("account_number", ""),
+        "bank_name": bank_details.get("bank_name", ""),
+        "email": payslip.pop("emp_email", ""),
+    }
+
+    org_dict = dict(org) if org else {}
+    if isinstance(org_dict.get("billing_address"), str):
+        org_dict["billing_address"] = json.loads(org_dict["billing_address"] or "{}")
+
+    try:
+        pdf_bytes = generate_payslip_pdf(payslip, employee, org_dict)
+    except Exception as e:
+        logger.error("payslip PDF generation failed: payslip=%s org=%s err=%s\n%s",
+                     payslip_id, org_id, e, traceback.format_exc())
+        raise HTTPException(500, "Failed to generate payslip PDF — please try again.")
+
+    filename = f"Payslip-{payslip.get('payslip_number', 'payslip')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # ── Dashboard ────────────────────────────────────────────────
 
 @router.get("/dashboard")
@@ -801,6 +890,16 @@ async def create_loan(
         org_id, body.employee_id, body.principal_amount, body.emi_amount,
         body.disbursed_date, body.notes, user["user_id"],
     )
+    # ── Notify employee ──
+    emp = await pool.fetchrow(
+        "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", body.employee_id,
+    )
+    if emp and emp.get("email"):
+        from services.employee_email import send_loan_email
+        send_loan_email(
+            emp["email"], emp["name"], "Employee Loan",
+            float(body.principal_amount), float(body.emi_amount), "approved",
+        )
     return dict(row)
 
 

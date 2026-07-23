@@ -502,6 +502,15 @@ function PayslipsTab() {
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <Badge text={p.status} color={PS_COLORS[p.status]} />
+              <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={async () => {
+                try {
+                  const res = await api.get(`/v1/vetana/payslips/${p.id}/pdf`, { responseType: 'blob' });
+                  const url = URL.createObjectURL(res.data);
+                  const a = document.createElement('a');
+                  a.href = url; a.download = `Payslip-${p.payslip_number}.pdf`; a.click();
+                  URL.revokeObjectURL(url);
+                } catch { /* toast handled by interceptor */ }
+              }}>Download PDF</button>
               {p.status === 'approved' && <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={disburse}>Mark Disbursed</button>}
             </div>
           </div>
