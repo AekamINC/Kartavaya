@@ -8,7 +8,9 @@ export default function MentionTextarea({ value, onChange, onSubmit, members = [
   const taRef = useRef(null);
 
   const filtered = popup
-    ? members.filter(m => m.display_name.toLowerCase().startsWith(popup.query.toLowerCase())).slice(0, 8)
+    ? (popup.query
+        ? members.filter(m => m.display_name.toLowerCase().includes(popup.query.toLowerCase())).slice(0, 8)
+        : members.slice(0, 8))
     : [];
 
   function getCaretCoords(el, caretPos) {

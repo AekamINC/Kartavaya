@@ -98,7 +98,8 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   }, [assigneeOpen]);
 
   // ── Load task on open ─────────────────────────────────────────────────────
-  const mentionMembers = teamMembers.map(m => ({
+  const mentionSource = teamMembers.length > 0 ? teamMembers : members;
+  const mentionMembers = mentionSource.map(m => ({
     user_id:      m.user_id,
     display_name: m.display_name || m.full_name || m.email || 'Unknown',
   }));
