@@ -745,6 +745,64 @@ function KnowledgeTab({ clientId }) {
 
 // ── Publish Tab ────────────────────────────────────────────────
 
+const PUBLISH_PLATFORMS = [
+  { key: 'facebook', label: 'Facebook', color: '#1877F2', icon: 'f',
+    desc: 'Publish to Facebook Pages',
+    prereqs: ['Facebook Business Page', 'Meta Business Suite access', 'Page admin role'],
+    supports: ['Text posts', 'Photo posts', 'Link sharing'] },
+  { key: 'instagram', label: 'Instagram', color: '#E4405F', icon: 'IG',
+    desc: 'Publish to Instagram Business',
+    prereqs: ['Instagram Business or Creator account', 'Linked Facebook Page', 'Meta Business Suite access'],
+    supports: ['Photo posts (image required)', 'Captions with hashtags'] },
+  { key: 'linkedin', label: 'LinkedIn', color: '#0A66C2', icon: 'in',
+    desc: 'Publish to LinkedIn profiles',
+    prereqs: ['LinkedIn account with posting access'],
+    supports: ['Text posts', 'Articles', 'Link sharing'] },
+  { key: 'google_business', label: 'Google Business', color: '#4285F4', icon: 'G',
+    desc: 'Publish to Google Business Profile',
+    prereqs: ['Verified Google Business Profile', 'Owner or manager access'],
+    supports: ['Local posts', 'Updates', 'Offers'] },
+  { key: 'twitter', label: 'Twitter / X', color: '#1DA1F2', icon: 'X',
+    desc: 'Publish to X (Twitter)',
+    prereqs: ['X Developer account', 'API v2 access (manual token)'],
+    supports: ['Tweets (280 chars)', 'Threads'], manualOnly: true },
+  { key: 'youtube', label: 'YouTube', color: '#FF0000', icon: 'YT',
+    desc: 'Upload videos to YouTube',
+    prereqs: ['YouTube channel', 'Google account with channel access'],
+    supports: ['Video uploads', 'Shorts', 'Community posts'] },
+  { key: 'whatsapp_business', label: 'WhatsApp Business', color: '#25D366', icon: 'WA',
+    desc: 'Broadcast via WhatsApp Business API',
+    prereqs: ['WhatsApp Business account', 'Meta Business Suite', 'Verified phone number', 'Approved message templates'],
+    supports: ['Template messages', 'Broadcast lists', 'Media messages'] },
+  { key: 'pinterest', label: 'Pinterest', color: '#E60023', icon: 'P',
+    desc: 'Create Pins on Pinterest',
+    prereqs: ['Pinterest Business account', 'At least one board created'],
+    supports: ['Image pins', 'Rich pins', 'Idea pins'] },
+  { key: 'tiktok', label: 'TikTok', color: '#000000', icon: 'TT',
+    desc: 'Publish videos to TikTok',
+    prereqs: ['TikTok Business or Creator account', 'TikTok Developer app access'],
+    supports: ['Video posts', 'Descriptions with hashtags'] },
+  { key: 'threads', label: 'Threads', color: '#000000', icon: 'Th',
+    desc: 'Post to Threads (Meta)',
+    prereqs: ['Instagram account (Threads linked)', 'Meta app with Threads API access'],
+    supports: ['Text posts', 'Image posts', 'Link sharing'] },
+  { key: 'telegram', label: 'Telegram', color: '#0088cc', icon: 'TG',
+    desc: 'Post to Telegram channels',
+    prereqs: ['Telegram Bot token (from @BotFather)', 'Bot added as admin to target channel'],
+    supports: ['Text messages', 'Photo messages', 'HTML formatting'], manualOnly: true },
+  { key: 'snapchat', label: 'Snapchat', color: '#FFFC00', icon: 'SC',
+    desc: 'Publish to Snapchat',
+    prereqs: ['Snapchat Business account', 'Snap Kit API access'],
+    supports: ['Stories', 'Spotlight posts'], manualOnly: true },
+  { key: 'reddit', label: 'Reddit', color: '#FF4500', icon: 'R',
+    desc: 'Submit posts to subreddits',
+    prereqs: ['Reddit account with posting karma', 'Reddit API app registered'],
+    supports: ['Text posts', 'Link posts', 'Image posts'] },
+];
+
+const PUBLISH_PLATFORM_COLORS = Object.fromEntries(PUBLISH_PLATFORMS.map(p => [p.key, p.color]));
+const QUEUE_STATUS_COLORS = { scheduled: '#f59e0b', publishing: '#0082c6', published: '#10b981', failed: '#ef4444', cancelled: '#9ca3af' };
+
 function PublishTab({ clientId }) {
   const { pushToast } = useToast();
   const [accounts, setAccounts] = useState([]);
@@ -752,23 +810,31 @@ function PublishTab({ clientId }) {
   const [calendar, setCalendar] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showSchedule, setShowSchedule] = useState(false);
-  const [showManualConnect, setShowManualConnect] = useState(false);
-  const [connectForm, setConnectForm] = useState({ platform: 'facebook', account_name: '', account_id: '', page_id: '', access_token: '' });
+  const [showManual, setShowManual] = useState(null);
+  const [manualForm, setManualForm] = useState({ account_name: '', account_id: '', page_id: '', access_token: '' });
   const [scheduleForm, setScheduleForm] = useState({ content_id: '', social_account_id: '', scheduled_for: '' });
+  const [bulkAccounts, setBulkAccounts] = useState([]);
   const [content, setContent] = useState([]);
   const [saving, setSaving] = useState(false);
   const [queueFilter, setQueueFilter] = useState('');
   const [view, setView] = useState('queue');
   const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; });
+  const [connectingPlatform, setConnectingPlatform] = useState(null);
+  const [enabledPlatforms, setEnabledPlatforms] = useState(null);
+  const [showPlatformMgmt, setShowPlatformMgmt] = useState(false);
+  const [pendingEnabled, setPendingEnabled] = useState([]);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); loadEnabledPlatforms(); }, []);
   useEffect(() => { if (view === 'calendar') loadCalendar(); }, [view, calMonth]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('oauth') === 'success') {
       pushToast({ title: `${params.get('platform') || 'Account'} connected via OAuth`, type: 'success' });
-      window.history.replaceState({}, '', window.location.pathname);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('oauth');
+      url.searchParams.delete('platform');
+      window.history.replaceState({}, '', url.toString());
       loadData();
     }
   }, []);
@@ -806,29 +872,49 @@ function PublishTab({ clientId }) {
     }
   }
 
-  async function connectViaOAuth(platform) {
+  async function loadEnabledPlatforms() {
     try {
-      const r = await api.get(`/v1/hub/oauth/${platform}/authorize?client_id=${clientId}`);
-      window.open(r.data.auth_url, '_blank', 'width=600,height=700');
-    } catch (err) {
-      const detail = err.response?.data?.detail || '';
-      if (detail.includes('not configured')) {
-        pushToast({ title: `${platform} OAuth not configured yet — use manual connect`, type: 'error' });
-        setShowManualConnect(true);
-      } else {
-        pushToast({ title: detail || 'OAuth failed', type: 'error' });
-      }
+      const r = await api.get(`/v1/hub/clients/${clientId}/platforms`);
+      setEnabledPlatforms(r.data.enabled || []);
+    } catch {
+      setEnabledPlatforms(PUBLISH_PLATFORMS.map(p => p.key));
     }
   }
 
-  async function connectManual(e) {
+  async function saveEnabledPlatforms() {
+    setSaving(true);
+    try {
+      await api.put(`/v1/hub/clients/${clientId}/platforms`, { platforms: pendingEnabled });
+      setEnabledPlatforms(pendingEnabled);
+      setShowPlatformMgmt(false);
+      pushToast({ title: 'Platforms updated', type: 'success' });
+    } catch (err) {
+      pushToast({ title: err.response?.data?.detail || 'Failed to update', type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function connectViaOAuth(platformKey) {
+    setConnectingPlatform(platformKey);
+    try {
+      const r = await api.get(`/v1/hub/oauth/${platformKey}/authorize`, { params: { client_id: clientId } });
+      window.location.href = r.data.auth_url;
+    } catch (err) {
+      const detail = err.response?.data?.detail || 'OAuth not configured for this platform';
+      pushToast({ title: detail, type: 'error' });
+      setConnectingPlatform(null);
+    }
+  }
+
+  async function connectManual(e, platformKey) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post(`/v1/hub/clients/${clientId}/social-accounts`, connectForm);
+      await api.post(`/v1/hub/clients/${clientId}/social-accounts`, { platform: platformKey, ...manualForm });
       pushToast({ title: 'Account connected', type: 'success' });
-      setShowManualConnect(false);
-      setConnectForm({ platform: 'facebook', account_name: '', account_id: '', page_id: '', access_token: '' });
+      setShowManual(null);
+      setManualForm({ account_name: '', account_id: '', page_id: '', access_token: '' });
       loadData();
     } catch (err) {
       pushToast({ title: err.response?.data?.detail || 'Failed to connect', type: 'error' });
@@ -851,10 +937,20 @@ function PublishTab({ clientId }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post(`/v1/hub/clients/${clientId}/publish/schedule`, scheduleForm);
-      pushToast({ title: 'Post scheduled', type: 'success' });
+      if (bulkAccounts.length > 1) {
+        await api.post(`/v1/hub/clients/${clientId}/publish/bulk-schedule`, {
+          content_id: scheduleForm.content_id, account_ids: bulkAccounts, scheduled_for: scheduleForm.scheduled_for,
+        });
+        pushToast({ title: `Scheduled to ${bulkAccounts.length} accounts`, type: 'success' });
+      } else {
+        await api.post(`/v1/hub/clients/${clientId}/publish/schedule`, {
+          ...scheduleForm, social_account_id: bulkAccounts[0] || scheduleForm.social_account_id,
+        });
+        pushToast({ title: 'Post scheduled', type: 'success' });
+      }
       setShowSchedule(false);
       setScheduleForm({ content_id: '', social_account_id: '', scheduled_for: '' });
+      setBulkAccounts([]);
       loadData();
     } catch (err) {
       pushToast({ title: err.response?.data?.detail || 'Failed to schedule', type: 'error' });
@@ -883,115 +979,182 @@ function PublishTab({ clientId }) {
     }
   }
 
-  const PLATFORMS = [
-    { id: 'facebook', label: 'Facebook', color: '#1877F2', icon: 'f' },
-    { id: 'instagram', label: 'Instagram', color: '#E4405F', icon: 'ig' },
-    { id: 'linkedin', label: 'LinkedIn', color: '#0A66C2', icon: 'in' },
-    { id: 'google_business', label: 'Google Business', color: '#4285F4', icon: 'G' },
-  ];
-  const PLATFORM_COLORS = Object.fromEntries(PLATFORMS.map(p => [p.id, p.color]));
-  const QUEUE_STATUS_COLORS = { scheduled: '#f59e0b', publishing: '#0082c6', published: '#10b981', failed: '#ef4444', cancelled: '#9ca3af' };
+  function toggleBulkAccount(id) {
+    setBulkAccounts(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
 
   if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 24, textAlign: 'center' }}>Loading…</p>;
 
-  const connectedPlatforms = new Set(accounts.map(a => a.platform));
-
   return (
     <div>
-      {/* Connected Accounts */}
+      {/* ── Platform Management (Aekam controls) ── */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Connected Accounts</h3>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Platform Integrations</h3>
           <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }}
-            onClick={() => setShowManualConnect(!showManualConnect)}>
-            {showManualConnect ? 'Hide Manual' : 'Manual Connect'}
+            onClick={() => { setShowPlatformMgmt(!showPlatformMgmt); setPendingEnabled([...(enabledPlatforms || [])]); }}>
+            Manage Platforms
           </button>
         </div>
 
-        {/* OAuth connect buttons */}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-          {PLATFORMS.map(p => {
-            const connected = connectedPlatforms.has(p.id);
-            return (
-              <button key={p.id}
-                onClick={() => !connected && connectViaOAuth(p.id)}
-                disabled={connected}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '10px 18px',
-                  borderRadius: 10, border: connected ? '2px solid var(--rule-soft)' : `2px solid ${p.color}`,
-                  background: connected ? 'var(--surface-1)' : 'var(--surface-0)',
-                  cursor: connected ? 'default' : 'pointer', fontSize: 13, fontWeight: 600,
-                  color: connected ? 'var(--ink-3)' : p.color, opacity: connected ? 0.7 : 1,
-                }}>
-                <span style={{ width: 24, height: 24, borderRadius: 6, background: p.color,
-                  color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 11, fontWeight: 800 }}>{p.icon}</span>
-                {connected ? `${p.label} ✓` : `Connect ${p.label}`}
+        {showPlatformMgmt && (
+          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 20, marginBottom: 16 }}>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12 }}>
+              Select which platforms this client can use for publishing.
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+              {PUBLISH_PLATFORMS.map(p => {
+                const on = pendingEnabled.includes(p.key);
+                return (
+                  <button key={p.key} type="button"
+                    onClick={() => setPendingEnabled(prev => on ? prev.filter(x => x !== p.key) : [...prev, p.key])}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 8,
+                      border: `2px solid ${on ? p.color : 'var(--rule-soft)'}`,
+                      background: on ? `${p.color}12` : 'var(--surface-0)',
+                      cursor: 'pointer', fontSize: 12, fontWeight: on ? 700 : 400, color: 'var(--ink-1)' }}>
+                    <span style={{ width: 20, height: 20, borderRadius: 4, background: p.color, color: p.color === '#FFFC00' ? '#000' : '#fff',
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 8, fontWeight: 800 }}>
+                      {p.icon}
+                    </span>
+                    {p.label}
+                    {on && <span style={{ color: p.color, fontWeight: 800 }}>✓</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }}
+                onClick={() => setShowPlatformMgmt(false)}>Cancel</button>
+              <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} disabled={saving}
+                onClick={saveEnabledPlatforms}>
+                {saving ? 'Saving…' : `Enable ${pendingEnabled.length} Platform${pendingEnabled.length !== 1 ? 's' : ''}`}
               </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Platform Cards (only enabled ones) ── */}
+      <div style={{ marginBottom: 32 }}>
+        {enabledPlatforms && enabledPlatforms.length === 0 && (
+          <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 24, textAlign: 'center', background: 'var(--surface-1)',
+            borderRadius: 12, border: '1px solid var(--rule-soft)' }}>
+            No platforms enabled for this client. Click "Manage Platforms" above to enable integrations.
+          </p>
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+          {PUBLISH_PLATFORMS.filter(p => !enabledPlatforms || enabledPlatforms.includes(p.key)).map(p => {
+            const connected = accounts.filter(a => a.platform === p.key);
+            const isConnected = connected.length > 0;
+            return (
+              <div key={p.key} style={{ background: 'var(--surface-1)', border: `1px solid ${isConnected ? p.color + '40' : 'var(--rule-soft)'}`,
+                borderRadius: 12, padding: 20, position: 'relative', overflow: 'hidden' }}>
+                {isConnected && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: p.color }} />}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                  <span style={{ width: 36, height: 36, borderRadius: 8, background: p.color, color: p.color === '#FFFC00' ? '#000' : '#fff',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>
+                    {p.icon}
+                  </span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{p.label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{p.desc}</div>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--ink-4)', marginBottom: 6 }}>Prerequisites</div>
+                  {p.prereqs.map((req, i) => (
+                    <div key={i} style={{ fontSize: 11, color: 'var(--ink-3)', padding: '2px 0', display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                      <span style={{ color: isConnected ? '#10b981' : 'var(--ink-4)' }}>{isConnected ? '✓' : '•'}</span>
+                      {req}
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--ink-4)', marginBottom: 4 }}>Supports</div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {p.supports.map((s, i) => (
+                      <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 99, background: 'var(--surface-0)', color: 'var(--ink-3)' }}>{s}</span>
+                    ))}
+                  </div>
+                </div>
+
+                {connected.map(a => (
+                  <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    background: `${p.color}08`, border: `1px solid ${p.color}20`, borderRadius: 8, padding: '8px 12px', marginBottom: 8, fontSize: 12 }}>
+                    <div>
+                      <span style={{ fontWeight: 600 }}>{a.account_name || 'Connected'}</span>
+                      {a.token_expires_at && new Date(a.token_expires_at) < new Date() && (
+                        <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 600, marginLeft: 8 }}>EXPIRED</span>
+                      )}
+                      {a.token_expires_at && new Date(a.token_expires_at) >= new Date() && (
+                        <span style={{ fontSize: 10, color: 'var(--ink-4)', marginLeft: 8 }}>
+                          Expires {new Date(a.token_expires_at).toLocaleDateString('en-IN')}
+                        </span>
+                      )}
+                    </div>
+                    <button onClick={() => disconnectAccount(a.id)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11, fontWeight: 600 }}>
+                      Disconnect
+                    </button>
+                  </div>
+                ))}
+
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {!p.manualOnly && (
+                    <button className="k-btn k-btn--primary" disabled={connectingPlatform === p.key}
+                      style={{ fontSize: 12, flex: 1, background: p.color, borderColor: p.color }}
+                      onClick={() => connectViaOAuth(p.key)}>
+                      {connectingPlatform === p.key ? 'Redirecting…' : isConnected ? 'Reconnect' : `Connect ${p.label}`}
+                    </button>
+                  )}
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }}
+                    onClick={() => setShowManual(showManual === p.key ? null : p.key)}>
+                    {p.manualOnly ? 'Connect with Token' : 'Manual'}
+                  </button>
+                </div>
+
+                {showManual === p.key && (
+                  <form onSubmit={e => connectManual(e, p.key)}
+                    style={{ marginTop: 12, padding: 12, background: 'var(--surface-0)', borderRadius: 8 }}>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      <input className="k-input" placeholder="Account display name" value={manualForm.account_name}
+                        onChange={e => setManualForm({ ...manualForm, account_name: e.target.value })} style={{ fontSize: 12 }} />
+                      <input className="k-input" placeholder="Account / User ID" required value={manualForm.account_id}
+                        onChange={e => setManualForm({ ...manualForm, account_id: e.target.value })} style={{ fontSize: 12 }} />
+                      {(p.key === 'facebook' || p.key === 'instagram') && (
+                        <input className="k-input" placeholder="Page ID (required for publishing)" value={manualForm.page_id}
+                          onChange={e => setManualForm({ ...manualForm, page_id: e.target.value })} style={{ fontSize: 12 }} />
+                      )}
+                      {p.key === 'telegram' && (
+                        <input className="k-input" placeholder="Channel ID (e.g. @channelname)" value={manualForm.page_id}
+                          onChange={e => setManualForm({ ...manualForm, page_id: e.target.value })} style={{ fontSize: 12 }} />
+                      )}
+                      {p.key === 'reddit' && (
+                        <input className="k-input" placeholder="Subreddit (e.g. r/marketing)" value={manualForm.page_id}
+                          onChange={e => setManualForm({ ...manualForm, page_id: e.target.value })} style={{ fontSize: 12 }} />
+                      )}
+                      {p.key === 'pinterest' && (
+                        <input className="k-input" placeholder="Board ID" value={manualForm.page_id}
+                          onChange={e => setManualForm({ ...manualForm, page_id: e.target.value })} style={{ fontSize: 12 }} />
+                      )}
+                      <input className="k-input" type="password" placeholder="Access Token / Bot Token" required value={manualForm.access_token}
+                        onChange={e => setManualForm({ ...manualForm, access_token: e.target.value })} style={{ fontSize: 12 }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
+                      <button type="button" className="k-btn k-btn--ghost" style={{ fontSize: 11 }}
+                        onClick={() => { setShowManual(null); setManualForm({ account_name: '', account_id: '', page_id: '', access_token: '' }); }}>Cancel</button>
+                      <button type="submit" className="k-btn k-btn--primary" style={{ fontSize: 11 }} disabled={saving}>
+                        {saving ? 'Connecting…' : 'Connect'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
             );
           })}
         </div>
-
-        {/* Manual connect form (fallback) */}
-        {showManualConnect && (
-          <form onSubmit={connectManual} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 12 }}>
-            <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Manual Token Connect</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <label style={{ fontSize: 13 }}>
-                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Platform *</span>
-                <select className="k-input" value={connectForm.platform} onChange={e => setConnectForm({ ...connectForm, platform: e.target.value })}>
-                  <option value="facebook">Facebook</option>
-                  <option value="instagram">Instagram</option>
-                  <option value="linkedin">LinkedIn</option>
-                  <option value="google_business">Google Business</option>
-                </select>
-              </label>
-              <label style={{ fontSize: 13 }}>
-                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Account Name</span>
-                <input className="k-input" placeholder="Display name" value={connectForm.account_name}
-                  onChange={e => setConnectForm({ ...connectForm, account_name: e.target.value })} />
-              </label>
-              <label style={{ fontSize: 13 }}>
-                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Account / User ID *</span>
-                <input className="k-input" required value={connectForm.account_id}
-                  onChange={e => setConnectForm({ ...connectForm, account_id: e.target.value })} />
-              </label>
-              <label style={{ fontSize: 13 }}>
-                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Page ID</span>
-                <input className="k-input" placeholder="For Facebook/Instagram" value={connectForm.page_id}
-                  onChange={e => setConnectForm({ ...connectForm, page_id: e.target.value })} />
-              </label>
-              <label style={{ fontSize: 13, gridColumn: '1 / -1' }}>
-                <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Access Token *</span>
-                <input className="k-input" type="password" required value={connectForm.access_token}
-                  onChange={e => setConnectForm({ ...connectForm, access_token: e.target.value })} />
-              </label>
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-              <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowManualConnect(false)}>Cancel</button>
-              <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Connecting…' : 'Connect'}</button>
-            </div>
-          </form>
-        )}
-
-        {/* Connected account chips */}
-        {accounts.length > 0 && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {accounts.map(a => (
-              <div key={a.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '10px 16px',
-                display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: PLATFORM_COLORS[a.platform] || '#6E7B91' }} />
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{a.account_name || a.platform}</span>
-                <span style={{ fontSize: 11, color: 'var(--ink-3)', textTransform: 'capitalize' }}>{a.platform.replace('_', ' ')}</span>
-                {a.token_expires_at && new Date(a.token_expires_at) < new Date() && (
-                  <span style={{ fontSize: 10, color: '#ef4444', fontWeight: 600 }}>EXPIRED</span>
-                )}
-                <button onClick={() => disconnectAccount(a.id)}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11 }}>Disconnect</button>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* View switcher: Queue / Calendar */}
@@ -1016,14 +1179,21 @@ function PublishTab({ clientId }) {
                 <option value="failed">Failed</option>
               </select>
             </div>
-            <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => { setShowSchedule(true); loadContent(); }}>
+            <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} disabled={accounts.length === 0}
+              onClick={() => { setShowSchedule(true); loadContent(); }}>
               + Schedule Post
             </button>
           </div>
 
+          {accounts.length === 0 && (
+            <p style={{ color: 'var(--ink-3)', fontSize: 12, padding: '8px 0', marginBottom: 8 }}>
+              Connect at least one platform above to schedule posts.
+            </p>
+          )}
+
           {showSchedule && (
             <form onSubmit={schedulePost} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 12 }}>
-              <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Schedule a Post</h4>
+              <h4 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700 }}>Schedule a Post</h4>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <label style={{ fontSize: 13 }}>
                   <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Content *</span>
@@ -1036,24 +1206,39 @@ function PublishTab({ clientId }) {
                   </select>
                 </label>
                 <label style={{ fontSize: 13 }}>
-                  <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Account *</span>
-                  <select className="k-input" required value={scheduleForm.social_account_id}
-                    onChange={e => setScheduleForm({ ...scheduleForm, social_account_id: e.target.value })}>
-                    <option value="">Select account…</option>
-                    {accounts.map(a => (
-                      <option key={a.id} value={a.id}>{a.account_name || a.platform} ({a.platform})</option>
-                    ))}
-                  </select>
-                </label>
-                <label style={{ fontSize: 13, gridColumn: '1 / -1' }}>
                   <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Schedule For *</span>
                   <input className="k-input" type="datetime-local" required value={scheduleForm.scheduled_for}
                     onChange={e => setScheduleForm({ ...scheduleForm, scheduled_for: e.target.value })} />
                 </label>
               </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-                <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowSchedule(false)}>Cancel</button>
-                <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Scheduling…' : 'Schedule'}</button>
+
+              <div style={{ marginTop: 16 }}>
+                <span style={{ fontWeight: 600, fontSize: 13, display: 'block', marginBottom: 8 }}>Publish to *</span>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {accounts.map(a => {
+                    const pl = PUBLISH_PLATFORMS.find(p => p.key === a.platform);
+                    const selected = bulkAccounts.includes(a.id);
+                    return (
+                      <button type="button" key={a.id} onClick={() => toggleBulkAccount(a.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8,
+                          border: `2px solid ${selected ? (pl?.color || 'var(--k-primary)') : 'var(--rule-soft)'}`,
+                          background: selected ? `${pl?.color || 'var(--k-primary)'}10` : 'var(--surface-0)',
+                          cursor: 'pointer', fontSize: 12, fontWeight: selected ? 700 : 400 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: pl?.color || '#6E7B91' }} />
+                        {a.account_name || a.platform}
+                        <span style={{ fontSize: 10, color: 'var(--ink-3)', textTransform: 'capitalize' }}>{a.platform.replace('_', ' ')}</span>
+                        {selected && <span style={{ fontWeight: 800, color: pl?.color }}>✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+                <button type="button" className="k-btn k-btn--ghost" onClick={() => { setShowSchedule(false); setBulkAccounts([]); }}>Cancel</button>
+                <button type="submit" className="k-btn k-btn--primary" disabled={saving || bulkAccounts.length === 0}>
+                  {saving ? 'Scheduling…' : bulkAccounts.length > 1 ? `Schedule to ${bulkAccounts.length} Accounts` : 'Schedule Post'}
+                </button>
               </div>
             </form>
           )}
@@ -1062,36 +1247,39 @@ function PublishTab({ clientId }) {
             <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 24, textAlign: 'center' }}>No posts in queue{queueFilter ? ` with status "${queueFilter}"` : ''}.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {queue.filter(q => !queueFilter || q.status === queueFilter).map(q => (
-                <div key={q.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: PLATFORM_COLORS[q.platform] || '#6E7B91' }} />
-                      <span style={{ fontWeight: 700, fontSize: 14 }}>{q.content_title}</span>
-                      <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>→ {q.account_name} ({q.platform})</span>
+              {queue.filter(q => !queueFilter || q.status === queueFilter).map(q => {
+                const pl = PUBLISH_PLATFORMS.find(p => p.key === q.platform);
+                return (
+                  <div key={q.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: pl?.color || '#6E7B91' }} />
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{q.content_title}</span>
+                        <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>→ {q.account_name} ({q.platform})</span>
+                      </div>
+                      <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', padding: '2px 10px', borderRadius: 99,
+                        background: `${QUEUE_STATUS_COLORS[q.status] || '#6E7B91'}18`, color: QUEUE_STATUS_COLORS[q.status] || '#6E7B91' }}>
+                        {q.status}
+                      </span>
                     </div>
-                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', padding: '2px 10px', borderRadius: 99,
-                      background: `${QUEUE_STATUS_COLORS[q.status] || '#6E7B91'}18`, color: QUEUE_STATUS_COLORS[q.status] || '#6E7B91' }}>
-                      {q.status}
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
-                    {q.scheduled_for && `Scheduled: ${new Date(q.scheduled_for).toLocaleString('en-IN')}`}
-                    {q.published_at && ` · Published: ${new Date(q.published_at).toLocaleString('en-IN')}`}
-                    {q.error_message && <span style={{ color: '#ef4444' }}> · Error: {q.error_message}</span>}
-                  </div>
-                  {q.status === 'scheduled' && (
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="k-btn k-btn--primary" style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => publishNow(q.id)}>Publish Now</button>
-                      <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px', color: '#ef4444' }} onClick={() => cancelPost(q.id)}>Cancel</button>
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>
+                      {q.scheduled_for && `Scheduled: ${new Date(q.scheduled_for).toLocaleString('en-IN')}`}
+                      {q.published_at && ` · Published: ${new Date(q.published_at).toLocaleString('en-IN')}`}
+                      {q.error_message && <span style={{ color: '#ef4444' }}> · Error: {q.error_message}</span>}
                     </div>
-                  )}
-                  {q.platform_url && (
-                    <a href={q.platform_url} target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 12, color: 'var(--k-primary)' }}>View Post ↗</a>
-                  )}
-                </div>
-              ))}
+                    {q.status === 'scheduled' && (
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="k-btn k-btn--primary" style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => publishNow(q.id)}>Publish Now</button>
+                        <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px', color: '#ef4444' }} onClick={() => cancelPost(q.id)}>Cancel</button>
+                      </div>
+                    )}
+                    {q.platform_url && (
+                      <a href={q.platform_url} target="_blank" rel="noopener noreferrer"
+                        style={{ fontSize: 12, color: 'var(--k-primary)' }}>View Post ↗</a>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -1144,8 +1332,8 @@ function PublishTab({ clientId }) {
                           {(dayItems[day] || []).map((item, j) => (
                             <div key={j} style={{
                               fontSize: 10, padding: '2px 6px', borderRadius: 4, marginBottom: 2,
-                              background: `${PLATFORM_COLORS[item.platform] || '#6E7B91'}20`,
-                              color: PLATFORM_COLORS[item.platform] || '#6E7B91',
+                              background: `${PUBLISH_PLATFORM_COLORS[item.platform] || '#6E7B91'}20`,
+                              color: PUBLISH_PLATFORM_COLORS[item.platform] || '#6E7B91',
                               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                             }}>
                               {item.title || 'Post'}
