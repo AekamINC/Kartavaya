@@ -2381,6 +2381,42 @@ async def _run_startup_migrations():
         await pool.execute("ALTER TABLE teams ADD COLUMN IF NOT EXISTS brand_settings JSONB NOT NULL DEFAULT '{\"colors\":[],\"fonts\":[]}'::jsonb")
         await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS authorized_signatory_name TEXT DEFAULT ''")
         await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS authorized_signatory_designation TEXT DEFAULT ''")
+        # Org credit tables (migration 052)
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS staging.hub_org_credits (
+                org_id      UUID PRIMARY KEY REFERENCES staging.organisations(id) ON DELETE CASCADE,
+                balance     INTEGER NOT NULL DEFAULT 0,
+                updated_at  TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS staging.hub_user_credits (
+                org_id      UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
+                user_id     TEXT NOT NULL,
+                allocated   INTEGER NOT NULL DEFAULT 0,
+                used        INTEGER NOT NULL DEFAULT 0,
+                updated_at  TIMESTAMPTZ DEFAULT NOW(),
+                PRIMARY KEY (org_id, user_id)
+            )
+        """)
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_hub_user_credits_org ON staging.hub_user_credits(org_id)")
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS staging.hub_org_credit_transactions (
+                id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                org_id          UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
+                user_id         TEXT,
+                amount          INTEGER NOT NULL,
+                balance_after   INTEGER NOT NULL,
+                tx_type         TEXT NOT NULL DEFAULT 'debit',
+                description     TEXT DEFAULT '',
+                created_by      TEXT,
+                created_at      TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_hub_org_credit_tx_org ON staging.hub_org_credit_transactions(org_id)")
+        # AI logs org_id column (migration 053)
+        await pool.execute("ALTER TABLE staging.hub_ai_logs ADD COLUMN IF NOT EXISTS org_id UUID")
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_hub_ai_logs_org_id ON staging.hub_ai_logs(org_id)")
         logger.info("Startup migrations OK")
     except Exception as e:
         logger.warning("Startup migration warning (non-fatal): %s", e)

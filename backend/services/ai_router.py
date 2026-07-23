@@ -251,6 +251,14 @@ async def generate(
                 result["prompt_tokens"], result["completion_tokens"],
                 latency, cost_usd, result.get("generation_id", ""),
             )
+            if org_id:
+                await pool.execute(
+                    "INSERT INTO staging.usage_tracking (org_id, metric, value, recorded_at) "
+                    "VALUES ($1::uuid, 'ai_calls', 1, CURRENT_DATE) "
+                    "ON CONFLICT (org_id, metric, recorded_at) "
+                    "DO UPDATE SET value = staging.usage_tracking.value + 1",
+                    org_id,
+                )
 
             return {
                 "text": result["text"],
@@ -355,6 +363,14 @@ async def generate_image(
         "VALUES ($1::uuid, $2, $3, 0, 0, $4, 'success', $5)",
         org_id, result["provider"], result["model"], latency, result.get("cost_usd", 0.0),
     )
+    if org_id:
+        await pool.execute(
+            "INSERT INTO staging.usage_tracking (org_id, metric, value, recorded_at) "
+            "VALUES ($1::uuid, 'ai_calls', 1, CURRENT_DATE) "
+            "ON CONFLICT (org_id, metric, recorded_at) "
+            "DO UPDATE SET value = staging.usage_tracking.value + 1",
+            org_id,
+        )
     return result
 
 
@@ -526,6 +542,14 @@ async def generate_rich_content(
                 usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0),
                 latency, cost_usd, data.get("id", ""),
             )
+            if org_id:
+                await pool.execute(
+                    "INSERT INTO staging.usage_tracking (org_id, metric, value, recorded_at) "
+                    "VALUES ($1::uuid, 'ai_calls', 1, CURRENT_DATE) "
+                    "ON CONFLICT (org_id, metric, recorded_at) "
+                    "DO UPDATE SET value = staging.usage_tracking.value + 1",
+                    org_id,
+                )
 
             return {
                 "text": "\n".join(text_parts),
