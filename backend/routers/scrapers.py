@@ -157,11 +157,11 @@ async def run_scraper(
 
         row = await pool.fetchrow(
             "INSERT INTO staging.hub_scraper_runs "
-            "(org_id, scraper_id, user_id, apify_run_id, inputs, status, billed_inr) "
-            "VALUES ($1::uuid, $2, $3, $4, $5, 'running', $6) "
+            "(org_id, scraper_id, user_id, apify_run_id, inputs, status, billed_inr, credits_charged) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, 'running', $6, $7) "
             "RETURNING id",
             org_id, body.scraper_id, user["user_id"], run["run_id"],
-            json.dumps(body.inputs), float(scraper["price_inr"]),
+            json.dumps(body.inputs), float(scraper["price_inr"]), min_credits,
         )
 
         asyncio.ensure_future(_poll_run(

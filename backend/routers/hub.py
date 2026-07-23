@@ -1488,14 +1488,33 @@ async def get_org_credits(
     """Get org credit balance and recent transactions."""
     pool = await get_pool()
 
+    org_row = await pool.fetchrow(
+        "SELECT o.monthly_credits, p.default_credits "
+        "FROM staging.organisations o "
+        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
+        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
+        "WHERE o.id = $1::uuid", org_id
+    )
+    plan_credits = (org_row["monthly_credits"] or org_row["default_credits"] or 0) if org_row else 0
+
     wallet = await pool.fetchrow(
         "SELECT * FROM staging.hub_org_credits WHERE org_id=$1::uuid", org_id
     )
     if not wallet:
         wallet = await pool.fetchrow(
-            "INSERT INTO staging.hub_org_credits (org_id) VALUES ($1::uuid) RETURNING *",
-            org_id,
+            "INSERT INTO staging.hub_org_credits (org_id, balance) VALUES ($1::uuid, $2) RETURNING *",
+            org_id, plan_credits,
         )
+
+    # Compute used credits this month
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    monthly_used = await pool.fetchval(
+        "SELECT COALESCE(SUM(ABS(amount)), 0) FROM staging.hub_org_credit_transactions "
+        "WHERE org_id=$1::uuid AND tx_type='debit' AND created_at >= $2",
+        org_id, month_start,
+    ) or 0
 
     recent_tx = await pool.fetch(
         "SELECT * FROM staging.hub_org_credit_transactions "
@@ -1510,7 +1529,12 @@ async def get_org_credits(
     )
 
     return {
-        "org_balance": dict(wallet),
+        "org_balance": {
+            **dict(wallet),
+            "balance": max(0, plan_credits - monthly_used),
+            "plan_credits": plan_credits,
+            "used": monthly_used,
+        },
         "user_allocation": dict(user_alloc) if user_alloc else {"allocated": 0, "used": 0},
         "recent_transactions": [dict(r) for r in recent_tx],
         "credit_costs": CREDIT_COSTS,

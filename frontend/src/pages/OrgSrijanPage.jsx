@@ -55,9 +55,10 @@ export default function OrgSrijanPage() {
       <PageHeader title="Srijan · सृजन" subtitle="AI content, data tools, skills & credits" />
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
-        <StatTile label="Org Balance" value={credits?.org_balance?.balance ?? '–'} variant="blue" />
+        <StatTile label="Plan Credits" value={credits?.org_balance?.plan_credits ?? '–'} />
+        <StatTile label="Used This Month" value={credits?.org_balance?.used ?? 0} variant="orange" />
+        <StatTile label="Balance" value={credits?.org_balance?.balance ?? '–'} variant="blue" />
         <StatTile label="Your Allocated" value={credits?.user_allocation?.allocated ?? '–'} variant="green" />
-        <StatTile label="Your Used" value={credits?.user_allocation?.used ?? 0} variant="orange" />
       </div>
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)', overflowX: 'auto' }}>
