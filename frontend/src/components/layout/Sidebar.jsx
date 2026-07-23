@@ -71,7 +71,6 @@ const NAV_FULL = [
     section: 'srijan', sans: 'सृजन', gu: 'સર્જન',
     items: [
       { to: '/hub/org', icon: 'hub', en: 'Srijan', hi: 'सृजन', gu: 'સર્જન' },
-      { to: '/scrapers', icon: 'search', en: 'Data Tools', hi: 'डेटा टूल्स', gu: 'ડેટા ટૂલ્સ' },
       { to: '/hub', icon: 'settings', en: 'Srijan Admin', hi: 'सृजन व्यवस्था', gu: 'સર્જન વ્યવસ્થા', adminOnly: true },
     ],
   },

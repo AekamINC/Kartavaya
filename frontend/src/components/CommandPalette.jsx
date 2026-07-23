@@ -29,7 +29,7 @@ const NAV_ITEMS = [
   { id: 'prachar', label: 'Marketing', hi: 'प्रचार', section: 'Navigate', route: '/prachar', keywords: 'marketing campaigns prachar' },
   { id: 'esign', label: 'E-Sign', hi: 'प्रमाण', section: 'Navigate', route: '/esign', keywords: 'esign documents signatures' },
   { id: 'srijan', label: 'Srijan', hi: 'सृजन', section: 'Navigate', route: '/hub/org', keywords: 'srijan content ai generate' },
-  { id: 'scrapers', label: 'Data Tools', hi: 'डेटा टूल्स', section: 'Navigate', route: '/scrapers', keywords: 'scrapers data tools leads' },
+  { id: 'scrapers', label: 'Data Tools', hi: 'डेटा टूल्स', section: 'Navigate', route: '/hub/org', keywords: 'scrapers data tools leads' },
   { id: 'categories', label: 'Categories', hi: 'वर्ग', section: 'Navigate', route: '/settings/categories', keywords: 'settings categories tags' },
   { id: 'notifications', label: 'Notifications', hi: 'सूचना', section: 'Navigate', route: '/settings/notifications', keywords: 'settings notifications' },
   { id: 'customize', label: 'Customize', hi: 'सजावट', section: 'Navigate', route: '/settings/customize', keywords: 'settings customize theme' },
