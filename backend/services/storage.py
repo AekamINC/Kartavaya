@@ -93,7 +93,7 @@ async def upload_file(file_bytes: bytes, filename: str, content_type: str, user_
         ),
     )
 
-    url = f"{PUB_URL}/{key}" if PUB_URL else client.generate_presigned_url(
+    url = client.generate_presigned_url(
         "get_object",
         Params={"Bucket": BUCKET, "Key": key},
         ExpiresIn=7 * 24 * 3600,
