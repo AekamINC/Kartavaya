@@ -427,13 +427,13 @@ async def cost_report(
     cutoff = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
 
     org = await pool.fetchrow(
-        "SELECT o.name, p.name as plan_name, p.default_credits "
+        "SELECT o.name, o.monthly_credits, p.name as plan_name, p.default_credits "
         "FROM staging.organisations o "
         "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
         "LEFT JOIN staging.plans p ON p.id = s.plan_id "
         "WHERE o.id = $1::uuid", org_id
     )
-    plan_credits = org["default_credits"] if org and org["default_credits"] else 0
+    plan_credits = (org["monthly_credits"] or org["default_credits"] or 0) if org else 0
 
     wallet = await pool.fetchrow(
         "SELECT balance, credits_reset_at FROM staging.hub_org_credits WHERE org_id=$1::uuid",
@@ -505,14 +505,14 @@ async def cost_report_pdf(
     cutoff_end = datetime.combine(date.today() + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
 
     org = await pool.fetchrow(
-        "SELECT o.name, o.authorized_signatory_name, o.authorized_signatory_designation, "
+        "SELECT o.name, o.monthly_credits, o.authorized_signatory_name, o.authorized_signatory_designation, "
         "p.name as plan_name, p.default_credits "
         "FROM staging.organisations o "
         "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
         "LEFT JOIN staging.plans p ON p.id = s.plan_id "
         "WHERE o.id = $1::uuid", org_id
     )
-    plan_credits = org["default_credits"] if org and org["default_credits"] else 0
+    plan_credits = (org["monthly_credits"] or org["default_credits"] or 0) if org else 0
 
     wallet = await pool.fetchrow(
         "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid", org_id

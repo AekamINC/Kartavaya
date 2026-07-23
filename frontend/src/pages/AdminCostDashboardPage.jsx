@@ -191,6 +191,8 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
   const [loading, setLoading] = useState(true);
   const [dlLoading, setDlLoading] = useState(false);
   const [editMarkup, setEditMarkup] = useState(null);
+  const [editCredits, setEditCredits] = useState(null);
+  const [editPrice, setEditPrice] = useState(null);
   const [savingMarkup, setSavingMarkup] = useState(false);
 
   useEffect(() => {
@@ -240,23 +242,43 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
         {orgName || 'Organisation'} — Cost Breakdown
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 12px', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>Markup:</span>
-        <input className="k-input" type="number" min="0" max="100" step="1"
-          style={{ width: 64, textAlign: 'center' }}
-          value={editMarkup != null ? editMarkup : Math.round((data.markup_pct || 0.3) * 100)}
-          onChange={e => setEditMarkup(Number(e.target.value))} />
-        <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>%</span>
-        {editMarkup != null && editMarkup !== Math.round((data.markup_pct || 0.3) * 100) && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, margin: '0 0 12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Markup</span>
+          <input className="k-input" type="number" min="0" max="100" step="1"
+            style={{ width: 56, textAlign: 'center' }}
+            value={editMarkup != null ? editMarkup : Math.round((data.markup_pct || 0.3) * 100)}
+            onChange={e => setEditMarkup(Number(e.target.value))} />
+          <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>%</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Monthly Credits</span>
+          <input className="k-input" type="number" min="0" step="50"
+            style={{ width: 80, textAlign: 'center' }}
+            value={editCredits != null ? editCredits : (data.monthly_credits || 0)}
+            onChange={e => setEditCredits(Number(e.target.value))} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Monthly Price ₹</span>
+          <input className="k-input" type="number" min="0" step="500"
+            style={{ width: 90, textAlign: 'center' }}
+            value={editPrice != null ? editPrice : (data.monthly_price || 0)}
+            onChange={e => setEditPrice(Number(e.target.value))} />
+        </div>
+        {(editMarkup != null || editCredits != null || editPrice != null) && (
           <button className="k-btn k-btn--sm k-btn--primary" disabled={savingMarkup}
             onClick={async () => {
               setSavingMarkup(true);
               try {
-                await api.patch(`/v1/admin/orgs/${orgId}/markup`, { markup_pct: editMarkup / 100 });
-                pushToast({ type: 'success', title: `Markup updated to ${editMarkup}%` });
-                setData(d => ({ ...d, markup_pct: editMarkup / 100 }));
-                setEditMarkup(null);
-              } catch { pushToast({ type: 'error', title: 'Failed to update markup' }); }
+                const patch = {};
+                if (editMarkup != null) patch.markup_pct = editMarkup / 100;
+                if (editCredits != null) patch.monthly_credits = editCredits;
+                if (editPrice != null) patch.monthly_price = editPrice;
+                const res = await api.patch(`/v1/admin/orgs/${orgId}/settings`, patch);
+                pushToast({ type: 'success', title: 'Settings updated' });
+                setData(d => ({ ...d, markup_pct: res.data.markup_pct, monthly_credits: res.data.monthly_credits, monthly_price: res.data.monthly_price }));
+                setEditMarkup(null); setEditCredits(null); setEditPrice(null);
+              } catch { pushToast({ type: 'error', title: 'Failed to update settings' }); }
               finally { setSavingMarkup(false); }
             }}>
             {savingMarkup ? 'Saving…' : 'Save'}

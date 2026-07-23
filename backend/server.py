@@ -2426,9 +2426,28 @@ async def _run_startup_migrations():
         await pool.execute("ALTER TABLE staging.hub_scraper_catalog ADD COLUMN IF NOT EXISTS credit_cost INTEGER NOT NULL DEFAULT 2")
         await pool.execute("UPDATE staging.hub_scraper_catalog SET credit_cost = CASE WHEN cost_per_run <= 0.05 THEN 1 WHEN cost_per_run <= 0.15 THEN 2 WHEN cost_per_run <= 0.25 THEN 3 ELSE 5 END WHERE credit_cost = 2")
         await pool.execute("UPDATE staging.plans SET default_credits=200 WHERE code='free' AND default_credits=0")
-        await pool.execute("UPDATE staging.plans SET default_credits=500 WHERE code='professional' AND default_credits=0")
-        await pool.execute("UPDATE staging.plans SET default_credits=1000 WHERE code='business' AND default_credits=0")
-        await pool.execute("UPDATE staging.plans SET default_credits=2000 WHERE code='enterprise' AND default_credits=0")
+        await pool.execute("UPDATE staging.plans SET default_credits=500 WHERE code='starter' AND default_credits=0")
+        await pool.execute("UPDATE staging.plans SET default_credits=1000 WHERE code='growth' AND default_credits=0")
+        await pool.execute("UPDATE staging.plans SET default_credits=2000 WHERE code='scale' AND default_credits=0")
+        # Per-org monthly_credits and monthly_price overrides
+        await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS monthly_credits INTEGER NOT NULL DEFAULT 0")
+        await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS monthly_price NUMERIC(10,2) NOT NULL DEFAULT 0")
+        # Seed monthly_credits from plan defaults for existing orgs that have 0
+        await pool.execute("""
+            UPDATE staging.organisations o
+            SET monthly_credits = p.default_credits
+            FROM staging.subscriptions s
+            JOIN staging.plans p ON p.id = s.plan_id
+            WHERE s.org_id = o.id AND o.monthly_credits = 0 AND p.default_credits > 0
+        """)
+        # Seed hub_org_credits for orgs that don't have a row yet
+        await pool.execute("""
+            INSERT INTO staging.hub_org_credits (org_id, balance, credits_reset_at)
+            SELECT o.id, o.monthly_credits, NOW()
+            FROM staging.organisations o
+            WHERE o.monthly_credits > 0
+            AND NOT EXISTS (SELECT 1 FROM staging.hub_org_credits c WHERE c.org_id = o.id)
+        """)
         # Ensure all users with role='admin' have platform_admin in user_roles
         await pool.execute("""
             INSERT INTO staging.user_roles (user_id, org_id, role_code)

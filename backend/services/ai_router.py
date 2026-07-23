@@ -655,14 +655,20 @@ async def _maybe_reset_monthly_credits(conn, org_id: str):
     last_reset = wallet["credits_reset_at"]
     if last_reset.year == now.year and last_reset.month == now.month:
         return
-    plan_credits = await conn.fetchval(
-        "SELECT p.default_credits FROM staging.plans p "
-        "JOIN staging.subscriptions s ON s.plan_id = p.id "
-        "WHERE s.org_id=$1::uuid AND s.status='active' LIMIT 1",
+    org_credits = await conn.fetchval(
+        "SELECT monthly_credits FROM staging.organisations WHERE id=$1::uuid",
         org_id,
     )
-    if not plan_credits:
+    if not org_credits:
+        org_credits = await conn.fetchval(
+            "SELECT p.default_credits FROM staging.plans p "
+            "JOIN staging.subscriptions s ON s.plan_id = p.id "
+            "WHERE s.org_id=$1::uuid AND s.status='active' LIMIT 1",
+            org_id,
+        )
+    if not org_credits:
         return
+    plan_credits = org_credits
     await conn.execute(
         "UPDATE staging.hub_org_credits SET balance=$1, credits_reset_at=NOW(), updated_at=NOW() "
         "WHERE org_id=$2::uuid",

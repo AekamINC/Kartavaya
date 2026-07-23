@@ -48,6 +48,8 @@ class OrgCreate(BaseModel):
     owner_email: EmailStr
     plan_code: str = "free"
     markup_pct: float = 0.30
+    monthly_credits: Optional[int] = None
+    monthly_price: Optional[float] = None
     r2: Optional[R2Credentials] = None
 
 class OrgMemberAdd(BaseModel):
@@ -115,14 +117,18 @@ async def create_org(
     r2_secret_key = body.r2.secret_access_key if body.r2 else None
     r2_bucket = body.r2.bucket_name if body.r2 else None
 
+    monthly_credits = body.monthly_credits if body.monthly_credits is not None else (plan["default_credits"] or 0)
+    monthly_price = body.monthly_price if body.monthly_price is not None else 0
+
     await pool.execute(
         "INSERT INTO staging.organisations "
         "(id, team_id, name, owner_user_id, r2_account_id, r2_access_key_id, "
-        " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, markup_pct, is_active) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE)",
+        " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, markup_pct, "
+        " monthly_credits, monthly_price, is_active) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, TRUE)",
         org_id, tm["team_id"], body.name, owner["user_id"],
         r2_account_id, r2_access_key, r2_secret_key, r2_bucket,
-        storage_limit, body.markup_pct,
+        storage_limit, body.markup_pct, monthly_credits, monthly_price,
     )
 
     bucket_name = None
@@ -135,18 +141,17 @@ async def create_org(
         org_id, plan["id"],
     )
 
-    default_credits = plan["default_credits"] or 0
-    if default_credits > 0:
+    if monthly_credits > 0:
         await pool.execute(
             "INSERT INTO staging.hub_org_credits (org_id, balance, credits_reset_at) "
             "VALUES ($1, $2, NOW())",
-            org_id, default_credits,
+            org_id, monthly_credits,
         )
         await pool.execute(
             "INSERT INTO staging.hub_org_credit_transactions "
             "(org_id, amount, balance_after, tx_type, description, created_by) "
-            "VALUES ($1, $2, $2, 'topup', 'Plan default credits', $3)",
-            org_id, default_credits, user["user_id"],
+            "VALUES ($1, $2, $2, 'topup', 'Initial monthly credits', $3)",
+            org_id, monthly_credits, user["user_id"],
         )
 
     await pool.execute(
@@ -181,6 +186,7 @@ async def list_orgs(
     rows = await pool.fetch(
         "SELECT o.id, o.name, o.team_id, o.owner_user_id, o.is_active, "
         "o.storage_used_bytes, o.storage_limit_bytes, o.created_at, "
+        "o.markup_pct, o.monthly_credits, o.monthly_price, "
         "p.code as plan_code, p.name as plan_name, "
         "u.email as owner_email, u.full_name as owner_name "
         "FROM staging.organisations o "
@@ -467,6 +473,7 @@ async def get_org(
     org = await pool.fetchrow(
         "SELECT o.id, o.team_id, o.name, o.owner_user_id, o.is_active, "
         "o.r2_account_id, o.r2_bucket_name, o.storage_limit_bytes, "
+        "o.markup_pct, o.monthly_credits, o.monthly_price, "
         "o.created_at, o.updated_at, "
         "p.code as plan_code, p.name as plan_name, "
         "u.email as owner_email "
@@ -527,21 +534,59 @@ async def deactivate_org(
     return {"status": "deactivated"}
 
 
-@router.patch("/{org_id}/markup")
-async def update_org_markup(
+@router.patch("/{org_id}/settings")
+async def update_org_settings(
     org_id: str,
     body: dict,
     user=Depends(require_platform_role("platform_admin", "account_manager")),
 ):
+    """Update org markup, monthly credits, and/or monthly price."""
     pool = await get_pool()
-    pct = body.get("markup_pct")
-    if pct is None or not (0 <= float(pct) <= 1):
-        raise HTTPException(400, "markup_pct must be between 0 and 1")
+    updates = []
+    params = []
+    idx = 1
+
+    if "markup_pct" in body:
+        pct = float(body["markup_pct"])
+        if not (0 <= pct <= 1):
+            raise HTTPException(400, "markup_pct must be between 0 and 1")
+        updates.append(f"markup_pct=${idx}")
+        params.append(pct)
+        idx += 1
+
+    if "monthly_credits" in body:
+        mc = int(body["monthly_credits"])
+        if mc < 0:
+            raise HTTPException(400, "monthly_credits must be >= 0")
+        updates.append(f"monthly_credits=${idx}")
+        params.append(mc)
+        idx += 1
+
+    if "monthly_price" in body:
+        mp = float(body["monthly_price"])
+        if mp < 0:
+            raise HTTPException(400, "monthly_price must be >= 0")
+        updates.append(f"monthly_price=${idx}")
+        params.append(mp)
+        idx += 1
+
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    params.append(org_id)
     await pool.execute(
-        "UPDATE staging.organisations SET markup_pct=$1 WHERE id=$2::uuid",
-        float(pct), org_id,
+        f"UPDATE staging.organisations SET {', '.join(updates)} WHERE id=${idx}::uuid",
+        *params,
     )
-    return {"markup_pct": float(pct)}
+    row = await pool.fetchrow(
+        "SELECT markup_pct, monthly_credits, monthly_price FROM staging.organisations WHERE id=$1::uuid",
+        org_id,
+    )
+    return {
+        "markup_pct": float(row["markup_pct"]),
+        "monthly_credits": row["monthly_credits"],
+        "monthly_price": float(row["monthly_price"]),
+    }
 
 
 # ── Member Management ───────────────────────────────────────
@@ -941,7 +986,7 @@ async def org_cost_breakdown(
     cutoff = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
 
     org_row = await pool.fetchrow(
-        "SELECT id, markup_pct FROM staging.organisations WHERE id=$1::uuid", org_id
+        "SELECT id, markup_pct, monthly_credits, monthly_price FROM staging.organisations WHERE id=$1::uuid", org_id
     )
     if not org_row:
         raise HTTPException(404, "Organisation not found")
@@ -1039,6 +1084,8 @@ async def org_cost_breakdown(
         "period": period,
         "org_id": org_id,
         "markup_pct": org_markup,
+        "monthly_credits": org_row["monthly_credits"] or 0,
+        "monthly_price": float(org_row["monthly_price"]) if org_row["monthly_price"] else 0,
         "usd_to_inr": rate,
         "ai_costs": [
             {"provider": r["provider"], "model": r["model"],
@@ -1238,7 +1285,7 @@ async def admin_credit_usage(
     cutoff_end = datetime.combine(e + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
 
     org = await pool.fetchrow(
-        "SELECT o.name, p.name as plan_name, p.default_credits "
+        "SELECT o.name, o.monthly_credits, o.monthly_price, p.name as plan_name, p.default_credits "
         "FROM staging.organisations o "
         "LEFT JOIN staging.subscriptions sub ON sub.org_id = o.id "
         "LEFT JOIN staging.plans p ON p.id = sub.plan_id "
@@ -1271,7 +1318,8 @@ async def admin_credit_usage(
         "org_id": org_id,
         "org_name": org["name"] if org else "",
         "plan_name": org["plan_name"] if org else "Free",
-        "plan_default_credits": org["default_credits"] if org else 0,
+        "monthly_credits": (org["monthly_credits"] or org["default_credits"] or 0) if org else 0,
+        "monthly_price": float(org["monthly_price"]) if org and org["monthly_price"] else 0,
         "current_balance": wallet["balance"] if wallet else 0,
         "last_reset": wallet["credits_reset_at"].isoformat() if wallet and wallet["credits_reset_at"] else None,
         "period_start": s.isoformat(),

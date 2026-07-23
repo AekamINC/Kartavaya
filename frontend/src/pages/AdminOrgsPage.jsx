@@ -8,10 +8,10 @@ import { useToast } from '../components/ui/toast';
 import { PageHeader } from '../components/editorial';
 
 const PLAN_OPTIONS = [
-  { code: 'free', label: 'Free — Core PM only' },
-  { code: 'starter', label: 'Starter — ₹10k/mo' },
-  { code: 'growth', label: 'Growth — ₹15k/mo' },
-  { code: 'scale', label: 'Scale — ₹20k/mo' },
+  { code: 'free', label: 'Free', credits: 200 },
+  { code: 'starter', label: 'Starter', credits: 500 },
+  { code: 'growth', label: 'Growth', credits: 1000 },
+  { code: 'scale', label: 'Scale', credits: 2000 },
 ];
 
 const ORG_ROLE_OPTIONS = [
@@ -39,7 +39,7 @@ function formatBytes(bytes) {
 // ── Create Org Form ─────────────────────────────────────────
 
 function CreateOrgForm({ onCreated, pushToast }) {
-  const [form, setForm] = useState({ name: '', owner_email: '', plan_code: 'starter', markup_pct: 0.30 });
+  const [form, setForm] = useState({ name: '', owner_email: '', plan_code: 'starter', markup_pct: 0.30, monthly_credits: 500, monthly_price: 10000 });
   const [r2, setR2] = useState({ account_id: '', access_key_id: '', secret_access_key: '', bucket_name: 'kartavya-storage' });
   const [showR2, setShowR2] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -77,7 +77,7 @@ function CreateOrgForm({ onCreated, pushToast }) {
       if (showR2 && r2.account_id) payload.r2 = r2;
       const res = await api.post('/v1/admin/orgs', payload);
       pushToast({ type: 'success', title: `Org "${res.data.name}" created`, message: `Plan: ${res.data.plan}` });
-      setForm({ name: '', owner_email: '', plan_code: 'starter', markup_pct: 0.30 });
+      setForm({ name: '', owner_email: '', plan_code: 'starter', markup_pct: 0.30, monthly_credits: 500, monthly_price: 10000 });
       setR2({ account_id: '', access_key_id: '', secret_access_key: '', bucket_name: 'kartavya-storage' });
       setShowR2(false);
       setR2Valid(null);
@@ -107,8 +107,11 @@ function CreateOrgForm({ onCreated, pushToast }) {
         </div>
         <div>
           <label style={labelSt}>Plan</label>
-          <select className="k-select" style={{ width: '100%' }} value={form.plan_code} onChange={e => setForm(f => ({ ...f, plan_code: e.target.value }))}>
-            {PLAN_OPTIONS.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
+          <select className="k-select" style={{ width: '100%' }} value={form.plan_code} onChange={e => {
+            const plan = PLAN_OPTIONS.find(p => p.code === e.target.value);
+            setForm(f => ({ ...f, plan_code: e.target.value, monthly_credits: plan?.credits || f.monthly_credits }));
+          }}>
+            {PLAN_OPTIONS.map(p => <option key={p.code} value={p.code}>{p.label} ({p.credits} credits)</option>)}
           </select>
         </div>
         <div style={{ minWidth: 90 }}>
@@ -116,6 +119,22 @@ function CreateOrgForm({ onCreated, pushToast }) {
           <input className="k-input" type="number" min="0" max="100" step="1"
             value={Math.round(form.markup_pct * 100)}
             onChange={e => setForm(f => ({ ...f, markup_pct: Number(e.target.value) / 100 }))}
+            style={{ width: '100%' }} />
+        </div>
+      </div>
+      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr', marginBottom: 12 }}>
+        <div>
+          <label style={labelSt}>Monthly Credits</label>
+          <input className="k-input" type="number" min="0" step="50"
+            value={form.monthly_credits}
+            onChange={e => setForm(f => ({ ...f, monthly_credits: Number(e.target.value) }))}
+            style={{ width: '100%' }} />
+        </div>
+        <div>
+          <label style={labelSt}>Monthly Price (₹)</label>
+          <input className="k-input" type="number" min="0" step="500"
+            value={form.monthly_price}
+            onChange={e => setForm(f => ({ ...f, monthly_price: Number(e.target.value) }))}
             style={{ width: '100%' }} />
         </div>
       </div>
@@ -176,6 +195,62 @@ const ALL_MODULES = [
   { code: 'prachar', label: 'Prachar · Marketing', sensitive: false },
   { code: 'srijan', label: 'Srijan · AI Hub', sensitive: false },
 ];
+
+function OrgBillingSettings({ org, orgId, pushToast, onSaved }) {
+  const [markup, setMarkup] = useState(Math.round((org.markup_pct || 0.3) * 100));
+  const [credits, setCredits] = useState(org.monthly_credits || 0);
+  const [price, setPrice] = useState(org.monthly_price || 0);
+  const [saving, setSaving] = useState(false);
+
+  const changed = markup !== Math.round((org.markup_pct || 0.3) * 100)
+    || credits !== (org.monthly_credits || 0)
+    || price !== (org.monthly_price || 0);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.patch(`/v1/admin/orgs/${orgId}/settings`, {
+        markup_pct: markup / 100,
+        monthly_credits: credits,
+        monthly_price: price,
+      });
+      pushToast({ type: 'success', title: 'Billing settings saved' });
+      onSaved();
+    } catch (err) {
+      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Save failed' });
+    } finally { setSaving(false); }
+  };
+
+  const labelSt = { fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 };
+
+  return (
+    <div style={{ padding: '0 24px 16px' }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-2)', marginBottom: 8 }}>Billing & Credits</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+        <div>
+          <div style={labelSt}>MARKUP %</div>
+          <input className="k-input" type="number" min="0" max="100" step="1" value={markup}
+            onChange={e => setMarkup(Number(e.target.value))} style={{ width: '100%' }} />
+        </div>
+        <div>
+          <div style={labelSt}>MONTHLY CREDITS</div>
+          <input className="k-input" type="number" min="0" step="50" value={credits}
+            onChange={e => setCredits(Number(e.target.value))} style={{ width: '100%' }} />
+        </div>
+        <div>
+          <div style={labelSt}>MONTHLY PRICE ₹</div>
+          <input className="k-input" type="number" min="0" step="500" value={price}
+            onChange={e => setPrice(Number(e.target.value))} style={{ width: '100%' }} />
+        </div>
+      </div>
+      {changed && (
+        <button className="k-btn k-btn--sm k-btn--primary" style={{ marginTop: 8 }} disabled={saving} onClick={save}>
+          {saving ? 'Saving…' : 'Save Billing Settings'}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function OrgDetail({ orgId, onClose, pushToast }) {
   const [data, setData] = useState(null);
@@ -306,6 +381,9 @@ function OrgDetail({ orgId, onClose, pushToast }) {
             </div>
           </div>
         </div>
+
+        {/* Billing Settings */}
+        <OrgBillingSettings org={org} orgId={orgId} pushToast={pushToast} onSaved={load} />
 
         {/* R2 Config */}
         {!org.r2_account_id && (
@@ -673,9 +751,9 @@ export default function AdminOrgsPage() {
             </div>
 
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>{formatBytes(org.storage_used_bytes)}</div>
+              <div style={{ fontSize: 11, color: 'var(--ink-2)' }}>{org.monthly_credits || 0} credits · ₹{(org.monthly_price || 0).toLocaleString('en-IN')}/mo</div>
               <div style={{ fontSize: 10, color: 'var(--ink-faint)' }}>
-                {org.storage_limit_bytes > 0 ? `of ${formatBytes(org.storage_limit_bytes)}` : 'no limit'}
+                {formatBytes(org.storage_used_bytes)} {org.storage_limit_bytes > 0 ? `of ${formatBytes(org.storage_limit_bytes)}` : ''}
               </div>
             </div>
 
