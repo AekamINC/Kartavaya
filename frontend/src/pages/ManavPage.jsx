@@ -544,8 +544,8 @@ function ScheduleGrid({ pushToast }) {
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <label style={{ fontSize: 13 }}>From <input className="k-input" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></label>
-        <label style={{ fontSize: 13 }}>To <input className="k-input" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></label>
+        <label style={{ fontSize: 13 }}>From <input className="k-input" type="date" aria-label="Filter from date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></label>
+        <label style={{ fontSize: 13 }}>To <input className="k-input" type="date" aria-label="Filter to date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></label>
         <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={loadSchedules}>Load</button>
         <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={loadCoverage}>Coverage</button>
         <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ Assign Shift</button>
@@ -566,7 +566,7 @@ function ScheduleGrid({ pushToast }) {
                 {shifts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select></label>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Date *</span>
-              <input className="k-input" type="date" required value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></label>
+              <input className="k-input" type="date" aria-label="Assign date" required value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></label>
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
