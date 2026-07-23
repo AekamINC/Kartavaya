@@ -225,11 +225,35 @@ async def platform_analytics(
         "WHERE org_id IS NOT NULL"
     )
 
-    total_revenue_inr = await pool.fetchval(
-        "SELECT COALESCE(SUM(total), 0) FROM staging.subscription_invoices "
-        "WHERE payment_status='paid' AND paid_at >= $1",
+    # Revenue = margin earned from AI + scraper usage per org (charged_inr - cost_inr)
+    margin_rows = await pool.fetch(
+        "SELECT o.markup_pct, "
+        "COALESCE(ai.cost, 0) + COALESCE(sc.cost, 0) as total_cost_usd "
+        "FROM staging.organisations o "
+        "LEFT JOIN LATERAL ("
+        "  SELECT SUM(l.cost_usd) as cost "
+        "  FROM staging.hub_ai_logs l "
+        "  JOIN staging.hub_clients c ON c.id = l.client_id "
+        "  WHERE c.org_id = o.id AND l.created_at >= $1"
+        ") ai ON TRUE "
+        "LEFT JOIN LATERAL ("
+        "  SELECT SUM(r.cost_usd) as cost "
+        "  FROM staging.hub_scraper_runs r "
+        "  WHERE r.org_id = o.id AND r.created_at >= $1"
+        ") sc ON TRUE "
+        "WHERE o.is_active=TRUE AND "
+        "(COALESCE(ai.cost, 0) + COALESCE(sc.cost, 0)) > 0",
         datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
-    ) or 0
+    )
+    rate_for_rev = await get_usd_inr()
+    total_revenue_inr = sum(
+        math.ceil(float(r["total_cost_usd"]) * rate_for_rev * (1 + float(r["markup_pct"])))
+        for r in margin_rows
+    )
+    total_cost_inr = sum(
+        round(float(r["total_cost_usd"]) * rate_for_rev, 2)
+        for r in margin_rows
+    )
 
     ai_stats = await pool.fetchrow(
         "SELECT COALESCE(SUM(l.cost_usd), 0) as total_cost, COUNT(*) as total_calls "
@@ -286,7 +310,9 @@ async def platform_analytics(
         "period": period,
         "total_orgs": total_orgs,
         "total_users": total_users,
-        "total_revenue_inr": float(total_revenue_inr),
+        "total_revenue_inr": round(total_revenue_inr, 2),
+        "total_cost_inr": round(total_cost_inr, 2),
+        "margin_inr": round(total_revenue_inr - total_cost_inr, 2),
         "total_ai_cost_usd": ai_cost,
         "total_scraper_cost_usd": scraper_cost,
         "total_cost": _with_inr(total_cost, rate),
@@ -308,7 +334,9 @@ async def platform_analytics(
              "total_cost_usd": float(r["total_cost_usd"]),
              "markup_pct": float(r["markup_pct"]),
              "total": _with_inr(float(r["total_cost_usd"]), rate, float(r["markup_pct"])),
-             "charged_inr": _with_inr(float(r["total_cost_usd"]), rate, float(r["markup_pct"]))["charged_inr"]}
+             "charged_inr": _with_inr(float(r["total_cost_usd"]), rate, float(r["markup_pct"]))["charged_inr"],
+             "margin_inr": _with_inr(float(r["total_cost_usd"]), rate, float(r["markup_pct"]))["charged_inr"]
+                           - round(float(r["total_cost_usd"]) * rate, 2)}
             for r in top_orgs
         ],
     }

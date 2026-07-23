@@ -74,7 +74,9 @@ function PlatformOverview({ period }) {
       <div className="k-stats">
         <StatTile label="Total Orgs" value={fmtNum(data.total_orgs)} />
         <StatTile label="Total Users" value={fmtNum(data.total_users)} />
-        <StatTile label="Revenue (INR)" value={fmtINR(data.total_revenue_inr)} />
+        <StatTile label="Usage Revenue" value={fmtINR(data.total_revenue_inr)} />
+        <StatTile label="Aekam Cost" value={fmtINR(data.total_cost_inr)} />
+        <StatTile label="Margin" value={fmtINR(data.margin_inr)} />
         <StatTile label="Total AI Calls" value={fmtNum(data.total_ai_calls)} />
       </div>
 
@@ -118,18 +120,20 @@ function PlatformOverview({ period }) {
       </Section>
 
       <Section title="Top Spenders">
-        <DataTable columns={['Organisation', 'Aekam Cost (USD)', 'Client Charge (INR)', 'AI', 'Scraper']}>
+        <DataTable columns={['Organisation', 'Markup', 'Aekam Cost (USD)', 'Client Charge (INR)', 'Margin (INR)', 'AI', 'Scraper']}>
           {(data.top_orgs_by_spend || []).map((r, i) => (
             <tr key={i}>
               <Td bold>{r.org_name}</Td>
+              <Td mono>{fmtPct(r.markup_pct)}</Td>
               <Td mono>{fmtUSD2(r.total_cost_usd)}</Td>
               <Td mono bold style={{ color: 'var(--k-primary)' }}>{fmtINR(r.charged_inr)}</Td>
+              <Td mono style={{ color: '#10b981', fontWeight: 600 }}>{fmtINR(r.margin_inr)}</Td>
               <Td mono>{fmtUSD2(r.ai_cost_usd)}</Td>
               <Td mono>{fmtUSD2(r.scraper_cost_usd)}</Td>
             </tr>
           ))}
           {(data.top_orgs_by_spend || []).length === 0 && (
-            <tr><Td colSpan={5} style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>No spend data in this period.</Td></tr>
+            <tr><Td colSpan={7} style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>No spend data in this period.</Td></tr>
           )}
         </DataTable>
       </Section>

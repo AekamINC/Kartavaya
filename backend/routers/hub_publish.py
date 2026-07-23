@@ -43,6 +43,12 @@ async def _pop_oauth_state(state: str) -> dict | None:
     )
     return json.loads(row["data"]) if row else None
 
+ALL_PLATFORMS = [
+    "facebook", "instagram", "linkedin", "google_business", "twitter",
+    "youtube", "whatsapp_business", "pinterest", "tiktok",
+    "threads", "telegram", "snapchat", "reddit",
+]
+
 OAUTH_CONFIGS = {
     "facebook": {
         "auth_url": "https://www.facebook.com/v21.0/dialog/oauth",
@@ -71,6 +77,41 @@ OAUTH_CONFIGS = {
         "scopes": "https://www.googleapis.com/auth/business.manage",
         "env_id": "GOOGLE_CLIENT_ID",
         "env_secret": "GOOGLE_CLIENT_SECRET",
+    },
+    "youtube": {
+        "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
+        "token_url": "https://oauth2.googleapis.com/token",
+        "scopes": "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube",
+        "env_id": "GOOGLE_CLIENT_ID",
+        "env_secret": "GOOGLE_CLIENT_SECRET",
+    },
+    "pinterest": {
+        "auth_url": "https://www.pinterest.com/oauth/",
+        "token_url": "https://api.pinterest.com/v5/oauth/token",
+        "scopes": "boards:read,pins:read,pins:write",
+        "env_id": "PINTEREST_APP_ID",
+        "env_secret": "PINTEREST_APP_SECRET",
+    },
+    "tiktok": {
+        "auth_url": "https://www.tiktok.com/v2/auth/authorize/",
+        "token_url": "https://open.tiktokapis.com/v2/oauth/token/",
+        "scopes": "video.publish,video.upload",
+        "env_id": "TIKTOK_CLIENT_KEY",
+        "env_secret": "TIKTOK_CLIENT_SECRET",
+    },
+    "threads": {
+        "auth_url": "https://threads.net/oauth/authorize",
+        "token_url": "https://graph.threads.net/oauth/access_token",
+        "scopes": "threads_basic,threads_content_publish",
+        "env_id": "META_APP_ID",
+        "env_secret": "META_APP_SECRET",
+    },
+    "reddit": {
+        "auth_url": "https://www.reddit.com/api/v1/authorize",
+        "token_url": "https://www.reddit.com/api/v1/access_token",
+        "scopes": "submit,read,identity",
+        "env_id": "REDDIT_CLIENT_ID",
+        "env_secret": "REDDIT_CLIENT_SECRET",
     },
 }
 
@@ -243,7 +284,7 @@ async def oauth_callback(
     frontend_url = os.getenv("FRONTEND_URL", "").rstrip("/")
     from fastapi.responses import RedirectResponse
     return RedirectResponse(
-        f"{frontend_url}/hub?tab=publish&oauth=success&platform={platform}"
+        f"{frontend_url}/hub/clients/{state_data['client_id']}?tab=publish&oauth=success&platform={platform}"
     )
 
 
@@ -380,9 +421,8 @@ async def connect_social_account(
     if not cl:
         raise HTTPException(404, "Client not found")
 
-    valid_platforms = {"facebook", "instagram", "linkedin", "google_business", "twitter"}
-    if body.platform not in valid_platforms:
-        raise HTTPException(400, f"Invalid platform. Must be one of: {', '.join(valid_platforms)}")
+    if body.platform not in ALL_PLATFORMS:
+        raise HTTPException(400, f"Invalid platform. Must be one of: {', '.join(ALL_PLATFORMS)}")
 
     row = await pool.fetchrow(
         "INSERT INTO staging.hub_social_accounts "
@@ -629,3 +669,64 @@ async def dispatch_scheduled_posts(
     published = sum(1 for r in results if r.get("status") == "published")
     failed = sum(1 for r in results if r.get("status") == "failed")
     return {"processed": len(results), "published": published, "failed": failed}
+
+
+# ── Client Platform Management (Aekam controls) ─────────
+
+class PlatformToggle(BaseModel):
+    platforms: list[str]
+
+
+@router.get("/clients/{client_id}/platforms")
+async def list_client_platforms(
+    client_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _gate=Depends(_hub_gate),
+):
+    """List which platforms are enabled for this client."""
+    pool = await get_pool()
+    cid = str(client_id)
+    rows = await pool.fetch(
+        "SELECT platform, enabled FROM staging.hub_client_platforms "
+        "WHERE client_id=$1::uuid ORDER BY platform",
+        cid,
+    )
+    enabled = [r["platform"] for r in rows if r["enabled"]]
+    return {"enabled": enabled, "all_platforms": ALL_PLATFORMS}
+
+
+@router.put("/clients/{client_id}/platforms")
+async def set_client_platforms(
+    client_id: UUID,
+    body: PlatformToggle,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _gate=Depends(_hub_gate),
+):
+    """Set which platforms a client can use. Only valid platform keys accepted."""
+    pool = await get_pool()
+    cid = str(client_id)
+
+    cl = await pool.fetchrow(
+        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        cid, org_id,
+    )
+    if not cl:
+        raise HTTPException(404, "Client not found")
+
+    invalid = [p for p in body.platforms if p not in ALL_PLATFORMS]
+    if invalid:
+        raise HTTPException(400, f"Invalid platforms: {', '.join(invalid)}")
+
+    await pool.execute(
+        "DELETE FROM staging.hub_client_platforms WHERE client_id=$1::uuid", cid,
+    )
+    for p in body.platforms:
+        await pool.execute(
+            "INSERT INTO staging.hub_client_platforms (client_id, platform, enabled, enabled_by, org_id) "
+            "VALUES ($1::uuid, $2, TRUE, $3, $4::uuid)",
+            cid, p, user["user_id"], org_id,
+        )
+
+    return {"enabled": body.platforms}

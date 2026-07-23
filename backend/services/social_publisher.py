@@ -238,6 +238,200 @@ async def publish_to_google_business(account: dict, text: str, media_urls: list 
     }
 
 
+async def publish_to_youtube(account: dict, text: str, media_urls: list = None) -> dict:
+    """Upload a video to YouTube via Data API v3."""
+    token = account["access_token"]
+    if not media_urls:
+        raise ValueError("YouTube requires a video URL")
+
+    metadata = {
+        "snippet": {
+            "title": text[:100] if text else "Untitled",
+            "description": text,
+            "categoryId": "22",
+        },
+        "status": {"privacyStatus": "public"},
+    }
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(
+            "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=metadata,
+        )
+        resp.raise_for_status()
+        upload_url = resp.headers.get("location", "")
+
+        if upload_url and media_urls:
+            video_resp = await client.get(media_urls[0])
+            video_resp.raise_for_status()
+            up = await client.put(
+                upload_url,
+                content=video_resp.content,
+                headers={"Content-Type": "video/*"},
+            )
+            up.raise_for_status()
+            data = up.json()
+            video_id = data.get("id", "")
+            return {
+                "platform_post_id": video_id,
+                "platform_url": f"https://youtube.com/watch?v={video_id}" if video_id else None,
+            }
+
+    return {"platform_post_id": None, "platform_url": None}
+
+
+async def publish_to_pinterest(account: dict, text: str, media_urls: list = None) -> dict:
+    """Create a Pin on Pinterest."""
+    token = account["access_token"]
+    board_id = account.get("page_id") or account.get("account_id")
+    pin_data = {
+        "board_id": board_id,
+        "description": text,
+    }
+    if media_urls:
+        pin_data["media_source"] = {"source_type": "image_url", "url": media_urls[0]}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.pinterest.com/v5/pins",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json=pin_data,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    pin_id = data.get("id", "")
+    return {
+        "platform_post_id": pin_id,
+        "platform_url": f"https://pinterest.com/pin/{pin_id}" if pin_id else None,
+    }
+
+
+async def publish_to_threads(account: dict, text: str, media_urls: list = None) -> dict:
+    """Publish to Threads (Meta) via Graph API."""
+    token = account["access_token"]
+    user_id = account.get("account_id")
+
+    container_data = {"text": text, "media_type": "TEXT", "access_token": token}
+    if media_urls:
+        container_data["media_type"] = "IMAGE"
+        container_data["image_url"] = media_urls[0]
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        container = await client.post(
+            f"https://graph.threads.net/v1.0/{user_id}/threads",
+            data=container_data,
+        )
+        container.raise_for_status()
+        creation_id = container.json()["id"]
+
+        publish = await client.post(
+            f"https://graph.threads.net/v1.0/{user_id}/threads_publish",
+            data={"creation_id": creation_id, "access_token": token},
+        )
+        publish.raise_for_status()
+        data = publish.json()
+
+    return {"platform_post_id": data.get("id"), "platform_url": None}
+
+
+async def publish_to_telegram(account: dict, text: str, media_urls: list = None) -> dict:
+    """Send a message to a Telegram channel via Bot API."""
+    bot_token = account["access_token"]
+    chat_id = account.get("page_id") or account.get("account_id")
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        if media_urls:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendPhoto",
+                data={"chat_id": chat_id, "caption": text, "photo": media_urls[0]},
+            )
+        else:
+            resp = await client.post(
+                f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                data={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+            )
+        resp.raise_for_status()
+        data = resp.json()
+
+    msg_id = data.get("result", {}).get("message_id", "")
+    return {
+        "platform_post_id": str(msg_id),
+        "platform_url": f"https://t.me/{chat_id.lstrip('@')}/{msg_id}" if msg_id and chat_id else None,
+    }
+
+
+async def publish_to_tiktok(account: dict, text: str, media_urls: list = None) -> dict:
+    """Publish a video to TikTok via Content Posting API."""
+    token = account["access_token"]
+    if not media_urls:
+        raise ValueError("TikTok requires a video URL")
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        init = await client.post(
+            "https://open.tiktokapis.com/v2/post/publish/video/init/",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={
+                "post_info": {"title": text[:150], "privacy_level": "PUBLIC_TO_EVERYONE"},
+                "source_info": {"source": "PULL_FROM_URL", "video_url": media_urls[0]},
+            },
+        )
+        init.raise_for_status()
+        data = init.json()
+    publish_id = data.get("data", {}).get("publish_id", "")
+    return {"platform_post_id": publish_id, "platform_url": None}
+
+
+async def publish_to_reddit(account: dict, text: str, media_urls: list = None) -> dict:
+    """Submit a post to a subreddit."""
+    token = account["access_token"]
+    subreddit = account.get("page_id") or account.get("account_id")
+
+    post_data = {
+        "sr": subreddit,
+        "title": text[:300] if text else "Post",
+        "kind": "self",
+        "text": text,
+    }
+    if media_urls:
+        post_data["kind"] = "link"
+        post_data["url"] = media_urls[0]
+        del post_data["text"]
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://oauth.reddit.com/api/submit",
+            headers={"Authorization": f"Bearer {token}", "User-Agent": "Kartavya/1.0"},
+            data=post_data,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    url = data.get("json", {}).get("data", {}).get("url", "")
+    post_id = data.get("json", {}).get("data", {}).get("id", "")
+    return {"platform_post_id": post_id, "platform_url": url or None}
+
+
+async def publish_to_whatsapp_business(account: dict, text: str, media_urls: list = None) -> dict:
+    """Send a template message via WhatsApp Business Cloud API."""
+    token = account["access_token"]
+    phone_number_id = account.get("page_id") or account.get("account_id")
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"https://graph.facebook.com/v21.0/{phone_number_id}/messages",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={
+                "messaging_product": "whatsapp",
+                "type": "text",
+                "text": {"body": text},
+                "to": account.get("metadata", {}).get("broadcast_list", ""),
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    msg_id = data.get("messages", [{}])[0].get("id", "")
+    return {"platform_post_id": msg_id, "platform_url": None}
+
+
 # ── Queue processor ───────────────────────────────────────
 
 async def publish_content(queue_id: str) -> dict:
@@ -282,16 +476,23 @@ async def publish_content(queue_id: str) -> dict:
 
     try:
         platform = item["platform"]
-        if platform == "facebook":
-            result = await publish_to_facebook(account, text, media)
-        elif platform == "instagram":
-            result = await publish_to_instagram(account, text, media)
-        elif platform == "linkedin":
-            result = await publish_to_linkedin(account, text, media)
-        elif platform == "google_business":
-            result = await publish_to_google_business(account, text, media)
-        else:
+        publishers = {
+            "facebook": publish_to_facebook,
+            "instagram": publish_to_instagram,
+            "linkedin": publish_to_linkedin,
+            "google_business": publish_to_google_business,
+            "youtube": publish_to_youtube,
+            "pinterest": publish_to_pinterest,
+            "threads": publish_to_threads,
+            "telegram": publish_to_telegram,
+            "tiktok": publish_to_tiktok,
+            "reddit": publish_to_reddit,
+            "whatsapp_business": publish_to_whatsapp_business,
+        }
+        publisher = publishers.get(platform)
+        if not publisher:
             raise ValueError(f"Unsupported platform: {platform}")
+        result = await publisher(account, text, media)
 
         now = datetime.now(timezone.utc)
         await pool.execute(
