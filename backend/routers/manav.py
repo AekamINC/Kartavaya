@@ -19,6 +19,17 @@ router = APIRouter(prefix="/api/v1/manav", tags=["manav-hrms"])
 
 _gate = require_module("manav")
 
+from datetime import time as _dt_time
+
+
+def _parse_date(s: str) -> date:
+    return date.fromisoformat(s)
+
+
+def _parse_time(s: str) -> _dt_time:
+    parts = s.split(":")
+    return _dt_time(int(parts[0]), int(parts[1]))
+
 
 # ── Pydantic Models ──────────────────────────────────────────
 
@@ -482,11 +493,11 @@ async def attendance_summary(
         today = date.today()
         year, mo = str(today.year), f"{today.month:02d}"
 
-    start = f"{year}-{mo}-01"
+    start = _parse_date(f"{year}-{mo}-01")
     if int(mo) < 12:
-        end = f"{year}-{int(mo)+1:02d}-01"
+        end = _parse_date(f"{year}-{int(mo)+1:02d}-01")
     else:
-        end = f"{int(year)+1}-01-01"
+        end = _parse_date(f"{int(year)+1}-01-01")
 
     rows = await pool.fetch(
         "SELECT e.id, e.name, e.employee_code, "
@@ -499,7 +510,7 @@ async def attendance_summary(
         "COALESCE(SUM(a.overtime_hours),0) as overtime_hours "
         "FROM staging.manav_employees e "
         "LEFT JOIN staging.manav_attendance a ON a.employee_id=e.id "
-        "  AND a.date >= $2::date AND a.date < $3::date "
+        "  AND a.date >= $2 AND a.date < $3 "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
         "GROUP BY e.id, e.name, e.employee_code ORDER BY e.name",
         org_id, start, end,
@@ -720,8 +731,8 @@ async def create_holiday(
     pool = await get_pool()
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_holidays (org_id, name, date, is_optional) "
-        "VALUES ($1::uuid, $2, $3::date, $4) RETURNING id, name, date",
-        org_id, body.name, body.date, body.is_optional,
+        "VALUES ($1::uuid, $2, $3, $4) RETURNING id, name, date",
+        org_id, body.name, _parse_date(body.date), body.is_optional,
     )
     return {"status": "created", **dict(row)}
 
@@ -940,9 +951,9 @@ async def check_leave_conflicts(
         "WHERE lr.org_id=$1::uuid AND lr.status IN ('approved','pending') "
         "AND e.department=$2 AND e.is_active=TRUE "
         "AND lr.employee_id != $3::uuid "
-        "AND lr.start_date <= $5::date AND lr.end_date >= $4::date "
+        "AND lr.start_date <= $5 AND lr.end_date >= $4 "
         "ORDER BY lr.start_date",
-        org_id, emp["department"], employee_id, start_date, end_date,
+        org_id, emp["department"], employee_id, _parse_date(start_date), _parse_date(end_date),
     )
 
     conflict_count = len(conflicts)
@@ -1037,10 +1048,6 @@ async def list_shifts(user=Depends(require_user), org_id=Depends(get_org_id)):
 @router.post("/shifts", dependencies=[Depends(_gate)])
 async def create_shift(body: ShiftCreate, user=Depends(require_user), org_id=Depends(get_org_id)):
     pool = await get_pool()
-    from datetime import time as dt_time
-    def _parse_time(s: str) -> dt_time:
-        parts = s.split(":")
-        return dt_time(int(parts[0]), int(parts[1]))
     st, et = _parse_time(body.start_time), _parse_time(body.end_time)
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_shift_definitions "
@@ -1062,10 +1069,6 @@ async def update_shift(shift_id: UUID, body: ShiftUpdate, user=Depends(require_u
         raise HTTPException(400, "No fields to update")
     sets, params = [], [str(shift_id), org_id]
     idx = 3
-    from datetime import time as dt_time
-    def _parse_time(s: str) -> dt_time:
-        parts = s.split(":")
-        return dt_time(int(parts[0]), int(parts[1]))
     for k, v in updates.items():
         if k in ("start_time", "end_time"):
             sets.append(f"{k}=${idx}")
@@ -1115,12 +1118,12 @@ async def list_schedules(
     params: list = [org_id]
     idx = 2
     if date_from:
-        query += f"AND s.date >= ${idx}::date "
-        params.append(date_from)
+        query += f"AND s.date >= ${idx} "
+        params.append(_parse_date(date_from))
         idx += 1
     if date_to:
-        query += f"AND s.date <= ${idx}::date "
-        params.append(date_to)
+        query += f"AND s.date <= ${idx} "
+        params.append(_parse_date(date_to))
         idx += 1
     if employee_id:
         query += f"AND s.employee_id = ${idx}::uuid "
@@ -1137,11 +1140,11 @@ async def assign_schedule(body: ScheduleAssign, user=Depends(require_user), org_
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_schedules "
         "(org_id, employee_id, shift_id, date, notes, created_by) "
-        "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::date, $5, $6) "
+        "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6) "
         "ON CONFLICT (employee_id, date) DO UPDATE SET "
         "shift_id=$3::uuid, notes=$5, status='scheduled' "
         "RETURNING id",
-        org_id, body.employee_id, body.shift_id, body.date, body.notes, user["user_id"],
+        org_id, body.employee_id, body.shift_id, _parse_date(body.date), body.notes, user["user_id"],
     )
     return {"status": "assigned", "id": str(row["id"])}
 
@@ -1154,10 +1157,10 @@ async def bulk_assign(body: ScheduleBulkAssign, user=Depends(require_user), org_
         await pool.execute(
             "INSERT INTO staging.manav_schedules "
             "(org_id, employee_id, shift_id, date, notes, created_by) "
-            "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::date, $5, $6) "
+            "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6) "
             "ON CONFLICT (employee_id, date) DO UPDATE SET "
             "shift_id=$3::uuid, notes=$5, status='scheduled'",
-            org_id, a.employee_id, a.shift_id, a.date, a.notes, user["user_id"],
+            org_id, a.employee_id, a.shift_id, _parse_date(a.date), a.notes, user["user_id"],
         )
         created += 1
     return {"status": "assigned", "count": created}
@@ -1176,9 +1179,9 @@ async def schedule_coverage(
         "COUNT(s.id) AS assigned_count "
         "FROM staging.manav_schedules s "
         "JOIN staging.manav_shift_definitions sd ON sd.id = s.shift_id "
-        "WHERE s.org_id=$1::uuid AND s.date >= $2::date AND s.date <= $3::date "
+        "WHERE s.org_id=$1::uuid AND s.date >= $2 AND s.date <= $3 "
         "GROUP BY s.date, sd.id, sd.name ORDER BY s.date, sd.name",
-        org_id, date_from, date_to,
+        org_id, _parse_date(date_from), _parse_date(date_to),
     )
     # Also get employee count for gap detection
     total_active = await pool.fetchval(
@@ -1217,12 +1220,12 @@ async def list_availability(
         params.append(employee_id)
         idx += 1
     if date_from:
-        query += f"AND a.date >= ${idx}::date "
-        params.append(date_from)
+        query += f"AND a.date >= ${idx} "
+        params.append(_parse_date(date_from))
         idx += 1
     if date_to:
-        query += f"AND a.date <= ${idx}::date "
-        params.append(date_to)
+        query += f"AND a.date <= ${idx} "
+        params.append(_parse_date(date_to))
         idx += 1
     query += "ORDER BY a.date LIMIT 500"
     rows = await pool.fetch(query, *params)
@@ -1242,10 +1245,10 @@ async def set_availability(body: AvailabilitySet, user=Depends(require_user), or
     await pool.execute(
         "INSERT INTO staging.manav_availability "
         "(org_id, employee_id, date, is_available, preferred_shift_id, notes) "
-        "VALUES ($1::uuid, $2, $3::date, $4, NULLIF($5,'')::uuid, $6) "
+        "VALUES ($1::uuid, $2, $3, $4, NULLIF($5,'')::uuid, $6) "
         "ON CONFLICT (employee_id, date) DO UPDATE SET "
         "is_available=$4, preferred_shift_id=NULLIF($5,'')::uuid, notes=$6",
-        org_id, emp, body.date, body.is_available,
+        org_id, emp, _parse_date(body.date), body.is_available,
         body.preferred_shift_id or "", body.notes,
     )
     return {"status": "saved"}
@@ -1283,8 +1286,8 @@ async def create_bid(body: ShiftBidCreate, user=Depends(require_user), org_id=De
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_shift_bids "
         "(org_id, shift_id, date, slots_needed, created_by) "
-        "VALUES ($1::uuid, $2::uuid, $3::date, $4, $5) RETURNING id",
-        org_id, body.shift_id, body.date, body.slots_needed, user["user_id"],
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5) RETURNING id",
+        org_id, body.shift_id, _parse_date(body.date), body.slots_needed, user["user_id"],
     )
     return {"status": "created", "id": str(row["id"])}
 
