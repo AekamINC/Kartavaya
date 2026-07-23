@@ -78,7 +78,7 @@ function PlatformOverview({ period }) {
         <StatTile label="Total AI Calls" value={fmtNum(data.total_ai_calls)} />
       </div>
 
-      <Section title={`Cost Summary · Default Markup ${fmtPct(data.default_markup_pct || data.markup_pct)} · Live Rate ₹${data.usd_to_inr ? data.usd_to_inr.toFixed(2) : '85.00'}/USD`}>
+      <Section title={`Cost Summary · Default Markup ${fmtPct(data.default_markup_pct || data.markup_pct)} · Live Rate ₹${data.usd_to_inr ? data.usd_to_inr.toFixed(2) : '—'}/USD`}>
         <DataTable columns={['Category', 'Aekam Cost (USD)', 'Aekam Cost (INR)', 'Client Charge (INR)']}>
           <tr>
             <Td bold>AI Services</Td>
@@ -201,7 +201,7 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
   if (!data) return <BackButton onClick={onBack} />;
 
   const maxDayCost = Math.max(
-    ...data.daily_trend.map(d => d.ai_cost + d.scraper_cost),
+    ...(data.daily_trend || []).map(d => d.ai_cost + d.scraper_cost),
     0.01
   );
 
@@ -259,11 +259,11 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
           </button>
         )}
         <span style={{ fontSize: 12, color: 'var(--ink-faint)', marginLeft: 'auto' }}>
-          Live Rate: ₹{data.usd_to_inr || 85}/USD
+          Live Rate: ₹{data.usd_to_inr ? data.usd_to_inr.toFixed(2) : '—'}/USD
         </span>
       </div>
 
-      <Section title={`Summary · Markup ${fmtPct(data.markup_pct)} · ₹${data.usd_to_inr || 85}/USD`}>
+      <Section title={`Summary · Markup ${fmtPct(data.markup_pct)} · Live Rate ₹${data.usd_to_inr ? data.usd_to_inr.toFixed(2) : '—'}/USD`}>
         <DataTable columns={['Category', 'Aekam Cost (USD)', 'Aekam Cost (INR)', 'Client Charge (INR)']}>
           <tr>
             <Td bold>AI Services</Td>
@@ -338,7 +338,7 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
 
       <Section title="AI Costs by Model">
         <DataTable columns={['Provider', 'Model', 'Cost (USD)', 'Charge (INR)', 'Calls', 'Tokens']}>
-          {data.ai_costs.map((r, i) => (
+          {(data.ai_costs || []).map((r, i) => (
             <tr key={i}>
               <Td>{r.provider}</Td>
               <Td mono>{r.model}</Td>
@@ -348,7 +348,7 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
               <Td mono style={{ fontSize: 10 }}>{fmtNum(r.prompt_tokens)} / {fmtNum(r.completion_tokens)}</Td>
             </tr>
           ))}
-          {data.ai_costs.length === 0 && (
+          {(data.ai_costs || []).length === 0 && (
             <tr><Td colSpan={6} style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>No AI usage in this period.</Td></tr>
           )}
         </DataTable>
@@ -356,7 +356,7 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
 
       <Section title="Scraper Costs">
         <DataTable columns={['Scraper', 'Cost (USD)', 'Charge (INR)', 'Billed (INR)', 'Runs']}>
-          {data.scraper_costs.map((r, i) => (
+          {(data.scraper_costs || []).map((r, i) => (
             <tr key={i}>
               <Td>{r.scraper_id}</Td>
               <Td mono>{fmtUSD(r.cost_usd)}</Td>
@@ -365,7 +365,7 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
               <Td mono>{fmtNum(r.run_count)}</Td>
             </tr>
           ))}
-          {data.scraper_costs.length === 0 && (
+          {(data.scraper_costs || []).length === 0 && (
             <tr><Td colSpan={5} style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>No scraper usage in this period.</Td></tr>
           )}
         </DataTable>
@@ -374,7 +374,7 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
       <Section title="Daily Trend">
         <div style={{ overflowX: 'auto' }}>
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, minHeight: 120, padding: '8px 0' }}>
-            {data.daily_trend.map((d, i) => {
+            {(data.daily_trend || []).map((d, i) => {
               const aiH = (d.ai_cost / maxDayCost) * 100;
               const scH = (d.scraper_cost / maxDayCost) * 100;
               const dayLabel = new Date(d.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
@@ -385,7 +385,7 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
                     <div style={{ height: Math.max(aiH, 1), background: 'var(--k-primary)', borderRadius: '3px 3px 0 0', opacity: 0.8 }} />
                     <div style={{ height: Math.max(scH, 0.5), background: '#f59e0b', borderRadius: '0 0 3px 3px', opacity: 0.8 }} />
                   </div>
-                  {data.daily_trend.length <= 31 && (
+                  {(data.daily_trend || []).length <= 31 && (
                     <div style={{ fontSize: 8, color: 'var(--ink-faint)', marginTop: 4, transform: 'rotate(-45deg)', whiteSpace: 'nowrap' }}>
                       {dayLabel}
                     </div>

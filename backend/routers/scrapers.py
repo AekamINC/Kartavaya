@@ -488,7 +488,7 @@ async def list_runs(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT r.id, r.scraper_id, r.status, r.result_count, r.billed_inr, "
-        "r.cost_usd, r.created_at, r.finished_at, c.name as scraper_name, c.icon "
+        "r.cost_usd, r.credits_charged, r.created_at, r.finished_at, c.name as scraper_name, c.icon "
         "FROM staging.hub_scraper_runs r "
         "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
         "WHERE r.org_id=$1::uuid ORDER BY r.created_at DESC LIMIT 50",
@@ -531,7 +531,7 @@ async def admin_runs(
     pool = await get_pool()
     q = (
         "SELECT r.id, r.org_id, r.scraper_id, r.user_id, r.status, r.result_count, "
-        "r.billed_inr, r.cost_usd, r.error, r.created_at, r.finished_at, "
+        "r.billed_inr, r.cost_usd, r.credits_charged, r.error, r.created_at, r.finished_at, "
         "c.name as scraper_name, c.icon, o.name as org_name "
         "FROM staging.hub_scraper_runs r "
         "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "

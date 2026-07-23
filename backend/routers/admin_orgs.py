@@ -25,7 +25,6 @@ DEFAULT_MARKUP_PCT = 0.30
 
 def _with_inr(cost_usd: float, rate: float, markup: float = 0.30) -> dict:
     """Return USD, INR, and client-charged INR (with markup, ceiled to whole number)."""
-    import math
     inr = cost_usd * rate
     charged_inr = math.ceil(inr * (1 + markup))
     return {"usd": round(cost_usd, 4), "inr": round(inr, 2), "charged_inr": charged_inr}

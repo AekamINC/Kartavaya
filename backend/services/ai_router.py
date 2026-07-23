@@ -251,14 +251,18 @@ async def generate(
                 result["prompt_tokens"], result["completion_tokens"],
                 latency, cost_usd, result.get("generation_id", ""),
             )
-            if org_id:
-                await pool.execute(
-                    "INSERT INTO staging.usage_tracking (org_id, metric, value, recorded_at) "
-                    "VALUES ($1::uuid, 'ai_calls', 1, CURRENT_DATE) "
-                    "ON CONFLICT (org_id, metric, recorded_at) "
-                    "DO UPDATE SET value = staging.usage_tracking.value + 1",
-                    org_id,
+            if client_id:
+                _org_id = await pool.fetchval(
+                    "SELECT org_id FROM staging.hub_clients WHERE id=$1::uuid", client_id
                 )
+                if _org_id:
+                    await pool.execute(
+                        "INSERT INTO staging.usage_tracking (org_id, metric, value, recorded_at) "
+                        "VALUES ($1::uuid, 'ai_calls', 1, CURRENT_DATE) "
+                        "ON CONFLICT (org_id, metric, recorded_at) "
+                        "DO UPDATE SET value = staging.usage_tracking.value + 1",
+                        _org_id,
+                    )
 
             return {
                 "text": result["text"],
