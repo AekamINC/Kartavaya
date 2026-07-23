@@ -260,7 +260,6 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
         <StatTile label="Credit Balance" value={fmtNum(data.credit_balance)} />
         <StatTile label="Org Credits" value={fmtNum(data.org_credits_balance)} />
         <StatTile label="Credits Used" value={fmtNum(data.credits_used_period)} />
-        <StatTile label="Total Top-ups" value={fmtNum(data.org_credits_topup)} />
       </div>
 
       {(data.per_client || []).length > 0 && (

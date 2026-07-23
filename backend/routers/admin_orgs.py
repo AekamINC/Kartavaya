@@ -935,7 +935,7 @@ async def org_cost_breakdown(
     ) or 0
 
     org_credits = await pool.fetchrow(
-        "SELECT balance, total_topup FROM staging.hub_org_credits WHERE org_id=$1::uuid",
+        "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid",
         org_id,
     )
 
@@ -1006,7 +1006,6 @@ async def org_cost_breakdown(
         "scraper": _with_inr(total_scraper, rate),
         "credit_balance": credit_balance,
         "org_credits_balance": org_credits["balance"] if org_credits else 0,
-        "org_credits_topup": org_credits["total_topup"] if org_credits else 0,
         "credits_used_period": credits_used,
         "daily_trend": [
             {"date": r["day"].isoformat(),
