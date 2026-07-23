@@ -106,10 +106,10 @@ def refresh_url(key: str) -> Optional[str]:
     """Return a fresh signed URL for the given R2 key, or None if R2 is not configured."""
     if not key:
         return None
-    if PUB_URL:
-        return f"{PUB_URL}/{key}"
     client = _client()
     if client is None:
+        if PUB_URL:
+            return f"{PUB_URL}/{key}"
         return None
     return client.generate_presigned_url(
         "get_object",
