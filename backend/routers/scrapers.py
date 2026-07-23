@@ -13,9 +13,51 @@ from db import get_pool
 from middleware.roles import require_platform_role, get_org_id
 from middleware.subscription import require_module
 
+import math
+
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/scrapers", tags=["scrapers"])
 _gate = require_module("srijan")
+
+SCRAPER_MARGIN = 0.45  # 45% markup on actual Apify cost for credit calc
+
+
+async def _calc_actual_credits(cost_usd: float, org_id: str, min_credits: int) -> int:
+    """Calculate actual credits from real Apify cost. 45% margin, minimum = min_credits."""
+    if cost_usd <= 0:
+        return min_credits
+    from services.forex import get_usd_inr
+    rate = await get_usd_inr()
+    charged_inr = cost_usd * rate * (1 + SCRAPER_MARGIN)
+    actual = max(min_credits, math.ceil(charged_inr))
+    return actual
+
+
+async def _deduct_extra_credits(pool, org_id: str, user_id: str, extra: int, run_id: str):
+    """Deduct additional credits after run completes (true-up)."""
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                wallet = await conn.fetchrow(
+                    "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid FOR UPDATE",
+                    org_id,
+                )
+                if not wallet:
+                    return
+                new_bal = max(0, wallet["balance"] - extra)
+                await conn.execute(
+                    "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() WHERE org_id=$2::uuid",
+                    new_bal, org_id,
+                )
+                await conn.execute(
+                    "INSERT INTO staging.hub_org_credit_transactions "
+                    "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
+                    "VALUES ($1::uuid, $2, $3, $4, 'debit', $5, $2)",
+                    org_id, user_id, -extra, new_bal,
+                    f"scraper true-up run:{run_id[:8]}",
+                )
+    except Exception as e:
+        log.warning("Credit true-up failed for run %s: %s", run_id, e)
 
 
 class RunScraper(BaseModel):
@@ -65,15 +107,8 @@ async def run_scraper(
         if not scraper:
             raise HTTPException(404, "Scraper not found")
 
-        # Check & deduct org credits before running
-        credit_cost = scraper.get("credit_cost") or 2
-        org_wallet = await pool.fetchrow(
-            "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid",
-            org_id,
-        )
-        if not org_wallet or org_wallet["balance"] < credit_cost:
-            bal = org_wallet["balance"] if org_wallet else 0
-            raise HTTPException(402, f"Insufficient credits. Need {credit_cost}, have {bal}. Contact Aekam to top up.")
+        # Deduct minimum credits upfront; true-up after Apify returns actual cost
+        min_credits = scraper.get("credit_cost") or 2
         from services.ai_router import _maybe_reset_monthly_credits
         async with pool.acquire() as conn:
             async with conn.transaction():
@@ -82,9 +117,10 @@ async def run_scraper(
                     "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid FOR UPDATE",
                     org_id,
                 )
-                if wallet["balance"] < credit_cost:
-                    raise HTTPException(402, f"Insufficient credits. Need {credit_cost}, have {wallet['balance']}")
-                new_bal = wallet["balance"] - credit_cost
+                if not wallet or wallet["balance"] < min_credits:
+                    bal = wallet["balance"] if wallet else 0
+                    raise HTTPException(402, f"Insufficient credits. Need {min_credits}, have {bal}. Contact Aekam to top up.")
+                new_bal = wallet["balance"] - min_credits
                 await conn.execute(
                     "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() WHERE org_id=$2::uuid",
                     new_bal, org_id,
@@ -93,8 +129,8 @@ async def run_scraper(
                     "INSERT INTO staging.hub_org_credit_transactions "
                     "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
                     "VALUES ($1::uuid, $2, $3, $4, 'debit', $5, $2)",
-                    org_id, user["user_id"], -credit_cost, new_bal,
-                    f"scraper:{body.scraper_id}",
+                    org_id, user["user_id"], -min_credits, new_bal,
+                    f"scraper:{body.scraper_id} (minimum upfront)",
                 )
 
         # Build Apify input from schema + user inputs
@@ -133,6 +169,8 @@ async def run_scraper(
             scraper["max_results"] or 100,
             scraper.get("result_path"),
             org_id=org_id,
+            min_credits_charged=min_credits,
+            user_id=user["user_id"],
         ))
 
         return {
@@ -140,6 +178,8 @@ async def run_scraper(
             "run_id": str(row["id"]),
             "apify_run_id": run["run_id"],
             "billed_inr": float(scraper["price_inr"]),
+            "credits_charged": min_credits,
+            "credits_note": "minimum upfront — final charge after run completes",
         }
     except HTTPException:
         raise
@@ -151,8 +191,9 @@ async def run_scraper(
         raise HTTPException(502, f"Apify error: {msg}")
 
 
-async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_path: str = None, org_id: str = None):
-    """Background task: poll Apify run until done, then store results in R2."""
+async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_path: str = None,
+                    org_id: str = None, min_credits_charged: int = 0, user_id: str = None):
+    """Background task: poll Apify run until done, store results, true-up credits."""
     from services.apify import get_run_status, get_dataset_items
     pool = await get_pool()
 
@@ -183,12 +224,21 @@ async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_pa
             trimmed = results[:max_items]
             r2_key = await _store_results_r2(org_id, db_run_id, trimmed)
 
+            actual_cost_usd = float(info.get("usage_usd", 0))
+            actual_credits = await _calc_actual_credits(actual_cost_usd, org_id, min_credits_charged)
+
             await pool.execute(
                 "UPDATE staging.hub_scraper_runs SET status='succeeded', "
-                "result_count=$2, cost_usd=$3, results_r2_key=$4, finished_at=NOW() "
+                "result_count=$2, cost_usd=$3, results_r2_key=$4, credits_charged=$5, finished_at=NOW() "
                 "WHERE id=$1::uuid",
-                db_run_id, len(trimmed), float(info.get("usage_usd", 0)), r2_key,
+                db_run_id, len(trimmed), actual_cost_usd, r2_key, actual_credits,
             )
+
+            # True-up: if actual > minimum already charged, deduct the difference
+            extra = actual_credits - min_credits_charged
+            if extra > 0 and org_id:
+                await _deduct_extra_credits(pool, org_id, user_id or "", extra, db_run_id)
+
             return
 
         if info["status"] in ("FAILED", "ABORTED", "TIMED-OUT"):
@@ -268,7 +318,7 @@ async def get_run(
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT r.id, r.org_id, r.scraper_id, r.user_id, r.status, r.result_count, "
-        "r.billed_inr, r.cost_usd, r.error, r.created_at, r.finished_at, "
+        "r.billed_inr, r.cost_usd, r.credits_charged, r.error, r.created_at, r.finished_at, "
         "r.graha_imported_count, r.graha_imported_at, r.results_r2_key, r.results, "
         "c.name as scraper_name, c.result_columns "
         "FROM staging.hub_scraper_runs r "
