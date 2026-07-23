@@ -1037,14 +1037,19 @@ async def list_shifts(user=Depends(require_user), org_id=Depends(get_org_id)):
 @router.post("/shifts", dependencies=[Depends(_gate)])
 async def create_shift(body: ShiftCreate, user=Depends(require_user), org_id=Depends(get_org_id)):
     pool = await get_pool()
+    from datetime import time as dt_time
+    def _parse_time(s: str) -> dt_time:
+        parts = s.split(":")
+        return dt_time(int(parts[0]), int(parts[1]))
+    st, et = _parse_time(body.start_time), _parse_time(body.end_time)
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_shift_definitions "
         "(org_id, name, start_time, end_time, break_minutes, color) "
-        "VALUES ($1::uuid, $2, $3::time, $4::time, $5, $6) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6) "
         "ON CONFLICT (org_id, name) DO UPDATE SET "
-        "start_time=$3::time, end_time=$4::time, break_minutes=$5, color=$6, is_active=TRUE "
+        "start_time=$3, end_time=$4, break_minutes=$5, color=$6, is_active=TRUE "
         "RETURNING id, name",
-        org_id, body.name, body.start_time, body.end_time, body.break_minutes, body.color,
+        org_id, body.name, st, et, body.break_minutes, body.color,
     )
     return {"status": "created", **dict(row)}
 
@@ -1057,9 +1062,14 @@ async def update_shift(shift_id: UUID, body: ShiftUpdate, user=Depends(require_u
         raise HTTPException(400, "No fields to update")
     sets, params = [], [str(shift_id), org_id]
     idx = 3
+    from datetime import time as dt_time
+    def _parse_time(s: str) -> dt_time:
+        parts = s.split(":")
+        return dt_time(int(parts[0]), int(parts[1]))
     for k, v in updates.items():
         if k in ("start_time", "end_time"):
-            sets.append(f"{k}=${idx}::time")
+            sets.append(f"{k}=${idx}")
+            v = _parse_time(v)
         else:
             sets.append(f"{k}=${idx}")
         params.append(v)
