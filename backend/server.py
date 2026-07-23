@@ -227,7 +227,13 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None):
         effective_role = user_row.get("role") if user_row else None
 
     if effective_role == "admin":
-        all_teams = await pool.fetch("SELECT team_id FROM teams")
+        org_row = await pool.fetchrow(
+            "SELECT org_id FROM staging.user_roles WHERE user_id=$1 AND org_id IS NOT NULL LIMIT 1", user_id)
+        if org_row and org_row["org_id"]:
+            all_teams = await pool.fetch(
+                "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org_row["org_id"])
+        else:
+            all_teams = await pool.fetch("SELECT team_id FROM teams WHERE deleted_at IS NULL")
         result = [r["team_id"] for r in all_teams]
     else:
         rows = await pool.fetch(
@@ -2196,6 +2202,10 @@ async def _run_startup_migrations():
     """Run idempotent schema migrations in the background so the server is ready immediately."""
     try:
         pool = await get_pool()
+        already = await pool.fetchval(
+            "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='notifications'")
+        if already:
+            return
         await pool.execute("""
             CREATE TABLE IF NOT EXISTS project_assignments (
                 assignment_id TEXT PRIMARY KEY DEFAULT ('pa_' || substr(md5(random()::text), 1, 12)),

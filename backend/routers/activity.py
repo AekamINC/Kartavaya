@@ -96,7 +96,13 @@ async def feed_activity(
     """Return paginated activity events across all teams the user belongs to."""
     try:
         if user.get("role") == "admin":
-            team_ids = [r["team_id"] for r in await pool.fetch("SELECT team_id FROM teams")]
+            org_row = await pool.fetchrow(
+                "SELECT org_id FROM staging.user_roles WHERE user_id=$1 AND org_id IS NOT NULL LIMIT 1", user["user_id"])
+            if org_row and org_row["org_id"]:
+                team_ids = [r["team_id"] for r in await pool.fetch(
+                    "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org_row["org_id"])]
+            else:
+                team_ids = [r["team_id"] for r in await pool.fetch("SELECT team_id FROM teams WHERE deleted_at IS NULL")]
         else:
             rows = await pool.fetch(
                 """

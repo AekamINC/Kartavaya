@@ -147,8 +147,14 @@ export default function AppShell() {
       } catch (_) {}
     };
     tick();
-    const id = setInterval(tick, 60_000);
-    return () => { live = false; clearInterval(id); };
+    let id = setInterval(tick, 60_000);
+    const onVis = () => {
+      clearInterval(id);
+      id = setInterval(tick, document.hidden ? 300_000 : 60_000);
+      if (!document.hidden) tick();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { live = false; clearInterval(id); document.removeEventListener('visibilitychange', onVis); };
   }, []);
 
   useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
