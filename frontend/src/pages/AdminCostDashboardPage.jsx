@@ -250,13 +250,11 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
 
 // ── Main Page ──────────────────────────────────────────────
 
-const TABS = [
-  { id: 'overview', label: 'Platform Overview' },
-  { id: 'orgs', label: 'All Orgs' },
-];
+const TABS = ['Platform Overview', 'All Orgs'];
+const TAB_KEY = { 'Platform Overview': 'overview', 'All Orgs': 'orgs' };
 
 export default function AdminCostDashboardPage() {
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab] = useState('Platform Overview');
   const [period, setPeriod] = useState('30d');
   const [selectedOrg, setSelectedOrg] = useState(null); // { id, name }
 
@@ -280,7 +278,7 @@ export default function AdminCostDashboardPage() {
 
       {selectedOrg ? (
         <OrgDetail orgId={selectedOrg.id} orgName={selectedOrg.name} period={period} onBack={handleBack} />
-      ) : tab === 'overview' ? (
+      ) : TAB_KEY[tab] === 'overview' ? (
         <PlatformOverview period={period} />
       ) : (
         <AllOrgs period={period} onSelectOrg={handleSelectOrg} />
