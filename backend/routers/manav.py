@@ -353,6 +353,48 @@ async def create_department(
     return {"status": "created", **dict(row)}
 
 
+@router.patch("/departments/{dept_id}")
+async def update_department(
+    dept_id: str,
+    body: DepartmentCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "UPDATE staging.manav_departments SET name=$3, head_employee_id=NULLIF($4,'')::uuid "
+        "WHERE id=$1::uuid AND org_id=$2::uuid RETURNING id, name",
+        dept_id, org_id, body.name, body.head_employee_id,
+    )
+    if not row:
+        raise HTTPException(404, "Department not found")
+    return {"status": "updated", **dict(row)}
+
+
+@router.delete("/departments/{dept_id}")
+async def delete_department(
+    dept_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    emp_count = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.manav_employees e "
+        "JOIN staging.manav_departments d ON d.name = e.department AND d.org_id = e.org_id "
+        "WHERE d.id=$1::uuid AND d.org_id=$2::uuid AND e.is_active=TRUE",
+        dept_id, org_id,
+    )
+    if emp_count and emp_count > 0:
+        raise HTTPException(400, f"Cannot delete — {emp_count} active employee(s) in this department")
+    await pool.execute(
+        "UPDATE staging.manav_departments SET is_active=FALSE WHERE id=$1::uuid AND org_id=$2::uuid",
+        dept_id, org_id,
+    )
+    return {"status": "deleted"}
+
+
 # ── Attendance ───────────────────────────────────────────────
 
 @router.get("/attendance")

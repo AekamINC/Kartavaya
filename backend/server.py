@@ -169,7 +169,7 @@ _VERCEL_PREVIEW_RE = (
     r"https://kartavya-[a-z0-9-]+-kevalvshah03-6145s-projects\.vercel\.app"
     r"|https://kartavya-[a-z0-9-]+\.akeam\.vercel\.app"
     r"|https://([a-z0-9-]+\.)?kartavaya\.com"
-    r"|https://Kartavaya-git-[a-z0-9-]+-kevalvshah03-6145s-projects\.vercel\.app"
+    r"|https://[Kk]artavaya-git-[a-z0-9-]+-kevalvshah03-6145s-projects\.vercel\.app"
 )
 
 app.add_middleware(

@@ -999,11 +999,16 @@ function LeavesTab() {
   const [showConflict, setShowConflict] = useState(false);
   const [conflicts, setConflicts] = useState(null);
   const [conflictForm, setConflictForm] = useState({ start_date: '', end_date: '', department: '' });
-  const [reqForm, setReqForm] = useState({ leave_type_id: '', start_date: '', end_date: '', days: 1, reason: '' });
+  const [reqForm, setReqForm] = useState({ employee_id: '', leave_type_id: '', start_date: '', end_date: '', days: 1, reason: '' });
   const [typeForm, setTypeForm] = useState({ name: '', code: '', annual_quota: 12, is_paid: true, carry_forward: false });
   const [saving, setSaving] = useState(false);
+  const [employees, setEmployees] = useState([]);
 
-  useEffect(() => { load(); loadTypes(); }, []);
+  useEffect(() => { load(); loadTypes(); loadEmployees(); }, []);
+
+  async function loadEmployees() {
+    try { const r = await api.get('/v1/manav/employees'); setEmployees(r.data.data || []); } catch {}
+  }
 
   async function load() {
     try {
@@ -1029,7 +1034,7 @@ function LeavesTab() {
       await api.post('/v1/manav/leaves', reqForm);
       pushToast({ title: 'Leave request submitted', type: 'success' });
       setShowRequest(false);
-      setReqForm({ leave_type_id: '', start_date: '', end_date: '', days: 1, reason: '' });
+      setReqForm({ employee_id: '', leave_type_id: '', start_date: '', end_date: '', days: 1, reason: '' });
       load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
@@ -1146,6 +1151,11 @@ function LeavesTab() {
         <form onSubmit={submitRequest} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Request Leave</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee *</span>
+              <select className="k-input" required value={reqForm.employee_id} onChange={e => setReqForm({ ...reqForm, employee_id: e.target.value })}>
+                <option value="">Select employee…</option>
+                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name} ({emp.employee_code})</option>)}
+              </select></label>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Leave Type *</span>
               <select className="k-input" required value={reqForm.leave_type_id} onChange={e => setReqForm({ ...reqForm, leave_type_id: e.target.value })}>
                 <option value="">Select…</option>
@@ -1213,10 +1223,15 @@ function ExpensesTab() {
   const [statusFilter, setStatusFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ category: 'travel', expense_date: '', amount: '', description: '', receipt_urls: [] });
+  const [form, setForm] = useState({ employee_id: '', category: 'travel', expense_date: '', amount: '', description: '', receipt_urls: [] });
   const [receiptUrl, setReceiptUrl] = useState('');
+  const [employees, setEmployees] = useState([]);
 
-  useEffect(() => { load(); }, [statusFilter]);
+  useEffect(() => { load(); loadEmployees(); }, [statusFilter]);
+
+  async function loadEmployees() {
+    try { const r = await api.get('/v1/manav/employees'); setEmployees(r.data.data || []); } catch {}
+  }
 
   async function load() {
     try {
@@ -1235,7 +1250,7 @@ function ExpensesTab() {
       await api.post('/v1/manav/expense-claims', { ...form, amount: parseFloat(form.amount) || 0 });
       pushToast({ title: 'Expense claim submitted', type: 'success' });
       setShowForm(false);
-      setForm({ category: 'travel', expense_date: '', amount: '', description: '', receipt_urls: [] });
+      setForm({ employee_id: '', category: 'travel', expense_date: '', amount: '', description: '', receipt_urls: [] });
       setReceiptUrl('');
       load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
@@ -1271,6 +1286,11 @@ function ExpensesTab() {
         <form onSubmit={submit} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Submit Expense Claim</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee *</span>
+              <select className="k-input" required value={form.employee_id} onChange={e => setForm({ ...form, employee_id: e.target.value })}>
+                <option value="">Select employee…</option>
+                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name} ({emp.employee_code})</option>)}
+              </select></label>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Category</span>
               <select className="k-input" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
                 {CLAIM_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1681,6 +1701,9 @@ function DepartmentsTab() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '' });
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ name: '' });
+  const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -1703,6 +1726,26 @@ function DepartmentsTab() {
       load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault();
+    setEditSaving(true);
+    try {
+      await api.patch(`/v1/manav/departments/${editingId}`, editForm);
+      pushToast({ title: 'Department updated', type: 'success' });
+      setEditingId(null);
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    finally { setEditSaving(false); }
+  }
+
+  async function remove(id) {
+    try {
+      await api.delete(`/v1/manav/departments/${id}`);
+      pushToast({ title: 'Department deleted', type: 'success' });
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
   return (
@@ -1731,11 +1774,27 @@ function DepartmentsTab() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
           {departments.map(d => (
             <div key={d.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 20 }}>
-              <h4 style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 700 }}>{d.name}</h4>
-              <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>
-                <div>{d.employee_count} employee{d.employee_count !== 1 ? 's' : ''}</div>
-                {d.head_name && <div style={{ marginTop: 4 }}>Head: {d.head_name}</div>}
-              </div>
+              {editingId === d.id ? (
+                <form onSubmit={saveEdit}>
+                  <input className="k-input" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} style={{ marginBottom: 8, width: '100%' }} />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button type="submit" className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 8px' }} disabled={editSaving}>{editSaving ? 'Saving…' : 'Save'}</button>
+                    <button type="button" className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => setEditingId(null)}>Cancel</button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <h4 style={{ margin: '0 0 8px', fontSize: 15, fontWeight: 700 }}>{d.name}</h4>
+                  <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>
+                    <div>{d.employee_count} employee{d.employee_count !== 1 ? 's' : ''}</div>
+                    {d.head_name && <div style={{ marginTop: 4 }}>Head: {d.head_name}</div>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => { setEditingId(d.id); setEditForm({ name: d.name }); }}>Edit</button>
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px', color: '#ef4444' }} onClick={() => remove(d.id)}>Delete</button>
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -1869,7 +1928,7 @@ function PerformanceTab() {
           <div style={{ textAlign: 'center', padding: '48px 24px' }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>📈</div>
             <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No performance data</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Performance reviews for this period will appear here once submitted.</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Attendance-based performance summary for the selected month. Mark attendance first to see metrics here.</div>
           </div>
         ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -1997,6 +2056,7 @@ function AssetsTab() {
     setEditAssetForm({
       name: a.name || '', category: a.category || 'laptop', serial_number: a.serial_number || '',
       condition: a.condition || 'new', notes: a.notes || '',
+      purchase_cost: a.purchase_cost || '', purchase_date: a.purchase_date || '',
     });
   }
 
@@ -2122,7 +2182,11 @@ function AssetsTab() {
                           <select className="k-input" value={editAssetForm.condition} onChange={e => setEditAssetForm({ ...editAssetForm, condition: e.target.value })}>
                             {ASSET_CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
                           </select></label>
-                        <label style={{ fontSize: 13, gridColumn: '2 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes</span>
+                        <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Purchase Date</span>
+                          <input className="k-input" type="date" value={editAssetForm.purchase_date} onChange={e => setEditAssetForm({ ...editAssetForm, purchase_date: e.target.value })} /></label>
+                        <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Purchase Cost</span>
+                          <input className="k-input" type="number" placeholder="0" value={editAssetForm.purchase_cost} onChange={e => setEditAssetForm({ ...editAssetForm, purchase_cost: e.target.value })} /></label>
+                        <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes</span>
                           <input className="k-input" value={editAssetForm.notes} onChange={e => setEditAssetForm({ ...editAssetForm, notes: e.target.value })} /></label>
                       </div>
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>

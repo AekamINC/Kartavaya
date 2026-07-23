@@ -325,7 +325,12 @@ async def process_payroll(
             "AND date >= $3 AND date <= $4",
             org_id, emp_id, month_start, month_end,
         )
-        present_days = att["present"] if att else working_days
+        has_attendance = await pool.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM staging.manav_attendance "
+            "WHERE org_id=$1::uuid AND employee_id=$2::uuid AND date >= $3 AND date <= $4)",
+            org_id, emp_id, month_start, month_end,
+        )
+        present_days = att["present"] if has_attendance else working_days
         ot_hours = float(att["ot"]) if att else 0
 
         paid_leaves = await pool.fetchval(
