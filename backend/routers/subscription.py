@@ -541,6 +541,15 @@ async def cost_report_pdf(
     total_used = ai_credits + scraper_credits
     overage = max(0, total_used - plan_credits)
 
+    scraper_breakdown = await pool.fetch(
+        "SELECT c.name, COUNT(r.id) as runs, COALESCE(SUM(r.credits_charged),0) as credits "
+        "FROM staging.hub_scraper_runs r "
+        "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
+        "WHERE r.org_id=$1::uuid AND r.created_at >= $2 AND r.created_at < $3 "
+        "GROUP BY c.name ORDER BY credits DESC",
+        org_id, cutoff, cutoff_end,
+    )
+
     report_data = {
         "org_name": org["name"] if org else "",
         "plan_name": org["plan_name"] if org else "Free",
@@ -554,6 +563,7 @@ async def cost_report_pdf(
         "overage_credits": overage,
         "signatory_name": org["authorized_signatory_name"] if org else "",
         "signatory_designation": org["authorized_signatory_designation"] if org else "",
+        "scraper_breakdown": [{"name": r["name"], "runs": r["runs"], "credits": r["credits"]} for r in scraper_breakdown],
     }
 
     pdf_bytes = generate_credit_report_pdf(report_data)

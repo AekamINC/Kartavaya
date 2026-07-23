@@ -180,6 +180,8 @@ def generate_credit_report_pdf(data: dict) -> bytes:
     sig_name = data.get("signatory_name", "")
     sig_desg = data.get("signatory_designation", "")
 
+    scraper_breakdown = data.get("scraper_breakdown", [])
+
     overage_row = ""
     if overage > 0:
         overage_row = f"""
@@ -197,6 +199,23 @@ def generate_credit_report_pdf(data: dict) -> bytes:
             <div style="font-size:10px;color:{_INK2}">{sig_desg}</div>
         </div>"""
 
+    catalog_section = ""
+    if scraper_breakdown:
+        catalog_rows = "".join(
+            f'<tr><td>{s["name"]}</td>'
+            f'<td style="text-align:right;font-family:{_FONT_MONO}">{s["runs"]}</td>'
+            f'<td style="text-align:right;font-family:{_FONT_MONO}">{s["credits"]}</td></tr>'
+            for s in scraper_breakdown
+        )
+        catalog_section = f"""
+<div class="section">
+    <h2>Data Catalog Usage · डेटा कैटलॉग</h2>
+    <table class="detail">
+        <thead><tr><th>Catalog</th><th style="text-align:right">Runs</th><th style="text-align:right">Credits</th></tr></thead>
+        <tbody>{catalog_rows}</tbody>
+    </table>
+</div>"""
+
     html_str = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
@@ -210,6 +229,13 @@ body {{ font-family: {_FONT_UI}; font-size: 11px; color: {_INK}; }}
          background: {_BG_SOFT}; padding: 12px 16px; border-radius: 6px; font-size: 10px; }}
 .meta dt {{ font-weight: 600; color: {_INK2}; }}
 .meta dd {{ margin: 0; font-family: {_FONT_MONO}; }}
+.section {{ margin-bottom: 18px; }}
+.section h2 {{ font-family: {_FONT_DISP}; font-size: 13px; margin: 0 0 8px;
+               color: {_DEEP}; border-bottom: 1px solid {_RULE}; padding-bottom: 4px; }}
+table.detail {{ width: 100%; border-collapse: collapse; }}
+table.detail th {{ text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .06em;
+      color: {_INK3}; padding: 5px 8px; border-bottom: 1px solid {_RULE}; }}
+table.detail td {{ padding: 5px 8px; border-bottom: 1px solid {_RULE_SOFT}; font-size: 10.5px; }}
 .summary {{ background: {_SURFACE}; border: 1px solid {_RULE}; border-radius: 6px;
             padding: 16px; margin-top: 20px; }}
 .summary table {{ width: 100%; border-collapse: collapse; }}
@@ -236,6 +262,8 @@ body {{ font-family: {_FONT_UI}; font-size: 11px; color: {_INK}; }}
     <dt>Report Period</dt><dd>{p_start} to {p_end}</dd>
     <dt>Plan Credits (Monthly)</dt><dd>{plan_credits}</dd>
 </dl>
+
+{catalog_section}
 
 <div class="summary">
     <table>
