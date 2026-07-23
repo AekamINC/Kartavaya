@@ -2417,6 +2417,13 @@ async def _run_startup_migrations():
         # AI logs org_id column (migration 053)
         await pool.execute("ALTER TABLE staging.hub_ai_logs ADD COLUMN IF NOT EXISTS org_id UUID")
         await pool.execute("CREATE INDEX IF NOT EXISTS idx_hub_ai_logs_org_id ON staging.hub_ai_logs(org_id)")
+        # Ensure all users with role='admin' have platform_admin in user_roles
+        await pool.execute("""
+            INSERT INTO staging.user_roles (user_id, org_id, role_code)
+            SELECT user_id, NULL, 'platform_admin'
+            FROM users WHERE role = 'admin'
+            ON CONFLICT DO NOTHING
+        """)
         logger.info("Startup migrations OK")
     except Exception as e:
         logger.warning("Startup migration warning (non-fatal): %s", e)
