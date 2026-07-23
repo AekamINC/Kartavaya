@@ -317,7 +317,8 @@ async def process_payroll(
         emp_id = str(s["employee_id"])
 
         att = await pool.fetchrow(
-            "SELECT COUNT(*) FILTER (WHERE status='present') AS present, "
+            "SELECT COUNT(*) FILTER (WHERE status IN ('present','late')) AS present, "
+            "COUNT(*) FILTER (WHERE status='half_day') AS half_day, "
             "COUNT(*) FILTER (WHERE status='absent') AS absent, "
             "COALESCE(SUM(overtime_hours),0) AS ot "
             "FROM staging.manav_attendance "
@@ -325,12 +326,8 @@ async def process_payroll(
             "AND date >= $3 AND date <= $4",
             org_id, emp_id, month_start, month_end,
         )
-        has_attendance = await pool.fetchval(
-            "SELECT EXISTS(SELECT 1 FROM staging.manav_attendance "
-            "WHERE org_id=$1::uuid AND employee_id=$2::uuid AND date >= $3 AND date <= $4)",
-            org_id, emp_id, month_start, month_end,
-        )
-        present_days = att["present"] if has_attendance else working_days
+        has_attendance = att["present"] + att["half_day"] + att["absent"] > 0
+        present_days = (att["present"] + att["half_day"] * 0.5) if has_attendance else working_days
         ot_hours = float(att["ot"]) if att else 0
 
         paid_leaves = await pool.fetchval(
