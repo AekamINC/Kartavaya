@@ -391,9 +391,9 @@ function PayrollTab() {
             <StatTile label="TDS" value={FMT(detail.total_tds)} variant="red" />
           </div>
 
-          {detail.status === 'processed' && (
+          {(detail.status === 'processed' || detail.status === 'approved') && (
             <div className="k-detail__actions">
-              <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={approveRun}>Approve Payroll</button>
+              {detail.status === 'processed' && <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={approveRun}>Approve Payroll</button>}
               <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={revertRun}>Revert to Draft</button>
             </div>
           )}
