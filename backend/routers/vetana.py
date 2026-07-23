@@ -568,8 +568,8 @@ async def revert_run(
     )
     if not run:
         raise HTTPException(404, "Payroll run not found")
-    if run["status"] not in ("processed",):
-        raise HTTPException(400, "Can only revert a processed (not yet approved) payroll run")
+    if run["status"] not in ("processed", "approved"):
+        raise HTTPException(400, "Can only revert a processed or approved payroll run")
     await pool.execute(
         "UPDATE staging.vetana_payroll_runs SET status='draft', "
         "processed_at=NULL WHERE id=$1::uuid AND org_id=$2::uuid",
