@@ -1910,7 +1910,11 @@ function PerformanceTab() {
 
   async function load() {
     try {
-      const r = await api.get(`/v1/manav/performance/summary?month=${month}`);
+      const [y, m] = month.split('-');
+      const from_date = `${y}-${m}-01`;
+      const lastDay = new Date(Number(y), Number(m), 0).getDate();
+      const to_date = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
+      const r = await api.get(`/v1/manav/performance/summary?from_date=${from_date}&to_date=${to_date}`);
       setData(r.data.data || []);
     } catch { pushToast({ title: 'Failed to load performance', type: 'error' }); }
     finally { setLoading(false); }
@@ -1942,17 +1946,20 @@ function PerformanceTab() {
           </thead>
           <tbody>
             {data.map(e => {
-              const attendance_pct = e.working_days > 0 ? ((e.present_days / e.working_days) * 100).toFixed(0) : '—';
-              const avg_hours = e.present_days > 0 ? (Number(e.total_hours || 0) / e.present_days).toFixed(1) : '—';
+              const present = Number(e.days_present || 0);
+              const absent = Number(e.days_absent || 0);
+              const totalDays = present + absent;
+              const attendance_pct = totalDays > 0 ? ((present / totalDays) * 100).toFixed(0) : '—';
+              const avg_hours = present > 0 ? (Number(e.total_work_hours || 0) / present).toFixed(1) : '—';
               return (
-                <tr key={e.employee_id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                  <td style={{ padding: '10px', fontWeight: 600 }}>{e.employee_name}</td>
+                <tr key={e.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
+                  <td style={{ padding: '10px', fontWeight: 600 }}>{e.name}</td>
                   <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{e.department || '—'}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#10b981' }}>{e.present_days}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#ef4444' }}>{e.absent_days}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#6366f1' }}>{e.late_days}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#0082c6' }}>{e.leaves_used}</td>
-                  <td style={{ padding: '10px', textAlign: 'right' }}>{Number(e.total_hours || 0).toFixed(1)}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#10b981' }}>{e.days_present}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#ef4444' }}>{e.days_absent}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#6366f1' }}>{e.days_late}</td>
+                  <td style={{ padding: '10px', textAlign: 'right', color: '#0082c6' }}>{e.leaves_taken}</td>
+                  <td style={{ padding: '10px', textAlign: 'right' }}>{Number(e.total_work_hours || 0).toFixed(1)}</td>
                   <td style={{ padding: '10px', textAlign: 'right' }}>{avg_hours}</td>
                   <td style={{ padding: '10px', textAlign: 'right', fontWeight: 700 }}>
                     <span style={{ color: Number(attendance_pct) >= 90 ? '#10b981' : Number(attendance_pct) >= 75 ? '#f59e0b' : '#ef4444' }}>
