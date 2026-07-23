@@ -416,8 +416,8 @@ async def cost_report(
     org_id: str = Depends(get_org_id),
 ):
     """Client-facing cost report. Shows charged amounts (with markup), not raw costs."""
+    import math
     pool = await get_pool()
-    from routers.admin_orgs import MARKUP_PCT
     from services.forex import get_usd_inr
 
     period_map = {"7d": 7, "30d": 30, "90d": 90, "ytd": None}
@@ -429,13 +429,13 @@ async def cost_report(
     cutoff = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
 
     org = await pool.fetchrow(
-        "SELECT o.name, p.name as plan_name FROM staging.organisations o "
+        "SELECT o.name, o.markup_pct, p.name as plan_name FROM staging.organisations o "
         "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
         "LEFT JOIN staging.plans p ON p.id = s.plan_id "
         "WHERE o.id = $1::uuid", org_id
     )
+    markup = float(org["markup_pct"]) if org and org["markup_pct"] else 0.30
 
-    # AI costs by provider+model
     ai_rows = await pool.fetch(
         "SELECT l.provider, l.model, "
         "COALESCE(SUM(l.cost_usd), 0) as cost_usd, COUNT(*) as calls "
@@ -446,7 +446,6 @@ async def cost_report(
         org_id, cutoff,
     )
 
-    # Scraper costs
     scraper_rows = await pool.fetch(
         "SELECT r.scraper_id, COALESCE(SUM(r.cost_usd), 0) as cost_usd, "
         "COUNT(*) as runs "
@@ -456,7 +455,6 @@ async def cost_report(
         org_id, cutoff,
     )
 
-    # Credit usage
     credits_used = await pool.fetchval(
         "SELECT COALESCE(SUM(credits_used), 0) FROM staging.hub_content_items "
         "WHERE org_id=$1::uuid AND created_at >= $2",
@@ -466,7 +464,7 @@ async def cost_report(
     rate = await get_usd_inr()
 
     def _charge(usd):
-        return round(float(usd) * rate * (1 + MARKUP_PCT), 2)
+        return math.ceil(float(usd) * rate * (1 + markup))
 
     total_ai_usd = sum(float(r["cost_usd"]) for r in ai_rows)
     total_scraper_usd = sum(float(r["cost_usd"]) for r in scraper_rows)
@@ -502,9 +500,9 @@ async def cost_report_pdf(
     org_id: str = Depends(get_org_id),
 ):
     """Download client cost report as PDF."""
+    import math
     from fastapi.responses import Response
     from services.cost_report_pdf import generate_cost_report_pdf
-    from routers.admin_orgs import MARKUP_PCT
     from services.forex import get_usd_inr
 
     pool = await get_pool()
@@ -518,7 +516,7 @@ async def cost_report_pdf(
     cutoff = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
 
     org = await pool.fetchrow(
-        "SELECT o.name, o.authorized_signatory_name, o.authorized_signatory_designation, "
+        "SELECT o.name, o.markup_pct, o.authorized_signatory_name, o.authorized_signatory_designation, "
         "p.name as plan_name "
         "FROM staging.organisations o "
         "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
@@ -552,9 +550,10 @@ async def cost_report_pdf(
     ) or 0
 
     rate = await get_usd_inr()
+    pdf_markup = float(org["markup_pct"]) if org and org["markup_pct"] else 0.30
 
     def _charge(usd):
-        return round(float(usd) * rate * (1 + MARKUP_PCT), 2)
+        return math.ceil(float(usd) * rate * (1 + pdf_markup))
 
     report_data = {
         "org_name": org["name"] if org else "",

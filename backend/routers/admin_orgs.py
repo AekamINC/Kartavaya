@@ -4,6 +4,7 @@ cost aggregation analytics.
 Only platform_admin / account_manager can access these endpoints.
 """
 import json
+import math
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
@@ -20,13 +21,14 @@ from services.storage import create_org_bucket, verify_r2_credentials, clear_org
 
 router = APIRouter(prefix="/api/v1/admin/orgs", tags=["admin-orgs"])
 
-MARKUP_PCT = 0.18  # 18% markup on actual costs → client charge
+DEFAULT_MARKUP_PCT = 0.30
 
-def _with_inr(cost_usd: float, rate: float) -> dict:
-    """Return USD, INR, and client-charged INR (with markup) for a cost."""
+def _with_inr(cost_usd: float, rate: float, markup: float = 0.30) -> dict:
+    """Return USD, INR, and client-charged INR (with markup, ceiled to whole number)."""
+    import math
     inr = cost_usd * rate
-    charged_inr = inr * (1 + MARKUP_PCT)
-    return {"usd": round(cost_usd, 4), "inr": round(inr, 2), "charged_inr": round(charged_inr, 2)}
+    charged_inr = math.ceil(inr * (1 + markup))
+    return {"usd": round(cost_usd, 4), "inr": round(inr, 2), "charged_inr": charged_inr}
 
 PLAN_STORAGE_LIMITS = {
     "free": 0,
@@ -46,6 +48,7 @@ class OrgCreate(BaseModel):
     name: str
     owner_email: EmailStr
     plan_code: str = "free"
+    markup_pct: float = 0.30
     r2: Optional[R2Credentials] = None
 
 class OrgMemberAdd(BaseModel):
@@ -116,11 +119,11 @@ async def create_org(
     await pool.execute(
         "INSERT INTO staging.organisations "
         "(id, team_id, name, owner_user_id, r2_account_id, r2_access_key_id, "
-        " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, is_active) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE)",
+        " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, markup_pct, is_active) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE)",
         org_id, tm["team_id"], body.name, owner["user_id"],
         r2_account_id, r2_access_key, r2_secret_key, r2_bucket,
-        storage_limit,
+        storage_limit, body.markup_pct,
     )
 
     bucket_name = None
@@ -239,7 +242,7 @@ async def platform_analytics(
     )
 
     top_orgs = await pool.fetch(
-        "SELECT o.id as org_id, o.name as org_name, "
+        "SELECT o.id as org_id, o.name as org_name, o.markup_pct, "
         "COALESCE(ai.cost, 0) as ai_cost_usd, "
         "COALESCE(sc.cost, 0) as scraper_cost_usd, "
         "COALESCE(ai.cost, 0) + COALESCE(sc.cost, 0) as total_cost_usd "
@@ -277,7 +280,7 @@ async def platform_analytics(
         "ai_cost": _with_inr(ai_cost, rate),
         "scraper_cost": _with_inr(scraper_cost, rate),
         "total_ai_calls": ai_stats["total_calls"],
-        "markup_pct": MARKUP_PCT,
+        "default_markup_pct": DEFAULT_MARKUP_PCT,
         "usd_to_inr": rate,
         "ai_cost_by_provider": [
             {"provider": r["provider"], "cost_usd": float(r["cost_usd"]),
@@ -290,8 +293,9 @@ async def platform_analytics(
              "ai_cost_usd": float(r["ai_cost_usd"]),
              "scraper_cost_usd": float(r["scraper_cost_usd"]),
              "total_cost_usd": float(r["total_cost_usd"]),
-             "total": _with_inr(float(r["total_cost_usd"]), rate),
-             "charged_inr": round(float(r["total_cost_usd"]) * rate * (1 + MARKUP_PCT), 2)}
+             "markup_pct": float(r["markup_pct"]),
+             "total": _with_inr(float(r["total_cost_usd"]), rate, float(r["markup_pct"])),
+             "charged_inr": _with_inr(float(r["total_cost_usd"]), rate, float(r["markup_pct"]))["charged_inr"]}
             for r in top_orgs
         ],
     }
@@ -308,7 +312,7 @@ async def all_orgs_cost_summary(
     cutoff = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
 
     rows = await pool.fetch(
-        "SELECT o.id as org_id, o.name as org_name, "
+        "SELECT o.id as org_id, o.name as org_name, o.markup_pct, "
         "p.name as plan_name, "
         "COALESCE(ai.cost, 0) as ai_cost_usd, "
         "COALESCE(ai.calls, 0) as ai_calls, "
@@ -339,18 +343,19 @@ async def all_orgs_cost_summary(
 
     return {
         "period": period,
-        "markup_pct": MARKUP_PCT,
+        "default_markup_pct": DEFAULT_MARKUP_PCT,
         "usd_to_inr": rate,
         "data": [
             {
                 "org_id": str(r["org_id"]),
                 "org_name": r["org_name"],
                 "plan_name": r["plan_name"],
+                "markup_pct": float(r["markup_pct"]),
                 "ai_cost_usd": float(r["ai_cost_usd"]),
                 "scraper_cost_usd": float(r["scraper_cost_usd"]),
                 "total_cost_usd": float(r["total_cost_usd"]),
-                "total": _with_inr(float(r["total_cost_usd"]), rate),
-                "charged_inr": round(float(r["total_cost_usd"]) * rate * (1 + MARKUP_PCT), 2),
+                "total": _with_inr(float(r["total_cost_usd"]), rate, float(r["markup_pct"])),
+                "charged_inr": _with_inr(float(r["total_cost_usd"]), rate, float(r["markup_pct"]))["charged_inr"],
                 "ai_calls": r["ai_calls"],
                 "last_active": r["last_active"].isoformat() if r["last_active"] else None,
             }
@@ -479,6 +484,23 @@ async def deactivate_org(
         org_id,
     )
     return {"status": "deactivated"}
+
+
+@router.patch("/{org_id}/markup")
+async def update_org_markup(
+    org_id: str,
+    body: dict,
+    user=Depends(require_platform_role("platform_admin", "account_manager")),
+):
+    pool = await get_pool()
+    pct = body.get("markup_pct")
+    if pct is None or not (0 <= float(pct) <= 1):
+        raise HTTPException(400, "markup_pct must be between 0 and 1")
+    await pool.execute(
+        "UPDATE staging.organisations SET markup_pct=$1 WHERE id=$2::uuid",
+        float(pct), org_id,
+    )
+    return {"markup_pct": float(pct)}
 
 
 # ── Member Management ───────────────────────────────────────
@@ -877,11 +899,12 @@ async def org_cost_breakdown(
     start = _period_start(period)
     cutoff = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
 
-    org = await pool.fetchval(
-        "SELECT id FROM staging.organisations WHERE id=$1::uuid", org_id
+    org_row = await pool.fetchrow(
+        "SELECT id, markup_pct FROM staging.organisations WHERE id=$1::uuid", org_id
     )
-    if not org:
+    if not org_row:
         raise HTTPException(404, "Organisation not found")
+    org_markup = float(org_row["markup_pct"])
 
     ai_costs = await pool.fetch(
         "SELECT l.provider, l.model, "
@@ -974,12 +997,12 @@ async def org_cost_breakdown(
     return {
         "period": period,
         "org_id": org_id,
-        "markup_pct": MARKUP_PCT,
+        "markup_pct": org_markup,
         "usd_to_inr": rate,
         "ai_costs": [
             {"provider": r["provider"], "model": r["model"],
              "cost_usd": float(r["cost_usd"]),
-             "cost": _with_inr(float(r["cost_usd"]), rate),
+             "cost": _with_inr(float(r["cost_usd"]), rate, org_markup),
              "call_count": r["call_count"],
              "prompt_tokens": r["prompt_tokens"],
              "completion_tokens": r["completion_tokens"]}
@@ -987,23 +1010,23 @@ async def org_cost_breakdown(
         ],
         "scraper_costs": [
             {"scraper_id": r["scraper_id"], "cost_usd": float(r["cost_usd"]),
-             "cost": _with_inr(float(r["cost_usd"]), rate),
+             "cost": _with_inr(float(r["cost_usd"]), rate, org_markup),
              "billed_inr": float(r["billed_inr"]), "run_count": r["run_count"]}
             for r in scraper_costs
         ],
         "per_client": [
             {"client_id": str(r["client_id"]), "client_name": r["client_name"],
              "ai_cost_usd": float(r["ai_cost_usd"]),
-             "ai_cost": _with_inr(float(r["ai_cost_usd"]), rate),
+             "ai_cost": _with_inr(float(r["ai_cost_usd"]), rate, org_markup),
              "ai_calls": r["ai_calls"]}
             for r in per_client_costs
         ],
         "total_ai_cost_usd": total_ai,
         "total_scraper_cost_usd": total_scraper,
         "total_cost_usd": total_cost,
-        "total": _with_inr(total_cost, rate),
-        "ai": _with_inr(total_ai, rate),
-        "scraper": _with_inr(total_scraper, rate),
+        "total": _with_inr(total_cost, rate, org_markup),
+        "ai": _with_inr(total_ai, rate, org_markup),
+        "scraper": _with_inr(total_scraper, rate, org_markup),
         "credit_balance": credit_balance,
         "org_credits_balance": org_credits["balance"] if org_credits else 0,
         "credits_used_period": credits_used,
@@ -1031,7 +1054,7 @@ async def admin_org_cost_report_pdf(
     cutoff = datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc)
 
     org = await pool.fetchrow(
-        "SELECT o.name, o.authorized_signatory_name, o.authorized_signatory_designation, "
+        "SELECT o.name, o.markup_pct, o.authorized_signatory_name, o.authorized_signatory_designation, "
         "p.name as plan_name "
         "FROM staging.organisations o "
         "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
@@ -1068,8 +1091,10 @@ async def admin_org_cost_report_pdf(
 
     rate = await get_usd_inr()
 
+    pdf_markup = float(org["markup_pct"])
+
     def _charge(usd):
-        return round(float(usd) * rate * (1 + MARKUP_PCT), 2)
+        return math.ceil(float(usd) * rate * (1 + pdf_markup))
 
     report_data = {
         "org_name": org["name"],

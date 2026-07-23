@@ -156,7 +156,7 @@ function AllOrgs({ period, onSelectOrg }) {
 
   return (
     <Section title="All Organisations">
-      <DataTable columns={['Org Name', 'Plan', 'Cost (USD)', 'Charge (INR)', 'AI Calls', 'Last Active']}>
+      <DataTable columns={['Org Name', 'Plan', 'Markup', 'Cost (USD)', 'Charge (INR)', 'AI Calls', 'Last Active']}>
         {data.map(r => (
           <tr key={r.org_id} onClick={() => onSelectOrg(r.org_id, r.org_name)}
             style={{ cursor: 'pointer' }}
@@ -164,6 +164,7 @@ function AllOrgs({ period, onSelectOrg }) {
             onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
             <Td bold>{r.org_name}</Td>
             <Td>{r.plan_name || 'Free'}</Td>
+            <Td mono>{r.markup_pct != null ? `${Math.round(r.markup_pct * 100)}%` : '30%'}</Td>
             <Td mono>{fmtUSD2(r.total_cost_usd)}</Td>
             <Td mono bold style={{ color: 'var(--k-primary)' }}>{fmtINR(r.charged_inr)}</Td>
             <Td mono>{fmtNum(r.ai_calls)}</Td>
@@ -171,7 +172,7 @@ function AllOrgs({ period, onSelectOrg }) {
           </tr>
         ))}
         {data.length === 0 && (
-          <tr><Td colSpan={6} style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>No organisations found.</Td></tr>
+          <tr><Td colSpan={7} style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>No organisations found.</Td></tr>
         )}
       </DataTable>
     </Section>
@@ -185,6 +186,8 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dlLoading, setDlLoading] = useState(false);
+  const [editMarkup, setEditMarkup] = useState(null);
+  const [savingMarkup, setSavingMarkup] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -231,6 +234,33 @@ function OrgDetail({ orgId, orgName, period, onBack }) {
 
       <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--ink)', margin: '8px 0 16px' }}>
         {orgName || 'Organisation'} — Cost Breakdown
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 12px', flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>Markup:</span>
+        <input className="k-input" type="number" min="0" max="100" step="1"
+          style={{ width: 64, textAlign: 'center' }}
+          value={editMarkup != null ? editMarkup : Math.round((data.markup_pct || 0.3) * 100)}
+          onChange={e => setEditMarkup(Number(e.target.value))} />
+        <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>%</span>
+        {editMarkup != null && editMarkup !== Math.round((data.markup_pct || 0.3) * 100) && (
+          <button className="k-btn k-btn--sm k-btn--primary" disabled={savingMarkup}
+            onClick={async () => {
+              setSavingMarkup(true);
+              try {
+                await api.patch(`/v1/admin/orgs/${orgId}/markup`, { markup_pct: editMarkup / 100 });
+                pushToast({ type: 'success', title: `Markup updated to ${editMarkup}%` });
+                setData(d => ({ ...d, markup_pct: editMarkup / 100 }));
+                setEditMarkup(null);
+              } catch { pushToast({ type: 'error', title: 'Failed to update markup' }); }
+              finally { setSavingMarkup(false); }
+            }}>
+            {savingMarkup ? 'Saving…' : 'Save'}
+          </button>
+        )}
+        <span style={{ fontSize: 12, color: 'var(--ink-faint)', marginLeft: 'auto' }}>
+          Live Rate: ₹{data.usd_to_inr || 85}/USD
+        </span>
       </div>
 
       <Section title={`Summary · Markup ${fmtPct(data.markup_pct)} · ₹${data.usd_to_inr || 85}/USD`}>

@@ -39,7 +39,7 @@ function formatBytes(bytes) {
 // ── Create Org Form ─────────────────────────────────────────
 
 function CreateOrgForm({ onCreated, pushToast }) {
-  const [form, setForm] = useState({ name: '', owner_email: '', plan_code: 'starter' });
+  const [form, setForm] = useState({ name: '', owner_email: '', plan_code: 'starter', markup_pct: 0.30 });
   const [r2, setR2] = useState({ account_id: '', access_key_id: '', secret_access_key: '', bucket_name: 'kartavya-storage' });
   const [showR2, setShowR2] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -77,7 +77,7 @@ function CreateOrgForm({ onCreated, pushToast }) {
       if (showR2 && r2.account_id) payload.r2 = r2;
       const res = await api.post('/v1/admin/orgs', payload);
       pushToast({ type: 'success', title: `Org "${res.data.name}" created`, message: `Plan: ${res.data.plan}` });
-      setForm({ name: '', owner_email: '', plan_code: 'starter' });
+      setForm({ name: '', owner_email: '', plan_code: 'starter', markup_pct: 0.30 });
       setR2({ account_id: '', access_key_id: '', secret_access_key: '', bucket_name: 'kartavya-storage' });
       setShowR2(false);
       setR2Valid(null);
@@ -96,7 +96,7 @@ function CreateOrgForm({ onCreated, pushToast }) {
         <span className="k-card__sans">संगठन बनाएं</span>
       </div>
 
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr 1fr', marginBottom: 12 }}>
+      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr 1fr auto', marginBottom: 12 }}>
         <div>
           <label style={labelSt}>Organisation Name</label>
           <input className="k-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Acme Corp" />
@@ -110,6 +110,13 @@ function CreateOrgForm({ onCreated, pushToast }) {
           <select className="k-select" style={{ width: '100%' }} value={form.plan_code} onChange={e => setForm(f => ({ ...f, plan_code: e.target.value }))}>
             {PLAN_OPTIONS.map(p => <option key={p.code} value={p.code}>{p.label}</option>)}
           </select>
+        </div>
+        <div style={{ minWidth: 90 }}>
+          <label style={labelSt}>Markup %</label>
+          <input className="k-input" type="number" min="0" max="100" step="1"
+            value={Math.round(form.markup_pct * 100)}
+            onChange={e => setForm(f => ({ ...f, markup_pct: Number(e.target.value) / 100 }))}
+            style={{ width: '100%' }} />
         </div>
       </div>
 
