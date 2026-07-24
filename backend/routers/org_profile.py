@@ -36,13 +36,17 @@ async def get_profile(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT name, gstin, pan, billing_address, logo_url, email, phone, "
+        "SELECT name, gstin, pan, billing_address, logo_url, logo_key, email, phone, "
         "website, bank_details, invoice_note FROM staging.organisations WHERE id=$1::uuid",
         org_id,
     )
     if not row:
         raise HTTPException(404, "Organisation not found")
-    return dict(row)
+    d = dict(row)
+    if d.get("logo_key"):
+        from services.storage import sign_key
+        d["logo_url"] = await sign_key(org_id, d["logo_key"]) or d.get("logo_url", "")
+    return d
 
 
 @router.patch("")

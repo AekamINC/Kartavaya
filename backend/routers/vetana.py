@@ -466,12 +466,15 @@ async def process_payroll(
     )
     if payslip_rows:
         org_row = await pool.fetchrow(
-            "SELECT name, gstin, pan, billing_address, logo_url, email, phone, website, "
+            "SELECT name, gstin, pan, billing_address, logo_url, logo_key, email, phone, website, "
             "COALESCE(authorized_signatory_name, '') AS authorized_signatory_name, "
             "COALESCE(authorized_signatory_designation, '') AS authorized_signatory_designation "
             "FROM staging.organisations WHERE id=$1::uuid", org_id,
         )
         org_dict = dict(org_row) if org_row else {}
+        if org_dict.get("logo_key"):
+            from services.storage import sign_key
+            org_dict["logo_url"] = await sign_key(org_id, org_dict["logo_key"]) or org_dict.get("logo_url", "")
         from services.payslip_pdf import generate_payslip_pdf
         from services.employee_email import send_payslip_email
         for ps in payslip_rows:
@@ -737,7 +740,7 @@ async def download_payslip_pdf(
         raise HTTPException(404, "Payslip not found")
 
     org = await pool.fetchrow(
-        "SELECT name, gstin, pan, billing_address, logo_url, email, phone, website, "
+        "SELECT name, gstin, pan, billing_address, logo_url, logo_key, email, phone, website, "
         "COALESCE(authorized_signatory_name, '') AS authorized_signatory_name, "
         "COALESCE(authorized_signatory_designation, '') AS authorized_signatory_designation "
         "FROM staging.organisations WHERE id=$1::uuid",
@@ -764,6 +767,9 @@ async def download_payslip_pdf(
     org_dict = dict(org) if org else {}
     if isinstance(org_dict.get("billing_address"), str):
         org_dict["billing_address"] = json.loads(org_dict["billing_address"] or "{}")
+    if org_dict.get("logo_key"):
+        from services.storage import sign_key
+        org_dict["logo_url"] = await sign_key(org_id, org_dict["logo_key"]) or org_dict.get("logo_url", "")
 
     try:
         pdf_bytes = generate_payslip_pdf(payslip, employee, org_dict)

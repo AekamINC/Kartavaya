@@ -83,7 +83,7 @@ async def send_for_signature(
 async def get_signer_by_token(pool, token: str) -> dict | None:
     row = await pool.fetchrow(
         "SELECT s.*, c.title AS contract_title, c.description AS contract_description, "
-        "c.file_url AS contract_file_url, c.contract_value "
+        "c.file_url AS contract_file_url, c.file_key AS contract_file_key, c.contract_value, c.org_id AS contract_org_id "
         "FROM staging.ganit_contract_signers s "
         "JOIN staging.ganit_contracts c ON c.id = s.contract_id "
         "WHERE s.token=$1 AND s.expires_at > NOW()",

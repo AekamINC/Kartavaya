@@ -23,11 +23,19 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
-from services.storage import upload_file
+from services.storage import upload_file, _get_org_r2
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/esign", tags=["esign"])
+
+
+async def _refresh_file_url(org_id: str, key: str, url: str) -> str:
+    """Re-sign an R2 URL using the org's credentials and the stored key."""
+    if not key or key == "pending" or not org_id:
+        return url or ""
+    from services.storage import sign_key
+    return await sign_key(org_id, key) or url or ""
 
 _esign_gate = require_module("esign")
 
@@ -82,7 +90,14 @@ async def list_documents(
         args.append(status)
     q += " ORDER BY created_at DESC LIMIT 50"
     rows = await pool.fetch(q, *args)
-    return {"data": [dict(r) for r in rows]}
+    docs = []
+    for r in rows:
+        d = dict(r)
+        d["file_url"] = await _refresh_file_url(org_id, d.get("file_key"), d.get("file_url"))
+        if d.get("signed_file_key"):
+            d["signed_file_url"] = await _refresh_file_url(org_id, d["signed_file_key"], d.get("signed_file_url"))
+        docs.append(d)
+    return {"data": docs}
 
 
 @router.post("/documents")
@@ -213,8 +228,12 @@ async def get_document(
         uuid.UUID(doc_id),
     )
 
+    doc_dict = dict(doc)
+    doc_dict["file_url"] = await _refresh_file_url(org_id, doc_dict.get("file_key"), doc_dict.get("file_url"))
+    if doc_dict.get("signed_file_key"):
+        doc_dict["signed_file_url"] = await _refresh_file_url(org_id, doc_dict["signed_file_key"], doc_dict.get("signed_file_url"))
     return {
-        "document": dict(doc),
+        "document": doc_dict,
         "signers": [dict(s) for s in signers],
         "audit_trail": [dict(a) for a in audit],
     }
@@ -287,7 +306,7 @@ async def get_signing_page(token: str, request: Request):
     pool = await get_pool()
 
     signer = await pool.fetchrow(
-        "SELECT s.*, d.title, d.description, d.file_url, d.file_hash, d.status as doc_status, "
+        "SELECT s.*, d.title, d.description, d.file_url, d.file_key, d.file_hash, d.status as doc_status, "
         "d.expires_at, d.org_id "
         "FROM staging.sign_signers s "
         "JOIN staging.sign_documents d ON d.id = s.document_id "
@@ -323,7 +342,7 @@ async def get_signing_page(token: str, request: Request):
         "status": "pending",
         "document_title": signer["title"],
         "document_description": signer["description"],
-        "file_url": signer["file_url"],
+        "file_url": await _refresh_file_url(str(signer["org_id"]), signer.get("file_key"), signer.get("file_url")),
         "signer_name": signer["name"],
         "signer_email": signer["email"],
         "otp_required": not signer["otp_verified"],

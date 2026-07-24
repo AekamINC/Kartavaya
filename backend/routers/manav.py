@@ -1696,7 +1696,14 @@ async def list_candidates(
         q += f" AND stage=${len(params)}"
     q += " ORDER BY created_at DESC"
     rows = await pool.fetch(q, *params)
-    return {"data": [dict(r) for r in rows]}
+    from services.storage import sign_key
+    candidates = []
+    for r in rows:
+        d = dict(r)
+        if d.get("resume_key"):
+            d["resume_url"] = await sign_key(org_id, d["resume_key"]) or d.get("resume_url", "")
+        candidates.append(d)
+    return {"data": candidates}
 
 
 @router.post("/candidates")

@@ -180,6 +180,7 @@ class ContractUpdate(BaseModel):
     status: str | None = None
     renewal_reminder_days: int | None = None
     file_url: str | None = None
+    file_key: str | None = None
     notes: str | None = None
 
 
@@ -476,7 +477,7 @@ async def download_invoice_pdf(
         raise HTTPException(404, "Invoice not found")
 
     org = await pool.fetchrow(
-        "SELECT name, gstin, pan, billing_address, logo_url, email, phone, website, "
+        "SELECT name, gstin, pan, billing_address, logo_url, logo_key, email, phone, website, "
         "bank_details, invoice_note FROM staging.organisations WHERE id=$1::uuid",
         org_id,
     )
@@ -500,6 +501,9 @@ async def download_invoice_pdf(
     for jsonb_field in ("billing_address", "bank_details"):
         if isinstance(org_dict.get(jsonb_field), str):
             org_dict[jsonb_field] = json.loads(org_dict[jsonb_field] or "{}")
+    if org_dict.get("logo_key"):
+        from services.storage import sign_key
+        org_dict["logo_url"] = await sign_key(org_id, org_dict["logo_key"]) or org_dict.get("logo_url", "")
 
     try:
         pdf_bytes = generate_invoice_pdf(invoice, org_dict, contact)
@@ -942,7 +946,14 @@ async def list_contracts(
 
     query += "ORDER BY ct.created_at DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    from services.storage import sign_key
+    docs = []
+    for r in rows:
+        d = dict(r)
+        if d.get("file_key"):
+            d["file_url"] = await sign_key(org_id, d["file_key"]) or d.get("file_url", "")
+        docs.append(d)
+    return {"data": docs}
 
 
 @router.post("/contracts")
@@ -1092,12 +1103,16 @@ async def get_signing_page(token: str, request: Request):
     signer = await get_signer_by_token(pool, token)
     if not signer:
         raise HTTPException(404, "Signing link expired or invalid")
+    contract_url = signer.get("contract_file_url")
+    if signer.get("contract_file_key") and signer.get("contract_org_id"):
+        from services.storage import sign_key
+        contract_url = await sign_key(str(signer["contract_org_id"]), signer["contract_file_key"]) or contract_url
     return {
         "signer_name": signer["name"],
         "signer_email": signer["email"],
         "contract_title": signer["contract_title"],
         "contract_description": signer["contract_description"],
-        "contract_file_url": signer.get("contract_file_url"),
+        "contract_file_url": contract_url,
         "contract_value": float(signer["contract_value"]) if signer.get("contract_value") else 0,
         "status": signer["status"],
         "otp_verified": signer.get("otp_verified_at") is not None,

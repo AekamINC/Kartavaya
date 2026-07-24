@@ -158,31 +158,48 @@ async def upload_file(
     url = client.generate_presigned_url(
         "get_object",
         Params={"Bucket": bucket, "Key": key},
-        ExpiresIn=7 * 24 * 3600,
+        ExpiresIn=32400,
     )
 
     return {"url": url, "name": filename, "key": key, "size": len(file_bytes), "bucket": bucket}
 
 
+async def sign_key(org_id: str, key: str) -> Optional[str]:
+    """Generate a fresh presigned URL for an R2 key. Returns None if R2 not configured."""
+    if not key or not org_id:
+        return None
+    client, bucket = await _get_org_r2(org_id)
+    if not client:
+        return None
+    try:
+        return client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": bucket, "Key": key},
+            ExpiresIn=32400,
+        )
+    except Exception as e:
+        log.warning("Failed to sign key %s for org %s: %s", key, org_id, e)
+        return None
+
+
 async def refresh_signed_url(org_id: str, old_url: str) -> str:
-    """Re-sign an R2 URL by extracting the key from the stored pre-signed URL."""
+    """Re-sign an R2 URL by extracting the key from the stored pre-signed URL.
+    DEPRECATED: use sign_key() with a stored file_key instead."""
     if not old_url or old_url.startswith("data:"):
         return old_url
     try:
         from urllib.parse import urlparse
         parsed = urlparse(old_url)
-        key = parsed.path.lstrip("/").split("/", 1)[-1] if "/" in parsed.path.lstrip("/") else parsed.path.lstrip("/")
-        bucket_prefix = parsed.path.lstrip("/").split("/")[0]
+        full_key = parsed.path.lstrip("/")
         client, bucket = await _get_org_r2(org_id)
         if not client:
             return old_url
-        full_key = parsed.path.lstrip("/")
         if full_key.startswith(bucket + "/"):
             full_key = full_key[len(bucket) + 1:]
         return client.generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket, "Key": full_key},
-            ExpiresIn=7 * 24 * 3600,
+            ExpiresIn=32400,
         )
     except Exception as e:
         log.warning("Failed to refresh signed URL for org %s: %s", org_id, e)

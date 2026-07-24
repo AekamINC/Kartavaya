@@ -2649,6 +2649,7 @@ async def reject_request(
 class DocumentCreate(BaseModel):
     name: str
     file_url: str
+    file_key: str = ""
     file_size: int = 0
     mime_type: str = ""
     folder: str = ""
@@ -2694,7 +2695,14 @@ async def list_documents(
         q += f" AND (name ILIKE ${len(params)} OR description ILIKE ${len(params)})"
     q += " ORDER BY created_at DESC LIMIT 200"
     rows = await pool.fetch(q, *params)
-    return {"data": [dict(r) for r in rows]}
+    from services.storage import sign_key
+    docs = []
+    for r in rows:
+        d = dict(r)
+        if d.get("file_key"):
+            d["file_url"] = await sign_key(org_id, d["file_key"]) or d.get("file_url", "")
+        docs.append(d)
+    return {"data": docs}
 
 
 @router.post("/documents")
@@ -2707,11 +2715,11 @@ async def create_document(
     pool = await get_pool()
     row = await pool.fetchrow(
         "INSERT INTO staging.graha_documents "
-        "(org_id, name, file_url, file_size, mime_type, folder, tags, "
+        "(org_id, name, file_url, file_key, file_size, mime_type, folder, tags, "
         "contact_id, deal_id, description, uploaded_by) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb, "
-        "NULLIF($8,'')::uuid, NULLIF($9,'')::uuid, $10, $11) RETURNING *",
-        org_id, body.name, body.file_url, body.file_size, body.mime_type,
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::jsonb, "
+        "NULLIF($9,'')::uuid, NULLIF($10,'')::uuid, $11, $12) RETURNING *",
+        org_id, body.name, body.file_url, body.file_key, body.file_size, body.mime_type,
         body.folder, json.dumps(body.tags),
         body.contact_id, body.deal_id, body.description, user["user_id"],
     )

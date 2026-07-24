@@ -469,6 +469,37 @@ class MarkReadIn(BaseModel):
     notification_ids:List[str]=[]; mark_all:bool=False
 
 
+_team_org_cache: Dict[str, Optional[str]] = {}
+
+async def _resolve_org_id(pool, team_id: str) -> Optional[str]:
+    """Resolve org_id from team_id, with in-memory cache."""
+    if not team_id:
+        return None
+    if team_id in _team_org_cache:
+        return _team_org_cache[team_id]
+    row = await pool.fetchrow("SELECT org_id FROM teams WHERE team_id=$1", team_id)
+    org_id = str(row["org_id"]) if row and row["org_id"] else None
+    _team_org_cache[team_id] = org_id
+    return org_id
+
+async def _refresh_task_attachments(pool, task: "TaskOut") -> "TaskOut":
+    """Re-sign attachment URLs using the task's org R2 credentials."""
+    if not task.attachments:
+        return task
+    org_id = await _resolve_org_id(pool, task.team_id)
+    if not org_id:
+        return task
+    from services.storage import sign_key
+    refreshed = []
+    for a in task.attachments:
+        if a.key:
+            fresh_url = await sign_key(org_id, a.key)
+            refreshed.append(Attachment(name=a.name, url=fresh_url or a.url, key=a.key, is_private=a.is_private, visible_to=a.visible_to))
+        else:
+            refreshed.append(a)
+    task.attachments = refreshed
+    return task
+
 def row_to_task(r) -> TaskOut:
     """Convert an asyncpg Record from the tasks table to a TaskOut Pydantic model."""
     def pj(v,d):
@@ -679,7 +710,9 @@ async def client_tasks(pool=Depends(get_db),user=Depends(require_user)):
            OR EXISTS(SELECT 1 FROM task_clients tc WHERE tc.task_id=t.task_id AND tc.user_id=$1))
         ORDER BY t.updated_at DESC
     """, user["user_id"])
-    return [row_to_task(r) for r in rows]
+    tasks = [row_to_task(r) for r in rows]
+    tasks = [await _refresh_task_attachments(pool, t) for t in tasks]
+    return tasks
 
 @api_router.get("/client/projects")
 async def client_projects(pool=Depends(get_db),user=Depends(require_user)):
@@ -1543,7 +1576,7 @@ async def list_tasks(status:Optional[str]=None,category_id:Optional[str]=None,q:
                t.tags, t.assignee_user_ids, t.assignee_emails,
                t.due_at, t.reminder_at, t.reminder_sent_at,
                t.recurrence_rule, t.recurrence_interval, t.estimated_minutes,
-               '[]'::text AS attachments, t.custom_fields, t.subtasks,
+               t.attachments, t.custom_fields, t.subtasks,
                t.sort_order, t.created_at, t.updated_at, t.completed_at,
                t.board_id, t.column_slug, t.requires_approval,
                t.approval_status, t.approved_by, t.approval_notes,
@@ -1564,7 +1597,9 @@ async def list_tasks(status:Optional[str]=None,category_id:Optional[str]=None,q:
         ORDER BY t.sort_order ASC
         LIMIT ${_lim_idx} OFFSET ${_off_idx}
     """,*vals, _lim, _off)
-    return [row_to_task(r) for r in rows]
+    tasks = [row_to_task(r) for r in rows]
+    tasks = [await _refresh_task_attachments(pool, t) for t in tasks]
+    return tasks
 
 
 @api_router.post("/tasks/auto-archive")
@@ -1769,6 +1804,7 @@ async def _fetch_enriched_task(pool, task_id: str) -> "TaskOut":
     """, task_id)
     if not row: return None
     out = row_to_task(row)
+    out = await _refresh_task_attachments(pool, out)
     out.reminders = await _fetch_task_reminders(pool, task_id)
     return out
 
