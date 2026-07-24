@@ -3,7 +3,9 @@ prachar.py — Prachar · प्रचार (Marketing) Router
 Email templates, campaigns, automations, unsubscribes.
 Reads Graha contacts for audience targeting.
 """
+import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,12 +13,17 @@ from pydantic import BaseModel
 
 from auth_router import require_user
 from db import get_pool
+from email_service import send_email
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/prachar", tags=["prachar-marketing"])
 
 _gate = require_module("prachar")
+
+_background_tasks: set = set()
 
 
 # ── Pydantic Models ──────────────────────────────────────────
@@ -337,6 +344,23 @@ async def send_campaign(
     unsub_set = {r["email"].lower() for r in unsubs}
     eligible = [c for c in contacts if c["email"] and c["email"].lower() not in unsub_set]
 
+    # Resolve subject & body: use template if linked, else campaign's own fields
+    subject = campaign["subject"] or ""
+    body_html = campaign["body_html"] or ""
+    if campaign["template_id"] and (not subject or not body_html):
+        tmpl = await pool.fetchrow(
+            "SELECT subject, body_html FROM staging.prachar_templates "
+            "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+            str(campaign["template_id"]), org_id,
+        )
+        if tmpl:
+            subject = subject or tmpl["subject"]
+            body_html = body_html or tmpl["body_html"]
+
+    if not subject or not body_html:
+        raise HTTPException(400, "Campaign has no subject or body content")
+
+    # Insert contact rows and set status to sending
     async with pool.acquire() as conn:
         async with conn.transaction():
             for c in eligible:
@@ -352,6 +376,57 @@ async def send_campaign(
                 "WHERE id=$2::uuid",
                 len(eligible), str(campaign["id"]),
             )
+
+    # Dispatch emails in background so the API responds quickly
+    campaign_id = str(campaign["id"])
+    campaign_name = campaign["name"]
+
+    async def _dispatch():
+        sent_count = 0
+        failed_count = 0
+        for c in eligible:
+            contact_email = c["email"]
+            # Simple variable substitution: {{name}}, {{email}}, {{company}}
+            rendered_body = body_html
+            rendered_subj = subject
+            for var_key in ("name", "email", "company"):
+                placeholder = "{{" + var_key + "}}"
+                val = str(c.get(var_key) or "")
+                rendered_body = rendered_body.replace(placeholder, val)
+                rendered_subj = rendered_subj.replace(placeholder, val)
+
+            try:
+                send_email(contact_email, rendered_subj, rendered_body)
+                sent_count += 1
+                # Mark individual contact as sent
+                await pool.execute(
+                    "UPDATE staging.prachar_campaign_contacts SET status='sent', sent_at=NOW() "
+                    "WHERE campaign_id=$1::uuid AND email=$2",
+                    campaign_id, contact_email,
+                )
+            except Exception as exc:
+                failed_count += 1
+                logger.error("Prachar campaign %s: failed to send to %s: %s",
+                             campaign_name, contact_email, exc)
+                await pool.execute(
+                    "UPDATE staging.prachar_campaign_contacts SET status='failed' "
+                    "WHERE campaign_id=$1::uuid AND email=$2",
+                    campaign_id, contact_email,
+                )
+
+        # Update campaign to sent with aggregate counts
+        await pool.execute(
+            "UPDATE staging.prachar_campaigns SET status='sent', "
+            "total_recipients=$1, updated_at=NOW() "
+            "WHERE id=$2::uuid",
+            sent_count, campaign_id,
+        )
+        logger.info("Prachar campaign '%s' (%s): %d sent, %d failed",
+                     campaign_name, campaign_id, sent_count, failed_count)
+
+    task = asyncio.create_task(_dispatch())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     return {"ok": True, "recipients": len(eligible), "skipped_unsubscribed": len(contacts) - len(eligible)}
 

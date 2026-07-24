@@ -131,36 +131,130 @@ async def ingest_document(client_id: str, title: str, content: str, source_type:
 
 async def search_knowledge(client_id: str, query: str, top_k: int = 5) -> list[dict]:
     """Vector similarity search across a client's knowledge base."""
+    return await search_hybrid(client_id, query, top_k=top_k)
+
+
+async def search_hybrid(
+    client_id: str,
+    query: str,
+    *,
+    top_k: int = 5,
+    vector_weight: float = 0.7,
+    text_weight: float = 0.3,
+    team_id: str | None = None,
+    content_type: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict]:
+    """Hybrid search: blend pgvector cosine similarity with tsvector full-text search.
+
+    Metadata filters (team_id, content_type, date range) are applied BEFORE scoring.
+    Returns source metadata (chunk_id, source_type, source_id) for citations.
+    """
     embedding = await generate_embedding(query)
     pool = await get_pool()
 
+    # Build WHERE clause with metadata filters
+    conditions = ["c.client_id=$1::uuid", "d.is_active=TRUE"]
+    params: list = [client_id]
+    idx = 2
+
+    if team_id:
+        conditions.append(f"d.team_id=${idx}::uuid")
+        params.append(team_id)
+        idx += 1
+    if content_type:
+        conditions.append(f"d.source_type=${idx}")
+        params.append(content_type)
+        idx += 1
+    if date_from:
+        conditions.append(f"d.created_at >= ${idx}::timestamptz")
+        params.append(date_from)
+        idx += 1
+    if date_to:
+        conditions.append(f"d.created_at <= ${idx}::timestamptz")
+        params.append(date_to)
+        idx += 1
+
+    where = " AND ".join(conditions)
+
     if embedding and len(embedding) == EMBEDDING_DIM:
         embedding_str = f"[{','.join(str(v) for v in embedding)}]"
-        rows = await pool.fetch(
-            "SELECT c.content, c.chunk_index, d.title as doc_title, "
-            "1 - (c.embedding <=> $1::vector) as similarity "
-            "FROM staging.hub_kb_chunks c "
-            "JOIN staging.hub_kb_documents d ON d.id = c.document_id "
-            "WHERE c.client_id=$2::uuid AND c.embedding IS NOT NULL AND d.is_active=TRUE "
-            "ORDER BY c.embedding <=> $1::vector LIMIT $3",
-            embedding_str, client_id, top_k,
+        emb_idx = idx
+        params.append(embedding_str)
+        idx += 1
+        query_idx = idx
+        params.append(query)
+        idx += 1
+        topk_idx = idx
+        params.append(top_k * 4)  # fetch more for blending
+
+        sql = (
+            f"SELECT c.id as chunk_id, c.content, c.chunk_index, "
+            f"d.title as doc_title, d.id as document_id, d.source_type, "
+            f"1 - (c.embedding <=> ${emb_idx}::vector) as vec_score, "
+            f"COALESCE(ts_rank_cd(to_tsvector('english', c.content), plainto_tsquery('english', ${query_idx})), 0) as text_score "
+            f"FROM staging.hub_kb_chunks c "
+            f"JOIN staging.hub_kb_documents d ON d.id = c.document_id "
+            f"WHERE {where} AND c.embedding IS NOT NULL "
+            f"ORDER BY (1 - (c.embedding <=> ${emb_idx}::vector)) DESC "
+            f"LIMIT ${topk_idx}"
         )
+        rows = await pool.fetch(sql, *params)
+
+        # Blend scores and re-sort
+        results = []
+        for r in rows:
+            vec = float(r["vec_score"])
+            txt = float(r["text_score"])
+            combined = vector_weight * vec + text_weight * min(txt, 1.0)
+            results.append({
+                "chunk_id": str(r["chunk_id"]),
+                "content": r["content"],
+                "doc_title": r["doc_title"],
+                "document_id": str(r["document_id"]),
+                "source_type": r["source_type"],
+                "chunk_index": r["chunk_index"],
+                "similarity": round(combined, 4),
+                "vec_score": round(vec, 4),
+                "text_score": round(txt, 4),
+            })
+
+        results.sort(key=lambda x: x["similarity"], reverse=True)
+        return results[:top_k]
     else:
+        # Fallback: text-only search
+        query_idx = idx
+        params.append(query[:100])
+        idx += 1
+        topk_idx = idx
+        params.append(top_k)
+
         rows = await pool.fetch(
-            "SELECT c.content, c.chunk_index, d.title as doc_title, 0.0 as similarity "
-            "FROM staging.hub_kb_chunks c "
-            "JOIN staging.hub_kb_documents d ON d.id = c.document_id "
-            "WHERE c.client_id=$1::uuid AND d.is_active=TRUE "
-            "AND c.content ILIKE '%' || $2 || '%' "
-            "LIMIT $3",
-            client_id, query[:100], top_k,
+            f"SELECT c.id as chunk_id, c.content, c.chunk_index, "
+            f"d.title as doc_title, d.id as document_id, d.source_type, "
+            f"0.0 as similarity "
+            f"FROM staging.hub_kb_chunks c "
+            f"JOIN staging.hub_kb_documents d ON d.id = c.document_id "
+            f"WHERE {where} AND c.content ILIKE '%' || ${query_idx} || '%' "
+            f"LIMIT ${topk_idx}",
+            *params,
         )
 
-    return [
-        {"content": r["content"], "doc_title": r["doc_title"],
-         "chunk_index": r["chunk_index"], "similarity": float(r["similarity"])}
-        for r in rows
-    ]
+        return [
+            {
+                "chunk_id": str(r["chunk_id"]),
+                "content": r["content"],
+                "doc_title": r["doc_title"],
+                "document_id": str(r["document_id"]),
+                "source_type": r["source_type"],
+                "chunk_index": r["chunk_index"],
+                "similarity": 0.0,
+                "vec_score": 0.0,
+                "text_score": 0.0,
+            }
+            for r in rows
+        ]
 
 
 async def delete_document(document_id: str) -> bool:

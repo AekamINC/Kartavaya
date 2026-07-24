@@ -12,6 +12,7 @@ import {
 } from '../components/editorial';
 import { AVATAR_COLORS, relTime, userInitials, logger } from '../lib/utils';
 import { STATUS_COLORS, STATUS_LABELS } from '../components/drawer/constants';
+import { SkeletonCardGrid, SkeletonCard, SkeletonRegion } from '../components/ui/Skeleton';
 
 const VIKRAM_MONTHS = ['Chaitra','Vaishākha','Jyēṣṭha','Āṣāḍha','Śrāvaṇa','Bhādra',
   'Āśvina','Kārtika','Mārgaśīrṣa','Pauṣa','Māgha','Phālguna'];
@@ -238,12 +239,16 @@ export default function DashboardPage({ teams = [] }) {
       )}
 
       {/* Stat row */}
-      <div className="k-stats">
-        <StatTile variant="blue"  label="OPEN TASKS"          sanskrit="खुला"      value={openTasks.length}     sub={`across ${openProjectCount} project${openProjectCount !== 1 ? 's' : ''}`} />
-        <StatTile variant="teal"  label="DUE TODAY"           sanskrit="आज"        value={dueToday.length}      sub={`${dueToday.filter(t=>t.priority==='high'||t.priority==='urgent').length} high priority`} />
-        <StatTile variant="amber" label="OVERDUE"             sanskrit="विलंबित"   value={overdue.length}       sub={overdue.length > 0 ? 'needs attention' : 'all on track'} />
-        <StatTile variant="red"   label="DONE THIS WEEK"      sanskrit="इस सप्ताह" value={completedWeek.length} sub={completedWeek.length > 0 ? `${Math.round((completedWeek.length/(tasks.length||1))*100)}% completion rate` : 'keep going'} />
-      </div>
+      {loading ? (
+        <SkeletonCardGrid count={4} lines={2} />
+      ) : (
+        <div className="k-stats">
+          <StatTile variant="blue"  label="OPEN TASKS"          sanskrit="खुला"      value={openTasks.length}     sub={`across ${openProjectCount} project${openProjectCount !== 1 ? 's' : ''}`} />
+          <StatTile variant="teal"  label="DUE TODAY"           sanskrit="आज"        value={dueToday.length}      sub={`${dueToday.filter(t=>t.priority==='high'||t.priority==='urgent').length} high priority`} />
+          <StatTile variant="amber" label="OVERDUE"             sanskrit="विलंबित"   value={overdue.length}       sub={overdue.length > 0 ? 'needs attention' : 'all on track'} />
+          <StatTile variant="red"   label="DONE THIS WEEK"      sanskrit="इस सप्ताह" value={completedWeek.length} sub={completedWeek.length > 0 ? `${Math.round((completedWeek.length/(tasks.length||1))*100)}% completion rate` : 'keep going'} />
+        </div>
+      )}
 
       {/* Quick actions */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
@@ -397,9 +402,17 @@ export default function DashboardPage({ teams = [] }) {
       )}
 
       {loading && (
-        <div style={{ padding: '48px 0', textAlign: 'center', color: 'var(--ink-3)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>
-          Loading…
-        </div>
+        <SkeletonRegion label="Loading dashboard…" className="k-twocol">
+          <div className="k-col k-col--main">
+            <SkeletonCard lines={5} />
+            <SkeletonCard lines={4} />
+          </div>
+          <div className="k-col k-col--side">
+            <SkeletonCard lines={3} showAvatar />
+            <SkeletonCard lines={3} showAvatar />
+            <SkeletonCard lines={2} />
+          </div>
+        </SkeletonRegion>
       )}
     </div>
   );

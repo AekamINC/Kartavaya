@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { PageHeader, PriorityDot } from '../components/editorial';
 import { AVATAR_COLORS, userInitials } from '../lib/utils';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { EmptyState } from '../components/ui/EmptyState';
 
 export default function TeamsPage() {
   const [projects,       setProjects]       = useState([]);
@@ -122,9 +123,13 @@ export default function TeamsPage() {
           </div>
         </section>
       ) : (
-        <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--ink-3)', fontStyle: 'italic' }}>
-          No projects yet. Create a project from the Board screen first.
-        </div>
+        <EmptyState
+          illustration="teams"
+          title={{ en: 'No teams created', hi: 'कोई टीम नहीं' }}
+          description="Teams live on projects — create a project first, then add members here."
+          action="Create Project"
+          onAction={() => window.location.assign('/projects')}
+        />
       )}
 
       {/* Member grid */}

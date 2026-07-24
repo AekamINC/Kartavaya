@@ -72,6 +72,7 @@ const VetanaPage            = lazy(() => import('./pages/VetanaPage'));
 const DristiPage            = lazy(() => import('./pages/DristiPage'));
 const PracharPage           = lazy(() => import('./pages/PracharPage'));
 const EsignPage             = lazy(() => import('./pages/EsignPage'));
+const SanvaadPage           = lazy(() => import('./pages/SanvaadPage'));
 const SigningPage           = lazy(() => import('./pages/SigningPage'));
 const CustomizeSettingsPage = lazy(() => import('./pages/CustomizeSettingsPage'));
 
@@ -158,6 +159,7 @@ function AppRouter() {
           <Route path="dristi"                 element={<DristiPage />} />
           <Route path="prachar"                element={<PracharPage />} />
           <Route path="esign"                  element={<EsignPage />} />
+          <Route path="sanvaad"                element={<SanvaadPage />} />
 
           {/* Client portal */}
           <Route path="client"                          element={<ClientProjectsPage />} />

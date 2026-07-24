@@ -15,7 +15,8 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
 from services.ai_router import generate
-from services.rag import ingest_document, search_knowledge, delete_document
+from services.rag import ingest_document, search_knowledge, search_hybrid, delete_document
+from services.ai.reranker import rerank
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub-chat"])
 
@@ -113,6 +114,14 @@ async def add_faq(
 ):
     """Add a Q&A pair to the knowledge base."""
     cid = str(client_id)
+    pool = await get_pool()
+    cl = await pool.fetchrow(
+        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        cid, org_id,
+    )
+    if not cl:
+        raise HTTPException(404, "Client not found")
+
     content = f"Question: {body.question}\nAnswer: {body.answer}"
     result = await ingest_document(
         client_id=cid,
@@ -132,6 +141,13 @@ async def remove_kb_document(
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
 ):
+    pool = await get_pool()
+    cl = await pool.fetchrow(
+        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(client_id), org_id,
+    )
+    if not cl:
+        raise HTTPException(404, "Client not found")
     await delete_document(str(doc_id))
     return {"status": "deleted"}
 
@@ -145,6 +161,13 @@ async def search_kb(
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
 ):
+    pool = await get_pool()
+    cl = await pool.fetchrow(
+        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(client_id), org_id,
+    )
+    if not cl:
+        raise HTTPException(404, "Client not found")
     results = await search_knowledge(str(client_id), q, top_k)
     return {"results": results}
 
@@ -242,14 +265,24 @@ async def send_chat_message(
         sid, body.message,
     )
 
-    # RAG: search knowledge base for relevant context
-    kb_results = await search_knowledge(client_id, body.message, top_k=4)
+    # RAG: hybrid search + re-rank for relevant context
+    kb_results = await search_hybrid(client_id, body.message, top_k=20)
+    kb_results = await rerank(body.message, kb_results, top_k=5, client_id=client_id)
     sources = []
     context_parts = []
-    for r in kb_results:
-        if r["similarity"] > 0.3:
-            context_parts.append(f"[From: {r['doc_title']}]\n{r['content']}")
-            sources.append({"title": r["doc_title"], "similarity": round(r["similarity"], 3)})
+    valid_chunk_ids = set()
+    for idx, r in enumerate(kb_results):
+        if r.get("similarity", 0) > 0.3 or r.get("vec_score", 0) > 0.3:
+            ref_num = idx + 1
+            valid_chunk_ids.add(str(ref_num))
+            context_parts.append(f"[{ref_num}] (Source: {r.get('doc_title', 'Unknown')})\n{r['content']}")
+            sources.append({
+                "ref": ref_num,
+                "chunk_id": r.get("chunk_id", ""),
+                "title": r.get("doc_title", ""),
+                "source_type": r.get("source_type", ""),
+                "similarity": round(r.get("similarity", 0), 3),
+            })
 
     # Load brand profile for system prompt
     brand = await pool.fetchrow(
@@ -269,8 +302,22 @@ async def send_chat_message(
     if context_parts:
         sys_parts.append("\nRelevant knowledge base context:")
         sys_parts.extend(context_parts)
-        sys_parts.append("\nUse this context to answer the user's question accurately. "
-                        "If the context doesn't contain the answer, say so honestly.")
+        sys_parts.append(
+            "\nIMPORTANT INSTRUCTIONS:"
+            "\n- Use the provided context to answer the user's question accurately."
+            "\n- Cite your sources using bracket notation like [1], [2], etc. matching the reference numbers above."
+            "\n- You may combine multiple citations like [1][3] when information comes from multiple sources."
+            "\n- If the context does not contain enough information to answer the question, "
+            "clearly state: 'I don't have enough information in the knowledge base to answer this question.'"
+            "\n- Do NOT make up information that is not supported by the provided context."
+        )
+    else:
+        sys_parts.append(
+            "\nNo relevant context was found in the knowledge base. "
+            "If the user is asking about business-specific information, "
+            "respond with: 'I don't have enough information in the knowledge base to answer this question. "
+            "Please add relevant documents to the knowledge base.'"
+        )
 
     # Get recent conversation history (last 10 messages)
     history = await pool.fetch(
@@ -300,6 +347,13 @@ async def send_chat_message(
         assistant_text = ai_result.get("text", "I couldn't generate a response.")
         model_used = ai_result.get("model", "")
         cost = 0
+
+        import re as _re
+        def _strip_invalid_refs(text, valid_ids):
+            def _replacer(m):
+                return "" if m.group(1) not in valid_ids else m.group(0)
+            return _re.sub(r'\[(\d+)\]', _replacer, text)
+        assistant_text = _strip_invalid_refs(assistant_text, valid_chunk_ids)
 
         grounding_sources = ai_result.get("grounding_sources", [])
         if grounding_sources:

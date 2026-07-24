@@ -85,6 +85,7 @@ const NAV_FULL = [
       { to: '/dristi',  icon: 'dristi',  en: 'Analytics',  hi: 'दृष्टि', gu: 'દૃષ્ટિ' },
       { to: '/prachar', icon: 'prachar', en: 'Marketing',  hi: 'प्रचार', gu: 'પ્રચાર' },
       { to: '/esign',   icon: 'esign',   en: 'E-Sign',     hi: 'प्रमाण', gu: 'પ્રમાણ' },
+      { to: '/sanvaad', icon: 'inbox',   en: 'Messages',   hi: 'संवाद',  gu: 'સંવાદ' },
     ],
   },
   {
@@ -129,6 +130,22 @@ function KMark({ size = 30 }) {
   );
 }
 
+const SECTIONS_KEY = 'kartavya_sidebar_sections';
+const COLLAPSED_KEY = 'kartavya_sidebar_collapsed';
+const CORE_SECTION = 'workspace'; // expanded by default on first visit — everything else starts collapsed
+
+function loadSectionState() {
+  try {
+    const raw = localStorage.getItem(SECTIONS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (_) { /* ignore */ }
+  return null; // signals "no saved prefs yet" so callers can apply defaults per-section
+}
+
+function loadCollapsed() {
+  try { return localStorage.getItem(COLLAPSED_KEY) === '1'; } catch (_) { return false; }
+}
+
 export default function Sidebar({ inboxCount = 0 }) {
   const navigate  = useNavigate();
   const location  = useLocation();
@@ -145,6 +162,34 @@ export default function Sidebar({ inboxCount = 0 }) {
   const isRail = prefs.sidebar === 'rail';
   const showGu = lang === 'gu' || lang === 'en+gu';
   const showHi = lang === 'en+sa' || lang === 'en+hi' || lang === 'hi';
+
+  // ── Collapsible sections + collapsed rail state (persisted) ──────────────
+  const [sectionState, setSectionState] = React.useState(loadSectionState);
+  const [collapsed, setCollapsed] = React.useState(loadCollapsed);
+
+  const isSectionExpanded = (section) => {
+    if (sectionState && Object.prototype.hasOwnProperty.call(sectionState, section)) return sectionState[section];
+    return section === CORE_SECTION; // default: only Core expanded on first visit
+  };
+
+  const toggleSection = (section) => {
+    setSectionState(prev => {
+      const base = prev || {};
+      const next = { ...base, [section]: !isSectionExpanded(section) };
+      try { localStorage.setItem(SECTIONS_KEY, JSON.stringify(next)); } catch (_) { /* ignore */ }
+      return next;
+    });
+  };
+
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem(COLLAPSED_KEY, next ? '1' : '0'); } catch (_) { /* ignore */ }
+      return next;
+    });
+  };
+
+  const effectiveRail = isRail || collapsed;
 
   const groups = isClient ? NAV_CLIENT : NAV_FULL;
   let allGroups = groups;
@@ -175,12 +220,20 @@ export default function Sidebar({ inboxCount = 0 }) {
   const initials = ((user?.full_name || user?.name || 'U')
     .split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase());
 
+  const chevron = (expanded) => (
+    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"
+      style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s', flexShrink: 0 }}>
+      <path d="M6 3l5 5-5 5" />
+    </svg>
+  );
+
+  const rail = effectiveRail;
   return (
-    <aside className={`k-sidebar${isRail ? ' k-sidebar--rail' : ''}`}>
+    <aside className={`k-sidebar${rail ? ' k-sidebar--rail' : ''}${collapsed ? ' k-sidebar--collapsed' : ''}`}>
       {/* Brand */}
       <div className="k-sidebar__brand">
-        <KMark size={isRail ? 28 : 32} />
-        {!isRail && (
+        <KMark size={rail ? 28 : 32} />
+        {!rail && (
           <div className="k-wordmark">
             <div className="k-wordmark__main">Kartavaya</div>
             <div className="k-wordmark__sans">कर्तव्य</div>
@@ -191,48 +244,67 @@ export default function Sidebar({ inboxCount = 0 }) {
 
       {/* Nav */}
       <nav className="k-sidebar__nav">
-        {allGroups.map(({ section, sans, gu: guSec, items }) => (
-          <div key={section} className="k-sidebar__group">
-            {!isRail && (
-              <div className="k-sidebar__section">
-                <span>{section}</span>
-                <span className="k-sidebar__section-hi">{showGu ? guSec : sans}</span>
-              </div>
-            )}
-            {items.filter(item => (!item.ownerOnly || !isMember) && (!item.adminOnly || isAdmin)).map(({ to, icon, en, hi, gu: guLabel, adminOnly, badge }) => {
-              const badgeCount = badge === 'unread' ? inboxCount : 0;
-              const secondaryLabel = showGu ? guLabel : hi;
-              return (
+        {allGroups.map(({ section, sans, gu: guSec, items }) => {
+          const expanded = rail ? true : isSectionExpanded(section);
+          return (
+            <div key={section} className="k-sidebar__group">
+              {!rail && (
                 <button
-                  key={en}
-                  className={'k-sidebar__item' + (isActive(to) ? ' is-active' : '')}
-                  onClick={() => navigate(to)}
-                  title={isRail ? en : undefined}
+                  type="button"
+                  className="k-sidebar__section"
+                  aria-expanded={expanded}
+                  onClick={() => toggleSection(section)}
+                  style={{ width: '100%', border: 'none', background: 'transparent', cursor: 'pointer', font: 'inherit' }}
                 >
-                  <span className="k-sidebar__icon">{ICONS[icon]}</span>
-                  {!isRail && <span>{en}</span>}
-                  {!isRail && <span className="k-sidebar__hi-mute">{secondaryLabel}</span>}
-                  {!isRail && adminOnly && (
-                    <span className="k-sidebar__badge" style={{ fontSize: 9, letterSpacing: '0.1em' }}>
-                      ADMIN
-                    </span>
-                  )}
-                  {!isRail && badgeCount > 0 && (
-                    <span style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 4px', borderRadius: 99, background: '#dc2626', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {badgeCount > 9 ? '9+' : badgeCount}
-                    </span>
-                  )}
+                  {chevron(expanded)}
+                  <span style={{ marginRight: 'auto' }}>{section}</span>
+                  <span className="k-sidebar__section-hi">{showGu ? guSec : sans}</span>
                 </button>
-              );
-            })}
-          </div>
-        ))}
+              )}
+              <div
+                className="k-sidebar__section-items"
+                style={{
+                  maxHeight: expanded ? items.length * 44 + 'px' : '0px',
+                  overflow: 'hidden',
+                  transition: 'max-height .2s ease',
+                }}
+              >
+                {items.filter(item => (!item.ownerOnly || !isMember) && (!item.adminOnly || isAdmin)).map(({ to, icon, en, hi, gu: guLabel, adminOnly, badge }) => {
+                  const badgeCount = badge === 'unread' ? inboxCount : 0;
+                  const secondaryLabel = showGu ? guLabel : hi;
+                  return (
+                    <button
+                      key={en}
+                      className={'k-sidebar__item' + (isActive(to) ? ' is-active' : '')}
+                      onClick={() => navigate(to)}
+                      title={rail ? en : undefined}
+                    >
+                      <span className="k-sidebar__icon">{ICONS[icon]}</span>
+                      {!rail && <span>{en}</span>}
+                      {!rail && <span className="k-sidebar__hi-mute">{secondaryLabel}</span>}
+                      {!rail && adminOnly && (
+                        <span className="k-sidebar__badge" style={{ fontSize: 9, letterSpacing: '0.1em' }}>
+                          ADMIN
+                        </span>
+                      )}
+                      {!rail && badgeCount > 0 && (
+                        <span style={{ marginLeft: 'auto', minWidth: 18, height: 18, padding: '0 4px', borderRadius: 99, background: '#dc2626', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {badgeCount > 9 ? '9+' : badgeCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </nav>
 
       {/* Footer */}
-      <div className="k-sidebar__foot" style={isRail ? { justifyContent: 'center', padding: '12px 0' } : undefined}>
+      <div className="k-sidebar__foot" style={rail ? { justifyContent: 'center', padding: '12px 0', flexWrap: 'wrap' } : undefined}>
         <div className="k-avatar k-avatar--me">{initials}</div>
-        {!isRail && (
+        {!rail && (
           <div className="k-sidebar__me">
             <div className="k-sidebar__me-name">{user?.full_name || user?.name || 'User'}</div>
             <div className="k-sidebar__me-role" style={{ textTransform: 'capitalize' }}>
@@ -240,7 +312,7 @@ export default function Sidebar({ inboxCount = 0 }) {
             </div>
           </div>
         )}
-        {!isRail && (
+        {!rail && (
           <button
             className="k-sidebar__foot-btn"
             title="Sign out"
@@ -254,6 +326,24 @@ export default function Sidebar({ inboxCount = 0 }) {
           </button>
         )}
       </div>
+
+      {/* Global collapse toggle */}
+      {!isRail && (
+        <button
+          type="button"
+          className="k-sidebar__toggle"
+          aria-expanded={!collapsed}
+          aria-label="Toggle sidebar"
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          onClick={toggleCollapsed}
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"
+            style={{ transform: collapsed ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+            <path d="M10 3L5 8l5 5" />
+          </svg>
+          {!collapsed && <span>Collapse</span>}
+        </button>
+      )}
     </aside>
   );
 }

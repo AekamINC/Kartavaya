@@ -44,6 +44,7 @@ const COMMANDS = [
   { id: 'templates',   label: 'Go to Templates',section: 'Navigation', keywords: ['template'] },
   { id: 'automations', label: 'Go to Automations', section: 'Navigation', keywords: ['rules', 'automation'] },
   { id: 'settings',    label: 'Go to Settings', section: 'Navigation', keywords: ['categories', 'preferences'] },
+  { id: 'sanvaad',    label: 'Go to Messages', section: 'Navigation', keywords: ['messaging', 'chat', 'sanvaad', 'samvada'] },
 ];
 
 export default function Topbar({ unread = 0, onOpenNotifications, onNewTask }) {
@@ -57,7 +58,7 @@ export default function Topbar({ unread = 0, onOpenNotifications, onNewTask }) {
       dashboard: '/dashboard', tasks: '/tasks', projects: '/projects', boards: '/boards',
       inbox: '/inbox', approvals: '/approvals', activity: '/activity', time: '/time',
       reports: '/reports', teams: '/teams', templates: '/templates', automations: '/automations',
-      settings: '/settings/categories',
+      settings: '/settings/categories', sanvaad: '/sanvaad',
     };
     if (routes[cmd.id]) navigate(routes[cmd.id]);
   };

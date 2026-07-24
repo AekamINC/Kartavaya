@@ -28,6 +28,34 @@ const ILLUSTRATIONS = {
       <path d="M44 38h16M44 50h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.1" />
     </svg>
   ),
+  teams: (
+    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
+      <circle cx="46" cy="38" r="14" stroke="currentColor" strokeWidth="2" opacity="0.14" />
+      <circle cx="78" cy="38" r="10" stroke="currentColor" strokeWidth="2" opacity="0.1" />
+      <path d="M24 78c0-14 10-22 22-22s22 8 22 22" stroke="currentColor" strokeWidth="2" opacity="0.12" />
+      <path d="M68 78c0-10 6-16 16-16s16 6 16 16" stroke="currentColor" strokeWidth="2" opacity="0.08" />
+    </svg>
+  ),
+  contacts: (
+    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
+      <circle cx="60" cy="34" r="16" stroke="currentColor" strokeWidth="2" opacity="0.14" />
+      <path d="M28 82c0-18 14-28 32-28s32 10 32 28" stroke="currentColor" strokeWidth="2" opacity="0.12" />
+      <circle cx="60" cy="34" r="4" fill="currentColor" opacity="0.14" />
+    </svg>
+  ),
+  invoice: (
+    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
+      <rect x="35" y="12" width="50" height="76" rx="4" stroke="currentColor" strokeWidth="2" opacity="0.12" />
+      <path d="M45 30h30M45 42h30M45 54h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.12" />
+      <circle cx="60" cy="70" r="8" stroke="currentColor" strokeWidth="1.5" opacity="0.14" strokeDasharray="3 3" />
+    </svg>
+  ),
+  success: (
+    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
+      <circle cx="60" cy="46" r="26" stroke="currentColor" strokeWidth="1.5" opacity="0.14" />
+      <path d="M48 46l8 8 16-16" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" opacity="0.22" />
+    </svg>
+  ),
   generic: (
     <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
       <circle cx="60" cy="45" r="25" stroke="currentColor" strokeWidth="1.5" opacity="0.1" strokeDasharray="4 3" />
@@ -37,15 +65,53 @@ const ILLUSTRATIONS = {
   ),
 };
 
-export function EmptyState({ illustration = 'generic', title, description, action, className }) {
+/**
+ * EmptyState — icon/illustration + one-line "why it's empty" + single prominent CTA.
+ *
+ * Props:
+ *  - illustration: key into ILLUSTRATIONS, or a custom SVG/node
+ *  - icon: emoji or small SVG shown above the title instead of/alongside illustration
+ *  - title: bilingual-friendly string, or { en, hi } / { en, gu }
+ *  - description: one-sentence explanation of why it's empty
+ *  - action: button label string (renders a styled CTA) — or pass a custom node directly
+ *  - onAction: callback fired when the CTA is clicked (used when `action` is a string)
+ *  - className: extra classes for the wrapper
+ */
+export function EmptyState({ illustration = 'generic', icon, title, description, action, onAction, className }) {
+  let titleEn = title, titleSecondary = null;
+  if (title && typeof title === 'object') {
+    titleEn = title.en;
+    titleSecondary = title.hi || title.gu || null;
+  }
+
   return (
-    <div className={cn('flex flex-col items-center justify-center py-12 px-6 text-center', className)}>
-      <div className="mb-4">
-        {typeof illustration === 'string' ? ILLUSTRATIONS[illustration] || ILLUSTRATIONS.generic : illustration}
+    <div className={cn('flex flex-col items-center justify-center py-12 px-6 text-center mx-auto', className)} style={{ maxWidth: 400 }}>
+      <div className="mb-4" style={{ color: 'var(--ink-faint, #b9c0cc)' }}>
+        {icon
+          ? (typeof icon === 'string' ? <span style={{ fontSize: 40, lineHeight: 1, opacity: 0.6 }}>{icon}</span> : icon)
+          : (typeof illustration === 'string' ? ILLUSTRATIONS[illustration] || ILLUSTRATIONS.generic : illustration)}
       </div>
-      {title && <h3 className="text-base font-semibold text-textDefault mb-1">{title}</h3>}
+      {titleEn && (
+        <h3 className="text-base font-semibold text-textDefault mb-1">
+          {titleEn}
+          {titleSecondary && <span style={{ display: 'block', fontFamily: 'var(--font-hindi)', fontWeight: 400, fontSize: '0.85em', color: 'var(--ink-3, #8a93a3)', marginTop: 2 }}>{titleSecondary}</span>}
+        </h3>
+      )}
       {description && <p className="text-sm text-textMuted max-w-xs">{description}</p>}
-      {action && <div className="mt-4">{action}</div>}
+      {action && (
+        <div className="mt-4">
+          {typeof action === 'string' ? (
+            <button
+              type="button"
+              className="k-btn k-btn--primary k-btn--sm"
+              onClick={onAction}
+              style={{ background: 'var(--accent, var(--k-primary))' }}
+            >
+              {action}
+            </button>
+          ) : action}
+        </div>
+      )}
     </div>
   );
 }

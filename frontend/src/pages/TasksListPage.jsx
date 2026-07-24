@@ -10,6 +10,7 @@ import NewTaskModal from '../components/NewTaskModal';
 import { PageHeader, DueChip, PriorityDot, StatusChip, ProjectTag } from '../components/editorial';
 import { AVATAR_COLORS, avatarColor, priorityColor, userInitials, relTime } from '../lib/utils';
 import { PRIORITY_LABELS, STATUS_LABELS, STATUS_COLORS } from '../components/drawer/constants';
+import { SkeletonTable, SkeletonRegion } from '../components/ui/Skeleton';
 
 const PRIORITY_ORDER = ['urgent','high','medium','low'];
 const PRIORITY_HI    = { urgent:'अत्यावश्यक', high:'उच्च', medium:'मध्यम', low:'न्यून' };
@@ -287,9 +288,9 @@ export default function TasksListPage() {
       </div>
 
       {loading ? (
-        <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--ink-3)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>
-          Loading tasks…
-        </div>
+        <SkeletonRegion label="Loading tasks…">
+          <SkeletonTable rows={8} columns={activeCols.length} />
+        </SkeletonRegion>
       ) : (
         <div className="k-tablewrap" style={{ overflowX: 'auto' }}>
           {/* Header */}

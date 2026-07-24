@@ -1,0 +1,92 @@
+[
+  {
+    "id": "q01",
+    "question": "What is the company refund policy?",
+    "relevant_chunks": ["refund-policy-001", "refund-policy-002"],
+    "expected_keywords": ["refund", "return", "days", "policy"]
+  },
+  {
+    "id": "q02",
+    "question": "How do I reset my password?",
+    "relevant_chunks": ["auth-guide-001", "faq-password-001"],
+    "expected_keywords": ["password", "reset", "email", "link"]
+  },
+  {
+    "id": "q03",
+    "question": "What are the pricing plans available?",
+    "relevant_chunks": ["pricing-001", "pricing-002", "pricing-003"],
+    "expected_keywords": ["plan", "price", "monthly", "annual"]
+  },
+  {
+    "id": "q04",
+    "question": "How to integrate the API with my application?",
+    "relevant_chunks": ["api-docs-001", "api-docs-002"],
+    "expected_keywords": ["API", "integration", "endpoint", "key"]
+  },
+  {
+    "id": "q05",
+    "question": "What payment methods do you accept?",
+    "relevant_chunks": ["payment-faq-001"],
+    "expected_keywords": ["payment", "credit card", "UPI", "bank"]
+  },
+  {
+    "id": "q06",
+    "question": "Can I export my data from the platform?",
+    "relevant_chunks": ["data-export-001", "privacy-policy-002"],
+    "expected_keywords": ["export", "data", "download", "CSV"]
+  },
+  {
+    "id": "q07",
+    "question": "What is the SLA for uptime?",
+    "relevant_chunks": ["sla-doc-001"],
+    "expected_keywords": ["uptime", "SLA", "availability", "99"]
+  },
+  {
+    "id": "q08",
+    "question": "How do I add team members to my project?",
+    "relevant_chunks": ["team-guide-001", "team-guide-002"],
+    "expected_keywords": ["team", "member", "invite", "role"]
+  },
+  {
+    "id": "q09",
+    "question": "What analytics features are available?",
+    "relevant_chunks": ["analytics-doc-001", "analytics-doc-002"],
+    "expected_keywords": ["analytics", "dashboard", "report", "metrics"]
+  },
+  {
+    "id": "q10",
+    "question": "How does the billing cycle work?",
+    "relevant_chunks": ["billing-faq-001", "billing-faq-002"],
+    "expected_keywords": ["billing", "cycle", "invoice", "charge"]
+  },
+  {
+    "id": "q11",
+    "question": "What security certifications do you have?",
+    "relevant_chunks": ["security-doc-001"],
+    "expected_keywords": ["security", "certification", "SOC", "compliance"]
+  },
+  {
+    "id": "q12",
+    "question": "How to set up email notifications?",
+    "relevant_chunks": ["notification-guide-001"],
+    "expected_keywords": ["email", "notification", "alert", "settings"]
+  },
+  {
+    "id": "q13",
+    "question": "What are the file upload size limits?",
+    "relevant_chunks": ["upload-doc-001", "limits-doc-001"],
+    "expected_keywords": ["upload", "file", "size", "limit", "MB"]
+  },
+  {
+    "id": "q14",
+    "question": "How does the knowledge base search work?",
+    "relevant_chunks": ["kb-guide-001", "kb-guide-002"],
+    "expected_keywords": ["knowledge", "search", "vector", "semantic"]
+  },
+  {
+    "id": "q15",
+    "question": "What languages does the chatbot support?",
+    "relevant_chunks": ["chatbot-doc-001", "language-support-001"],
+    "expected_keywords": ["language", "Hindi", "English", "support"]
+  }
+]

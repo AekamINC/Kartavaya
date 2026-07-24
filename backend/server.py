@@ -72,6 +72,8 @@ from routers.org_members    import router as org_members_router
 from routers.org_profile    import router as org_profile_router
 from routers.scrapers       import router as scrapers_router
 from routers.scheduler      import router as scheduler_router
+from routers.messaging      import router as messaging_router
+from routers.whatsapp       import router as whatsapp_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -2027,7 +2029,12 @@ async def delete_task_attachment(
 
 
 @api_router.post("/admin/migrate-data-uris")
-async def migrate_data_uri_attachments(pool=Depends(get_db)):
+async def migrate_data_uri_attachments(
+    user=Depends(require_user),
+    pool=Depends(get_db),
+):
+    if user.get("role") not in ("superadmin", "admin"):
+        raise HTTPException(403, "Admin only")
     """Re-upload data: URI attachments to R2. One-time migration for old files."""
     from services.storage import upload_file
     import base64, mimetypes as _mt
@@ -2269,6 +2276,8 @@ app.include_router(org_members_router)
 app.include_router(org_profile_router)
 app.include_router(scrapers_router)
 app.include_router(scheduler_router)
+app.include_router(messaging_router)
+app.include_router(whatsapp_router)
 
 
 # ── Verse of the day (public) ────────────────────────────────────────────────

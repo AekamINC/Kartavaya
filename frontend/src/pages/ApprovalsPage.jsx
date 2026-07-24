@@ -10,6 +10,7 @@ import { useToast } from '../components/ui/toast';
 import { PageHeader, StatTile, DueChip, PriorityDot } from '../components/editorial';
 import { relTime } from '../lib/utils';
 import TaskDrawer from '../components/TaskDrawer';
+import { EmptyState } from '../components/ui/EmptyState';
 
 export default function ApprovalsPage() {
   const { pushToast } = useToast();
@@ -182,11 +183,11 @@ export default function ApprovalsPage() {
       )}
 
       {!loading && (isClient ? requests : activeTab).length === 0 && (
-        <div className="k-empty">
-          <div className="k-empty__icon">✓</div>
-          <div className="k-empty__title">All caught up</div>
-          <div className="k-empty__sub">{isClient ? 'No tasks awaiting your review.' : 'Nothing pending right now.'}</div>
-        </div>
+        <EmptyState
+          illustration="success"
+          title={{ en: 'No pending approvals', hi: 'कोई लंबित अनुमोदन नहीं' }}
+          description={isClient ? 'No tasks awaiting your review right now.' : 'Nothing pending right now — you are all caught up.'}
+        />
       )}
 
       {/* Pending approvals card */}

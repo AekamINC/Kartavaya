@@ -6,6 +6,7 @@ import { api } from '../lib/api';
 import { PageHeader } from '../components/editorial';
 import { relTime } from '../lib/utils';
 import TaskDrawer from '../components/TaskDrawer';
+import { EmptyState } from '../components/ui/EmptyState';
 
 const KIND_MAP = {
   mention:  { color: 'var(--k-deep)',   bg: 'color-mix(in srgb, var(--k-mid) 14%, transparent)',   label: 'MENTION',  sans: 'उल्लेख',  initial: 'M' },
@@ -84,11 +85,11 @@ export default function InboxPage() {
       )}
 
       {!loading && notifications.length === 0 && (
-        <div className="k-empty">
-          <div className="k-empty__icon">✓</div>
-          <div className="k-empty__title">All caught up</div>
-          <div className="k-empty__sub">Nothing in your inbox right now.</div>
-        </div>
+        <EmptyState
+          illustration="success"
+          title={{ en: 'All caught up', hi: 'सब पढ़ा' }}
+          description="Nothing in your inbox right now — mentions, assignments, and approvals will show up here."
+        />
       )}
 
       {!loading && notifications.length > 0 && (

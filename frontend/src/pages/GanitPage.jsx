@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
 import { PageHeader, StatTile } from '../components/editorial';
+import { EmptyState } from '../components/ui/EmptyState';
 
 const INV_TYPE_LABELS = { tax_invoice: 'Tax Invoice', proforma: 'Proforma', credit_note: 'Credit Note', debit_note: 'Debit Note', quotation: 'Quotation' };
 const STATUS_COLORS = { unpaid: '#f59e0b', partial: '#6366f1', paid: '#10b981', overdue: '#ef4444', cancelled: '#9ca3af' };
@@ -522,11 +523,13 @@ function InvoicesTab() {
 
       {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
         invoices.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>🧾</div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No invoices yet</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 320, margin: '0 auto' }}>Create your first invoice to start tracking payments. Add products first if you haven't already.</div>
-          </div>
+          <EmptyState
+            illustration="invoice"
+            title={{ en: 'No invoices yet', hi: 'कोई बीजक नहीं' }}
+            description="Create your first invoice to start tracking payments. Add products first if you haven't already."
+            action="Create Invoice"
+            onAction={() => { setShowForm(true); loadOptions(); }}
+          />
         ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>

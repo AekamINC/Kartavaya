@@ -19,6 +19,7 @@ import Topbar  from './Topbar';
 import { NotifToastContainer, NotifPermissionPrompt } from './NotifToast';
 import CommandPalette from '../CommandPalette';
 import KeyboardShortcuts from '../KeyboardShortcuts';
+import OnboardingChecklist from '../OnboardingChecklist';
 import { urlBase64ToUint8Array } from '../../lib/push';
 import { playNotifSound } from '../../lib/notifSound';
 import { Bell, Menu, X } from 'lucide-react';
@@ -259,6 +260,9 @@ export default function AppShell() {
           />
         </div>
       )}
+
+      {/* First-run setup checklist — floating, bottom-right, always skippable */}
+      <OnboardingChecklist onNewTask={() => setNewTaskOpen(true)} />
 
       {/* In-app toast stack */}
       <NotifToastContainer

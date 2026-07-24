@@ -2,12 +2,13 @@
  * ProjectsPage.jsx — editorial Projects grid with soft-delete bin.
  */
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import { useToast } from '../components/ui/toast';
 import { PageHeader, DueChip } from '../components/editorial';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { EmptyState } from '../components/ui/EmptyState';
 import BrandKit from '../components/BrandKit';
 import { AVATAR_COLORS } from '../lib/utils';
 
@@ -97,6 +98,7 @@ function DeleteProjectModal({ project, onConfirm, onCancel }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function ProjectsPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { pushToast } = useToast();
   const me = currentUser();
   const isMainAdmin = me?.role === 'admin';
@@ -117,6 +119,16 @@ export default function ProjectsPage() {
 
   useEffect(() => { load(); }, []); // eslint-disable-line
   useEffect(() => { if (showBin) loadBin(); }, [showBin]);
+
+  // Deep-link from the onboarding checklist: /projects?new=1 opens the New Project prompt.
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setShowNew(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('new');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams]); // eslint-disable-line
 
   const create = async () => {
     if (!name.trim()) return;
@@ -301,11 +313,13 @@ export default function ProjectsPage() {
       {/* Project grid */}
       <div className="k-pgrid">
         {projects.length === 0 && (
-          <div className="k-empty">
-            <div className="k-empty__icon">📁</div>
-            <div className="k-empty__title">No projects yet</div>
-            <div className="k-empty__sub">Create your first project to get started.</div>
-          </div>
+          <EmptyState
+            illustration="projects"
+            title={{ en: 'No projects yet', hi: 'अभी कोई योजना नहीं' }}
+            description="Every engagement — internal or client-facing — starts here. Create one to get going."
+            action="Create Project"
+            onAction={() => setShowNew(true)}
+          />
         )}
         {projects.map((p, idx) => {
           const color     = AVATAR_COLORS[idx % AVATAR_COLORS.length];
