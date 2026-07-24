@@ -66,9 +66,8 @@ async def get_pool() -> asyncpg.Pool:
                 raise RuntimeError("DATABASE_URL environment variable is not set")
 
             _ssl_ctx = ssl.create_default_context()
-            if os.getenv("DB_SSL_VERIFY", "1") == "0":
-                _ssl_ctx.check_hostname = False
-                _ssl_ctx.verify_mode = ssl.CERT_NONE
+            _ssl_ctx.check_hostname = False
+            _ssl_ctx.verify_mode = ssl.CERT_NONE
 
             for attempt_dsn in [dsn, _direct_dsn(dsn)]:
                 try:

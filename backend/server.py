@@ -593,8 +593,10 @@ async def me(user=Depends(require_user)):
 
 @api_router.post("/auth/logout")
 async def logout():
-    """Invalidate the current session (client-side token deletion only)."""
-    return {"ok":True}
+    """Invalidate the current session — clear httpOnly cookie."""
+    resp = JSONResponse(content={"ok": True})
+    resp.delete_cookie(key="session_token", httponly=True, secure=True, samesite="lax", path="/")
+    return resp
 
 
 # ── Mobile: push tokens ───────────────────────────────────────────────────────

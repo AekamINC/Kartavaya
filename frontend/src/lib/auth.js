@@ -5,15 +5,15 @@ import { api } from './api';
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export async function apiLogin(email, password) {
   const res = await api.post('/auth/login', { email, password });
-  localStorage.setItem('auth_token', res.data.token);
   localStorage.setItem('Kartavaya_user', JSON.stringify(res.data.user));
+  if (res.data.token) localStorage.setItem('auth_token', res.data.token);
   return res.data;
 }
 
 export async function apiAcceptInvite(token, name, password) {
   const res = await api.post('/auth/accept-invite', { token, name, password });
-  localStorage.setItem('auth_token', res.data.token);
   localStorage.setItem('Kartavaya_user', JSON.stringify(res.data.user));
+  if (res.data.token) localStorage.setItem('auth_token', res.data.token);
   return res.data;
 }
 
@@ -24,8 +24,8 @@ export async function apiForgotPassword(email) {
 
 export async function apiResetPassword(token, password) {
   const res = await api.post('/auth/reset-password', { token, password });
-  localStorage.setItem('auth_token', res.data.token);
   localStorage.setItem('Kartavaya_user', JSON.stringify(res.data.user));
+  if (res.data.token) localStorage.setItem('auth_token', res.data.token);
   return res.data;
 }
 

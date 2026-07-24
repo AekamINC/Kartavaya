@@ -13,11 +13,16 @@ from typing import Optional
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
 
 from db import get_pool
 from limiter import limiter
+from services.audit import emit as audit
+
+_COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "1") != "0"
+_COOKIE_DOMAIN = os.environ.get("COOKIE_DOMAIN", None) or None
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
@@ -45,6 +50,22 @@ def _create_token(user_id: str) -> str:
         {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=JWT_TTL_DAYS), "iat": datetime.now(timezone.utc)},
         JWT_SECRET, algorithm=JWT_ALGORITHM,
     )
+
+
+def _auth_response(token: str, body: dict) -> JSONResponse:
+    """Return a JSON response that also sets the session_token httpOnly cookie."""
+    resp = JSONResponse(content=body)
+    resp.set_cookie(
+        key="session_token",
+        value=token,
+        httponly=True,
+        secure=_COOKIE_SECURE,
+        samesite="lax",
+        max_age=JWT_TTL_DAYS * 86400,
+        path="/",
+        domain=_COOKIE_DOMAIN,
+    )
+    return resp
 
 
 def _decode_token(token: str) -> Optional[str]:
@@ -181,7 +202,9 @@ async def accept_invite(request: Request, body: AcceptInviteBody):
     except Exception:
         pass
 
-    return {"token": _create_token(user_id), "user": _safe_user(dict(user))}
+    token = _create_token(user_id)
+    audit("auth.invite_accepted", request, user_id=user_id, detail={"email": invite["email"]})
+    return _auth_response(token, {"token": token, "user": _safe_user(dict(user))})
 
 
 @router.post("/login")
@@ -191,6 +214,7 @@ async def login(request: Request, body: LoginBody):
     pool = await get_pool()
     user = await pool.fetchrow("SELECT * FROM users WHERE email=$1", body.email.lower())
     if not user or not _verify_password(body.password, user["salt"], user["password_hash"]):
+        audit("auth.login_failed", request, detail={"email": body.email.lower()}, severity="warn")
         raise HTTPException(status_code=401, detail="Invalid email or password")
     pr = await pool.fetch(
         "SELECT role_code FROM staging.user_roles WHERE user_id=$1 AND org_id IS NULL",
@@ -206,13 +230,24 @@ async def login(request: Request, body: LoginBody):
         user["user_id"],
     )
     org_roles = [dict(r) for r in or_rows]
-    return {"token": _create_token(user["user_id"]), "user": _safe_user(dict(user), platform_roles, org_roles)}
+    token = _create_token(user["user_id"])
+    audit("auth.login", request, user_id=user["user_id"])
+    return _auth_response(token, {"token": token, "user": _safe_user(dict(user), platform_roles, org_roles)})
 
 
 @router.post("/logout")
 async def logout():
-    """Invalidate the session (client-side token deletion)."""
-    return {"ok": True}
+    """Clear the session cookie (client also drops localStorage token)."""
+    resp = JSONResponse(content={"ok": True})
+    resp.delete_cookie(
+        key="session_token",
+        httponly=True,
+        secure=_COOKIE_SECURE,
+        samesite="lax",
+        path="/",
+        domain=_COOKIE_DOMAIN,
+    )
+    return resp
 
 
 class ForgotPasswordBody(BaseModel):
@@ -247,7 +282,7 @@ async def forgot_password(request: Request, body: ForgotPasswordBody):
 
 
 @router.post("/reset-password")
-async def reset_password(body: ResetPasswordBody):
+async def reset_password(request: Request, body: ResetPasswordBody):
     """Verify a password-reset token and update the user's password."""
     pool = await get_pool()
     user = await pool.fetchrow(
@@ -263,7 +298,9 @@ async def reset_password(body: ResetPasswordBody):
            WHERE user_id=$3""",
         _hash_password(body.password, salt), salt, user["user_id"],
     )
-    return {"token": _create_token(user["user_id"]), "user": _safe_user(dict(user))}
+    token = _create_token(user["user_id"])
+    audit("auth.password_reset", request, user_id=user["user_id"], severity="warn")
+    return _auth_response(token, {"token": token, "user": _safe_user(dict(user))})
 
 
 @router.get("/me")
