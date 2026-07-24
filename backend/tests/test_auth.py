@@ -267,3 +267,116 @@ async def test_accept_invite_duplicate_account(api_client, mock_pool, admin_user
         "password": "SomePass123!",
     })
     assert resp.status_code == 409
+
+
+# ── Cookie behaviour ────────────────────────────────────────────────────────
+
+async def test_login_sets_httponly_cookie(api_client, mock_pool, admin_user):
+    mock_pool.fetchrow.return_value = admin_user
+    resp = await api_client.post("/api/auth/login", json={
+        "email": admin_user["email"],
+        "password": TEST_PASSWORD,
+    })
+    assert resp.status_code == 200
+    cookie_header = resp.headers.get("set-cookie", "")
+    assert "session_token=" in cookie_header
+    assert "httponly" in cookie_header.lower()
+    assert "samesite=lax" in cookie_header.lower()
+
+
+async def test_accept_invite_sets_httponly_cookie(api_client, mock_pool):
+    invite = await _make_invite()
+
+    async def fetchrow_side_effect(query, *args):
+        if "invites WHERE token" in query:
+            return invite
+        if "users WHERE email" in query:
+            return None
+        if "users WHERE user_id" in query:
+            return {
+                "user_id": "user_newxxx",
+                "email": invite["email"],
+                "name": "New User",
+                "full_name": "New User",
+                "role": "member",
+                "avatar": None,
+            }
+        return None
+
+    mock_pool.fetchrow.side_effect = fetchrow_side_effect
+    mock_pool.execute.return_value = "INSERT 1"
+    resp = await api_client.post("/api/auth/accept-invite", json={
+        "token": "invite-token-xyz",
+        "name": "New User",
+        "password": "NewPass123!",
+    })
+    assert resp.status_code == 200
+    cookie_header = resp.headers.get("set-cookie", "")
+    assert "session_token=" in cookie_header
+    assert "httponly" in cookie_header.lower()
+
+
+async def test_reset_password_sets_httponly_cookie(api_client, mock_pool, admin_user):
+    mock_pool.fetchrow.return_value = admin_user
+    resp = await api_client.post("/api/auth/reset-password", json={
+        "token": "valid-reset-token",
+        "password": "NewPassword456!",
+    })
+    assert resp.status_code == 200
+    cookie_header = resp.headers.get("set-cookie", "")
+    assert "session_token=" in cookie_header
+    assert "httponly" in cookie_header.lower()
+
+
+async def test_logout_clears_cookie(api_client):
+    resp = await api_client.post("/api/auth/logout")
+    assert resp.status_code == 200
+    cookie_header = resp.headers.get("set-cookie", "")
+    assert "session_token=" in cookie_header
+    assert 'max-age=0' in cookie_header.lower() or '01 jan 1970' in cookie_header.lower() or '="";' in cookie_header
+
+
+# ── Audit logging ────────────────────────────────────────────────────────────
+
+from unittest.mock import patch
+
+
+async def test_login_success_emits_audit(api_client, mock_pool, admin_user):
+    mock_pool.fetchrow.return_value = admin_user
+    with patch("auth_router.audit") as mock_audit:
+        resp = await api_client.post("/api/auth/login", json={
+            "email": admin_user["email"],
+            "password": TEST_PASSWORD,
+        })
+        assert resp.status_code == 200
+        mock_audit.assert_called_once()
+        call_args = mock_audit.call_args
+        assert call_args[0][0] == "auth.login"
+
+
+async def test_login_failed_emits_audit_warn(api_client, mock_pool, admin_user):
+    mock_pool.fetchrow.return_value = admin_user
+    with patch("auth_router.audit") as mock_audit, \
+         patch("auth_router.limiter._check_request_limit", return_value=None):
+        resp = await api_client.post("/api/auth/login", json={
+            "email": admin_user["email"],
+            "password": "WrongPassword!",
+        })
+        assert resp.status_code == 401
+        mock_audit.assert_called_once()
+        call_args = mock_audit.call_args
+        assert call_args[0][0] == "auth.login_failed"
+        assert call_args[1].get("severity") == "warn"
+
+
+async def test_reset_password_emits_audit(api_client, mock_pool, admin_user):
+    mock_pool.fetchrow.return_value = admin_user
+    with patch("auth_router.audit") as mock_audit:
+        resp = await api_client.post("/api/auth/reset-password", json={
+            "token": "valid-reset-token",
+            "password": "NewPassword456!",
+        })
+        assert resp.status_code == 200
+        mock_audit.assert_called_once()
+        call_args = mock_audit.call_args
+        assert call_args[0][0] == "auth.password_reset"

@@ -89,4 +89,54 @@ test.describe('authenticated flows', () => {
     const token = await page.evaluate(() => localStorage.getItem('auth_token'));
     expect(token).toBeNull();
   });
+
+  test('session_token cookie is set after login (httpOnly cookie)', async ({ page }) => {
+    await page.goto('/login');
+    await page.fill('input[type="email"], input[name="email"]', ADMIN_EMAIL);
+    await page.fill('input[type="password"]', ADMIN_PASSWORD);
+    await page.getByRole('button', { name: /sign in|log in|login/i }).click();
+    await page.waitForURL(/dashboard|boards|tasks/i, { timeout: 10_000 });
+
+    // httpOnly cookies are not accessible via document.cookie / JS,
+    // so we check via the Playwright browser context API
+    const cookies = await page.context().cookies();
+    const sessionCookie = cookies.find(c => c.name === 'session_token');
+    expect(sessionCookie).toBeTruthy();
+    expect(sessionCookie!.httpOnly).toBe(true);
+  });
+
+  test('session persists after clearing localStorage (cookie-based auth)', async ({ page }) => {
+    await page.goto('/login');
+    await page.fill('input[type="email"], input[name="email"]', ADMIN_EMAIL);
+    await page.fill('input[type="password"]', ADMIN_PASSWORD);
+    await page.getByRole('button', { name: /sign in|log in|login/i }).click();
+    await page.waitForURL(/dashboard|boards|tasks/i, { timeout: 10_000 });
+
+    // Clear localStorage but keep cookies
+    await page.evaluate(() => localStorage.clear());
+
+    // Navigate to a protected page — should still be authenticated via cookie
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/dashboard/i, { timeout: 8_000 });
+  });
+
+  test('after logout, accessing protected page redirects to login', async ({ page }) => {
+    // Login
+    await page.goto('/login');
+    await page.fill('input[type="email"], input[name="email"]', ADMIN_EMAIL);
+    await page.fill('input[type="password"]', ADMIN_PASSWORD);
+    await page.getByRole('button', { name: /sign in|log in|login/i }).click();
+    await page.waitForURL(/dashboard|boards|tasks/i, { timeout: 10_000 });
+
+    // Logout
+    const logoutBtn = page
+      .getByRole('button', { name: /logout|sign out/i })
+      .or(page.getByText(/logout|sign out/i));
+    await logoutBtn.first().click();
+    await expect(page).toHaveURL(/login/i, { timeout: 8_000 });
+
+    // Try accessing a protected page directly
+    await page.goto('/tasks');
+    await expect(page).toHaveURL(/login/i, { timeout: 8_000 });
+  });
 });
