@@ -44,7 +44,7 @@ export default function OnboardingChecklist({ onNewTask }) {
 
   const refresh = useCallback(async () => {
     const [projectsRes, usersRes, tasksRes] = await Promise.all([
-      api.get('/projects').catch(() => null),
+      api.get('/teams').catch(() => null),
       api.get('/users').catch(() => null),
       api.get('/tasks').catch(() => null),
     ]);
