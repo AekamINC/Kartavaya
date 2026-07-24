@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import re
-import ssl
 import asyncpg
 
 logger = logging.getLogger(__name__)
@@ -65,10 +64,6 @@ async def get_pool() -> asyncpg.Pool:
             if not dsn:
                 raise RuntimeError("DATABASE_URL environment variable is not set")
 
-            _ssl_ctx = ssl.create_default_context()
-            _ssl_ctx.check_hostname = False
-            _ssl_ctx.verify_mode = ssl.CERT_NONE
-
             for attempt_dsn in [dsn, _direct_dsn(dsn)]:
                 try:
                     _pool = await asyncpg.create_pool(
@@ -79,7 +74,6 @@ async def get_pool() -> asyncpg.Pool:
                         command_timeout=60,
                         statement_cache_size=0,
                         init=_init_conn,
-                        ssl=_ssl_ctx,
                     )
                     logger.info("DB pool created successfully")
                     return _pool
