@@ -4,6 +4,15 @@ import { useToast } from '../components/ui/toast';
 import { PageHeader, StatTile } from '../components/editorial';
 import { currentUser } from '../lib/auth';
 
+const CATEGORY_COLORS = {
+  general: '#6E7B91', festival: '#f59e0b', launch: '#ef4444',
+  engagement: '#10b981', branding: '#0082c6', seasonal: '#8b5cf6', industry: '#ec4899',
+};
+
+const ICON_MAP = {
+  calendar: '📅', rocket: '🚀', video: '🎬', search: '🔍', megaphone: '📢', star: '⭐',
+};
+
 const AGENT_LABELS = {
   social_media: 'Social Media', blog: 'Blog', ad_copy: 'Ad Copy',
   email: 'Email', whatsapp: 'WhatsApp', lead_magnet: 'Lead Magnet',
@@ -88,24 +97,50 @@ export default function OrgSrijanPage() {
 
 function SkillsTab({ onCreditsChange }) {
   const { pushToast } = useToast();
+  const me = currentUser();
   const [skills, setSkills] = useState([]);
+  const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [runningId, setRunningId] = useState(null);
   const [runResult, setRunResult] = useState(null);
   const [runVars, setRunVars] = useState({});
   const [expandedId, setExpandedId] = useState(null);
   const [withImages, setWithImages] = useState(false);
+  const [subtab, setSubtab] = useState('assigned');
+  const [assigning, setAssigning] = useState(null);
+
+  const canAssign = Array.isArray(me?.platform_roles) && me.platform_roles.some(
+    r => ['platform_admin', 'account_manager', 'srijan_admin'].includes(r)
+  ) || me?.org_role === 'owner' || me?.org_role === 'admin';
 
   useEffect(() => { loadSkills(); }, []);
 
   async function loadSkills() {
     try {
-      const r = await api.get('/v1/hub/org/skills');
-      setSkills(r.data.data || r.data || []);
+      const [s, t] = await Promise.all([
+        api.get('/v1/hub/org/skills'),
+        api.get('/v1/hub/skills/templates'),
+      ]);
+      setSkills(s.data.data || s.data || []);
+      setTemplates(t.data.data || t.data || []);
     } catch {
       pushToast({ title: 'Failed to load skills', type: 'error' });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function assignSkill(templateId) {
+    setAssigning(templateId);
+    try {
+      await api.post(`/v1/hub/org/skills/${templateId}`, { custom_config: {} });
+      pushToast({ title: 'Skill added to your org', type: 'success' });
+      loadSkills();
+      setSubtab('assigned');
+    } catch (err) {
+      pushToast({ title: err.response?.data?.detail || 'Failed to assign skill', type: 'error' });
+    } finally {
+      setAssigning(null);
     }
   }
 
@@ -128,90 +163,165 @@ function SkillsTab({ onCreditsChange }) {
   }
 
   if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 24, textAlign: 'center' }}>Loading skills…</p>;
-  if (skills.length === 0) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 24, textAlign: 'center' }}>No skills assigned to your organisation yet.</p>;
+
+  const assignedTemplateIds = new Set(skills.map(s => s.template_id));
+  const availableTemplates = templates.filter(t => !assignedTemplateIds.has(t.id));
+
+  const SUBTABS = [
+    { key: 'assigned', label: `Active (${skills.length})` },
+    { key: 'catalog', label: `Catalog (${availableTemplates.length})` },
+  ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {skills.map(skill => {
-        const isExpanded = expandedId === skill.id;
-        const steps = typeof skill.steps === 'string' ? JSON.parse(skill.steps) : (skill.steps || []);
-        return (
-          <div key={skill.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <span style={{ fontWeight: 700, fontSize: 14 }}>{skill.template_name || skill.name}</span>
-                <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ink-3)' }}>
-                  {steps.length} step{steps.length !== 1 ? 's' : ''}
-                </span>
-              </div>
-              <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px' }}
-                onClick={() => { setExpandedId(isExpanded ? null : skill.id); setRunResult(null); }}>
-                {isExpanded ? 'Close' : 'Run Skill'}
-              </button>
+    <div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
+        {SUBTABS.map(t => (
+          <button key={t.key} onClick={() => setSubtab(t.key)}
+            style={{ padding: '6px 14px', fontSize: 12, fontWeight: subtab === t.key ? 700 : 400,
+              color: subtab === t.key ? 'var(--k-primary)' : 'var(--ink-3)',
+              background: subtab === t.key ? 'var(--k-primary-ghost)' : 'none',
+              border: '1px solid', borderColor: subtab === t.key ? 'var(--k-primary)' : 'var(--rule-soft)',
+              borderRadius: 6, cursor: 'pointer' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {subtab === 'assigned' && (
+        <>
+          {skills.length === 0 ? (
+            <div style={{ padding: 48, textAlign: 'center', background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12 }}>
+              <p style={{ color: 'var(--ink-3)', fontSize: 14, marginBottom: 12 }}>No skills assigned to your organisation yet.</p>
+              <button className="k-btn k-btn--primary" onClick={() => setSubtab('catalog')}>Browse Catalog</button>
             </div>
-
-            {skill.description && (
-              <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: '6px 0 0' }}>{skill.description}</p>
-            )}
-
-            {isExpanded && (
-              <div style={{ marginTop: 16, padding: 16, background: 'var(--surface-0)', borderRadius: 8, border: '1px solid var(--rule-soft)' }}>
-                <h4 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700 }}>Steps</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
-                  {steps.sort((a, b) => (a.order || 0) - (b.order || 0)).map((step, i) => (
-                    <div key={i} style={{ fontSize: 12, color: 'var(--ink-2)', display: 'flex', gap: 8 }}>
-                      <span style={{ fontWeight: 700, color: 'var(--k-primary)', minWidth: 20 }}>{step.order || i + 1}.</span>
-                      <span>{AGENT_LABELS[step.agent_type] || step.agent_type} — {step.platform || 'general'}</span>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {skills.map(skill => {
+                const isExpanded = expandedId === skill.id;
+                const steps = typeof skill.steps === 'string' ? JSON.parse(skill.steps) : (skill.steps || []);
+                return (
+                  <div key={skill.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{skill.template_name || skill.name}</span>
+                        <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ink-3)' }}>
+                          {steps.length} step{steps.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px' }}
+                        onClick={() => { setExpandedId(isExpanded ? null : skill.id); setRunResult(null); }}>
+                        {isExpanded ? 'Close' : 'Run Skill'}
+                      </button>
                     </div>
-                  ))}
-                </div>
 
-                <h4 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700 }}>Variables</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
-                  <label style={{ fontSize: 12 }}>
-                    <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Brand Name</span>
-                    <input className="k-input" placeholder="Your brand name"
-                      value={runVars.brand_name || ''}
-                      onChange={e => setRunVars({ ...runVars, brand_name: e.target.value })} />
-                  </label>
-                  <label style={{ fontSize: 12 }}>
-                    <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Language</span>
-                    <select className="k-input" value={runVars.language || 'en'}
-                      onChange={e => setRunVars({ ...runVars, language: e.target.value })}>
-                      <option value="en">English</option>
-                      <option value="hi">Hindi</option>
-                      <option value="gu">Gujarati</option>
-                      <option value="mr">Marathi</option>
-                      <option value="ta">Tamil</option>
-                    </select>
-                  </label>
-                </div>
+                    {skill.description && (
+                      <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: '6px 0 0' }}>{skill.description}</p>
+                    )}
 
-                <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                  <input type="checkbox" checked={withImages} onChange={e => setWithImages(e.target.checked)} />
-                  <span style={{ fontWeight: 600 }}>Generate images for each step (+3 credits each)</span>
-                </label>
+                    {isExpanded && (
+                      <div style={{ marginTop: 16, padding: 16, background: 'var(--surface-0)', borderRadius: 8, border: '1px solid var(--rule-soft)' }}>
+                        <h4 style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700 }}>Steps</h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+                          {steps.sort((a, b) => (a.order || 0) - (b.order || 0)).map((step, i) => (
+                            <div key={i} style={{ fontSize: 12, color: 'var(--ink-2)', display: 'flex', gap: 8 }}>
+                              <span style={{ fontWeight: 700, color: 'var(--k-primary)', minWidth: 20 }}>{step.order || i + 1}.</span>
+                              <span>{AGENT_LABELS[step.agent_type] || step.agent_type} — {step.platform || 'general'}</span>
+                            </div>
+                          ))}
+                        </div>
 
-                <button className="k-btn k-btn--primary" disabled={runningId === skill.id}
-                  onClick={() => runSkill(skill.id)}>
-                  {runningId === skill.id ? 'Running…' : 'Run Now'}
-                </button>
+                        <h4 style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 700 }}>Variables</h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+                          <label style={{ fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Brand Name</span>
+                            <input className="k-input" placeholder="Your brand name"
+                              value={runVars.brand_name || ''}
+                              onChange={e => setRunVars({ ...runVars, brand_name: e.target.value })} />
+                          </label>
+                          <label style={{ fontSize: 12 }}>
+                            <span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Language</span>
+                            <select className="k-input" value={runVars.language || 'en'}
+                              onChange={e => setRunVars({ ...runVars, language: e.target.value })}>
+                              <option value="en">English</option>
+                              <option value="hi">Hindi</option>
+                              <option value="gu">Gujarati</option>
+                              <option value="mr">Marathi</option>
+                              <option value="ta">Tamil</option>
+                            </select>
+                          </label>
+                        </div>
 
-                {runResult && (
-                  <div style={{ marginTop: 16, padding: 12, background: '#10b98118', borderRadius: 8, border: '1px solid #10b981' }}>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#10b981' }}>
-                      Completed — {runResult.steps_completed} steps, {runResult.credits_used} credits used
-                    </p>
-                    <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>
-                      {runResult.content_ids?.length || 0} content items generated. Check the Content tab to view them.
-                    </p>
+                        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                          <input type="checkbox" checked={withImages} onChange={e => setWithImages(e.target.checked)} />
+                          <span style={{ fontWeight: 600 }}>Generate images for each step (+3 credits each)</span>
+                        </label>
+
+                        <button className="k-btn k-btn--primary" disabled={runningId === skill.id}
+                          onClick={() => runSkill(skill.id)}>
+                          {runningId === skill.id ? 'Running…' : 'Run Now'}
+                        </button>
+
+                        {runResult && (
+                          <div style={{ marginTop: 16, padding: 12, background: '#10b98118', borderRadius: 8, border: '1px solid #10b981' }}>
+                            <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#10b981' }}>
+                              Completed — {runResult.steps_completed} steps, {runResult.credits_used} credits used
+                            </p>
+                            <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>
+                              {runResult.content_ids?.length || 0} content items generated. Check the Content tab to view them.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {subtab === 'catalog' && (
+        <>
+          {availableTemplates.length === 0 ? (
+            <div style={{ padding: 48, textAlign: 'center', background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12 }}>
+              <p style={{ color: 'var(--ink-3)', fontSize: 14 }}>All available skill templates are already assigned to your org.</p>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
+              {availableTemplates.map(tmpl => {
+                const steps = typeof tmpl.steps === 'string' ? JSON.parse(tmpl.steps) : (tmpl.steps || []);
+                const catColor = CATEGORY_COLORS[tmpl.category] || '#6E7B91';
+                return (
+                  <div key={tmpl.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: 20 }}>{ICON_MAP[tmpl.icon] || ICON_MAP.star}</span>
+                      <span style={{ fontWeight: 700, fontSize: 14, flex: 1 }}>{tmpl.name}</span>
+                    </div>
+                    <div style={{ marginBottom: 8 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em',
+                        padding: '2px 10px', borderRadius: 99, background: `${catColor}18`, color: catColor }}>
+                        {tmpl.category}
+                      </span>
+                    </div>
+                    {tmpl.description && (
+                      <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: '0 0 10px', lineHeight: 1.5 }}>{tmpl.description}</p>
+                    )}
+                    <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 12 }}>
+                      {steps.length} step{steps.length !== 1 ? 's' : ''} · ~{tmpl.estimated_credits || 0} credits
+                    </div>
+                    <button className="k-btn k-btn--primary" style={{ fontSize: 12, padding: '6px 16px', width: '100%' }}
+                      disabled={assigning === tmpl.id || !canAssign}
+                      onClick={() => assignSkill(tmpl.id)}>
+                      {assigning === tmpl.id ? 'Adding…' : canAssign ? 'Add to Org' : 'Admin Required'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
