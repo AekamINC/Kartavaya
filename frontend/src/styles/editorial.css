@@ -905,6 +905,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-c-project .k-ptag__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k-trow__id { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); flex-shrink: 0; }
 .k-trow__title { font-size: 13.5px; color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.k-trow__attach { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--ink-3); flex-shrink: 0; margin-left: 4px; }
 .k-trow__due { font-size: 12px; color: var(--ink-3); }
 
 .k-c-assignees { flex-direction: column; align-items: flex-start; gap: 5px; overflow: visible; }
@@ -1091,7 +1092,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-bcol__body { display: flex; flex-direction: column; gap: var(--sp-3); }
 
 /* Drag-over highlight — column accepts a drop */
-.k-bcol.is-over {
+.k-bcol__body.is-over {
   background: color-mix(in srgb, var(--k-primary) 6%, var(--bg-soft));
   border-color: var(--k-primary);
   outline: 2px solid color-mix(in srgb, var(--k-primary) 40%, transparent);
@@ -1133,7 +1134,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   box-shadow: var(--shadow-sm);
   cursor: pointer;
 }
-.k-bcard:hover { border-color: color-mix(in srgb, var(--k-primary) 40%, var(--rule)); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+.k-bcard:hover { border-color: color-mix(in srgb, var(--k-primary) 40%, var(--rule)); box-shadow: var(--shadow-md); }
 .k-bcard__top { display: flex; align-items: center; gap: 8px; }
 .k-bcard__id { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); }
 .k-bcard__priolbl { font-size: 10.5px; color: var(--ink-3); margin-left: auto; }

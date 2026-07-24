@@ -173,7 +173,6 @@ function ClientTaskDrawer({ open, onClose, task: initialTask, categories = [], t
       const fd = new FormData();
       fd.append('file', file);
       const r = await api.post(`/tasks/${initialTask.task_id}/attachments`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
         signal: controller.signal,
         noRetry: true,
         onUploadProgress: () => kickStall(),

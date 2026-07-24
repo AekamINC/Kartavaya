@@ -337,6 +337,12 @@ export default function TasksListPage() {
                               <PriorityDot priority={t.priority} />
                               <span className="k-trow__id">KAR-{String(idx + 100)}</span>
                               <span className="k-trow__title">{t.title}</span>
+                              {t.attachments?.length > 0 && (
+                                <span className="k-trow__attach" title={`${t.attachments.length} attachment${t.attachments.length > 1 ? 's' : ''}`}>
+                                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M10 3l-5 5a2.5 2.5 0 003.5 3.5l5-5a4 4 0 00-5.7-5.7L3 5.5"/></svg>
+                                  {t.attachments.length}
+                                </span>
+                              )}
                               {showArchived ? (
                                 <button
                                   className="k-row-action k-row-action--unarchive"

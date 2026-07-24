@@ -4,6 +4,7 @@
 import React, { useState, useMemo } from 'react';
 import TaskDrawer from '../TaskDrawer';
 import FieldRenderer from '../fields/FieldRenderer';
+import { EmptyState } from '../ui/EmptyState';
 
 import { priorityColor } from '../../lib/utils';
 
@@ -181,6 +182,12 @@ export default function TableView({ tasks, columns, fieldDefs, fieldValueMap, te
                       <td style={{ padding: '10px 14px', fontWeight: 500, color: 'var(--ink)', verticalAlign: 'middle' }}>
                         {task.approval_status === 'pending' && <span style={{ marginRight: 6, fontSize: 12 }}>⏳</span>}
                         {task.title}
+                        {task.attachments?.length > 0 && (
+                          <span title={`${task.attachments.length} attachment${task.attachments.length > 1 ? 's' : ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--ink-3)', marginLeft: 6, flexShrink: 0 }}>
+                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M10 3l-5 5a2.5 2.5 0 003.5 3.5l5-5a4 4 0 00-5.7-5.7L3 5.5"/></svg>
+                            {task.attachments.length}
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
                         <ColBadge col={col} />
@@ -211,8 +218,12 @@ export default function TableView({ tasks, columns, fieldDefs, fieldValueMap, te
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5 + shownFields.length} style={{ padding: '32px', textAlign: 'center', color: 'var(--ink-faint)', fontStyle: 'italic', fontSize: 13 }}>
-                  No tasks match your filter.
+                <td colSpan={5 + shownFields.length}>
+                  <EmptyState
+                    illustration="search"
+                    title="No tasks found"
+                    description="Try adjusting your filter or create a new task."
+                  />
                 </td>
               </tr>
             )}

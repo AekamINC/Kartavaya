@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
+import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
 import { api } from '../../lib/api';
@@ -351,26 +352,28 @@ export default function KanbanView({
     if (targetColId === '__requested__' || targetColId === '__pending_client__') return;
     if (targetColId === srcColId && destination.index === source.index) return;
 
-    const order = destination.index;
+    const newOrder = destination.index;
 
-    // Optimistic UI — move card instantly before API responds
-    onTasksChange?.(prev => prev.map(t =>
-      t.task_id === taskId ? { ...t, column_id: targetColId, sort_order: order } : t
-    ));
+    // flushSync: React 18+ batches state updates, but @hello-pangea/dnd
+    // needs the DOM to reflect the move synchronously before its cleanup runs.
+    flushSync(() => {
+      onTasksChange?.(prev => prev.map(t =>
+        t.task_id === taskId ? { ...t, column_id: targetColId, order: newOrder, sort_order: newOrder } : t
+      ));
+    });
 
     try {
-      const res = await api.patch(`/tasks/${taskId}/move`, { column_id: targetColId, order });
+      const res = await api.patch(`/tasks/${taskId}/move`, { column_id: targetColId, order: newOrder });
       onTasksChange?.(prev => prev.map(t => t.task_id === taskId ? res.data : t));
       if (res.data.status === 'done') playPraiseSound();
     } catch (e) {
       logger.error('Move failed', e);
       pushToast({ type: 'error', title: 'Could not move task' });
-      // Revert optimistic update
       onTasksChange?.(prev => prev.map(t =>
         t.task_id === taskId ? { ...t, column_id: srcColId } : t
       ));
     }
-  }, [byCol, onTasksChange, pushToast]);
+  }, [onTasksChange, pushToast]);
 
 
 

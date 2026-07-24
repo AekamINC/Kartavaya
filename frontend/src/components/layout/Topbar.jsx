@@ -1,8 +1,9 @@
-﻿/**
- * Topbar.jsx — editorial header: "कर्तव्य / Page" breadcrumb, pill search, actions.
+/**
+ * Topbar.jsx — editorial header: "कर्तव्य / Page" breadcrumb, pill search, command palette.
  */
-import React from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { CommandPalette } from '../ui/CommandPalette';
 
 const PAGE_META = {
   '/dashboard':              { en: 'Today',         hi: 'आज' },
@@ -28,8 +29,38 @@ const PAGE_META = {
   '/esign':                  { en: 'E-Sign',        hi: 'प्रमाण' },
 };
 
-export default function Topbar({ unread = 0, onOpenNotifications, onNewTask, onOpenCmdk }) {
+const COMMANDS = [
+  { id: 'new-task',    label: 'New Task',       section: 'Actions',    shortcut: 'N', keywords: ['create', 'add'] },
+  { id: 'dashboard',   label: 'Go to Today',    section: 'Navigation', shortcut: 'G D', keywords: ['home', 'dashboard'] },
+  { id: 'tasks',       label: 'Go to Tasks',    section: 'Navigation', shortcut: 'G T', keywords: ['list'] },
+  { id: 'projects',    label: 'Go to Projects', section: 'Navigation', shortcut: 'G P', keywords: ['boards'] },
+  { id: 'boards',      label: 'Go to Boards',   section: 'Navigation', keywords: ['kanban'] },
+  { id: 'inbox',       label: 'Go to Inbox',    section: 'Navigation', shortcut: 'G I', keywords: ['messages', 'notifications'] },
+  { id: 'approvals',   label: 'Go to Approvals',section: 'Navigation', keywords: ['approve', 'review'] },
+  { id: 'activity',    label: 'Go to Activity',  section: 'Navigation', keywords: ['feed', 'log'] },
+  { id: 'time',        label: 'Go to Time Report', section: 'Navigation', keywords: ['timer', 'tracking'] },
+  { id: 'reports',     label: 'Go to Reports',  section: 'Navigation', keywords: ['analytics'] },
+  { id: 'teams',       label: 'Go to Team',     section: 'Navigation', keywords: ['members', 'people'] },
+  { id: 'templates',   label: 'Go to Templates',section: 'Navigation', keywords: ['template'] },
+  { id: 'automations', label: 'Go to Automations', section: 'Navigation', keywords: ['rules', 'automation'] },
+  { id: 'settings',    label: 'Go to Settings', section: 'Navigation', keywords: ['categories', 'preferences'] },
+];
+
+export default function Topbar({ unread = 0, onOpenNotifications, onNewTask }) {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [cmdOpen, setCmdOpen] = useState(false);
+
+  const handleCommand = (cmd) => {
+    if (cmd.id === 'new-task') { onNewTask?.(); return; }
+    const routes = {
+      dashboard: '/dashboard', tasks: '/tasks', projects: '/projects', boards: '/boards',
+      inbox: '/inbox', approvals: '/approvals', activity: '/activity', time: '/time',
+      reports: '/reports', teams: '/teams', templates: '/templates', automations: '/automations',
+      settings: '/settings/categories',
+    };
+    if (routes[cmd.id]) navigate(routes[cmd.id]);
+  };
 
   const meta = PAGE_META[location.pathname]
     || Object.entries(PAGE_META).find(([k]) => location.pathname.startsWith(k + '/'))?.[1]
@@ -46,12 +77,18 @@ export default function Topbar({ unread = 0, onOpenNotifications, onNewTask, onO
         </div>
       </div>
 
-      {/* Center: pill search — opens command palette */}
-      <div className="k-topbar__search" onClick={onOpenCmdk} style={{ cursor: 'pointer' }}>
+      {/* Center: pill search — click opens command palette */}
+      <div className="k-topbar__search" onClick={() => setCmdOpen(true)} style={{ cursor: 'pointer' }}>
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
           <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
         </svg>
-        <span style={{ flex: 1, color: 'var(--ink-faint)', fontSize: 13 }}>Search tasks, projects, people…</span>
+        <input
+          value=""
+          onFocus={() => setCmdOpen(true)}
+          placeholder="Search tasks, projects, people…"
+          readOnly
+          style={{ cursor: 'pointer' }}
+        />
         <kbd className="k-kbd">⌘K</kbd>
       </div>
 
@@ -71,6 +108,12 @@ export default function Topbar({ unread = 0, onOpenNotifications, onNewTask, onO
           New task
         </button>
       </div>
+      <CommandPalette
+        open={cmdOpen}
+        onOpenChange={setCmdOpen}
+        commands={COMMANDS}
+        onSelect={handleCommand}
+      />
     </header>
   );
 }

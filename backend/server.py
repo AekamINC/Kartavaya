@@ -1707,7 +1707,7 @@ async def create_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(requi
     await log_event(pool,task_id=task_id,team_id=payload.team_id,actor_id=user["user_id"],event_type="created",data={"title":payload.title})
     from services.automation_engine import fire_automations
     _bg(fire_automations(pool,"task_created",{"task":{"task_id":task_id,"team_id":payload.team_id},"team_id":payload.team_id}), label="fire_automations")
-    out=row_to_task(row)
+    out=await _fetch_enriched_task(pool,task_id)
     out.reminders=await _replace_task_reminders(pool,task_id,due_dt,payload.reminders)
     return out
 
@@ -2024,6 +2024,50 @@ async def delete_task_attachment(
         json.dumps(filtered), now_utc(), task_id,
     )
     return row_to_task(updated)
+
+
+@api_router.post("/admin/migrate-data-uris")
+async def migrate_data_uri_attachments(pool=Depends(get_db)):
+    """Re-upload data: URI attachments to R2. One-time migration for old files."""
+    from services.storage import upload_file
+    import base64, mimetypes as _mt
+
+    rows = await pool.fetch("SELECT task_id, attachments FROM tasks WHERE attachments::text LIKE '%data:%'")
+    migrated = 0
+    errors = []
+    for row in rows:
+        raw = row["attachments"]
+        atts = json.loads(raw) if isinstance(raw, str) else (raw or [])
+        changed = False
+        for att in atts:
+            url = att.get("url", "")
+            if not url.startswith("data:"):
+                continue
+            try:
+                header, b64 = url.split(",", 1)
+                mime = header.split(":")[1].split(";")[0] if ":" in header else "application/octet-stream"
+                content = base64.b64decode(b64)
+                fname = att.get("name", "file")
+                ext = "." + fname.rsplit(".", 1)[-1] if "." in fname else ""
+                if not ext:
+                    ext_guess = _mt.guess_extension(mime) or ""
+                    fname += ext_guess
+                result = await upload_file(
+                    file_bytes=content, filename=fname,
+                    content_type=mime, user_id="migration",
+                )
+                att["url"] = result["url"]
+                att["key"] = result.get("key")
+                changed = True
+                migrated += 1
+            except Exception as exc:
+                errors.append({"task_id": row["task_id"], "name": att.get("name"), "error": str(exc)})
+        if changed:
+            await pool.execute(
+                "UPDATE tasks SET attachments=$1::jsonb, updated_at=$2 WHERE task_id=$3",
+                json.dumps(atts), now_utc(), row["task_id"],
+            )
+    return {"migrated": migrated, "errors": errors}
 
 
 @api_router.delete("/tasks/{task_id}")

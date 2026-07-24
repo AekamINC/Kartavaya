@@ -5,6 +5,7 @@
 import React, { useState, useMemo } from 'react';
 import TaskDrawer from '../TaskDrawer';
 import { priorityColor } from '../../lib/utils';
+import { EmptyState } from '../ui/EmptyState';
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 function addDays(date, n) {
@@ -193,9 +194,11 @@ export default function TimelineView({ tasks = [], columns = [], teamMembers = [
         })}
 
         {tasks.length === 0 && (
-          <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--ink-3)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>
-            No tasks to display
-          </div>
+          <EmptyState
+            illustration="tasks"
+            title="No tasks to display"
+            description="Create tasks with due dates to see them on the timeline."
+          />
         )}
       </div>
 

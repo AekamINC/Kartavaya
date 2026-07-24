@@ -6,6 +6,7 @@ import { currentUser } from '../../lib/auth';
 import TaskDrawer from '../TaskDrawer';
 import { priorityColor } from '../../lib/utils';
 import { STATUS_COLORS, STATUS_LABELS } from '../drawer/constants';
+import { EmptyState } from '../ui/EmptyState';
 
 const GROUPS = [
   { id: 'overdue',  label: 'Overdue',   sans: 'विलंबित',  color: '#dc2626', border: '#dc2626' },
@@ -76,9 +77,11 @@ export default function MyTasksView({ tasks = [], teamMembers = [], onTasksChang
       </div>
 
       {myTasks.length === 0 && (
-        <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--ink-3)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>
-          No tasks assigned to you in this project
-        </div>
+        <EmptyState
+          illustration="tasks"
+          title="No tasks assigned to you"
+          description="Tasks assigned to you in this project will appear here."
+        />
       )}
 
       {/* Groups */}
@@ -114,6 +117,12 @@ export default function MyTasksView({ tasks = [], teamMembers = [], onTasksChang
                 >
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: pColor, flexShrink: 0 }} />
                   <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
+                  {t.attachments?.length > 0 && (
+                    <span title={`${t.attachments.length} attachment${t.attachments.length > 1 ? 's' : ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--ink-3)', flexShrink: 0 }}>
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M10 3l-5 5a2.5 2.5 0 003.5 3.5l5-5a4 4 0 00-5.7-5.7L3 5.5"/></svg>
+                      {t.attachments.length}
+                    </span>
+                  )}
                   <span style={{ fontSize: 11, fontWeight: 600, color: sColor, background: sColor + '18', borderRadius: 99, padding: '2px 9px', flexShrink: 0 }}>
                     {STATUS_LABELS[t.status] || t.status}
                   </span>
