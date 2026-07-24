@@ -505,11 +505,19 @@ function PayslipsTab() {
               <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={async () => {
                 try {
                   const res = await api.get(`/v1/vetana/payslips/${p.id}/pdf`, { responseType: 'blob' });
+                  if (!res.data || res.data.size === 0) { pushToast({ title: 'PDF generation returned empty', type: 'error' }); return; }
                   const url = URL.createObjectURL(res.data);
                   const a = document.createElement('a');
                   a.href = url; a.download = `Payslip-${p.payslip_number}.pdf`; a.click();
                   URL.revokeObjectURL(url);
-                } catch { /* toast handled by interceptor */ }
+                } catch (err) {
+                  let msg = 'Failed to download payslip';
+                  if (err.response?.status === 403) msg = 'Module access denied';
+                  else if (err.response?.data instanceof Blob) {
+                    try { const t = JSON.parse(await err.response.data.text()); msg = t.detail || msg; } catch {}
+                  } else if (err.response?.data?.detail) msg = err.response.data.detail;
+                  pushToast({ title: msg, type: 'error' });
+                }
               }}>Download PDF</button>
               {p.status === 'approved' && <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={disburse}>Mark Disbursed</button>}
             </div>

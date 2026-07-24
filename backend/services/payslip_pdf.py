@@ -239,7 +239,7 @@ body{{ background:{_SURFACE}; font-family:{_FONT_UI}; color:{_INK}; -webkit-prin
 .pdf__table th{{ text-align:left; font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:#fff; background:{_INK}; font-weight:700; padding:8px; }}
 .pdf__table td{{ padding:7px 8px; border-bottom:1px solid {_RULE_SOFT}; }}
 .pdf__table td.num{{ text-align:right; font-family:{_FONT_MONO}; font-size:10.5px; }}
-.pdf__table .total-row td{{ border-top:2px solid {_RULE}; font-weight:700; background:color-mix(in srgb, {_BG_SOFT} 50%, transparent); }}
+.pdf__table .total-row td{{ border-top:2px solid {_RULE}; font-weight:700; background:{_BG_SOFT}; }}
 
 .pdf__net{{ background:{_INK}; color:#fff; border-radius:8px; padding:14px 20px; }}
 .pdf__net-row{{ display:flex; justify-content:space-between; align-items:center; }}
