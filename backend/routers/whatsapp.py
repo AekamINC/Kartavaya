@@ -15,6 +15,7 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
+from services.encryption import encrypt, decrypt
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ async def create_account(
         VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, 'active')
         RETURNING id, org_id, phone_number, display_name, waba_id, phone_number_id, status
     """, org_id, body.phone_number, body.display_name, body.waba_id,
-        body.phone_number_id, body.access_token, body.webhook_verify_token)
+        body.phone_number_id, encrypt(body.access_token), body.webhook_verify_token)
     return dict(row)
 
 

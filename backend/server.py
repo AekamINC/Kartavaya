@@ -26,6 +26,7 @@ import asyncpg
 import sentry_sdk
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, UploadFile, File
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -138,6 +139,46 @@ app = FastAPI(title="Kartavaya API v2", description="Team task management by Aek
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
+@app.middleware("http")
+async def global_write_rate_limit(request: Request, call_next):
+    """Apply a default rate limit to all mutating requests (POST/PUT/PATCH/DELETE)."""
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        from slowapi.util import get_remote_address
+        client_ip = get_remote_address(request)
+        key = f"global_write:{client_ip}"
+        import time
+        _now = int(time.time())
+        _bucket = _write_rate_buckets.get(key)
+        if _bucket and _bucket[0] == _now // 60:
+            if _bucket[1] >= 120:
+                return JSONResponse(status_code=429, content={"detail": "Too many requests"})
+            _write_rate_buckets[key] = (_bucket[0], _bucket[1] + 1)
+        else:
+            _write_rate_buckets[key] = (_now // 60, 1)
+    return await call_next(request)
+
+_write_rate_buckets: dict = {}
+
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: Request, exc: Exception):
+    """Prevent stack traces from leaking to clients."""
+    import traceback
+    logger.error("Unhandled error on %s %s: %s", request.method, request.url.path, traceback.format_exc())
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    if request.url.scheme == "https" or os.environ.get("RAILWAY_ENVIRONMENT"):
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+    return response
 api_router = APIRouter(prefix="/api")
 
 # ── CORS ──────────────────────────────────────────
