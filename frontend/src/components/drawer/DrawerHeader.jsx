@@ -1,6 +1,7 @@
 import React from 'react';
 import { Trash2, Archive, ArchiveRestore } from 'lucide-react';
-import { STATUS_LABELS, STATUS_COLORS } from './constants';
+import { STATUS_LABELS } from './constants';
+import { statusColor, mixAlpha } from '../../lib/statusColors';
 
 /**
  * DrawerHeader — breadcrumb / status badge, title input, and action buttons
@@ -24,7 +25,7 @@ export default function DrawerHeader({
               <span style={{ color: 'var(--rule-strong)' }}>/</span>
             </>
           )}
-          <span style={{ padding: '2px 7px', borderRadius: 'var(--r-sm)', fontSize: 11, fontWeight: 600, background: STATUS_COLORS[draft.status] + '18', color: STATUS_COLORS[draft.status] }}>
+          <span style={{ padding: '2px 7px', borderRadius: 'var(--r-sm)', fontSize: 11, fontWeight: 600, background: mixAlpha(statusColor(draft.status), 9), color: statusColor(draft.status) }}>
             {STATUS_LABELS[draft.status] || draft.status}
           </span>
           {/* Collapsed title shown in breadcrumb bar when scrolled */}

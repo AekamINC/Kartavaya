@@ -121,10 +121,13 @@ describe('priorityColor()', () => {
     expect(priorityColor('')).toBe(PRIORITY_COLOR._default);
   });
 
-  it('all known priorities return valid hex colors', () => {
-    const hexRe = /^#[0-9a-f]{6}$/i;
+  it('all known priorities return a design token reference', () => {
+    // Priority colour is a token reference, not a hex. 00-tokens.md §9 requires
+    // these to flip with the theme (--pr-urgent/--pr-high alias --danger/--warn),
+    // and a baked hex cannot flip — that is the defect this replaced.
+    const tokenRe = /^var\(--[a-z0-9-]+\)$/;
     ['urgent', 'high', 'medium', 'low'].forEach((p) => {
-      expect(priorityColor(p)).toMatch(hexRe);
+      expect(priorityColor(p)).toMatch(tokenRe);
     });
   });
 });
@@ -178,13 +181,18 @@ describe('PRIORITY_COLOR object', () => {
   const required = ['urgent', 'high', 'medium', 'low', '_default'];
 
   required.forEach((key) => {
-    it(`has key "${key}" as a valid hex color`, () => {
-      expect(PRIORITY_COLOR[key]).toMatch(/^#[0-9a-f]{6}$/i);
+    it(`has key "${key}" as a design token reference`, () => {
+      expect(PRIORITY_COLOR[key]).toMatch(/^var\(--[a-z0-9-]+\)$/);
     });
   });
 
-  it('urgent is more alarming than medium (darker red)', () => {
-    // urgent (#dc2626) should differ from medium (#f59e0b)
+  it('urgent is distinct from medium', () => {
     expect(PRIORITY_COLOR.urgent).not.toBe(PRIORITY_COLOR.medium);
+  });
+
+  it('carries no baked hex — a literal cannot flip with the theme', () => {
+    Object.values(PRIORITY_COLOR).forEach((v) => {
+      expect(v).not.toMatch(/#[0-9a-f]{3,8}/i);
+    });
   });
 });

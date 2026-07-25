@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from "react";
 import { api } from "../../lib/api";
 import TaskDrawer from "../TaskDrawer";
 import { PRIORITY_COLOR as PCOLOR, logger } from '../../lib/utils';
+import { mixAlpha } from '../../lib/statusColors';
 
 const DAYS   = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -161,8 +162,8 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
     display: "flex", alignItems: "center", gap: 4,
     borderRadius: "var(--r-sm)", padding: "2px 5px", marginBottom: 2,
     cursor: "grab", fontSize: 11, lineHeight: 1.3,
-    background: (PCOLOR[priority] || "#94a3b8") + "22",
-    color: PCOLOR[priority] || "#94a3b8", userSelect: "none",
+    background: mixAlpha(PCOLOR[priority] || PCOLOR._default, 13),
+    color: PCOLOR[priority] || PCOLOR._default, userSelect: "none",
   });
 
   // ── Nav title ─────────────────────────────────────────────────────────────
@@ -268,7 +269,7 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
                         onClick={e => { e.stopPropagation(); setDrawer(task.task_id); }}
                         title={task.title}
                       >
-                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: PCOLOR[task.priority] || '#94a3b8', flexShrink: 0 }} />
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: PCOLOR[task.priority] || PCOLOR._default, flexShrink: 0 }} />
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</span>
                       </div>
                     ))}
@@ -371,7 +372,7 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
                       onDoubleClick={e => e.stopPropagation()}
                       title={`${task.title} — drag to reschedule`}
                     >
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: PCOLOR[task.priority] || "#94a3b8", flexShrink: 0 }} />
+                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: PCOLOR[task.priority] || PCOLOR._default, flexShrink: 0 }} />
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>{task.title}</span>
                     </div>
                   ))}
