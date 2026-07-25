@@ -3,64 +3,298 @@
    Import AFTER tailwind in App.js */
 
 /* ── Font tokens ───────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS — implements design-handover/00-tokens.md
+   00-tokens.md is the source of truth. If a value here disagrees with it,
+   this file is wrong.
+
+   Deviation from the handover, deliberate: 00 says "replace the token block
+   wholesale". The legacy names (--ink, --rule, --k-primary, …) have ~2,957
+   references across the app, and the new names had zero, so a wholesale
+   replacement would break every screen in one commit. Instead the new system
+   is defined as the source of truth and the legacy names are aliased onto it
+   at the bottom of this block. Nothing breaks, new work uses the new names,
+   and files 01–24 migrate consumers as they restyle each surface. Delete the
+   alias layer when the last legacy reference is gone.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1 · Runtime-tunable roots (§1) ─────────────────────────────────────────
+   Set by Customization via applyPrefs. Everything else derives from these. */
+:root {
+  --radius-base:      10px;   /* user: 4 | 10 | 20 — default IS an option */
+  --glass-mix:        .6;     /* user: 0 → 1 */
+  --font-size-base:   14px;   /* user: 12 → 20 */
+  --line-height-base: 1.5;    /* user: 1.3 | 1.5 | 1.7 */
+  --ix-user:          1;      /* motion scale: 1 | .5 | .001 */
+  --ix:               var(--ix-user);   /* never written directly — see §5 */
+}
+
+/* ── 2 · Type (§2) ──────────────────────────────────────────────────────── */
 :root {
   --font-display: 'Newsreader', 'Georgia', serif;
-  --font-ui:      'Inter', system-ui, sans-serif;
-  --font-hindi:   'Tiro Devanagari Hindi', serif;
-  --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
+  --font-ui:      'Inter', system-ui, -apple-system, sans-serif;
+  --font-hindi:   'Tiro Devanagari Hindi', 'Noto Serif Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', serif;
+  --font-indic:   var(--font-hindi);   /* → Noto Sans Gujarati when language is gu | en+gu */
+  --font-mono:    'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+
+  /* Derived from --font-size-base so the Text size slider moves the whole
+     scale. Absolute px made the slider a no-op on everything but body copy. */
+  --t-display:   calc(var(--font-size-base) * 2.86);            /* 40px @14 */
+  --t-headline:  calc(var(--font-size-base) * 2);               /* 28px */
+  --t-title-lg:  calc(var(--font-size-base) * 1.43);            /* 20px */
+  --t-title:     calc(var(--font-size-base) * 1.14);            /* 16px */
+  --t-body:      var(--font-size-base);                         /* 14px */
+  --t-body-sm:   calc(var(--font-size-base) * .93);             /* 13px */
+  --t-label:     max(11.5px, calc(var(--font-size-base) * .86));/* 12px */
+  --t-label-sm:  max(11px,   calc(var(--font-size-base) * .79));/* 11px */
+
+  --t-display-w: 400;  --t-headline-w: 400;  --t-title-lg-w: 500;
+  --t-title-w:   500;  --t-body-w:     400;  --t-label-w:    500;
 }
 
 /* ── Design tokens ─────────────────────────────────────────────────────── */
+/* ── 3 · Radius — all derived (§3) ──────────────────────────────────────────
+   Never hard-code a radius. A literal `border-radius: 8px` breaks the Sharp
+   and Pill settings in exactly that one place. */
 :root {
-  /* Brand */
-  --k-primary: #05b7aa;
-  --k-mid:     #03a1b6;
-  --k-deep:    #0082c6;
-  --k-grad:    linear-gradient(135deg, #0082c6, #03a1b6 55%, #05b7aa);
-  --k-gradD:   linear-gradient(135deg, #005f9e, #0291a3 55%, #04a394);
+  --r-xs:   calc(var(--radius-base) * 0.34);
+  --r-sm:   calc(var(--radius-base) * 0.58);
+  --r-md:   var(--radius-base);
+  --r-lg:   calc(var(--radius-base) * 1.45);
+  --r-xl:   calc(var(--radius-base) * 2.1);
+  --r-pill: 999px;
+}
 
-  /* Canvas */
-  --bg:        #F6F3EC;
-  --bg-soft:   #F0ECDF;
-  --surface:   #FCFAF5;
-  --surface-2: #FFFFFF;
+/* ── 4 · Density and spacing (§4) ───────────────────────────────────────── */
+:root {
+  --row-h: 44px;  --pad-page: 28px;  --pad-card: 18px;
+  --gap-section: 22px;  --gap-tight: 10px;
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px;  --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-7: 32px;  --sp-8: 44px;
+  --sp-10: 40px;   /* legacy, 1 use — not part of §4 */
+}
+[data-density="compact"] { --row-h:38px; --pad-page:16px; --pad-card:14px; --gap-section:16px; --gap-tight:8px }
+[data-density="comfy"]   { --row-h:48px; --pad-page:32px; --pad-card:20px; --gap-section:26px; --gap-tight:12px }
 
-  /* Ink */
-  --ink:       #1A2230;
-  --ink-2:     #4A5468;
-  --ink-3:     #6E7B91;
-  --ink-faint: #A5B0C2;
+/* ── 5 · Motion (§5) ────────────────────────────────────────────────────────
+   applyPrefs writes --ix-user, NEVER --ix. An inline style on the root beats
+   a media query, so writing --ix directly let an app preference silently
+   override the OS reduced-motion setting. */
+:root {
+  --dur-instant: calc( 90ms * var(--ix));
+  --dur-fast:    calc(140ms * var(--ix));
+  --dur-base:    calc(220ms * var(--ix));
+  --dur-slow:    calc(360ms * var(--ix));
+  --dur-xslow:   calc(520ms * var(--ix));
 
-  /* Rules */
-  --rule:        #D4CCB3;
-  --rule-soft:   #E0D9C4;
-  --rule-strong: #B8AE94;
+  --ease-standard:    cubic-bezier(.2, 0, 0, 1);
+  --ease-emph:        cubic-bezier(.16, 1, .3, 1);   /* expo-out, genuinely distinct */
+  --ease-enter:       cubic-bezier(0, 0, .2, 1);
+  --ease-exit:        cubic-bezier(.4, 0, 1, 1);
+  --ease-emph-in:     cubic-bezier(.05, .7, .1, 1);
+  --ease-emph-out:    cubic-bezier(.3, 0, .8, .15);
+  --ease-spring:      cubic-bezier(.34, 1.36, .64, 1);
+  --ease-spring-soft: cubic-bezier(.32, 1.14, .68, 1);
+}
+@media (prefers-reduced-motion: reduce) { :root { --ix: .001 } }
 
-  /* Sidebar */
-  --side-bg:     #050E1A;
-  --side-fg:     rgba(255,255,255,.72);
-  --side-active: rgba(5,183,170,.16);
-  --side-glow:   radial-gradient(ellipse 220px 180px at 50% 0%, rgba(5,183,170,.18) 0%, transparent 70%);
+/* ── 6 · Translucency (§6) ──────────────────────────────────────────────── */
+:root {
+  --glass-blur:  calc(22px * var(--glass-mix));
+  --glass-sat:   calc(1 + .5 * var(--glass-mix));
+  --glass-alpha: calc(1 - (.28 * var(--glass-mix)));
+}
 
-  /* Status */
-  --ok:     #16a34a;
-  --warn:   #d97706;
-  --danger: #dc2626;
+/* ── 7 · Light palette (§7) ─────────────────────────────────────────────── */
+:root, [data-theme="light"] {
+  --bg:         #F3EFE6;
+  --s-lowest:   #FFFEFB;
+  --surface:    #FAF7F0;
+  --s-low:      #F5F1E7;
+  --s-container:#EEE9DC;
+  --s-high:     #E7E1D1;
+  --s-highest:  #DFD8C5;
 
-  /* Spacing */
-  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
-  --sp-5: 20px; --sp-6: 24px; --sp-7: 28px; --sp-8: 32px; --sp-10: 40px;
+  --on-surface:       #1B1D1A;
+  --on-surface-2:     #4A4E48;
+  --on-surface-3:     #666A61;   /* was #74786F — 3.9:1 on --bg, failed AA */
+  --on-surface-faint: #9DA096;   /* 2.3:1 — NON-TEXT ONLY */
 
-  /* Radii */
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
-  --r-xl: 20px;
+  --outline-variant: #D8D1BE;
+  --outline:         #ADA692;
 
-  /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(26,34,48,.06), 0 1px 2px rgba(26,34,48,.04);
-  --shadow-md: 0 4px 14px rgba(26,34,48,.10), 0 1px 4px rgba(26,34,48,.06);
-  --shadow-lg: 0 8px 28px rgba(26,34,48,.12), 0 2px 8px rgba(26,34,48,.08);
+  --primary:              #04837A;
+  --primary-hover:        #026B64;
+  --on-primary:           #FFFFFF;
+  --primary-container:    #B4F1E8;
+  --on-primary-container: #00201D;
+  --primary-vivid:        #05b7aa;
+
+  --secondary:              #5C6450;
+  --secondary-container:    #E1E7D4;
+  --on-secondary-container: #1A2013;
+  --tertiary:               #8A5730;
+  --tertiary-container:     #FFDCC3;
+  --on-tertiary-container:  #301A07;
+
+  --ok:     #14743A;  --ok-container:     #C6EFD2;   /* was #16803F — 4.4:1 */
+  --warn:   #955806;  --warn-container:   #FBE3BE;   /* was #A66207 — 4.2:1 */
+  --danger: #B42318;  --danger-container: #FBDAD5;
+
+  --scrim:      rgba(28, 26, 20, .34);
+  --glass-tint: 250, 247, 240;
+  --shadow-1:   0 1px 2px rgba(30, 28, 22, .07);
+  --shadow-2:   0 4px 16px -6px rgba(30, 28, 22, .16);
+  --shadow-3:   0 18px 44px -18px rgba(30, 28, 22, .3);
+  --shadow-4:   0 32px 72px -28px rgba(30, 28, 22, .38);
+
+  --side-ink:      22, 26, 24;
+  --side-fg:       rgba(255, 255, 255, .8);
+  --side-fg-mute:  rgba(255, 255, 255, .5);
+  --side-fg-faint: rgba(255, 255, 255, .28);
+  --side-rule:     rgba(255, 255, 255, .1);
+  --side-hover:    rgba(255, 255, 255, .08);
+}
+
+/* ── 8 · Dark palette (§8) ──────────────────────────────────────────────────
+   Cool near-black against a warm light palette — deliberate. Warm greys go
+   muddy at low luminance. Consequence: a tint sampled from light cannot be
+   reused in dark; it carries the wrong hue, not just the wrong luminance. */
+[data-theme="dark"] {
+  --bg:         #0C0E11;
+  --s-lowest:   #080A0C;
+  --surface:    #12151A;
+  --s-low:      #171B21;
+  --s-container:#1D2229;
+  --s-high:     #252B33;
+  --s-highest:  #2E353E;
+
+  --on-surface:       #E9E7E1;
+  --on-surface-2:     #BFBDB6;
+  --on-surface-3:     #8E8D87;
+  --on-surface-faint: #64645F;
+
+  --outline-variant: #333A43;
+  --outline:         #5B626C;
+
+  /* Dark INVERTS the primary relationship: --primary is the light mint and
+     --primary-container is the DARK one. Any component assuming container is
+     lighter than primary breaks in exactly one theme. */
+  --primary:              #4FD8CB;
+  --primary-hover:        #6FE6DA;
+  --on-primary:           #00332F;
+  --primary-container:    #00514B;
+  --on-primary-container: #74F5E8;
+  --primary-vivid:        #05b7aa;
+
+  --secondary:              #C3CBB0;
+  --secondary-container:    #434A36;
+  --on-secondary-container: #DFE7CB;
+  --tertiary:               #F0BB90;
+  --tertiary-container:     #6A3F1A;
+  --on-tertiary-container:  #FFDCC3;
+
+  --ok:     #5BD98A;  --ok-container:     #14432A;
+  --warn:   #E8B45C;  --warn-container:   #4A3312;
+  --danger: #F2867A;  --danger-container: #55201B;
+
+  --scrim:      rgba(0, 0, 0, .58);
+  --glass-tint: 18, 21, 26;
+  --shadow-1:   0 1px 2px rgba(0, 0, 0, .5);
+  --shadow-2:   0 4px 16px -6px rgba(0, 0, 0, .6);
+  --shadow-3:   0 18px 44px -18px rgba(0, 0, 0, .8);
+  --shadow-4:   0 32px 72px -28px rgba(0, 0, 0, .9);
+
+  --side-ink:      8, 10, 13;
+  --side-fg:       rgba(255, 255, 255, .78);
+  --side-fg-mute:  rgba(255, 255, 255, .46);
+  --side-fg-faint: rgba(255, 255, 255, .24);
+  --side-rule:     rgba(255, 255, 255, .08);
+  --side-hover:    rgba(255, 255, 255, .07);
+}
+
+/* ── 9 · Status, approval and priority (§9) ─────────────────────────────────
+   These DO flip with the theme. Meaning is constant; rendering cannot be —
+   no single mid-tone is legible on both #FAF7F0 and #12151A. Three of the six
+   statuses just reuse the semantic tokens, which is why darkening --ok/--warn
+   fixed every status chip without touching them. */
+:root, [data-theme="light"] {
+  --st-todo:        #5A6270;
+  --st-in-progress: #3E5C8A;
+  --st-in-review:   #6E5AA0;
+  --st-requested:   var(--warn);
+  --st-done:        var(--ok);
+  --st-rejected:    var(--danger);
+
+  --ap-pending:        var(--warn);
+  --ap-pending-client: #6E5AA0;
+  --ap-approved:       var(--ok);
+  --ap-rejected:       var(--danger);
+
+  --pr-urgent: var(--danger);
+  --pr-high:   var(--warn);
+  --pr-medium: #3E5C8A;
+  --pr-low:    var(--on-surface-3);
+}
+[data-theme="dark"] {
+  --st-todo:           #9AA3B2;
+  --st-in-progress:    #8FAEDC;
+  --st-in-review:      #B6A6E0;
+  --ap-pending-client: #B6A6E0;
+  --pr-medium:         #8FAEDC;
+  /* requested / done / rejected / urgent / high / low follow --warn, --ok,
+     --danger and --on-surface-3, which already flip above. */
+}
+
+/* Fixed literals — external meanings, so they do not flip. */
+:root {
+  --pf-primary:      #6B4FBF;   /* platform admin, light */
+  --pf-primary-dark: #C0A9F5;   /* platform admin, dark  */
+  --pf-keyline:      #7c5cbf;
+  --ink-fixed:       #23262B;
+  --ink-fixed-dark:  #E9E7E1;
+  --tick-read:       #4FC3F7;   /* WhatsApp read tick — their blue, not ours */
+  --wa-green:        #1FA855;
+}
+
+/* ── LEGACY ALIASES ─────────────────────────────────────────────────────────
+   Not part of 00-tokens.md. ~2,957 references across the app still use these
+   names; each is mapped onto its new-system equivalent so nothing breaks
+   while files 01–24 migrate consumers surface by surface.
+   Add nothing here. Delete a line when its last reference is gone. */
+:root {
+  --ink:       var(--on-surface);
+  --ink-2:     var(--on-surface-2);
+  --ink-3:     var(--on-surface-3);
+  --ink-faint: var(--on-surface-faint);
+
+  --bg-soft:   var(--s-low);
+  --surface-2: var(--s-lowest);
+
+  --rule:        var(--outline-variant);
+  --rule-soft:   var(--outline-variant);
+  --rule-strong: var(--outline);
+
+  --side-bg:   rgb(var(--side-ink));
+  --side-active: color-mix(in srgb, var(--primary) 16%, transparent);
+  --side-glow: radial-gradient(ellipse 220px 180px at 50% 0%,
+                 color-mix(in srgb, var(--primary) 18%, transparent) 0%, transparent 70%);
+
+  --shadow-sm: var(--shadow-1);
+  --shadow-md: var(--shadow-2);
+  --shadow-lg: var(--shadow-3);
+
+  /* Accent trio — overwritten at runtime by applyPrefs. The retired legacy
+     blue #0082c6 is deliberately gone from --k-deep; 01-navigation.md retired
+     that gradient. */
+  --k-primary: var(--primary-vivid);
+  --k-mid:     var(--primary);
+  --k-deep:    var(--primary-hover);
+  --k-grad:    linear-gradient(135deg, var(--primary-hover), var(--primary) 55%, var(--primary-vivid));
+  --k-gradD:   var(--k-grad);
+  --k-danger:  var(--danger);   /* 08 records --k-danger and --danger both in use */
+
+  --font-devanagari: var(--font-indic);   /* FormGroup.jsx — 02 says use --font-indic */
 }
 
 /* ── Global canvas ─────────────────────────────────────────────────────── */

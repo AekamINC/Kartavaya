@@ -2,11 +2,22 @@ import React, { useEffect, useState, createContext, useContext, useCallback } fr
 
 const STORAGE_KEY = 'k_prefs';
 
+/* 00-tokens.md §10 — 12 presets. Only `color` is stored; mid/deep/light are
+   derived, so a custom hex behaves identically to a preset. The first four
+   ids are unchanged so stored preferences keep resolving. */
 export const ACCENTS = [
-  { id: 'teal',   label: 'TEAL',   color: '#05b7aa', mid: '#03a1b6', deep: '#0082c6' },
-  { id: 'blue',   label: 'BLUE',   color: '#3b82f6', mid: '#2563eb', deep: '#1d4ed8' },
-  { id: 'saffro', label: 'SAFFRO', color: '#f59e0b', mid: '#d97706', deep: '#b45309' },
-  { id: 'indigo', label: 'INDIGO', color: '#6366f1', mid: '#4f46e5', deep: '#3730a3' },
+  { id: 'teal',    label: 'TEAL',    color: '#05b7aa' },
+  { id: 'blue',    label: 'BLUE',    color: '#3b82f6' },
+  { id: 'saffro',  label: 'SAFFRO',  color: '#f59e0b' },
+  { id: 'indigo',  label: 'INDIGO',  color: '#6366f1' },
+  { id: 'rose',    label: 'ROSE',    color: '#e11d63' },
+  { id: 'emerald', label: 'EMERALD', color: '#059669' },
+  { id: 'amber',   label: 'AMBER',   color: '#d97706' },
+  { id: 'violet',  label: 'VIOLET',  color: '#7c3aed' },
+  { id: 'coral',   label: 'CORAL',   color: '#f2643c' },
+  { id: 'slate',   label: 'SLATE',   color: '#64748b' },
+  { id: 'crimson', label: 'CRIMSON', color: '#be123c' },
+  { id: 'forest',  label: 'FOREST',  color: '#3f6212' },
 ];
 
 export const FONTS = [
@@ -21,16 +32,18 @@ export const FONTS = [
   { id: 'source-sans',      label: 'Source Sans 3',     sub: 'technical', value: "'Source Sans 3', system-ui, sans-serif" },
 ];
 
-const SANS_IDS = new Set(['inter', 'dm-sans', 'poppins', 'source-sans']);
-
 export const DEFAULTS = {
-  mode:         'light',
+  mode:         'light',      // light | dark | system
   accent:       'teal',
   customAccent: null,
   sidebar:      'wide',
   density:      'comfy',
-  font:         'newsreader',
-  fontSize:     14,
+  font:         'newsreader', // display face
+  uiFont:       'inter',      // body face — independent of `font` (00 §2)
+  fontSize:     14,           // 12 → 20
+  lineHeight:   1.5,          // 1.3 | 1.5 | 1.7
+  radius:       10,           // 4 | 10 | 20 — default IS one of the options
+  anim:         'full',       // full | reduced | none
   language:     'en+sa',
 };
 
@@ -61,9 +74,19 @@ export function deriveAccentColors(hex) {
   const [h, s, l] = hexToHsl(hex);
   return {
     color: hex,
-    mid:  hslToHex(h, Math.min(s + 5, 100), Math.max(l - 10, 10)),
-    deep: hslToHex(h, Math.min(s + 10, 100), Math.max(l - 20, 10)),
+    mid:   hslToHex(h, Math.min(s + 5, 100),  Math.max(l - 10, 10)),
+    deep:  hslToHex(h, Math.min(s + 10, 100), Math.max(l - 20, 10)),
+    // `light` is new (00 §10). Hover must step AWAY from the page, which
+    // reverses by theme: darker on light surfaces, lighter on dark ones.
+    light: hslToHex(h, s, Math.min(l + 12, 92)),
   };
+}
+
+/** Resolve the active accent to its four derived values. */
+function accentFor(prefs) {
+  const hex = prefs.customAccent
+    || (ACCENTS.find(a => a.id === prefs.accent) || ACCENTS[0]).color;
+  return deriveAccentColors(hex);
 }
 
 function loadPrefs() {
@@ -71,76 +94,80 @@ function loadPrefs() {
   catch { return { ...DEFAULTS }; }
 }
 
+export function systemPrefersDark() {
+  return typeof window !== 'undefined'
+    && window.matchMedia
+    && window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
 export function applyPrefs(prefs) {
   const root = document.documentElement;
+  const acc  = accentFor(prefs);
+  const fnt  = FONTS.find(f => f.id === prefs.font) || FONTS[0];
 
-  let acc;
-  if (prefs.customAccent) {
-    acc = deriveAccentColors(prefs.customAccent);
-  } else {
-    acc = ACCENTS.find(a => a.id === prefs.accent) || ACCENTS[0];
-  }
+  // Resolve `system` to a concrete value. The previous version wrote
+  // prefs.mode straight through, so mode 'system' produced
+  // [data-theme="system"], which matches no rule — system mode silently
+  // rendered light. Must be set BEFORE the accent below, which reads it.
+  const dark = prefs.mode === 'dark' || (prefs.mode === 'system' && systemPrefersDark());
+  root.setAttribute('data-theme', dark ? 'dark' : 'light');
 
-  const fnt = FONTS.find(f => f.id === prefs.font) || FONTS[0];
-
+  // ── Accent ───────────────────────────────────────────────────────────────
   root.style.setProperty('--k-primary', acc.color);
   root.style.setProperty('--k-mid',     acc.mid);
   root.style.setProperty('--k-deep',    acc.deep);
-  root.style.setProperty('--k-grad',    `linear-gradient(135deg, ${acc.deep}, ${acc.mid} 55%, ${acc.color})`);
-  root.style.setProperty('--k-gradD',   `linear-gradient(135deg, ${acc.deep}cc, ${acc.mid}cc 55%, ${acc.color}cc)`);
+  root.style.setProperty('--k-grad',  `linear-gradient(135deg, ${acc.deep}, ${acc.mid} 55%, ${acc.color})`);
+  root.style.setProperty('--k-gradD', `linear-gradient(135deg, ${acc.deep}cc, ${acc.mid}cc 55%, ${acc.color}cc)`);
   root.style.setProperty('--side-active', `${acc.color}29`);
 
+  // The accent must reach --primary, or picking one restyles the k-* layer
+  // and leaves every new component on the default teal. Hover reverses
+  // direction by theme — darker in light, lighter in dark — which is why
+  // this function must re-run on theme change, not only on preference change.
+  root.style.setProperty('--primary',       dark ? acc.color : acc.mid);
+  root.style.setProperty('--primary-hover', dark ? acc.light : acc.deep);
+  root.style.setProperty('--primary-vivid', acc.color);
+
+  // ── Type ─────────────────────────────────────────────────────────────────
+  // --font-display and --font-ui are independent. The old SANS_IDS check set
+  // --font-ui to the display font in BOTH arms of its own condition, so
+  // picking Newsreader turned every label, table cell and button serif.
+  const ui = FONTS.find(f => f.id === prefs.uiFont) || FONTS.find(f => f.id === 'inter') || FONTS[0];
   root.style.setProperty('--font-display', fnt.value);
-  if (SANS_IDS.has(prefs.font)) {
-    root.style.setProperty('--font-ui', fnt.value);
-    document.body.style.fontFamily = fnt.value;
-  } else {
-    root.style.setProperty('--font-ui', fnt.value);
-    document.body.style.fontFamily = fnt.value;
-  }
+  root.style.setProperty('--font-ui',      ui.value);
+  document.body.style.fontFamily = 'var(--font-ui)';
 
   const fs = Math.max(12, Math.min(20, prefs.fontSize || 14));
-  document.body.style.fontSize = fs + 'px';
   root.style.setProperty('--font-size-base', fs + 'px');
+  root.style.setProperty('--line-height-base', String(prefs.lineHeight || 1.5));
+  document.body.style.fontSize = 'var(--t-body)';
 
-  root.setAttribute('data-theme', prefs.mode);
-  if (prefs.mode === 'dark') {
-    root.style.setProperty('--bg',         '#0f1117');
-    root.style.setProperty('--bg-soft',    '#161b25');
-    root.style.setProperty('--surface',    '#1a2033');
-    root.style.setProperty('--surface-2',  '#212840');
-    root.style.setProperty('--ink',        '#e8eaf0');
-    root.style.setProperty('--ink-2',      '#a8b0c4');
-    root.style.setProperty('--ink-3',      '#7080a0');
-    root.style.setProperty('--ink-faint',  '#455070');
-    root.style.setProperty('--rule',       '#2a3248');
-    root.style.setProperty('--rule-soft',  '#232a40');
-    root.style.setProperty('--rule-strong','#384060');
-  } else {
-    root.style.setProperty('--bg',         '#F6F3EC');
-    root.style.setProperty('--bg-soft',    '#F0ECDF');
-    root.style.setProperty('--surface',    '#FCFAF5');
-    root.style.setProperty('--surface-2',  '#FFFFFF');
-    root.style.setProperty('--ink',        '#1A2230');
-    root.style.setProperty('--ink-2',      '#4A5468');
-    root.style.setProperty('--ink-3',      '#6E7B91');
-    root.style.setProperty('--ink-faint',  '#A5B0C2');
-    root.style.setProperty('--rule',       '#E2DCC9');
-    root.style.setProperty('--rule-soft',  '#EFE9D8');
-    root.style.setProperty('--rule-strong','#C8C0AA');
-  }
+  // ── Shape and motion ────────────────────────────────────────────────────
+  root.style.setProperty('--radius-base', (prefs.radius || 10) + 'px');
 
-  root.setAttribute('data-density', prefs.density);
-  root.style.setProperty('--page-pad', prefs.density === 'compact' ? '16px' : '28px');
-  root.setAttribute('data-sidebar', prefs.sidebar);
+  // --ix-user, NOT --ix. An inline style on the root outranks a media query,
+  // so writing --ix directly let this preference silently defeat the OS
+  // prefers-reduced-motion setting. CSS does --ix: var(--ix-user) and the
+  // media query overrides --ix, so the OS always wins.
+  root.style.setProperty('--ix-user',
+    prefs.anim === 'none' ? '.001' : prefs.anim === 'reduced' ? '.5' : '1');
+
+  // NOTE: the block that set --bg / --surface / --ink / --rule per theme as
+  // inline styles is deliberately gone (00 §11). Those live in CSS under
+  // [data-theme]; as inline styles they outranked the stylesheet, so the new
+  // palette would never have rendered at all.
+
+  root.setAttribute('data-density',  prefs.density);
+  root.setAttribute('data-sidebar',  prefs.sidebar);
   root.setAttribute('data-language', prefs.language);
+  if (prefs.sideBg)  root.setAttribute('data-sidebar-bg', prefs.sideBg);
+  if (prefs.toastPos) root.setAttribute('data-toast-pos', prefs.toastPos);
 
   const lang = prefs.language;
-  if (lang === 'gu' || lang === 'en+gu') {
-    root.style.setProperty('--font-indic', "'Noto Sans Gujarati', sans-serif");
-  } else {
-    root.style.setProperty('--font-indic', "var(--font-hindi)");
-  }
+  root.style.setProperty('--font-indic',
+    (lang === 'gu' || lang === 'en+gu')
+      ? "'Noto Sans Gujarati', 'Shruti', sans-serif"
+      : 'var(--font-hindi)');
 }
 
 const CustomizeCtx = createContext(null);
@@ -158,6 +185,17 @@ export function CustomizeProvider({ children }) {
   }, []);
 
   useEffect(() => { applyPrefs(prefs); }, []); // eslint-disable-line
+
+  // `system` is a live subscription, not a boot-time read (00 §11). Without
+  // this, a user on system mode who switches their OS to dark keeps a light
+  // app until the next full reload.
+  useEffect(() => {
+    if (prefs.mode !== 'system' || !window.matchMedia) return;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onChange = () => applyPrefs(prefs);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [prefs]);
 
   return (
     <CustomizeCtx.Provider value={{ prefs, setPrefs }}>

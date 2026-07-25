@@ -1,75 +1,56 @@
 /**
- * Modern Dark Theme
- * Professional color system with proper contrast
+ * dark-theme.css
+ *
+ * 00-tokens.md says to delete this file: dark now lives in the
+ * [data-theme="dark"] block in kartavaya-design.css, and this file carried a
+ * second, conflicting definition (a `.dark` class mechanism, the retired brand
+ * blue #0082c6, and its own semantic set).
+ *
+ * It is emptied rather than deleted, because ~48 references to its names are
+ * still live (--border x31, --card-bg x5, --text-muted x5, ...) and it also
+ * owned the scrollbar and selection styling, which nothing else provides.
+ *
+ * What was removed:
+ *   - every colour token definition (kartavaya-design.css owns them now)
+ *   - the `.dark` / `:root.dark` mechanism — superseded by [data-theme="dark"]
+ *   - the `body` rule; kartavaya-design.css already sets background and colour
+ *   - --brand-blue / --brand-mid / --brand-teal / --brand-gradient, the legacy
+ *     blue→teal gradient retired by 01-navigation.md
+ *
+ * Delete this file entirely once the aliases below have no references left.
  */
 
+/* ── Legacy aliases ─────────────────────────────────────────────────────────
+   Mapped onto the new system so existing consumers keep working. */
 :root {
-  /* Brand colors */
-  --brand-blue: #0082c6;
-  --brand-mid: #03a1b6;
-  --brand-teal: #05b7aa;
-  --brand-gradient: linear-gradient(90deg, #0082c6, #03a1b6, #05b7aa);
-  
-  /* Semantic colors */
-  --success: #10b981;
-  --warning: #f59e0b;
-  --error: #ef4444;
-  --info: #3b82f6;
+  --app-bg:         var(--bg);
+  --card-bg:        var(--surface);
+  --input-bg:       var(--s-low);
+  --border:         var(--outline-variant);
+  --text-primary:   var(--on-surface);
+  --text-secondary: var(--on-surface-2);
+  --text-muted:     var(--on-surface-3);
+  --overlay:        var(--scrim);
+  --brand-blue:     var(--primary);   /* was #0082c6 — retired */
 }
 
-/* Light theme */
-:root {
-  --app-bg: #f8fafc;
-  --card-bg: #ffffff;
-  --input-bg: #f8fafc;
-  --border: #e2e8f0;
-  --text-primary: #0f172a;
-  --text-secondary: #334155;
-  --text-muted: #64748b;
-  --overlay: rgba(0, 0, 0, 0.5);
-}
-
-/* Dark theme */
-.dark,
-:root.dark {
-  --app-bg: #0a0e17;
-  --card-bg: #0f1420;
-  --input-bg: #1a1f2e;
-  --border: #1e2533;
-  --text-primary: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #64748b;
-  --overlay: rgba(0, 0, 0, 0.7);
-}
-
-/* Global styles */
-body {
-  background: var(--app-bg);
-  color: var(--text-primary);
-  transition: background-color 0.3s ease, color 0.3s ease;
-}
-
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
+/* ── Scrollbar ──────────────────────────────────────────────────────────────
+   Follows the theme through the tokens, so no dark-specific rule is needed. */
+::-webkit-scrollbar       { width: 8px; height: 8px }
+::-webkit-scrollbar-track { background: transparent }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
+  background: var(--outline-variant);
+  border-radius: var(--r-xs);
 }
+::-webkit-scrollbar-thumb:hover { background: var(--outline) }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
-
-/* Selection */
+/* ── Selection ─────────────────────────────────────────────────────────────
+   color-mix percentages are not theme-portable — 26% over cream reads clearly,
+   the same value over #0C0E11 barely registers, so dark gets its own. */
 ::selection {
-  background: rgba(0, 130, 198, 0.3);
-  color: var(--text-primary);
+  background: color-mix(in srgb, var(--primary) 26%, transparent);
+  color: var(--on-surface);
+}
+[data-theme="dark"] ::selection {
+  background: color-mix(in srgb, var(--primary) 40%, transparent);
 }

@@ -163,10 +163,69 @@ Read-only queries, 2026-07-25, project `toacecaewujfxjfrjwco` (`ap-southeast-1`)
 
 ---
 
+## 6a · How `00-tokens.md` was actually implemented
+
+Shipped. Two deviations from the handover, both deliberate.
+
+**1 · The handover names the wrong file — partly.** `00` says to rewrite
+`styles/kartavaya-design.css` and never mentions `lib/tokens.css`. Both define
+tokens: `lib/tokens.css` has 97 vars and loads *first* via the `styles/index.css`
+barrel; `kartavaya-design.css` has the 35 that the app actually consumes
+(`--ink`, `--rule`, `--k-primary`). `kartavaya-design.css` was the right target;
+`lib/tokens.css` is a near-dead older vocabulary (`--accent-default`: 2 uses)
+that still supplies the font `@import`s, so it stays.
+
+**2 · No wholesale replacement — an alias layer instead.** `00` says "replace
+the token block wholesale". Measured first: the legacy names have **~2,957
+references** (`--ink-3` alone 907, `--rule-soft` 475, `--k-primary` 380) and the
+new names had **zero**. A wholesale swap breaks every screen in one commit.
+
+So the new system is the source of truth and every legacy name is aliased onto
+it at the bottom of the token block:
+
+```css
+--ink: var(--on-surface);  --ink-3: var(--on-surface-3);
+--rule: var(--outline-variant);  --bg-soft: var(--s-low);  …
+```
+
+Nothing broke, new work uses the new names, and files 01–24 migrate consumers
+as they restyle each surface. **Delete a line from the alias block when its
+last reference goes.** Same treatment for `dark-theme.css`: emptied rather than
+deleted (`00` says delete) because ~48 references were live and it also owned
+scrollbar and selection styling.
+
+**The critical fix was in `applyPrefs`, not the CSS.** It wrote `--bg`,
+`--ink`, `--rule` as *inline styles on the root element*, which outrank any
+stylesheet — the new palette would never have rendered. That block is gone;
+CSS owns colour under `[data-theme]`.
+
+Other `applyPrefs` corrections: `data-theme` now resolves `system` to
+light/dark (it wrote `"system"` through, matching no rule, so system mode
+silently rendered light); `--ix-user` replaces `--ix`; `--primary` receives the
+accent and reverses hover direction by theme; the `SANS_IDS` branch whose two
+arms were identical is deleted. `system` is now a live `matchMedia`
+subscription. A blocking script in `index.html` sets `data-theme` before first
+paint, so dark-mode users no longer get a white flash.
+
+Verified in-browser: legacy aliases resolve to new values, dark flips
+correctly, `--st-done` follows `--ok` across themes (so the contrast fix reaches
+every status chip for free), the Text size slider now moves the whole scale
+(20.02px → 28.6px → 17.16px at base 14/20/12), and `--t-label-sm` clamps to
+exactly 11px at base 12 where unclamped it would be 9.48px.
+
+**Not verified:** that the `prefers-reduced-motion` media query beats an inline
+`--ix-user`. The mechanism is right, but the test machine has the OS setting
+off. Confirm on a machine with reduce-motion enabled.
+
+§3.1 and §3.2 below are **not yet applied** — both are component-level, not
+token-level, and belong with the files that restyle those components.
+
+---
+
 ## 7 · Sequencing
 
-1. `23-accessibility.md` — the only file with no dependency on the three missing ones. Behaviour and semantics, no visual change.
-2. `00-tokens.md` — with §3.1 and §3.2 above applied.
+1. ~~`23-accessibility.md`~~ — done.
+2. ~~`00-tokens.md`~~ — done; see §6a. §3.1/§3.2 still outstanding at component level.
 3. Split the three module monoliths (Graha 150 KB, Manav 133 KB, Ganit 125 KB) **before** restyling — per `13`.
 4. `lib/statusColors.js` — now trivial, since `02` aliases `var(--st-*)`.
 5. The two ship-blockers: `addToast` and message scrollback (`06`).
