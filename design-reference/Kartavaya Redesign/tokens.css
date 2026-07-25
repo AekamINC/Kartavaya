@@ -1,0 +1,184 @@
+/* Kartavaya — Fusion token layer
+   macOS structure · M3 tonal color · warm-earthy neutrals · teal brand accent
+   Everything user-tunable is a var set on <html> by the Appearance panel.
+   ─────────────────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,300;1,6..72,400&family=Inter:wght@400;500;600;700&family=Tiro+Devanagari+Hindi:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  /* ── Type families (display swappable: serif | sans | hybrid) ───────── */
+  --font-display: "Newsreader", Georgia, serif;
+  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-hindi: "Tiro Devanagari Hindi", "Noto Serif Devanagari", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  /* M3 type scale, macOS weight hierarchy (light headings, medium body) */
+  --t-display: 40px; --t-display-w: 400;
+  --t-headline: 28px; --t-headline-w: 400;
+  --t-title-lg: 20px; --t-title-lg-w: 500;
+  --t-title: 16px; --t-title-w: 500;
+  --t-body: 14px; --t-body-w: 400;
+  --t-body-sm: 13px;
+  --t-label: 12px; --t-label-w: 500;
+  --t-label-sm: 11px;
+
+  /* ── Radius — driven by --radius-base (Appearance slider, 8–28) ─────── */
+  --radius-base: 12px;
+  --r-xs: calc(var(--radius-base) * 0.34);
+  --r-sm: calc(var(--radius-base) * 0.58);
+  --r-md: var(--radius-base);
+  --r-lg: calc(var(--radius-base) * 1.45);
+  --r-xl: calc(var(--radius-base) * 2.1);
+  --r-pill: 999px;
+
+  /* ── Density — driven by [data-density] ────────────────────────────── */
+  --row-h: 44px;
+  --pad-page: 28px;
+  --pad-card: 18px;
+  --gap-section: 22px;
+  --gap-tight: 10px;
+
+  /* ── Spacing ───────────────────────────────────────────────────────── */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-7: 32px; --sp-8: 44px;
+
+  /* ── Motion — M3 emphasized easing + macOS spring ──────────────────── */
+  --ease-emph: cubic-bezier(.2, 0, 0, 1);
+  --ease-standard: cubic-bezier(.2, 0, 0, 1);
+  --ease-spring: cubic-bezier(.34, 1.36, .64, 1);
+  --dur-fast: .14s;
+  --dur-base: .22s;
+  --dur-slow: .36s;
+
+  /* ── Translucency — --glass-mix set 0..1 by the Appearance slider ───── */
+  --glass-mix: .6;
+  --glass-blur: calc(22px * var(--glass-mix));
+  --glass-sat: calc(1 + .5 * var(--glass-mix));
+  /* how much the glass layer lets through: high mix = more transparent */
+  --glass-alpha: calc(1 - (.28 * var(--glass-mix)));
+}
+
+/* ══ LIGHT — warm earthy neutral ramp (M3 surface containers) ══════════ */
+:root, [data-theme="light"] {
+  --bg: #F3EFE6;
+  --s-lowest: #FFFEFB;
+  --surface: #FAF7F0;
+  --s-low: #F5F1E7;
+  --s-container: #EEE9DC;
+  --s-high: #E7E1D1;
+  --s-highest: #DFD8C5;
+
+  --on-surface: #1B1D1A;
+  --on-surface-2: #4A4E48;
+  --on-surface-3: #74786F;
+  --on-surface-faint: #9DA096;
+
+  --outline-variant: #D8D1BE;
+  --outline: #ADA692;
+
+  /* Brand — teal primary kept for actions */
+  --primary: #04837A;
+  --primary-hover: #026B64;
+  --on-primary: #FFFFFF;
+  --primary-container: #B4F1E8;
+  --on-primary-container: #00201D;
+  --primary-vivid: #05b7aa;
+
+  /* Earthy secondary (olive) + tertiary (clay) for everyday UI */
+  --secondary: #5C6450;
+  --secondary-container: #E1E7D4;
+  --on-secondary-container: #1A2013;
+  --tertiary: #8A5730;
+  --tertiary-container: #FFDCC3;
+  --on-tertiary-container: #301A07;
+
+  --ok: #16803F;
+  --ok-container: #C6EFD2;
+  --warn: #A66207;
+  --warn-container: #FBE3BE;
+  --danger: #B42318;
+  --danger-container: #FBDAD5;
+
+  --scrim: rgba(28, 26, 20, .34);
+  --glass-tint: 250, 247, 240;
+  --shadow-1: 0 1px 2px rgba(30, 28, 22, .07);
+  --shadow-2: 0 4px 16px -6px rgba(30, 28, 22, .16);
+  --shadow-3: 0 18px 44px -18px rgba(30, 28, 22, .3);
+
+  /* Sidebar reads as glass over a deep warm ink */
+  --side-ink: 22, 26, 24;
+  --side-fg: rgba(255, 255, 255, .8);
+  --side-fg-mute: rgba(255, 255, 255, .5);
+  --side-fg-faint: rgba(255, 255, 255, .28);
+  --side-rule: rgba(255, 255, 255, .1);
+  --side-hover: rgba(255, 255, 255, .08);
+}
+
+/* ══ DARK — macOS true dark + M3 dark tonal containers ════════════════ */
+[data-theme="dark"] {
+  --bg: #0C0E11;
+  --s-lowest: #080A0C;
+  --surface: #12151A;
+  --s-low: #171B21;
+  --s-container: #1D2229;
+  --s-high: #252B33;
+  --s-highest: #2E353E;
+
+  --on-surface: #E9E7E1;
+  --on-surface-2: #BFBDB6;
+  --on-surface-3: #8E8D87;
+  --on-surface-faint: #64645F;
+
+  --outline-variant: #333A43;
+  --outline: #5B626C;
+
+  --primary: #4FD8CB;
+  --primary-hover: #6FE6DA;
+  --on-primary: #00332F;
+  --primary-container: #00514B;
+  --on-primary-container: #74F5E8;
+  --primary-vivid: #05b7aa;
+
+  --secondary: #C3CBB0;
+  --secondary-container: #434A36;
+  --on-secondary-container: #DFE7CB;
+  --tertiary: #F0BB90;
+  --tertiary-container: #6A3F1A;
+  --on-tertiary-container: #FFDCC3;
+
+  --ok: #5BD98A;
+  --ok-container: #14432A;
+  --warn: #E8B45C;
+  --warn-container: #4A3312;
+  --danger: #F2867A;
+  --danger-container: #55201B;
+
+  --scrim: rgba(0, 0, 0, .58);
+  --glass-tint: 18, 21, 26;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, .5);
+  --shadow-2: 0 4px 16px -6px rgba(0, 0, 0, .6);
+  --shadow-3: 0 18px 44px -18px rgba(0, 0, 0, .8);
+
+  --side-ink: 8, 10, 13;
+  --side-fg: rgba(255, 255, 255, .78);
+  --side-fg-mute: rgba(255, 255, 255, .46);
+  --side-fg-faint: rgba(255, 255, 255, .24);
+  --side-rule: rgba(255, 255, 255, .08);
+  --side-hover: rgba(255, 255, 255, .07);
+}
+
+/* ══ Density variants ═════════════════════════════════════════════════ */
+[data-density="compact"] { --row-h: 34px; --pad-page: 18px; --pad-card: 12px; --gap-section: 14px; --gap-tight: 7px; --t-body: 13px; --t-body-sm: 12px; }
+[data-density="cozy"] { --row-h: 44px; --pad-page: 28px; --pad-card: 18px; --gap-section: 22px; --gap-tight: 10px; }
+[data-density="comfy"] { --row-h: 54px; --pad-page: 38px; --pad-card: 24px; --gap-section: 30px; --gap-tight: 14px; --t-body: 15px; }
+
+/* ══ Display font variants ════════════════════════════════════════════ */
+[data-display="sans"] { --font-display: Inter, ui-sans-serif, system-ui, sans-serif; --t-display-w: 300; --t-headline-w: 400; }
+[data-display="hybrid"] { --font-display: "Newsreader", Georgia, serif; }
+[data-display="hybrid"] .k-title, [data-display="hybrid"] .k-card__title { font-family: var(--font-ui); }
+
+/* ══ Platform: Windows swaps blur for tonal surfaces (Mica-style) ══════ */
+[data-platform="win"] { --glass-blur: 0px; --glass-alpha: 1; }
+
+@media (prefers-reduced-transparency: reduce) { :root { --glass-blur: 0px; --glass-alpha: 1; } }
+@media (prefers-reduced-motion: reduce) { :root { --dur-fast: 0s; --dur-base: 0s; --dur-slow: 0s; } }

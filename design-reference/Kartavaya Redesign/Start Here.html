@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-density="cozy" data-display="serif" data-platform="mac">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kartavaya — start here</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="motion.css">
+<style>
+body{margin:0;background:var(--bg);color:var(--on-surface);font-family:var(--font-ui)}
+a{color:var(--primary);text-decoration:none}a:hover{color:var(--primary-vivid);text-decoration:underline}
+.wrap{width:min(1240px,100% - 48px);margin:0 auto}
+/* ── Cover ─────────────────────────────────────────────────────────── */
+.cv{position:relative;overflow:hidden;padding:72px 0 46px;border-bottom:1px solid var(--outline-variant)}
+.cv__mesh{position:absolute;inset:-40% -10% auto;height:620px;pointer-events:none;background:radial-gradient(44% 40% at 16% 26%,color-mix(in srgb,var(--primary-vivid) 17%,transparent),transparent 70%),radial-gradient(38% 34% at 82% 8%,color-mix(in srgb,var(--tertiary) 13%,transparent),transparent 72%)}
+.cv__in{position:relative;z-index:2}
+.cv__k{display:flex;align-items:center;gap:10px;font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--primary);font-weight:700}
+.cv__k span{width:26px;height:1px;background:currentColor;opacity:.5}
+.cv__h{font-family:var(--font-display);font-size:clamp(38px,5.6vw,72px);font-weight:400;line-height:1.02;letter-spacing:-.036em;margin:18px 0 0}
+.cv__h em{font-style:italic;color:var(--primary)}
+.cv__hi{font-family:var(--font-hindi);font-size:clamp(17px,1.9vw,25px);color:var(--on-surface-3);margin-top:12px}
+.cv__p{font-size:16.5px;line-height:1.7;color:var(--on-surface-2);margin:24px 0 0;max-width:62ch;text-wrap:pretty}
+.cv__p b{color:var(--on-surface)}
+.cv__m{display:flex;flex-wrap:wrap;gap:0;margin-top:34px;border:1px solid var(--outline-variant);border-radius:var(--r-lg);overflow:hidden;background:var(--surface)}
+.cv__mi{flex:1 1 128px;padding:15px 18px;border-right:1px solid var(--outline-variant)}
+.cv__mi:last-child{border-right:0}
+.cv__mi b{display:block;font-family:var(--font-display);font-size:31px;font-weight:400;letter-spacing:-.03em;line-height:1}
+.cv__mi i{font-style:normal;display:block;font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--on-surface-faint);font-weight:700;margin-top:7px}
+/* ── Section ───────────────────────────────────────────────────────── */
+.sec{padding:56px 0 12px}
+.sec--alt{background:var(--s-low);border-block:1px solid var(--outline-variant);padding-bottom:56px}
+.sec__h{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:26px}
+.sec__t{font-family:var(--font-display);font-size:clamp(23px,2.7vw,33px);font-weight:400;letter-spacing:-.026em;margin:0;line-height:1.14}
+.sec__t i{font-style:normal;font-family:var(--font-hindi);font-size:.62em;color:var(--primary);margin-left:11px}
+.sec__l{font-size:14px;line-height:1.62;color:var(--on-surface-3);max-width:56ch;margin:9px 0 0;text-wrap:pretty}
+.sec__n{font-family:var(--font-mono);font-size:11px;color:var(--on-surface-3);letter-spacing:.06em}
+/* ── Card ──────────────────────────────────────────────────────────── */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(392px,1fr));gap:20px}
+.cards--wide{grid-template-columns:1fr}
+.cd{display:flex;flex-direction:column;border:1px solid var(--outline-variant);border-radius:var(--r-lg);background:var(--surface);overflow:hidden;transition:box-shadow var(--dur-base),border-color var(--dur-fast),transform var(--dur-base) var(--ease-spring)}
+.cd:hover{box-shadow:var(--shadow-3);border-color:color-mix(in srgb,var(--primary) 34%,var(--outline-variant));transform:translateY(-2px)}
+.cd__fr{position:relative;display:flex;align-items:flex-end;aspect-ratio:16/5;overflow:hidden;padding:20px;border-bottom:1px solid var(--outline-variant);background:linear-gradient(150deg,color-mix(in srgb,var(--cc) 20%,var(--surface)),color-mix(in srgb,var(--cc) 7%,var(--surface)) 62%,var(--surface))}
+.cards--wide .cd__fr{aspect-ratio:26/5}
+.cd__fr::after{content:'';position:absolute;inset:0 0 auto;height:3px;background:var(--cc)}
+.cd__gl{position:absolute;right:-4px;top:-20px;font-family:var(--font-hindi);font-size:118px;line-height:1;color:var(--cc);opacity:.14;pointer-events:none;white-space:nowrap}
+.cd__fn{position:relative;z-index:2;font-family:var(--font-mono);font-size:11px;color:var(--on-surface-3);letter-spacing:.02em}
+.cd__open{position:absolute;right:16px;bottom:16px;z-index:3;display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:var(--r-pill);background:rgba(var(--glass-tint),.9);backdrop-filter:blur(12px) saturate(1.5);-webkit-backdrop-filter:blur(12px) saturate(1.5);border:1px solid var(--outline-variant);font-size:11.5px;font-weight:600;color:var(--on-surface);box-shadow:var(--shadow-2);opacity:0;transform:translateY(4px);transition:opacity var(--dur-base),transform var(--dur-base) var(--ease-spring)}
+.cd:hover .cd__open,.cd__fr:focus-visible .cd__open{opacity:1;transform:none}
+.cd__fr:focus-visible{outline:2px solid var(--primary);outline-offset:-2px}
+.cd__b{padding:17px 19px 19px;display:flex;flex-direction:column;gap:9px;flex:1}
+.cd__t{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.cd__t b{font-family:var(--font-display);font-size:20px;font-weight:400;letter-spacing:-.018em}
+.cd__t i{font-style:normal;font-family:var(--font-hindi);font-size:14px;color:var(--primary)}
+.cd__p{font-size:13px;line-height:1.6;color:var(--on-surface-3);margin:0;text-wrap:pretty}
+.cd__ul{list-style:none;margin:2px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:5px}
+.cd__ul li{font-size:11px;padding:3px 9px;border-radius:var(--r-pill);background:var(--s-container);color:var(--on-surface-2)}
+.cd__ul li.k{background:var(--primary-container);color:var(--on-primary-container);font-weight:600}
+.cd__f{margin-top:auto;padding-top:11px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--on-surface-2)}
+.cd__f a{font-weight:600}
+/* ── Spec list ─────────────────────────────────────────────────────── */
+.specs{display:grid;grid-template-columns:repeat(auto-fill,minmax(268px,1fr));gap:11px}
+.spec{display:flex;flex-direction:column;gap:5px;padding:15px 17px;border:1px solid var(--outline-variant);border-radius:var(--r-md);background:var(--surface);transition:border-color var(--dur-fast),transform var(--dur-base) var(--ease-spring)}
+.spec:hover{border-color:var(--primary);transform:translateY(-2px)}
+.spec b{font-family:var(--font-mono);font-size:12px;font-weight:600;color:var(--on-surface)}
+.spec span{font-size:12px;line-height:1.55;color:var(--on-surface-3);text-wrap:pretty}
+/* ── Open items ────────────────────────────────────────────────────── */
+.open{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:11px}
+.oi{display:flex;gap:11px;padding:15px 17px;border-radius:var(--r-md);background:var(--surface);border:1px solid var(--outline-variant)}
+.oi__n{font-family:var(--font-mono);font-size:10.5px;color:var(--primary);font-weight:700;flex-shrink:0;padding-top:1px}
+.oi b{display:block;font-size:13px;margin-bottom:4px}
+.oi span{font-size:12px;line-height:1.55;color:var(--on-surface-3);text-wrap:pretty}
+.foot{padding:44px 0 60px;border-top:1px solid var(--outline-variant);margin-top:56px;font-size:12px;color:var(--on-surface-faint);display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap}
+@media(max-width:720px){.cv{padding:44px 0 34px}.sec{padding:40px 0 8px}.cards{grid-template-columns:1fr}.cv__mi{flex-basis:50%;border-bottom:1px solid var(--outline-variant)}}
+</style>
+</head>
+<body>
+<header class="cv">
+<div class="cv__mesh"></div>
+<div class="wrap cv__in">
+<div class="cv__k"><span></span>Aekam Inc · design review · July 2026</div>
+<h1 class="cv__h">Everything we designed<br><em>for Kartavaya.</em></h1>
+<p class="cv__hi">कर्तव्य — एक ही जगह, पूरा काम</p>
+<p class="cv__p">Fifteen modules, three settings hubs, a platform console, a mobile app and eight documents — all built on one set of tokens, all grounded in the staging codebase rather than guessed at. <b>Every card below opens a real, working screen</b> — click through and use it, in light or dark, on any of the four surfaces.</p>
+<div class="cv__m">
+<div class="cv__mi"><b>19</b><i>Desktop screens</i></div>
+<div class="cv__mi"><b>19</b><i>Mobile screens</i></div>
+<div class="cv__mi"><b>42</b><i>Interactions</i></div>
+<div class="cv__mi"><b>8</b><i>Documents</i></div>
+<div class="cv__mi"><b>6</b><i>Written specs</i></div>
+</div>
+</div>
+</header>
+
+<section class="sec">
+<div class="wrap">
+<div class="sec__h">
+<div>
+<h2 class="sec__t">The product<i>उत्पाद</i></h2>
+<p class="sec__l">The application itself. Start here — the sidebar reaches every module, and the Settings section at the bottom now opens Customization, Organisation and the Aekam admin console.</p>
+</div>
+<span class="sec__n">01</span>
+</div>
+<div class="cards cards--wide">
+<article class="cd">
+<a class="cd__fr" href="Kartavaya Redesign.html" style="--cc:#04837A"><span class="cd__gl">कर्तव्य</span><span class="cd__fn">Kartavaya Redesign.html</span><span class="cd__open">Open the app →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Kartavaya</b><i>कर्तव्य</i></div>
+<p class="cd__p">The whole application in one shell: fifteen modules, the roles and access matrix, face attendance, and the cross-org platform console. Light and dark, four surfaces, real data throughout.</p>
+<ul class="cd__ul"><li class="k">15 modules</li><li>Roles &amp; access</li><li>Pahchan attendance</li><li>Sanvaad messaging</li><li>Varta WhatsApp</li><li>Customization</li><li>Organisation</li><li>Aekam admin</li><li>Client portal</li></ul>
+<div class="cd__f"><a href="Kartavaya Redesign.html">Open →</a><span>Sidebar → Settings → Customization / Organisation / Aekam admin</span></div>
+</div>
+</article>
+</div>
+</div>
+</section>
+
+<section class="sec sec--alt">
+<div class="wrap">
+<div class="sec__h">
+<div>
+<h2 class="sec__t">Settings, administration &amp; the platform<i>व्यवस्था</i></h2>
+<p class="sec__l">Three hubs a company owner lives in. These also open standalone, with a surface switcher for Mac, Windows and mobile, so you can see how each behaves on a phone.</p>
+</div>
+<span class="sec__n">02</span>
+</div>
+<div class="cards">
+<article class="cd">
+<a class="cd__fr" href="Settings.html" style="--cc:#7c5cbf"><span class="cd__gl">व्यवस्था</span><span class="cd__fn">Settings.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Settings &amp; admin</b><i>रूपांकन</i></div>
+<p class="cd__p">Customization merged from two pages into six tabs; the organisation hub with profile, members, billing, modules, security and a danger zone; and the Aekam platform console in its own violet surface so cross-org context is never mistaken for your own.</p>
+<ul class="cd__ul"><li class="k">Appearance · 12 accents</li><li>Typography</li><li>Layout</li><li>Language</li><li>Notifications</li><li>Data &amp; privacy</li><li>Members · RBAC</li><li>Billing</li><li>Modules</li><li>Security</li></ul>
+<div class="cd__f"><a href="Settings.html">Open →</a><span>Switch hubs with the control at the top</span></div>
+</div>
+</article>
+<article class="cd">
+<a class="cd__fr" href="Interaction Catalogue.html" style="--cc:#B8863B"><span class="cd__gl">व्यवहार</span><span class="cd__fn">Interaction Catalogue.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Interaction catalogue</b><i>व्यवहार</i></div>
+<p class="cd__p">Forty-two interactions across twelve sections, each a working demo with its timing, easing and handler written next to it — and an honest note on what staging does today. The reference an engineer builds from.</p>
+<ul class="cd__ul"><li class="k">42 live demos</li><li>Slow-motion review</li><li>Timing per element</li><li>What staging does today</li></ul>
+<div class="cd__f"><a href="Interaction Catalogue.html">Open →</a><span>Turn on slow motion to inspect any transition</span></div>
+</div>
+</article>
+</div>
+</div>
+</section>
+
+<section class="sec">
+<div class="wrap">
+<div class="sec__h">
+<div>
+<h2 class="sec__t">Getting in<i>प्रवेश</i></h2>
+<p class="sec__l">Everything before the app: the public page, the sign-in surfaces, the first two minutes, and the four emails the system sends.</p>
+</div>
+<span class="sec__n">03</span>
+</div>
+<div class="cards">
+<article class="cd">
+<a class="cd__fr" href="Landing Page.html" style="--cc:#04837A"><span class="cd__gl">मुख</span><span class="cd__fn">Landing Page.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Landing page</b><i>मुख</i></div>
+<p class="cd__p">The public page, using real app fragments as the product visuals rather than drawn illustrations. Pricing reflects the actual plan model — free, starter, growth, scale — with price on quote.</p>
+<ul class="cd__ul"><li class="k">Real product visuals</li><li>4 plans</li><li>Module grid</li></ul>
+<div class="cd__f"><a href="Landing Page.html">Open →</a></div>
+</div>
+</article>
+<article class="cd">
+<a class="cd__fr" href="Auth Screens.html" style="--cc:#2C6E9B"><span class="cd__gl">प्रवेश</span><span class="cd__fn">Auth Screens.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Sign in &amp; invitations</b><i>प्रवेश</i></div>
+<p class="cd__p">Eight states: log in, sign up, forgot, reset, expired link, and accepting an invitation — with inline validation, which staging does not have today.</p>
+<ul class="cd__ul"><li class="k">8 states</li><li>Inline validation</li><li>Password strength</li></ul>
+<div class="cd__f"><a href="Auth Screens.html">Open →</a></div>
+</div>
+</article>
+<article class="cd">
+<a class="cd__fr" href="Onboarding.html" style="--cc:#8C6A3F"><span class="cd__gl">आरंभ</span><span class="cd__fn">Onboarding.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Onboarding</b><i>आरंभ</i></div>
+<p class="cd__p">Five steps that resume where you left off. Modules preselect from the industry given at signup, and the final screen reports only what actually happened — skipping is never dressed up as success.</p>
+<ul class="cd__ul"><li class="k">5 steps</li><li>Autosaves</li><li>Industry presets</li><li>Honest summary</li></ul>
+<div class="cd__f"><a href="Onboarding.html">Open →</a><span>Try “Skip setup” to see the honest ending</span></div>
+</div>
+</article>
+<article class="cd">
+<a class="cd__fr" href="Auth Emails.html" style="--cc:#9B5B4B"><span class="cd__gl">पत्र</span><span class="cd__fn">Auth Emails.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>System emails</b><i>पत्र</i></div>
+<p class="cd__p">Welcome, invitation, password reset and support-access request — send-ready table layouts that survive Gmail, Outlook and Apple Mail. The invitation shows the access being granted, not just the org name.</p>
+<ul class="cd__ul"><li class="k">4 templates</li><li>600px, inline styles</li><li>Dark-mode safe</li></ul>
+<div class="cd__f"><a href="Auth Emails.html">Open →</a></div>
+</div>
+</article>
+</div>
+</div>
+</section>
+
+<section class="sec sec--alt">
+<div class="wrap">
+<div class="sec__h">
+<div>
+<h2 class="sec__t">On the phone<i>मोबाइल</i></h2>
+<p class="sec__l">Nineteen screens on three real devices, side by side, in light and dark with an offline toggle. Face attendance is the screen most of your staff will use every day, so it gets the full-bleed camera treatment.</p>
+</div>
+<span class="sec__n">04</span>
+</div>
+<div class="cards cards--wide">
+<article class="cd">
+<a class="cd__fr" href="Mobile App.html" style="--cc:#3F6212"><span class="cd__gl">चलित</span><span class="cd__fn">Mobile App.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Mobile app</b><i>चलित</i></div>
+<p class="cd__p">iPhone 15 Pro, iPhone SE and Pixel 8 at once. Task detail carries the whole drawer at 393px wide; Pahchan clocks in offline and says the timestamp recorded is the real one, not the sync time — which matters when payroll reads it.</p>
+<ul class="cd__ul"><li class="k">19 screens</li><li>3 devices</li><li>Light + dark</li><li>Offline toggle</li><li>Task detail</li><li>Board detail</li><li>Pahchan camera</li><li>Push previews</li></ul>
+<div class="cd__f"><a href="Mobile App.html">Open →</a><span>Screen tabs at the top; toggle Offline to see the queue</span></div>
+</div>
+</article>
+</div>
+</div>
+</section>
+
+<section class="sec">
+<div class="wrap">
+<div class="sec__h">
+<div>
+<h2 class="sec__t">What the system hands people<i>दस्तावेज़</i></h2>
+<p class="sec__l">Eight documents, all print-owned and all reading their brand from tokens — so a second tenant's logo, accent and legal identity flow through without touching a layout. Switch tenant at the top of any of them.</p>
+</div>
+<span class="sec__n">05</span>
+</div>
+<div class="cards cards--wide">
+<article class="cd">
+<a class="cd__fr" href="docs/Document Kit.html" style="--cc:#8A5A2B"><span class="cd__gl">पत्रावली</span><span class="cd__fn">docs/Document Kit.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Document kit</b><i>पत्रावली</i></div>
+<p class="cd__p">Tax invoice, payslip, statement of account, quotation, GSTR-3B summary, TDS challan, service agreement and project report. Each states its own caveats — the GSTR-3B says it is a working paper with no ARN and names the invoices held back for a missing HSN code.</p>
+<ul class="cd__ul"><li class="k">8 documents</li><li>3 tenants</li><li>Print-ready</li><li>Statutory field sets</li></ul>
+<div class="cd__f"><a href="docs/Document Kit.html">Open →</a><span>Switch to Nirmal Exports to see unset-field warnings</span></div>
+</div>
+</article>
+</div>
+</div>
+</section>
+
+<section class="sec sec--alt">
+<div class="wrap">
+<div class="sec__h">
+<div>
+<h2 class="sec__t">Written down<i>विवरण</i></h2>
+<p class="sec__l">Six specs your engineers build from — exact values, component trees, API endpoints and what changes in which existing file.</p>
+</div>
+<span class="sec__n">06</span>
+</div>
+<div class="specs">
+<a class="spec" href="RESEARCH.md"><b>RESEARCH.md</b><span>What comparable products do, and where Indian compliance forces a different answer.</span></a>
+<a class="spec" href="RBAC-SPEC.md"><b>RBAC-SPEC.md</b><span>Org roles, module grant levels, the access matrix, support sessions and audit.</span></a>
+<a class="spec" href="MESSAGING-ATTENDANCE-SPEC.md"><b>MESSAGING-ATTENDANCE-SPEC.md</b><span>Sanvaad channels and threads; Pahchan face match, geofence and the offline buffer.</span></a>
+<a class="spec" href="AUTH-SPEC.md"><b>AUTH-SPEC.md</b><span>Field CSS, strength rules, every state per screen, and the invite-only question.</span></a>
+<a class="spec" href="SETTINGS-ADMIN-SPEC.md"><b>SETTINGS-ADMIN-SPEC.md</b><span>Preference keys, the accent derivation, admin routes, endpoints — and the font bug.</span></a>
+<a class="spec" href="MOTION-SPEC.md"><b>MOTION-SPEC.md</b><span>Duration and easing tokens, in/out pairs per element, ten behaviour rules.</span></a>
+</div>
+</div>
+</section>
+
+<section class="sec">
+<div class="wrap">
+<div class="sec__h">
+<div>
+<h2 class="sec__t">Decisions we need from you<i>निर्णय</i></h2>
+<p class="sec__l">Five things the design surfaced that are business calls, not design calls. Each is designed both ways where that was possible.</p>
+</div>
+<span class="sec__n">07</span>
+</div>
+<div class="open">
+<div class="oi"><span class="oi__n">01</span><span><b>Decided — invite-only.</b><span>There is no public signup. The landing page now says “Request access”, not “Start free”, and makes no trial promise. The self-serve path stays designed in <b>AUTH-SPEC.md</b> for whenever you want it.</span></span></div>
+<div class="oi"><span class="oi__n">02</span><span><b>Decided — the app is built new.</b><span>Nothing is live, so there is no palette migration to manage. <code>tokens.ts</code> gets authored from the web tokens on day one and the two surfaces stay in step from the start.</span></span></div>
+<div class="oi"><span class="oi__n">03</span><span><b>Decided — sensitive modules follow the org role.</b><span>Payroll, accounting and HR are not granted per member at all. Owner and Org admin have them, nobody else does. The matrix cells are locked rather than pickable, so nobody can quietly grant payroll to a manager.</span></span></div>
+<div class="oi"><span class="oi__n">04</span><span><b>Deleting an organisation waits seven days.</b><span>Queued rather than executed, recoverable in that window. Worth confirming that matches what you would want to promise a customer.</span></span></div>
+<div class="oi"><span class="oi__n">05</span><span><b>Support access is never silent.</b><span>When Aekam staff enter a customer's workspace it is logged in the customer's own audit trail and the owner is emailed. There is no quiet mode, by design.</span></span></div>
+</div>
+<div class="foot">
+<span>Kartavaya · कर्तव्य — designed for Aekam Inc, July 2026. Grounded in the staging branch, not reconstructed from memory.</span>
+<span>Implementation handover is still to come.</span>
+</div>
+</div>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,72 @@
+<!-- @dsCard group="Components" viewport="700x360" name="Composite Patterns" -->
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body { margin: 0; background: var(--bg); padding: 14px 20px; font-family: var(--font-ui); color: var(--ink); }
+  .section { font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 10px 0 6px; }
+  .section:first-child { margin-top: 0; }
+  /* Inline subset of styles for the card */
+  .k-trow { display: grid; grid-template-columns: minmax(0,2.4fr) minmax(0,1.1fr) 80px 80px 90px; align-items: center; padding: 0 14px; background: var(--surface); border: 0; border-bottom: 1px solid var(--rule-soft); font-family: inherit; color: inherit; text-align: left; min-height: 44px; gap: 12px; width: 100%; }
+  .k-trow:hover { background: color-mix(in srgb, var(--k-primary) 4%, var(--surface)); }
+  .k-trow__cell { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+  .k-trow__id { font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); flex-shrink: 0; }
+  .k-trow__title { font-size: 12.5px; color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .k-pdot { display: inline-block; border-radius: 50%; flex-shrink: 0; }
+  .k-ptag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-2); }
+  .k-ptag__dot { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+  .k-ptag__name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .k-avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; font-weight: 700; font-family: var(--font-ui); font-size: 8px; }
+  .k-avatar--ring { box-shadow: 0 0 0 1.5px var(--surface); }
+  .k-avstack { display: inline-flex; }
+  .k-avstack > * + * { margin-left: -5px; }
+  .k-due { display: inline-flex; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 99px; border: 1px solid; white-space: nowrap; }
+  .k-due--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, var(--rule)); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
+  .k-due--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, var(--rule)); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
+  .k-bcard { display: flex; flex-direction: column; gap: 8px; text-align: left; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-md); padding: 10px 12px; font-family: inherit; color: inherit; box-shadow: var(--shadow-sm); width: 220px; }
+  .k-bcard__top { display: flex; align-items: center; gap: 6px; }
+  .k-bcard__id { font-family: var(--font-mono); font-size: 10px; color: var(--ink-3); }
+  .k-bcard__priolbl { font-size: 10px; color: var(--ink-3); margin-left: auto; }
+  .k-bcard__title { font-size: 12.5px; font-weight: 500; color: var(--ink); line-height: 1.4; }
+  .k-bcard__foot { display: flex; align-items: center; gap: 8px; }
+  .k-pcard { text-align: left; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg); padding: 14px; display: flex; flex-direction: column; gap: 10px; font-family: inherit; color: inherit; width: 220px; }
+  .k-pcard__head { display: grid; grid-template-columns: 4px 1fr; gap: 10px; }
+  .k-pcard__bar { width: 4px; border-radius: 2px; }
+  .k-pcard__sans { font-family: var(--font-hindi); font-size: 13px; color: var(--k-primary); }
+  .k-pcard__name { font-family: var(--font-display); font-size: 17px; font-weight: 500; line-height: 1.2; margin-top: 2px; }
+  .k-pcard__client { font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.14em; font-weight: 600; margin-top: 4px; }
+  .k-pcard__body { display: flex; gap: 16px; padding-top: 8px; border-top: 1px dashed var(--rule-soft); }
+  .k-pcard__stat { display: flex; flex-direction: column; gap: 1px; }
+  .k-pcard__stat b { font-family: var(--font-display); font-size: 18px; font-weight: 400; line-height: 1; }
+  .k-pcard__stat span { font-size: 9px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600; }
+  .trow-wrap { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg); overflow: hidden; }
+</style>
+
+<div class="section">Task Row</div>
+<div class="trow-wrap">
+  <button class="k-trow">
+    <div class="k-trow__cell"><span class="k-pdot" style="width:8px;height:8px;background:#C0392B"></span><span class="k-trow__id">KAR-582</span><span class="k-trow__title">Tata Steel — Mumbai office review</span></div>
+    <div class="k-trow__cell"><span class="k-ptag"><span class="k-ptag__dot" style="background:#0082c6"></span><span class="k-ptag__name">Mumbai client</span></span></div>
+    <div class="k-trow__cell"><span class="k-avstack"><span class="k-avatar k-avatar--ring" style="width:20px;height:20px;background:#0082c6">KS</span><span class="k-avatar k-avatar--ring" style="width:20px;height:20px;background:#03a1b6">AM</span></span></div>
+    <div class="k-trow__cell" style="font-size:11px;color:var(--ink-3)">Urgent</div>
+    <div class="k-trow__cell"><span class="k-due k-due--warn">Tomorrow</span></div>
+  </button>
+  <button class="k-trow">
+    <div class="k-trow__cell"><span class="k-pdot" style="width:8px;height:8px;background:#B06A00"></span><span class="k-trow__id">KAR-184</span><span class="k-trow__title">Compile Q1 GSTR-3B working notes</span></div>
+    <div class="k-trow__cell"><span class="k-ptag"><span class="k-ptag__dot" style="background:#05b7aa"></span><span class="k-ptag__name">Quarterly GST</span></span></div>
+    <div class="k-trow__cell"><span class="k-avstack"><span class="k-avatar k-avatar--ring" style="width:20px;height:20px;background:#05b7aa">KS</span></span></div>
+    <div class="k-trow__cell" style="font-size:11px;color:var(--ink-3)">High</div>
+    <div class="k-trow__cell"><span class="k-due k-due--danger">2d overdue</span></div>
+  </button>
+</div>
+
+<div class="section">Kanban Card + Project Card</div>
+<div style="display:flex;gap:16px">
+  <button class="k-bcard">
+    <div class="k-bcard__top"><span class="k-pdot" style="width:7px;height:7px;background:#B06A00"></span><span class="k-bcard__id">KAR-184</span><span class="k-bcard__priolbl">High</span></div>
+    <div class="k-bcard__title">Compile Q1 GSTR-3B working notes</div>
+    <div class="k-bcard__foot"><span class="k-due k-due--warn" style="font-size:10px">Tomorrow</span><span class="k-avstack"><span class="k-avatar k-avatar--ring" style="width:20px;height:20px;font-size:8px;background:#0082c6">KS</span><span class="k-avatar k-avatar--ring" style="width:20px;height:20px;font-size:8px;background:#03a1b6">AM</span></span></div>
+  </button>
+  <div class="k-pcard">
+    <div class="k-pcard__head"><div class="k-pcard__bar" style="background:#0082c6"></div><div><div class="k-pcard__sans">राजस्व</div><div class="k-pcard__name">Quarterly GST filing</div><div class="k-pcard__client">AEKAM INC</div></div></div>
+    <div class="k-pcard__body"><div class="k-pcard__stat"><b>4</b><span>TASKS</span></div><div class="k-pcard__stat"><b>1</b><span>DONE</span></div><div class="k-pcard__stat"><b>30</b><span>DAYS</span></div></div>
+  </div>
+</div>

@@ -1,0 +1,41 @@
+/* Kartavya — Spacing & Radius Tokens
+   4px base grid · Density variants: compact / comfy
+   ──────────────────────────────────────────────────── */
+
+:root {
+  /* ── Spacing scale (4-base) ──────────────────────────────────────── */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 28px;
+  --sp-7: 40px;
+  --sp-8: 56px;
+
+  /* ── Border radius ───────────────────────────────────────────────── */
+  --r-sm:  8px;   /* buttons, chips */
+  --r-md: 12px;   /* small cards, stat tiles */
+  --r-lg: 18px;   /* major cards */
+  --r-xl: 22px;   /* hero */
+
+  /* ── Default row height ──────────────────────────────────────────── */
+  --row-h: 48px;
+}
+
+/* ── Compact density ───────────────────────────────────────────────── */
+[data-density="compact"] {
+  --sp-1: 3px;
+  --sp-2: 6px;
+  --sp-3: 9px;
+  --sp-4: 12px;
+  --sp-5: 14px;
+  --sp-6: 20px;
+  --sp-7: 28px;
+  --row-h: 36px;
+}
+
+/* ── Comfy density ─────────────────────────────────────────────────── */
+[data-density="comfy"] {
+  --row-h: 48px;
+}

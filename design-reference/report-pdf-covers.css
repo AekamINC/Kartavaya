@@ -1,0 +1,239 @@
+/* On-demand cover variants — extra components for the dynamic cover. */
+
+/* Stamp header — replaces the default head when the report is on-demand */
+.pdf__head--ondemand .pdf__head-meta{ display:none; }
+
+.pdf__head-stamp{
+  display:flex; align-items:flex-start; gap:14px;
+  text-align:right;
+}
+.pdf__stamp{
+  display:inline-block;
+  font-family:var(--font-mono);
+  font-size:9px; letter-spacing:0.22em;
+  text-transform:uppercase; font-weight:700;
+  padding:5px 10px;
+  border-radius:4px;
+  color:#fff;
+}
+.pdf__stamp--ondemand{
+  background:linear-gradient(180deg,#a8233b,#8a1c30);
+}
+.pdf__stamp--auto{
+  background:linear-gradient(180deg,#0a3d91,#1d6fcf);
+}
+.pdf__stamp-meta{
+  display:flex; flex-direction:column; gap:3px;
+  font-size:10.5px; color:var(--ink-3);
+  line-height:1.4;
+}
+.pdf__stamp-meta span:first-child{
+  font-weight:600; color:var(--ink-2);
+  letter-spacing:0.02em;
+}
+.pdf__stamp-meta span:first-child i{
+  font-family:var(--font-hindi);
+  font-style:normal;
+  font-weight:400;
+  color:var(--ink-3);
+  margin-left:2px;
+}
+.pdf__stamp-dur{
+  font-family:var(--font-mono);
+  font-size:10px;
+  color:var(--ink-faint);
+  letter-spacing:0.02em;
+}
+
+/* Generated-by line above colophon */
+.pdf__cover-by{
+  margin-top:auto;
+  padding-top:14px;
+  border-top:1px dashed var(--rule);
+  display:flex; align-items:baseline; gap:8px;
+  font-size:11.5px; color:var(--ink-3);
+  font-family:var(--font-display);
+  font-style:italic;
+}
+.pdf__cover-by b{
+  font-weight:500;
+  font-style:normal;
+  color:var(--ink-2);
+  font-size:9px; letter-spacing:0.2em; text-transform:uppercase;
+  margin-right:6px;
+  font-family:var(--font-ui);
+}
+.pdf__cover-by-sep{ color:var(--rule-strong); }
+
+/* ── Mini 4-bar trend on covers ───────────────────────────────── */
+.pdf-cv__trend{
+  background:var(--bg-soft);
+  border:1px solid var(--rule);
+  border-radius:10px;
+  padding:14px 18px 12px;
+  margin-top:4px;
+}
+.pdf-cv__trend-h{
+  font-size:9.5px; letter-spacing:0.2em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:700;
+  margin-bottom:12px;
+  display:flex; align-items:baseline; gap:10px;
+}
+.pdf-cv__trend-h span{
+  font-family:var(--font-hindi);
+  font-size:12px;
+  letter-spacing:0;
+  text-transform:none;
+  font-weight:400;
+  margin-left:auto;
+  color:var(--ink-3);
+}
+.pdf-cv__bars{
+  display:flex; align-items:flex-end;
+  gap:14px;
+  height:100px;
+}
+.pdf-cv__bars--wide{ gap:24px; }
+.pdf-cv__bar{
+  flex:1;
+  display:flex; flex-direction:column; align-items:center;
+  gap:4px;
+  height:100%;
+  justify-content:flex-end;
+}
+.pdf-cv__bar-col{
+  width:100%;
+  max-width:44px;
+  background:color-mix(in srgb, var(--k-deep) 22%, var(--bg-soft));
+  border-radius:3px 3px 0 0;
+  min-height:4px;
+}
+.pdf-cv__bar.is-here .pdf-cv__bar-col{
+  background:var(--k-gradD);
+  box-shadow:0 4px 12px -6px rgba(0,130,198,.5);
+}
+.pdf-cv__bar-lbl{
+  font-size:9.5px; letter-spacing:0.12em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:700;
+}
+.pdf-cv__bar.is-here .pdf-cv__bar-lbl{ color:var(--k-deep); }
+.pdf-cv__bar-n{
+  font-family:var(--font-display);
+  font-size:13px; color:var(--ink);
+  font-feature-settings:"tnum" 1;
+  line-height:1;
+}
+.pdf-cv__bar.is-here .pdf-cv__bar-n{ font-weight:500; }
+
+/* ── Range timeline (custom cover) ─────────────────────────────── */
+.pdf-cv__range{
+  background:var(--bg-soft);
+  border:1px solid var(--rule);
+  border-radius:10px;
+  padding:16px 22px 18px;
+  margin-top:4px;
+}
+.pdf-cv__range-h{
+  font-size:9.5px; letter-spacing:0.2em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:700;
+  margin-bottom:14px;
+  display:flex; align-items:baseline; gap:10px;
+}
+.pdf-cv__range-h span{
+  font-family:var(--font-hindi);
+  font-size:12px;
+  letter-spacing:0; text-transform:none;
+  font-weight:400; color:var(--ink-3);
+  margin-left:auto;
+}
+
+.pdf-cv__rail{
+  position:relative;
+  height:64px;
+  margin: 8px 12px 12px;
+}
+.pdf-cv__rail-band{
+  position:absolute;
+  left:0; right:0; top:22px;
+  height:6px;
+  background:var(--rule-soft);
+  border-radius:99px;
+}
+.pdf-cv__rail-shade{
+  position:absolute; top:14px;
+  height:22px;
+  border-radius:6px;
+  display:flex; flex-direction:column; justify-content:center; align-items:center;
+  padding:0 6px;
+  font-size:9px; line-height:1;
+  font-weight:700;
+  pointer-events:none;
+}
+.pdf-cv__rail-shade b{
+  font-family:var(--font-display);
+  font-weight:500;
+  font-size:11px;
+  letter-spacing:0.02em;
+}
+.pdf-cv__rail-shade small{
+  font-family:var(--font-ui);
+  font-size:8.5px;
+  letter-spacing:0.14em; text-transform:uppercase;
+  margin-top:2px;
+  opacity:.75;
+  font-weight:600;
+}
+.pdf-cv__rail-shade--a{
+  background:color-mix(in srgb, var(--k-deep) 18%, transparent);
+  color:var(--k-deep);
+}
+.pdf-cv__rail-shade--b{
+  background:color-mix(in srgb, var(--warn) 22%, transparent);
+  color:var(--warn);
+}
+
+.pdf-cv__rail-mark{
+  position:absolute;
+  top:0;
+  transform:translateX(-50%);
+  display:flex; flex-direction:column; align-items:center;
+  gap:2px;
+  font-size:10px; color:var(--ink-2);
+  font-weight:600;
+  letter-spacing:0.02em;
+  z-index:2;
+}
+.pdf-cv__rail-mark i{
+  width:9px; height:9px;
+  background:var(--ink);
+  border-radius:50%;
+  margin-top:21px;
+  box-shadow:0 0 0 3px var(--bg-soft);
+}
+.pdf-cv__rail-mark span{
+  position:absolute;
+  top:-12px;
+  white-space:nowrap;
+  font-family:var(--font-mono);
+  font-size:9.5px;
+  color:var(--ink-2);
+}
+.pdf-cv__rail-mark--mid i{
+  background:var(--warn);
+}
+.pdf-cv__rail-mark--mid small{
+  position:absolute;
+  bottom:-12px;
+  white-space:nowrap;
+  font-size:8.5px; letter-spacing:0.12em; text-transform:uppercase;
+  color:var(--warn); font-weight:700;
+}
+.pdf-cv__rail-mark--end i{ background:var(--k-deep); }
+
+.pdf-cv__range-note{
+  margin:0;
+  font-size:11.5px;
+  color:var(--ink-2);
+  line-height:1.55;
+}
+.pdf-cv__range-note b{ color:var(--ink); font-weight:600; }

@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start", "--prefix", "frontend"],
       "port": 5173
+    },
+    {
+      "name": "kartavya-backend",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd backend && export $(grep -v '^#' .env | grep '=' | xargs) && .venv/Scripts/python.exe -m uvicorn server:app --reload --port 8080"],
+      "port": 8080,
+      "url": "http://localhost:8080"
     }
   ]
 }

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Kartavya — Generated PDF report</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,300;1,6..72,400&family=Inter:wght@400;500;600;700&family=Tiro+Devanagari+Hindi:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap">
+
+  <link rel="stylesheet" href="report-pdf.css">
+  <link rel="stylesheet" href="report-pdf-scale.css">
+  <link rel="stylesheet" href="report-pdf-covers.css">
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react" src="design-canvas.jsx"></script>
+  <script type="text/babel" data-presets="react" src="report-pdf.jsx"></script>
+  <script type="text/babel" data-presets="react" src="report-pdf-scale.jsx"></script>
+  <script type="text/babel" data-presets="react" src="report-pdf-covers.jsx"></script>
+
+  <script type="text/babel" data-presets="react">
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(
+      <DesignCanvas
+        title="Kartavya — Generated PDF report"
+        subtitle="aekam_weekly_wk20_2026.pdf · 5 letter-size pages (816×1056)"
+        initialZoom={0.55}
+      >
+        <DCSection id="pdf" title="Weekly report — PDF export (5 pages)">
+          <DCArtboard id="p1" label="Page 1 · Cover + executive summary"   width={816} height={1056}><PdfCover/></DCArtboard>
+          <DCArtboard id="p2" label="Page 2 · Per-project breakdown"        width={816} height={1056}><PdfProjects/></DCArtboard>
+          <DCArtboard id="p3" label="Page 3 · Team performance + champion"  width={816} height={1056}><PdfTeam/></DCArtboard>
+          <DCArtboard id="p4" label="Page 4 · Detailed task list"           width={816} height={1056}><PdfTasks/></DCArtboard>
+          <DCArtboard id="p5" label="Page 5 · Throughput + methodology"     width={816} height={1056}><PdfTrend/></DCArtboard>
+        </DCSection>
+
+        <DCSection id="pdf-scale" title="At scale — page 2 variants when N projects grows">
+          <DCArtboard id="dense"  label="14 projects · dense single-page table"       width={816} height={1056}><PdfProjectsDense/></DCArtboard>
+          <DCArtboard id="paged"  label="24 projects · paginated — page 1 of 2"      width={816} height={1056}><PdfProjectsPaged1/></DCArtboard>
+          <DCArtboard id="movers" label="25+ projects · movers snapshot (front-page)" width={816} height={1056}><PdfMovers/></DCArtboard>
+        </DCSection>
+
+        <DCSection id="pdf-covers" title="On-demand cover — dynamic per kind">
+          <DCArtboard id="cov-daily"   label="Daily · tactical, live snapshot"             width={816} height={1056}><PdfCoverDaily/></DCArtboard>
+          <DCArtboard id="cov-weekly"  label="Weekly on-demand · + 4-week trend sparkline" width={816} height={1056}><PdfCoverWeeklyOnDemand/></DCArtboard>
+          <DCArtboard id="cov-monthly" label="Monthly · narrative arc + weekly bars"       width={816} height={1056}><PdfCoverMonthly/></DCArtboard>
+          <DCArtboard id="cov-custom"  label="Custom range · 32 days, cross-month"         width={816} height={1056}><PdfCoverCustom/></DCArtboard>
+        </DCSection>
+      </DesignCanvas>
+    );
+  </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+/* Kartavya — Dark Theme
+   Applied via [data-theme="dark"] on <html>
+   ──────────────────────────────────────────── */
+
+[data-theme="dark"] {
+  --bg:          #050E1A;
+  --bg-soft:     #0A1424;
+  --surface:     #0B1828;
+  --surface-2:   #122035;
+
+  --ink:         #E6EEFC;
+  --ink-2:       #B0BDD4;
+  --ink-3:       #7D8BA6;
+  --ink-faint:   #4A5878;
+
+  --rule:        #1A2A45;
+  --rule-soft:   #122035;
+  --rule-strong: #233655;
+
+  --shadow-sm: 0 1px 0 rgba(0,0,0,.4), 0 1px 3px rgba(0,0,0,.4);
+  --shadow-md: 0 1px 0 rgba(0,0,0,.4), 0 8px 24px -10px rgba(0,0,0,.6);
+  --shadow-lg: 0 30px 60px -30px rgba(0,0,0,.8);
+}

@@ -1,0 +1,187 @@
+/* Kartavaya — auth surfaces. Loads after tokens.css + app.css + motion.css.
+   The branding panel reuses the app sidebar's ink and glow so signing in and
+   arriving at the dashboard feel like one continuous surface. */
+.auwrap { display: flex; flex-direction: column; height: 100%; min-height: 100vh; background: var(--bg); }
+.auhost { flex: 1; display: flex; padding: 22px; min-height: 0; }
+.auhost--m { padding: 22px; justify-content: center; }
+.au { flex: 1; display: grid; grid-template-columns: minmax(0, 44%) minmax(0, 56%); border-radius: var(--r-xl); overflow: hidden; border: 1px solid var(--outline-variant); background: var(--surface); box-shadow: var(--shadow-2); min-height: 620px; }
+.au--m { grid-template-columns: 1fr; width: min(392px, 100%); flex: 0 1 auto; min-height: 0; align-self: center; }
+
+/* ══ Branding panel ═══════════════════════════════════════════════════ */
+.au-brand { position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; gap: 26px; padding: 34px; color: var(--side-fg); background: rgb(var(--side-ink)); }
+.au-brand > * { position: relative; z-index: 2; }
+.au-brand__wm { position: absolute; z-index: 0; right: -6%; bottom: -8%; font-family: var(--font-hindi); font-size: clamp(150px, 27vw, 300px); line-height: .8; color: #fff; opacity: .045; letter-spacing: -.03em; white-space: nowrap; animation: wmDrift 40s ease-in-out infinite alternate; }
+@keyframes wmDrift { to { transform: translate3d(-14px, -10px, 0) rotate(-1.2deg) } }
+.au-brand__glow { position: absolute; z-index: 1; border-radius: 50%; pointer-events: none; }
+.au-brand__glow--1 { width: 320px; height: 320px; top: -110px; right: -90px; background: radial-gradient(circle, color-mix(in srgb, var(--primary-vivid) 34%, transparent), transparent 66%); }
+.au-brand__glow--2 { width: 260px; height: 260px; bottom: -80px; left: -70px; background: radial-gradient(circle, color-mix(in srgb, var(--tertiary) 22%, transparent), transparent 68%); }
+.au-brand__top { display: flex; align-items: center; gap: 12px; }
+.au-brand__wordmark { font-family: var(--font-display); font-size: 20px; font-weight: 500; color: #fff; letter-spacing: .004em; line-height: 1.1; }
+.au-brand__sub { font-size: 8.5px; letter-spacing: .2em; text-transform: uppercase; color: var(--side-fg-faint); font-weight: 600; margin-top: 3px; }
+.au-brand__mid { max-width: 22ch; }
+.au-brand__h { font-family: var(--font-display); font-size: clamp(28px, 3.1vw, 40px); font-weight: 400; line-height: 1.18; letter-spacing: -.026em; margin: 0; color: #fff; }
+.au-brand__h em { font-style: italic; color: var(--primary); }
+.au-brand__p { font-size: 13px; line-height: 1.68; color: var(--side-fg-mute); margin: 14px 0 0; max-width: 36ch; text-wrap: pretty; }
+.au-brand__rot { padding: 15px 17px; border-radius: var(--r-lg); background: rgba(255, 255, 255, .055); border: 1px solid var(--side-rule); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: rotIn var(--dur-slow) var(--ease-emph); }
+@keyframes rotIn { from { opacity: 0; transform: translateY(7px) } }
+.au-brand__rot-k { font-size: 8.5px; letter-spacing: .2em; text-transform: uppercase; color: var(--primary); font-weight: 700; margin-bottom: 9px; }
+.au-brand__rot-t { display: flex; align-items: baseline; gap: 9px; margin-bottom: 7px; }
+.au-brand__rot-t .hi { font-size: 21px; color: #fff; }
+.au-brand__rot-t span:last-child { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--side-fg-faint); font-weight: 600; }
+.au-brand__rot-s { display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px; }
+.au-brand__rot-s b { font-family: var(--font-display); font-size: 34px; font-weight: 400; color: #fff; letter-spacing: -.03em; }
+.au-brand__rot-s span { font-size: 11.5px; color: var(--side-fg-mute); }
+.au-brand__rot-l { font-size: 12.5px; line-height: 1.62; color: var(--side-fg-mute); margin: 0; text-wrap: pretty; }
+.au-brand__rot-w { display: flex; align-items: center; gap: 9px; margin-top: 11px; }
+.au-brand__rot-w b { display: block; font-size: 12px; color: #fff; }
+.au-brand__rot-w i { font-style: normal; font-size: 10.5px; color: var(--side-fg-faint); }
+.au-brand__rot-f { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--side-rule); font-size: 10.5px; color: var(--side-fg-faint); }
+.au-brand__dots { display: flex; gap: 6px; }
+.au-dot { width: 22px; height: 3px; border-radius: var(--r-pill); background: var(--side-rule); transition: background var(--dur-base) var(--ease-emph); }
+.au-dot.on { background: var(--primary); }
+.au-dot:hover { background: var(--side-fg-mute); }
+
+.au-brandm { display: flex; align-items: center; gap: 11px; padding: 18px 20px; background: rgb(var(--side-ink)); position: relative; overflow: hidden; }
+.au-brandm::after { content: 'कर्तव्य'; position: absolute; right: -10px; bottom: -22px; font-family: var(--font-hindi); font-size: 86px; color: #fff; opacity: .05; line-height: 1; }
+.au-brandm__n { font-family: var(--font-display); font-size: 17px; color: #fff; font-weight: 500; line-height: 1.1; }
+.au-brandm__hi { font-size: 10.5px; color: var(--side-fg-mute); margin-top: 2px; }
+
+/* ══ Form pane ════════════════════════════════════════════════════════ */
+.au-pane { display: flex; flex-direction: column; justify-content: flex-start; gap: 18px; padding: 40px clamp(24px, 5vw, 56px); overflow-y: auto; background: var(--surface); }
+.au--m .au-pane { padding: 24px 20px 26px; }
+.au-form { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 372px; margin: auto auto 0; }
+.au-form.shake { animation: auShake 420ms cubic-bezier(.36, .07, .19, .97); }
+@keyframes auShake { 10%, 90% { transform: translateX(-1px) } 20%, 80% { transform: translateX(2px) } 30%, 50%, 70% { transform: translateX(-4px) } 40%, 60% { transform: translateX(4px) } }
+.au-h__k { display: flex; align-items: center; gap: 8px; font-size: 10px; letter-spacing: .2em; text-transform: uppercase; color: var(--primary); font-weight: 700; margin-bottom: 9px; }
+.au-h__1 { font-family: var(--font-display); font-size: clamp(25px, 2.6vw, 31px); font-weight: 400; line-height: 1.2; letter-spacing: -.024em; margin: 0; }
+.au-h__1 em { font-style: italic; color: var(--primary); }
+.au-h__hi { font-family: var(--font-hindi); font-size: .62em; color: var(--on-surface-3); margin-left: 11px; font-style: normal; }
+.au-h__l { font-size: 13px; color: var(--on-surface-3); line-height: 1.6; margin: 11px 0 0; text-wrap: pretty; }
+.au-fields { display: flex; flex-direction: column; gap: 14px; }
+.au-steps { display: inline-flex; gap: 4px; }
+.au-steps__d { width: 14px; height: 3px; border-radius: var(--r-pill); background: var(--s-highest); }
+.au-steps__d.on { background: var(--primary); }
+.au-slide { animation: auSlide var(--dur-slow) var(--ease-emph); display: flex; flex-direction: column; gap: 16px; }
+.au-slide[data-dir="-1"] { animation-name: auSlideBack; }
+@keyframes auSlide { from { opacity: 0; transform: translateX(22px) } }
+@keyframes auSlideBack { from { opacity: 0; transform: translateX(-22px) } }
+
+/* M3 filled text field, macOS corner radius */
+.au-f { display: flex; flex-direction: column; gap: 5px; }
+.au-f__box { position: relative; display: flex; align-items: flex-end; gap: 8px; height: 56px; padding: 0 14px 9px; background: var(--s-container); border-radius: var(--r-sm); overflow: hidden; transition: background var(--dur-fast) var(--ease-standard); }
+.au-f__box:hover { background: var(--s-high); }
+.au-f.foc .au-f__box { background: var(--s-lowest); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 40%, transparent); }
+.au-f__l { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); display: flex; align-items: baseline; gap: 7px; font-size: 13.5px; color: var(--on-surface-3); pointer-events: none; transform-origin: left center; transition: transform var(--dur-base) var(--ease-emph), color var(--dur-fast), font-size var(--dur-base) var(--ease-emph); }
+.au-f__l .hi { font-family: var(--font-hindi); font-size: 12px; color: var(--on-surface-faint); }
+.au-f__l.up { transform: translateY(-19px) scale(.82); }
+.au-f.foc .au-f__l { color: var(--primary); }
+.au-f.err .au-f__l { color: var(--danger); }
+.au-f__i { flex: 1; min-width: 0; border: 0; background: none; outline: none; font-size: 14px; color: var(--on-surface); padding: 0; height: 22px; }
+.au-f__line { position: absolute; left: 0; right: 0; bottom: 0; height: 1px; background: var(--outline); transform-origin: center; transition: transform var(--dur-base) var(--ease-emph), background var(--dur-fast); }
+.au-f.foc .au-f__line { background: var(--primary); transform: scaleY(2); }
+.au-f.err .au-f__line { background: var(--danger); transform: scaleY(2); }
+.au-f.ok .au-f__line { background: var(--ok); }
+.au-f__r { display: flex; align-items: center; flex-shrink: 0; padding-bottom: 1px; }
+.au-f__err { display: flex; align-items: flex-start; gap: 6px; font-size: 11.5px; color: var(--danger); line-height: 1.45; padding-left: 2px; animation: dmFade var(--dur-fast) var(--ease-enter); }
+.au-f__err svg { width: 12px; height: 12px; flex-shrink: 0; margin-top: 1px; }
+.au-f__hint { font-size: 11px; color: var(--on-surface-faint); padding-left: 2px; line-height: 1.45; }
+.au-f__ok { display: inline-flex; color: var(--ok); }
+.au-f__no { display: inline-flex; color: var(--danger); }
+.au-f__ok svg, .au-f__no svg { width: 15px; height: 15px; }
+.au-eye { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: var(--r-xs); color: var(--on-surface-3); }
+.au-eye:hover { background: var(--s-container); color: var(--on-surface); }
+
+.au-str { display: flex; align-items: center; gap: 9px; padding-left: 2px; }
+.au-str__bars { display: flex; gap: 3px; width: 96px; flex-shrink: 0; }
+.au-str__bars span { flex: 1; height: 3px; border-radius: var(--r-pill); background: var(--s-highest); transition: background var(--dur-base) var(--ease-emph); }
+.au-str[data-s="1"] .au-str__bars span.on { background: var(--danger); }
+.au-str[data-s="2"] .au-str__bars span.on { background: var(--warn); }
+.au-str[data-s="3"] .au-str__bars span.on { background: #0082c6; }
+.au-str[data-s="4"] .au-str__bars span.on { background: var(--ok); }
+.au-str__l { font-size: 11px; color: var(--on-surface-3); }
+
+.au-btn { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%; min-height: 46px; padding: 12px 18px; border-radius: var(--r-sm); font-size: 13.5px; font-weight: 600; transition: background var(--dur-fast), transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur-fast), border-color var(--dur-fast); }
+.au-btn > span { white-space: nowrap; }
+.au-btn--fill { background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary-vivid) 72%, var(--primary))); color: var(--on-primary); box-shadow: 0 1px 2px rgba(0, 0, 0, .1); }
+.au-btn--fill:hover { transform: translateY(-1px); box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--primary) 72%, transparent); }
+.au-btn--fill:active { transform: translateY(0) scale(.99); }
+.au-btn--out { border: 1px solid var(--outline); color: var(--on-surface-2); background: var(--surface); }
+.au-btn--out:hover { background: var(--s-container); color: var(--on-surface); }
+.au-btn:disabled { opacity: .5; pointer-events: none; }
+.au-btn.loading { pointer-events: none; }
+.au-spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .34); border-top-color: #fff; animation: dmSpin .7s linear infinite; flex-shrink: 0; }
+.au-btn--out .au-spin { border-color: color-mix(in srgb, var(--on-surface-3) 30%, transparent); border-top-color: var(--primary); }
+
+.au-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.au-check { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--on-surface-2); cursor: pointer; white-space: nowrap; }
+.au-check input { position: absolute; opacity: 0; width: 0; height: 0; }
+.au-check__b { width: 17px; height: 17px; border-radius: var(--r-xs); border: 1.5px solid var(--outline); display: grid; place-items: center; color: transparent; flex-shrink: 0; transition: background var(--dur-fast), border-color var(--dur-fast); }
+.au-check__b svg { width: 12px; height: 12px; }
+.au-check input:checked + .au-check__b { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.au-check input:focus-visible + .au-check__b { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent); }
+.au-link { font-size: 12.5px; font-weight: 600; color: var(--primary); padding: 0; white-space: nowrap; }
+.au-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+.au-link--c { align-self: center; display: inline-flex; align-items: center; gap: 5px; }
+.au-link--mute { color: var(--on-surface-3); font-weight: 500; }
+.au-link svg { width: 13px; height: 13px; }
+
+.au-or { display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--on-surface-faint); text-transform: uppercase; letter-spacing: .1em; font-weight: 600; }
+.au-or::before, .au-or::after { content: ''; flex: 1; height: 1px; background: var(--outline-variant); }
+.au-social { display: flex; flex-direction: column; gap: 9px; }
+.au-social svg { flex-shrink: 0; }
+.au-fine { font-size: 11px; color: var(--on-surface-faint); line-height: 1.55; margin: 0; text-align: center; text-wrap: pretty; }
+.au-foot { text-align: center; font-size: 12.5px; color: var(--on-surface-3); max-width: 372px; margin: 0 auto; }
+.au-pow { display: flex; align-items: center; justify-content: center; gap: 8px; padding-top: 16px; margin: 4px auto auto; max-width: 372px; width: 100%; border-top: 1px solid var(--outline-variant); font-size: 9px; letter-spacing: .22em; text-transform: uppercase; color: var(--on-surface-faint); }
+.au-pow b { color: var(--on-surface-3); }
+.au-pow__d { width: 4px; height: 4px; border-radius: 50%; background: var(--primary); }
+
+.au-banner { display: flex; align-items: flex-start; gap: 9px; padding: 11px 13px; border-radius: var(--r-sm); background: var(--s-container); font-size: 12px; line-height: 1.5; color: var(--on-surface-2); text-wrap: pretty; animation: dmFade var(--dur-base) var(--ease-enter); }
+.au-banner svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; color: var(--on-surface-3); }
+.au-banner--err { background: var(--danger-container); color: var(--on-surface); }
+.au-banner--err svg { color: var(--danger); }
+.au-banner--warn { background: var(--warn-container); }
+.au-banner--warn svg { color: var(--warn); }
+.au-banner .au-link { font-size: 12px; }
+
+.au-fld { display: flex; flex-direction: column; gap: 8px; }
+.au-fld__l { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--on-surface-3); }
+.au-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.au-chip { padding: 6px 12px; border-radius: var(--r-pill); border: 1px solid var(--outline-variant); font-size: 12.5px; color: var(--on-surface-2); transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast); }
+.au-chip:hover { background: var(--s-container); }
+.au-chip.on { background: var(--primary-container); color: var(--on-primary-container); border-color: transparent; font-weight: 600; }
+.au-seg { display: flex; background: var(--s-container); border-radius: var(--r-sm); padding: 3px; gap: 2px; }
+.au-seg__b { flex: 1; padding: 8px 6px; border-radius: calc(var(--r-sm) - 2px); font-size: 12.5px; font-weight: 600; color: var(--on-surface-3); transition: background var(--dur-fast), color var(--dur-fast); }
+.au-seg__b.on { background: var(--s-lowest); color: var(--on-surface); box-shadow: var(--shadow-1); }
+
+.au-sent { display: flex; flex-direction: column; align-items: center; gap: 11px; text-align: center; padding: 6px 0 4px; }
+.au-sent__ic { width: 52px; height: 52px; border-radius: var(--r-lg); background: var(--primary-container); color: var(--on-primary-container); display: grid; place-items: center; animation: sentPop var(--dur-slow) var(--ease-spring); }
+@keyframes sentPop { from { opacity: 0; transform: scale(.8) } }
+.au-sent__ic svg { width: 22px; height: 22px; }
+.au-sent__p { font-size: 13px; color: var(--on-surface-2); line-height: 1.6; margin: 0; max-width: 34ch; text-wrap: pretty; }
+.au-sent__hint { font-size: 11.5px; color: var(--on-surface-faint); line-height: 1.5; max-width: 36ch; text-wrap: pretty; }
+.au-done { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--r-sm); background: var(--ok-container); font-size: 12.5px; color: var(--on-surface); animation: dmFade var(--dur-base) var(--ease-enter); }
+.au-done__ic { width: 26px; height: 26px; border-radius: 50%; background: var(--ok); color: #fff; display: grid; place-items: center; flex-shrink: 0; animation: sentPop var(--dur-slow) var(--ease-spring); }
+.au-done__ic svg { width: 15px; height: 15px; }
+
+.au-invite { display: flex; gap: 13px; padding: 15px; border-radius: var(--r-lg); background: var(--s-low); border: 1px solid var(--outline-variant); }
+.au-invite__logo { flex-shrink: 0; }
+.au-invite__by { display: flex; align-items: center; gap: 7px; margin-top: 10px; font-size: 12px; color: var(--on-surface-2); flex-wrap: wrap; }
+.au-invite__g { display: flex; align-items: center; gap: 6px; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--outline-variant); font-size: 10.5px; color: var(--on-surface-faint); flex-wrap: wrap; }
+
+/* Narrow viewports stack the panel above the form — it never disappears, or the
+   sign-in loses the brand entirely. Only the phone surfaces swap to the compact
+   header, which is a surface decision, not a width one. */
+@media (max-width: 1023px) {
+  .auhost { padding: 0; }
+  .au { border: 0; border-radius: 0; min-height: 100vh; grid-template-columns: 1fr; grid-template-rows: auto 1fr; box-shadow: none; }
+  .au--m { width: 100%; }
+  .au-brand { padding: 24px; gap: 18px; }
+  .au-brand__mid { max-width: none; }
+  .au-brand__h { font-size: 27px; }
+  .au-brand__wm { font-size: 190px; bottom: -14%; }
+  .au-pane { padding: 26px 22px 28px; }
+}
+.au--m .au-brand { display: none; }
+[data-surface-kind="mweb"] .au-f__box, [data-surface-kind="mapp"] .au-f__box { height: 58px; }
+[data-surface-kind="mweb"] .au-btn, [data-surface-kind="mapp"] .au-btn { min-height: 50px; }
+[data-surface-kind="mweb"] .au-link, [data-surface-kind="mapp"] .au-link { min-height: 44px; display: inline-flex; align-items: center; }

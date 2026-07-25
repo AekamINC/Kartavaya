@@ -1,0 +1,264 @@
+/* Kartavaya — document brand layer
+   One stylesheet, many tenants. Each org sets its identity via [data-org]
+   on <html>; every document below reads only these tokens, never hex.
+   ───────────────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=Inter:wght@400;500;600;700&family=Tiro+Devanagari+Hindi&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --doc-font-display: "Newsreader", Georgia, serif;
+  --doc-font-ui: Inter, system-ui, sans-serif;
+  --doc-font-hindi: "Tiro Devanagari Hindi", serif;
+  --doc-font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --doc-ink: #14171A;
+  --doc-ink-2: #464B52;
+  --doc-ink-3: #6E747C;
+  --doc-ink-faint: #9AA0A8;
+  --doc-rule: #D9D5CA;
+  --doc-rule-soft: #EAE7DE;
+  --doc-tint: #F7F5EF;
+
+  --doc-pad: 0.62in;
+  --doc-gap: 20px;
+}
+
+/* ── Tenant accents ──────────────────────────────────────────────────
+   These map to a brand_color on the org profile. NOTE: the staging
+   /v1/org/profile schema has no colour field yet — see the field map in
+   Document Kit.html. Until it does, accent falls back to Kartavaya teal.
+   ──────────────────────────────────────────────────────────────────── */
+[data-org="aekam"]     { --org-accent: #04837A; --org-accent-2: #0082c6; --org-tint: #E8F5F2; }
+[data-org="saraswati"] { --org-accent: #9A5324; --org-accent-2: #C2703C; --org-tint: #FBF0E6; }
+[data-org="nirmal"]    { --org-accent: #3F4FB8; --org-accent-2: #5b6ee0; --org-tint: #ECEEFB; }
+
+/* ══ Shared document furniture ════════════════════════════════════════ */
+.page {
+  padding: var(--doc-pad);
+  font-family: var(--doc-font-ui);
+  font-size: 9.5pt;
+  line-height: 1.5;
+  color: var(--doc-ink);
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+}
+.page * { box-sizing: border-box; }
+
+/* Letterhead */
+.lh { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: start; padding-bottom: 13px; border-bottom: 2px solid var(--org-accent); }
+/* Logo slot — an org-uploaded image. Never tinted, never gradient-filled,
+   never cropped: any aspect ratio has to sit correctly on white. */
+.lh__logo { height: 46px; max-width: 170px; display: flex; align-items: center; flex-shrink: 0; }
+.lh__logo img { max-height: 46px; max-width: 170px; width: auto; height: auto; object-fit: contain; display: block; }
+/* Fallback when logo_url is empty — initial on the org accent */
+.lh__mark { width: 46px; height: 46px; border-radius: 10px; background: linear-gradient(140deg, var(--org-accent-2), var(--org-accent)); color: #fff; display: grid; place-items: center; font-family: var(--doc-font-display); font-size: 22px; font-weight: 600; line-height: 1; flex-shrink: 0; }
+
+/* Unset profile field — visible, never silent */
+.unset { color: #A02318; font-weight: 600; font-style: normal; }
+.unset::before { content: '⚠ '; }
+.gap-note { display: flex; align-items: flex-start; gap: 9px; padding: 9px 11px; background: #FADAD6; border-radius: 6px; font-size: 7.5pt; color: #7A1B12; line-height: 1.5; margin-top: 11px; break-inside: avoid; }
+.gap-note b { display: block; font-size: 8pt; }
+.lh__who { min-width: 0; }
+.lh__name { font-family: var(--doc-font-display); font-size: 17pt; font-weight: 600; line-height: 1.1; letter-spacing: -0.01em; }
+.lh__legal { font-size: 7.5pt; color: var(--doc-ink-3); margin-top: 3px; line-height: 1.45; }
+.lh__ids { font-family: var(--doc-font-mono); font-size: 7pt; color: var(--doc-ink-2); margin-top: 4px; letter-spacing: -0.01em; }
+.lh__doc { text-align: right; flex-shrink: 0; }
+.lh__kind { font-size: 8pt; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; color: var(--org-accent); }
+.lh__kind-hi { font-family: var(--doc-font-hindi); font-size: 11pt; color: var(--doc-ink-3); letter-spacing: 0; text-transform: none; font-weight: 400; display: block; margin-top: 1px; }
+.lh__no { font-family: var(--doc-font-mono); font-size: 12pt; font-weight: 500; margin-top: 5px; }
+
+/* Meta strip */
+.meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--doc-rule-soft); }
+.meta--3 { grid-template-columns: repeat(3, 1fr); }
+.meta__l { font-size: 6.8pt; letter-spacing: 0.13em; text-transform: uppercase; color: var(--doc-ink-3); font-weight: 700; }
+.meta__v { font-size: 9.5pt; font-weight: 500; margin-top: 2px; }
+.meta__v--mono { font-family: var(--doc-font-mono); font-size: 8.5pt; }
+
+/* Parties */
+.parties { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding: 13px 0; border-bottom: 1px solid var(--doc-rule-soft); }
+.party__l { font-size: 6.8pt; letter-spacing: 0.13em; text-transform: uppercase; color: var(--doc-ink-3); font-weight: 700; margin-bottom: 4px; }
+.party__n { font-size: 10.5pt; font-weight: 600; }
+.party__a { font-size: 8.5pt; color: var(--doc-ink-2); line-height: 1.5; margin-top: 2px; }
+.party__id { font-family: var(--doc-font-mono); font-size: 7.5pt; color: var(--doc-ink-2); margin-top: 3px; }
+
+/* Line-item table */
+.lines { width: 100%; border-collapse: collapse; margin-top: 13px; font-size: 9pt; }
+.lines thead th { background: var(--doc-tint); font-size: 6.8pt; letter-spacing: 0.11em; text-transform: uppercase; color: var(--doc-ink-3); font-weight: 700; text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--doc-rule); }
+.lines td { padding: 8px; border-bottom: 1px solid var(--doc-rule-soft); vertical-align: top; }
+.lines tbody tr { break-inside: avoid; }
+.num { text-align: right; font-family: var(--doc-font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lines__desc { font-weight: 500; }
+.lines__sub { font-size: 7.5pt; color: var(--doc-ink-3); margin-top: 1px; }
+
+/* Totals */
+.totals { margin-top: 14px; margin-left: auto; width: 62%; max-width: 3.5in; }
+.totals__row { display: flex; justify-content: space-between; gap: 16px; padding: 5px 0; font-size: 9pt; }
+.totals__row span:first-child { color: var(--doc-ink-2); }
+.totals__row--grand { border-top: 1.5px solid var(--doc-ink); margin-top: 5px; padding-top: 8px; font-size: 12pt; font-weight: 700; }
+.totals__row--grand span:last-child { color: var(--org-accent); }
+.words { margin-top: 9px; padding: 8px 10px; background: var(--doc-tint); border-radius: 5px; font-size: 8pt; }
+.words b { text-transform: capitalize; }
+
+/* Blocks */
+.block { break-inside: avoid; }
+.block__l { font-size: 6.8pt; letter-spacing: 0.13em; text-transform: uppercase; color: var(--doc-ink-3); font-weight: 700; margin-bottom: 5px; }
+.terms { font-size: 7.5pt; color: var(--doc-ink-2); line-height: 1.55; }
+.terms li { margin-bottom: 2px; }
+.sign { text-align: right; }
+.sign__line { border-top: 1px solid var(--doc-ink); width: 1.9in; margin: 34px 0 0 auto; padding-top: 4px; font-size: 8pt; }
+
+/* Foot */
+.foot { margin-top: auto; padding-top: 11px; border-top: 1px solid var(--doc-rule-soft); display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; font-size: 7pt; color: var(--doc-ink-3); }
+.foot__brand { font-family: var(--doc-font-hindi); color: var(--org-accent); font-size: 9pt; }
+
+/* Chips + QR */
+.dchip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 7px; border-radius: 99px; font-size: 7pt; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+.dchip--ok { background: #DCF0E4; color: #17603A; }
+.dchip--due { background: #FBE6C8; color: #8A5300; }
+.dchip--over { background: #FADAD6; color: #A02318; }
+.qr { width: 74px; height: 74px; flex-shrink: 0; }
+
+/* Scroll hint is phone-only */
+.hint { display: none; }
+@media print { .hint { display: none !important; } }
+
+/* Screen-only tenant switcher */
+.switcher { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 99; display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: rgba(20,23,26,.9); backdrop-filter: blur(12px); border-radius: 99px; box-shadow: 0 8px 28px -10px rgba(0,0,0,.5); font-family: var(--doc-font-ui); }
+.switcher__l { font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,.5); font-weight: 700; }
+.switcher button { border: 0; background: rgba(255,255,255,.1); color: rgba(255,255,255,.75); font-size: 11.5px; font-weight: 600; padding: 5px 11px; border-radius: 99px; cursor: pointer; font-family: inherit; }
+.switcher button.on { background: #fff; color: #14171A; }
+@media print { .switcher { display: none !important; } }
+
+
+/* ══ Contact line — email · phone · website from the org profile ══════ */
+.lh__contact { font-size: 7.5pt; color: var(--doc-ink-3); margin-top: 3px; }
+.lh__contact span + span::before { content: ' · '; color: var(--doc-rule); }
+
+/* ══ Bank block — every bank_details field ════════════════════════════ */
+.bank { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 8pt; color: var(--doc-ink-2); }
+.bank dt { color: var(--doc-ink-3); }
+.bank dd { margin: 0; font-family: var(--doc-font-mono); font-size: 7.5pt; }
+
+/* ══ Invoice note — org-authored footer line ══════════════════════════ */
+.orgnote { font-style: italic; font-family: var(--doc-font-display); font-size: 9pt; color: var(--doc-ink-2); }
+
+
+/* ══ Phone reading layer — iOS and Android ═════════════════════════════
+   Screen only. Print geometry is owned by <doc-page> and must not change:
+   every rule below is inside @media screen, so a PDF exported from a phone
+   is byte-identical to one exported from a desktop.
+
+   The choice made here is REFLOW, not scale. A Letter page shrunk to 390px
+   is 5pt type — technically the whole document, practically unreadable. */
+@media screen and (max-width: 767px) {
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+  /* doc-page keeps its paper geometry in shadow DOM: .sheet reads
+     var(--doc-page-w), and ::slotted(.page) sets width/height from the same
+     vars with !important. An outer-document width rule loses to that, so do
+     not write one — drive the variables instead. They inherit through the
+     shadow boundary and the !important declaration then resolves to fluid. */
+  doc-page {
+    --doc-page-w: 100%;
+    --doc-page-h: auto;
+    --doc-page-ar: auto;
+    --doc-page-margin: 0;
+    /* These three are shadow :host declarations; an outer rule on the host
+       element outranks :host, so no !important is needed. */
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    background: var(--doc-bg, #fff);
+  }
+  .page {
+    box-shadow: none;
+    border-radius: 0;
+    padding: calc(16px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom));
+    font-size: 10pt;               /* up from 9pt — phone reading distance */
+    line-height: 1.55;
+  }
+  .page + .page { border-top: 8px solid var(--doc-tint); }
+
+  /* Letterhead stacks. The logo and the document kind stay on one line so
+     the reader still gets "who + what" in the first 44px. */
+  .lh { grid-template-columns: auto 1fr; gap: 11px 12px; padding-bottom: 11px; }
+  .lh__logo { height: 38px; max-width: 132px; }
+  .lh__logo img { max-height: 38px; max-width: 132px; }
+  .lh__mark { width: 38px; height: 38px; }
+  .lh__doc { grid-column: 2; grid-row: 1; text-align: right; align-self: center; }
+  .lh__who { grid-column: 1 / -1; grid-row: 2; }
+  .lh__name { font-size: 15pt; }
+  .lh__legal, .lh__ids, .lh__contact { font-size: 8pt; }
+  .lh__no { font-size: 13pt; }
+  .lh__contact { display: flex; flex-wrap: wrap; gap: 3px 10px; }
+
+  .meta, .meta--3 { grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+  .meta__l { font-size: 7.2pt; }
+  .meta__v { font-size: 10pt; }
+  .parties { grid-template-columns: 1fr; gap: 14px; }
+
+  /* Tables scroll sideways rather than stacking. In a statutory document the
+     column a figure sits under IS the meaning — collapsing GSTR-3B into
+     label/value cards would make the return unreadable and unverifiable. */
+  /* overflow-y must be stated: authoring only overflow-x makes the other axis
+     compute to auto, which puts a stray vertical scrollbar inside the table. */
+  .lines { display: block; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; font-size: 9.5pt; }
+  .lines thead, .lines tbody { display: table; width: 100%; min-width: 520px; }
+  .lines thead th, .lines td { padding: 8px 9px; }
+  .lines__sub { font-size: 8pt; }
+  /* Scroll affordance: a fading right edge on the table plus a one-line hint.
+     Hidden on desktop and in print, where nothing scrolls. */
+  .scroller { position: relative; }
+  .scroller::after { content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 26px; pointer-events: none; background: linear-gradient(to right, transparent, var(--doc-bg, #fff)); }
+  .hint { display: block !important; font-size: 8pt; color: var(--doc-ink-3); margin-top: 5px; font-style: italic; }
+
+  .totals { width: 100%; max-width: none; margin-top: 16px; }
+  .totals__row { font-size: 10pt; padding: 6px 0; }
+  .totals__row--grand { font-size: 13pt; }
+  .words { font-size: 9pt; }
+  .terms { font-size: 9pt; line-height: 1.6; }
+  .block__l, .party__l { font-size: 7.2pt; }
+  .party__a { font-size: 9.5pt; }
+  .party__id { font-size: 8pt; }
+
+  /* Signature blocks stack and stop being right-aligned — on a phone a
+     right-aligned rule reads as a stray line. */
+  .sign, .sign__line { text-align: left; }
+  .sign__line { width: 100%; margin: 26px 0 0; }
+
+  .foot { flex-direction: column; align-items: flex-start; gap: 6px; font-size: 8pt; }
+  .gap-note { font-size: 8.5pt; }
+
+}
+
+/* Tenant switcher goes sticky wherever the page is full-bleed — below 1024px.
+   Fixed positioning is also unreliable on iOS Safari, which moves fixed
+   elements as the address bar collapses. */
+@media screen and (max-width: 1023px) {
+  .switcher {
+    position: sticky; top: 0; left: auto; transform: none;
+    width: 100%; border-radius: 0; justify-content: center; flex-wrap: wrap;
+    padding: calc(7px + env(safe-area-inset-top)) 10px 7px;
+  }
+  .switcher button { min-height: 40px; padding: 8px 14px; font-size: 12.5px; }
+}
+@media screen and (max-width: 767px) {
+  .switcher__l { display: none; }
+}
+
+/* Tablet — two columns survive, the page just loses its desk margins. */
+@media screen and (min-width: 768px) and (max-width: 1023px) {
+  doc-page { --doc-page-w: 100%; --doc-page-h: auto; --doc-page-ar: auto; --doc-page-margin: 0; min-width: 0; min-height: 0; padding: 0; }
+  .page { padding: 26px 24px; box-shadow: none; border-radius: 0; }
+  .lines { display: block; overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; }
+  .lines thead, .lines tbody { display: table; width: 100%; min-width: 560px; }
+  .totals { width: 78%; }
+}
+
+/* Android Chrome and iOS Safari both honour this; it stops the whole page
+   being pinch-zoomed out to fit the released width. */
+@media screen and (max-width: 767px) {
+  .switcher, .page { touch-action: pan-y pinch-zoom; }
+}

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en" data-org="aekam">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Document kit — Kartavaya</title>
+<link rel="stylesheet" href="brand.css">
+<style>
+body{margin:0;background:#EDEAE1;font-family:var(--doc-font-ui);color:var(--doc-ink);padding:36px 28px 60px}
+.wrap{max-width:1180px;margin:0 auto}
+.hd{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;padding-bottom:16px;border-bottom:2px solid var(--org-accent)}
+.kick{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--org-accent);font-weight:700}
+h1{font-family:var(--doc-font-display);font-size:34px;font-weight:500;margin:6px 0 0;letter-spacing:-.02em;line-height:1.2}
+h1 .hi{font-family:var(--doc-font-hindi);color:var(--org-accent);font-size:.8em}
+.lede{font-size:14px;color:var(--doc-ink-2);margin:10px 0 0;max-width:66ch;line-height:1.6;text-wrap:pretty}
+.orgbar{display:flex;gap:8px;flex-wrap:wrap}
+.orgbtn{display:flex;align-items:center;gap:8px;padding:8px 13px;border:1px solid var(--doc-rule);border-radius:10px;background:#fff;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--doc-ink-2)}
+.orgbtn.on{border-color:var(--org-accent);background:var(--org-tint);color:var(--doc-ink)}
+.orgbtn i{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-family:var(--doc-font-hindi);font-size:13px;color:#fff;font-style:normal}
+h2{font-family:var(--doc-font-display);font-size:20px;font-weight:500;margin:36px 0 4px}
+.sub{font-size:13px;color:var(--doc-ink-3);margin:0 0 16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(238px,1fr));gap:14px}
+.card{background:#fff;border:1px solid var(--doc-rule);border-radius:12px;overflow:hidden;text-decoration:none;color:inherit;display:flex;flex-direction:column;transition:box-shadow .16s,transform .16s}
+a.card:hover{box-shadow:0 12px 32px -14px rgba(20,23,26,.28);transform:translateY(-2px)}
+.card__prev{height:132px;background:var(--doc-tint);border-bottom:1px solid var(--doc-rule-soft);padding:13px 14px;overflow:hidden;position:relative}
+.card__prev::after{content:'';position:absolute;inset:auto 0 0 0;height:38px;background:linear-gradient(transparent,var(--doc-tint))}
+.mini-lh{display:flex;align-items:center;gap:7px;padding-bottom:6px;border-bottom:1.5px solid var(--org-accent)}
+.mini-mark{width:17px;height:17px;border-radius:4px;background:linear-gradient(140deg,var(--org-accent-2),var(--org-accent));color:#fff;display:grid;place-items:center;font-family:var(--doc-font-hindi);font-size:10px;flex-shrink:0}
+.mini-n{font-family:var(--doc-font-display);font-size:9.5px;font-weight:600}
+.mini-k{margin-left:auto;font-size:6px;letter-spacing:.13em;text-transform:uppercase;color:var(--org-accent);font-weight:700}
+.bar{height:4px;background:var(--doc-rule-soft);border-radius:2px;margin-top:6px}
+.bar.w80{width:80%}.bar.w60{width:60%}.bar.w45{width:45%}.bar.w70{width:70%}
+.bar.dk{background:var(--doc-rule)}
+.card__b{padding:13px 14px 15px;display:flex;flex-direction:column;gap:5px;flex:1}
+.card__t{font-size:14px;font-weight:600;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.card__t .hi{font-family:var(--doc-font-hindi);font-size:12.5px;color:var(--org-accent);font-weight:400}
+.card__d{font-size:12px;color:var(--doc-ink-3);line-height:1.5;text-wrap:pretty}
+.card__f{margin-top:auto;padding-top:9px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tagx{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--doc-tint);color:var(--doc-ink-3)}
+.tagx--pdf{background:#FADAD6;color:#A02318}
+.tagx--xl{background:#DCF0E4;color:#17603A}
+.tagx--json{background:#E4E6FA;color:#3A3F8F}
+.tagx--soon{background:transparent;color:var(--doc-ink-faint);border:1px dashed var(--doc-rule)}
+.card--soon{opacity:.72;border-style:dashed}
+.note{margin-top:34px;padding:16px 18px;background:#fff;border:1px solid var(--doc-rule);border-left:3px solid var(--org-accent);border-radius:10px;font-size:12.5px;color:var(--doc-ink-2);line-height:1.6;max-width:78ch}
+.note b{color:var(--doc-ink)}
+code{font-family:var(--doc-font-mono);font-size:11px;background:var(--doc-tint);padding:1px 5px;border-radius:4px}
+</style>
+<style id="__om-edit-overrides"></style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hd">
+<div>
+<div class="kick">Kartavaya · दस्तावेज़</div>
+<h1>Document kit <span class="hi">पत्रावली</span></h1>
+<p class="lede">Every file the system hands to a user. One brand layer, many tenants — each org's logo, accent, legal identity and footer come from tokens, so a document never hard-codes a colour or a company name.</p>
+</div>
+<div>
+<div class="kick" style="margin-bottom:7px">Preview as</div>
+<div class="orgbar">
+<button class="orgbtn on" data-o="aekam"><i style="background:linear-gradient(140deg,#0082c6,#04837A)">क</i>Aekam Inc</button>
+<button class="orgbtn" data-o="saraswati"><i style="background:linear-gradient(140deg,#C2703C,#9A5324)">स</i>Saraswati Textiles</button>
+<button class="orgbtn" data-o="nirmal"><i style="background:linear-gradient(140deg,#5b6ee0,#3F4FB8)">न</i>Nirmal Exports</button>
+</div>
+</div>
+</header>
+
+<h2>Statutory — PDF, legally formatted</h2>
+<p class="sub">Fixed-layout, print-owned. Field sets follow the CGST Rules; a missing field blocks e-invoice validation, so these are validated before they can be issued.</p>
+<div class="grid">
+
+<a class="card" href="Tax Invoice.html">
+<div class="card__prev">
+<div class="mini-lh"><span class="mini-mark">क</span><span class="mini-n" data-org-name>Aekam Inc</span><span class="mini-k">Tax Invoice</span></div>
+<div class="bar w60" style="margin-top:9px"></div><div class="bar w45"></div>
+<div class="bar dk w80" style="margin-top:9px;height:7px"></div>
+<div class="bar w70"></div><div class="bar w60"></div><div class="bar w70"></div>
+<div class="bar dk w45" style="margin-left:auto;margin-top:9px"></div>
+</div>
+<div class="card__b">
+<div class="card__t">Tax invoice <span class="hi">कर बीजक</span></div>
+<div class="card__d">GSTIN pair, HSN/SAC per line, place of supply, CGST/SGST or IGST split, IRN and verification QR.</div>
+<div class="card__f"><span class="tagx tagx--pdf">PDF</span><span class="tagx tagx--json">e-Invoice JSON</span><span class="tagx">1 page</span></div>
+</div>
+</a>
+
+<a class="card" href="Payslip.html">
+<div class="card__prev">
+<div class="mini-lh"><span class="mini-mark">क</span><span class="mini-n" data-org-name>Aekam Inc</span><span class="mini-k">Payslip</span></div>
+<div class="bar w60" style="margin-top:9px"></div>
+<div style="display:flex;gap:8px;margin-top:9px"><div style="flex:1"><div class="bar dk"></div><div class="bar w80"></div><div class="bar w70"></div><div class="bar w60"></div></div><div style="flex:1"><div class="bar dk"></div><div class="bar w70"></div><div class="bar w45"></div><div class="bar w60"></div></div></div>
+<div class="bar dk w45" style="margin-left:auto;margin-top:9px"></div>
+</div>
+<div class="card__b">
+<div class="card__t">Payslip <span class="hi">वेतन पर्ची</span></div>
+<div class="card__d">Earnings and deductions side by side, UAN and PF identifiers, leave balance, and the attendance source it was computed from.</div>
+<div class="card__f"><span class="tagx tagx--pdf">PDF</span><span class="tagx">Per employee</span><span class="tagx">1 page</span></div>
+</div>
+</a>
+
+<a class="card" href="Statement of Account.html">
+<div class="card__prev">
+<div class="mini-lh"><span class="mini-mark">क</span><span class="mini-n" data-org-name>Aekam Inc</span><span class="mini-k">Statement</span></div>
+<div class="bar w60" style="margin-top:9px"></div>
+<div class="bar dk w80" style="margin-top:9px;height:7px"></div>
+<div class="bar w70"></div><div class="bar w70"></div><div class="bar w60"></div><div class="bar w70"></div>
+<div style="display:flex;gap:5px;margin-top:9px"><div class="bar dk" style="flex:1"></div><div class="bar" style="flex:1;background:#FBE6C8"></div><div class="bar" style="flex:1"></div><div class="bar" style="flex:1"></div></div>
+</div>
+<div class="card__b">
+<div class="card__t">Statement of account <span class="hi">लेखा विवरण</span></div>
+<div class="card__d">Running ledger with ageing buckets and the MSME 45-day threshold called out by date.</div>
+<div class="card__f"><span class="tagx tagx--pdf">PDF</span><span class="tagx tagx--xl">XLSX</span><span class="tagx">Per party</span></div>
+</div>
+</a>
+
+<a class="card" href="GSTR-3B Summary.html">
+<div class="card__prev">
+<div class="mini-lh"><span class="mini-mark">क</span><span class="mini-n" data-org-name>Aekam Inc</span><span class="mini-k">GSTR-3B</span></div>
+<div class="bar w45" style="margin-top:9px"></div>
+<div class="bar dk w80" style="margin-top:9px;height:7px"></div>
+<div class="bar w70"></div><div class="bar w60"></div><div class="bar w45"></div>
+</div>
+<div class="card__b">
+<div class="card__t">GSTR-3B summary <span class="hi">विवरणी</span></div>
+<div class="card__d">Working paper for the monthly return — 3.1 outward supplies, eligible ITC, and payment of tax, with the two invoices held back for missing HSN called out by name.</div>
+<div class="card__f"><span class="tagx tagx--pdf">PDF</span><span class="tagx tagx--json">JSON</span><span class="tagx">1 page</span></div>
+</div>
+</a>
+
+<a class="card" href="TDS Challan.html">
+<div class="card__prev">
+<div class="mini-lh"><span class="mini-mark">क</span><span class="mini-n" data-org-name>Aekam Inc</span><span class="mini-k">TDS challan</span></div>
+<div class="bar w45" style="margin-top:9px"></div>
+<div class="bar dk w80" style="margin-top:9px;height:7px"></div>
+<div class="bar w70"></div><div class="bar w60"></div><div class="bar w45"></div>
+</div>
+<div class="card__b">
+<div class="card__t">TDS challan <span class="hi">कर चालान</span></div>
+<div class="card__d">ITNS-281 counterfoil with the section-wise deduction schedule, the amount breakdown as deposited, and the CIN triple.</div>
+<div class="card__f"><span class="tagx tagx--pdf">PDF</span><span class="tagx">Per month</span><span class="tagx">1 page</span></div>
+</div>
+</a>
+
+<div class="card card--soon">
+<div class="card__prev">
+<div class="mini-lh"><span class="mini-mark">क</span><span class="mini-n" data-org-name>Aekam Inc</span><span class="mini-k">Challan</span></div>
+<div class="bar w60" style="margin-top:9px"></div>
+<div class="bar dk w80" style="margin-top:9px;height:7px"></div>
+<div class="bar w70"></div><div class="bar w60"></div>
+</div>
+<div class="card__b">
+<div class="card__t">Delivery challan <span class="hi">प्रेषण पत्र</span></div>
+<div class="card__d">Goods movement without a tax invoice, with e-way bill number and vehicle details.</div>
+<div class="card__f"><span class="tagx tagx--soon">Not built yet</span></div>
+</div>
+</div>
+
+</div>
+
+<h2>Commercial — sent to clients</h2>
+<p class="sub">Client-facing, so the brand layer matters most here. All three are signable from the portal without printing.</p>
+<div class="grid">
+
+<a class="card" href="Quotation.html">
+<div class="card__prev">
+<div class="mini-lh"><span class="mini-mark">क</span><span class="mini-n" data-org-name>Aekam Inc</span><span class="mini-k">Quotation</span></div>
+<div class="bar w60" style="margin-top:9px"></div>
+<div class="bar dk w80" style="margin-top:9px;height:7px"></div>
+<div class="bar w70"></div><div class="bar w60"></div><div class="bar w70"></div>
+<div class="bar" style="margin-top:9px;height:14px;border-radius:5px;background:var(--org-tint)"></div>
+</div>
+<div class="card__b">
+<div class="card__t">Quotation <span class="hi">प्रस्ताव</span></div>
+<div class="card__d">Scope, staged payment schedule, and an acceptance block. Signing it creates the engagement and its first invoice.</div>
+<div class="card__f"><span class="tagx tagx--pdf">PDF</span><span class="tagx">Signable</span><span class="tagx">1 page</span></div>
+</div>
+</a>
+
+<a class="card" href="Service Agreement.html">
+<div class="card__prev">
+<div class="mini-lh"><span class="mini-mark">क</span><span class="mini-n" data-org-name>Aekam Inc</span><span class="mini-k">Agreement</span></div>
+<div class="bar w45" style="margin-top:9px"></div>
+<div class="bar w80" style="margin-top:9px"></div><div class="bar w70"></div><div class="bar w80"></div><div class="bar w60"></div>
+<div class="bar dk w45" style="margin-top:9px"></div>
+</div>
+<div class="card__b">
+<div class="card__t">Signed agreement <span class="hi">अनुबंध</span></div>
+<div class="card__d">Two-page execution copy — scope, milestone-linked payment schedule, confidentiality, IP, liability cap and the dual signature block.</div>
+<div class="card__f"><span class="tagx tagx--pdf">PDF</span><span class="tagx">Signable</span><span class="tagx">2 pages</span></div>
+</a>
+</div>
+
+<a class="card" href="Project Report.html">
+<div class="card__prev">
+<div class="mini-lh"><span class="mini-mark">क</span><span class="mini-n" data-org-name>Aekam Inc</span><span class="mini-k">Report</span></div>
+<div class="bar w60" style="margin-top:9px"></div>
+<div style="display:flex;gap:4px;align-items:flex-end;height:30px;margin-top:9px"><div style="flex:1;height:50%;background:var(--org-tint);border-radius:2px 2px 0 0"></div><div style="flex:1;height:72%;background:var(--org-tint);border-radius:2px 2px 0 0"></div><div style="flex:1;height:60%;background:var(--org-tint);border-radius:2px 2px 0 0"></div><div style="flex:1;height:88%;background:var(--org-accent);border-radius:2px 2px 0 0"></div></div>
+<div class="bar w70" style="margin-top:8px"></div>
+</div>
+<div class="card__b">
+<div class="card__t">Client project report <span class="hi">प्रतिवेदन</span></div>
+<div class="card__d">Progress pack for the client — position at a glance, milestone forecast against plan, ranked risks with owners, and the decisions being asked for by date.</div>
+<div class="card__f"><span class="tagx tagx--pdf">PDF</span><span class="tagx">Per period</span><span class="tagx">1 page</span></div>
+</a>
+</div>
+
+</div>
+
+<div class="note">
+<b>How the tenant layer works.</b> Each organisation sets one attribute — <code>data-org="saraswati"</code> — and <code>brand.css</code> resolves its accent, tint, mark glyph and gradient from that. Documents reference <code>var(--org-accent)</code> and never a literal colour, so onboarding a new tenant is one block of six tokens plus its legal details. Switch tenant above, then open any document: the same file re-brands with no change to its markup.
+<br><br>
+<b>Why these are print-owned.</b> Statutory documents carry legal consequences if a field is clipped or a page breaks mid-table, so the fixed-layout ones pin their own page box and print at true size — letter or A4 — with no browser date/URL chrome. Long documents whose length varies, like a signed agreement, flow instead and let the print engine paginate.
+</div>
+
+</div>
+
+<script>
+const ORGS={aekam:{name:'Aekam Inc',mark:'क'},saraswati:{name:'Saraswati Textiles',mark:'स'},nirmal:{name:'Nirmal Exports',mark:'न'}};
+document.querySelectorAll('.orgbtn').forEach(b=>b.addEventListener('click',()=>{
+  const d=ORGS[b.dataset.o];
+  document.documentElement.dataset.org=b.dataset.o;
+  document.querySelectorAll('.orgbtn').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('[data-org-name]').forEach(e=>e.textContent=d.name);
+  document.querySelectorAll('.mini-mark').forEach(e=>e.textContent=d.mark);
+}));
+</script>
+</body>
+</html>

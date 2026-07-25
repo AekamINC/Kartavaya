@@ -1,0 +1,215 @@
+/* Scale variants — dense per-project table, roll-up row, movers snapshot. */
+
+/* ── Email — dense rollup row ──────────────────────────────────── */
+.rp__table--dense th{ padding:6px 6px; }
+.rp__table--dense td{ padding:9px 6px; }
+.rp__table--dense .rp__td-num{ font-size:16px; }
+.rp__proj--dense{ gap:8px; }
+.rp__proj--dense .rp__proj-name{ font-size:13px; }
+.rp__proj-client{
+  font-size:11px; color:var(--ink-3); margin-top:2px;
+  letter-spacing:0.02em;
+}
+.rp__rollup{
+  background:linear-gradient(180deg,
+    color-mix(in srgb, var(--k-primary) 5%, transparent),
+    transparent);
+}
+.rp__rollup td{
+  border-top:1px solid var(--rule);
+  border-bottom:0;
+}
+.rp__rollup-row{
+  display:flex; align-items:center; gap:10px;
+}
+.rp__rollup-bullets{
+  display:inline-flex; gap:3px;
+  flex-shrink:0;
+}
+.rp__rollup-bullets i{
+  width:6px; height:6px; border-radius:2px;
+  display:inline-block;
+}
+.rp__rollup-name{
+  font-size:13px; font-weight:600;
+  color:var(--ink); line-height:1.2;
+  font-style:italic;
+  font-family:var(--font-display);
+}
+.rp__rollup-hint{
+  font-size:11px; color:var(--ink-3);
+  margin-top:2px;
+  font-family:var(--font-ui);
+  font-style:normal;
+}
+
+/* ── PDF — dense table ─────────────────────────────────────────── */
+.pdf-dense th{ padding:7px 6px; font-size:9px; }
+.pdf-dense td{ padding:8px 6px; }
+.pdf-dense td.num{ font-size:14px; }
+.pdf-dense th:first-child, .pdf-dense td:first-child{ width:32px; }
+.pdf-dense th.num, .pdf-dense td.num{ width:46px; }
+.pdf-dense th:last-child, .pdf-dense td:last-child{ width:120px; }
+.pdf-dense__rank{
+  font-family:var(--font-mono);
+  font-size:10px; color:var(--ink-faint);
+  font-feature-settings:"tnum" 1;
+}
+.pdf-dense__proj{
+  display:flex; align-items:center; gap:9px;
+  min-width:0;
+}
+.pdf-dense__proj > i{
+  width:7px; height:7px; border-radius:2px; flex-shrink:0;
+}
+.pdf-dense__proj > div{ min-width:0; }
+.pdf-dense__name{
+  font-size:12.5px; font-weight:600; color:var(--ink);
+  line-height:1.2;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.pdf-dense__hi{
+  font-size:10.5px; color:var(--ink-3);
+  margin-top:2px;
+}
+.pdf-dense__hi span{
+  font-family:var(--font-ui);
+  font-style:normal;
+  color:var(--ink-faint);
+  margin-left:2px;
+}
+
+.pdf-dense__foot{
+  margin-top:auto;
+  padding-top:14px;
+  border-top:1px dashed var(--rule);
+  font-size:11px; color:var(--ink-3);
+  font-style:italic;
+  font-family:var(--font-display);
+}
+
+/* Pagination "1 of 2" inline tag on the H2 */
+.pdf-dense__pg{
+  display:inline-block;
+  margin-left:10px;
+  font-family:var(--font-mono);
+  font-size:11px;
+  color:var(--ink-3);
+  background:var(--bg-soft);
+  border:1px solid var(--rule);
+  padding:2px 8px;
+  border-radius:99px;
+  vertical-align:middle;
+  letter-spacing:0.04em;
+  font-weight:500;
+}
+.pdf-dense__pgfoot{
+  margin-top:auto;
+  padding-top:14px;
+  border-top:1px solid var(--rule);
+  display:flex; justify-content:space-between;
+  font-size:11.5px; color:var(--ink-2);
+  font-family:var(--font-display);
+  font-style:italic;
+}
+.pdf-dense__pgfoot-cite{
+  font-family:var(--font-mono);
+  font-style:normal;
+  color:var(--ink-faint);
+  font-size:10.5px;
+}
+
+/* ── PDF — movers snapshot ─────────────────────────────────────── */
+.pdf-movers{
+  display:grid; grid-template-columns:1fr 1fr;
+  gap:14px;
+  margin-top:8px;
+}
+.pdf-movers__col{
+  background:var(--bg-soft);
+  border:1px solid var(--rule);
+  border-radius:10px;
+  padding:18px 20px 14px;
+  border-left:4px solid var(--ok);
+}
+.pdf-movers__col--warn{ border-left-color:var(--warn); }
+.pdf-movers__h{
+  display:flex; flex-direction:column; gap:3px;
+  margin-bottom:12px;
+  padding-bottom:10px;
+  border-bottom:1px solid var(--rule-soft);
+}
+.pdf-movers__h span:first-child{
+  font-size:9.5px; letter-spacing:0.2em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:700;
+}
+.pdf-movers__hi{
+  font-family:var(--font-hindi);
+  font-size:12px; color:var(--ink-3);
+  font-weight:400;
+}
+.pdf-movers__row{
+  display:flex; align-items:center; gap:10px;
+  padding:10px 0;
+  border-bottom:1px dashed var(--rule);
+}
+.pdf-movers__row:last-child{ border-bottom:0; }
+.pdf-movers__rank{
+  width:18px; flex-shrink:0;
+  font-family:var(--font-display);
+  font-size:18px; font-weight:400;
+  color:var(--ink-3);
+  text-align:center;
+  font-feature-settings:"tnum" 1;
+}
+.pdf-movers__dot{
+  width:8px; height:8px; border-radius:2px;
+  flex-shrink:0;
+}
+.pdf-movers__id{ flex:1; min-width:0; }
+.pdf-movers__name{
+  font-size:13px; font-weight:600;
+  color:var(--ink); line-height:1.2;
+}
+.pdf-movers__sub{
+  font-size:10.5px; color:var(--ink-3);
+  margin-top:3px;
+  line-height:1.4;
+}
+.pdf-movers__n{
+  text-align:right;
+  flex-shrink:0;
+  min-width:56px;
+}
+.pdf-movers__n b{
+  display:block;
+  font-family:var(--font-display);
+  font-size:24px; font-weight:400;
+  color:var(--ok);
+  letter-spacing:-0.02em;
+  line-height:1;
+}
+.pdf-movers__n--warn b{ color:var(--warn); }
+.pdf-movers__n small{
+  font-size:9px; letter-spacing:0.12em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:700;
+  display:block;
+  margin-top:4px;
+}
+
+.pdf-movers__note{
+  margin-top:auto;
+  padding:14px 16px;
+  background:var(--surface-2);
+  border:1px dashed var(--rule);
+  border-radius:8px;
+  font-size:11.5px; color:var(--ink-2);
+  line-height:1.55;
+}
+.pdf-movers__note b{ color:var(--ink); font-weight:600; }
+.pdf-movers__note code{
+  font-family:var(--font-mono); font-size:10.5px;
+  background:var(--bg-soft); border:1px solid var(--rule);
+  padding:1px 5px; border-radius:3px;
+  color:var(--ink-2);
+}

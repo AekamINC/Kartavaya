@@ -1,0 +1,180 @@
+# 17 · Mobile app (React Native)
+
+Prereq: `00-tokens.md`, `07-pahchan.md`. Distinct from `15-mobile-web.md` — that is the responsive web app; this is the Expo app in `mobile/`.
+
+Design source: `Mobile App.html` → `Mobile.jsx`, `mobile.css` — 19 screens across iPhone 15 Pro, iPhone SE and Pixel 8, light and dark.
+
+Staging source: `mobile/src/` — Expo 51, **TypeScript** (`.tsx`), 49 files. `theme/tokens.ts`, `theme/fonts.ts`, `nav/RootStack.tsx`, `screens/TodayScreen.tsx`, `components/TaskCard.tsx`, `components/NewTaskSheet.tsx`, `hooks/useOfflineMutation.ts`, `offline/mutationQueue.ts`, `offline/queryClient.ts`.
+
+TypeScript here, JSX on the web — the no-TypeScript rule applies to `frontend/`, not to `mobile/`.
+
+---
+
+## The finding: the app is on a different palette
+
+`mobile/src/theme/tokens.ts` is iOS system grey with M3 teal and the legacy gradient:
+
+```ts
+bg: '#F2F2F7'      surface: '#FFFFFF'      primary: '#006A60'
+gradient: ['#0082c6', '#03a1b6', '#05b7aa']
+```
+
+The warm-earthy system never reached the app — the same gap as `AuthShell.jsx` (`12-auth-onboarding.md`). Three token systems currently ship: web (warm), auth (cold blue), app (iOS grey).
+
+`tokens.ts` must be rewritten against `00-tokens.md` before any screen work, because every screen below assumes it. Pahchan is the most colour-dependent screen in the product and cannot be built on the wrong palette.
+
+Values are `00-tokens.md`'s, transcribed exactly. Where an earlier draft of this file quoted different hexes, `00` is correct.
+
+```ts
+export const light = {
+  bg: '#F3EFE6', sLowest: '#FFFEFB', surface: '#FAF7F0', sLow: '#F5F1E7',
+  sContainer: '#EEE9DC', sHigh: '#E7E1D1', sHighest: '#DFD8C5',
+  onSurface: '#1B1D1A', onSurface2: '#4A4E48', onSurface3: '#666A61', onSurfaceFaint: '#9DA096',
+  outline: '#ADA692', outlineVariant: '#D8D1BE',
+  primary: '#04837A', primaryHover: '#026B64', onPrimary: '#FFFFFF',
+  primaryContainer: '#B4F1E8', onPrimaryContainer: '#00201D', primaryVivid: '#05b7aa',
+  ok: '#14743A', okContainer: '#C6EFD2',
+  warn: '#955806', warnContainer: '#FBE3BE',
+  danger: '#B42318', dangerContainer: '#FBDAD5',
+  sideInk: '#161A18',   /* rgb(22,26,24) */
+};
+export const dark = {
+  bg: '#0C0E11', sLowest: '#080A0C', surface: '#12151A', sLow: '#171B21',
+  sContainer: '#1D2229', sHigh: '#252B33', sHighest: '#2E353E',
+  onSurface: '#E9E7E1', onSurface2: '#BFBDB6', onSurface3: '#8E8D87', onSurfaceFaint: '#64645F',
+  outline: '#5B626C', outlineVariant: '#333A43',
+  primary: '#4FD8CB', primaryHover: '#6FE6DA', onPrimary: '#00332F',
+  primaryContainer: '#00514B', onPrimaryContainer: '#74F5E8', primaryVivid: '#05b7aa',
+  ok: '#5BD98A', okContainer: '#14432A',
+  warn: '#E8B45C', warnContainer: '#4A3312',
+  danger: '#F2867A', dangerContainer: '#55201B',
+  sideInk: '#080A0D',   /* rgb(8,10,13) */
+};
+```
+
+Two things RN gets wrong easily. **`primaryHover` reverses direction by theme** — darker than `primary` in light, lighter in dark; a `Pressable` style that subtracts luminance is wrong in one mode. And **`primaryContainer` is lighter than `primary` in light and darker in dark**, so any `backgroundColor: primaryContainer` + `color: primary` pairing must be checked in both.
+
+Status, approval and priority colours also flip — `00-tokens.md` §9 — and three of the six statuses just reuse `ok`, `warn` and `danger`.
+
+RN has no CSS custom properties, so the tokens are a plain object consumed through a theme context. Anything reading a hex literal at a call site is the same class of bug the web has.
+
+---
+
+## Navigation change
+
+Today it is **Today · Boards · Add · Inbox · Me**. The redesign is **Today · Tasks · ＋ · Messages · More** — Messages takes the fourth slot because messaging is the highest-frequency mobile action, and Inbox moves under More.
+
+```tsx
+// nav/RootStack.tsx
+<Tab.Navigator tabBar={props => <BottomBar {...props} />}>
+  <Tab.Screen name="Today"    component={TodayScreen} />
+  <Tab.Screen name="Tasks"    component={TasksScreen} />
+  <Tab.Screen name="Create"   component={CreateStub} listeners={openSheet} />
+  <Tab.Screen name="Messages" component={MessagesScreen} />
+  <Tab.Screen name="More"     component={MoreScreen} />
+</Tab.Navigator>
+```
+
+`Create` is a stub whose tab press opens the sheet rather than navigating — the ＋ is an action, not a destination, and pushing a screen for it breaks the back stack.
+
+---
+
+## Screens
+
+| Screen | Notes |
+|---|---|
+| Today | week strip; clock-in card that becomes a running-hours card once in |
+| Tasks | swipe right to complete; Boards segment |
+| Task detail | the load-bearing one — see below |
+| Board detail | column tab pills, 270px snapping columns, add-card inline, long-press to move |
+| Messages | channel list with unread |
+| Chat | reactions, thread affordance, read ticks, hold-to-record mic replacing send when empty |
+| Pahchan | immersive camera capture — `07-pahchan.md` |
+| Pahchan history | month calendar, 7 states, legend |
+| Approvals | swipe right approve, left decline, batch select, decline gated on a reason |
+| Inbox | 5 tabs, date groups, mark all read |
+| Time | live timer, entries, weekly bars |
+| Reminders | snooze sheet, per-item toggles |
+| Settings | theme trio, per-kind notification scopes, push, language, time format |
+| More | pinned modules + grid |
+| 7 module surfaces | Graha, Ganit, Manav, Vetana, Dristi, Srijan, Prachar |
+
+### Task detail is the screen that decides whether the app is usable
+
+Everything in the 43 KB web drawer (`03-task-drawer.md`) has to survive 393px: inline title edit, status sheet, assignee picker, subtasks with animated progress, files, time, comments with mentions and long-press edit/delete, and the full approval state machine including how it degrades for member / admin / client.
+
+It is reached from every card on Today, Tasks and Boards. In staging both this and board detail are inline placeholders in the shell.
+
+### The light modules are deliberately the *checking* view, not the *doing* view
+
+Ganit shows outstanding and lets you send a payment reminder but not create an invoice. Vetana shows only your own payslips. Each screen states where the boundary is rather than silently omitting actions — a user who can't find invoice creation should be told it's desktop-only, not left hunting.
+
+---
+
+## Platform differences that are not optional
+
+| | iOS | Android |
+|---|---|---|
+| Back | swipe from left edge | hardware/gesture back must be handled on every sheet and modal |
+| Sheet | `presentationStyle="pageSheet"`, grab handle | bottom sheet, elevation, no handle |
+| Haptics | `impactAsync` on swipe commit and clock-in | `Vibration` short pulse |
+| Status bar | `translucent` + `light-content` on Pahchan | same, plus `setNavigationBarColor` |
+| Font | SF fallback under the display face | Roboto fallback |
+| Safe area | `useSafeAreaInsets`, notch + home bar | insets + nav bar mode varies |
+
+Pahchan's capture screen is **immersive on both** — edge-to-edge under a transparent status bar with light glyphs, in light and dark alike. A cream status bar above a black camera view is the most visible possible defect, and it is invisible in dark mode, which is where it gets tested.
+
+---
+
+## Offline
+
+`hooks/useOfflineMutation.ts`, `offline/mutationQueue.ts` and `offline/queryClient.ts` already exist. Extend, don't replace.
+
+Punches need their own retention: **72 hours**, never dropped on failure, idempotent via a client-generated `client_punch_id`, and the recorded time is when the punch happened, not when it synced (`07-pahchan.md`). A dropped punch is an unpaid day.
+
+The offline banner must state which mutations are queued, not just that the device is offline. "3 changes waiting to sync" is actionable; a grey cloud is not.
+
+---
+
+## New files
+
+```
+mobile/src/theme/tokens.ts                 rewritten
+mobile/src/theme/ThemeProvider.tsx         light/dark/system + live subscription
+mobile/src/nav/BottomBar.tsx
+mobile/src/screens/TaskDetailScreen.tsx
+mobile/src/screens/BoardDetailScreen.tsx
+mobile/src/screens/MessagesScreen.tsx · ChatScreen.tsx
+mobile/src/screens/PahchanScreen.tsx · PahchanHistoryScreen.tsx
+mobile/src/screens/ApprovalsScreen.tsx · InboxScreen.tsx · TimeScreen.tsx
+mobile/src/screens/RemindersScreen.tsx · SettingsScreen.tsx · MoreScreen.tsx
+mobile/src/screens/modules/*.tsx           7 light surfaces
+mobile/src/components/SwipeRow.tsx         one gesture primitive, reused
+mobile/src/components/Sheet.tsx
+mobile/src/offline/punchQueue.ts
+```
+
+`SwipeRow.tsx` exists once. Tasks, approvals and messages all swipe; three implementations would drift in threshold, haptic timing and colour.
+
+---
+
+## What changes in existing files
+
+| File | Change |
+|---|---|
+| `theme/tokens.ts` | **Rewrite to the warm-earthy system**, both modes. Delete the legacy gradient |
+| `theme/fonts.ts` | Display + Devanagari faces bundled, not fetched — the app must render offline |
+| `nav/RootStack.tsx` | New five-tab structure; `Create` as an action; deep links for Pahchan and task detail |
+| `screens/TodayScreen.tsx` | Week strip, clock-in card |
+| `components/TaskCard.tsx` | Swipe-to-complete via `SwipeRow`; a completed task shouldn't render an alarming red due chip |
+| `components/NewTaskSheet.tsx` | Keep the field set; restyle to the new tokens |
+| `offline/mutationQueue.ts` | Punch retention + idempotency key |
+| `hooks/useOfflineMutation.ts` | Surface queue depth for the banner |
+
+---
+
+## Two open items
+
+**Face matching provider** — on-device (private, free, weaker) vs cloud vision (stronger, per-call cost, employee faces leave the device). Changes the consent copy on first run, so it needs deciding before Pahchan ships.
+
+**Store review for face capture.** Both stores require a clear purpose string and, for biometric-adjacent processing, an explicit privacy disclosure. Selfies must be private-bucket with short-lived signed URLs and a retention policy (`07-pahchan.md`). Worth confirming with the stores before build, not after rejection.

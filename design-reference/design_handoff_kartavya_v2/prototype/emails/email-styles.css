@@ -1,0 +1,395 @@
+/* Kartavya editorial email design tokens + components.
+   Same paper-canvas system as the app, scoped to a 640px email envelope. */
+
+:root{
+  --k-primary:#05b7aa;
+  --k-mid:#03a1b6;
+  --k-deep:#0082c6;
+  --k-grad:linear-gradient(90deg,#0082c6,#03a1b6,#05b7aa);
+  --k-gradD:linear-gradient(135deg,#0082c6,#05b7aa);
+
+  --bg:#F6F3EC; --bg-soft:#F0ECDF;
+  --surface:#FCFAF5; --surface-2:#FFFFFF;
+  --ink:#1A2230; --ink-2:#4A5468; --ink-3:#6E7B91; --ink-faint:#A5B0C2;
+  --rule:#E2DCC9; --rule-soft:#EFE9D8; --rule-strong:#C8C0AA;
+  --danger:#C0392B; --warn:#B06A00; --ok:#0A7A6E;
+
+  --font-display:"Newsreader", Georgia, serif;
+  --font-ui:Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-hindi:"Tiro Devanagari Hindi","Noto Serif Devanagari","Newsreader",serif;
+  --font-mono:"JetBrains Mono", ui-monospace, "Menlo", monospace;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#1e1a14;font-family:var(--font-ui);color:var(--ink)}
+body{overflow:hidden;height:100vh}
+
+/* ── Email shell ─────────────────────────────────────────────────── */
+.em{
+  width:640px; background:var(--bg);
+  font-family:var(--font-ui); color:var(--ink-2);
+  font-size:15px; line-height:1.6;
+  padding:48px 40px 40px;
+}
+.em__envelope{
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-radius:18px;
+  padding:40px 36px;
+  box-shadow:0 1px 0 rgba(20,30,50,.04), 0 30px 60px -40px rgba(10,20,40,.25);
+}
+.em__brand{
+  display:flex; align-items:baseline; gap:10px;
+  padding-bottom:24px; margin-bottom:28px;
+  border-bottom:1px solid var(--rule-soft);
+}
+.em__brand-main{
+  font-family:var(--font-display);
+  font-size:22px; font-weight:500;
+  color:var(--ink);
+  letter-spacing:0.005em;
+}
+.em__brand-hi{
+  font-family:var(--font-hindi);
+  font-size:16px; color:var(--k-mid);
+}
+.em__brand-tag{
+  margin-left:auto;
+  font-size:10px; letter-spacing:0.2em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:700;
+}
+.em__kicker{
+  font-size:11px; letter-spacing:0.22em; text-transform:uppercase;
+  color:var(--k-mid); font-weight:700;
+  margin-bottom:14px;
+}
+.em__h1{
+  font-family:var(--font-display);
+  font-size:36px; font-weight:400;
+  line-height:1.1;
+  letter-spacing:-0.02em;
+  margin:0 0 6px;
+  color:var(--ink);
+}
+.em__h1-sans{
+  font-family:var(--font-hindi);
+  font-size:18px; color:var(--k-primary);
+  margin-bottom:24px;
+  font-weight:400;
+}
+.em__lede{
+  font-size:16px; line-height:1.65;
+  color:var(--ink-2);
+  margin:0 0 24px;
+}
+.em__lede em{
+  font-family:var(--font-display);
+  font-style:italic; color:var(--k-deep);
+}
+.em p{margin:0 0 16px}
+.em b, .em strong{color:var(--ink); font-weight:600}
+
+.em__card{
+  background:var(--bg-soft);
+  border:1px solid var(--rule);
+  border-radius:12px;
+  padding:18px 20px;
+  margin:24px 0;
+}
+.em__row{
+  display:flex; align-items:baseline; justify-content:space-between;
+  gap:16px; padding:8px 0;
+  border-bottom:1px dashed var(--rule);
+}
+.em__row:first-child{padding-top:0}
+.em__row:last-child{border-bottom:0; padding-bottom:0}
+.em__row-k{
+  font-size:10.5px; letter-spacing:0.16em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:700;
+  flex-shrink:0;
+}
+.em__row-v{
+  font-size:14px; color:var(--ink); font-weight:500;
+  text-align:right;
+}
+.em__row-v-sans{
+  font-family:var(--font-hindi);
+  font-size:13px; color:var(--ink-3);
+  display:block;
+  margin-top:2px;
+}
+
+.em__cta-row{
+  display:flex; gap:12px; flex-wrap:wrap;
+  margin:28px 0 20px;
+}
+.em__btn{
+  display:inline-block;
+  font-family:var(--font-ui); font-weight:600;
+  font-size:14px;
+  padding:13px 22px;
+  border-radius:8px;
+  text-decoration:none;
+  letter-spacing:0.005em;
+}
+.em__btn--primary{
+  background:var(--k-grad);
+  color:#fff;
+  box-shadow:0 4px 14px -4px rgba(0,130,198,.5), 0 1px 0 rgba(255,255,255,.15) inset;
+}
+.em__btn--ghost{
+  background:transparent;
+  color:var(--ink);
+  border:1px solid var(--rule-strong);
+}
+.em__btn--approve{
+  background:linear-gradient(135deg,#0A7A6E,#13a895);
+  color:#fff;
+  box-shadow:0 4px 14px -4px rgba(10,122,110,.5);
+}
+.em__btn--reject{
+  background:transparent;
+  color:var(--danger);
+  border:1px solid color-mix(in srgb,var(--danger) 30%, var(--rule));
+}
+
+.em__bigcta{
+  background:linear-gradient(180deg, color-mix(in srgb, var(--k-primary) 6%, var(--surface)), var(--surface));
+  border:1px solid color-mix(in srgb, var(--k-primary) 22%, var(--rule));
+  border-radius:14px;
+  padding:24px;
+  margin:24px 0 12px;
+}
+.em__bigcta-q{
+  font-family:var(--font-display);
+  font-size:18px; color:var(--ink);
+  margin-bottom:14px;
+  font-weight:500;
+}
+
+.em__steps{margin:24px 0; padding:0; list-style:none}
+.em__step{
+  display:grid; grid-template-columns:32px 1fr;
+  gap:14px; padding:14px 0;
+  border-bottom:1px dashed var(--rule);
+}
+.em__step:last-child{border-bottom:0}
+.em__step-num{
+  width:28px; height:28px; border-radius:50%;
+  background:var(--bg-soft);
+  border:1px solid var(--rule);
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--font-display); font-size:16px; color:var(--ink);
+  font-weight:500;
+}
+.em__step-title{font-size:14.5px; font-weight:600; color:var(--ink); margin:4px 0 2px}
+.em__step-body{font-size:13.5px; color:var(--ink-3); line-height:1.55}
+
+.em__person{
+  display:flex; align-items:center; gap:10px;
+  padding:10px 12px;
+  background:var(--surface-2);
+  border:1px solid var(--rule);
+  border-radius:8px;
+  margin:8px 0;
+}
+.em__av{
+  width:34px; height:34px; border-radius:50%;
+  background:var(--k-gradD);
+  color:#fff; font-weight:700; font-size:13px;
+  display:flex; align-items:center; justify-content:center;
+  flex-shrink:0;
+}
+.em__person-name{font-size:13.5px; font-weight:600; color:var(--ink)}
+.em__person-role{font-size:11px; color:var(--ink-3); margin-top:1px}
+
+.em__cite{
+  border-left:2px solid var(--k-primary);
+  padding:6px 0 6px 16px;
+  margin:24px 0;
+  font-family:var(--font-hindi);
+  font-size:16px; color:var(--ink-2);
+  font-style:normal;
+}
+.em__cite-src{
+  display:block;
+  font-family:var(--font-display);
+  font-style:italic;
+  font-size:12px; color:var(--ink-3);
+  margin-top:6px;
+}
+
+.em__foot{
+  margin-top:32px; padding-top:20px;
+  border-top:1px solid var(--rule-soft);
+  font-size:11.5px; color:var(--ink-3);
+  line-height:1.6;
+}
+.em__foot-row{display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap}
+.em__foot a{color:var(--k-deep); text-decoration:none}
+.em__foot a:hover{text-decoration:underline}
+
+.em__pill{
+  display:inline-block;
+  font-size:10.5px; letter-spacing:0.12em; text-transform:uppercase;
+  font-weight:700;
+  padding:3px 9px; border-radius:99px;
+}
+.em__pill--requested{background:color-mix(in srgb, #94a3b8 18%, transparent); color:#475569}
+.em__pill--approved {background:color-mix(in srgb, var(--ok) 16%, transparent); color:var(--ok)}
+.em__pill--done     {background:color-mix(in srgb, var(--k-primary) 16%, transparent); color:var(--k-mid)}
+.em__pill--warn     {background:color-mix(in srgb, var(--warn) 16%, transparent); color:var(--warn)}
+
+.em__small{font-size:12.5px; color:var(--ink-3); margin-top:14px}
+.em__small code{font-family:var(--font-mono); font-size:11.5px; color:var(--ink-2); background:var(--bg-soft); padding:1px 6px; border-radius:4px; border:1px solid var(--rule)}
+
+/* ── /approve landing ─────────────────────────────────────────────── */
+.ap{
+  width:1280px; height:920px;
+  background:var(--bg);
+  padding:64px 80px;
+  font-family:var(--font-ui);
+  display:flex; flex-direction:column;
+}
+.ap__topbar{
+  display:flex; align-items:center; gap:14px;
+  padding-bottom:28px;
+  border-bottom:1px solid var(--rule);
+}
+.ap__brand{display:flex; align-items:baseline; gap:10px}
+.ap__brand-main{font-family:var(--font-display); font-size:26px; font-weight:500; color:var(--ink)}
+.ap__brand-hi{font-family:var(--font-hindi); font-size:18px; color:var(--k-mid)}
+.ap__brand-sub{
+  font-size:9px; letter-spacing:0.24em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:700; margin-left:6px;
+}
+.ap__topright{margin-left:auto; display:flex; align-items:center; gap:12px; font-size:12.5px; color:var(--ink-3)}
+.ap__topright b{color:var(--ink); font-weight:600}
+
+.ap__main{
+  flex:1;
+  display:grid; grid-template-columns:1.5fr 1fr; gap:40px;
+  padding-top:48px;
+}
+.ap__left{display:flex; flex-direction:column; gap:24px}
+
+.ap__kicker{
+  font-size:11px; letter-spacing:0.24em; text-transform:uppercase;
+  color:var(--k-mid); font-weight:700;
+}
+.ap__h1{
+  font-family:var(--font-display);
+  font-size:54px; font-weight:400; line-height:1.05;
+  letter-spacing:-0.02em;
+  margin:8px 0 4px;
+  color:var(--ink);
+}
+.ap__h1-sans{font-family:var(--font-hindi); font-size:24px; color:var(--k-primary); margin-bottom:10px}
+.ap__lede{
+  font-size:17px; line-height:1.65;
+  color:var(--ink-2); max-width:540px;
+  margin:0;
+}
+.ap__lede em{font-family:var(--font-display); font-style:italic; color:var(--k-deep)}
+
+.ap__card{
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-radius:18px;
+  padding:28px 32px;
+  margin-top:8px;
+}
+.ap__card-h{
+  display:flex; align-items:baseline; gap:12px;
+  padding-bottom:14px;
+  border-bottom:1px solid var(--rule-soft);
+}
+.ap__card-h h3{margin:0; font-family:var(--font-display); font-size:20px; font-weight:500; color:var(--ink)}
+.ap__card-h .sans{font-family:var(--font-hindi); color:var(--ink-3); font-size:14px}
+.ap__id{margin-left:auto; font-family:var(--font-mono); font-size:12px; color:var(--ink-3)}
+
+.ap__taskttl{
+  font-family:var(--font-display);
+  font-size:28px; font-weight:500;
+  line-height:1.25;
+  letter-spacing:-0.005em;
+  margin:18px 0 10px;
+  color:var(--ink);
+}
+.ap__props{
+  display:grid; grid-template-columns:1fr 1fr;
+  gap:14px 28px;
+  padding:14px 0;
+  border-top:1px dashed var(--rule);
+  border-bottom:1px dashed var(--rule);
+  margin:12px 0;
+}
+.ap__prop-k{
+  font-size:10px; letter-spacing:0.18em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:700;
+}
+.ap__prop-v{
+  font-size:14px; color:var(--ink); margin-top:5px; font-weight:500;
+  display:flex; align-items:center; gap:8px;
+}
+.ap__prop-v-sans{font-family:var(--font-hindi); font-size:13px; color:var(--ink-3); margin-left:auto}
+
+.ap__desc{font-size:14.5px; line-height:1.7; color:var(--ink-2); margin-top:8px}
+.ap__desc b{color:var(--ink)}
+
+.ap__right{display:flex; flex-direction:column; gap:18px}
+
+.ap__action{
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-radius:18px;
+  padding:28px;
+}
+.ap__action-q{
+  font-family:var(--font-display);
+  font-size:22px; font-weight:500; color:var(--ink);
+  letter-spacing:-0.005em;
+  margin:0 0 6px;
+}
+.ap__action-sans{font-family:var(--font-hindi); color:var(--k-mid); font-size:15px; margin-bottom:18px}
+.ap__action-help{font-size:13.5px; color:var(--ink-3); margin-bottom:18px; line-height:1.55}
+
+.ap__bigbtn{
+  display:flex; align-items:center; justify-content:center; gap:10px;
+  width:100%; padding:18px;
+  border-radius:12px; border:0;
+  font-family:var(--font-ui); font-weight:600;
+  font-size:15.5px;
+  cursor:pointer; letter-spacing:0.005em;
+}
+.ap__bigbtn--approve{
+  background:linear-gradient(135deg,#0A7A6E,#13a895);
+  color:#fff;
+  box-shadow:0 8px 24px -8px rgba(10,122,110,.6), 0 1px 0 rgba(255,255,255,.18) inset;
+}
+.ap__bigbtn--reject{
+  background:transparent;
+  color:var(--danger);
+  border:1px solid color-mix(in srgb, var(--danger) 30%, var(--rule));
+  margin-top:10px;
+}
+.ap__bigbtn--reject:hover{background:color-mix(in srgb, var(--danger) 6%, transparent)}
+
+.ap__meta{
+  background:var(--surface);
+  border:1px dashed var(--rule);
+  border-radius:14px;
+  padding:18px 22px;
+  font-size:13px; color:var(--ink-3); line-height:1.6;
+}
+.ap__meta b{color:var(--ink-2); font-weight:600}
+.ap__meta-row{display:flex; justify-content:space-between; gap:10px; padding:4px 0}
+
+.ap__foot{
+  margin-top:auto;
+  padding-top:24px;
+  border-top:1px solid var(--rule-soft);
+  display:flex; justify-content:space-between;
+  font-size:12px; color:var(--ink-faint);
+}
+.ap__foot a{color:var(--k-deep); text-decoration:none}

@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kartavaya — auth email templates</title>
+<style>
+/* Preview chrome only — never part of the sent HTML. */
+body{margin:0;background:#E8E4DA;font-family:Inter,system-ui,sans-serif;color:#1B1D1A}
+.pv{display:flex;align-items:center;gap:12px;padding:0 20px;height:54px;background:#FCFAF5;border-bottom:1px solid #D8D1BE;position:sticky;top:0;z-index:5}
+.pv__t{font-family:Georgia,serif;font-size:16px}
+.pv__t i{font-style:normal;color:#04837A;margin-left:6px}
+.pv__seg{display:inline-flex;background:#EEE9DC;border-radius:8px;padding:3px;gap:2px}
+.pv__b{padding:6px 13px;border:0;background:none;border-radius:6px;font:600 12.5px Inter,sans-serif;color:#74786F;cursor:pointer}
+.pv__b.on{background:#fff;color:#1B1D1A;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.pv__n{margin-left:auto;font-size:11.5px;color:#74786F}
+.pv__wrap{padding:26px 16px 60px}
+.pv__meta{max-width:600px;margin:0 auto 14px;font-size:11.5px;color:#5C6450;line-height:1.6}
+.pv__meta b{color:#1B1D1A}
+.pv__meta code{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;background:#EEE9DC;padding:1px 5px;border-radius:4px}
+.mail{display:none}
+.mail.on{display:block}
+</style>
+</head>
+<body>
+<header class="pv">
+  <span class="pv__t">Auth emails<i>पत्र</i></span>
+  <div class="pv__seg" id="tabs">
+    <button class="pv__b on" data-m="welcome">Welcome</button>
+    <button class="pv__b" data-m="invite">Invitation</button>
+    <button class="pv__b" data-m="reset">Password reset</button>
+    <button class="pv__b" data-m="support">Support access</button>
+  </div>
+  <span class="pv__n">600px · table layout · inline styles · dark-mode safe</span>
+</header>
+
+<div class="pv__wrap">
+<div class="pv__meta" id="meta"></div>
+
+<!-- ══ WELCOME ══════════════════════════════════════════════════════════ -->
+<div class="mail on" id="m-welcome">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F3EC">
+<tr><td align="center" style="padding:28px 12px">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#FCFAF5;border:1px solid #E2DCC9;border-radius:14px;overflow:hidden">
+  <tr><td style="padding:26px 32px 0">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="padding-right:11px"><img src="kartavaya-mark.png" width="34" height="34" alt="Kartavaya" style="display:block;border-radius:8px"></td>
+      <td><div style="font:500 18px Georgia,serif;color:#1B1D1A;line-height:1.1">Kartavaya</div><div style="font:600 8.5px Inter,sans-serif;letter-spacing:2px;text-transform:uppercase;color:#9DA096;padding-top:3px">by Aekam Inc</div></td>
+    </tr></table>
+  </td></tr>
+  <tr><td style="padding:26px 32px 0">
+    <h1 style="margin:0;font:400 27px Georgia,serif;color:#1B1D1A;letter-spacing:-.5px;line-height:1.2">Welcome to Kartavaya, Keval.</h1>
+    <p style="margin:12px 0 0;font:400 15px 'Tiro Devanagari Hindi',Georgia,serif;color:#74786F">कर्तव्य में आपका स्वागत है</p>
+    <p style="margin:18px 0 0;font:400 14px Inter,sans-serif;color:#4A4E48;line-height:1.68">
+      <strong style="color:#1B1D1A">Aekam Inc</strong> is ready. Four modules are switched on and your first project is set up.
+      Everything below is a link straight into the thing itself — no hunting.
+    </p>
+  </td></tr>
+  <tr><td style="padding:22px 32px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F0ECDF;border-radius:10px">
+      <tr><td style="padding:16px 18px">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr><td style="padding-bottom:9px;font:600 9px Inter,sans-serif;letter-spacing:1.8px;text-transform:uppercase;color:#9DA096">Your workspace</td></tr>
+          <tr><td style="font:400 13px Inter,sans-serif;color:#4A4E48;line-height:1.7">
+            <span style="font-family:'Tiro Devanagari Hindi',Georgia,serif;font-size:14px;color:#04837A">कर्तव्य</span> Projects &nbsp;·&nbsp;
+            <span style="font-family:'Tiro Devanagari Hindi',Georgia,serif;font-size:14px;color:#04837A">गणित</span> Finance &nbsp;·&nbsp;
+            <span style="font-family:'Tiro Devanagari Hindi',Georgia,serif;font-size:14px;color:#04837A">ग्रह</span> CRM &nbsp;·&nbsp;
+            <span style="font-family:'Tiro Devanagari Hindi',Georgia,serif;font-size:14px;color:#04837A">हस्ताक्षर</span> eSign
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:22px 32px 0">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="background:#04837A;border-radius:9px"><a href="https://aekam.kartavaya.com" style="display:inline-block;padding:13px 26px;font:600 14px Inter,sans-serif;color:#ffffff;text-decoration:none">Open my dashboard</a></td>
+    </tr></table>
+  </td></tr>
+  <tr><td style="padding:24px 32px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #E2DCC9">
+      <tr><td style="padding-top:18px">
+        <div style="font:600 9px Inter,sans-serif;letter-spacing:1.8px;text-transform:uppercase;color:#9DA096;padding-bottom:10px">Three things worth knowing</div>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr><td style="padding-bottom:11px;font:400 13px Inter,sans-serif;color:#4A4E48;line-height:1.6"><strong style="color:#1B1D1A">Press ⌘K anywhere.</strong> One search for records, actions and navigation.</td></tr>
+          <tr><td style="padding-bottom:11px;font:400 13px Inter,sans-serif;color:#4A4E48;line-height:1.6"><strong style="color:#1B1D1A">Add it to your phone.</strong> Attendance and approvals work offline for 72 hours.</td></tr>
+          <tr><td style="font:400 13px Inter,sans-serif;color:#4A4E48;line-height:1.6"><strong style="color:#1B1D1A">Invite your team when ready.</strong> An invite alone grants nothing sensitive.</td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:24px 32px 26px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #E2DCC9">
+      <tr><td style="padding-top:16px;font:400 11px Inter,sans-serif;color:#9DA096;line-height:1.6">
+        Sent to keval@aekam.co because you created a Kartavaya organisation.<br>
+        Aekam Inc · 4th floor, Sunbeam Chambers, Mumbai 400020 · <a href="#" style="color:#74786F">Notification settings</a>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</td></tr></table>
+</div>
+
+<!-- ══ INVITE ═══════════════════════════════════════════════════════════ -->
+<div class="mail" id="m-invite">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F3EC">
+<tr><td align="center" style="padding:28px 12px">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#FCFAF5;border:1px solid #E2DCC9;border-radius:14px;overflow:hidden">
+  <tr><td style="padding:26px 32px 0">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="padding-right:11px"><img src="kartavaya-mark.png" width="34" height="34" alt="Kartavaya" style="display:block;border-radius:8px"></td>
+      <td><div style="font:500 18px Georgia,serif;color:#1B1D1A;line-height:1.1">Kartavaya</div><div style="font:600 8.5px Inter,sans-serif;letter-spacing:2px;text-transform:uppercase;color:#9DA096;padding-top:3px">by Aekam Inc</div></td>
+    </tr></table>
+  </td></tr>
+  <tr><td style="padding:26px 32px 0">
+    <h1 style="margin:0;font:400 27px Georgia,serif;color:#1B1D1A;letter-spacing:-.5px;line-height:1.2">Keval Shah invited you to Aekam Inc</h1>
+    <p style="margin:16px 0 0;font:400 14px Inter,sans-serif;color:#4A4E48;line-height:1.68">
+      You have been added as a <strong style="color:#1B1D1A">Member</strong>. Set a password and you are in — nothing else to install.
+    </p>
+  </td></tr>
+  <tr><td style="padding:20px 32px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F0ECDF;border-radius:10px">
+      <tr><td style="padding:16px 18px">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td width="42" valign="top"><img src="kartavaya-mark.png" width="34" height="34" alt="" style="display:block;border-radius:8px"></td>
+            <td valign="top">
+              <div style="font:600 15px Inter,sans-serif;color:#1B1D1A">Aekam Inc</div>
+              <div style="font:400 12px Inter,sans-serif;color:#74786F;padding-top:2px">aekam.kartavaya.com · 6 members</div>
+            </td>
+          </tr>
+          <tr><td colspan="2" style="padding-top:13px;border-top:1px solid #E2DCC9;font:600 9px Inter,sans-serif;letter-spacing:1.8px;text-transform:uppercase;color:#9DA096">With access to</td></tr>
+          <tr><td colspan="2" style="padding-top:7px;font:400 13px Inter,sans-serif;color:#4A4E48;line-height:1.7">
+            <span style="font-family:'Tiro Devanagari Hindi',Georgia,serif;font-size:14px;color:#04837A">कर्तव्य</span> Projects — <strong style="color:#1B1D1A">Editor</strong><br>
+            <span style="font-family:'Tiro Devanagari Hindi',Georgia,serif;font-size:14px;color:#04837A">गणित</span> Finance — <strong style="color:#1B1D1A">Viewer</strong>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:22px 32px 0">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="background:#04837A;border-radius:9px"><a href="#" style="display:inline-block;padding:13px 26px;font:600 14px Inter,sans-serif;color:#ffffff;text-decoration:none">Accept invitation</a></td>
+      <td style="padding-left:10px"><a href="#" style="display:inline-block;padding:13px 20px;font:600 14px Inter,sans-serif;color:#74786F;text-decoration:none">Decline</a></td>
+    </tr></table>
+    <p style="margin:14px 0 0;font:400 12px Inter,sans-serif;color:#74786F;line-height:1.6">
+      Expires in <strong style="color:#1B1D1A">7 days</strong>. Only rohan@aekam.co can accept it.
+    </p>
+  </td></tr>
+  <tr><td style="padding:24px 32px 26px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #E2DCC9">
+      <tr><td style="padding-top:16px;font:400 11px Inter,sans-serif;color:#9DA096;line-height:1.6">
+        Not expecting this? Ignore it — the invitation lapses on its own and nothing is created.<br>
+        Aekam Inc · Mumbai · <a href="#" style="color:#74786F">Report this invite</a>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</td></tr></table>
+</div>
+
+<!-- ══ RESET ════════════════════════════════════════════════════════════ -->
+<div class="mail" id="m-reset">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F3EC">
+<tr><td align="center" style="padding:28px 12px">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#FCFAF5;border:1px solid #E2DCC9;border-radius:14px;overflow:hidden">
+  <tr><td style="padding:26px 32px 0">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="padding-right:11px"><img src="kartavaya-mark.png" width="34" height="34" alt="Kartavaya" style="display:block;border-radius:8px"></td>
+      <td><div style="font:500 18px Georgia,serif;color:#1B1D1A;line-height:1.1">Kartavaya</div><div style="font:600 8.5px Inter,sans-serif;letter-spacing:2px;text-transform:uppercase;color:#9DA096;padding-top:3px">by Aekam Inc</div></td>
+    </tr></table>
+  </td></tr>
+  <tr><td style="padding:26px 32px 0">
+    <h1 style="margin:0;font:400 27px Georgia,serif;color:#1B1D1A;letter-spacing:-.5px;line-height:1.2">Reset your password</h1>
+    <p style="margin:16px 0 0;font:400 14px Inter,sans-serif;color:#4A4E48;line-height:1.68">
+      Somebody asked for a password reset on <strong style="color:#1B1D1A">keval@aekam.co</strong>. If that was you, use the button below.
+    </p>
+  </td></tr>
+  <tr><td style="padding:22px 32px 0">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="background:#04837A;border-radius:9px"><a href="#" style="display:inline-block;padding:13px 26px;font:600 14px Inter,sans-serif;color:#ffffff;text-decoration:none">Set a new password</a></td>
+    </tr></table>
+  </td></tr>
+  <tr><td style="padding:20px 32px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FBE3BE;border-radius:10px">
+      <tr><td style="padding:14px 16px;font:400 13px Inter,sans-serif;color:#4A4E48;line-height:1.6">
+        This link <strong style="color:#1B1D1A">expires in one hour</strong> and works only once. Setting a new password signs out every other device.
+      </td></tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:20px 32px 0">
+    <p style="margin:0;font:400 12px Inter,sans-serif;color:#74786F;line-height:1.68">
+      <strong style="color:#1B1D1A">Did not ask for this?</strong> Nothing has changed yet — you can ignore this email and your password stays as it is.
+      If you get several of these, someone may be trying your address; <a href="#" style="color:#04837A">tell us</a>.
+    </p>
+    <p style="margin:14px 0 0;font:400 11px ui-monospace,Menlo,monospace;color:#9DA096;line-height:1.6;word-break:break-all">
+      Button not working? Paste this into your browser:<br>https://aekam.kartavaya.com/reset-password?token=PLACEHOLDER_TOKEN
+    </p>
+  </td></tr>
+  <tr><td style="padding:24px 32px 26px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #E2DCC9">
+      <tr><td style="padding-top:16px;font:400 11px Inter,sans-serif;color:#9DA096;line-height:1.6">
+        Requested from Mumbai, IN · 103.21.x.x · 25 Jul 2026, 13:42 IST<br>
+        Aekam Inc · Mumbai
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</td></tr></table>
+</div>
+
+<!-- ══ SUPPORT ACCESS ═══════════════════════════════════════════════════ -->
+<div class="mail" id="m-support">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F6F3EC">
+<tr><td align="center" style="padding:28px 12px">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;background:#FCFAF5;border:1px solid #E2DCC9;border-radius:14px;overflow:hidden">
+  <tr><td style="height:4px;background:#7c5cbf;font-size:0;line-height:0">&nbsp;</td></tr>
+  <tr><td style="padding:24px 32px 0">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="padding-right:11px"><img src="kartavaya-mark.png" width="34" height="34" alt="Kartavaya" style="display:block;border-radius:8px"></td>
+      <td><div style="font:500 18px Georgia,serif;color:#1B1D1A;line-height:1.1">Kartavaya</div><div style="font:600 8.5px Inter,sans-serif;letter-spacing:2px;text-transform:uppercase;color:#7c5cbf;padding-top:3px">Platform support request</div></td>
+    </tr></table>
+  </td></tr>
+  <tr><td style="padding:24px 32px 0">
+    <h1 style="margin:0;font:400 26px Georgia,serif;color:#1B1D1A;letter-spacing:-.5px;line-height:1.24">Sneha from Aekam support wants temporary access</h1>
+    <p style="margin:16px 0 0;font:400 14px Inter,sans-serif;color:#4A4E48;line-height:1.68">
+      She has <strong style="color:#1B1D1A">no access to your data right now</strong> and cannot grant herself any. Only you can approve this,
+      and it expires on its own.
+    </p>
+  </td></tr>
+  <tr><td style="padding:20px 32px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F0ECDF;border-radius:10px">
+      <tr><td style="padding:16px 18px">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr><td style="font:600 9px Inter,sans-serif;letter-spacing:1.8px;text-transform:uppercase;color:#9DA096;padding-bottom:8px">Her reason · ticket #4821</td></tr>
+          <tr><td style="font:400 13px Inter,sans-serif;color:#4A4E48;line-height:1.66;font-style:italic">
+            “Placeholder — GSTR-3B totals do not match the invoice list. I need the July invoices and the reconciliation to reproduce it.”
+          </td></tr>
+          <tr><td style="padding-top:14px;border-top:1px solid #E2DCC9;font:600 9px Inter,sans-serif;letter-spacing:1.8px;text-transform:uppercase;color:#9DA096">Asking for</td></tr>
+          <tr><td style="padding-top:7px;font:400 13px Inter,sans-serif;color:#4A4E48;line-height:1.7">
+            <span style="font-family:'Tiro Devanagari Hindi',Georgia,serif;font-size:14px;color:#04837A">गणित</span> Finance — <strong style="color:#1B1D1A">Viewer</strong><br>
+            <span style="font-family:'Tiro Devanagari Hindi',Georgia,serif;font-size:14px;color:#04837A">दृष्टि</span> Reports — <strong style="color:#1B1D1A">Viewer</strong><br>
+            <span style="color:#74786F">for 2 hours</span>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:22px 32px 0">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="background:#04837A;border-radius:9px"><a href="#" style="display:inline-block;padding:13px 24px;font:600 14px Inter,sans-serif;color:#ffffff;text-decoration:none">Review &amp; approve</a></td>
+      <td style="padding-left:10px;border:1px solid #D8D1BE;border-radius:9px"><a href="#" style="display:inline-block;padding:12px 22px;font:600 14px Inter,sans-serif;color:#B42318;text-decoration:none">Deny</a></td>
+    </tr></table>
+  </td></tr>
+  <tr><td style="padding:20px 32px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #E2DCC9">
+      <tr><td style="padding-top:16px">
+        <div style="font:600 9px Inter,sans-serif;letter-spacing:1.8px;text-transform:uppercase;color:#9DA096;padding-bottom:9px">How this works</div>
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr><td style="padding-bottom:8px;font:400 12.5px Inter,sans-serif;color:#4A4E48;line-height:1.6">You choose the level and a time limit. It expires without anyone doing anything.</td></tr>
+          <tr><td style="padding-bottom:8px;font:400 12.5px Inter,sans-serif;color:#4A4E48;line-height:1.6">Every record she opens is written to <strong style="color:#1B1D1A">your</strong> audit log with her name.</td></tr>
+          <tr><td style="padding-bottom:8px;font:400 12.5px Inter,sans-serif;color:#4A4E48;line-height:1.6">Support can never be given Approver or Admin on Finance, HR or Payroll.</td></tr>
+          <tr><td style="font:400 12.5px Inter,sans-serif;color:#4A4E48;line-height:1.6">You can revoke instantly, at any point, without contacting us.</td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </td></tr>
+  <tr><td style="padding:22px 32px 26px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-top:1px solid #E2DCC9">
+      <tr><td style="padding-top:16px;font:400 11px Inter,sans-serif;color:#9DA096;line-height:1.6">
+        Sent to you as the owner of Aekam Inc. This email cannot be switched off — you should always know when somebody asks for your data.<br>
+        Aekam Inc · Mumbai
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</td></tr></table>
+</div>
+</div>
+
+<script>
+var META = {
+  welcome: '<b>Welcome</b> · trigger <code>signup + org created</code> · subject “Aekam Inc is ready — welcome to Kartavaya” · preheader “Four modules on, one project created. Here is where to start.” · <b>one</b> primary action. Module names carry Devanagari, so the Hindi webfont must be declared with a serif fallback — most clients will render the fallback and that is fine.',
+  invite: '<b>Invitation</b> · trigger <code>member invited</code> · subject “Keval Shah invited you to Aekam Inc on Kartavaya” · preheader “Set a password and you are in. Expires in 7 days.” · shows the <b>grants</b>, not just the org, so the recipient knows what they are accepting. Decline is present but visually quieter.',
+  reset: '<b>Password reset</b> · trigger <code>forgot password</code> · subject “Reset your Kartavaya password” · preheader “This link expires in one hour.” · states the <b>expiry</b>, the sign-out side effect, the request origin, and a plain-text fallback URL. Never says whether the address has an account.',
+  support: '<b>Support access request</b> · trigger <code>platform_support requests access</code> · subject “Aekam support is asking for 2 hours of access to Aekam Inc” · violet keyline marks it as platform, not tenant. The agent’s reason is quoted <b>verbatim</b>. This one is transactional and cannot be unsubscribed.',
+};
+var tabs = document.getElementById('tabs');
+var meta = document.getElementById('meta');
+function show(k) {
+  Array.prototype.forEach.call(document.querySelectorAll('.mail'), function (m) { m.classList.toggle('on', m.id === 'm-' + k); });
+  Array.prototype.forEach.call(tabs.children, function (b) { b.classList.toggle('on', b.dataset.m === k); });
+  meta.innerHTML = META[k];
+}
+tabs.addEventListener('click', function (e) { if (e.target.dataset.m) show(e.target.dataset.m); });
+show('welcome');
+</script>
+</body>
+</html>

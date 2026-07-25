@@ -1,0 +1,71 @@
+/* Kartavya — Color Tokens
+   Brand: Aekam Inc · Palette: #0082c6 → #03a1b6 → #05b7aa
+   ────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Brand accent (teal default — swappable via CustomizePanel) ──── */
+  --k-primary: #05b7aa;
+  --k-mid:     #03a1b6;
+  --k-deep:    #0082c6;
+  --k-grad:    linear-gradient(90deg, #0082c6, #03a1b6, #05b7aa);
+  --k-gradD:   linear-gradient(135deg, #0082c6, #05b7aa);
+
+  /* ── Light theme (default) — warm paper canvas ───────────────────── */
+  --bg:          #F6F3EC;
+  --bg-soft:     #F0ECDF;
+  --surface:     #FCFAF5;
+  --surface-2:   #FFFFFF;
+
+  --ink:         #1A2230;
+  --ink-2:       #4A5468;
+  --ink-3:       #6E7B91;
+  --ink-faint:   #A5B0C2;
+
+  --rule:        #E2DCC9;
+  --rule-soft:   #EFE9D8;
+  --rule-strong: #C8C0AA;
+
+  /* ── Sidebar (always dark) ───────────────────────────────────────── */
+  --side-bg:        #050E1A;
+  --side-fg:        rgba(255,255,255,.72);
+  --side-fg-mute:   rgba(255,255,255,.42);
+  --side-fg-faint:  rgba(255,255,255,.22);
+  --side-rule:      rgba(255,255,255,.06);
+  --side-rule-2:    rgba(255,255,255,.12);
+  --side-hover:     rgba(255,255,255,.06);
+  --side-active:    rgba(5, 183, 170, .16);
+
+  /* ── Semantic status ─────────────────────────────────────────────── */
+  --danger: #C0392B;
+  --warn:   #B06A00;
+  --ok:     #0A7A6E;
+
+  /* ── Kanban status colors ────────────────────────────────────────── */
+  --status-todo:        #94a3b8;
+  --status-in-progress: #0082c6;
+  --status-in-review:   #a78bfa;
+  --status-done:        #05b7aa;
+  --status-requested:   #f59e0b;
+
+  /* ── Priority colors ─────────────────────────────────────────────── */
+  --priority-urgent: #C0392B;
+  --priority-high:   #B06A00;
+  --priority-medium: #0082c6;
+  --priority-low:    #6E7B91;
+
+  /* ── Role badge colors ───────────────────────────────────────────── */
+  --role-admin:  #0082c6;
+  --role-member: #05b7aa;
+  --role-client: #8b5cf6;
+
+  /* ── Notification kinds ──────────────────────────────────────────── */
+  --notif-mention:  #0082c6;
+  --notif-assign:   #0A7A6E;
+  --notif-approval: #B06A00;
+}
+
+/* ── Accent presets (applied via JS on <html>) ─────────────────────── */
+/* Teal (default): --k-primary:#05b7aa --k-mid:#03a1b6 --k-deep:#0082c6 */
+/* Blue:           --k-primary:#0082c6 --k-mid:#1d6fcf --k-deep:#0a3d91 */
+/* Saffron:        --k-primary:#d97706 --k-mid:#ea580c --k-deep:#9a3412 */
+/* Indigo:         --k-primary:#6366f1 --k-mid:#4f46e5 --k-deep:#3730a3 */

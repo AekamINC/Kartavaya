@@ -1,0 +1,20 @@
+<!-- @dsCard group="Spacing" viewport="700x140" subtitle="4px base grid — 8 named steps from sp-1 to sp-8" name="Spacing Scale" -->
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; background: var(--bg); padding: 20px 28px; font-family: var(--font-ui); }
+  .row { display: flex; align-items: flex-end; gap: 12px; }
+  .step { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .bar { width: 40px; background: var(--k-grad); border-radius: 4px 4px 0 0; }
+  .lbl { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; color: var(--ink-3); text-transform: uppercase; }
+  .val { font-family: var(--font-mono); font-size: 10px; color: var(--ink-2); }
+</style>
+<div class="row">
+  <div class="step"><div class="bar" style="height:4px"></div><span class="lbl">sp-1</span><span class="val">4px</span></div>
+  <div class="step"><div class="bar" style="height:8px"></div><span class="lbl">sp-2</span><span class="val">8px</span></div>
+  <div class="step"><div class="bar" style="height:12px"></div><span class="lbl">sp-3</span><span class="val">12px</span></div>
+  <div class="step"><div class="bar" style="height:16px"></div><span class="lbl">sp-4</span><span class="val">16px</span></div>
+  <div class="step"><div class="bar" style="height:20px"></div><span class="lbl">sp-5</span><span class="val">20px</span></div>
+  <div class="step"><div class="bar" style="height:28px"></div><span class="lbl">sp-6</span><span class="val">28px</span></div>
+  <div class="step"><div class="bar" style="height:40px"></div><span class="lbl">sp-7</span><span class="val">40px</span></div>
+  <div class="step"><div class="bar" style="height:56px"></div><span class="lbl">sp-8</span><span class="val">56px</span></div>
+</div>

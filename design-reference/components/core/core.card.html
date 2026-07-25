@@ -1,0 +1,51 @@
+<!-- @dsCard group="Components" viewport="700x260" name="Core Controls" -->
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body { margin: 0; background: var(--bg); padding: 20px 24px; font-family: var(--font-ui); color: var(--ink); }
+  .section { font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; margin-top: 14px; }
+  .section:first-child { margin-top: 0; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .k-btn { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 8px; font-weight: 600; font-size: 13px; padding: 8px 14px; cursor: pointer; font-family: var(--font-ui); }
+  .k-btn--sm { padding: 7px 12px; font-size: 12.5px; }
+  .k-btn--primary { background: var(--k-grad); color: #fff; box-shadow: 0 1px 0 rgba(255,255,255,.15) inset, 0 4px 14px -4px color-mix(in srgb, var(--k-deep) 60%, transparent); }
+  .k-btn--ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--rule); }
+  .k-btn--reject { background: transparent; color: var(--danger); border: 1px solid color-mix(in srgb, var(--danger) 30%, var(--rule)); }
+  .k-iconbtn { width: 34px; height: 34px; border-radius: 8px; background: transparent; border: 0; color: var(--ink-2); display: inline-flex; align-items: center; justify-content: center; position: relative; }
+  .k-iconbtn__dot { position: absolute; top: 7px; right: 8px; width: 6px; height: 6px; border-radius: 50%; background: var(--danger); border: 1.5px solid var(--surface); }
+  .k-input { width: 240px; padding: 10px 12px; background: var(--bg-soft); border: 1px solid var(--rule); border-radius: 8px; font-size: 13.5px; color: var(--ink); outline: none; font-family: var(--font-ui); }
+  .k-avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; font-weight: 700; font-family: var(--font-ui); flex-shrink: 0; }
+  .k-avatar--ring { box-shadow: 0 0 0 1.5px var(--surface); }
+  .k-avatar--me { background: linear-gradient(135deg,#0082c6,#05b7aa) !important; }
+  .k-rolebadge { font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; padding: 2px 7px; border-radius: 4px; }
+  .k-rolebadge--admin { background: color-mix(in srgb, var(--k-deep) 14%, transparent); color: var(--k-deep); }
+  .k-rolebadge--member { background: color-mix(in srgb, var(--k-primary) 14%, transparent); color: var(--k-primary); }
+  .k-rolebadge--client { background: color-mix(in srgb, #8b5cf6 14%, transparent); color: #8b5cf6; }
+</style>
+<div class="section">Buttons</div>
+<div class="row">
+  <button class="k-btn k-btn--primary">+ New task</button>
+  <button class="k-btn k-btn--primary k-btn--sm">Save</button>
+  <button class="k-btn k-btn--ghost">Open project →</button>
+  <button class="k-btn k-btn--reject">Decline</button>
+</div>
+<div class="section">Icon Button + Input</div>
+<div class="row">
+  <button class="k-iconbtn">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M13 11l-2-2H5L3 11V4a1 1 0 011-1h8a1 1 0 011 1v7z"/><path d="M6.5 13.5a1.5 1.5 0 003 0"/></svg>
+    <span class="k-iconbtn__dot"></span>
+  </button>
+  <button class="k-iconbtn">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2"/><path d="M8 2v1.5M8 12.5V14M14 8h-1.5M3.5 8H2M12.1 3.9l-1 1M4.9 11.1l-1 1M12.1 12.1l-1-1M4.9 4.9l-1-1"/></svg>
+  </button>
+  <input class="k-input" placeholder="Search tasks, projects, people…">
+</div>
+<div class="section">Avatars + Role Badges</div>
+<div class="row">
+  <span class="k-avatar" style="width:28px;height:28px;font-size:11px;background:#0082c6">KS</span>
+  <span class="k-avatar k-avatar--ring" style="width:28px;height:28px;font-size:11px;background:#03a1b6">AM</span>
+  <span class="k-avatar k-avatar--me" style="width:32px;height:32px;font-size:13px">KS</span>
+  <span style="width:12px"></span>
+  <span class="k-rolebadge k-rolebadge--admin">admin</span>
+  <span class="k-rolebadge k-rolebadge--member">member</span>
+  <span class="k-rolebadge k-rolebadge--client">client</span>
+</div>

@@ -1,0 +1,9 @@
+/* Kartavya Design System — Root Entry
+   Import this single file to get all tokens.
+   ─────────────────────────────────────────── */
+
+@import './tokens/colors.css';
+@import './tokens/typography.css';
+@import './tokens/spacing.css';
+@import './tokens/shadows.css';
+@import './tokens/themes.css';

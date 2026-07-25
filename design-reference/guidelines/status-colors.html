@@ -1,0 +1,30 @@
+<!-- @dsCard group="Colors" viewport="700x150" subtitle="Kanban status, priority, and role badge color systems" name="Status & Priority" -->
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; background: var(--bg); padding: 16px 24px; font-family: var(--font-ui); }
+  .section { font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; }
+  .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 3px 10px; border-radius: 99px; border: 1px solid; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .pri { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; }
+  .pdot { width: 8px; height: 8px; border-radius: 50%; }
+  .badge { font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700; padding: 2px 7px; border-radius: 4px; }
+</style>
+<div class="section">Kanban Status</div>
+<div class="row">
+  <span class="chip" style="color:#94a3b8;background:color-mix(in srgb,#94a3b8 10%,var(--surface));border-color:color-mix(in srgb,#94a3b8 28%,var(--rule))"><span class="dot" style="background:#94a3b8"></span>To Do · कार्य</span>
+  <span class="chip" style="color:#0082c6;background:color-mix(in srgb,#0082c6 10%,var(--surface));border-color:color-mix(in srgb,#0082c6 28%,var(--rule))"><span class="dot" style="background:#0082c6"></span>In Progress · चालू</span>
+  <span class="chip" style="color:#a78bfa;background:color-mix(in srgb,#a78bfa 10%,var(--surface));border-color:color-mix(in srgb,#a78bfa 28%,var(--rule))"><span class="dot" style="background:#a78bfa"></span>In Review · समीक्षा</span>
+  <span class="chip" style="color:#05b7aa;background:color-mix(in srgb,#05b7aa 10%,var(--surface));border-color:color-mix(in srgb,#05b7aa 28%,var(--rule))"><span class="dot" style="background:#05b7aa"></span>Done · सम्पन्न</span>
+</div>
+<div class="section">Priority</div>
+<div class="row">
+  <span class="pri"><span class="pdot" style="background:#C0392B"></span>Urgent</span>
+  <span class="pri"><span class="pdot" style="background:#B06A00"></span>High</span>
+  <span class="pri"><span class="pdot" style="background:#0082c6"></span>Medium</span>
+  <span class="pri"><span class="pdot" style="background:#6E7B91"></span>Low</span>
+  <span style="width:20px"></span>
+  <span class="badge" style="background:color-mix(in srgb,#0082c6 14%,transparent);color:#0082c6">Admin</span>
+  <span class="badge" style="background:color-mix(in srgb,#05b7aa 14%,transparent);color:#05b7aa">Member</span>
+  <span class="badge" style="background:color-mix(in srgb,#8b5cf6 14%,transparent);color:#8b5cf6">Client</span>
+</div>

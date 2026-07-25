@@ -1,0 +1,56 @@
+<!-- @dsCard group="Components" viewport="700x200" name="Data Display" -->
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body { margin: 0; background: var(--bg); padding: 16px 24px; font-family: var(--font-ui); color: var(--ink); }
+  .section { font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 12px 0 6px; }
+  .section:first-child { margin-top: 0; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .k-statuschip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--c); padding: 2px 9px; background: color-mix(in srgb, var(--c) 10%, var(--surface)); border-radius: 99px; border: 1px solid color-mix(in srgb, var(--c) 28%, var(--rule)); }
+  .k-statuschip__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+  .k-due { display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 99px; border: 1px solid var(--rule-strong); color: var(--ink-2); background: var(--surface); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .k-due--danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, var(--rule)); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
+  .k-due--warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, var(--rule)); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); }
+  .k-due--muted { color: var(--ink-3); border-color: var(--rule); }
+  .k-pdot { display: inline-block; border-radius: 50%; }
+  .k-ptag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); }
+  .k-ptag__dot { width: 8px; height: 8px; border-radius: 2px; }
+  .k-ptag__name { font-weight: 500; }
+  .k-ptag__sans { font-family: var(--font-hindi); color: var(--ink-3); font-size: 12px; }
+  .k-avatar { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: #fff; font-weight: 700; font-family: var(--font-ui); font-size: 9px; }
+  .k-avatar--ring { box-shadow: 0 0 0 1.5px var(--surface); }
+  .k-avstack { display: inline-flex; align-items: center; }
+  .k-avstack > * + * { margin-left: -6px; }
+  .k-avstack__more { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--surface-2); color: var(--ink-2); font-size: 9px; font-weight: 700; box-shadow: 0 0 0 1.5px var(--surface); }
+  .pri-label { font-size: 11px; color: var(--ink-2); }
+</style>
+<div class="section">Status Chips</div>
+<div class="row">
+  <span class="k-statuschip" style="--c:#94a3b8"><span class="k-statuschip__dot"></span>To Do</span>
+  <span class="k-statuschip" style="--c:#0082c6"><span class="k-statuschip__dot"></span>In Progress</span>
+  <span class="k-statuschip" style="--c:#a78bfa"><span class="k-statuschip__dot"></span>In Review</span>
+  <span class="k-statuschip" style="--c:#05b7aa"><span class="k-statuschip__dot"></span>Done</span>
+  <span class="k-statuschip" style="--c:#f59e0b"><span class="k-statuschip__dot"></span>Requested</span>
+</div>
+<div class="section">Due Chips</div>
+<div class="row">
+  <span class="k-due k-due--danger">2d overdue</span>
+  <span class="k-due k-due--warn">Today</span>
+  <span class="k-due k-due--warn">Tomorrow</span>
+  <span class="k-due">In 4d</span>
+  <span class="k-due k-due--muted">15 Jul</span>
+</div>
+<div class="section">Priority Dots + Project Tags + Avatar Stack</div>
+<div class="row">
+  <span class="k-pdot" style="width:8px;height:8px;background:#C0392B"></span><span class="pri-label">Urgent</span>
+  <span class="k-pdot" style="width:8px;height:8px;background:#B06A00"></span><span class="pri-label">High</span>
+  <span class="k-pdot" style="width:8px;height:8px;background:#0082c6"></span><span class="pri-label">Medium</span>
+  <span class="k-pdot" style="width:8px;height:8px;background:#6E7B91"></span><span class="pri-label">Low</span>
+  <span style="width:8px"></span>
+  <span class="k-ptag"><span class="k-ptag__dot" style="background:#0082c6"></span><span class="k-ptag__name">Quarterly GST filing</span><span class="k-ptag__sans">राजस्व</span></span>
+  <span style="width:8px"></span>
+  <span class="k-avstack">
+    <span class="k-avatar k-avatar--ring" style="width:22px;height:22px;background:#0082c6">KS</span>
+    <span class="k-avatar k-avatar--ring" style="width:22px;height:22px;background:#03a1b6">AM</span>
+    <span class="k-avstack__more" style="width:22px;height:22px">+3</span>
+  </span>
+</div>

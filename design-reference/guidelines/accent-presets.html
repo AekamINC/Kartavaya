@@ -1,0 +1,12 @@
+<!-- @dsCard group="Colors" viewport="700x110" subtitle="Four swappable accent presets — Teal, Blue, Saffron, Indigo" name="Accent Presets" -->
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; background: var(--bg); padding: 20px 24px; font-family: var(--font-ui); display: flex; gap: 12px; }
+  .preset { flex: 1; height: 60px; border-radius: 8px; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px 10px; position: relative; overflow: hidden; }
+  .preset b { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; color: #fff; position: relative; z-index: 1; }
+  .preset code { font-family: var(--font-mono); font-size: 9px; color: rgba(255,255,255,.75); position: relative; z-index: 1; }
+</style>
+<div class="preset" style="background:linear-gradient(90deg,#0082c6,#03a1b6,#05b7aa)"><b>Teal (default)</b><code>#05b7aa · #03a1b6 · #0082c6</code></div>
+<div class="preset" style="background:linear-gradient(90deg,#0a3d91,#0082c6,#1d6fcf)"><b>Blue</b><code>#0082c6 · #1d6fcf · #0a3d91</code></div>
+<div class="preset" style="background:linear-gradient(90deg,#9a3412,#d97706,#f59e0b)"><b>Saffron</b><code>#d97706 · #ea580c · #9a3412</code></div>
+<div class="preset" style="background:linear-gradient(90deg,#3730a3,#4f46e5,#818cf8)"><b>Indigo</b><code>#6366f1 · #4f46e5 · #3730a3</code></div>

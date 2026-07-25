@@ -1,0 +1,15 @@
+<!-- @dsCard group="Colors" viewport="700x160" subtitle="Brand accent gradient: blue → mid → teal" name="Brand Accents" -->
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; background: var(--bg); display: flex; align-items: stretch; padding: 20px 24px; gap: 12px; font-family: var(--font-ui); }
+  .swatch { flex: 1; border-radius: 10px; display: flex; flex-direction: column; justify-content: flex-end; padding: 10px 12px; min-height: 100px; }
+  .swatch b { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; font-weight: 700; color: #fff; }
+  .swatch code { font-family: var(--font-mono); font-size: 11px; color: rgba(255,255,255,.8); margin-top: 2px; }
+  .grad { flex: 1.5; background: var(--k-grad); }
+  .gradD { flex: 1; background: var(--k-gradD); }
+</style>
+<div class="swatch" style="background: var(--k-deep)"><b>Deep</b><code>#0082c6</code></div>
+<div class="swatch" style="background: var(--k-mid)"><b>Mid</b><code>#03a1b6</code></div>
+<div class="swatch" style="background: var(--k-primary)"><b>Primary</b><code>#05b7aa</code></div>
+<div class="swatch grad"><b>Gradient 90°</b><code>--k-grad</code></div>
+<div class="swatch gradD"><b>Gradient 135°</b><code>--k-gradD</code></div>

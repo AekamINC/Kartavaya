@@ -1,0 +1,14 @@
+<!-- @dsCard group="Spacing" viewport="700x120" subtitle="Border radius tokens — sm through xl" name="Corner Radii" -->
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; background: var(--bg); padding: 20px 28px; font-family: var(--font-ui); display: flex; gap: 20px; align-items: center; }
+  .box { width: 80px; height: 60px; background: var(--surface); border: 1.5px solid var(--rule-strong); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  .lbl { font-size: 9px; font-weight: 700; letter-spacing: 0.1em; color: var(--ink-3); text-transform: uppercase; }
+  .val { font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); }
+  .usage { font-size: 10px; color: var(--ink-3); margin-top: 2px; }
+</style>
+<div style="text-align:center"><div class="box" style="border-radius:var(--r-sm)"><span class="lbl">r-sm</span><span class="val">8px</span></div><div class="usage">Buttons, chips</div></div>
+<div style="text-align:center"><div class="box" style="border-radius:var(--r-md)"><span class="lbl">r-md</span><span class="val">12px</span></div><div class="usage">Cards, tiles</div></div>
+<div style="text-align:center"><div class="box" style="border-radius:var(--r-lg)"><span class="lbl">r-lg</span><span class="val">18px</span></div><div class="usage">Major cards</div></div>
+<div style="text-align:center"><div class="box" style="border-radius:var(--r-xl)"><span class="lbl">r-xl</span><span class="val">22px</span></div><div class="usage">Hero</div></div>
+<div style="text-align:center"><div class="box" style="border-radius:99px"><span class="lbl">pill</span><span class="val">99px</span></div><div class="usage">Chips, search</div></div>

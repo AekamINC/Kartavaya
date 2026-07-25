@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-density="cozy" data-display="serif" data-platform="mac">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kartavaya — settings &amp; admin</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:wght@400;500&family=Instrument+Serif&family=Playfair+Display:wght@400;500&family=Lora:wght@400;500&family=DM+Sans:wght@400;500;600&family=Poppins:wght@400;500;600&family=Source+Sans+3:wght@400;500;600&family=Nunito+Sans:wght@400;600&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="motion.css">
+<link rel="stylesheet" href="auth.css">
+<link rel="stylesheet" href="settings.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style id="__om-edit-overrides"></style>
+</head>
+<body style="margin:0">
+<div id="root"></div>
+<script type="text/babel" src="Chrome.jsx"></script>
+<script type="text/babel" src="Data.jsx"></script>
+<script type="text/babel" src="ScreensSanvaad.jsx"></script>
+<script type="text/babel" src="ScreensRBAC.jsx"></script>
+<script type="text/babel" src="SetCustomize.jsx"></script>
+<script type="text/babel" src="SetOrg.jsx"></script>
+<script type="text/babel" src="SetAdmin.jsx"></script>
+<script type="text/babel">
+function SettingsApp() {
+  const [hub, setHub] = React.useState('customize');
+  const [surface, setSurface] = React.useState('mac');
+  const [theme, setTheme] = React.useState('light');
+  const mobile = surface === 'mweb' || surface === 'mapp';
+  React.useEffect(() => {
+    const r = document.documentElement;
+    r.dataset.theme = theme; r.dataset.platform = mobile ? 'mac' : surface; r.dataset.surfaceKind = surface;
+  }, [surface, theme, mobile]);
+  if (hub === 'admin') return <AdminConsole exit={() => setHub('org')} />;
+  return (
+    <div>
+      <header className="hubbar">
+        <span className="hubbar__t">Settings<span className="hi">व्यवस्था</span></span>
+        <div className="seg">
+          {[['customize', 'Customization'], ['org', 'Organisation'], ['admin', 'Platform admin']].map(([v, l]) => (
+            <button key={v} className={'seg__b' + (hub === v ? ' on' : '')} onClick={() => setHub(v)}>{l}</button>
+          ))}
+        </div>
+        <span style={{ flex: 1 }} />
+        <div className="seg">
+          {[['mac', 'macOS'], ['win', 'Win'], ['mweb', 'M-web'], ['mapp', 'M-app']].map(([v, l]) => (
+            <button key={v} className={'seg__b' + (surface === v ? ' on' : '')} onClick={() => setSurface(v)}>{l}</button>
+          ))}
+        </div>
+        <button className="icobtn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? I.moon : I.sun}</button>
+      </header>
+      {hub === 'customize' ? <CustomizeHub /> : <OrgHub />}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<SettingsApp />);
+</script>
+</body>
+</html>

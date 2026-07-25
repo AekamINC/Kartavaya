@@ -1,0 +1,60 @@
+<!-- @dsCard group="Components" viewport="700x400" name="Editorial Primitives" -->
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body { margin: 0; background: var(--bg); padding: 16px 20px; font-family: var(--font-ui); color: var(--ink); }
+  .section { font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin: 12px 0 6px; }
+  .section:first-child { margin-top: 0; }
+  .k-pageh { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--rule); }
+  .k-pageh__kicker { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--k-mid); font-weight: 700; margin-bottom: 4px; }
+  .k-pageh__h1 { font-family: var(--font-display); font-size: 32px; font-weight: 400; line-height: 1; margin: 0; letter-spacing: -0.02em; display: flex; align-items: baseline; gap: 12px; }
+  .k-pageh__sans { font-family: var(--font-hindi); font-size: .7em; color: var(--k-primary); font-weight: 400; }
+  .k-pageh__lede { font-size: 13px; color: var(--ink-3); margin-top: 6px; }
+  .stats { display: flex; gap: 10px; }
+  .k-stat { flex: 1; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-md); padding: 12px 14px; }
+  .k-stat__lbl { display: flex; align-items: baseline; justify-content: space-between; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
+  .k-stat__hi { font-family: var(--font-hindi); font-size: 12px; text-transform: none; letter-spacing: 0; color: var(--ink-faint); font-weight: 400; }
+  .k-stat__val { font-family: var(--font-display); font-size: 36px; font-weight: 400; line-height: 1; margin: 6px 0 2px; }
+  .k-stat--blue .k-stat__val { color: var(--k-deep); }
+  .k-stat--teal .k-stat__val { color: var(--ok); }
+  .k-stat--amber .k-stat__val { color: var(--warn); }
+  .k-stat--red .k-stat__val { color: var(--danger); }
+  .k-stat__sub { font-size: 11px; color: var(--ink-3); }
+  .k-card { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg); overflow: hidden; }
+  .k-card__head { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--rule-soft); }
+  .k-card__title { font-family: var(--font-display); font-size: 16px; font-weight: 500; margin: 0; }
+  .k-card__sans { font-family: var(--font-hindi); font-size: 13px; color: var(--ink-3); margin-left: 8px; }
+  .k-card__body { padding: 12px 16px; font-size: 13px; color: var(--ink-2); }
+  .k-citation { padding: 14px 16px; border-left: 2px solid var(--k-primary); background: var(--surface); border-radius: 0 var(--r-md) var(--r-md) 0; }
+  .k-citation__sans { font-family: var(--font-hindi); font-size: 16px; line-height: 1.5; color: var(--ink); }
+  .k-citation__src { font-family: var(--font-display); font-style: italic; font-size: 12px; color: var(--ink-3); margin-top: 6px; }
+</style>
+<div class="section">Page Header</div>
+<div class="k-pageh">
+  <div>
+    <div class="k-pageh__kicker">WORKSPACE</div>
+    <h1 class="k-pageh__h1">Tasks <span class="k-pageh__sans">कर्तव्य</span></h1>
+    <p class="k-pageh__lede">The list of what's worth doing today.</p>
+  </div>
+</div>
+
+<div class="section">Stat Tiles</div>
+<div class="stats">
+  <div class="k-stat k-stat--blue"><div class="k-stat__lbl"><span>DUE TODAY</span><span class="k-stat__hi">आज</span></div><div class="k-stat__val">3</div><div class="k-stat__sub">2 high priority</div></div>
+  <div class="k-stat k-stat--teal"><div class="k-stat__lbl"><span>IN PROGRESS</span><span class="k-stat__hi">चालू</span></div><div class="k-stat__val">7</div><div class="k-stat__sub">across 3 projects</div></div>
+  <div class="k-stat k-stat--amber"><div class="k-stat__lbl"><span>IN REVIEW</span><span class="k-stat__hi">समीक्षा</span></div><div class="k-stat__val">2</div><div class="k-stat__sub">awaiting approval</div></div>
+  <div class="k-stat k-stat--red"><div class="k-stat__lbl"><span>OVERDUE</span></div><div class="k-stat__val">1</div><div class="k-stat__sub">needs attention</div></div>
+</div>
+
+<div class="section">Card + Citation</div>
+<div style="display:flex;gap:12px">
+  <div class="k-card" style="flex:1.5">
+    <div class="k-card__head"><h3 class="k-card__title">My tasks today<span class="k-card__sans">आज के कार्य</span></h3></div>
+    <div class="k-card__body">Task rows render here — see Composite components</div>
+  </div>
+  <div style="flex:1">
+    <div class="k-citation">
+      <div class="k-citation__sans">कर्मण्येवाधिकारस्ते मा फलेषु कदाचन</div>
+      <div class="k-citation__src">— Bhagavad Gita 2.47 · <em>Do what must be done</em></div>
+    </div>
+  </div>
+</div>

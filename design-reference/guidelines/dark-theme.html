@@ -1,0 +1,26 @@
+<!-- @dsCard group="Colors" viewport="700x160" subtitle="Dark theme — deep navy canvas with adjusted ink and rules" name="Dark Theme" -->
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; padding: 16px 20px; font-family: var(--font-ui); }
+  .row { display: flex; gap: 8px; margin-bottom: 8px; }
+  .swatch { flex: 1; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 1px; border: 1px solid rgba(255,255,255,.06); }
+  .swatch span { font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700; }
+  .swatch code { font-family: var(--font-mono); font-size: 9px; }
+  .label { font-size: 10px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: #7D8BA6; margin-bottom: 4px; }
+</style>
+<div data-theme="dark" style="background:#050E1A;padding:16px;border-radius:12px;">
+  <div class="label" style="color:#7D8BA6">Canvas & Surface</div>
+  <div class="row">
+    <div class="swatch" style="background:#050E1A"><span style="color:#7D8BA6">bg</span><code style="color:#4A5878">#050E1A</code></div>
+    <div class="swatch" style="background:#0A1424"><span style="color:#7D8BA6">bg-soft</span><code style="color:#4A5878">#0A1424</code></div>
+    <div class="swatch" style="background:#0B1828"><span style="color:#7D8BA6">surface</span><code style="color:#4A5878">#0B1828</code></div>
+    <div class="swatch" style="background:#122035"><span style="color:#7D8BA6">surface-2</span><code style="color:#4A5878">#122035</code></div>
+  </div>
+  <div class="label" style="color:#7D8BA6">Ink</div>
+  <div class="row">
+    <div class="swatch" style="background:#1A2A45"><span style="color:#E6EEFC">ink</span><code style="color:#B0BDD4">#E6EEFC</code></div>
+    <div class="swatch" style="background:#1A2A45"><span style="color:#B0BDD4">ink-2</span><code style="color:#7D8BA6">#B0BDD4</code></div>
+    <div class="swatch" style="background:#1A2A45"><span style="color:#7D8BA6">ink-3</span><code style="color:#4A5878">#7D8BA6</code></div>
+    <div class="swatch" style="background:#1A2A45"><span style="color:#4A5878">ink-faint</span><code style="color:#4A5878">#4A5878</code></div>
+  </div>
+</div>

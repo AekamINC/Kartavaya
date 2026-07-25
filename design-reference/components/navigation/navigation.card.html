@@ -1,0 +1,36 @@
+<!-- @dsCard group="Components" viewport="700x120" name="Navigation" -->
+<link rel="stylesheet" href="../../styles.css">
+<style>
+  body { margin: 0; background: var(--bg); padding: 16px 24px; font-family: var(--font-ui); color: var(--ink); }
+  .section { font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  .row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .k-segctrl { display: inline-flex; background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 3px; }
+  .k-segctrl__btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 7px; background: transparent; border: 0; font-size: 12.5px; font-weight: 600; color: var(--ink-3); cursor: pointer; font-family: var(--font-ui); }
+  .k-segctrl__btn.is-active { background: var(--bg-soft); color: var(--ink); }
+  .k-segctrl__count { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); background: var(--rule-soft); padding: 1px 6px; border-radius: 99px; }
+  .k-segctrl__btn.is-active .k-segctrl__count { background: color-mix(in srgb, var(--k-primary) 18%, transparent); color: var(--k-mid); }
+  .k-fld { display: inline-flex; align-items: center; gap: 8px; }
+  .k-fld__lbl { font-size: 11.5px; color: var(--ink-3); font-weight: 600; }
+  .k-fld__sel { padding: 6px 28px 6px 12px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; font-size: 13px; color: var(--ink); font-weight: 500; appearance: none; font-family: var(--font-ui); background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%236E7B91' d='M0 0h10L5 6z'/></svg>"); background-repeat: no-repeat; background-position: right 10px center; }
+  .k-topbar__search { display: inline-flex; align-items: center; gap: 10px; height: 38px; padding: 0 14px; background: var(--surface); border: 1px solid var(--rule); border-radius: 99px; color: var(--ink-3); }
+  .k-topbar__search input { flex: 1; border: 0; background: transparent; outline: none; font-size: 13px; color: var(--ink); font-family: var(--font-ui); width: 180px; }
+  .k-kbd { font-family: var(--font-mono); font-size: 10px; padding: 2px 6px; border-radius: 4px; background: var(--rule-soft); color: var(--ink-3); border: 1px solid var(--rule); }
+</style>
+<div class="section">Segmented Control + Field Select + Pill Search</div>
+<div class="row">
+  <div class="k-segctrl">
+    <button class="k-segctrl__btn is-active">Mine <span class="k-segctrl__count">4</span></button>
+    <button class="k-segctrl__btn">All open <span class="k-segctrl__count">11</span></button>
+    <button class="k-segctrl__btn">Overdue <span class="k-segctrl__count">0</span></button>
+    <button class="k-segctrl__btn">Done <span class="k-segctrl__count">2</span></button>
+  </div>
+  <div class="k-fld">
+    <span class="k-fld__lbl">Group by</span>
+    <select class="k-fld__sel"><option>Priority</option><option>Project</option></select>
+  </div>
+  <div class="k-topbar__search">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+    <input placeholder="Search…">
+    <kbd class="k-kbd">⌘K</kbd>
+  </div>
+</div>

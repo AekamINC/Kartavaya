@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-density="cozy" data-display="serif" data-platform="mac">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kartavaya — mobile app</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="motion.css">
+<link rel="stylesheet" href="mobile.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style id="__om-edit-overrides"></style>
+</head>
+<body style="margin:0">
+<div id="root"></div>
+<script type="text/babel" src="Chrome.jsx"></script>
+<script type="text/babel" src="Data.jsx"></script>
+<script type="text/babel" src="ScreensSanvaad.jsx"></script>
+<script type="text/babel" src="IxKit.jsx"></script>
+<script type="text/babel" src="IxDrawer.jsx"></script>
+<script type="text/babel" src="Mobile.jsx"></script>
+<script type="text/babel" src="MobileTask.jsx"></script>
+<script type="text/babel" src="MobileBoard.jsx"></script>
+<script type="text/babel" src="MobileMore.jsx"></script>
+<script type="text/babel" src="MobileModules.jsx"></script>
+<script type="text/babel">
+const SCREENS = [
+  ['today', 'Today'], ['tasks', 'Tasks'], ['msgs', 'Messages'], ['chat', 'Chat'],
+  ['pahchan', 'Pahchan'], ['approvals', 'Approvals'], ['more', 'More'], ['push', 'Push'],
+];
+const STATES = [['loaded', 'Loaded'], ['loading', 'Loading'], ['empty', 'Empty'], ['error', 'Error']];
+
+function NewTaskSheet({ close }) {
+  const [more, setMore] = React.useState(false);
+  const [pri, setPri] = React.useState('medium');
+  const [due, setDue] = React.useState('today');
+  return (
+    <>
+      <div className="msheet__scrim" onClick={close} />
+      <div className="msheet">
+        <span className="msheet__grab" />
+        <div className="msheet__h"><b>New task</b></div>
+        <div className="msheet__b">
+          <input className="minp" placeholder="What needs doing?" autoFocus />
+          <div>
+            <span className="mlbl">Project</span>
+            <div className="mchips" style={{ marginTop: 7 }}>
+              {['Quarterly GST', 'Mumbai fit-out', 'Diwali campaign', 'Vendor onboarding'].map((p, i) => (
+                <button key={p} className={'mchip' + (i === 0 ? ' on' : '')}>{p}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <span className="mlbl">Due</span>
+            <div className="mchips" style={{ marginTop: 7 }}>
+              {[['today', 'Today'], ['tmrw', 'Tomorrow'], ['week', 'Next week'], ['pick', 'Pick a date']].map(([v, l]) => (
+                <button key={v} className={'mchip' + (due === v ? ' on' : '')} onClick={() => setDue(v)}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <span className="mlbl">Priority</span>
+            <div className="mchips" style={{ marginTop: 7 }}>
+              {Object.keys(PRIO).map(p => (
+                <button key={p} className={'mchip' + (pri === p ? ' on' : '')} onClick={() => setPri(p)} style={{ textTransform: 'capitalize' }}>
+                  <span className="pdot" style={{ background: PRIO[p] }} /> {p}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <span className="mlbl">Assign to</span>
+            <div className="mchips" style={{ marginTop: 7 }}>
+              {MEM.slice(0, 4).map((m, i) => (
+                <button key={m} className={'mchip' + (i === 0 ? ' on' : '')}><Av n={m} s={18} /> {m.split(' ')[0]}</button>
+              ))}
+            </div>
+          </div>
+          {more && (
+            <div className="mchips" style={{ flexWrap: 'wrap' }}>
+              {['Compliance template', 'Add subtasks', 'Set a reminder', 'Attach a file'].map(x => <button key={x} className="mchip">{x}</button>)}
+            </div>
+          )}
+          <button className="mlist" style={{ borderBottom: 0, padding: '4px 0' }} onClick={() => setMore(!more)}>
+            <span className="mlist__ic">{I.plus}</span>{more ? 'Fewer options' : 'More options'}
+          </button>
+          <label className="mlist" style={{ borderBottom: 0, padding: '4px 0', gap: 9 }}>
+            <input type="checkbox" /> Create &amp; add another
+          </label>
+          <button className="mbtn mbtn--fill" onClick={close}>Create task</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Push() {
+  return (
+    <div className="mpush">
+      <div className="mpush__lock">
+        <div className="mpush__time">9:41</div>
+        <div className="mpush__date">Friday, 25 July</div>
+        <div className="mpush__card">
+          <span className="mpush__ic">सम</span>
+          <span className="mpush__b"><b>Rohan needs your approval</b><span>Mumbai fit-out — final layout · KAR-582</span><i>Kartavaya · now</i></span>
+        </div>
+        <div className="mpush__card">
+          <span className="mpush__ic">सं</span>
+          <span className="mpush__b"><b>Aanya Mehta · #gst-filing</b><span>Two vendor invoices are missing HSN codes</span><i>Kartavaya · 2m ago</i></span>
+        </div>
+        <div className="mpush__card">
+          <span className="mpush__ic">प</span>
+          <span className="mpush__b"><b>You haven’t clocked in</b><span>Shift started 41 minutes ago</span><i>Kartavaya · 9:41</i></span>
+        </div>
+      </div>
+      <div className="mpush__cap">Lock screen · grouped by module</div>
+      <div className="mpush__banner">
+        <span className="mpush__ic">सम</span>
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <b>Rohan needs your approval</b>
+          <span>Mumbai fit-out — final layout</span>
+          <span className="mpush__acts"><button>Approve</button><button>Decline</button><button>Open</button></span>
+        </span>
+      </div>
+      <div className="mpush__cap">Banner · actionable without opening the app</div>
+      <div className="mpush__banner" style={{ background: 'var(--warn-container)', borderColor: 'transparent' }}>
+        <span className="mpush__ic" style={{ background: 'linear-gradient(140deg,#E8B45C,#A66207)' }}>आ</span>
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <b>Morning digest · 08:30</b>
+          <span>3 tasks due, 1 overdue · 3 approvals waiting · 5 reminders today</span>
+        </span>
+      </div>
+      <div className="mpush__cap">Scheduled digest · one push, not five</div>
+    </div>
+  );
+}
+
+function Phone({ dev, screen, setScreen, state, offline, clockedIn, setClockedIn }) {
+  const d = MDEV[dev];
+  const [sheet, setSheet] = React.useState(false);
+  const [sub, setSub] = React.useState(null);
+  const cur = sub || screen;
+  const go = k => { if (k === 'stub') return; setSub(['chat', 'pahchan', 'approvals', 'task', 'board', 'inbox', 'settings', 'time', 'reminders', 'crm', 'fin', 'hr', 'pay', 'rep', 'ai', 'sign'].includes(k) ? k : null); if (!['chat', 'pahchan', 'approvals', 'task', 'board', 'inbox', 'settings', 'time', 'reminders', 'crm', 'fin', 'hr', 'pay', 'rep', 'ai', 'sign'].includes(k)) setScreen(k); };
+  const back = () => setSub(null);
+  const full = cur === 'chat' || cur === 'pahchan' || cur === 'approvals';
+  window.__mgo = go;
+
+  return (
+    <div className={'mphone mphone--' + dev} style={{ width: d.w + 22, height: d.h + 22 }}>
+      <div className="mscreen" style={{ width: d.w, height: d.h, borderRadius: d.r, '--m-safe-t': d.safeT + 'px' }}>
+        <MStatus d={d} />
+        <MOffline on={offline} />
+        {cur === 'today' && <MToday st={state} go={go} clockedIn={clockedIn} setClockedIn={setClockedIn} os={d.os} />}
+        {cur === 'tasks' && <MTasks st={state} go={go} os={d.os} />}
+        {cur === 'msgs' && (state === 'loaded' ? <MMessages go={go} /> : <MState kind="msgs" state={state} os={d.os} />)}
+        {cur === 'chat' && (state === 'loaded' ? <MChat back={back} /> : <MState kind="chat" state={state} os={d.os} back={back} />)}
+        {cur === 'pahchan' && <MPahchan back={back} clockedIn={clockedIn} setClockedIn={setClockedIn} offline={offline} />}
+        {cur === 'approvals' && (state === 'loaded' ? <MApprovals back={back} /> : <MState kind="approvals" state={state} os={d.os} back={back} />)}
+        {cur === 'more' && (state === 'loaded' ? <MMore go={go} /> : <MState kind="more" state={state} os={d.os} />)}
+        {cur === 'task' && <MTaskDetail back={back} os={d.os} offline={offline} state={state} />}
+        {cur === 'board' && <MBoardDetail back={back} os={d.os} go={go} state={state} />}
+        {cur === 'inbox' && <MInbox os={d.os} state={state} go={go} />}
+        {cur === 'settings' && <MSettings os={d.os} back={back} />}
+        {cur === 'time' && <MTime os={d.os} back={back} />}
+        {cur === 'reminders' && <MReminders os={d.os} back={back} />}
+        {MODS[cur] && <MModule m={cur} back={back} os={d.os} go={go} />}
+        {!full && cur !== 'task' && cur !== 'board' && (
+          <div className={'mnav2 mnav2--' + d.os} style={{ paddingBottom: d.safeB ? d.safeB - 10 : 6 }}>
+            {MTABS.map(([k, l, hi, ic, n]) => k === 'add' ? (
+              <span key={k} className="mnav2__b" style={{ position: 'relative' }}>
+                <button className="mnav2__pill" onClick={() => setSheet(true)}>{I.plus}</button>
+              </span>
+            ) : (
+              <button key={k} className={'mnav2__b' + (screen === k ? ' on' : '')} onClick={() => { setScreen(k); setSub(null); }}>
+                {screen === k && d.os === 'android' && <span className="mnav2__ind" />}
+                {I[ic]}
+                <i>{hi}</i>
+                {n && <span className="mnav2__badge">{n}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+        {sheet && <NewTaskSheet close={() => setSheet(false)} />}
+      </div>
+    </div>
+  );
+}
+
+function MobileApp() {
+  const [screen, setScreen] = React.useState('today');
+  const [state, setState] = React.useState('loaded');
+  const [theme, setTheme] = React.useState('light');
+  const [offline, setOffline] = React.useState(false);
+  const [clockedIn, setClockedIn] = React.useState(false);
+  const [devs, setDevs] = React.useState(['ios15', 'pixel']);
+  React.useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+  const toggle = d => setDevs(v => v.includes(d) ? (v.length > 1 ? v.filter(x => x !== d) : v) : [...v, d]);
+
+  return (
+    <div className="mwrap">
+      <header className="mbar">
+        <span className="mbar__t">Mobile app<span className="hi">चलंत</span></span>
+        <div className="tabs" style={{ border: 0 }}>
+          <div className="tabs__scroll">
+            {SCREENS.map(([k, l]) => <button key={k} className={'tabs__b' + (screen === k ? ' on' : '')} onClick={() => setScreen(k)}>{l}</button>)}
+          </div>
+        </div>
+        <div className="seg">
+          {Object.entries(MDEV).map(([k, d]) => <button key={k} className={'seg__b' + (devs.includes(k) ? ' on' : '')} onClick={() => toggle(k)}>{d.n}</button>)}
+        </div>
+        <div className="seg">
+          {STATES.map(([v, l]) => <button key={v} className={'seg__b' + (state === v ? ' on' : '')} onClick={() => setState(v)}>{l}</button>)}
+        </div>
+        <button className={'chip' + (offline ? ' on' : '')} onClick={() => setOffline(!offline)}>{offline ? 'Offline' : 'Online'}</button>
+        <button className="icobtn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? I.moon : I.sun}</button>
+      </header>
+      <div className="mstage">
+        {screen === 'push' ? (
+          <div className="mcase"><span className="mcase__l">Push notifications</span><Push /></div>
+        ) : devs.map(d => (
+          <div key={d} className="mcase">
+            <span className="mcase__l">{MDEV[d].n} · {MDEV[d].w}×{MDEV[d].h}</span>
+            <Phone dev={d} screen={screen} setScreen={setScreen} state={state} offline={offline} clockedIn={clockedIn} setClockedIn={setClockedIn} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<MobileApp />);
+</script>
+</body>
+</html>

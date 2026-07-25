@@ -1,0 +1,11 @@
+<!-- @dsCard group="Spacing" viewport="700x120" subtitle="Three shadow levels — warm-toned, not pure black" name="Shadows" -->
+<link rel="stylesheet" href="../styles.css">
+<style>
+  body { margin: 0; background: var(--bg); padding: 20px 28px; font-family: var(--font-ui); display: flex; gap: 28px; align-items: center; }
+  .card { width: 160px; height: 70px; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-md); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+  .lbl { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; color: var(--ink-3); text-transform: uppercase; }
+  .val { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); }
+</style>
+<div class="card" style="box-shadow:var(--shadow-sm)"><span class="lbl">shadow-sm</span><span class="val">Cards at rest</span></div>
+<div class="card" style="box-shadow:var(--shadow-md)"><span class="lbl">shadow-md</span><span class="val">Hover / elevated</span></div>
+<div class="card" style="box-shadow:var(--shadow-lg)"><span class="lbl">shadow-lg</span><span class="val">Overlays / drawers</span></div>
