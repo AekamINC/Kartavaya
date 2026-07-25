@@ -117,7 +117,7 @@ function ChannelsTab() {
                 {ch.unread_count > 0 && (
                   <span style={{
                     background: 'var(--k-deep)', color: '#fff', borderRadius: 99,
-                    fontSize: 10, fontWeight: 700, padding: '1px 7px', minWidth: 18, textAlign: 'center',
+                    fontSize: 'var(--t-label-sm)', fontWeight: 700, padding: '1px 7px', minWidth: 18, textAlign: 'center',
                   }}>{ch.unread_count}</span>
                 )}
               </div>
@@ -237,8 +237,8 @@ function ChatView({ channel, onRefreshChannels }) {
             <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
                 <span style={{ fontWeight: 700, fontSize: 13 }}>{m.sender_name || 'Unknown'}</span>
-                <span style={{ fontSize: 10, color: 'var(--ink-4)' }}>{relTime(m.created_at)}</span>
-                {m.is_edited && <span style={{ fontSize: 9, color: 'var(--ink-4)' }}>(edited)</span>}
+                <span style={{ fontSize: 'var(--t-label-sm)', color: 'var(--ink-4)' }}>{relTime(m.created_at)}</span>
+                {m.is_edited && <span style={{ fontSize: 'var(--t-label-sm)', color: 'var(--ink-4)' }}>(edited)</span>}
               </div>
               <div style={{ fontSize: 13, lineHeight: 1.5, marginTop: 2, whiteSpace: 'pre-wrap' }}>
                 {m.is_deleted ? <em style={{ color: 'var(--ink-4)' }}>Message deleted</em> : m.content}
@@ -424,7 +424,7 @@ function WhatsAppTab() {
                 <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 2 }}>→ {r.response_content.slice(0, 100)}</div>
               </div>
               <span style={{
-                fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 99,
+                fontSize: 'var(--t-label-sm)', fontWeight: 700, padding: '2px 8px', borderRadius: 99,
                 background: r.is_active ? 'color-mix(in srgb, var(--ok) 14%, transparent)' : 'var(--bg-soft)',
                 color: r.is_active ? 'var(--ok)' : 'var(--ink-4)',
               }}>
@@ -514,7 +514,7 @@ function WAChat({ conversation }) {
               color: m.direction === 'outbound' ? '#fff' : 'var(--ink)',
             }}>
               <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{m.content}</div>
-              <div style={{ fontSize: 9, marginTop: 4, opacity: 0.7, textAlign: 'right' }}>
+              <div style={{ fontSize: 'var(--t-label-sm)', marginTop: 4, opacity: 0.85, textAlign: 'right' }}>
                 {relTime(m.created_at)} {m.direction === 'outbound' && (STATUS_ICONS[m.status] || '')}
               </div>
             </div>
@@ -546,7 +546,7 @@ function StatusBadge({ status }) {
   const c = colors[status] || 'var(--ink-4)';
   return (
     <span style={{
-      fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+      fontSize: 'var(--t-label-sm)', fontWeight: 700, textTransform: 'uppercase',
       padding: '2px 8px', borderRadius: 99, marginTop: 6, display: 'inline-block',
       background: `color-mix(in srgb, ${c} 14%, transparent)`, color: c,
     }}>
