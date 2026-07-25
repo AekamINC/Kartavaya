@@ -34,9 +34,24 @@ Verified from the deployed bundle, not from config: staging's frontend does call
 
 ## Three risks, in the order they actually matter
 
-### 1 · Outbound side effects — nothing guards them
+### 1 · Outbound side effects — **DONE** (`c010c11`)
 
-Searched for `DRY_RUN`, `SANDBOX`, any staging check. **None exists.** `DB_SCHEMA` routes the database and nothing else.
+Built 2026-07-25. `OUTBOUND_MODE=live|dry` in `backend/outbound.py`, guarding
+`email_service.send_email`, all three push services, and all 11
+`social_publisher.publish_to_*` entry points via a decorator.
+
+**One manual step outstanding: set `OUTBOUND_MODE=dry` on the `kartavya-staging`
+Railway service.** Until that variable is set the switch is inert — `live` is
+the default, deliberately, so production needs no change.
+
+AI inference is deliberately *not* guarded (blocking it makes Srijan untestable;
+spend is metered and visible). WhatsApp is not guarded because it does not send
+yet — `send_wa_message` stores `pending` behind a TODO. Both documented in
+`outbound.py`.
+
+The original finding, for context:
+
+Searched for `DRY_RUN`, `SANDBOX`, any staging check. **None existed.** `DB_SCHEMA` routes the database and nothing else.
 
 So from staging, with production credentials:
 
@@ -97,7 +112,7 @@ The trade, stated plainly: **a data fork reconciled once at cutover, versus test
 
 ## Recommended order
 
-1. **Outbound kill-switch** — must exist before anyone clicks through the redesign
+1. ~~**Outbound kill-switch**~~ — **done** (`c010c11`). Still needs `OUTBOUND_MODE=dry` set on Railway staging.
 2. **R2 prefix** on the staging org — one `UPDATE`
 3. **Schema clone** — reviewable `.sql`, run in the evening with `lock_timeout`
 
@@ -105,7 +120,7 @@ The trade, stated plainly: **a data fork reconciled once at cutover, versus test
 
 ## Decisions needed
 
-- [ ] Kill-switch: build it before testing starts?
+- [ ] **Set `OUTBOUND_MODE=dry` on `kartavya-staging` in Railway** — the switch is inert until this is done
 - [ ] Schema clone: do it, or test inside one quarantined team instead?
 - [ ] Rename `staging` schema → `v2` / `app` after the redesign ships?
 - [ ] `account_manager`: `PLAN_RBAC.md` says removed, but 2 users hold it and the code treats it as platform staff
