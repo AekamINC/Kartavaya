@@ -1,6 +1,6 @@
 import React, { useEffect } from "react";
 import { cn } from "../../lib/utils";
-import { Button } from "./button";
+import { Button } from "./Button";
 import FocusTrap from "./FocusTrap";
 
 export function Modal({ open, onOpenChange, title, children, footer, dataTestId }) {

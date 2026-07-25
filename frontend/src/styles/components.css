@@ -1,0 +1,132 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMMON COMPONENTS — implements design-handover/02-common-components.md §1
+   One system: CSS classes on custom properties. The Tailwind primitives these
+   replace (button/badge/input/select/FormGroup/ButtonBox/ColorTag) had between
+   zero and one importer each and are deleted alongside this file.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Button — seven variants, three sizes ──────────────────────────────────
+   The old pair was rounded-full while inputs were rounded-2xl, so a button and
+   an input side by side had different corner radii. Both are --r-sm now. */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 8px 15px; border-radius: var(--r-sm);
+  font-family: inherit; font-size: 13px; font-weight: 600; white-space: nowrap;
+  background: none; border: none; cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast),
+              border-color var(--dur-fast), transform var(--dur-fast) var(--ease-spring);
+}
+/* Feedback is a scale, not a colour change — it survives every variant. Under
+   anim:none the transform collapses because --ix drives --dur-fast. */
+.btn:active   { transform: scale(.975); }
+.btn:disabled { opacity: .42; pointer-events: none; }
+
+.btn--fill  { background: var(--primary); color: var(--on-primary); }
+.btn--fill:hover  { background: var(--primary-hover); }
+.btn--tonal { background: var(--primary-container); color: var(--on-primary-container); }
+.btn--tonal:hover { background: color-mix(in srgb, var(--primary-container) 78%, var(--primary)); }
+.btn--out   { border: 1px solid var(--outline); color: var(--on-surface-2); }
+.btn--out:hover   { background: var(--s-container); color: var(--on-surface); }
+.btn--text  { color: var(--primary); padding: 8px 10px; }
+.btn--text:hover  { background: var(--primary-container); }
+.btn--ghost { background: transparent; color: var(--on-surface-2); }
+.btn--ghost:hover  { background: var(--s-container); color: var(--on-surface); }
+.btn--ghost:active { background: var(--s-high); }
+/* Danger is OUTLINE, not filled: a filled red button reads as the primary
+   action on the screen, which a destructive action never is. The one exception
+   is a confirmed delete inside a dialog the user opened deliberately. */
+.btn--danger { border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--outline-variant)); color: var(--danger); }
+.btn--danger:hover { background: var(--danger-container); }
+
+.btn--sm { padding: 6px 11px; font-size: 12.5px; }
+.btn--lg { padding: 11px 20px; font-size: 14px; }
+
+/* ── Field ─────────────────────────────────────────────────────────────── */
+.fld    { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.fld__l { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3); }
+/* Labels that follow the user's language use --font-indic, never --font-hindi.
+   --font-hindi is reserved for fixed decorative Devanagari (watermarks), and
+   --font-devanagari was a third name that only existed in FormGroup.jsx. */
+.fld__hi   { font-family: var(--font-indic); text-transform: none; letter-spacing: 0; color: var(--primary); margin-left: 6px; }
+.fld__req  { color: var(--danger); margin-left: 3px; }
+.fld__hint { font-size: var(--t-label); color: var(--on-surface-3); }
+.fld__err  { font-size: var(--t-label); color: var(--danger); }
+
+.inp {
+  width: 100%; padding: 10px 12px;
+  background: var(--s-low); border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  font-family: inherit; font-size: var(--t-body-sm); color: var(--on-surface);
+  outline: none;
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast), background var(--dur-fast);
+}
+/* A 3px box-shadow, NOT outline: outline cannot take a radius on all engines
+   and clips against overflow parents. Same radius as the field so the ring
+   follows the corner. */
+.inp:focus { border-color: var(--primary); background: var(--s-lowest); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent); }
+.inp[aria-invalid="true"] { border-color: var(--danger); }
+.inp[aria-invalid="true"]:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 16%, transparent); }
+/* --on-surface-faint is 2.3:1 and declared non-text (00 §12). Placeholders
+   often carry format hints (27AAAPA1234A1Z5, DD/MM/YYYY), so this is text and
+   reads at --on-surface-3 instead — ledger §3.1. */
+.inp::placeholder { color: var(--on-surface-3); opacity: 1; }
+.inp:disabled { opacity: .55; cursor: not-allowed; }
+
+select.inp {
+  appearance: none; padding-right: 30px;
+  background-repeat: no-repeat; background-position: right 11px center;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23666A61' d='M0 0h10L5 6z'/></svg>");
+}
+/* The chevron fill is baked into the data URI, so dark mode must restate it. */
+[data-theme="dark"] select.inp, .dark select.inp {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23A9AEA3' d='M0 0h10L5 6z'/></svg>");
+}
+textarea.inp { resize: vertical; min-height: 76px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* ── Card ──────────────────────────────────────────────────────────────── */
+.card         { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: var(--r-md); box-shadow: var(--shadow-1); }
+.card--flat   { background: var(--s-low); border-color: transparent; box-shadow: none; }
+.card--glass  { background: rgba(var(--glass-tint), var(--glass-alpha)); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur)); border-color: color-mix(in srgb, var(--outline-variant) 60%, transparent); }
+.card__head   { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: var(--pad-card) var(--pad-card) calc(var(--pad-card) * .7); }
+/* Title and Hindi are both display:inline inside a block wrapper, so the Hindi
+   sits on the SAME baseline and wraps with the English rather than forming a
+   second line. It is an apposition, not a subtitle — a flex column stacks them
+   and reads as a heading plus subheading, which is a different thing. */
+.card__titles { display: block; min-width: 0; }
+.card__title  { display: inline; font-family: var(--font-display); font-size: var(--t-title-lg); font-weight: var(--t-title-lg-w); letter-spacing: -.01em; line-height: 1.4; }
+.card__hi     { display: inline; margin-left: 9px; font-family: var(--font-indic); font-size: 14px; color: var(--primary); }
+.card__body   { padding: 0 var(--pad-card) var(--pad-card); }
+.card__body--flush { padding: 0; }
+
+/* ── Chip and tag ──────────────────────────────────────────────────────── */
+.chip      { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: var(--r-sm); border: 1px solid var(--outline-variant); background: none; font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--on-surface-2); cursor: pointer; }
+.chip:hover{ background: var(--s-container); }
+.chip.on   { background: var(--secondary-container); color: var(--on-secondary-container); border-color: transparent; }
+.chip__dot { width: 8px; height: 8px; border-radius: 3px; flex-shrink: 0; }
+.chips     { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* .tag takes its colour from an inline --c, so one class covers every semantic
+   tone without a variant per colour. --c MUST resolve to a real colour:
+   color-mix() with an undefined variable voids the whole declaration silently
+   and the tag loses its pill. The semantic set is --ok / --warn / --danger;
+   there is no --info in this system. */
+.tag { --c: var(--on-surface-3);
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; border-radius: var(--r-pill);
+  font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .04em;
+  color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent);
+}
+
+/* ── Error states — four, not one "Something went wrong" ───────────────────
+   A single generic error tells the user nothing and gives them nothing to do.
+   Only `server` is red: a 404 on a deleted task is not an alarm, and colouring
+   it like one trains users to ignore red. */
+.k-err     { display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); padding: var(--sp-8) var(--sp-5); text-align: center; max-width: 42ch; margin: 0 auto; }
+.k-err__ic { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--s-container); color: var(--on-surface-3); }
+.k-err[data-kind="denied"] .k-err__ic { background: var(--warn-container); color: var(--warn); }
+.k-err[data-kind="server"] .k-err__ic { background: var(--danger-container); color: var(--danger); }
+.k-err__t  { font-family: var(--font-display); font-size: var(--t-title-lg); font-weight: 400; letter-spacing: -.02em; color: var(--on-surface); margin: 0; }
+.k-err__d  { font-size: var(--t-body-sm); line-height: var(--line-height-base); color: var(--on-surface-3); text-wrap: pretty; margin: 0; }
+
+.k-offline { position: sticky; top: 0; z-index: 60; padding: 7px var(--pad-page); background: var(--warn-container); color: var(--warn); font-size: var(--t-label); font-weight: 500; text-align: center; }
