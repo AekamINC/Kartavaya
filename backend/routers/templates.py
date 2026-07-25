@@ -8,6 +8,7 @@ import uuid, json
 
 from auth_router import require_user
 from db import get_pool
+from middleware.roles import is_platform_staff
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
@@ -32,7 +33,7 @@ async def _assert_team_member(pool, team_id: str, user_id: str):
 
 async def _assert_can_modify(pool, tmpl, user):
     """Raise 403 if user may not edit/delete the template row."""
-    if user.get("role") == "admin":
+    if await is_platform_staff(user["user_id"]):
         return
     if tmpl["team_id"]:
         await _assert_team_member(pool, tmpl["team_id"], user["user_id"])
@@ -67,7 +68,7 @@ class TaskTemplateBody(BaseModel):
 
 @router.get("/projects")
 async def list_project_templates(pool=Depends(get_pool), user=Depends(require_user)):
-    if user.get("role") == "admin":
+    if await is_platform_staff(user["user_id"]):
         rows = await pool.fetch("SELECT * FROM project_templates ORDER BY created_at DESC")
     else:
         rows = await pool.fetch(
@@ -93,7 +94,7 @@ async def delete_project_template(template_id: str, pool=Depends(get_pool), user
     tmpl = await pool.fetchrow("SELECT created_by FROM project_templates WHERE template_id=$1", template_id)
     if not tmpl:
         raise HTTPException(404, _TEMPLATE_NOT_FOUND)
-    if tmpl["created_by"] != user["user_id"] and user.get("role") != "admin":
+    if tmpl["created_by"] != user["user_id"] and not await is_platform_staff(user["user_id"]):
         raise HTTPException(403, "Not authorised")
     await pool.execute("DELETE FROM project_templates WHERE template_id=$1", template_id)
     return {"ok": True}
@@ -105,7 +106,7 @@ async def apply_project_template(
     pool=Depends(get_pool), user=Depends(require_user)
 ):
     """Create columns and sample tasks from template into existing team."""
-    if user.get("role") != "admin":
+    if not await is_platform_staff(user["user_id"]):
         await _assert_team_member(pool, team_id, user["user_id"])
     tmpl = await pool.fetchrow("SELECT config FROM project_templates WHERE template_id=$1", template_id)
     if not tmpl:
@@ -149,10 +150,10 @@ async def apply_project_template(
 
 @router.get("/tasks")
 async def list_task_templates(team_id: Optional[str] = None, pool=Depends(get_pool), user=Depends(require_user)):
-    is_admin = user.get("role") == "admin"
+    is_staff = await is_platform_staff(user["user_id"])
 
     if team_id:
-        if not is_admin:
+        if not is_staff:
             await _assert_team_member(pool, team_id, user["user_id"])
         rows = await pool.fetch("""
             SELECT * FROM task_templates
@@ -160,7 +161,7 @@ async def list_task_templates(team_id: Optional[str] = None, pool=Depends(get_po
             ORDER BY is_default DESC, created_at ASC
         """, team_id)
     else:
-        if not is_admin:
+        if not is_staff:
             rows = await pool.fetch("""
                 SELECT DISTINCT tt.* FROM task_templates tt
                 LEFT JOIN (
@@ -171,7 +172,7 @@ async def list_task_templates(team_id: Optional[str] = None, pool=Depends(get_po
                 WHERE tt.team_id IS NULL OR my_teams.team_id IS NOT NULL
                 ORDER BY tt.is_default DESC, tt.created_at ASC
             """, user["user_id"])
-        else:
+        else:  # platform staff
             rows = await pool.fetch("SELECT * FROM task_templates ORDER BY is_default DESC, created_at ASC")
     return [dict(r) for r in rows]
 
@@ -181,17 +182,17 @@ async def get_task_template(template_id: str, pool=Depends(get_pool), user=Depen
     row = await pool.fetchrow("SELECT * FROM task_templates WHERE template_id=$1", template_id)
     if not row:
         raise HTTPException(404, _TEMPLATE_NOT_FOUND)
-    if row["team_id"] and user.get("role") != "admin":
+    if row["team_id"] and not await is_platform_staff(user["user_id"]):
         await _assert_team_member(pool, row["team_id"], user["user_id"])
     return dict(row)
 
 
 @router.post("/tasks")
 async def create_task_template(body: TaskTemplateBody, pool=Depends(get_pool), user=Depends(require_user)):
-    is_admin = user.get("role") == "admin"
-    if not body.team_id and not is_admin:
-        raise HTTPException(403, "Only admins can create org-wide templates")
-    if body.team_id and not is_admin:
+    is_staff = await is_platform_staff(user["user_id"])
+    if not body.team_id and not is_staff:
+        raise HTTPException(403, "Only platform staff can create org-wide templates")
+    if body.team_id and not is_staff:
         await _assert_team_member(pool, body.team_id, user["user_id"])
     tid = f"ttmpl_{uuid.uuid4().hex[:10]}"
     if body.is_default and body.team_id:
@@ -229,7 +230,7 @@ async def set_default_template(template_id: str, pool=Depends(get_pool), user=De
     tmpl = await pool.fetchrow("SELECT team_id FROM task_templates WHERE template_id=$1", template_id)
     if not tmpl:
         raise HTTPException(404, _TEMPLATE_NOT_FOUND)
-    if user.get("role") != "admin":
+    if not await is_platform_staff(user["user_id"]):
         member = await pool.fetchrow(
             "SELECT role FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' LIMIT 1",
             tmpl["team_id"], user["user_id"]

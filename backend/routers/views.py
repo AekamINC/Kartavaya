@@ -8,8 +8,24 @@ import uuid
 
 from auth_router import require_user
 from db import get_pool
+from middleware.roles import is_platform_staff
+
 
 router = APIRouter(prefix="/api/views", tags=["views"])
+
+
+async def _assert_team_access(pool, team_id: str, user: dict):
+    if await is_platform_staff(user["user_id"]):
+        return
+    row = await pool.fetchrow(
+        "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' "
+        "UNION ALL "
+        "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
+        "LIMIT 1",
+        team_id, user["user_id"],
+    )
+    if not row:
+        raise HTTPException(403, "Not a member of this project")
 
 
 class ViewCreate(BaseModel):
@@ -28,6 +44,7 @@ class ViewUpdate(BaseModel):
 
 @router.get("/team/{team_id}")
 async def list_views(team_id: str, pool=Depends(get_pool), user=Depends(require_user)):
+    await _assert_team_access(pool, team_id, user)
     rows = await pool.fetch(
         "SELECT * FROM saved_views WHERE team_id=$1 ORDER BY is_default DESC, created_at",
         team_id
@@ -37,6 +54,7 @@ async def list_views(team_id: str, pool=Depends(get_pool), user=Depends(require_
 
 @router.post("/")
 async def create_view(body: ViewCreate, pool=Depends(get_pool), user=Depends(require_user)):
+    await _assert_team_access(pool, body.team_id, user)
     if body.type not in {"kanban", "table", "calendar"}:
         raise HTTPException(400, "type must be kanban, table, or calendar")
     view_id = f"view_{uuid.uuid4().hex[:12]}"
@@ -54,6 +72,7 @@ async def update_view(view_id: str, body: ViewUpdate, pool=Depends(get_pool), us
     view = await pool.fetchrow("SELECT team_id FROM saved_views WHERE view_id=$1", view_id)
     if not view:
         raise HTTPException(404, "View not found")
+    await _assert_team_access(pool, view["team_id"], user)
     updates, vals = [], []
     if body.name is not None:       updates.append(f"name=${len(vals)+2}");       vals.append(body.name)
     if body.config is not None:     updates.append(f"config=${len(vals)+2}");     vals.append(body.config)
@@ -68,5 +87,9 @@ async def update_view(view_id: str, body: ViewUpdate, pool=Depends(get_pool), us
 
 @router.delete("/{view_id}")
 async def delete_view(view_id: str, pool=Depends(get_pool), user=Depends(require_user)):
+    view = await pool.fetchrow("SELECT team_id FROM saved_views WHERE view_id=$1", view_id)
+    if not view:
+        raise HTTPException(404, "View not found")
+    await _assert_team_access(pool, view["team_id"], user)
     await pool.execute("DELETE FROM saved_views WHERE view_id=$1", view_id)
     return {"ok": True}

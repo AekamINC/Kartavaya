@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 
 from auth_router import require_user
 from db import get_pool
+from middleware.roles import is_platform_staff
 
 router = APIRouter(prefix="/api/automations", tags=["automations"])
 
@@ -43,6 +44,16 @@ class AutomationUpdate(BaseModel):
 @router.get("/team/{team_id}")
 async def list_automations(team_id: str, pool=Depends(get_pool), user=Depends(require_user)):
     """Return all automations for the given team."""
+    if not await is_platform_staff(user["user_id"]):
+        member = await pool.fetchrow(
+            "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' "
+            "UNION ALL "
+            "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
+            "LIMIT 1",
+            team_id, user["user_id"],
+        )
+        if not member:
+            raise HTTPException(403, "Not a member of this project")
     rows = await pool.fetch(
         "SELECT * FROM automations WHERE team_id=$1 ORDER BY created_at DESC",
         team_id

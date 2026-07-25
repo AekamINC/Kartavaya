@@ -41,8 +41,6 @@ def require_platform_role(*allowed_roles: str):
             user["user_id"], list(allowed_roles),
         )
         if not role:
-            if user.get("role") == "admin" and "platform_admin" in allowed_roles:
-                return user
             raise HTTPException(
                 403,
                 f"This action requires one of: {', '.join(allowed_roles)}",
@@ -65,7 +63,7 @@ def require_org_role(*allowed_roles: str):
             "AND role_code IN ('platform_admin', 'account_manager')",
             user["user_id"],
         )
-        if is_platform or user.get("role") == "admin":
+        if is_platform:
             return user
 
         role = await pool.fetchval(
@@ -81,6 +79,66 @@ def require_org_role(*allowed_roles: str):
         return user
 
     return _check
+
+
+async def is_platform_staff(user_id: str) -> bool:
+    """Check if user has a platform-wide role (platform_admin or account_manager)."""
+    pool = await get_pool()
+    return bool(await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id IS NULL "
+        "AND role_code IN ('platform_admin','account_manager')",
+        user_id,
+    ))
+
+
+async def is_org_admin(user_id: str, org_id: str | None = None) -> bool:
+    """True for platform staff, and for org_owner / org_admin.
+
+    This replaces the legacy `users.role == 'admin'` check. That read a column
+    on the users table which the JWT also carried, so anyone holding a token
+    minted while they were an admin kept admin powers, and the value could not
+    be scoped to an organisation at all. `staging.user_roles` is the single
+    source of truth for authorisation.
+
+    `org_id` is optional because most call sites do not yet carry org context —
+    they inherited the old global check. Passing it scopes the answer properly
+    and should be done wherever the org is known; omitting it preserves the
+    previous global behaviour, which is still strictly narrower than the column
+    it replaces (6 role holders rather than every user flagged admin).
+    """
+    pool = await get_pool()
+    if org_id:
+        return bool(await pool.fetchval(
+            "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND ("
+            "  (org_id IS NULL AND role_code IN ('platform_admin','account_manager'))"
+            "  OR (org_id=$2::uuid AND role_code IN ('org_owner','org_admin'))"
+            ")",
+            user_id, org_id,
+        ))
+    return bool(await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND ("
+        "  (org_id IS NULL AND role_code IN ('platform_admin','account_manager'))"
+        "  OR (org_id IS NOT NULL AND role_code IN ('org_owner','org_admin'))"
+        ")",
+        user_id,
+    ))
+
+
+async def admin_org_id(user_id: str) -> str | None:
+    """The org whose teams this user may see in full, or None.
+
+    Used by the visibility helpers that previously expanded `role == 'admin'`
+    into "every team in the org". Returns None for platform staff with no org
+    row, which the callers treat as unrestricted — the same as before.
+    """
+    pool = await get_pool()
+    return await pool.fetchval(
+        "SELECT org_id::text FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id IS NOT NULL "
+        "AND role_code IN ('org_owner','org_admin') LIMIT 1",
+        user_id,
+    )
 
 
 async def get_user_roles(user_id: str, org_id: str = None) -> list[str]:

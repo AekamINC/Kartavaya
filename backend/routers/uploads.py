@@ -99,7 +99,8 @@ async def upload(
             "UNION SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' LIMIT 1",
             team_id, user["user_id"]
         )
-        if not member and user.get("role") != "admin":
+        from middleware.roles import is_platform_staff
+        if not member and not await is_platform_staff(user["user_id"]):
             raise HTTPException(403, "Not a member of this project")
 
     fname = (file.filename or "upload").lower()

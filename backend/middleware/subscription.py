@@ -14,6 +14,7 @@ from middleware.org_resolver import get_org_id
 
 _cache: dict = {}
 _CACHE_TTL = timedelta(minutes=5)
+_CACHE_MAX_SIZE = 2000
 
 BUNDLED_MODULES = {"srijan", "esign"}
 
@@ -25,9 +26,8 @@ def require_module(module_code: str):
     AND the user has been granted access to this module."""
 
     async def _check(request: Request, org_id: str = Depends(get_org_id)):
+        # get_org_id depends on require_user, so _auth_user is guaranteed set
         user = getattr(request.state, "_auth_user", None)
-        if user and user.get("role") == "admin":
-            return
 
         pool = await get_pool()
 
@@ -68,6 +68,9 @@ def require_module(module_code: str):
 
         cache_key = f"{org_id}:{module_code}"
         now = datetime.now(timezone.utc)
+
+        if len(_cache) > _CACHE_MAX_SIZE:
+            _cache.clear()
 
         if cache_key in _cache:
             cached_at, is_active = _cache[cache_key]

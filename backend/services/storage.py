@@ -7,6 +7,9 @@ Each org gets its own 10GB free tier from Cloudflare.
 
 Credentials stored per-org in staging.organisations:
   r2_account_id, r2_access_key_id, r2_secret_access_key, r2_bucket_name
+
+Local dev: set LOCAL_STORAGE_PATH to a directory path to store files on disk instead of R2.
+Files are served via /local-files/ static route added in server.py.
 """
 import asyncio
 import os
@@ -16,6 +19,9 @@ from typing import Optional
 import logging
 
 log = logging.getLogger(__name__)
+
+LOCAL_STORAGE_PATH = os.getenv("LOCAL_STORAGE_PATH")
+_local_base_url = os.getenv("LOCAL_STORAGE_URL", "http://localhost:8080/local-files")
 
 _org_clients: dict[str, object] = {}
 
@@ -123,8 +129,20 @@ async def upload_file(
 ) -> dict:
     """
     Upload a file to the org's dedicated R2 bucket.
-    Falls back to base64 data-URI when R2 is not configured for the org.
+    Falls back to local filesystem when LOCAL_STORAGE_PATH is set.
+    Falls back to base64 data-URI when neither R2 nor local storage is configured.
     """
+    ext = Path(filename).suffix
+    prefix = folder or f"personal/{user_id}"
+    key = f"{prefix}/{uuid.uuid4().hex}{ext}"
+
+    if LOCAL_STORAGE_PATH:
+        dest = Path(LOCAL_STORAGE_PATH) / key
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(file_bytes)
+        url = f"{_local_base_url}/{key}"
+        return {"url": url, "name": filename, "key": key, "size": len(file_bytes), "bucket": "local"}
+
     client, bucket = None, None
     if org_id:
         client, bucket = await _get_org_r2(org_id)
@@ -139,10 +157,6 @@ async def upload_file(
             "size": len(file_bytes),
             "bucket": None,
         }
-
-    ext = Path(filename).suffix
-    prefix = folder or f"personal/{user_id}"
-    key = f"{prefix}/{uuid.uuid4().hex}{ext}"
 
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(
@@ -168,6 +182,8 @@ async def sign_key(org_id: str, key: str) -> Optional[str]:
     """Generate a fresh presigned URL for an R2 key. Returns None if R2 not configured."""
     if not key or not org_id:
         return None
+    if LOCAL_STORAGE_PATH:
+        return f"{_local_base_url}/{key}"
     client, bucket = await _get_org_r2(org_id)
     if not client:
         return None
@@ -241,6 +257,12 @@ async def check_storage_limit(org_id: str, file_size: int) -> bool:
 async def delete_file(key: str, org_id: Optional[str] = None) -> bool:
     """Delete a single object from R2 by key."""
     if not key:
+        return False
+    if LOCAL_STORAGE_PATH:
+        target = Path(LOCAL_STORAGE_PATH) / key
+        if target.exists():
+            target.unlink()
+            return True
         return False
     client, bucket = None, None
     if org_id:

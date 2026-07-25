@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
-from middleware.roles import require_org_role
+from middleware.roles import require_org_role, is_org_admin
 from middleware.subscription import require_module
 from services.contact_dedupe import find_duplicates, merge_contacts, undo_merge
 from services.lead_parser import parse_lead_email
@@ -1243,7 +1243,9 @@ async def crm_today(
     pool = await get_pool()
     role = user.get("role", "member")
     uid = user["user_id"]
-    is_admin = role == "admin"
+    # Org-scoped: a CRM "today" view for one org must not widen because the
+    # caller happens to hold the legacy admin claim in another.
+    is_admin = await is_org_admin(uid, org_id)
 
     if is_admin:
         overdue_q = pool.fetch(

@@ -111,8 +111,9 @@ class ScheduleCreate(BaseModel):
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 async def _assert_project_owner(pool, team_id: str, user: dict):
-    """Raise 403 unless the user is a system admin or project owner/admin."""
-    if user.get("role") == "admin":
+    """Raise 403 unless the user is platform staff or project owner/admin."""
+    from middleware.roles import is_platform_staff
+    if await is_platform_staff(user["user_id"]):
         return
     mem = await pool.fetchrow(
         "SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",
@@ -123,13 +124,9 @@ async def _assert_project_owner(pool, team_id: str, user: dict):
 
 
 async def _assert_project_member(pool, team_id: str, user: dict):
-    """Raise 403 unless the user is a system admin or any member of the project.
-
-    Viewing/exporting a report you already have task access to shouldn't require
-    being the project owner — that restriction is reserved for managing schedules,
-    which dispatch automated emails to other people.
-    """
-    if user.get("role") == "admin":
+    """Raise 403 unless the user is platform staff or any member of the project."""
+    from middleware.roles import is_platform_staff
+    if await is_platform_staff(user["user_id"]):
         return
     mem = await pool.fetchrow(
         "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2",
@@ -424,8 +421,10 @@ async def dispatch_reports(
         if token:
             user_id = _auth_decode(token)
             if user_id:
-                row = await pool.fetchrow("SELECT role FROM users WHERE user_id=$1", user_id)
-                if row and row["role"] == "admin":
+                # Platform staff, not org admin: this dispatches scheduled
+                # reports across every team, so it is a system operation.
+                from middleware.roles import is_platform_staff
+                if await is_platform_staff(user_id):
                     authorized = True
     if not authorized:
         raise HTTPException(403, "Provide REPORT_DISPATCH_SECRET or an admin JWT")

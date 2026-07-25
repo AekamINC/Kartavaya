@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from auth_router import require_user
 from db import get_pool
+from middleware.roles import is_platform_staff
 
 router = APIRouter(prefix="/api/dashboards", tags=["dashboards"])
 
@@ -75,10 +76,24 @@ async def get_dashboard_data(dashboard_id: str, pool=Depends(get_pool), user=Dep
 
     widgets = dash["widgets"] or []
 
+    # Build set of teams the user can access
+    _allowed_teams = None
+    if not await is_platform_staff(user["user_id"]):
+        rows = await pool.fetch(
+            "SELECT team_id FROM team_members WHERE user_id=$1 AND status='active' "
+            "UNION SELECT team_id FROM project_assignments WHERE user_id=$1",
+            user["user_id"],
+        )
+        _allowed_teams = {r["team_id"] for r in rows}
+
     async def _fetch_widget(widget: dict):
         wtype = widget.get("type")
         wid   = widget.get("id", wtype)
         cfg   = widget.get("config", {})
+
+        widget_team = cfg.get("team_id")
+        if _allowed_teams is not None and widget_team and widget_team not in _allowed_teams:
+            return wid, {}
 
         if wtype == "count":
             count = await pool.fetchval(

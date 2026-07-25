@@ -316,8 +316,8 @@ async def reject_task(task_id: str, payload: ApprovalRequest,
 @router.get("/tasks/pending-approval", response_model=List[dict])
 async def get_pending_approvals(pool=Depends(get_pool), user=Depends(require_user)):
     """Return all tasks with approval_status='pending' that the user can action."""
-    user_data = await pool.fetchrow(_SQL_USER_ROLE, user["user_id"])
-    if user_data and user_data["role"] == "admin":
+    from middleware.roles import is_org_admin
+    if await is_org_admin(user["user_id"]):
         # Admins see only teams they are actually a member of — no cross-team data leak.
         tasks = await pool.fetch("""
             SELECT t.*, u.name AS created_by_name, u.email AS created_by_email,

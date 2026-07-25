@@ -36,7 +36,7 @@ from starlette.middleware.cors import CORSMiddleware
 from auth_router import require_user, JWT_SECRET as _JWT_SECRET
 from limiter import limiter
 from auth_router import router as auth_router
-from middleware.roles import require_platform_role
+from middleware.roles import require_platform_role, is_org_admin, admin_org_id
 
 _require_admin = require_platform_role("platform_admin", "account_manager")
 from invite_router import router as invite_router
@@ -264,17 +264,15 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None):
     if cached is not None:
         return cached
 
-    effective_role = role or (_user_dict and _user_dict.get("role"))
-    if effective_role != "admin":
-        user_row = await pool.fetchrow(_SQL_USER_ROLE, user_id)
-        effective_role = user_row.get("role") if user_row else None
-
-    if effective_role == "admin":
-        org_row = await pool.fetchrow(
-            "SELECT org_id FROM staging.user_roles WHERE user_id=$1 AND org_id IS NOT NULL LIMIT 1", user_id)
-        if org_row and org_row["org_id"]:
+    # Authority is staging.user_roles, not the legacy users.role column. `role`
+    # and `_user_dict` are still accepted for call-site compatibility but are no
+    # longer trusted: both ultimately carried the JWT's admin claim, which
+    # survived the flag being revoked.
+    if await is_org_admin(user_id):
+        org_id = await admin_org_id(user_id)
+        if org_id:
             all_teams = await pool.fetch(
-                "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org_row["org_id"])
+                "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org_id)
         else:
             all_teams = await pool.fetch("SELECT team_id FROM teams WHERE deleted_at IS NULL")
         result = [r["team_id"] for r in all_teams]
@@ -1117,8 +1115,7 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user):
             "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND role IN ('owner','admin') AND status='active'",
             task["team_id"], user["user_id"]
         )
-        user_data = await pool.fetchrow(_SQL_USER_ROLE, user["user_id"])
-        is_admin = user_data and user_data["role"] == "admin"
+        is_admin = await is_org_admin(user["user_id"])
         if not (is_pa or is_tm or is_admin):
             raise HTTPException(403, "Only project owner/admin can review task approvals")
 
@@ -1136,9 +1133,8 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user):
             "SELECT role FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'",
             approval["team_id"], user["user_id"]
         )
-    user_data=await pool.fetchrow(_SQL_USER_ROLE,user["user_id"])
     is_owner_admin = mem and mem["role"] in ("owner","admin")
-    is_system_admin = user_data and user_data["role"] == "admin"
+    is_system_admin = await is_org_admin(user["user_id"])
     if not (is_owner_admin or is_system_admin):
         raise HTTPException(403, "Not authorised to review this approval")
     await pool.execute("UPDATE approvals SET status=$1,reviewed_by=$2,reviewed_at=NOW(),review_notes=$3 WHERE approval_id=$4",status,user["user_id"],notes,approval_id)
@@ -1868,10 +1864,14 @@ async def get_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
     row=await pool.fetchrow("SELECT t.*,COALESCE(u.full_name,u.name,u.email) AS created_by_name FROM tasks t LEFT JOIN users u ON u.user_id=t.created_by_user_id WHERE t.task_id=$1",task_id)
     if not row: raise HTTPException(404)
     uid=user["user_id"]; is_creator=row["created_by_user_id"]==uid
+    # Resolved once: this gates both private-attachment visibility and the
+    # unrestricted read below, and it must come from staging.user_roles rather
+    # than the JWT's admin claim.
+    _is_admin = await is_org_admin(uid)
     async def _out():
         enriched = await _fetch_enriched_task(pool, task_id)
-        return _filter_private_attachments(enriched, uid, is_creator or user.get("role")=="admin")
-    if user.get("role")=="admin": return await _out()
+        return _filter_private_attachments(enriched, uid, is_creator or _is_admin)
+    if _is_admin: return await _out()
     if is_creator: return await _out()
     if uid in (row["assignee_user_ids"] or []): return await _out()
     if row["team_id"]:
@@ -1912,7 +1912,7 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
     old_status=existing["status"]; old_assignees=list(existing.get("assignee_user_ids") or [])
     # approval_status gated: only admins/owners may approve or reject
     if "approval_status" in data and data["approval_status"] in ("approved","rejected"):
-        is_sys_admin = user.get("role") == "admin"
+        is_sys_admin = await is_org_admin(user["user_id"])
         member_role = None
         if existing["team_id"]:
             mr = await pool.fetchrow(
@@ -2322,6 +2322,12 @@ app.include_router(scheduler_router)
 app.include_router(messaging_router)
 app.include_router(whatsapp_router)
 
+# ── Local file storage (dev only) ────────────────────────────────────────────
+_local_storage = os.getenv("LOCAL_STORAGE_PATH")
+if _local_storage:
+    from starlette.staticfiles import StaticFiles
+    Path(_local_storage).mkdir(parents=True, exist_ok=True)
+    app.mount("/local-files", StaticFiles(directory=_local_storage), name="local-files")
 
 # ── Verse of the day (public) ────────────────────────────────────────────────
 @app.get("/api/verse-of-the-day")

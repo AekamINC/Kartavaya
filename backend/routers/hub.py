@@ -1602,8 +1602,10 @@ async def allocate_user_credits(
         "WHERE user_id=$1 AND org_id=$2::uuid AND role_code IN ('org_owner','org_admin')",
         user["user_id"], org_id,
     )
-    if not is_admin and user.get("role") != "admin":
-        raise HTTPException(403, "Only org admins can allocate credits")
+    if not is_admin:
+        from middleware.roles import is_platform_staff
+        if not await is_platform_staff(user["user_id"]):
+            raise HTTPException(403, "Only org admins can allocate credits")
 
     if body.amount <= 0:
         raise HTTPException(400, "Amount must be positive")

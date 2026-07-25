@@ -31,7 +31,7 @@ JWT_SECRET = os.environ.get("JWT_SECRET")
 if not JWT_SECRET:
     raise RuntimeError("JWT_SECRET environment variable must be set")
 JWT_ALGORITHM = "HS256"
-JWT_TTL_DAYS = 30
+JWT_TTL_DAYS = 7
 
 
 def _hash_password(password: str, salt: str) -> str:

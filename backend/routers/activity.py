@@ -9,6 +9,7 @@ import json
 
 from auth_router import require_user
 from db import get_pool
+from middleware.roles import is_platform_staff
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,7 @@ async def team_activity(
     user=Depends(require_user),
 ):
     """Return paginated activity events for a team, with optional actor and type filters."""
-    # Enforce team visibility: admin sees all; others must be a member or assignee
-    if user.get("role") != "admin":
+    if not await is_platform_staff(user["user_id"]):
         try:
             access = await pool.fetchrow(
                 """
@@ -95,7 +95,7 @@ async def feed_activity(
 ):
     """Return paginated activity events across all teams the user belongs to."""
     try:
-        if user.get("role") == "admin":
+        if await is_platform_staff(user["user_id"]):
             org_row = await pool.fetchrow(
                 "SELECT org_id FROM staging.user_roles WHERE user_id=$1 AND org_id IS NOT NULL LIMIT 1", user["user_id"])
             if org_row and org_row["org_id"]:
@@ -151,7 +151,7 @@ async def task_activity(
 ):
     """Return all activity events for a specific task, newest first."""
     # Enforce task visibility: caller must belong to the task's project
-    if user.get("role") != "admin":
+    if not await is_platform_staff(user["user_id"]):
         task_team = await pool.fetchrow(
             "SELECT team_id FROM tasks WHERE task_id=$1", task_id
         )

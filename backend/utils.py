@@ -104,16 +104,24 @@ async def next_doc_number(pool, org_id: str, table: str, column: str, prefix: st
 async def get_visible_team_ids(pool, user_id: str) -> List[str]:
     """Return the list of team_ids visible to this user.
 
-    Admins see everything. For everyone else we UNION project_assignments
-    and team_members (active) so late-registering invitees are included.
+    Platform staff and org owners/admins see every team in their org. For
+    everyone else we UNION project_assignments and team_members (active) so
+    late-registering invitees are included.
+
+    Authority comes from staging.user_roles, not the legacy users.role column —
+    that column was mirrored into the JWT, so a token minted while someone was
+    an admin kept admin visibility after the flag was removed.
     """
-    user_row = await pool.fetchrow("SELECT role FROM users WHERE user_id=$1", user_id)
-    if user_row and user_row.get("role") == "admin":
-        org_row = await pool.fetchrow(
-            "SELECT org_id FROM staging.user_roles WHERE user_id=$1 AND org_id IS NOT NULL LIMIT 1", user_id)
-        if org_row and org_row["org_id"]:
+    # Imported here rather than at module scope: middleware.roles imports
+    # auth_router, and utils is imported early enough that a top-level import
+    # would risk an import cycle as those modules grow.
+    from middleware.roles import is_org_admin, admin_org_id
+
+    if await is_org_admin(user_id):
+        org_id = await admin_org_id(user_id)
+        if org_id:
             rows = await pool.fetch(
-                "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org_row["org_id"])
+                "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org_id)
         else:
             rows = await pool.fetch("SELECT team_id FROM teams WHERE deleted_at IS NULL")
         return [r["team_id"] for r in rows]

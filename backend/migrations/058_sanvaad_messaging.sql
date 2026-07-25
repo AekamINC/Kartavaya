@@ -10,7 +10,7 @@ BEGIN;
 
 CREATE TABLE IF NOT EXISTS staging.samvada_channels (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id      UUID NOT NULL REFERENCES staging.organizations(id) ON DELETE CASCADE,
+    org_id      UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
     name        TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
     type        TEXT NOT NULL DEFAULT 'public' CHECK (type IN ('public','private','dm')),
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS staging.samvada_channel_members (
 
 CREATE TABLE IF NOT EXISTS staging.samvada_messages (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id            UUID NOT NULL REFERENCES staging.organizations(id) ON DELETE CASCADE,
+    org_id            UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
     channel_id        UUID NOT NULL REFERENCES staging.samvada_channels(id) ON DELETE CASCADE,
     sender_id         TEXT NOT NULL,
     content           TEXT NOT NULL DEFAULT '',
@@ -88,7 +88,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE staging.samvada_messages;
 
 CREATE TABLE IF NOT EXISTS staging.varta_business_accounts (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id              UUID NOT NULL REFERENCES staging.organizations(id) ON DELETE CASCADE,
+    org_id              UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
     provider            TEXT NOT NULL DEFAULT 'meta_cloud',
     phone_number        TEXT NOT NULL DEFAULT '',
     display_name        TEXT NOT NULL DEFAULT '',
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS staging.varta_business_accounts (
 
 CREATE TABLE IF NOT EXISTS staging.varta_contacts (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id          UUID NOT NULL REFERENCES staging.organizations(id) ON DELETE CASCADE,
+    org_id          UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
     phone_number    TEXT NOT NULL DEFAULT '',
     name            TEXT NOT NULL DEFAULT '',
     graha_contact_id UUID REFERENCES staging.graha_contacts(id) ON DELETE SET NULL,
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS staging.varta_contacts (
 
 CREATE TABLE IF NOT EXISTS staging.varta_conversations (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id          UUID NOT NULL REFERENCES staging.organizations(id) ON DELETE CASCADE,
+    org_id          UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
     varta_contact_id UUID NOT NULL REFERENCES staging.varta_contacts(id) ON DELETE CASCADE,
     assigned_to     TEXT,
     status          TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','pending','resolved')),
@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS staging.varta_conversations (
 
 CREATE TABLE IF NOT EXISTS staging.varta_messages (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id          UUID NOT NULL REFERENCES staging.organizations(id) ON DELETE CASCADE,
+    org_id          UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
     conversation_id UUID NOT NULL REFERENCES staging.varta_conversations(id) ON DELETE CASCADE,
     direction       TEXT NOT NULL CHECK (direction IN ('inbound','outbound')),
     wa_message_id   TEXT,
@@ -141,7 +141,7 @@ CREATE TABLE IF NOT EXISTS staging.varta_messages (
 
 CREATE TABLE IF NOT EXISTS staging.varta_templates (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id          UUID NOT NULL REFERENCES staging.organizations(id) ON DELETE CASCADE,
+    org_id          UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
     name            TEXT NOT NULL DEFAULT '',
     language        TEXT NOT NULL DEFAULT 'en',
     category        TEXT NOT NULL DEFAULT 'MARKETING',
@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS staging.varta_templates (
 
 CREATE TABLE IF NOT EXISTS staging.varta_auto_replies (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id          UUID NOT NULL REFERENCES staging.organizations(id) ON DELETE CASCADE,
+    org_id          UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
     trigger_type    TEXT NOT NULL DEFAULT 'keyword' CHECK (trigger_type IN ('keyword','first_message','off_hours','fallback')),
     trigger_value   TEXT NOT NULL DEFAULT '',
     response_type   TEXT NOT NULL DEFAULT 'text' CHECK (response_type IN ('text','template')),

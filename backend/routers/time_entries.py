@@ -1,7 +1,5 @@
 """
 time_entries.py — Time tracking: start/stop timer + manual entries
-Fix: activity_logger hooks added to start/stop so the Activity Feed
-shows every timer event, as required by the 10x lifecycle test.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -11,8 +9,41 @@ from datetime import datetime, timezone
 
 from auth_router import require_user
 from db import get_pool
+from middleware.roles import is_platform_staff
 
 router = APIRouter(prefix="/api/time", tags=["time"])
+
+
+async def _assert_task_access(pool, task_id: str, user: dict):
+    """Verify user belongs to the task's team."""
+    if await is_platform_staff(user["user_id"]):
+        return
+    task = await pool.fetchrow("SELECT team_id FROM tasks WHERE task_id=$1", task_id)
+    if not task:
+        raise HTTPException(404, "Task not found")
+    row = await pool.fetchrow(
+        "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' "
+        "UNION ALL "
+        "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
+        "LIMIT 1",
+        task["team_id"], user["user_id"],
+    )
+    if not row:
+        raise HTTPException(403, "Not a member of this project")
+
+
+async def _assert_team_access(pool, team_id: str, user: dict):
+    if await is_platform_staff(user["user_id"]):
+        return
+    row = await pool.fetchrow(
+        "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' "
+        "UNION ALL "
+        "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
+        "LIMIT 1",
+        team_id, user["user_id"],
+    )
+    if not row:
+        raise HTTPException(403, "Not a member of this project")
 
 
 class TimeEntryCreate(BaseModel):
@@ -25,6 +56,7 @@ class TimeEntryCreate(BaseModel):
 
 @router.get("/task/{task_id}")
 async def get_task_time(task_id: str, pool=Depends(get_pool), user=Depends(require_user)):
+    await _assert_task_access(pool, task_id, user)
     rows = await pool.fetch(
         """
         SELECT te.*, COALESCE(u.full_name, u.name) AS user_name
@@ -46,7 +78,7 @@ async def start_timer(task_id: str, pool=Depends(get_pool), user=Depends(require
     """Start a running timer. Auto-stops any existing running timer first."""
     if user.get("role") == "client":
         raise HTTPException(403, "Clients cannot log time")
-    # Stop existing running timer
+    await _assert_task_access(pool, task_id, user)
     await pool.execute(
         """
         UPDATE time_entries
@@ -61,15 +93,12 @@ async def start_timer(task_id: str, pool=Depends(get_pool), user=Depends(require
         "INSERT INTO time_entries (entry_id, task_id, user_id, started_at) VALUES ($1,$2,$3,NOW())",
         entry_id, task_id, user["user_id"],
     )
-
-    # FIX: log to activity feed
     try:
         from services.activity_logger import log_event
         await log_event(pool, task_id=task_id, actor_id=user["user_id"],
                         event_type="timer_started", data={"entry_id": entry_id})
     except Exception:
         pass
-
     return {"entry_id": entry_id, "started_at": datetime.now(timezone.utc)}
 
 
@@ -88,15 +117,12 @@ async def stop_timer(pool=Depends(get_pool), user=Depends(require_user)):
         "UPDATE time_entries SET ended_at=NOW(), minutes=$1 WHERE entry_id=$2",
         mins, row["entry_id"],
     )
-
-    # FIX: log to activity feed
     try:
         from services.activity_logger import log_event
         await log_event(pool, task_id=row["task_id"], actor_id=user["user_id"],
                         event_type="timer_stopped", data={"entry_id": row["entry_id"], "minutes": mins})
     except Exception:
         pass
-
     return {"entry_id": row["entry_id"], "task_id": row["task_id"], "minutes": mins}
 
 
@@ -104,6 +130,7 @@ async def stop_timer(pool=Depends(get_pool), user=Depends(require_user)):
 async def add_manual_entry(body: TimeEntryCreate, pool=Depends(get_pool), user=Depends(require_user)):
     if user.get("role") == "client":
         raise HTTPException(403, "Clients cannot log time")
+    await _assert_task_access(pool, body.task_id, user)
     entry_id = f"te_{uuid.uuid4().hex[:12]}"
     mins = body.minutes
     if mins is None and body.ended_at:
@@ -139,33 +166,39 @@ async def time_report(
     pool=Depends(get_pool),
     user=Depends(require_user),
 ):
-    """
-    Admin sees all users; member/client see only their own entries unless
-    they are a project owner and supply user_id_filter.
-    """
-    user_data = await pool.fetchrow("SELECT role FROM users WHERE user_id=$1", user["user_id"])
-    is_admin  = user_data and user_data["role"] == "admin"
+    """Report scoped to teams the caller belongs to."""
+    is_staff = await is_platform_staff(user["user_id"])
+
+    if team_id:
+        if not is_staff:
+            await _assert_team_access(pool, team_id, user)
 
     filters, vals = ["te.ended_at IS NOT NULL"], []
 
     if team_id:
         filters.append(f"tk.team_id=${len(vals)+1}")
         vals.append(team_id)
+    elif not is_staff:
+        user_teams = await pool.fetch(
+            "SELECT team_id FROM team_members WHERE user_id=$1 AND status='active' "
+            "UNION SELECT team_id FROM project_assignments WHERE user_id=$1",
+            user["user_id"],
+        )
+        team_ids = [r["team_id"] for r in user_teams]
+        if not team_ids:
+            return {"entries": [], "total_minutes": 0}
+        filters.append(f"tk.team_id = ANY(${len(vals)+1}::text[])")
+        vals.append(team_ids)
 
-    # Non-admins can only see their own entries unless they are a team owner
-    if not is_admin:
-        target_user = user_id_filter or user["user_id"]
-        if user_id_filter and user_id_filter != user["user_id"]:
-            # Verify caller is at least a project owner
-            if team_id:
-                owner = await pool.fetchrow(
-                    "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 AND role IN ('owner','admin')",
-                    team_id, user["user_id"]
-                )
-                if not owner:
-                    target_user = user["user_id"]  # silently fall back
-            else:
-                target_user = user["user_id"]
+    if not is_staff:
+        is_team_admin = False
+        if team_id:
+            owner = await pool.fetchrow(
+                "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 AND role IN ('owner','admin')",
+                team_id, user["user_id"]
+            )
+            is_team_admin = owner is not None
+        target_user = user_id_filter if (user_id_filter and is_team_admin) else user["user_id"]
         filters.append(f"te.user_id=${len(vals)+1}")
         vals.append(target_user)
 

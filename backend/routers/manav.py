@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
+from middleware.roles import is_org_admin
 from middleware.subscription import require_module
 
 router = APIRouter(prefix="/api/v1/manav", tags=["manav-hrms"])
@@ -600,11 +601,11 @@ async def create_leave_request(
     pool = await get_pool()
 
     if body.employee_id:
-        is_admin = user.get("role") == "admin" or await pool.fetchval(
-            "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND org_id=$2::uuid "
-            "AND role_code IN ('org_owner','org_admin')",
-            user["user_id"], org_id,
-        )
+        # The org-scoped user_roles half of this check was already correct; the
+        # `user.get("role") == "admin"` prefix widened it to anyone holding the
+        # legacy JWT claim. is_org_admin keeps the org scoping and adds platform
+        # staff, which the raw query omitted.
+        is_admin = await is_org_admin(user["user_id"], org_id)
         if not is_admin:
             raise HTTPException(403, "Only admins can create leaves for other employees")
         emp = await pool.fetchrow(
@@ -1456,11 +1457,11 @@ async def action_swap(swap_id: UUID, action: str, user=Depends(require_user), or
 # ── Expense Claims & Reimbursement ───────────────────────────
 
 async def _is_org_admin(pool, user, org_id) -> bool:
-    return user.get("role") == "admin" or bool(await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND org_id=$2::uuid "
-        "AND role_code IN ('org_owner','org_admin')",
-        user["user_id"], org_id,
-    ))
+    """Kept as a thin wrapper so the existing call sites don't all change.
+
+    `pool` is now unused — middleware.roles owns the connection.
+    """
+    return await is_org_admin(user["user_id"], org_id)
 
 
 @router.get("/expense-claims")

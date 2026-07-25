@@ -206,11 +206,25 @@ async def api_client(app):
 # ── Role injection via dependency_overrides ───────────────────────────────────
 
 @pytest.fixture
-def as_admin(app, admin_user):
-    """Override require_user so every request in this test runs as admin."""
+def as_admin(app, admin_user, mock_pool):
+    """Override require_user so every request in this test runs as admin.
+    Also patches the user_roles query so require_platform_role passes."""
     from auth_router import require_user
     app.dependency_overrides[require_user] = lambda: admin_user
+
+    original_fetchval = mock_pool.fetchval
+    _orig_side = original_fetchval.side_effect
+
+    async def _fetchval_with_platform_role(query, *args):
+        if "staging.user_roles" in query and "org_id IS NULL" in query:
+            return "platform_admin"
+        if _orig_side:
+            return await _orig_side(query, *args)
+        return 0
+
+    mock_pool.fetchval.side_effect = _fetchval_with_platform_role
     yield
+    mock_pool.fetchval.side_effect = _orig_side
     app.dependency_overrides.pop(require_user, None)
 
 

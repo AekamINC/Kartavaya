@@ -35,7 +35,7 @@ async def get_org_id(request: Request, user=Depends(require_user)):
                 "AND role_code IN ('platform_admin','account_manager')",
                 user["user_id"],
             )
-            if not is_platform and user.get("role") != "admin":
+            if not is_platform:
                 raise HTTPException(403, "You do not belong to this organisation")
         org = await pool.fetchrow(
             "SELECT id FROM staging.organisations WHERE id=$1::uuid AND is_active=TRUE",

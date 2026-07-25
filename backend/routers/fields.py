@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from auth_router import require_user
 from db import get_pool
+from middleware.roles import is_platform_staff
 
 router = APIRouter(prefix="/api/fields", tags=["fields"])
 
@@ -18,11 +19,14 @@ router = APIRouter(prefix="/api/fields", tags=["fields"])
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
 async def _assert_team_member(pool, team_id: str, user: dict) -> None:
-    """Raise 403 unless the user is a member of (or admin of) the given team."""
-    if user.get("role") in ("admin", "owner"):
+    """Raise 403 unless the user is a member of the given team."""
+    if await is_platform_staff(user["user_id"]):
         return
     row = await pool.fetchrow(
-        "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2",
+        "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
+        "UNION ALL "
+        "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' "
+        "LIMIT 1",
         team_id, user["user_id"]
     )
     if not row:

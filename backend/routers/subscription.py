@@ -66,11 +66,12 @@ async def list_plans(user=Depends(require_user)):
         "SELECT * FROM staging.add_on_modules WHERE is_active=TRUE ORDER BY price_per_user_monthly"
     )
 
-    is_admin = user.get("role") == "admin"
+    from middleware.roles import is_platform_staff
+    is_staff = await is_platform_staff(user["user_id"])
     plan_list = []
     for r in plans:
         p = dict(r)
-        if not is_admin:
+        if not is_staff:
             p.pop("price_monthly", None)
             p.pop("price_annual", None)
         plan_list.append(p)
@@ -596,5 +597,5 @@ async def get_my_roles(user=Depends(require_user)):
     return {
         "platform_roles": platform_roles,
         "org_roles": org_roles,
-        "is_platform_admin": "platform_admin" in platform_roles or user.get("role") == "admin",
+        "is_platform_admin": "platform_admin" in platform_roles,
     }
