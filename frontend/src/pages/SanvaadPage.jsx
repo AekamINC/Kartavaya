@@ -44,7 +44,7 @@ export default function SanvaadPage() {
 // ═══════════════════════════════════════════════════════════════
 
 function ChannelsTab() {
-  const { addToast } = useToast();
+  const { pushToast } = useToast();
   const [channels, setChannels] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -69,9 +69,9 @@ function ChannelsTab() {
       setNewName('');
       setShowCreate(false);
       setSelected(r.data);
-      addToast('Channel created', 'success');
+      pushToast({ type: 'success', title: 'Channel created' });
     } catch (e) {
-      addToast(e.response?.data?.detail || 'Failed to create channel', 'error');
+      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to create channel' });
     }
   };
 
@@ -152,7 +152,7 @@ function ChannelsTab() {
 
 
 function ChatView({ channel, onRefreshChannels }) {
-  const { addToast } = useToast();
+  const { pushToast } = useToast();
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
@@ -196,7 +196,7 @@ function ChatView({ channel, onRefreshChannels }) {
       setThreadMsg(null);
       onRefreshChannels();
     } catch (e) {
-      addToast(e.response?.data?.detail || 'Failed to send', 'error');
+      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to send' });
     } finally {
       setSending(false);
     }
@@ -323,7 +323,6 @@ function ChatView({ channel, onRefreshChannels }) {
 // ═══════════════════════════════════════════════════════════════
 
 function WhatsAppTab() {
-  const { addToast } = useToast();
   const [subTab, setSubTab] = useState('conversations');
   const [conversations, setConversations] = useState([]);
   const [templates, setTemplates] = useState([]);
@@ -464,7 +463,7 @@ function WAChat({ conversation }) {
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const { addToast } = useToast();
+  const { pushToast } = useToast();
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -487,7 +486,7 @@ function WAChat({ conversation }) {
       setMessages(prev => [...prev, r.data]);
       setText('');
     } catch (e) {
-      addToast(e.response?.data?.detail || 'Failed to send', 'error');
+      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to send' });
     } finally {
       setSending(false);
     }

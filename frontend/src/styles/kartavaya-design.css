@@ -2,65 +2,301 @@
    Warm paper canvas, dark ink sidebar, Newsreader serif display.
    Import AFTER tailwind in App.js */
 
-/* ── Font tokens ───────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   TOKENS — implements design-handover/00-tokens.md
+   This block is the single source of truth. The legacy --ink/--rule/--bg-soft
+   vocabulary still has ~3,500 references across src/, so §L below aliases it
+   onto these tokens rather than deleting it. Aliases are why one contrast fix
+   propagates everywhere — never re-expand one to a literal.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── §1 Runtime-tunable roots ──────────────────────────────────────────────
+   Set by Customization via applyPrefs(). Everything else derives from them. */
 :root {
-  --font-display: 'Newsreader', 'Georgia', serif;
-  --font-ui:      'Inter', system-ui, sans-serif;
-  --font-hindi:   'Tiro Devanagari Hindi', serif;
-  --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
+  --radius-base:      10px;  /* user: 4 | 10 | 20 — default IS a selectable option */
+  --glass-mix:        .6;    /* user: 0 → 1 */
+  --font-size-base:   14px;  /* user: 12 → 20 */
+  --line-height-base: 1.5;   /* user: 1.3 | 1.5 | 1.7 */
+  --ix-user:          1;     /* motion scale: 1 | .5 (reduced) | .001 (none) */
+  --ix: var(--ix-user);      /* never written directly — see §5 */
 }
 
-/* ── Design tokens ─────────────────────────────────────────────────────── */
+/* ── §2 Type ───────────────────────────────────────────────────────────── */
 :root {
-  /* Brand */
+  --font-display: 'Newsreader', Georgia, serif;
+  --font-ui:      Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-hindi:   'Tiro Devanagari Hindi', 'Noto Serif Devanagari', 'Nirmala UI', 'Kohinoor Devanagari', serif;
+  --font-indic:   var(--font-hindi); /* → Noto Sans Gujarati when language is gu | en+gu */
+  --font-mono:    'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  /* Derived from --font-size-base, so the Text size slider moves the whole
+     scale. Absolute px made the slider a no-op on everything but body copy. */
+  --t-display:   calc(var(--font-size-base) * 2.86); /* 40px at base 14 */
+  --t-headline:  calc(var(--font-size-base) * 2);    /* 28px */
+  --t-title-lg:  calc(var(--font-size-base) * 1.43); /* 20px */
+  --t-title:     calc(var(--font-size-base) * 1.14); /* 16px */
+  --t-body:      var(--font-size-base);              /* 14px */
+  --t-body-sm:   calc(var(--font-size-base) * .93);  /* 13px */
+  --t-label:     max(11.5px, calc(var(--font-size-base) * .86)); /* 12px */
+  --t-label-sm:  max(11px,   calc(var(--font-size-base) * .79)); /* 11px */
+  /* Ledger §3.2 — component CSS carries ten sub-11px literals that bypass the
+     tokens and so do not track the slider. This is their replacement: keeps
+     the intended ratio, keeps a floor. */
+  --t-micro:     max(10px,   calc(var(--font-size-base) * .71));
+
+  --t-display-w: 400;  --t-headline-w: 400;  --t-title-lg-w: 500;
+  --t-title-w:   500;  --t-body-w:     400;  --t-label-w:    500;
+}
+
+/* ── §3 Radius — all derived. Never hard-code a radius. ─────────────────── */
+:root {
+  --r-xs:   calc(var(--radius-base) * 0.34);
+  --r-sm:   calc(var(--radius-base) * 0.58);
+  --r-md:   var(--radius-base);
+  --r-lg:   calc(var(--radius-base) * 1.45);
+  --r-xl:   calc(var(--radius-base) * 2.1);
+  --r-pill: 999px;
+}
+
+/* ── §4 Density and spacing ────────────────────────────────────────────── */
+:root {
+  --row-h: 44px;  --pad-page: 28px;  --pad-card: 18px;
+  --gap-section: 22px;  --gap-tight: 10px;
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px;  --sp-4: 16px;
+  --sp-5: 20px; --sp-6: 24px; --sp-7: 32px;  --sp-8: 44px;
+  --sp-10: 40px; /* legacy step, still referenced */
+}
+[data-density="compact"] { --row-h: 38px; --pad-page: 16px; --pad-card: 14px; --gap-section: 16px; --gap-tight: 8px; }
+[data-density="comfy"]   { --row-h: 48px; --pad-page: 32px; --pad-card: 20px; --gap-section: 26px; --gap-tight: 12px; }
+
+/* ── §5 Motion ─────────────────────────────────────────────────────────── */
+:root {
+  --dur-instant: calc( 90ms * var(--ix));
+  --dur-fast:    calc(140ms * var(--ix));
+  --dur-base:    calc(220ms * var(--ix));
+  --dur-slow:    calc(360ms * var(--ix));
+  --dur-xslow:   calc(520ms * var(--ix));
+
+  --ease-standard:    cubic-bezier(.2, 0, 0, 1);
+  --ease-emph:        cubic-bezier(.16, 1, .3, 1);  /* expo-out — genuinely distinct */
+  --ease-enter:       cubic-bezier(0, 0, .2, 1);
+  --ease-exit:        cubic-bezier(.4, 0, 1, 1);
+  --ease-emph-in:     cubic-bezier(.05, .7, .1, 1);
+  --ease-emph-out:    cubic-bezier(.3, 0, .8, .15);
+  --ease-spring:      cubic-bezier(.34, 1.36, .64, 1);
+  --ease-spring-soft: cubic-bezier(.32, 1.14, .68, 1);
+}
+/* The OS setting must win. applyPrefs writes --ix-user, never --ix: an inline
+   style on documentElement outranks a media query, so writing --ix directly let
+   an app preference silently override an accessibility setting. */
+@media (prefers-reduced-motion: reduce) { :root { --ix: .001 } }
+
+/* ── §6 Translucency ───────────────────────────────────────────────────── */
+:root {
+  --glass-blur:  calc(22px * var(--glass-mix));
+  --glass-sat:   calc(1 + .5 * var(--glass-mix));
+  --glass-alpha: calc(1 - (.28 * var(--glass-mix)));
+}
+
+/* ── §7 Light palette ──────────────────────────────────────────────────── */
+:root, [data-theme="light"] {
+  --bg:          #F3EFE6;
+  --s-lowest:    #FFFEFB;
+  --surface:     #FAF7F0;
+  --s-low:       #F5F1E7;
+  --s-container: #EEE9DC;
+  --s-high:      #E7E1D1;
+  --s-highest:   #DFD8C5;
+
+  --on-surface:       #1B1D1A;
+  --on-surface-2:     #4A4E48;
+  --on-surface-3:     #666A61;  /* was #74786F — 3.9:1 on --bg, failed AA */
+  --on-surface-faint: #9DA096;  /* 2.3:1 — NON-TEXT ONLY, see §12 */
+
+  --outline-variant: #D8D1BE;
+  --outline:         #ADA692;
+
+  --primary:              #04837A;
+  --primary-hover:        #026B64;
+  --on-primary:           #FFFFFF;
+  --primary-container:    #B4F1E8;
+  --on-primary-container: #00201D;
+  --primary-vivid:        #05b7aa;
+
+  --secondary:              #5C6450;
+  --secondary-container:    #E1E7D4;
+  --on-secondary-container: #1A2013;
+  --tertiary:               #8A5730;
+  --tertiary-container:     #FFDCC3;
+  --on-tertiary-container:  #301A07;
+
+  --ok:     #14743A;  --ok-container:     #C6EFD2;  /* was #16803F — 4.4:1 */
+  --warn:   #955806;  --warn-container:   #FBE3BE;  /* was #A66207 — 4.2:1 */
+  --danger: #B42318;  --danger-container: #FBDAD5;
+
+  --scrim:      rgba(28, 26, 20, .34);
+  --glass-tint: 250, 247, 240;
+  --shadow-1:   0 1px 2px rgba(30, 28, 22, .07);
+  --shadow-2:   0 4px 16px -6px rgba(30, 28, 22, .16);
+  --shadow-3:   0 18px 44px -18px rgba(30, 28, 22, .3);
+  --shadow-4:   0 32px 72px -28px rgba(30, 28, 22, .38);
+
+  --side-ink:      22, 26, 24;
+  --side-fg:       rgba(255, 255, 255, .8);
+  --side-fg-mute:  rgba(255, 255, 255, .5);
+  --side-fg-faint: rgba(255, 255, 255, .28);
+  --side-rule:     rgba(255, 255, 255, .1);
+  --side-hover:    rgba(255, 255, 255, .08);
+}
+
+/* ── §8 Dark palette ───────────────────────────────────────────────────────
+   Two theme mechanisms ship today: applyPrefs sets [data-theme], lib/auth.js
+   toggles .dark. Both selectors are matched so they converge instead of
+   half-applying. Dark INVERTS the primary relationship — --primary becomes the
+   light mint and --primary-container the dark one. */
+[data-theme="dark"], .dark, :root.dark {
+  --bg:          #0C0E11;
+  --s-lowest:    #080A0C;
+  --surface:     #12151A;
+  --s-low:       #171B21;
+  --s-container: #1D2229;
+  --s-high:      #252B33;
+  --s-highest:   #2E353E;
+
+  --on-surface:       #E9E7E1;
+  --on-surface-2:     #BFBDB6;
+  --on-surface-3:     #8E8D87;
+  --on-surface-faint: #64645F;
+
+  --outline-variant: #333A43;
+  --outline:         #5B626C;
+
+  --primary:              #4FD8CB;
+  --primary-hover:        #6FE6DA;
+  --on-primary:           #00332F;
+  --primary-container:    #00514B;
+  --on-primary-container: #74F5E8;
+  --primary-vivid:        #05b7aa;
+
+  --secondary:              #C3CBB0;
+  --secondary-container:    #434A36;
+  --on-secondary-container: #DFE7CB;
+  --tertiary:               #F0BB90;
+  --tertiary-container:     #6A3F1A;
+  --on-tertiary-container:  #FFDCC3;
+
+  --ok:     #5BD98A;  --ok-container:     #14432A;
+  --warn:   #E8B45C;  --warn-container:   #4A3312;
+  --danger: #F2867A;  --danger-container: #55201B;
+
+  --scrim:      rgba(0, 0, 0, .58);
+  --glass-tint: 18, 21, 26;
+  --shadow-1:   0 1px 2px rgba(0, 0, 0, .5);
+  --shadow-2:   0 4px 16px -6px rgba(0, 0, 0, .6);
+  --shadow-3:   0 18px 44px -18px rgba(0, 0, 0, .8);
+  --shadow-4:   0 32px 72px -28px rgba(0, 0, 0, .9);
+
+  --side-ink:      8, 10, 13;
+  --side-fg:       rgba(255, 255, 255, .78);
+  --side-fg-mute:  rgba(255, 255, 255, .46);
+  --side-fg-faint: rgba(255, 255, 255, .24);
+  --side-rule:     rgba(255, 255, 255, .08);
+  --side-hover:    rgba(255, 255, 255, .07);
+}
+
+/* ── §9 Status, approval and priority ──────────────────────────────────────
+   These flip with the theme: the meaning is constant, the rendering cannot be.
+   Three of six reuse the semantic tokens, which removes three of the eight
+   competing colour maps outright. The retired blue #0082c6 is gone from all
+   three places it had reappeared. */
+:root, [data-theme="light"] {
+  --st-todo:        #5A6270;
+  --st-in-progress: #3E5C8A;
+  --st-in-review:   #6E5AA0;
+  --st-requested:   var(--warn);    /* #955806 */
+  --st-done:        var(--ok);      /* #14743A */
+  --st-rejected:    var(--danger);  /* #B42318 */
+
+  --ap-pending:        var(--warn);
+  --ap-pending-client: #6E5AA0;     /* waiting on someone outside the org */
+  --ap-approved:       var(--ok);
+  --ap-rejected:       var(--danger);
+
+  --pr-urgent: var(--danger);
+  --pr-high:   var(--warn);
+  --pr-medium: #3E5C8A;
+  --pr-low:    var(--on-surface-3);
+}
+[data-theme="dark"], .dark, :root.dark {
+  --st-todo:        #9AA3B2;
+  --st-in-progress: #8FAEDC;
+  --st-in-review:   #B6A6E0;
+  --ap-pending-client: #B6A6E0;
+  --pr-medium:      #8FAEDC;
+  /* requested / done / rejected / urgent / high / low follow --warn, --ok,
+     --danger and --on-surface-3, which already flip above */
+}
+
+/* Fixed literals — these encode something external to our palette, so they do
+   not flip. The read tick is #4FC3F7 (WhatsApp's own blue, read from muscle
+   memory), NOT the retired brand blue #0082c6. */
+:root {
+  --pf-primary:      #6B4FBF;
+  --pf-primary-dark: #C0A9F5;
+  --pf-keyline:      #7c5cbf;
+  --ink-fixed:       #23262B;
+  --ink-fixed-dark:  #E9E7E1;
+  --tick-read:       #4FC3F7;
+  --wa-green:        #1FA855;
+}
+
+/* ── §L Legacy bridge ──────────────────────────────────────────────────────
+   The old vocabulary, re-pointed at the tokens above. Because these are
+   aliases and not literals, they resolve per-theme automatically and inherit
+   every contrast fix. Migrate call sites to the §7 names over time; do not
+   reintroduce hexes here.
+     --ink-4 was NEVER DEFINED anywhere in src/ yet is used 18 times across 4
+   files (SanvaadPage, OrgSrijanPage, HubDashboardPage, HubClientDetailPage) for
+   timestamps, "(edited)" and deleted-message text. Undefined resolves to
+   `unset`, so that text silently inherited full-strength body colour instead of
+   reading as muted. Defined here at the §12-legal metadata step. */
+:root {
+  --ink:       var(--on-surface);
+  --ink-2:     var(--on-surface-2);
+  --ink-3:     var(--on-surface-3);
+  --ink-4:     var(--on-surface-3);   /* was undefined — see note above */
+  --ink-faint: var(--on-surface-faint);
+
+  --bg-soft:   var(--s-low);
+  --surface-2: var(--s-lowest);
+
+  --rule:        var(--outline-variant);
+  --rule-soft:   var(--s-high);
+  --rule-strong: var(--outline);
+  --border:      var(--outline-variant);
+
+  --side-bg:   rgb(var(--side-ink));
+  --side-glow: radial-gradient(ellipse 220px 180px at 50% 0%,
+                 color-mix(in srgb, var(--primary-vivid) 18%, transparent) 0%, transparent 70%);
+
+  /* The runtime accent ramp. applyPrefs overwrites all five per the user's
+     accent; these are the pre-JS defaults for the shipped Teal, derived with
+     the same mid/deep formula so first paint matches what JS then writes.
+     --k-deep was #0082c6 — the retired brand blue — and is now the real teal
+     deep step. 371 references depend on --k-primary alone, so these cannot be
+     left to JS to define. */
   --k-primary: #05b7aa;
-  --k-mid:     #03a1b6;
-  --k-deep:    #0082c6;
-  --k-grad:    linear-gradient(135deg, #0082c6, #03a1b6 55%, #05b7aa);
-  --k-gradD:   linear-gradient(135deg, #005f9e, #0291a3 55%, #04a394);
+  --k-mid:     #00897f;
+  --k-deep:    #005650;
+  --k-grad:    linear-gradient(135deg, #005650, #00897f 55%, #05b7aa);
+  --k-gradD:   linear-gradient(135deg, #005650cc, #00897fcc 55%, #05b7aacc);
+  --side-active: #05b7aa29;
 
-  /* Canvas */
-  --bg:        #F6F3EC;
-  --bg-soft:   #F0ECDF;
-  --surface:   #FCFAF5;
-  --surface-2: #FFFFFF;
+  --k-danger: var(--danger);
 
-  /* Ink */
-  --ink:       #1A2230;
-  --ink-2:     #4A5468;
-  --ink-3:     #6E7B91;
-  --ink-faint: #A5B0C2;
-
-  /* Rules */
-  --rule:        #D4CCB3;
-  --rule-soft:   #E0D9C4;
-  --rule-strong: #B8AE94;
-
-  /* Sidebar */
-  --side-bg:     #050E1A;
-  --side-fg:     rgba(255,255,255,.72);
-  --side-active: rgba(5,183,170,.16);
-  --side-glow:   radial-gradient(ellipse 220px 180px at 50% 0%, rgba(5,183,170,.18) 0%, transparent 70%);
-
-  /* Status */
-  --ok:     #16a34a;
-  --warn:   #d97706;
-  --danger: #dc2626;
-
-  /* Spacing */
-  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
-  --sp-5: 20px; --sp-6: 24px; --sp-7: 28px; --sp-8: 32px; --sp-10: 40px;
-
-  /* Radii */
-  --r-sm: 6px;
-  --r-md: 10px;
-  --r-lg: 14px;
-  --r-xl: 20px;
-
-  /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(26,34,48,.06), 0 1px 2px rgba(26,34,48,.04);
-  --shadow-md: 0 4px 14px rgba(26,34,48,.10), 0 1px 4px rgba(26,34,48,.06);
-  --shadow-lg: 0 8px 28px rgba(26,34,48,.12), 0 2px 8px rgba(26,34,48,.08);
+  --shadow-sm: var(--shadow-1);
+  --shadow-md: var(--shadow-2);
+  --shadow-lg: var(--shadow-3);
 }
 
 /* ── Global canvas ─────────────────────────────────────────────────────── */
