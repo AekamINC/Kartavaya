@@ -20,6 +20,7 @@ import { NotifToastContainer, NotifPermissionPrompt } from './NotifToast';
 import CommandPalette from '../CommandPalette';
 import KeyboardShortcuts from '../KeyboardShortcuts';
 import OnboardingChecklist from '../OnboardingChecklist';
+import SkipLink from '../ui/SkipLink';
 import { urlBase64ToUint8Array } from '../../lib/push';
 import { playNotifSound } from '../../lib/notifSound';
 import { Bell, Menu, X } from 'lucide-react';
@@ -197,6 +198,10 @@ export default function AppShell() {
 
   return (
     <div data-testid="app-shell" className="k-app">
+      {/* First tab stop. Must stay first in DOM order — the sidebar below is
+          15 module links plus a settings group. */}
+      <SkipLink />
+
       {/* Sidebar — hidden on mobile via CSS */}
       <div className="k-app__sidebar">
         <Sidebar inboxCount={unread} />
@@ -240,8 +245,10 @@ export default function AppShell() {
         </div>
 
 
-        {/* Page content */}
-        <main className="k-content">
+        {/* Page content. tabIndex={-1} is required by the skip link — without
+            it the jump moves the scroll position but not focus, so the next Tab
+            continues from the sidebar. */}
+        <main className="k-content" id="main" tabIndex={-1}>
           <Outlet context={{ teamId, teams }} />
         </main>
       </div>

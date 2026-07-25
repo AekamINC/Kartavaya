@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef, useId } from "react";
+import FocusTrap from "./FocusTrap";
 
 /**
  * Accessible confirm dialog — replaces window.confirm throughout the app.
@@ -9,44 +10,26 @@ import React, { useEffect, useRef, useCallback } from "react";
  *   // render:   <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
  */
 export default function ConfirmDialog({ state, onClose }) {
-  const cancelRef  = useRef(null);
-  const confirmRef = useRef(null);
-  const dialogRef  = useRef(null);
+  const cancelRef = useRef(null);
 
-  // Focus the cancel button when dialog opens (safe default)
-  useEffect(() => {
-    if (state) cancelRef.current?.focus();
-  }, [state]);
+  // useId, not a literal. Two dialogs mounted at once — a delete confirm opened
+  // from inside a slide-over — produced duplicate "cd-title" ids, and
+  // aria-labelledby resolved to whichever the browser found first.
+  const uid       = useId();
+  const titleId   = `cd-title-${uid}`;
+  const messageId = `cd-msg-${uid}`;
 
-  // Return focus to the element that opened the dialog when it closes
-  useEffect(() => {
-    if (!state) return;
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    return () => { trigger?.focus?.(); };
-  }, [state]);
-
-  // Close on Escape + trap focus inside the dialog
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === 'Escape') { onClose(); return; }
-    if (e.key !== 'Tab') return;
-    const focusable = dialogRef.current?.querySelectorAll(
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    );
-    if (!focusable || focusable.length === 0) return;
-    const first = focusable[0];
-    const last  = focusable[focusable.length - 1];
-    if (e.shiftKey) {
-      if (document.activeElement === first) { e.preventDefault(); last.focus(); }
-    } else {
-      if (document.activeElement === last) { e.preventDefault(); first.focus(); }
-    }
-  }, [onClose]);
-
+  // Escape only. Tab-trapping and focus restore belong to <FocusTrap>, which
+  // captures the trigger before moving focus inward. The previous version
+  // focused Cancel in one effect and captured document.activeElement in the
+  // next — effects run in declaration order, so it captured the Cancel button
+  // and "restored" focus to a node that was about to unmount.
   useEffect(() => {
     if (!state) return;
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state, handleKeyDown]);
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [state, onClose]);
 
   if (!state) return null;
 
@@ -67,12 +50,12 @@ export default function ConfirmDialog({ state, onClose }) {
       }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
+      <FocusTrap active initialFocus={cancelRef}>
       <div
-        ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
-        aria-labelledby="cd-title"
-        aria-describedby="cd-msg"
+        aria-labelledby={titleId}
+        aria-describedby={messageId}
         style={{
           background: "var(--surface, #fff)",
           borderRadius: "var(--r-lg, 14px)",
@@ -84,13 +67,13 @@ export default function ConfirmDialog({ state, onClose }) {
         }}
       >
         <p
-          id="cd-title"
+          id={titleId}
           style={{ margin: "0 0 10px", fontSize: 15, fontWeight: 600, color: "var(--ink)" }}
         >
           Are you sure?
         </p>
         <p
-          id="cd-msg"
+          id={messageId}
           style={{ margin: "0 0 24px", fontSize: 14, color: "var(--ink-3)", lineHeight: 1.55 }}
         >
           {message}
@@ -105,7 +88,6 @@ export default function ConfirmDialog({ state, onClose }) {
             Cancel
           </button>
           <button
-            ref={confirmRef}
             className="k-btn"
             style={{ ...confirmBtnStyle, minWidth: 80 }}
             onClick={async () => { await onConfirm(); onClose(); }}
@@ -114,6 +96,7 @@ export default function ConfirmDialog({ state, onClose }) {
           </button>
         </div>
       </div>
+      </FocusTrap>
     </div>
   );
 }

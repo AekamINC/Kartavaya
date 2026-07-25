@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { cn } from "../../lib/utils";
 import { Button } from "./button";
+import FocusTrap from "./FocusTrap";
 
 export function Modal({ open, onOpenChange, title, children, footer, dataTestId }) {
   const titleId = dataTestId ? `${dataTestId}-title` : "modal-title";
@@ -13,14 +14,9 @@ export function Modal({ open, onOpenChange, title, children, footer, dataTestId 
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onOpenChange]);
 
-  // Return focus to the element that opened the modal when it closes.
-  // Captured at open-time from the trigger element, not document.activeElement on close,
-  // so it survives focus changes that happen inside the modal.
-  useEffect(() => {
-    if (!open) return;
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    return () => { trigger?.focus?.(); };
-  }, [open]);
+  // Focus restore now lives in <FocusTrap>, which captures the trigger before
+  // moving focus inward and restores it in its own cleanup. Keeping a second
+  // copy here would fire two restores on every close.
 
   if (!open) return null;
 
@@ -31,6 +27,7 @@ export function Modal({ open, onOpenChange, title, children, footer, dataTestId 
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
       onClick={(e) => { if (e.target === e.currentTarget) onOpenChange(false); }}
     >
+      <FocusTrap active={open}>
       <div
         role="dialog"
         aria-modal="true"
@@ -53,6 +50,7 @@ export function Modal({ open, onOpenChange, title, children, footer, dataTestId 
         <div className="max-h-[70vh] overflow-auto px-6 py-5">{children}</div>
         {footer ? <div className="border-t border-borderDefault/60 px-6 py-4">{footer}</div> : null}
       </div>
+      </FocusTrap>
     </div>
   );
 }

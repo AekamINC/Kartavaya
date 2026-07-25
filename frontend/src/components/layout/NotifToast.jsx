@@ -145,6 +145,26 @@ export function NotifPermissionPrompt({ onAllow, onDismiss }) {
 
 /* Container rendered in AppShell — manages a list of toasts */
 export function NotifToastContainer({ toasts, onDismiss }) {
+  // The two live regions are mounted unconditionally, even with no toasts.
+  // A live region has to exist in the DOM *before* its content arrives or the
+  // insertion is not announced — putting aria-live on the toast card itself is
+  // the single most common way this gets implemented wrong, and it silently
+  // announces nothing.
+  //
+  // Assertive is reserved for errors: it interrupts whatever the screen reader
+  // is currently saying. Notifications are polite. Nothing in the current
+  // notification payload carries a severity, so everything routes to polite
+  // until one exists — inventing a mapping here would be guesswork.
+  const politeText = toasts
+    .filter(n => n.severity !== 'error')
+    .map(n => [n.title, n.message].filter(Boolean).join('. '))
+    .join(' ');
+
+  const assertiveText = toasts
+    .filter(n => n.severity === 'error')
+    .map(n => [n.title, n.message].filter(Boolean).join('. '))
+    .join(' ');
+
   return (
     <>
       <style>{`
@@ -153,15 +173,26 @@ export function NotifToastContainer({ toasts, onDismiss }) {
           to   { width: 0%; }
         }
       `}</style>
-      <div style={{
-        position: 'fixed', bottom: 'max(20px, env(safe-area-inset-bottom))', right: 20, zIndex: 9999,
-        display: 'flex', flexDirection: 'column', gap: 10,
-        alignItems: 'flex-end',
-        pointerEvents: 'none',
-      }}>
-        {toasts.map(n => (
-          <NotifToast key={n.notification_id} notif={n} onDismiss={onDismiss} />
-        ))}
+
+      <div role="region" aria-label="Notifications">
+        <div className="sr-only" aria-live="polite" aria-atomic="false">{politeText}</div>
+        <div className="sr-only" aria-live="assertive" aria-atomic="false">{assertiveText}</div>
+
+        <div style={{
+          position: 'fixed', bottom: 'max(20px, env(safe-area-inset-bottom))', right: 20, zIndex: 9999,
+          display: 'flex', flexDirection: 'column', gap: 10,
+          alignItems: 'flex-end',
+          pointerEvents: 'none',
+        }}>
+          {/* Deliberately NOT aria-hidden. The live region announces arrival;
+              the card stays in the accessibility tree so its Dismiss and View
+              buttons remain reachable. Hiding it would leave focusable controls
+              inside an aria-hidden subtree, which is a worse defect than
+              hearing the text twice. */}
+          {toasts.map(n => (
+            <NotifToast key={n.notification_id} notif={n} onDismiss={onDismiss} />
+          ))}
+        </div>
       </div>
     </>
   );
