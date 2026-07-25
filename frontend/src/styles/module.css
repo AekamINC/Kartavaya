@@ -1,0 +1,136 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODULE CHROME — implements design-handover/13-module-pages.md §1
+   Every module page is the same five parts: header, tabs, KPI strip, content,
+   empty state. One stylesheet, fifteen pages.
+   Import order note: loaded after kartavaya-design.css, so --r-*, --sp-*,
+   --on-surface-* and the motion tokens are all in scope.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Module accents ────────────────────────────────────────────────────────
+   13-module-pages.md sources these from `moduleColors.js (01-navigation.md)`,
+   but 01 never defines them and neither does design-reference/ — so they are
+   defined here, per the system's own rules rather than invented freehand:
+
+   · Modules sit at ~40-55% saturation. Accent presets are >60% (00 §10) and
+     statuses are 38-42% (00 §9). A module tint therefore never reads as the
+     user's accent or as a status chip, which is the same separation-by-chroma
+     argument 00 §9 makes.
+   · They flip by theme. The two palettes are opposite temperatures (light warm,
+     dark cool), so a light-theme tint cannot be reused in dark — it comes out
+     the wrong hue, not merely the wrong luminance.
+   · Consumed only through var(--m-<id>), never as a literal, so a correction
+     here reaches every surface. */
+:root, [data-theme="light"] {
+  --m-graha:     #2F6690;
+  --m-ganit:     #2E7D52;
+  --m-manav:     #A65A2E;
+  --m-vikray:    #A83E63;
+  --m-vetana:    #6B4FA8;
+  --m-dristi:    #24707F;
+  --m-prachar:   #8A6A18;
+  --m-esign:     #2B7A6B;
+  --m-sanvaad:   #8E4A86;
+  --m-hub:       #45569E;
+  --m-srijan:    #7A4E9E;
+  --m-pahchan:   #A24A38;
+  --m-boards:    #4F5BA6;
+  --m-approvals: #5A7A33;
+  --m-reports:   #2F7268;
+}
+[data-theme="dark"], .dark, :root.dark {
+  --m-graha:     #8FB8DC;
+  --m-ganit:     #7ED4A2;
+  --m-manav:     #E8AE82;
+  --m-vikray:    #E894B4;
+  --m-vetana:    #B9A6E8;
+  --m-dristi:    #7CC5D4;
+  --m-prachar:   #DCC072;
+  --m-esign:     #7FCFBE;
+  --m-sanvaad:   #DFA2D8;
+  --m-hub:       #A3AEE8;
+  --m-srijan:    #C4A2E4;
+  --m-pahchan:   #E8A08E;
+  --m-boards:    #A8B2E4;
+  --m-approvals: #ADC97E;
+  --m-reports:   #85C6BA;
+}
+
+/* ── Module header ─────────────────────────────────────────────────────────
+   --c is the module accent, set per page. English carries the hierarchy at 25px
+   display; Hindi accompanies at 15px — the same weighting rule as the sidebar. */
+.mh {
+  display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  padding-bottom: 15px; border-bottom: 1px solid var(--outline-variant);
+  margin-bottom: 18px;
+}
+.mh__ic {
+  width: 38px; height: 38px; border-radius: var(--r-sm);
+  display: grid; place-items: center; flex-shrink: 0;
+  background: color-mix(in srgb, var(--c) 14%, transparent);
+  color: var(--c);
+}
+.mh__t   { display: flex; align-items: baseline; gap: 9px; }
+.mh__en  { font-family: var(--font-display); font-size: 25px; font-weight: 400; letter-spacing: -.024em; }
+.mh__hi  { font-family: var(--font-indic); font-size: 15px; color: var(--primary); }
+.mh__sub { font-size: 12.5px; color: var(--on-surface-3); margin-top: 3px; }
+.mh__act { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+/* ── Tabs ──────────────────────────────────────────────────────────────── */
+.mt {
+  display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none;
+  border-bottom: 1px solid var(--outline-variant); margin-bottom: 18px;
+}
+.mt::-webkit-scrollbar { display: none; }
+.mt__b {
+  position: relative; padding: 9px 15px;
+  font-size: 13px; font-weight: 500; color: var(--on-surface-3);
+  white-space: nowrap; flex-shrink: 0;
+  background: none; border: none; cursor: pointer; font-family: inherit;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.mt__b:hover { color: var(--on-surface); }
+.mt__b.on    { color: var(--on-surface); font-weight: 600; }
+.mt__b.on::after {
+  content: ''; position: absolute; left: 12px; right: 12px; bottom: -1px;
+  height: 2px; border-radius: 1px 1px 0 0; background: var(--primary);
+}
+/* Count beside a tab. --on-surface-faint is 2.3:1 and non-text only (00 §12),
+   so this reads at --on-surface-3, and uses the floored token rather than the
+   10.5px literal the handover's own CSS carries — that literal would not track
+   the Text size slider. */
+.mt__n { font-size: var(--t-label-sm); color: var(--on-surface-3); margin-left: 6px; }
+
+/* ── KPI strip ─────────────────────────────────────────────────────────── */
+.mk    { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.mk__c { padding: 13px 15px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--outline-variant); }
+.mk__l { font-size: var(--t-label-sm); letter-spacing: .15em; text-transform: uppercase; color: var(--on-surface-3); font-weight: 700; }
+.mk__v { font-family: var(--font-display); font-size: 25px; font-weight: 400; letter-spacing: -.028em; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.mk__d { font-size: 11px; margin-top: 3px; display: flex; align-items: center; gap: 4px; }
+.mk__d--up { color: var(--ok); }
+.mk__d--dn { color: var(--danger); }
+
+/* ── Module tables ─────────────────────────────────────────────────────────
+   Numeric columns right-align: a left-aligned column of rupee amounts cannot
+   be scanned for magnitude, which is the only reason to look at one. */
+.mtbl__num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); font-size: 12.5px; }
+.mtbl__tot { font-weight: 700; background: var(--s-low); }
+
+/* ── Empty and restricted ──────────────────────────────────────────────────
+   Restricted is NOT an error and must not be styled as one — no red, no warning
+   triangle. A member without a module grant seeing a red alert learns that
+   something is broken; the correct message is neutral and names who can grant
+   access. */
+.mempty     { padding: 44px 24px; text-align: center; max-width: 44ch; margin: 0 auto; }
+.mempty__t  { font-family: var(--font-display); font-size: 19px; font-weight: 400; margin: 0 0 7px; }
+.mempty__p  { font-size: 13.5px; line-height: 1.6; color: var(--on-surface-3); margin: 0 0 17px; text-wrap: pretty; }
+.mrestrict  { display: flex; gap: 12px; padding: 16px 18px; border-radius: var(--r-md); background: var(--s-container); max-width: 64ch; }
+.mrestrict__ic { color: var(--on-surface-3); flex-shrink: 0; }
+.mrestrict__t  { font-weight: 600; margin: 0 0 4px; font-size: 13.5px; }
+.mrestrict__p  { font-size: 12.5px; line-height: 1.55; color: var(--on-surface-2); margin: 0; }
+
+/* ── Note blocks — state a constraint honestly ─────────────────────────── */
+.note          { padding: 11px 13px; border-radius: var(--r-sm); font-size: 12px; line-height: 1.55; background: var(--s-container); color: var(--on-surface-2); }
+.note--info    { background: color-mix(in srgb, var(--primary) 8%, transparent); color: var(--on-surface-2); }
+.note--warn    { background: var(--warn-container); color: var(--warn); }
+.note--danger  { background: var(--danger-container); color: var(--danger); }
+.note b        { font-weight: 600; }

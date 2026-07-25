@@ -2,9 +2,11 @@
 //
 // Was 2,030 lines / 124 KB. Split per 13-module-pages.md: route file + one file
 // per tab, applied BEFORE any restyle so the styling diff stays reviewable.
-// Visually unchanged in this commit by design.
+// Now on the shared .mh/.mt chrome from 13-module-pages.md §1.
 import React, { useState } from 'react';
-import { PageHeader } from '../components/editorial';
+import ModuleHeader from '../components/module/ModuleHeader';
+import ModuleTabs from '../components/module/ModuleTabs';
+import { ICONS } from '../components/layout/navIcons';
 
 import InvoicesTab from './ganit/InvoicesTab';
 import ProductsTab from './ganit/ProductsTab';
@@ -30,21 +32,24 @@ export default function GanitPage() {
 
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Ganit · गणित" subtitle="GST Invoicing — Tax Invoices, Quotations & Payments" />
+      <ModuleHeader
+        module="ganit"
+        en="Invoicing"
+        hi="गणित"
+        sub="Tax invoices, quotations and payments"
+        icon={ICONS.ganit}
+      />
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)', overflowX: 'auto' }}>
-        {TABS.map(([t]) => (
-          <button key={t} onClick={() => setTab(t)}
-            style={{ padding: '8px 16px', fontSize: 13, fontWeight: tab === t ? 700 : 400,
-              color: tab === t ? 'var(--k-primary)' : 'var(--ink-3)',
-              borderBottom: tab === t ? '2px solid var(--k-primary)' : '2px solid transparent',
-              background: 'none', border: 'none', cursor: 'pointer', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
-            {t}
-          </button>
-        ))}
+      <ModuleTabs
+        tabs={TABS.map(([id]) => ({ id, label: id.replace(/-/g, ' ') }))}
+        value={tab}
+        onChange={setTab}
+        label="Ganit sections"
+      />
+
+      <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
+        <Active />
       </div>
-
-      <Active />
     </div>
   );
 }

@@ -5,10 +5,11 @@
 // styling is applied: a restyle of a single-file module touches every tab, every
 // table and every form at once, and the diff is unreviewable.
 //
-// Deliberately unstyled in this commit — the shared .mh/.mt chrome comes next,
-// and mixing the two would defeat the point of splitting first.
+// Now on the shared .mh/.mt chrome from 13-module-pages.md §1.
 import React, { useState } from 'react';
-import { PageHeader } from '../components/editorial';
+import ModuleHeader from '../components/module/ModuleHeader';
+import ModuleTabs from '../components/module/ModuleTabs';
+import { ICONS } from '../components/layout/navIcons';
 
 import TodayTab from './graha/TodayTab';
 import ClientsTab from './graha/ClientsTab';
@@ -43,21 +44,24 @@ export default function GrahaPage() {
 
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Graha · ग्राह" subtitle="CRM — Contacts, Deals & Pipeline" />
+      <ModuleHeader
+        module="graha"
+        en="CRM"
+        hi="ग्राह"
+        sub="Contacts, deals and pipeline"
+        icon={ICONS.graha}
+      />
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)', overflowX: 'auto' }}>
-        {TABS.map(([t]) => (
-          <button key={t} onClick={() => setTab(t)}
-            style={{ padding: '8px 16px', fontSize: 13, fontWeight: tab === t ? 700 : 400,
-              color: tab === t ? 'var(--k-primary)' : 'var(--ink-3)',
-              borderBottom: tab === t ? '2px solid var(--k-primary)' : '2px solid transparent',
-              background: 'none', border: 'none', cursor: 'pointer', textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
-            {t}
-          </button>
-        ))}
+      <ModuleTabs
+        tabs={TABS.map(([id]) => ({ id, label: id.replace(/-/g, ' ') }))}
+        value={tab}
+        onChange={setTab}
+        label="Graha sections"
+      />
+
+      <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
+        <Active />
       </div>
-
-      <Active />
     </div>
   );
 }
