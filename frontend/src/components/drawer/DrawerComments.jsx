@@ -6,6 +6,47 @@ import { lbl } from './constants';
 /**
  * DrawerComments — threaded comment list with inline edit/delete, plus add-comment input.
  */
+/**
+ * Highlight mentions, matching how the backend resolves them.
+ *
+ * The old renderer was `body.split(/(@[\w.-]+)/g)`, which disagreed with the
+ * picker at both ends. MentionTextarea inserts the member's full display name,
+ * so "@Keval Shah" was bolded as "@Keval" with " Shah" left as plain text —
+ * the visible tell that the inserter and the parsers disagree. The same regex
+ * also bolded the domain of any pasted email address: "contact user@example.com"
+ * rendered "@example.com" as a mention of nobody.
+ *
+ * Member display names are matched first, longest first, so a member called
+ * "Keval" cannot shadow "Keval Shah". Bare handles still highlight, but only
+ * when not preceded by a word character — which is what excludes email domains.
+ */
+export function renderMentions(body, members = []) {
+  if (!body) return body;
+  const names = (members || [])
+    .map(m => m.display_name)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+
+  const pattern = names.length
+    ? `(?:${names.join('|')})|[\\w.-]+`
+    : `[\\w.-]+`;
+  // (^|[^\w@]) keeps "user@example.com" from matching — a mention never
+  // follows a word character.
+  const re = new RegExp(`(^|[^\\w@])(@(?:${pattern}))`, 'gi');
+
+  const out = [];
+  let last = 0, m;
+  while ((m = re.exec(body)) !== null) {
+    const start = m.index + m[1].length;
+    if (start > last) out.push(body.slice(last, start));
+    out.push(<strong key={start} style={{ color: 'var(--k-primary)' }}>{m[2]}</strong>);
+    last = start + m[2].length;
+  }
+  if (last < body.length) out.push(body.slice(last));
+  return out;
+}
+
 export default function DrawerComments({
   comments, comment, setComment, postComment,
   deleteComment, editingComment, editBody, setEditBody,
@@ -86,11 +127,7 @@ export default function DrawerComments({
               </div>
             ) : (
               <p style={{ margin: '4px 0 0', fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-                {c.body.split(/(@[\w.-]+)/g).map((part, i) =>
-                  part.startsWith('@')
-                    ? <strong key={i} style={{ color: 'var(--k-primary)' }}>{part}</strong>
-                    : part
-                )}
+                {renderMentions(c.body, mentionMembers)}
               </p>
             )}
           </div>
