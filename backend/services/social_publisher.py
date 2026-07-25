@@ -11,8 +11,31 @@ from typing import Optional
 import httpx
 
 from db import get_pool
+from outbound import suppressed
 
 log = logging.getLogger(__name__)
+
+
+def _guarded(fn):
+    """Suppress a publish when OUTBOUND_MODE=dry.
+
+    Applied to every publish_to_* entry point rather than to their callers, so
+    a new platform or a new caller is covered without anyone remembering to.
+
+    These post through per-client OAuth tokens to a customer's own audience.
+    A wrong post is public and not reliably retractable, which is why this is
+    the one channel guarded at every entry rather than at a dispatcher.
+    """
+    async def _wrapper(account: dict, text: str, media_urls: list = None) -> dict:
+        platform = fn.__name__.replace("publish_to_", "")
+        target = account.get("account_name") or account.get("page_id") or account.get("account_id") or ""
+        if suppressed(f"social:{platform}", str(target), (text or "")[:80]):
+            return {"platform_post_id": None, "platform_url": None, "suppressed": True}
+        return await fn(account, text, media_urls)
+
+    _wrapper.__name__ = fn.__name__
+    _wrapper.__doc__ = fn.__doc__
+    return _wrapper
 
 
 async def _get_account(account_id: str) -> dict | None:
@@ -104,6 +127,7 @@ async def _refresh_linkedin_token(refresh_token: str) -> str:
 
 # ── Platform publishers ───────────────────────────────────
 
+@_guarded
 async def publish_to_facebook(account: dict, text: str, media_urls: list = None) -> dict:
     """Post to a Facebook Page."""
     page_id = account.get("page_id") or account.get("account_id")
@@ -130,6 +154,7 @@ async def publish_to_facebook(account: dict, text: str, media_urls: list = None)
     }
 
 
+@_guarded
 async def publish_to_instagram(account: dict, text: str, media_urls: list = None) -> dict:
     """Post to Instagram Business (requires image)."""
     ig_id = account.get("page_id") or account.get("account_id")
@@ -159,6 +184,7 @@ async def publish_to_instagram(account: dict, text: str, media_urls: list = None
     }
 
 
+@_guarded
 async def publish_to_linkedin(account: dict, text: str, media_urls: list = None) -> dict:
     """Post to LinkedIn (personal or organization)."""
     token = account["access_token"]
@@ -201,6 +227,7 @@ async def publish_to_linkedin(account: dict, text: str, media_urls: list = None)
     }
 
 
+@_guarded
 async def publish_to_google_business(account: dict, text: str, media_urls: list = None) -> dict:
     """Post to Google Business Profile (local post)."""
     token = account["access_token"]
@@ -238,6 +265,7 @@ async def publish_to_google_business(account: dict, text: str, media_urls: list 
     }
 
 
+@_guarded
 async def publish_to_youtube(account: dict, text: str, media_urls: list = None) -> dict:
     """Upload a video to YouTube via Data API v3."""
     token = account["access_token"]
@@ -280,6 +308,7 @@ async def publish_to_youtube(account: dict, text: str, media_urls: list = None) 
     return {"platform_post_id": None, "platform_url": None}
 
 
+@_guarded
 async def publish_to_pinterest(account: dict, text: str, media_urls: list = None) -> dict:
     """Create a Pin on Pinterest."""
     token = account["access_token"]
@@ -306,6 +335,7 @@ async def publish_to_pinterest(account: dict, text: str, media_urls: list = None
     }
 
 
+@_guarded
 async def publish_to_threads(account: dict, text: str, media_urls: list = None) -> dict:
     """Publish to Threads (Meta) via Graph API."""
     token = account["access_token"]
@@ -334,6 +364,7 @@ async def publish_to_threads(account: dict, text: str, media_urls: list = None) 
     return {"platform_post_id": data.get("id"), "platform_url": None}
 
 
+@_guarded
 async def publish_to_telegram(account: dict, text: str, media_urls: list = None) -> dict:
     """Send a message to a Telegram channel via Bot API."""
     bot_token = account["access_token"]
@@ -360,6 +391,7 @@ async def publish_to_telegram(account: dict, text: str, media_urls: list = None)
     }
 
 
+@_guarded
 async def publish_to_tiktok(account: dict, text: str, media_urls: list = None) -> dict:
     """Publish a video to TikTok via Content Posting API."""
     token = account["access_token"]
@@ -381,6 +413,7 @@ async def publish_to_tiktok(account: dict, text: str, media_urls: list = None) -
     return {"platform_post_id": publish_id, "platform_url": None}
 
 
+@_guarded
 async def publish_to_reddit(account: dict, text: str, media_urls: list = None) -> dict:
     """Submit a post to a subreddit."""
     token = account["access_token"]
@@ -410,6 +443,7 @@ async def publish_to_reddit(account: dict, text: str, media_urls: list = None) -
     return {"platform_post_id": post_id, "platform_url": url or None}
 
 
+@_guarded
 async def publish_to_whatsapp_business(account: dict, text: str, media_urls: list = None) -> dict:
     """Send a template message via WhatsApp Business Cloud API."""
     token = account["access_token"]

@@ -266,6 +266,12 @@ def _body_text(text: str) -> str:
 def send_email(to_email: str, subject: str, html_content: str,
                reply_to: str = None) -> bool:
     """Send an HTML email via Resend or AWS SES in a background thread, logging in dev mode."""
+    # Single choke point for every email in the product — services/employee_email.py
+    # and all routers go through here, so guarding this covers them all.
+    from outbound import suppressed
+    if suppressed("email", to_email, subject):
+        return True
+
     def _send():
         if _resend_client:
             try:

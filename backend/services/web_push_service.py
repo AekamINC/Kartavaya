@@ -54,6 +54,10 @@ async def remove_subscription(pool, endpoint: str) -> None:
 
 async def send_web_push(pool, *, user_id: str, title: str, body: str, url: str = "/") -> None:
     """Send a Web Push notification to all browser subscriptions for user_id."""
+    from outbound import suppressed
+    if suppressed("push:web", user_id, title):
+        return
+
     if not _configured:
         return
     try:

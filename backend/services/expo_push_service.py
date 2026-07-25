@@ -13,6 +13,10 @@ EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
 async def send_expo_push(pool, *, user_id: str, title: str, body: str, url: str = "/", task_id: str | None = None):
     """Send an Expo push notification to all registered devices for a user."""
+    from outbound import suppressed
+    if suppressed("push:expo", user_id, title):
+        return
+
     try:
         rows = await pool.fetch(
             "SELECT token, device_id FROM push_tokens WHERE user_id=$1", user_id

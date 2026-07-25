@@ -80,6 +80,12 @@ async def send_push(
     is_mine: bool = True,
 ) -> None:
     """Send a push notification to one user, respecting their prefs and quiet hours."""
+    # Delivery only — this function writes no notification row, so suppressing
+    # it costs nothing but the device buzz.
+    from outbound import suppressed
+    if suppressed("push", recipient_id, f"{kind}: {title}"):
+        return
+
     try:
         prefs_row = await pool.fetchrow(
             "SELECT prefs, quiet_start, quiet_end FROM notification_prefs WHERE user_id=$1",
