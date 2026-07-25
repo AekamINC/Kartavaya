@@ -21,7 +21,7 @@ export function Field({ label, sanskrit, required, hint, error, span, htmlFor, c
       {label && (
         <label className="fld__l" htmlFor={id}>
           {label}
-          {sanskrit && <span className="fld__hi">{sanskrit}</span>}
+          {sanskrit && <span className="fld__hi" lang="hi" aria-hidden="true">{sanskrit}</span>}
           {required && <span className="fld__req" aria-hidden="true">*</span>}
         </label>
       )}

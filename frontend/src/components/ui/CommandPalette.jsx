@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { cn } from '../../lib/utils';
+import FocusTrap from './FocusTrap';
 
 export function CommandPalette({ open, onOpenChange, commands = [], onSelect }) {
   const [query, setQuery] = useState('');
@@ -73,8 +74,18 @@ export function CommandPalette({ open, onOpenChange, commands = [], onSelect }) 
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh] bg-black/40 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onOpenChange(false); }}
+      role="presentation"
     >
-      <div className="w-full max-w-lg rounded-2xl border border-borderDefault/60 bg-bgDefault shadow-2xl overflow-hidden">
+      {/* Trap wraps the panel, not the scrim. Without it Tab walked straight out
+          of the open palette into the page behind, and closing dropped focus at
+          <body> instead of returning it to the search trigger. */}
+      <FocusTrap active>
+      <div
+        className="w-full max-w-lg rounded-2xl border border-borderDefault/60 bg-bgDefault shadow-2xl overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+      >
         <div className="flex items-center gap-3 px-4 py-3 border-b border-borderDefault/60">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-textMuted flex-shrink-0">
             <circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5L14 14" />
@@ -139,6 +150,7 @@ export function CommandPalette({ open, onOpenChange, commands = [], onSelect }) 
           <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 bg-bgMuted/60 rounded font-medium border border-borderDefault/40">esc</kbd> Close</span>
         </div>
       </div>
+      </FocusTrap>
     </div>
   );
 }

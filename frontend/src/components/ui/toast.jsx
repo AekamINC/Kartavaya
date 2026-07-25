@@ -2,15 +2,24 @@ import React, { createContext, useCallback, useContext, useMemo, useState } from
 
 const ToastCtx = createContext(null);
 
+// Token references, not hexes — these were #05b7aa/#e53e3e/#f59e0b/#0082c6,
+// the last being the retired brand blue that 00 §9 removes. A baked hex also
+// cannot flip with the theme, so the accent bar was a light-mode colour sitting
+// on a dark card.
 const TYPE_STYLES = {
-  success: { borderLeft: '3px solid #05b7aa', icon: '✓' },
-  error:   { borderLeft: '3px solid #e53e3e', icon: '✕' },
-  warning: { borderLeft: '3px solid #f59e0b', icon: '!' },
-  info:    { borderLeft: '3px solid #0082c6', icon: 'i' },
+  success: { color: 'var(--ok)',      icon: '✓' },
+  error:   { color: 'var(--danger)',  icon: '✕' },
+  warning: { color: 'var(--warn)',    icon: '!' },
+  info:    { color: 'var(--primary)', icon: 'i' },
 };
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
+  // Announcement text is held separately from the toast list. A live region has
+  // to exist in the DOM BEFORE its content arrives or the insertion is not
+  // announced — which is why aria-live must never go on the toast card itself.
+  const [polite, setPolite] = useState('');
+  const [assertive, setAssertive] = useState('');
 
   const pushToast = useCallback((t) => {
     const id = `toast_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -21,6 +30,13 @@ export function ToastProvider({ children }) {
       message: t.message || "",
     };
     setToasts((prev) => [toast, ...prev].slice(0, 3));
+
+    // Errors interrupt; everything else waits for a pause. Without this the
+    // whole toast system was silent to screen readers — a blind user got no
+    // confirmation that anything happened and no error reporting at all.
+    const spoken = [toast.title, toast.message].filter(Boolean).join('. ');
+    if (spoken) (toast.type === 'error' ? setAssertive : setPolite)(spoken);
+
     setTimeout(() => {
       setToasts((prev) => prev.filter((x) => x.id !== id));
     }, 3200);
@@ -36,31 +52,38 @@ export function ToastProvider({ children }) {
   return (
     <ToastCtx.Provider value={value}>
       {children}
-      <div style={{
-        position: 'fixed', right: 20, top: 20, zIndex: 9999,
-        display: 'flex', flexDirection: 'column', gap: 8,
-        width: 320, maxWidth: 'calc(100vw - 40px)',
-        pointerEvents: 'none',
-      }}>
+      {/* One live-region pair for the whole app, mounted unconditionally. */}
+      <div className="sr-only" aria-live="polite"    aria-atomic="false">{polite}</div>
+      <div className="sr-only" aria-live="assertive" aria-atomic="false">{assertive}</div>
+      <div
+        role="region"
+        aria-label="Notifications"
+        style={{
+          position: 'fixed', right: 20, top: 20, zIndex: 9999,
+          display: 'flex', flexDirection: 'column', gap: 8,
+          width: 320, maxWidth: 'calc(100vw - 40px)',
+          pointerEvents: 'none',
+        }}
+      >
         {toasts.map((t) => {
           const ts = TYPE_STYLES[t.type] || TYPE_STYLES.info;
           return (
             <div key={t.id} style={{
-              background: 'var(--surface, #FCFAF5)',
-              border: '1px solid var(--rule, #E5E0D5)',
-              borderLeft: ts.borderLeft,
-              borderRadius: 10,
+              background: 'var(--surface)',
+              border: '1px solid var(--outline-variant)',
+              borderLeft: `3px solid ${ts.color}`,
+              borderRadius: 'var(--r-md)',
               padding: '10px 14px',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
+              boxShadow: 'var(--shadow-2)',
               pointerEvents: 'all',
               display: 'flex',
               gap: 10,
               alignItems: 'flex-start',
             }}>
-              <span style={{
+              <span aria-hidden="true" style={{
                 fontSize: 12,
                 fontWeight: 700,
-                color: ts.borderLeft.split(' ')[2],
+                color: ts.color,
                 marginTop: 1,
                 flexShrink: 0,
               }}>
@@ -71,8 +94,8 @@ export function ToastProvider({ children }) {
                   <div style={{
                     fontSize: 13,
                     fontWeight: 600,
-                    color: 'var(--ink, #1A2230)',
-                    fontFamily: 'var(--font-ui, system-ui)',
+                    color: 'var(--on-surface)',
+                    fontFamily: 'var(--font-ui)',
                     lineHeight: 1.3,
                   }}>
                     {t.title}
@@ -81,9 +104,9 @@ export function ToastProvider({ children }) {
                 {t.message && (
                   <div style={{
                     fontSize: 12,
-                    color: 'var(--ink-3, #6B7280)',
+                    color: 'var(--on-surface-3)',
                     marginTop: 2,
-                    fontFamily: 'var(--font-ui, system-ui)',
+                    fontFamily: 'var(--font-ui)',
                   }}>
                     {t.message}
                   </div>

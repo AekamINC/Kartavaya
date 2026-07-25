@@ -16,8 +16,10 @@ export default function ModuleHeader({ module, en, hi, sub, icon, actions }) {
       {icon && <div className="mh__ic" aria-hidden="true">{icon}</div>}
       <div>
         <div className="mh__t">
-          <span className="mh__en">{en}</span>
-          {hi && <span className="mh__hi">{hi}</span>}
+          <h1 className="mh__en">{en}</h1>
+          {/* Same label, second script — tagged for the right voice, hidden from
+              the accessibility tree so the heading is not announced twice. */}
+          {hi && <span className="mh__hi" lang="hi" aria-hidden="true">{hi}</span>}
         </div>
         {sub && <div className="mh__sub">{sub}</div>}
       </div>

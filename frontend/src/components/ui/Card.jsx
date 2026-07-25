@@ -19,7 +19,7 @@ export function CardHead({ title, sanskrit, actions, children }) {
       {title && (
         <div className="card__titles">
           <h3 className="card__title">{title}</h3>
-          {sanskrit && <span className="card__hi">{sanskrit}</span>}
+          {sanskrit && <span className="card__hi" lang="hi" aria-hidden="true">{sanskrit}</span>}
         </div>
       )}
       {children}

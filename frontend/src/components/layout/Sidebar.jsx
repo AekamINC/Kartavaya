@@ -188,7 +188,21 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0 }) {
                     >
                       <span className="k-sidebar__icon">{ICONS[icon]}</span>
                       {!rail && <span>{en}</span>}
-                      {!rail && <span className="k-sidebar__hi-mute">{secondaryLabel}</span>}
+                      {/* lang so a screen reader that does read this uses the right
+                          voice — without it Devanagari is read with the English one
+                          and produces noise. aria-hidden because this is the SAME
+                          label in a second script, not additional information:
+                          announcing both gives "Tasks कर्तव्य Tasks कर्तव्य" as
+                          focus moves. Visual affordance only. */}
+                      {!rail && (
+                        <span
+                          className="k-sidebar__hi-mute"
+                          lang={showGu ? 'gu' : 'hi'}
+                          aria-hidden="true"
+                        >
+                          {secondaryLabel}
+                        </span>
+                      )}
                       {!rail && adminOnly && (
                         <span className="k-sidebar__badge" style={{ fontSize: 9, letterSpacing: '0.1em' }}>
                           ADMIN
