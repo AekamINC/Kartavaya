@@ -78,7 +78,7 @@ select.inp {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23666A61' d='M0 0h10L5 6z'/></svg>");
 }
 /* The chevron fill is baked into the data URI, so dark mode must restate it. */
-[data-theme="dark"] select.inp, .dark select.inp {
+[data-theme="dark"] select.inp {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23A9AEA3' d='M0 0h10L5 6z'/></svg>");
 }
 textarea.inp { resize: vertical; min-height: 76px; }

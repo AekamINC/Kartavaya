@@ -41,10 +41,17 @@ export function currentUser() {
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
+// A second, competing theme mechanism: this stored its own key and toggled a
+// `.dark` class, while CustomizePanel stores `k_prefs` and sets [data-theme].
+// 00-tokens.md standardises on data-theme, so the class toggle is gone — the
+// `.dark` rules it drove were removed from dark-theme.css.
+//
+// Kept (rather than deleted) because callers still import it, but it now
+// writes the same attribute as applyPrefs so the two cannot disagree.
 export function useTheme() {
   const [theme, setTheme] = useState(() => localStorage.getItem('Kartavaya_theme') || 'light');
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', theme === 'dark');
+    document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
     localStorage.setItem('Kartavaya_theme', theme);
   }, [theme]);
   return { theme, setTheme };

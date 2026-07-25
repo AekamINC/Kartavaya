@@ -2,8 +2,9 @@ import React, { useEffect, useState, createContext, useContext, useCallback } fr
 
 const STORAGE_KEY = 'k_prefs';
 
-// Only `color` is stored per preset — mid, deep and light all derive, so a
-// custom hex behaves identically to a preset (00-tokens.md §10).
+/* 00-tokens.md §10 — 12 presets. Only `color` is stored; mid/deep/light are
+   derived, so a custom hex behaves identically to a preset. The first four
+   ids are unchanged so stored preferences keep resolving. */
 export const ACCENTS = [
   { id: 'teal',    label: 'TEAL',    color: '#05b7aa' },
   { id: 'blue',    label: 'BLUE',    color: '#3b82f6' },
@@ -31,21 +32,16 @@ export const FONTS = [
   { id: 'source-sans',      label: 'Source Sans 3',     sub: 'technical', value: "'Source Sans 3', system-ui, sans-serif" },
 ];
 
-// --font-display and --font-ui are INDEPENDENT. The previous applyPrefs set
-// --font-ui to the display font in both arms of a SANS_IDS check, so picking
-// Newsreader turned every label, table cell and button serif.
-export const UI_FONTS = [
-  { id: 'inter',       label: 'Inter',         sub: 'clean',     value: "Inter, ui-sans-serif, system-ui, -apple-system, sans-serif" },
-  { id: 'dm-sans',     label: 'DM Sans',       sub: 'geometric', value: "'DM Sans', ui-sans-serif, system-ui, sans-serif" },
-  { id: 'poppins',     label: 'Poppins',       sub: 'friendly',  value: "'Poppins', ui-sans-serif, system-ui, sans-serif" },
-  { id: 'source-sans', label: 'Source Sans 3', sub: 'technical', value: "'Source Sans 3', ui-sans-serif, system-ui, sans-serif" },
-  { id: 'system',      label: 'System',        sub: 'native',    value: "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" },
-  { id: 'ibm-plex',    label: 'IBM Plex Sans', sub: 'neutral',   value: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif" },
-];
+/* The interface-font picker offers the sans subset of FONTS rather than a rival
+   list, so `uiFont` and `font` stay resolvable from one source. Picking a serif
+   for headings must not drag the UI with it — that was the SANS_IDS bug. */
+export const UI_FONTS = FONTS.filter(f => /system-ui/.test(f.value));
 
-// Standalone hi/gu were dropped as interface languages; the four bilingual
-// options remain. A value stored before that change must fall through rather
-// than render the raw key.
+/* Standalone hi/gu were dropped as interface languages; the four bilingual
+   options remain (decided 2026-07-25, ledger §4). A value stored before that
+   change must fall through to its bilingual equivalent rather than render the
+   raw key — data-language="hi" matches no stylesheet rule and reads as a
+   missing translation. */
 const LANGUAGES = new Set(['en', 'en+sa', 'en+hi', 'en+gu']);
 const LANG_FALLBACK = { hi: 'en+hi', gu: 'en+gu' };
 export function normalizeLanguage(lang) {
@@ -54,18 +50,17 @@ export function normalizeLanguage(lang) {
 }
 
 export const DEFAULTS = {
-  mode:         'light',
+  mode:         'light',      // light | dark | system
   accent:       'teal',
   customAccent: null,
   sidebar:      'wide',
   density:      'comfy',
-  font:         'newsreader',
-  uiFont:       'inter',
-  fontSize:     14,
-  lineHeight:   1.5,
-  radius:       10,
-  glassMix:     0.6,
-  anim:         'full',
+  font:         'newsreader', // display face
+  uiFont:       'inter',      // body face — independent of `font` (00 §2)
+  fontSize:     14,           // 12 → 20
+  lineHeight:   1.5,          // 1.3 | 1.5 | 1.7
+  radius:       10,           // 4 | 10 | 20 — default IS one of the options
+  anim:         'full',       // full | reduced | none
   language:     'en+sa',
 };
 
@@ -98,14 +93,17 @@ export function deriveAccentColors(hex) {
     color: hex,
     mid:   hslToHex(h, Math.min(s + 5, 100),  Math.max(l - 10, 10)),
     deep:  hslToHex(h, Math.min(s + 10, 100), Math.max(l - 20, 10)),
-    light: hslToHex(h, s,                     Math.min(l + 12, 92)), // dark-mode hover
+    // `light` is new (00 §10). Hover must step AWAY from the page, which
+    // reverses by theme: darker on light surfaces, lighter on dark ones.
+    light: hslToHex(h, s, Math.min(l + 12, 92)),
   };
 }
 
-function systemPrefersDark() {
-  return typeof window !== 'undefined'
-    && window.matchMedia
-    && window.matchMedia('(prefers-color-scheme: dark)').matches;
+/** Resolve the active accent to its four derived values. */
+function accentFor(prefs) {
+  const hex = prefs.customAccent
+    || (ACCENTS.find(a => a.id === prefs.accent) || ACCENTS[0]).color;
+  return deriveAccentColors(hex);
 }
 
 function loadPrefs() {
@@ -113,68 +111,80 @@ function loadPrefs() {
   catch { return { ...DEFAULTS }; }
 }
 
+export function systemPrefersDark() {
+  return typeof window !== 'undefined'
+    && window.matchMedia
+    && window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
 export function applyPrefs(prefs) {
   const root = document.documentElement;
+  const acc  = accentFor(prefs);
+  const fnt  = FONTS.find(f => f.id === prefs.font) || FONTS[0];
 
-  let acc;
-  if (prefs.customAccent) {
-    acc = deriveAccentColors(prefs.customAccent);
-  } else {
-    acc = ACCENTS.find(a => a.id === prefs.accent) || ACCENTS[0];
-  }
+  // Resolve `system` to a concrete value. The previous version wrote
+  // prefs.mode straight through, so mode 'system' produced
+  // [data-theme="system"], which matches no rule — system mode silently
+  // rendered light. Must be set BEFORE the accent below, which reads it.
+  const dark = prefs.mode === 'dark' || (prefs.mode === 'system' && systemPrefersDark());
+  root.setAttribute('data-theme', dark ? 'dark' : 'light');
 
-  const dsp = FONTS.find(f => f.id === prefs.font)      || FONTS[0];
-  const ui  = UI_FONTS.find(f => f.id === prefs.uiFont) || UI_FONTS[0];
-
-  // Theme resolves FIRST — the --primary/--primary-hover pair below depends on
-  // it, so it has to be settled before those are written.
-  const mode = prefs.mode === 'system' ? (systemPrefersDark() ? 'dark' : 'light') : prefs.mode;
-  const dark = mode === 'dark';
-  root.setAttribute('data-theme', mode);
-  // lib/auth.js drives the same theme through a .dark class. Keep the two in
-  // step so a toggle from either side lands on one state.
-  root.classList.toggle('dark', dark);
-
+  // ── Accent ───────────────────────────────────────────────────────────────
   root.style.setProperty('--k-primary', acc.color);
   root.style.setProperty('--k-mid',     acc.mid);
   root.style.setProperty('--k-deep',    acc.deep);
-  root.style.setProperty('--k-grad',    `linear-gradient(135deg, ${acc.deep}, ${acc.mid} 55%, ${acc.color})`);
-  root.style.setProperty('--k-gradD',   `linear-gradient(135deg, ${acc.deep}cc, ${acc.mid}cc 55%, ${acc.color}cc)`);
+  root.style.setProperty('--k-grad',  `linear-gradient(135deg, ${acc.deep}, ${acc.mid} 55%, ${acc.color})`);
+  root.style.setProperty('--k-gradD', `linear-gradient(135deg, ${acc.deep}cc, ${acc.mid}cc 55%, ${acc.color}cc)`);
   root.style.setProperty('--side-active', `${acc.color}29`);
 
-  // Hover must be a STEP AWAY FROM THE PAGE, and that reverses by theme: light
-  // surfaces hover darker, dark surfaces hover lighter. Writing mid as
-  // --primary and color as --primary-hover in both themes made light-mode hover
-  // LIGHTER than rest — the inverse of every other interactive state.
+  // The accent must reach --primary, or picking one restyles the k-* layer
+  // and leaves every new component on the default teal. Hover reverses
+  // direction by theme — darker in light, lighter in dark — which is why
+  // this function must re-run on theme change, not only on preference change.
   root.style.setProperty('--primary',       dark ? acc.color : acc.mid);
   root.style.setProperty('--primary-hover', dark ? acc.light : acc.deep);
   root.style.setProperty('--primary-vivid', acc.color);
 
-  root.style.setProperty('--font-display', dsp.value);
+  // ── Type ─────────────────────────────────────────────────────────────────
+  // --font-display and --font-ui are independent. The old SANS_IDS check set
+  // --font-ui to the display font in BOTH arms of its own condition, so
+  // picking Newsreader turned every label, table cell and button serif.
+  const ui = FONTS.find(f => f.id === prefs.uiFont) || FONTS.find(f => f.id === 'inter') || FONTS[0];
+  root.style.setProperty('--font-display', fnt.value);
   root.style.setProperty('--font-ui',      ui.value);
   document.body.style.fontFamily = 'var(--font-ui)';
 
   const fs = Math.max(12, Math.min(20, prefs.fontSize || 14));
-  document.body.style.fontSize = fs + 'px';
   root.style.setProperty('--font-size-base', fs + 'px');
-  root.style.setProperty('--line-height-base', String(prefs.lineHeight ?? 1.5));
-  root.style.setProperty('--radius-base', (prefs.radius ?? 10) + 'px');
-  root.style.setProperty('--glass-mix',   String(prefs.glassMix ?? 0.6));
+  root.style.setProperty('--line-height-base', String(prefs.lineHeight || 1.5));
+  document.body.style.fontSize = 'var(--t-body)';
 
-  // --ix-user, NOT --ix. An inline style on documentElement outranks the
-  // prefers-reduced-motion media query, so writing --ix directly let an app
-  // preference silently override an OS accessibility setting.
+  // ── Shape and motion ────────────────────────────────────────────────────
+  root.style.setProperty('--radius-base', (prefs.radius || 10) + 'px');
+
+  // --ix-user, NOT --ix. An inline style on the root outranks a media query,
+  // so writing --ix directly let this preference silently defeat the OS
+  // prefers-reduced-motion setting. CSS does --ix: var(--ix-user) and the
+  // media query overrides --ix, so the OS always wins.
   root.style.setProperty('--ix-user',
     prefs.anim === 'none' ? '.001' : prefs.anim === 'reduced' ? '.5' : '1');
 
-  root.setAttribute('data-density', prefs.density);
-  root.style.setProperty('--page-pad', prefs.density === 'compact' ? '16px' : '28px');
-  root.setAttribute('data-sidebar', prefs.sidebar);
+  // NOTE: the block that set --bg / --surface / --ink / --rule per theme as
+  // inline styles is deliberately gone (00 §11). Those live in CSS under
+  // [data-theme]; as inline styles they outranked the stylesheet, so the new
+  // palette would never have rendered at all.
+
+  root.setAttribute('data-density',  prefs.density);
+  root.setAttribute('data-sidebar',  prefs.sidebar);
+  root.setAttribute('data-language', normalizeLanguage(prefs.language));
+  if (prefs.sideBg)  root.setAttribute('data-sidebar-bg', prefs.sideBg);
+  if (prefs.toastPos) root.setAttribute('data-toast-pos', prefs.toastPos);
 
   const lang = normalizeLanguage(prefs.language);
-  root.setAttribute('data-language', lang);
   root.style.setProperty('--font-indic',
-    lang === 'en+gu' ? "'Noto Sans Gujarati', 'Shruti', sans-serif" : 'var(--font-hindi)');
+    lang === 'en+gu'
+      ? "'Noto Sans Gujarati', 'Shruti', sans-serif"
+      : 'var(--font-hindi)');
 }
 
 const CustomizeCtx = createContext(null);
@@ -193,10 +203,11 @@ export function CustomizeProvider({ children }) {
 
   useEffect(() => { applyPrefs(prefs); }, []); // eslint-disable-line
 
-  // mode:'system' needs a live subscription — otherwise the OS flipping to dark
-  // mid-session leaves the app on the theme it booted with.
+  // `system` is a live subscription, not a boot-time read (00 §11). Without
+  // this, a user on system mode who switches their OS to dark keeps a light
+  // app until the next full reload.
   useEffect(() => {
-    if (prefs.mode !== 'system' || !window.matchMedia) return undefined;
+    if (prefs.mode !== 'system' || !window.matchMedia) return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = () => applyPrefs(prefs);
     mq.addEventListener('change', onChange);

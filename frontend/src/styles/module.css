@@ -37,7 +37,7 @@
   --m-approvals: #5A7A33;
   --m-reports:   #2F7268;
 }
-[data-theme="dark"], .dark, :root.dark {
+[data-theme="dark"] {
   --m-graha:     #8FB8DC;
   --m-ganit:     #7ED4A2;
   --m-manav:     #E8AE82;
