@@ -21,10 +21,15 @@ export default function TabAppearance() {
           <Seg
             value={prefs.mode}
             onChange={v => setPrefs({ mode: v })}
+            label="Theme mode"
             options={[
-              { label: '☀ Light', value: 'light' },
-              { label: '◗ Dark',  value: 'dark' },
-              { label: 'System',  value: 'system' },
+              // No glyphs. U+2600 renders as a colour emoji on Windows and
+              // Android and as a hairline outline on macOS, so the same control
+              // was a pictogram on one platform and a smudge on another — and
+              // it went into the radio's accessible name either way.
+              { label: 'Light',  value: 'light' },
+              { label: 'Dark',   value: 'dark' },
+              { label: 'System', value: 'system' },
             ]}
           />
         </div>

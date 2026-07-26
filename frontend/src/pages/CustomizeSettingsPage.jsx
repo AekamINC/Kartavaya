@@ -1,7 +1,7 @@
 import React from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../components/editorial';
-import Tabs from '../components/ui/Tabs';
+import { Tabs } from '../components/ui';
 import TabAppearance from './customize/TabAppearance';
 import TabTypography from './customize/TabTypography';
 import TabLayout from './customize/TabLayout';
@@ -50,9 +50,13 @@ export default function CustomizeSettingsPage() {
         onChange={v => setParams(v === 'appearance' ? {} : { tab: v }, { replace: true })}
       />
 
+      {/* --primary-text, not --primary. --primary is a fill at 4.04:1 on --bg
+          and this is 12px italic text (00 §12). --font-hindi rather than
+          --font-indic is deliberate: यथारुचि is a fixed Sanskrit epigraph, not a
+          label that follows the language setting (24 §watermark exception). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 28, fontSize: 12 }}>
         <span lang="sa" style={{ fontFamily: 'var(--font-hindi)', color: 'var(--on-surface-2)' }}>यथारुचि</span>
-        <em style={{ color: 'var(--primary)', fontFamily: 'var(--font-display)' }}>“as you wish.”</em>
+        <em style={{ color: 'var(--primary-text)', fontFamily: 'var(--font-display)' }}>“as you wish.”</em>
       </div>
     </div>
   );

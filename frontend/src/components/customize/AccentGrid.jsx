@@ -15,39 +15,43 @@ export default function AccentGrid({ accent, customAccent, onPick, onCustom }) {
     customAccent || (ACCENTS.find(a => a.id === accent) || ACCENTS[0]).color;
 
   return (
-    <>
-      <div className="acc" role="radiogroup" aria-label="Accent colour">
-        {ACCENTS.map(a => {
-          const d  = deriveAccentColors(a.color);
-          const on = !customAccent && accent === a.id;
-          return (
-            <button
-              key={a.id}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              className={`acc__c${on ? ' on' : ''}`}
-              onClick={() => onPick(a.id)}
-              style={{ '--c': d.color, '--m': d.mid, '--d': d.deep }}
-            >
-              <span className="acc__sw" />
-              {/* Label below the swatch, not painted on it. */}
-              <span className="acc__n">{a.label}</span>
-            </button>
-          );
-        })}
+    <div className="acc" role="radiogroup" aria-label="Accent colour">
+      {ACCENTS.map(a => {
+        const d  = deriveAccentColors(a.color);
+        const on = !customAccent && accent === a.id;
+        return (
+          <button
+            key={a.id}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            className={`acc__c${on ? ' on' : ''}`}
+            onClick={() => onPick(a.id)}
+            style={{ '--c': d.color, '--m': d.mid, '--d': d.deep }}
+          >
+            <span className="acc__sw" />
+            {/* Label below the swatch, not painted on it: it used to be 8px
+                #fff with a text-shadow, which is below any legibility floor and
+                fails contrast on saffron regardless of the shadow. */}
+            <span className="acc__n">{a.label}</span>
+          </button>
+        );
+      })}
 
-        <div className={`acc__c acc__cust${customAccent ? ' on' : ''}`}>
-          <input
-            type="color"
-            className="acc__hex"
-            value={activeColor}
-            onChange={e => onCustom(e.target.value)}
-            aria-label="Custom accent colour"
-          />
-          <span className="acc__n">CUSTOM</span>
-        </div>
+      {/* Not a radio: the swatch is a colour input, and role="radio" on a
+          wrapper whose real control is an <input type="color"> would announce a
+          choice the user cannot make with Space. It sits in the group as a
+          labelled control instead. */}
+      <div className={`acc__c acc__cust${customAccent ? ' on' : ''}`}>
+        <input
+          type="color"
+          className="acc__hex"
+          value={activeColor}
+          onChange={e => onCustom(e.target.value)}
+          aria-label="Custom accent colour"
+        />
+        <span className="acc__n">Custom</span>
       </div>
-    </>
+    </div>
   );
 }

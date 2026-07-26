@@ -1,5 +1,5 @@
 import React from 'react';
-import { FONTS } from '../CustomizePanel';
+import { DISPLAY_FONTS, UI_FONTS } from '../CustomizePanel';
 
 /**
  * TypePreview — heading, body and button together.
@@ -14,8 +14,8 @@ import { FONTS } from '../CustomizePanel';
  * the card is correct even mid-change.
  */
 export default function TypePreview({ font, uiFont, fontSize, lineHeight }) {
-  const d = FONTS.find(f => f.id === font)   || FONTS[0];
-  const u = FONTS.find(f => f.id === uiFont) || FONTS.find(f => f.id === 'inter') || FONTS[0];
+  const d = DISPLAY_FONTS.find(f => f.id === font)   || DISPLAY_FONTS[0];
+  const u = UI_FONTS.find(f => f.id === uiFont)      || UI_FONTS[0];
 
   return (
     <div

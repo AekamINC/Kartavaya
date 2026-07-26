@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useCustomize, DEFAULTS } from '../../components/CustomizePanel';
+import { Button } from '../../components/ui';
 
 /**
  * TabData — what can actually be done today.
@@ -39,7 +40,7 @@ export default function TabData() {
           </div>
         </div>
         <div className="sr__c">
-          <button className="k-btn k-btn--ghost k-btn--sm" onClick={exportPrefs}>Download</button>
+          <Button variant="out" size="sm" onClick={exportPrefs}>Download</Button>
         </div>
       </div>
 
@@ -61,27 +62,27 @@ export default function TabData() {
             Returns every setting on this page to its default. Your tasks, projects
             and account are untouched.
           </div>
-          {confirming ? (
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button
-                className="dz__b"
-                style={{ marginTop: 0 }}
-                onClick={() => { setPrefs({ ...DEFAULTS }); setConfirming(false); }}
-              >
-                Yes, reset everything
-              </button>
-              <button
-                className="k-btn k-btn--ghost k-btn--sm"
-                onClick={() => setConfirming(false)}
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button className="dz__b" onClick={() => setConfirming(true)}>
-              Reset to defaults
-            </button>
-          )}
+          {/* .btn--danger is an outline, not a fill (02 §1) — a filled red reads
+              as the primary action on the screen, which a destructive one never
+              is. The local .dz__b that used to be here was a hand-rolled copy of
+              exactly that variant, so it is absorbed (26 §7). */}
+          <div className="dz__act">
+            {confirming ? (
+              <>
+                <Button
+                  variant="danger"
+                  onClick={() => { setPrefs({ ...DEFAULTS }); setConfirming(false); }}
+                >
+                  Yes, reset everything
+                </Button>
+                <Button variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
+              </>
+            ) : (
+              <Button variant="danger" onClick={() => setConfirming(true)}>
+                Reset to defaults
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

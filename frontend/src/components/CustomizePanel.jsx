@@ -6,36 +6,55 @@ const STORAGE_KEY = 'k_prefs';
    derived, so a custom hex behaves identically to a preset. The first four
    ids are unchanged so stored preferences keep resolving. */
 export const ACCENTS = [
-  { id: 'teal',    label: 'TEAL',    color: '#05b7aa' },
-  { id: 'blue',    label: 'BLUE',    color: '#3b82f6' },
-  { id: 'saffro',  label: 'SAFFRO',  color: '#f59e0b' },
-  { id: 'indigo',  label: 'INDIGO',  color: '#6366f1' },
-  { id: 'rose',    label: 'ROSE',    color: '#e11d63' },
-  { id: 'emerald', label: 'EMERALD', color: '#059669' },
-  { id: 'amber',   label: 'AMBER',   color: '#d97706' },
-  { id: 'violet',  label: 'VIOLET',  color: '#7c3aed' },
-  { id: 'coral',   label: 'CORAL',   color: '#f2643c' },
-  { id: 'slate',   label: 'SLATE',   color: '#64748b' },
-  { id: 'crimson', label: 'CRIMSON', color: '#be123c' },
-  { id: 'forest',  label: 'FOREST',  color: '#3f6212' },
+  { id: 'teal',    label: 'Teal',    color: '#05b7aa' },
+  { id: 'blue',    label: 'Blue',    color: '#3b82f6' },
+  // The id stays `saffro` so preferences stored before the rename keep
+  // resolving; the LABEL is what the user reads, and it is "Saffron". The grid
+  // used to print the id, so one of the twelve presets was called "SAFFRO".
+  { id: 'saffro',  label: 'Saffron', color: '#f59e0b' },
+  { id: 'indigo',  label: 'Indigo',  color: '#6366f1' },
+  { id: 'rose',    label: 'Rose',    color: '#e11d63' },
+  { id: 'emerald', label: 'Emerald', color: '#059669' },
+  { id: 'amber',   label: 'Amber',   color: '#d97706' },
+  { id: 'violet',  label: 'Violet',  color: '#7c3aed' },
+  { id: 'coral',   label: 'Coral',   color: '#f2643c' },
+  { id: 'slate',   label: 'Slate',   color: '#64748b' },
+  { id: 'crimson', label: 'Crimson', color: '#be123c' },
+  { id: 'forest',  label: 'Forest',  color: '#3f6212' },
 ];
 
-export const FONTS = [
+/* --font-display and --font-ui are two independent settings, so they get two
+   lists (00 §2). One combined FONTS list is what made `SANS_IDS` look
+   reasonable: with a single list you need a rule to decide which half a pick
+   belongs to, and that rule set --font-ui to the display face in both arms of
+   its own condition. Two lists need no rule. */
+export const DISPLAY_FONTS = [
   { id: 'newsreader',       label: 'Newsreader',       sub: 'editorial', value: "'Newsreader', 'Georgia', serif" },
   { id: 'spectral',         label: 'Spectral',         sub: 'literary',  value: "'Spectral', 'Georgia', serif" },
   { id: 'instrument-serif', label: 'Instrument Serif', sub: 'modern',    value: "'Instrument Serif', 'Georgia', serif" },
-  { id: 'playfair',         label: 'Playfair Display',  sub: 'elegant',   value: "'Playfair Display', 'Georgia', serif" },
-  { id: 'lora',             label: 'Lora',              sub: 'readable',  value: "'Lora', 'Georgia', serif" },
-  { id: 'inter',            label: 'Inter',             sub: 'clean',     value: "'Inter', system-ui, sans-serif" },
-  { id: 'dm-sans',          label: 'DM Sans',           sub: 'geometric', value: "'DM Sans', system-ui, sans-serif" },
-  { id: 'poppins',          label: 'Poppins',           sub: 'friendly',  value: "'Poppins', system-ui, sans-serif" },
-  { id: 'source-sans',      label: 'Source Sans 3',     sub: 'technical', value: "'Source Sans 3', system-ui, sans-serif" },
+  { id: 'playfair',         label: 'Playfair Display', sub: 'elegant',   value: "'Playfair Display', 'Georgia', serif" },
+  { id: 'lora',             label: 'Lora',             sub: 'readable',  value: "'Lora', 'Georgia', serif" },
+  { id: 'inter',            label: 'Inter',            sub: 'clean',     value: "'Inter', system-ui, sans-serif" },
+  { id: 'dm-sans',          label: 'DM Sans',          sub: 'geometric', value: "'DM Sans', system-ui, sans-serif" },
+  { id: 'poppins',          label: 'Poppins',          sub: 'friendly',  value: "'Poppins', system-ui, sans-serif" },
+  { id: 'source-sans',      label: 'Source Sans 3',    sub: 'technical', value: "'Source Sans 3', system-ui, sans-serif" },
 ];
 
-/* The interface-font picker offers the sans subset of FONTS rather than a rival
-   list, so `uiFont` and `font` stay resolvable from one source. Picking a serif
-   for headings must not drag the UI with it — that was the SANS_IDS bug. */
-export const UI_FONTS = FONTS.filter(f => /system-ui/.test(f.value));
+/* Written out rather than filtered off DISPLAY_FONTS, so the two can diverge:
+   a face can be offered for the interface without also being offered for
+   headings, which is what "independent" means.
+
+   Four, not the six the handover asks for, and deliberately so: index.html
+   loads exactly these families up front. A row that offers a face the page has
+   not loaded renders in the system font — precisely the failure the specimen
+   rows exist to replace, so the picker would be lying about two of its six
+   options. Add the families to index.html first, then add them here. */
+export const UI_FONTS = [
+  { id: 'inter',       label: 'Inter',         sub: 'clean',     value: "'Inter', system-ui, sans-serif" },
+  { id: 'dm-sans',     label: 'DM Sans',       sub: 'geometric', value: "'DM Sans', system-ui, sans-serif" },
+  { id: 'poppins',     label: 'Poppins',       sub: 'friendly',  value: "'Poppins', system-ui, sans-serif" },
+  { id: 'source-sans', label: 'Source Sans 3', sub: 'technical', value: "'Source Sans 3', system-ui, sans-serif" },
+];
 
 /* Standalone hi/gu were dropped as interface languages; the four bilingual
    options remain (decided 2026-07-25, ledger §4). A value stored before that
@@ -64,6 +83,12 @@ export const DEFAULTS = {
   language:     'en+sa',
   sideBg:       'dark',       // dark | light | accent
   toastPos:     'tr',         // tl | tr | bl | br
+  // No `dnd` / `dndFrom` / `dndTo` here, against 09 §5. Quiet hours are not a
+  // local preference: the backend already stores `quiet_start` / `quiet_end` on
+  // notification_prefs and services/push_service.py refuses delivery inside the
+  // window. Mirroring them into localStorage would be a second copy that no
+  // sender reads, so the schedule would appear set and change nothing on the
+  // devices it exists to silence. TabNotifications reads and writes the real one.
 };
 
 function hexToHsl(hex) {
@@ -166,7 +191,7 @@ export function systemPrefersDark() {
 export function applyPrefs(prefs) {
   const root = document.documentElement;
   const acc  = accentFor(prefs);
-  const fnt  = FONTS.find(f => f.id === prefs.font) || FONTS[0];
+  const fnt  = DISPLAY_FONTS.find(f => f.id === prefs.font) || DISPLAY_FONTS[0];
 
   // Resolve `system` to a concrete value. The previous version wrote
   // prefs.mode straight through, so mode 'system' produced
@@ -203,7 +228,7 @@ export function applyPrefs(prefs) {
   // --font-display and --font-ui are independent. The old SANS_IDS check set
   // --font-ui to the display font in BOTH arms of its own condition, so
   // picking Newsreader turned every label, table cell and button serif.
-  const ui = FONTS.find(f => f.id === prefs.uiFont) || FONTS.find(f => f.id === 'inter') || FONTS[0];
+  const ui = UI_FONTS.find(f => f.id === prefs.uiFont) || UI_FONTS[0];
   root.style.setProperty('--font-display', fnt.value);
   root.style.setProperty('--font-ui',      ui.value);
   document.body.style.fontFamily = 'var(--font-ui)';
@@ -288,46 +313,9 @@ export function useCustomize() {
   return ctx;
 }
 
-export function Seg({ options, value, onChange }) {
-  return (
-    <div style={{
-      display: 'flex', background: 'var(--bg-soft)',
-      borderRadius: 8, padding: 3, gap: 2, width: 'fit-content',
-    }}>
-      {options.map(o => {
-        const active = value === o.value;
-        return (
-          <button key={o.value} onClick={() => onChange(o.value)} style={{
-            padding: '4px 13px', borderRadius: 6, border: 'none', cursor: 'pointer',
-            fontSize: 12, fontFamily: 'var(--font-ui)',
-            fontWeight: active ? 600 : 400,
-            background: active ? 'var(--surface-2)' : 'transparent',
-            color: active ? 'var(--ink)' : 'var(--ink-3)',
-            boxShadow: active ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
-            transition: 'all .12s',
-          }}>
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-export function SectionHead({ en, hi }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginBottom: 10, marginTop: 2 }}>
-      <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--k-primary)' }}>{en}</span>
-      <span style={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'var(--font-hindi)' }}>{hi}</span>
-    </div>
-  );
-}
-
-export function Row({ label, children }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-      <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>{label}</span>
-      {children}
-    </div>
-  );
-}
+/* The `Seg`, `SectionHead` and `Row` helpers that used to close this file are
+   gone. They had no importers left after the hub moved to customize/*, and all
+   three were inline style objects on the retired vocabulary — --bg-soft,
+   --surface-2, --ink, --ink-2, --ink-3, --k-primary. They resolved only through
+   the alias block in kartavaya-design.css, so they were dead code holding six
+   alias lines alive. Seg lives at components/customize/Seg.jsx, on .seg. */

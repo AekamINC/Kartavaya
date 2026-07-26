@@ -4,7 +4,9 @@ import { ensureServiceWorkerRegistered, urlBase64ToUint8Array } from '../../lib/
 import { getNotifSoundId, setNotifSoundId } from '../../lib/notifSound';
 import { getTimeFormat, setTimeFormat } from '../../lib/timeFormat';
 import { useCustomize } from '../../components/CustomizePanel';
+import { Button, Tag } from '../../components/ui';
 import SoundGrid from '../../components/customize/SoundGrid';
+import NotifyPrefs from '../../components/customize/NotifyPrefs';
 import Seg from '../../components/customize/Seg';
 
 /**
@@ -102,16 +104,18 @@ export default function TabNotifications() {
           )}
         </div>
         <div className="sr__c" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="k-statuschip" style={{ '--c': statusColor }}>
-            <span className="k-statuschip__dot" />
-            {enabled ? 'Enabled' : 'Disabled'}
-          </span>
-          <button className="k-btn k-btn--primary k-btn--sm" onClick={enablePush}
-                  disabled={loading || !supported || enabled}>Enable</button>
-          <button className="k-btn k-btn--ghost k-btn--sm" onClick={disablePush}
-                  disabled={loading || !supported || !enabled}>Disable</button>
+          <Tag color={statusColor}>{enabled ? 'ENABLED' : 'DISABLED'}</Tag>
+          <Button variant="fill" size="sm" onClick={enablePush}
+                  disabled={loading || !supported || enabled}>Enable</Button>
+          <Button variant="out" size="sm" onClick={disablePush}
+                  disabled={loading || !supported || !enabled}>Disable</Button>
         </div>
       </div>
+
+      {/* Quiet hours and the nine per-event modes. Both are stored and enforced
+          server-side already — this is the first surface that lets anyone set
+          them. Placed directly under the push toggle because they govern push. */}
+      <NotifyPrefs />
 
       <div className="sr sr--col">
         <div className="sr__l">

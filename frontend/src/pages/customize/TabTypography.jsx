@@ -1,5 +1,5 @@
 import React from 'react';
-import { useCustomize, FONTS, UI_FONTS } from '../../components/CustomizePanel';
+import { useCustomize, DISPLAY_FONTS, UI_FONTS } from '../../components/CustomizePanel';
 import FontList from '../../components/customize/FontList';
 import TypePreview from '../../components/customize/TypePreview';
 import Seg from '../../components/customize/Seg';
@@ -16,7 +16,7 @@ export default function TabTypography() {
           <div className="sr__d">Headings, page titles and pull quotes.</div>
         </div>
         <FontList
-          fonts={FONTS}
+          fonts={DISPLAY_FONTS}
           value={prefs.font}
           onChange={id => setPrefs({ font: id })}
           label="Display font"
