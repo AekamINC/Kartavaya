@@ -13,20 +13,22 @@ import {
  * TabMembers — who is in the org, and what each of them can reach.
  *
  * ── The state of Tier 4 in the running system, stated plainly ────────────────
- * `staging.org_member_modules.role` exists (migration 066, applied 2026-07-26)
- * and `middleware/role_tiers.level_satisfies` reads it. The API in between does
- * not: `GET /v1/org/members` returns `modules` as a list of bare module codes
- * with no level, and `PUT /v1/org/members/{id}/modules` DELETEs every row and
- * re-INSERTs without naming `role`, so each row lands back on the column
- * default. Every grant in the system is therefore `viewer`, and re-saving a
- * member's modules would silently demote any grant that was not.
+ * Tier 4 is end-to-end as of 40124fb. `staging.org_member_modules.role` exists
+ * (migration 066), `middleware/role_tiers.level_satisfies` reads it, and the API
+ * in between now carries it: `GET /v1/org/members` returns `module_grants` as
+ * `[{code, role}]`, and `PUT /v1/org/members/{id}/modules` writes the level
+ * instead of dropping it on the column default.
  *
- * So the level control renders, and it renders DISABLED, with the reason on
- * screen. A control that accepts a click and stores nothing is worse than one
- * that is absent — it reports success for work that did not happen, which is
- * the same failure class as the blank-profile overwrite this page used to have.
- * `grantsCarryLevels` flips the whole thing live the moment the endpoint starts
- * returning `{module_code, role}` objects; nothing else has to change.
+ * That last part was the defect. The endpoint DELETEd every grant row and
+ * re-INSERTed without naming `role`, so re-saving a member's modules to change
+ * one checkbox silently demoted every other grant they held to viewer. It was
+ * fixed while `org_member_modules` still held zero rows, so nothing had to be
+ * migrated and nobody was demoted on the way.
+ *
+ * `grantsCarryLevels` is kept rather than replaced with `true`. It reads the
+ * response, so if this page is ever served by an older backend the control
+ * disables itself instead of writing a level that will be discarded — the same
+ * reason it was written that way when the gap was the other way round.
  */
 
 const ROLE_OPTIONS = [
@@ -120,7 +122,9 @@ export default function TabMembers({ isOwner, selfUserId }) {
     setFailed(null);
     return api.get('/v1/org/members')
       .then(r => setMembers((Array.isArray(r.data) ? r.data : []).map(m => ({
-        ...m, grants: normaliseGrants(m.modules),
+        // module_grants carries the level; modules is the bare-code fallback the
+        // endpoint still returns alongside it for older clients.
+        ...m, grants: normaliseGrants(m.module_grants || m.modules),
       }))))
       .catch(err => setFailed(err))
       .finally(() => setLoading(false));
@@ -128,9 +132,18 @@ export default function TabMembers({ isOwner, selfUserId }) {
 
   useEffect(() => { load(); }, [load]);
 
-  /** True once the API round-trips a level. See the header comment. */
+  /**
+   * True once the API round-trips levels. See the header comment.
+   *
+   * Keyed on the PRESENCE OF THE `module_grants` KEY, not on finding a level
+   * value in it. org_member_modules currently holds zero rows, so a value test
+   * reports "this backend cannot store levels" on a backend that can — and
+   * would show the operator a warning that is now false. An empty array still
+   * proves the endpoint speaks the shape. The value test is kept as the fallback
+   * for a backend predating the key entirely.
+   */
   const grantsCarryLevels = useMemo(
-    () => members.some(m => m.grants.some(g => g.level)),
+    () => members.some(m => Array.isArray(m.module_grants) || m.grants.some(g => g.level)),
     [members],
   );
 
@@ -198,10 +211,13 @@ export default function TabMembers({ isOwner, selfUserId }) {
   const saveGrants = async () => {
     setSavingGrants(true);
     try {
-      // Bare codes, because that is what UpdateModulesBody accepts. When the
-      // endpoint takes levels, send `draft` itself and delete this map.
+      // {code, role} objects. UpdateModulesBody accepts these and bare strings
+      // both, but sending bare strings here would land every grant back on the
+      // column default — which is the demotion this whole surface exists to
+      // stop. `level` is only ever null against a backend that did not return
+      // one, and DEFAULT_GRANT_LEVEL matches the server's own default.
       await api.put(`/v1/org/members/${editing.member.user_id}/modules`, {
-        modules: editing.draft.map(g => g.code),
+        modules: editing.draft.map(g => ({ code: g.code, role: g.level || DEFAULT_GRANT_LEVEL })),
       });
       pushToast({ type: 'success', title: 'Module access updated' });
       setEditing(null);
@@ -273,10 +289,9 @@ export default function TabMembers({ isOwner, selfUserId }) {
               <p className="opend" style={{ marginBottom: 12 }}>
                 {Info}
                 <span>
-                  Levels are shown but not yet stored. <code>GET /v1/org/members</code> returns
-                  grants without a level and <code>PUT …/modules</code> re-inserts them at the
-                  column default, so every grant here is <strong>viewer</strong>. Turning a
-                  module on or off works normally.
+                  This server is running a build from before levels were stored, so every
+                  grant here is <strong>viewer</strong> whatever you pick. Turning a module
+                  on or off works normally. Levels apply once it is updated.
                 </span>
               </p>
             )}
