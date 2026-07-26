@@ -34,22 +34,36 @@ export default function SigningPage() {
   const drawingRef = useRef(false);
 
   /* This page's viewer is a stranger to the product: a client's client, with no
-     session and no stored prefs, so nothing has ever set [data-theme] on <html>
-     and every token here would resolve to the light palette regardless of what
-     their machine asks for. Follow the OS instead — but only when no theme has
-     been set already, so a signed-in user who opens a signing link keeps the
-     theme they picked. Cleaned up on unmount so this never outlives the route. */
+     session and no stored prefs, so nothing here has ever expressed a theme
+     preference and every token would resolve to the light palette regardless of
+     what their machine asks for. Follow the OS instead.
+
+     The guard is `k_prefs`, NOT the presence of [data-theme]. index.html runs a
+     blocking bootstrap that ALWAYS stamps [data-theme] on <html> before paint —
+     it falls back to 'light' when there are no stored prefs — so testing the
+     attribute would bail on every single visitor and this effect would never do
+     anything at all. `k_prefs` is the key CustomizePanel.applyPrefs writes, so
+     its presence is the only honest signal that a human chose a theme: a
+     signed-in user who opens a signing link keeps the one they picked, and a
+     stranger gets their OS setting.
+
+     Restored rather than removed on unmount — the bootstrap's value is what the
+     rest of the app expects to find on <html> when this route is left. */
   useEffect(() => {
     const root = document.documentElement;
-    if (root.getAttribute('data-theme')) return undefined;
+    let chosen = null;
+    try { chosen = window.localStorage?.getItem('k_prefs'); } catch { chosen = null; }
+    if (chosen) return undefined;
     const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
     if (!mq) return undefined;
+    const prev = root.getAttribute('data-theme');
     const apply = () => root.setAttribute('data-theme', mq.matches ? 'dark' : 'light');
     apply();
     mq.addEventListener?.('change', apply);
     return () => {
       mq.removeEventListener?.('change', apply);
-      root.removeAttribute('data-theme');
+      if (prev === null) root.removeAttribute('data-theme');
+      else root.setAttribute('data-theme', prev);
     };
   }, []);
 
