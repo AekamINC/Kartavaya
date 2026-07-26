@@ -22,6 +22,7 @@ import type { Notification } from '../api/types';
 import { AVATAR_COLORS } from '../theme/tokens';
 import { toneFor } from '../theme/tones';
 import { useReducedMotion } from '../theme/motion';
+import { a11yButton, hitSlopTo } from './a11y';
 
 // The tone map used to live here as eight hardcoded hexes with translucent
 // washes tuned for the cream canvas. It did not flip with the theme, so on the
@@ -110,9 +111,19 @@ function BannerCard({ notif, onDismiss }: { notif: Notification; onDismiss: () =
           <Text style={[s.message, { color: t.ink3 }]} numberOfLines={2}>{notif.message}</Text>
         </View>
 
-        {/* Dismiss */}
-        <TouchableOpacity onPress={onDismiss} hitSlop={10} style={s.closeBtn}>
-          <Ionicons name="close" size={14} color={t.ink3} />
+        {/* Dismiss. 14px icon + 4px padding either side = 22px drawn; hitSlopTo
+            takes it to MOTION-SPEC §5's 44px without growing the box. The
+            previous `hitSlop={10}` landed at 42 — close enough to look right and
+            not close enough to be right. It also had no accessibility label, so
+            a screen reader announced the dismiss control as an unlabelled
+            button on a toast that auto-dismisses in five seconds. */}
+        <TouchableOpacity
+          onPress={onDismiss}
+          hitSlop={hitSlopTo(22)}
+          style={s.closeBtn}
+          {...a11yButton('Dismiss notification')}
+        >
+          <Ionicons name="close" size={14} color={t.ink3} accessibilityElementsHidden />
         </TouchableOpacity>
       </Pressable>
 

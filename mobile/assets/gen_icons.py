@@ -1,6 +1,6 @@
 ﻿"""
 Generate Kartavaya app icons from the brand spec:
-  - 135° gradient #0082c6 → #03a1b6 → #05b7aa
+  - 135° gradient #026B64 → #04837A → #05b7aa
   - Devanagari "क" mark in white, ~62% of icon height
   - Inner shine: 18% white top-to-transparent (0→35%)
   - Bottom-left accent orb (18% white radial, blurred)
@@ -18,8 +18,23 @@ ASSETS = os.path.dirname(__file__)
 FONT_PATH = os.path.join(ASSETS, "fonts", "NotoSansDevanagari-Bold.ttf")
 
 # ── Brand colours ──────────────────────────────────────────────────────────────
-C_START  = (0,  130, 198)   # #0082c6
-C_MID    = (3,  161, 182)   # #03a1b6
+#
+# These must stay equal to `brand.gradient` in src/theme/tokens.ts, which is
+# ['#026B64', '#04837A', '#05b7aa'] — the deep → mid → vivid teal ramp.
+#
+# They did not. This script still held the retired brand blue that 00 §9 removed,
+# and the committed icon.png was generated from it: sampling the shipped PNG at
+# (2,2) gives #2d98cf — the blue, lightened by the shine overlay — running to
+# #04b6aa at the opposite corner. So while app.json, the token layer and every
+# in-app gradient had moved to teal, the icon on the user's home screen was still
+# the old blue.
+#
+# Changing the constants does NOT change the committed PNGs. Regenerating them
+# requires PIL and a human looking at the result, so that is deliberately left as
+# a separate step — see the report. What this fixes is the next regeneration
+# silently reintroducing the retired colour.
+C_START  = (2,  107, 100)   # #026B64
+C_MID    = (4,  131, 122)   # #04837A
 C_END    = (5,  183, 170)   # #05b7aa
 WHITE    = (255, 255, 255)
 
