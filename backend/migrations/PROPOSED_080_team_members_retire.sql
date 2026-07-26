@@ -1,0 +1,201 @@
+-- PROPOSED_080_team_members_retire.sql
+-- Phase 5 of 6 — multi-tenancy cutover. See swarm-reports/audit-tenancy-org-id-cutover.md
+--
+-- ############################################################################
+-- ##  PROPOSAL ONLY — AND NOT READY TO SCHEDULE.                            ##
+-- ##  Steps 1-3 of the retirement sequence below are NOT DONE. Running this  ##
+-- ##  file today breaks authorization across 17 backend modules and one      ##
+-- ##  live view. It is written now so the sequence is recorded, not so it    ##
+-- ##  can be run now.                                                        ##
+-- ############################################################################
+--
+-- ── THE CLAIM THIS FILE CORRECTS ──────────────────────────────────────────
+--
+--   Reported: "the legacy team_members fallback was removed on 2026-07-23;
+--   public.team_members still holds ~186 rows" — implying a dead table.
+--
+--   Verified against live and against origin/staging source: PARTLY TRUE, and
+--   the part that is false is the dangerous part.
+--
+--   TRUE:  the fallback was removed from the ORG RESOLVER.
+--          `backend/middleware/org_resolver.py` reads `staging.user_roles`
+--          exclusively, with no team_members path. "user_roles is the sole
+--          tenant path" holds — for resolving which ORG a request is in.
+--
+--   FALSE: that this generalises. PROJECT-LEVEL MEMBERSHIP still runs entirely
+--          on team_members. The table has 186 rows, all status='active', and
+--          64 references across 17 non-test backend modules.
+--
+-- ── WHAT BREAKS IF THIS RUNS TODAY ────────────────────────────────────────
+--
+--   Authorization, not just reads. The load-bearing call sites:
+--
+--     utils.py:82, server.py:205   get_visible_team_ids UNIONs team_members
+--                                  with project_assignments. Removing it means
+--                                  users invited BEFORE they registered lose
+--                                  access to their teams entirely.
+--     server.py:228                is_project_member — explicit fallback after
+--                                  project_assignments misses.
+--     server.py:994                role IN ('owner','admin') checks.
+--     routers/activity.py:49       membership gate
+--     routers/automations.py:58,90,127
+--     routers/templates.py:21,234
+--     routers/uploads.py:99
+--     approvals_router.py, auth_router.py, invite_router.py,
+--     routers/{admin_orgs,dashboards,fields,org_members,time_entries,views}.py,
+--     services/{automation_engine,mentions}.py
+--
+--   And one live database object:
+--
+--     staging.user_org_context (VIEW) —
+--       SELECT u.user_id, ..., o.id AS org_id, o.name AS org_name
+--         FROM users u
+--         JOIN team_members tm ON tm.user_id = u.user_id
+--         JOIN staging.organisations o ON o.team_id = tm.team_id
+--        WHERE tm.status = 'active';
+--
+--     A rename breaks this view immediately. Note it also exposes a SECOND,
+--     undocumented org path — `staging.organisations.team_id` — running
+--     opposite to `public.teams.org_id`. Two directions, one relationship.
+--     Whoever rewrites this view should decide which direction is canonical.
+--
+-- ── THE ORDER THAT MUST BE FOLLOWED ───────────────────────────────────────
+--
+--   1. Reconcile team_members into project_assignments.
+--      170 of 186 rows resolve to an org; 16 sit on org-less teams and need
+--      PROPOSED_078 Q5 / decision 1 settled FIRST. Reconciliation query and
+--      the delta report are in Step 0 below — read it before anything else.
+--
+--   2. Replace all 64 call sites with project_assignments (or user_roles where
+--      the check is really about org membership, not project membership —
+--      several of the 64 conflate the two).
+--
+--   3. Replace staging.user_org_context with a user_roles-based definition.
+--
+--   4. Rename the table (this file, Step 1). Watch a FULL business cycle.
+--
+--   5. Only then drop.
+--
+--   Steps 1-3 are the actual work and are not in this file. This file is 4 and
+--   the recipe for 5.
+--
+-- ── WHY RENAME AND NOT DROP ───────────────────────────────────────────────
+--
+--   A rename is instantly and completely reversible; a drop is not. After the
+--   rename, any missed reference fails LOUDLY with `relation "team_members"
+--   does not exist` — a clean 500 naming the exact problem, in a log, on the
+--   first request that hits it. A drop produces the identical error but with
+--   no way back. The rename buys the same signal at a fraction of the risk.
+--
+--   Do NOT replace it with a compatibility VIEW. A view would keep the 64 call
+--   sites working, which means they would never be found and never be fixed,
+--   and the retirement would stall permanently one step from done.
+--
+-- LOCK DURATION
+--   ALTER TABLE ... RENAME TO : catalog-only, sub-millisecond, ACCESS
+--   EXCLUSIVE held momentarily. Same acquisition-queue caveat as every other
+--   ALTER — `lock_timeout` bounds it. At 80 kB and 186 rows there is no data
+--   movement whatsoever.
+--
+-- RISK: HIGH — entirely because of the 64 unmigrated call sites, not because
+--   of anything the SQL does. Once steps 1-3 are genuinely complete the risk
+--   of this file drops to LOW.
+
+-- ── Step 0: reconciliation report — READ-ONLY, run this first ─────────────
+--
+-- Rows in team_members with no equivalent in project_assignments. Every one is
+-- an access grant that would be silently revoked by the rename. MUST be empty
+-- before Step 1.
+--
+-- SELECT tm.team_id, tm.user_id, tm.role, tm.status, t.org_id
+--   FROM public.team_members tm
+--   LEFT JOIN public.project_assignments pa
+--          ON pa.team_id = tm.team_id AND pa.user_id = tm.user_id
+--   LEFT JOIN public.teams t ON t.team_id = tm.team_id
+--  WHERE tm.status = 'active' AND pa.user_id IS NULL
+--  ORDER BY t.org_id NULLS FIRST, tm.team_id;
+--
+-- And the reverse — grants that exist only in project_assignments, to be sure
+-- the two are not each other's subset in a way that hides a divergence:
+--
+-- SELECT pa.team_id, pa.user_id, pa.role
+--   FROM public.project_assignments pa
+--   LEFT JOIN public.team_members tm
+--          ON tm.team_id = pa.team_id AND tm.user_id = pa.user_id AND tm.status = 'active'
+--  WHERE tm.user_id IS NULL;
+--
+-- Rows whose role differs between the two — the rename would change a user's
+-- permission level rather than remove it, which is worse because it is quiet:
+--
+-- SELECT tm.team_id, tm.user_id, tm.role AS tm_role, pa.role AS pa_role
+--   FROM public.team_members tm
+--   JOIN public.project_assignments pa
+--     ON pa.team_id = tm.team_id AND pa.user_id = tm.user_id
+--  WHERE tm.status = 'active' AND tm.role IS DISTINCT FROM pa.role;
+
+-- ── Step 1: rename (ONLY after steps 1-3 of the sequence above) ───────────
+--
+-- Commented out. Uncommenting is a deliberate act that should be accompanied
+-- by evidence that Step 0 returns empty and the 64 call sites are migrated.
+--
+-- SET lock_timeout = '3s';
+--
+-- ALTER TABLE public.team_members RENAME TO team_members_retired_20260726;
+--
+-- COMMENT ON TABLE public.team_members_retired_20260726 IS
+--   'Retired. Superseded by public.project_assignments for project membership '
+--   'and staging.user_roles for org membership. Renamed rather than dropped so '
+--   'any missed reference fails loudly and is recoverable. Do not drop until a '
+--   'full business cycle has passed with no errors naming team_members.';
+
+-- ── Step 2: the view must be rewritten BEFORE the rename ─────────────────
+--
+-- staging.user_org_context currently depends on team_members and will break.
+-- A user_roles-based replacement — note it drops team_id, which the current
+-- view exposes; check consumers before assuming that is acceptable:
+--
+-- CREATE OR REPLACE VIEW staging.user_org_context AS
+--   SELECT u.user_id, u.email, u.name,
+--          r.org_id, o.name AS org_name, r.role_code
+--     FROM public.users u
+--     JOIN staging.user_roles r    ON r.user_id = u.user_id
+--     JOIN staging.organisations o ON o.id = r.org_id
+--    WHERE r.org_id IS NOT NULL
+--      AND o.is_active = TRUE;
+--
+-- Confirm nothing else depends on the old shape first:
+--   SELECT dependent.relname
+--     FROM pg_depend d
+--     JOIN pg_rewrite rw ON rw.oid = d.objid
+--     JOIN pg_class dependent ON dependent.oid = rw.ev_class
+--     JOIN pg_class source ON source.oid = d.refobjid
+--    WHERE source.relname = 'team_members';
+
+-- ── Step 3: drop — NOT BEFORE A FULL CYCLE HAS PASSED ────────────────────
+--
+-- Do not schedule this in the same window as the rename. The entire value of
+-- renaming is the observation period between the two.
+--
+-- DROP TABLE public.team_members_retired_20260726;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- ROLLBACK
+-- ════════════════════════════════════════════════════════════════════════════
+-- For the rename — instant, total, loses nothing:
+--
+--   SET lock_timeout = '3s';
+--   ALTER TABLE public.team_members_retired_20260726 RENAME TO team_members;
+--
+-- Then restore the view if Step 2 changed it:
+--
+--   CREATE OR REPLACE VIEW staging.user_org_context AS
+--     SELECT u.user_id, u.email, u.name, tm.team_id, tm.role,
+--            o.id AS org_id, o.name AS org_name
+--       FROM public.users u
+--       JOIN public.team_members tm ON tm.user_id = u.user_id
+--       JOIN staging.organisations o ON o.team_id = tm.team_id
+--      WHERE tm.status = 'active';
+--
+-- For the DROP in Step 3: THERE IS NO ROLLBACK. Restore from snapshot. That
+-- asymmetry is the whole reason Step 3 is separated from Step 1 by a full
+-- business cycle.

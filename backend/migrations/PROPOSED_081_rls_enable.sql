@@ -1,0 +1,279 @@
+-- PROPOSED_081_rls_enable.sql
+-- Phase 6 of 6 — multi-tenancy cutover. See swarm-reports/audit-tenancy-org-id-cutover.md
+-- REQUIRES: PROPOSED_076-079 applied AND the application change in Step 0 shipped.
+--
+-- ############################################################################
+-- ##  PROPOSAL ONLY — NOT APPLIED, NOT SCHEDULED.                           ##
+-- ##  THE HIGHEST-CONSEQUENCE FILE IN THIS SET. Run out of order and it is  ##
+-- ##  a total outage of CRM, HR, payroll, marketing, sales and billing.     ##
+-- ############################################################################
+--
+-- ── WHY THIS PHASE IS THE POINT ───────────────────────────────────────────
+--
+--   Phases 1-4 add a COLUMN. They add no enforcement. Every unscoped query in
+--   the audit stays exactly as unscoped as it is today, now with an unused
+--   column beside it. Backfilling org_id and stopping there buys storage and
+--   nothing else.
+--
+--   This file is where tenancy stops being a convention and becomes a rule.
+--
+-- ── THE CURRENT STATE, VERIFIED AGAINST LIVE ─────────────────────────────
+--
+--   public   : 41 of 41 tables have RLS ENABLED and ZERO policies.
+--              That is deny-all for anything subject to RLS — which is why
+--              PostgREST (anon/authenticated) can read nothing, and that is
+--              the ONLY tenancy control in the system that currently works.
+--              It works by accident of having no policies, not by design.
+--
+--   staging  : 57 tables have policies. All 57 key off
+--              current_setting('app.current_org_id'). 126 tables have no RLS
+--              at all — including vetana_payslips, vetana_salary_structures,
+--              vetana_payroll_runs, manav_employees, and every ganit_*,
+--              graha_*, hub_*, sign_* table.
+--
+--   BOTH     : relforcerowsecurity = false on all ~224 tables, and the backend
+--              connects as the table OWNER. Owners bypass RLS. Even where
+--              policies exist, they have never been evaluated for a single
+--              application query.
+--
+--   Note also: `backend/migrations/007_rls_and_indexes.sql` is marked
+--   "✅ Applied" in backend/migrations/README.md and defines ~30 policies on
+--   tasks, teams, users, task_comments, approvals, project_assignments and
+--   notifications. NONE of them exist in the live database. Do not assume the
+--   README reflects reality; re-read pg_policy before trusting any of this.
+--
+-- ── STEP 0: THE APPLICATION CHANGE, WHICH IS NOT IN THIS FILE ────────────
+--
+--   >> DO NOT RUN ANY STATEMENT BELOW UNTIL THIS IS SHIPPED AND VERIFIED. <<
+--
+--   The 57 existing staging policies read a GUC the backend never sets. Zero
+--   occurrences of `app.current_org_id`, `set_config` or `SET LOCAL` in 37k
+--   lines of backend Python. Because the backend bypasses RLS as owner, that
+--   omission has never surfaced as an error.
+--
+--   The moment FORCE ROW LEVEL SECURITY is on, an unset GUC does not leak —
+--   it FAILS, with `unrecognized configuration parameter`. Fails closed, which
+--   is the right direction, but it is a hard outage of every module using
+--   those 53 tables, not a degradation.
+--
+--   The required change, in `backend/db.py` (pool `init=`) plus the request
+--   path so it tracks the resolved org from `middleware/org_resolver.py`:
+--
+--       await conn.execute("SELECT set_config('app.current_org_id', $1, true)",
+--                          org_id)
+--
+--   The third argument MUST be `true` (transaction-local). With `false` the
+--   setting persists on the pooled connection and the NEXT request to borrow
+--   that connection inherits the PREVIOUS request's org — a cross-tenant read
+--   caused by the very mechanism meant to prevent one. asyncpg pools connections
+--   by default (`db.py` creates one with min_size=3, max_size=15), so this is
+--   not a theoretical concern.
+--
+--   Platform-staff requests resolve no single org. Decide explicitly whether
+--   they set the GUC to the org they are acting on (correct, and matches how
+--   `org_resolver.py` already resolves an org for them from the X-Org-Id
+--   header) or bypass RLS by connecting as a different role. Do NOT leave it
+--   unset and rely on the error.
+--
+--   Verify before proceeding — this must return the org, not error:
+--       SELECT current_setting('app.current_org_id', true);
+--
+-- ── LOCK DURATION ────────────────────────────────────────────────────────
+--   CREATE POLICY   : catalog-only, sub-millisecond, ACCESS EXCLUSIVE briefly.
+--   ENABLE/FORCE RLS: catalog-only, sub-millisecond, ACCESS EXCLUSIVE briefly.
+--   No scans, no rewrites, at any table size. The cost of this phase is
+--   entirely at query time afterwards, not at DDL time.
+--
+--   Query-time cost is real and is why PROPOSED_076 built the org_id indexes:
+--   every SELECT gains an `org_id = <guc>` predicate. Without the index that
+--   is a sequential scan on every read.
+--
+-- ── RISK: HIGH ───────────────────────────────────────────────────────────
+--   First phase where a mistake denies service broadly rather than silently.
+--   Roll out ONE TABLE AT A TIME, starting with a low-traffic one, and watch.
+--   The rollback is one statement per table and is instant.
+
+SET lock_timeout = '3s';
+
+-- ── Step 1: policies for the public core (needs PROPOSED_079 validated) ──
+--
+-- Same one-liner already used on 53 staging tables. Applied here to the tables
+-- that Phase 4 constrained, so the predicate can never see a NULL org_id on a
+-- project-scoped row.
+--
+-- Uncomment ONE, deploy, watch a full traffic cycle, then the next.
+--
+-- CREATE POLICY tasks_org_isolation ON public.tasks
+--   FOR ALL USING (org_id = current_setting('app.current_org_id')::uuid)
+--            WITH CHECK (org_id = current_setting('app.current_org_id')::uuid);
+--
+-- CREATE POLICY team_members_org_isolation ON public.team_members
+--   FOR ALL USING (org_id = current_setting('app.current_org_id')::uuid)
+--            WITH CHECK (org_id = current_setting('app.current_org_id')::uuid);
+--
+-- CREATE POLICY project_assignments_org_isolation ON public.project_assignments
+--   FOR ALL USING (org_id = current_setting('app.current_org_id')::uuid)
+--            WITH CHECK (org_id = current_setting('app.current_org_id')::uuid);
+--
+-- CREATE POLICY activity_events_org_isolation ON public.activity_events
+--   FOR ALL USING (org_id = current_setting('app.current_org_id')::uuid)
+--            WITH CHECK (org_id = current_setting('app.current_org_id')::uuid);
+--
+-- CREATE POLICY approvals_org_isolation ON public.approvals
+--   FOR ALL USING (org_id = current_setting('app.current_org_id')::uuid)
+--            WITH CHECK (org_id = current_setting('app.current_org_id')::uuid);
+--
+-- CREATE POLICY boards_org_isolation ON public.boards
+--   FOR ALL USING (org_id = current_setting('app.current_org_id')::uuid)
+--            WITH CHECK (org_id = current_setting('app.current_org_id')::uuid);
+--
+-- ...and equivalently for project_columns, saved_views, automations,
+--    task_templates, field_definitions, report_schedules.
+--
+-- `tasks` and `notifications` carry the conditional constraint from
+-- PROPOSED_079, so their policy must permit the user-global row or personal
+-- tasks vanish from their owner's view:
+--
+-- CREATE POLICY notifications_org_isolation ON public.notifications
+--   FOR ALL USING (org_id = current_setting('app.current_org_id')::uuid
+--                  OR (org_id IS NULL AND team_id IS NULL))
+--            WITH CHECK (org_id = current_setting('app.current_org_id')::uuid
+--                        OR (org_id IS NULL AND team_id IS NULL));
+--
+-- `public.users` gets NO org policy — it has no org column and no path to one
+-- (report §3.1). Cross-org user lookup is a real exposure and needs a design
+-- decision, not a policy guess.
+
+-- ── Step 2: RLS on the 126 unprotected staging tables ────────────────────
+--
+-- These have org_id already and no RLS at all. Highest value first — these
+-- four are the payroll tables the whole audit is named for.
+--
+-- ALTER TABLE staging.vetana_payslips           ENABLE ROW LEVEL SECURITY;
+-- CREATE POLICY vetana_payslips_org_isolation ON staging.vetana_payslips
+--   FOR ALL USING (org_id = current_setting('app.current_org_id')::uuid)
+--            WITH CHECK (org_id = current_setting('app.current_org_id')::uuid);
+--
+-- ALTER TABLE staging.vetana_salary_structures  ENABLE ROW LEVEL SECURITY;
+-- CREATE POLICY vetana_salary_structures_org_isolation ON staging.vetana_salary_structures
+--   FOR ALL USING (org_id = current_setting('app.current_org_id')::uuid)
+--            WITH CHECK (org_id = current_setting('app.current_org_id')::uuid);
+--
+-- ALTER TABLE staging.vetana_payroll_runs       ENABLE ROW LEVEL SECURITY;
+-- CREATE POLICY vetana_payroll_runs_org_isolation ON staging.vetana_payroll_runs
+--   FOR ALL USING (org_id = current_setting('app.current_org_id')::uuid)
+--            WITH CHECK (org_id = current_setting('app.current_org_id')::uuid);
+--
+-- ALTER TABLE staging.manav_employees           ENABLE ROW LEVEL SECURITY;
+-- CREATE POLICY manav_employees_org_isolation ON staging.manav_employees
+--   FOR ALL USING (org_id = current_setting('app.current_org_id')::uuid)
+--            WITH CHECK (org_id = current_setting('app.current_org_id')::uuid);
+--
+-- Generate the remaining 122 from the catalog rather than by hand — a typo in
+-- a hand-written list is a table left unprotected, and it looks identical to
+-- one that was deliberately skipped:
+--
+--   SELECT format(
+--     'ALTER TABLE staging.%I ENABLE ROW LEVEL SECURITY;'
+--     E'\nCREATE POLICY %I ON staging.%I FOR ALL'
+--     E'\n  USING (org_id = current_setting(''app.current_org_id'')::uuid)'
+--     E'\n  WITH CHECK (org_id = current_setting(''app.current_org_id'')::uuid);',
+--     c.relname, c.relname || '_org_isolation', c.relname)
+--     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+--    WHERE n.nspname = 'staging' AND c.relkind = 'r'
+--      AND NOT c.relrowsecurity
+--      AND EXISTS (SELECT 1 FROM pg_attribute a
+--                   WHERE a.attrelid = c.oid AND a.attname = 'org_id'
+--                     AND a.attnum > 0 AND NOT a.attisdropped)
+--    ORDER BY c.relname;
+--
+-- Review the generated output before running it. It will NOT include the 11
+-- global catalogs (add_on_modules, plans, hub_tiers, hub_ai_providers,
+-- hub_scraper_catalog, hub_skill_templates, organisations, and the four
+-- shadowed decoys) because they have no org_id — which is correct, they are
+-- global by design.
+
+-- ── Step 3: FORCE — the step that actually changes anything ──────────────
+--
+--   >> NOTHING ABOVE HAS ANY EFFECT ON THE APPLICATION UNTIL THIS RUNS. <<
+--
+-- The backend connects as the table owner, and owners bypass RLS unless the
+-- table is FORCEd. Every policy created above is advisory until then.
+--
+-- This is also the moment Step 0's GUC becomes load-bearing. If it is not
+-- wired, this statement takes the table offline for the application.
+--
+-- ONE TABLE. WATCH. THEN THE NEXT. Start with something low-traffic —
+-- saved_views or report_schedules, not tasks.
+--
+-- ALTER TABLE public.tasks            FORCE ROW LEVEL SECURITY;
+-- ALTER TABLE staging.vetana_payslips FORCE ROW LEVEL SECURITY;
+--
+-- Verify what is actually enforced, at any time:
+--   SELECT n.nspname, c.relname, c.relrowsecurity AS enabled,
+--          c.relforcerowsecurity AS forced,
+--          (SELECT count(*) FROM pg_policy p WHERE p.polrelid = c.oid) AS policies
+--     FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+--    WHERE n.nspname IN ('public','staging') AND c.relkind = 'r'
+--      AND c.relforcerowsecurity
+--    ORDER BY 1, 2;
+
+-- ── NOT IN THIS FILE, AND STILL REQUIRED ─────────────────────────────────
+--
+--   G-1  `get_visible_team_ids` (utils.py:72 and its cached twin at
+--        server.py:183) returns EVERY team in the database when
+--        public.users.role = 'admin'. That legacy per-user column bypasses
+--        staging.user_roles and the entire four-tier model. RLS will not save
+--        this: an admin request still carries a valid GUC for whatever org it
+--        resolved, so the policy passes and the extra teams are simply
+--        filtered — which changes the failure from "sees everything" to
+--        "sees nothing outside the active org" only if org_id is set on teams
+--        for all 39 rows. 8 are NULL. Fix the code.
+--
+--   F-9  `middleware/org_resolver.py:31-40` lets ANY platform-scoped role
+--        resolve ANY org via the X-Org-Id header, including the four roles
+--        `role_tiers.modules_for()` deliberately gives zero module reach
+--        (account_manager, account_finance, srijan_admin, platform_support).
+--        That is upstream of every per-route guard, so it widens what a valid
+--        GUC can be set to. Narrow ALL_PLATFORM_ROLES there.
+--
+--   Both are application changes. Neither belongs in a migration, and RLS
+--   without them is a lock with a key taped to the door.
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- ROLLBACK
+-- ════════════════════════════════════════════════════════════════════════════
+-- Restore service FIRST, diagnose second. Removing FORCE returns the owner's
+-- bypass immediately and restores the exact behaviour in production today:
+--
+--   SET lock_timeout = '3s';
+--   ALTER TABLE public.tasks            NO FORCE ROW LEVEL SECURITY;
+--   ALTER TABLE staging.vetana_payslips NO FORCE ROW LEVEL SECURITY;
+--
+-- That single statement per table is the whole emergency rollback. Policies
+-- may stay in place; they simply stop applying to the owner again.
+--
+-- To remove the policies as well:
+--
+--   DROP POLICY IF EXISTS tasks_org_isolation               ON public.tasks;
+--   DROP POLICY IF EXISTS team_members_org_isolation        ON public.team_members;
+--   DROP POLICY IF EXISTS project_assignments_org_isolation ON public.project_assignments;
+--   DROP POLICY IF EXISTS activity_events_org_isolation     ON public.activity_events;
+--   DROP POLICY IF EXISTS notifications_org_isolation       ON public.notifications;
+--   DROP POLICY IF EXISTS approvals_org_isolation           ON public.approvals;
+--   DROP POLICY IF EXISTS boards_org_isolation              ON public.boards;
+--   DROP POLICY IF EXISTS vetana_payslips_org_isolation     ON staging.vetana_payslips;
+--   -- ...and the rest, generated from pg_policy:
+--   --   SELECT format('DROP POLICY IF EXISTS %I ON %I.%I;',
+--   --                 p.polname, n.nspname, c.relname)
+--   --     FROM pg_policy p JOIN pg_class c ON c.oid = p.polrelid
+--   --     JOIN pg_namespace n ON n.oid = c.relnamespace
+--   --    WHERE p.polname LIKE '%_org_isolation';
+--
+-- To fully revert a staging table to its pre-Step-2 state:
+--   ALTER TABLE staging.vetana_payslips DISABLE ROW LEVEL SECURITY;
+--
+-- Do NOT `DISABLE ROW LEVEL SECURITY` on any `public` table. All 41 currently
+-- have it ENABLED with zero policies, and that deny-all is the only thing
+-- keeping PostgREST's anon and authenticated roles out of the entire PM core.
+-- Disabling it there would open public read access to every customer's tasks.
