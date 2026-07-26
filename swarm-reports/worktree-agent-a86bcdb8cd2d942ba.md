@@ -1,361 +1,408 @@
-# Agent a86bcdb8cd2d942ba — API contract map + dead code / duplication
+# Agent a86bcdb8cd2d942ba — the API contract, and dead code / duplication
 
-Branch: `worktree-agent-a86bcdb8cd2d942ba`. Base: `staging` @ `666b0ea`.
+Branch: `swarm/api-contract-a86bcdb8cd2d942ba`. Base: `staging`.
 
-Two jobs: (1) the definitive frontend↔backend API contract; (2) prove-then-delete
-dead code and map duplication.
-
-**Note on the worktree.** This worktree was created off `main`, not `staging` — it
-started 272 commits behind `origin/staging` and 13 ahead with production-only
-commits (`1aa4985 feat: add admin endpoint to recover corrupted R2 attachments`
-and 12 others, all reachable from `origin/main`, so nothing was lost). I reset to
-`origin/staging` before doing any work. **Any other agent whose worktree shows
-`1aa4985` at HEAD is also on the wrong base and should check.**
+**Rebuilt against current staging after the spend-limit stop.** My pre-stop version
+of this file claimed defects that siblings have since fixed. Every claim below was
+re-derived from current staging; superseded claims are listed in §5 so nobody chases
+them.
 
 ---
 
-## Method
+## 0. Summary
 
-Both sides were extracted mechanically, not by grep-and-eyeball:
-
-- **Backend** — every `@app|@router.<verb>("...")` decorator across `backend/**/*.py`,
-  joined to its file's `APIRouter(prefix=...)`, then filtered by whether that router
-  is actually `include_router`'d in `backend/server.py`. 639 decorators, 636 mounted.
-- **Frontend + mobile** — every `api|apiClient.<verb>(...)` call in `frontend/src/**`
-  and `mobile/src/**`, with a real balanced-brace template-literal reader (a plain
-  regex mis-parses `${a ? `?x=${b}` : ''}` and produced 8 false "missing route" hits
-  on the first pass — those are excluded below). 739 call sites.
-- Path params normalised to `{}` on both sides; ternaries expanded into every
-  string-literal alternative so `/modules/${on ? 'deactivate' : 'activate'}` matches.
-
-Every defect below was then **re-read at the source line on both sides** before
-being listed. Nothing here is inferred from a name match.
-
----
-
-# JOB 1 — THE API CONTRACT
-
-## 1.1 Summary
-
-| Outcome | Count |
+| | |
 |---|---|
-| Frontend calls that match a mounted backend route | 689 |
-| **Frontend calls to a route that does not exist (404 at runtime)** | **17** |
-| **Frontend calls to a route whose router is never mounted** | **1** |
-| Calls with a computed path (verified by hand, see §1.5) | 29 |
-| Backend routes with no caller in web or mobile | 164 / 639 |
-| **Backend route files never mounted at all** | **2 (3 routes)** |
+| Backend route decorators | 650 |
+| Mounted and served | **650** — was 647; I registered the last 3 |
+| Frontend + mobile call sites | 738 |
+| **Calls that 404'd when I started** | **25** |
+| **Calls that 404 now** | **0** |
+| Backend routes with no caller | 168 / 650 |
 
-## 1.2 Calls to routes that DO NOT EXIST — confirmed 404s
+§2 is fixed and merged to staging. §3 is the contract table. §4 is Job 2.
 
-These are ordered by blast radius. Each row was verified by reading both the call
-site and the backend router file.
+---
 
-### A. All of Sanvaad (messaging) — 11 call sites, module is entirely non-functional
+## 1. Method — why this is a measurement, not a survey
 
-`backend/routers/messaging.py:1` declares `APIRouter(prefix="/api/v1/messaging")` and
-`backend/server.py:2791` mounts it. Every frontend call omits the `/v1`.
+- **Backend** — every `@app|@router.<verb>("…")` decorator in `backend/**/*.py`,
+  joined to its file's `APIRouter(prefix=…)`, filtered by whether that router is
+  actually `include_router`'d. The mount set is **derived from `server.py`'s own
+  import and include lines**, not hardcoded. My first pass *did* hardcode it, and
+  that list went stale within the hour as siblings landed routers — which is the same
+  mechanism that let §2.4 survive in the first place.
+- **Frontend + mobile** — every `api|apiClient.<verb>(…)` call under `frontend/src/**`
+  and `mobile/src/**`, parsed with a balanced-brace template-literal reader. A plain
+  regex mis-parses nested interpolation like `` `${a ? `?x=${b}` : ''}` `` and gave me
+  **8 false "missing route" hits** on the first pass. Ternaries are expanded to every
+  string-literal alternative so `/modules/${on ? 'deactivate' : 'activate'}` resolves.
+- **The mounted set is confirmed by importing the app and reading `app.openapi()`,
+  not by the static scan.** This FastAPI version stores lazy `_IncludedRouter`
+  placeholders in `app.routes`, so counting that list reports 42 and means nothing.
+  The real figure is **648 operations across 499 paths**.
 
-| Method | Frontend calls | Backend actually serves | Call site |
-|---|---|---|---|
-| GET | `/api/messaging/channels` | `/api/v1/messaging/channels` | `frontend/src/pages/sanvaad/ChannelsTab.jsx:31` |
-| POST | `/api/messaging/channels` | `/api/v1/messaging/channels` | `frontend/src/pages/sanvaad/ChannelsTab.jsx:45` |
-| GET | `/api/messaging/messages/{id}/thread` | `/api/v1/messaging/messages/{message_id}/thread` | `frontend/src/pages/sanvaad/ThreadPanel.jsx:37` |
-| POST | `/api/messaging/channels/{id}/messages` | `/api/v1/messaging/channels/{channel_id}/messages` | `frontend/src/pages/sanvaad/ThreadPanel.jsx:56` |
-| DELETE | `/api/messaging/messages/{id}/reactions/{emoji}` | `/api/v1/messaging/...` | `frontend/src/pages/sanvaad/ThreadPanel.jsx:94` |
-| POST | `/api/messaging/messages/{id}/reactions` | `/api/v1/messaging/...` | `frontend/src/pages/sanvaad/ThreadPanel.jsx:95` |
-| GET | `/api/messaging/channels/{id}/messages` | `/api/v1/messaging/...` | `frontend/src/pages/sanvaad/useChannelMessages.js:45` |
-| POST | `/api/messaging/channels/{id}/read` | `/api/v1/messaging/channels/{channel_id}/read` | `frontend/src/pages/sanvaad/useChannelMessages.js:72` |
-| POST | `/api/messaging/channels/{id}/messages` | `/api/v1/messaging/...` | `frontend/src/pages/sanvaad/useChannelMessages.js:91` |
-| DELETE | `/api/messaging/messages/{id}/reactions/{emoji}` | `/api/v1/messaging/...` | `frontend/src/pages/sanvaad/useChannelMessages.js:135` |
-| POST | `/api/messaging/messages/{id}/reactions` | `/api/v1/messaging/...` | `frontend/src/pages/sanvaad/useChannelMessages.js:139` |
+Every defect was then re-read at the source line on both sides.
 
-Corroborating evidence: **all 14 routes in `messaging.py` show zero callers** in the
-uncalled-route sweep (§1.4). Both halves independently say the same thing.
+---
 
-No path-rewriting middleware exists — `backend/server.py:184-271` registers only
-SlowAPI, a write rate limiter, security headers, CORS and a request-cache cleaner.
+## 2. Defects found and FIXED (merged to staging)
 
-### B. All of Varta (WhatsApp) — 7 call sites, module is entirely non-functional
+### 2.1 Sanvaad and Varta — 21 call sites, both modules 404'd entirely
 
-`backend/routers/whatsapp.py` declares `APIRouter(prefix="/api/v1/whatsapp")`. Same
-missing `/v1`.
+`routers/messaging.py:19` is `APIRouter(prefix="/api/v1/messaging")`; `whatsapp.py:22`
+is `/api/v1/whatsapp`. Every web call omitted the `/v1`.
 
-| Method | Frontend calls | Call site |
+**The tiebreaker that settled which side was wrong:** `mobile/src/api/messages.ts:76-124`
+already called `/v1/messaging/*` correctly against the same server. Backend and mobile
+agreed; the web client was the sole outlier. So the fix was the frontend, not the prefix.
+
+Fixed in `ChannelsTab.jsx` (2), `ThreadPanel.jsx` (4), `useChannelMessages.js` (8),
+`varta/WAChat.jsx` (2), `varta/TemplatePicker.jsx` (1), `varta/WhatsAppTab.jsx` (4 —
+these live in an `ENDPOINT` constant map read at `:88`, invisible to a path-literal scan).
+
+**This is not what `4a966c6` fixed.** That commit fixed the `samvada`/`sanvaad`
+*module code*, which made every Sanvaad endpoint return **403**. This is the separate
+**404** underneath it. After `4a966c6` the 403 simply became a 404; the module needed
+both fixes to work at all.
+
+### 2.2 Onboarding could not send a single invite
+
+`OnboardingPage.jsx:176` posted `/invites`. `invite_router.py:274` is
+`@router.post("/invites")` under `prefix="/api/admin"`, so the route is
+**`/api/admin/invites`** — which `AdminPage.jsx:547` has always used. Onboarding was
+the lone exception. Its loop catches per-invite and reports failures, so it presented
+as "every invite failed", never as an error.
+
+A sibling concurrently added `noRetry: true` to that same line for a real reason (the
+retry interceptor re-sends a request that **sends an email** — one 503 put four
+invitations on the wire). The rebase conflicted; I kept both changes.
+
+### 2.3 Mobile notifications — one dead helper, one live 404
+
+| Call | Reality | Action |
 |---|---|---|
-| GET | `/api/whatsapp/conversations/{id}/messages` | `frontend/src/pages/sanvaad/varta/WAChat.jsx:41` |
-| POST | `/api/whatsapp/conversations/{id}/messages` | `frontend/src/pages/sanvaad/varta/WAChat.jsx:68` |
-| GET | `/api/whatsapp/templates` | `frontend/src/pages/sanvaad/varta/TemplatePicker.jsx:19` |
-| GET | `/api/whatsapp/conversations` | `WhatsAppTab.jsx:23` (via `ENDPOINT` map, called at `:88`) |
-| GET | `/api/whatsapp/templates` | `WhatsAppTab.jsx:24` |
-| GET | `/api/whatsapp/auto-replies` | `WhatsAppTab.jsx:25` |
-| GET | `/api/whatsapp/accounts` | `WhatsAppTab.jsx:26` |
+| `notifications.ts:9` — `GET /notifications/unread_count`, expects `{count}` | **No such route, and zero callers.** `NotificationContext.tsx:34` destructures `unread` from `poll()`; `InboxScreen.tsx:114` counts `!read_at` locally | **Removed.** Deliberately *not* repointed at `/notifications/poll`: `server.py:2822` INSERTs reminder rows as a side effect, so a badge render would send reminders |
+| `notifications.ts:15` — `POST /notifications/mark_read` | Route is `mark-read`, **hyphen** (`server.py:2786`) | **Fixed.** Every mark-read tap in `InboxScreen.tsx:88` was silently no-op'ing behind an optimistic UI |
 
-The last four are the `ENDPOINT` constant at `WhatsAppTab.jsx:22-27`; the call at
-`:88` is `api.get(ENDPOINT[sub], params)`, so a path-literal scan misses them. All
-13 `whatsapp.py` routes show zero callers.
+### 2.4 Two finished routers were never registered
 
-### C. Onboarding cannot send invites
-
-`frontend/src/pages/onboarding/OnboardingPage.jsx:176` — `api.post('/invites', ...)`
-→ `/api/invites`. `backend/invite_router.py:274` is `@router.post("/invites")` under
-`APIRouter(prefix="/api/admin")`, so the real route is **`/api/admin/invites`**.
-There is no `/api/invites` anywhere. The loop at `:173-180` catches per-invite and
-reports "failed", so this presents as *every* invite failing, not as a crash.
-
-### D. Mobile notifications — two wrong paths
-
-| Call | Reality |
-|---|---|
-| `mobile/src/api/notifications.ts:9` — `GET /notifications/unread_count`, expects `{count:number}` | **No such route.** Nearest is `GET /api/notifications/poll` (`server.py:2675`) returning `{unread, fresh}` — different name *and* different shape. |
-| `mobile/src/api/notifications.ts:15` — `POST /notifications/mark_read` | Backend is `POST /api/notifications/mark-read` (`server.py:2639`) — **hyphen, not underscore**. The web client at `frontend/src/context/NotificationContext.jsx:213,230` uses the hyphen correctly, so this is mobile-only drift. |
-
-### E. Command palette search hits an unmounted router
-
-`frontend/src/components/CommandPalette.jsx:107` calls `GET /api/search`.
-`backend/routers/search.py:481` defines exactly that route — but see §1.3: the file
-is never imported and never mounted. This is a 404, and it is the one defect that
-*looks* fine from either side alone.
-
-## 1.3 Backend router files that exist but are never mounted
-
-`backend/server.py:57-87` imports 31 routers and `:2756-2793` includes 36. Two
-router modules are in neither list:
-
-| File | Routes it defines | Status |
+| File | Routes | Live caller |
 |---|---|---|
-| `backend/routers/search.py` | `GET /api/search` (`:481`) | **Never imported, never mounted.** Called by `CommandPalette.jsx:107`. |
-| `backend/routers/tasks_bulk.py` | `PATCH /api/v1/tasks/bulk` (`:273`), `DELETE /api/v1/tasks/bulk` (`:383`) | **Never imported, never mounted.** No caller either — dead on both sides. |
+| `backend/routers/search.py` | `GET /api/search` | `CommandPalette.jsx:107` |
+| `backend/routers/tasks_bulk.py` | `PATCH` + `DELETE /api/v1/tasks/bulk` | `BulkBar.jsx:74,102` |
 
-Proof: `grep -rn "include_router" backend/` returns 36 hits, all in `server.py`, none
-naming these; `grep -rn "tasks_bulk\|routers.search" backend/ --include=*.py` returns
-only two hits, both inside `tasks_bulk.py`'s own docstring.
+Both are complete and security-conscious — `search.py` delegates every privilege
+decision to `require_module`/`is_org_admin` rather than reimplementing it;
+`tasks_bulk.py` uses savepoints so a transactional batch and a per-id result coexist,
+and its own header names BulkBar as its destination. **The two halves were built by
+different agents and nobody wired them.**
 
-`search.py` is a genuine bug — a working implementation is sitting unmounted while a
-shipped UI calls it. `tasks_bulk.py` is orphaned feature work.
+`search.py` is the subtlest defect here: `CommandPalette` keeps a tri-state and
+**stops asking after one 404**, so the symptom was a quiet ⌘K that returned only the
+30 static commands — no error anywhere, in any log.
 
-## 1.4 Backend routes with no caller (164 / 639)
+Verified before merging, not assumed:
+- every symbol imported from `auth_router`, `db`, `middleware.*` exists;
+- both modules import cleanly and the full app builds to **648 operations**;
+- the OpenAPI schema now serves all three paths;
+- **`/api/v1/tasks/bulk` is the only `/api/v1/tasks/*` route**, so the literal cannot
+  be shadowed by a `{task_id}` matcher regardless of registration order — the failure
+  that would have made this look fixed while staying broken;
+- backend suite **498 passed, 0 failed**.
 
-Not all of these are dead — cron endpoints and OAuth callbacks are called by
-infrastructure, not by the app. Grouped by why:
+### 2.5 Mobile client portal read the wrong shape
 
-**Legitimately uncalled by design (26)** — `routers/scheduler.py` (13 `/api/internal/cron/*`
-routes, invoked by Railway cron), `routers/whatsapp.py` webhook GET+POST (Meta calls
-these), `routers/hub_publish.py:GET /api/v1/hub/oauth/{platform}/callback` (OAuth
-redirect), `POST /api/reports/dispatch`, `POST /api/task-reminders/dispatch`,
-`POST /api/v1/hub/publish/dispatch`, `GET /api/health`, `GET /api/`,
-`POST /api/v1/graha/inbound-leads`, `POST /api/v1/graha/f/{slug}` (public form post),
-`backend/routers/ganit.py` `/sign/{token}/*` × 4 (public e-sign flow, opened by URL).
+`mobile/src/screens/ClientPortalScreen.tsx:32` — `apiClient.get<Task[]>('/client/tasks')`,
+but the endpoint returns `List[ClientTaskOut]` (`server.py:609`). `apiClient.get<T>()`
+is an **unchecked cast**, so this compiled clean and failed only at runtime.
 
-**Uncalled because the caller uses the wrong prefix (27)** — all 14 of
-`routers/messaging.py` and all 13 of `routers/whatsapp.py`. See §1.2 A and B. These
-are the *same* defect counted from the other direction.
+The two shapes share exactly one field name — `title` — which is why the screen looked
+half-alive rather than broken:
 
-**Genuinely unreachable — feature built, no UI (the interesting ones):**
+| Read | Sent | Symptom |
+|---|---|---|
+| `item.status` | `state` | status pill printed `undefined` |
+| `item.description` | `note` | description line never rendered |
+| `item.due_at` | `expectedAt` | due line never rendered |
+| `item.task_id` (`:125`, `:39`, `:47`) | `taskId` | every FlatList key `undefined`; **both comment calls built `/api/tasks/undefined/comments`**, which 404s. Both swallow the failure, so the thread was permanently empty and every post failed with `'Could not post comment'` |
 
-| Route | File |
-|---|---|
-| `PATCH` / `DELETE /api/v1/tasks/bulk` | `routers/tasks_bulk.py` — router not mounted |
-| `GET /api/v1/admin/orgs/{org_id}/cost-breakdown`, `/credits/usage`, `/storage`, `/cost-summary`, `/provider-costs` | `routers/admin_orgs.py` |
-| `POST /api/v1/admin/orgs/{org_id}/credits/topup`, `PUT .../r2`, `GET|PUT .../members/{id}/modules` | `routers/admin_orgs.py` |
-| `GET|POST|PUT|DELETE /api/dashboards/*` (all 5) | `routers/dashboards.py` — entire router has no caller |
-| `GET /api/v1/hub/ai-feedback`, `POST /api/v1/hub/ai-feedback`, `GET /api/v1/hub/ai-feedback/stats` | `routers/hub.py` |
-| `GET|PUT|DELETE /api/v1/hub/ai-conversations/{context_type}` | `routers/hub.py` |
-| `GET /api/v1/hub/analytics/spend`, `GET /api/v1/hub/clients/{id}/analytics/spend` | `routers/hub.py` — spend analytics is gated, see memory |
-| `GET|POST /api/v1/graha/pipelines`, `GET /api/v1/graha/scoring-rules`, `PATCH /api/v1/graha/scoring-rules/{id}` | `routers/graha.py` |
-| `GET /api/v1/graha/inbound-emails`, `/inbound-emails/{id}`, `/follow-ups`, `/activities` | `routers/graha.py` |
-| `POST /api/v1/graha/territories/{id}/assign-next`, `PATCH /api/v1/graha/territories/{id}` | `routers/graha.py` |
-| `GET|POST /api/v1/manav/availability`, `GET /api/v1/manav/leaves/check-conflicts` | `routers/manav.py` |
-| `POST /api/v1/manav/shift-bids/{bid_id}/accept/{employee_id}`, `POST /api/v1/manav/schedules/bulk` | `routers/manav.py` |
-| `GET /api/v1/pahchan/me`, `/sites` (GET+POST), `/enrollment/{employee_id}`, `POST /punch/photo` | `routers/pahchan.py` — Pahchan is an unfinished module |
-| `GET /api/v1/prachar/campaigns/{id}/audience`, `/stats`, `GET /api/v1/prachar/events/{id}` | `routers/prachar.py` |
-| `GET /api/v1/scrapers/admin/runs`, `/admin/usage` | `routers/scrapers.py` |
-| `GET /api/v1/vikray/targets/leaderboard`, `DELETE /api/v1/vikray/targets/{id}` | `routers/vikray.py` |
-| `GET /api/v1/vetana/payslips`, `/statutory-summary`, `DELETE /salary-structures/{sid}` | `routers/vetana.py` |
-| `GET /api/v1/esign/documents`, `/documents/{id}/audit` | `routers/esign.py` |
-| `POST /api/admin/migrate-data-uris`, `PUT /api/settings/brand-colors`, `PATCH /api/teams/{id}/brand`, `POST /api/projects/{id}/columns/reorder`, `PATCH /api/tasks/{id}/toggle`, `POST|DELETE /api/tasks/{id}/clients/{user_id}` | `backend/server.py` |
+`RootStack.tsx:187` routes every `role === 'client'` straight here with no further
+gate, so this was live for **every** mobile client. `e366f50` fixed the web half of
+this defect; mobile was not in that change.
 
-Full machine-readable list is reproducible from the method in §1 — I have not
-committed the JSON, since it goes stale the moment another agent lands a route.
-
-I am **not** recommending deleting any of these. An uncalled route is a missing UI
-far more often than it is dead code, and several (`admin_orgs` cost/credits,
-`pahchan/*`) are known in-flight work.
-
-## 1.5 Computed-path call sites (verified by hand)
-
-29 call sites pass a variable rather than a literal. All were opened and checked;
-none is a defect except `WhatsAppTab.jsx:88` already counted in §1.2 B. The pattern
-is a module-level `ENDPOINT`/`TAB` constant map plus `api.get(MAP[tab], params)` —
-used by `ganit/*Tab.jsx`, `graha/*Tab.jsx`, `manav/*Tab.jsx`, `esign/DocumentsTab.jsx`,
-`VetanaPage.jsx`, `VikrayPage.jsx`, `BoardsPage.jsx`, `TasksListPage.jsx`,
-`ApprovalsPage.jsx`, `admin/orgScope.js`. `mobile/src/offline/mutationQueue.ts:168-171`
-dispatches a queued verb against a stored URL — correct by construction.
+Fixed, and I added a real `ClientTask` type to `mobile/src/api/types.ts` mirroring
+`ClientTaskOut`, so the next drift is a compile error rather than a blank cell. The
+comments endpoint was never at fault — `server.py:1641-1647` authorises a client
+against the task and returns only client-visible rows.
 
 ---
 
-## 1.6 Response-SHAPE mismatches — the ones that render blank instead of erroring
+## 3. THE CONTRACT TABLE
 
-These are the most valuable findings and every one was verified by reading the
-Pydantic model, the handler's `response_model=`, and the consuming component.
+### 3.1 Router → URL prefix — read this before writing a call
 
-### Background: the client shape landed on the server, and three consumers were not updated
+| Prefix | Router file |
+|---|---|
+| `/api` | `server.py` (`api_router`), `approvals_router.py`, `routers/uploads.py`, `routers/search.py` |
+| `/api/auth` | `auth_router.py` |
+| `/api/admin` | `invite_router.py` |
+| `/api/activity` · `/api/automations` · `/api/dashboards` · `/api/fields` · `/api/views` · `/api/templates` · `/api/time` · `/api/reports` · `/api/task-reminders` · `/api/internal` | the same-named `routers/*.py` |
+| `/api/v1/admin/orgs` | `routers/admin_orgs.py` |
+| `/api/v1/dristi` · `/api/v1/esign` · `/api/v1/ganit` · `/api/v1/graha` · `/api/v1/manav` · `/api/v1/prachar` · `/api/v1/scrapers` · `/api/v1/subscription` · `/api/v1/vetana` · `/api/v1/vikray` | the same-named `routers/*.py` |
+| `/api/v1/hub` | `routers/hub.py`, `hub_chat.py`, `hub_publish.py` — three files, one prefix |
+| `/api/v1/prachar/ads` | `routers/prachar_ads.py` |
+| **`/api/v1/messaging`** | `routers/messaging.py` — **not** `/api/messaging` |
+| **`/api/v1/whatsapp`** | `routers/whatsapp.py` — **not** `/api/whatsapp` |
+| `/api/v1/org/members` · `/api/v1/org/profile` | `routers/org_members.py`, `org_profile.py` |
+| `/api/v1/pahchan` | `routers/pahchan.py` |
+| `/api/v1/tasks` | `routers/tasks_bulk.py` — the only `/api/v1/tasks/*` route |
+| `""` (root) | `health.py` |
 
-During this revamp `GET /api/client/tasks` (`server.py:968`) changed to
-`response_model=List[ClientTaskOut]`, and `GET /api/client/approvals`
-(`server.py:1031`) to `List[ClientApprovalOut]`. Both new models are **allow-lists with
-camelCase wire aliases** (`server.py:609-655`):
+**The trap this table exists to prevent.** Core PM lives at `/api/…` while every
+module added since lives at `/api/v1/…`, and both are reachable from the same `api`
+axios instance whose `baseURL` already ends in `/api`. Four of the five defects in §2
+are this one mistake. If you are writing a call from memory, check here first.
 
-| Internal `TaskOut` field | `ClientTaskOut` wire name |
+### 3.2 Client-portal shapes — the wire names are not the internal ones
+
+`GET /api/client/tasks` → `List[ClientTaskOut]` · `POST /api/client/tasks/request` →
+`ClientTaskOut` · `GET /api/client/approvals` → `List[ClientApprovalOut]` ·
+`GET /api/client/projects` → `List[ClientProjectOut]`.
+
+| Internal `TaskOut` | `ClientTaskOut` wire name |
 |---|---|
 | `task_id` | `taskId` |
 | `description` | `note` |
 | `due_at` | `expectedAt` |
-| `updated_at` / `created_at` | `updatedAt` / `createdAt` |
+| `created_at` / `updated_at` | `createdAt` / `updatedAt` |
 | `team_id` | `projectId` |
 | `attachments` | `files` |
-| `status` (6 values) | `state` (3 values) — **and the raw status is gone** |
 | `created_by_name` | `requestedBy` |
+| `status` (6 values) | `state` (3: `with_us` / `with_you` / `done`) |
 | `priority`, `tags`, `category_id`, `column_id`, `assignee_*`, `custom_fields`, `subtasks`, `estimated_minutes`, `user_id`, `created_by_user_id`, `approval_status`, `approved_by`, `completed_at`, `archived_at`, `reminders` | **absent by design** |
 
-`ClientApprovalOut`: `approval_id`→`approvalId`, `task_id`→`taskId`, plus `ref`, `title`,
-`ask`, `requestedBy`, `requestedAt`. **No `approval_status`, no `request_data`, no
-`task_title`, no `notes`, no `created_at`, no `priority`, no `team_id`.**
+`ClientApprovalOut`: `approvalId`, `taskId`, `ref`, `title`, `ask`, `requestedBy`,
+`requestedAt`. **No `approval_status`, `request_data`, `task_title`, `notes`,
+`created_at`, `priority` or `team_id`** — `server.py:641` calls those internal
+vocabulary and omits them on purpose.
 
-**One consumer was updated and is correct.** `frontend/src/pages/client/clientShape.js`
-handles *both* wire shapes — it discriminates on `typeof raw.taskId === 'string'`
-(`:90`) and reduces either. The web client portal at `/client/*` therefore works.
-**The claim that `clientShape.js` is broken is FALSE — it is the reference for how
-this should be done.** Three other consumers were not updated.
+`frontend/src/pages/client/clientShape.js` is the reference implementation: it
+discriminates on `typeof raw.taskId === 'string'` (`:90`) and handles both wire
+shapes. Copy it rather than reinventing it. `mobile/src/api/types.ts` now carries the
+same shape as `ClientTask`.
 
-### MISMATCH 1 — `mobile/src/screens/ClientPortalScreen.tsx` — live for every mobile client
+### 3.3 Backend routes with no caller — 168 / 650
 
-`:32` — `apiClient.get<Task[]>('/client/tasks')`. `Task` in `mobile/src/api/types.ts:61-82`
-is the internal shape (`task_id`, `status`, `description`, `due_at`). The generic is an
-**unchecked cast**, so TypeScript cannot catch this — it compiles clean and fails at runtime.
+"Uncalled" and "dead" are not the same thing, so these are grouped by *why*.
 
-`mobile/src/nav/RootStack.tsx:187` sends every `user.role === 'client'` straight to this
-screen with no further gate, so this is unconditionally live on mobile.
+**Called by infrastructure, not the app (~26) — do not delete.**
+`routers/scheduler.py` (13 × `/api/internal/cron/*`, Railway cron), `whatsapp.py`
+webhook GET+POST (Meta calls these), `hub_publish.py: GET /api/v1/hub/oauth/{platform}/callback`
+(OAuth redirect), `POST /api/reports/dispatch`, `POST /api/task-reminders/dispatch`,
+`POST /api/v1/hub/publish/dispatch`, `GET /api/health`, `GET /api/`,
+`POST /api/v1/graha/inbound-leads`, `POST /api/v1/graha/f/{slug}` (public form post),
+`ganit.py` `/sign/{token}/*` × 4 (public e-sign, opened from an emailed URL),
+`approvals_router.py` `by-token` approve/reject (emailed links).
 
-| Line | Reads | Server sends | Result on screen |
-|---|---|---|---|
-| `:125` | `item.task_id` as FlatList `keyExtractor` | `taskId` | key is `undefined` for **every** row |
-| `:137` | `item.status` | `state` | the status pill renders **empty** |
-| `:141` | `item.description` | `note` | description line **never renders** |
-| `:144` | `item.due_at` | `expectedAt` | due line **never renders** |
-| `:134` | `item.title` | `title` | correct — which is why the screen looks half-alive |
-| `:39` | `` `/tasks/${selected.task_id}/comments` `` | — | requests **`/api/tasks/undefined/comments`** → 404, swallowed by `.catch(() => {})` at `:41`, so the thread is permanently empty |
-| `:47` | `POST` to the same undefined path | — | every comment fails with the generic `'Could not post comment'` alert |
+**Feature built, no UI — the interesting ones**, largest first:
 
-Net effect: a mobile client sees title-only cards with a blank status chip, and the
-screen's single interactive feature is broken with a misleading error.
+| File | Uncalled | Notable |
+|---|---|---|
+| `routers/hub.py` | 23 | all of `ai-feedback` (3), all of `ai-conversations` (3), `analytics/spend` × 2 (gated), `org/brand` GET+PUT, `org/credits/*` (3) |
+| `routers/graha.py` | 22 | `pipelines` GET+POST, `scoring-rules` GET+PATCH, `inbound-emails` × 2, `follow-ups`, `activities`, `territories` × 2 |
+| `routers/manav.py` | 13 | `availability` GET+POST, `leaves/check-conflicts`, `shift-bids/{id}/accept/{employee_id}`, `schedules/bulk` |
+| `routers/prachar.py` | 12 | `campaigns/{id}/audience`, `campaigns/{id}/stats`, `events/{id}`, most `PATCH`es |
+| `routers/ganit.py` | 11 | `bank-statements` + `/match`, `expenses`, `invoices`, `vendor-bills` list reads |
+| `backend/server.py` | 10 | `POST /api/admin/migrate-data-uris`, `PUT /api/settings/brand-colors`, `PATCH /api/teams/{id}/brand`, `POST /api/projects/{id}/columns/reorder`, `PATCH /api/tasks/{id}/toggle`, `POST\|DELETE /api/tasks/{id}/clients/{user_id}`, `GET /api/dashboard/summary`, `GET /api/approvals/pending` |
+| `routers/whatsapp.py` | 10 | residual after §2.1: `accounts`, `auto-replies`, `templates` writes |
+| `routers/admin_orgs.py` | 7 | `cost-breakdown`, `credits/usage`, `credits/topup`, `storage`, `cost-summary`, `provider-costs`, `r2` |
+| `routers/me.py` | 6 | landed this run; UI presumably still coming |
+| `routers/dashboards.py` | **5 — the whole router** | `GET\|POST /api/dashboards/`, `GET\|PUT\|DELETE /{id}`, `/{id}/data`. **The strongest dead-code candidate in the backend** — but it is a coherent saved-dashboards feature, so it reads as a missing UI, not rot |
+| `routers/messaging.py` | 5 | residual after §2.1: `/dm`, channel members × 3, `/unread` |
+| `routers/vikray.py` | 4 | `orders`, `stock/{id}/moves`, `targets/leaderboard`, `DELETE targets/{id}` |
+| `routers/vetana.py` | 3 | `payslips`, `statutory-summary`, `DELETE salary-structures/{sid}` |
+| `esign.py` · `dristi.py` · `scrapers.py` · `org_modules.py` · `org_security.py` · `subscription.py` · `hub_publish.py` | 2 each | |
 
-### MISMATCH 2 — `frontend/src/pages/ApprovalsPage.jsx` — the approve buttons cannot render
+**I am not recommending deleting any of these.** An uncalled route is a missing UI far
+more often than dead code, and several (`admin_orgs` cost/credits, `pahchan`, `me`) are
+known in-flight work. `dashboards.py` is the one worth a decision.
 
-`:41` fetches `/client/approvals` when `isClient`, then renders each row (`:227-250`)
-against the pre-change dict shape.
+### 3.4 Computed-path call sites — 27, all opened by hand
 
-| Line | Reads | Server sends | Result |
-|---|---|---|---|
-| `:228` | `r.request_data` | absent | `data = {}` |
-| `:229` | `data?.title \|\| r.task_title` | `title` | **every row reads "Untitled task"** while the real title sits in an unread field |
-| `:230` | `data?.description \|\| r.notes` | `ask` | description always blank |
-| `:232` | `r.requester_name \|\| r.requested_by_name` | `requestedBy` | falls through to the literal `'You'` — attributes the firm's request to the client |
-| `:235` | `key={r.approval_id}` | `approvalId` | duplicate `undefined` React key on every row |
-| `:233` | `deciding[r.approval_id]` | — | spinner state keyed on `undefined` |
-| `:249` | `r.approval_id?.startsWith('task_approval--') && r.approval_status === 'pending_client'` | neither field exists | **the client's Approve / Reject buttons never render.** Two independent reasons: `approval_id` is `undefined`, and `ClientApprovalOut` omits `approval_status` *deliberately* (its docstring at `server.py:641` calls it internal vocabulary) |
-| `:243` | `r.created_at` | `requestedAt` | no timestamp |
-| `:239` | `r.task_id` → `setDrawerTaskId` | `taskId` | title is not clickable; drawer never opens |
+These pass a variable, so no scanner resolves them. I checked all 27; none is a defect
+(the one that was, `varta/WhatsAppTab.jsx:88`, is fixed in §2.1). The pattern is a
+module-level `ENDPOINT`/`TAB` constant plus `api.get(MAP[tab], params)` — used by
+`ganit/*Tab.jsx`, `graha/*Tab.jsx`, `manav/*Tab.jsx`, `esign/DocumentsTab.jsx`,
+`VetanaPage.jsx`, `VikrayPage.jsx`, `TaskDrawer.jsx:377`, `ApprovalsPage.jsx:148`,
+`admin/orgScope.js:60`. `mobile/src/offline/mutationQueue.ts:168-171` dispatches a
+queued verb against a stored URL — correct by construction.
 
-A client on this page sees rows all titled "Untitled task", requested by "You", undated,
-**with no way to approve anything** — which is the page's entire purpose.
+**This is the blind spot in any grep-based audit**, and exactly how the four WhatsApp
+endpoints hid: a constant map defeats a path-literal scan completely.
 
-### MISMATCH 3 — `frontend/src/pages/TasksListPage.jsx`
+### 3.5 Cleared — flagged but NOT defects
 
-`:105-107` fetches `/client/tasks` when `isClient`, then filters and renders as `TaskOut`.
-
-| Line | Reads | Server sends | Result |
-|---|---|---|---|
-| `:154` | `t.user_id`, `t.assignee_user_ids` | absent | the **"Mine" filter matches nothing** |
-| `:155`,`:157` | `t.status` | `state` | **"Done" filter always empty**; "All" accidentally matches everything |
-| `:156` | `t.due_at` | `expectedAt` | **"Overdue" filter always empty** |
-| `:166` | `t.priority` | absent | every task lands in the "Other" priority group |
-| `:180` | `t.team_id` | `projectId` | every project group is empty |
-| `:325`,`:332` | `key={t.task_id}` / `setDrawerTaskId(t.task_id)` | `taskId` | duplicate `undefined` keys; **clicking a row does nothing** (`open={!!drawerTaskId}` at `:434` stays false) |
-| `:341` | `t.attachments` | `files` | attachment count never shows |
-| `:406` | `t.due_at`, `t.status`, `t.completed_at` | — | the Due chip renders empty |
-| `:412` | `t.updated_at` | `updatedAt` | Last-Updated column reads `—` |
-| `:418` | `t.status`, `t.approval_status` | — | the Status chip renders empty |
-
-**Reachability — I checked this rather than assuming it.** `Protected.jsx:115` confines a
-client to `/client/*` using `navContext().isClient`, which is
-`role === 'client' && orgRoles.length === 0` (`navConfig.js:106`). But `TasksListPage:67`
-and `ApprovalsPage:36` use the **bare** `user?.role === 'client'`. The two predicates
-disagree for a user who is flagged `client` *and* holds an org role: `Protected` correctly
-admits them to the staff shell, and then these two pages decide they are a client and
-fetch the client-shaped endpoints. So mismatches 2 and 3 are live for exactly that
-population — narrow, but real, and invisible in testing because the pages render without
-throwing.
-
-**This predicate split is itself the defect.** `navConfig.js` documents the full
-definition and `Protected.jsx:27-31` explains why it matters; six call sites never got the
-memo: `TasksListPage.jsx:67`, `ApprovalsPage.jsx:36`, `BoardsPage.jsx:32`,
-`NewTaskModal.jsx:44`, `TaskDrawer.jsx:543`, `mobile/src/components/NewTaskSheet.tsx:56`.
-The fix is to export the predicate and use it in all seven places.
-
-### MISMATCH 4 — `POST /api/client/tasks/request` still returns the internal shape (the reported suspect — CONFIRMED)
-
-`backend/server.py:1158` — `@api_router.post("/client/tasks/request", response_model=TaskOut)`,
-and `:1161` is `if user.get("role") != "client": raise HTTPException(403, ...)`. **The one
-endpoint that can only ever be called by a client is the one still serving `TaskOut`.**
-This is precisely the pattern `ClientTaskOut` was introduced to eliminate.
-
-Impact per caller — this one is more a leak than a render bug:
-
-- `frontend/src/pages/client/RequestWork.jsx:55` — `await` with the response discarded;
-  `onCreated?.()` takes no arguments. No render bug. **The full internal task object still
-  crosses the wire to the client's browser**, where anything can read it.
-- `frontend/src/components/NewTaskModal.jsx:299` — `onCreated?.(res.data)`. The three
-  staff pages that mount this (`BoardsPage:338`, `ProjectBoardPage:355`,
-  `TasksListPage:450`) all pass an `onCreated` that ignores its argument and refetches,
-  so nothing renders the mismatched object today. It is a live trap for the next caller
-  that does use it.
-- `mobile/src/components/NewTaskSheet.tsx:159` — same endpoint choice, same exposure.
-
-Practical severity of the leak is limited *right now* because the handler inserts a fresh
-row with no assignees, `custom_fields='{}'` and `subtasks='[]'` (`server.py:1177-1184`), so
-the internal-heavy fields come back empty. But the response does carry `user_id`,
-`team_id`, `column_id`, `created_by_user_id`, `priority`, `approval_status` and the
-unfiltered `attachments` list, and — more to the point — the shape is an **allow-everything
-default**, so the next field added to `TaskOut` reaches a client with nobody deciding it
-should. That is the exact failure `19-client-portal.md` describes.
-
-**Recommended fix (deliberately not applied — this is `server.py`, which several agents are
-editing):** change `response_model=TaskOut` to `ClientTaskOut` and build it through the same
-serializer `/client/tasks` uses. `clientShape.js` already accepts that shape, so the web
-side needs no change.
-
-### MISMATCH 5 — `GET /api/client/projects` never got a client shape at all
-
-`server.py:1012` — `@api_router.get("/client/projects")` with **no `response_model`**,
-returning `SELECT DISTINCT ON (t.team_id) t.*` from `teams` (`:1015-1016`). Every column of
-the teams row reaches a client, including `brand_settings` and `created_by` (an internal
-user id) — cf. `TeamOut` at `server.py:480-483`, which is what the staff endpoint returns.
-
-Consumers only read `team_id` and `name` (`TasksListPage.jsx:117`, `BoardsPage.jsx:56-57`),
-so **there is no render bug here** — this is a disclosure gap, not a shape mismatch, and I
-list it because it is the same class as MISMATCH 4 and the two should be fixed together.
-
-## 1.7 Suspects that were reported but are NOT defects
-
-Re-read and cleared, so nobody spends time on them again:
-
-| Reported | Verdict |
+| Claim | Verdict |
 |---|---|
-| `frontend/src/pages/client/clientShape.js` | **Not a defect.** Handles both wire shapes via `isShapedTask` (`:90`). It is the model the other three consumers should copy. |
-| `DELETE /api/admin/users/{id}` from `AdminPage.jsx:220` | Fine. The template's trailing `${reassign ? '?reassign_to=…' : ''}` is a query string; `invite_router.py:139` serves it. |
-| `POST /approvals/by-token/${token}/${act}` — `ApprovePage.jsx:64` | Fine. `act` is `'approve'`/`'reject'`; both exist at `approvals_router.py:499,570`. |
-| `POST /approvals/task_approval--${taskId}/review` — `mobile/src/api/tasks.ts:76` | Fine. `server.py:1409` is `/approvals/{approval_id}/review`; the prefix is part of the id. The comment at `tasks.ts:58-72` is accurate. |
-| `PATCH /v1/manav/expense-claims/${claimId}/${decision}` — `ExpensesTab.jsx:56` | Fine. `decision` is `'approve'`/`'reject'`; `manav.py:1657,1687` serve both. |
-| `POST /v1/subscription/modules/${on ? 'deactivate' : 'activate'}` — `AdminBillingPage.jsx:176` | Fine; `subscription.py:190,242`. |
-| `/v1/graha/*${params}`, `/v1/vikray/stock${...}`, `/v1/hub/org/content${params}` | Fine — all query strings. |
+| `POST /approvals/task_approval--${taskId}/review` (`mobile/src/api/tasks.ts:76`) | **Fine.** `server.py` serves `/approvals/{approval_id}/review`; `task_approval--` is part of the id, not a path segment. The comment at `tasks.ts:58-72` is accurate. |
+| `POST /approvals/by-token/${token}/${act}` (`ApprovePage.jsx:64`) | **Fine.** `act` is `approve`/`reject`; both exist (`approvals_router.py:499,570`). |
+| `PATCH /v1/manav/expense-claims/${claimId}/${decision}` (`ExpensesTab.jsx:56`) | **Fine.** `decision` is `approve`/`reject`; `manav.py:1657,1687`. |
+| `POST /v1/subscription/modules/${on ? … }` (`AdminBillingPage.jsx:176`) | **Fine.** `subscription.py:190,242`. |
+| `DELETE /admin/users/{id}${reassign ? …}` (`AdminPage.jsx:220`) | **Fine.** Trailing ternary is a query string. |
+| `/v1/graha/*${params}`, `/v1/vikray/stock${…}`, `/v1/hub/org/content${params}` | **Fine** — query strings; my first-pass regex mis-parsed them. |
+| `clientShape.js` "is broken" | **False.** It handles both wire shapes and is the model. |
+
+### 3.6 One pre-existing footgun I did not touch
+
+`app.openapi()` warns `Duplicate Operation ID me_api_auth_me_get` and
+`…logout_api_auth_logout_post`. **`/api/auth/me` and `/api/auth/logout` are each
+defined twice** — once in `auth_router.py`, once in `server.py`. FastAPI serves the
+first registration and silently ignores the second, so behaviour depends on
+`include_router` ordering. Not mine to adjudicate; currently unowned.
+
+---
+
+## 4. JOB 2 — dead code and duplication
+
+### 4.1 Deletions — all four targets resolved
+
+| Target | Outcome |
+|---|---|
+| `components/TaskEditor.jsx` | **Deleted by a sibling.** Zero importers; the surviving greps were three prose comments and BoardsPage's unrelated `newTaskEditor` state variable. |
+| `EmptyState` duplicate in `components/module/Note.jsx` | **Removed by a sibling** — zero importers. |
+| `pages/BillingPage.jsx` | **Already deleted** in `a4b186f`, together with ScrapersPage. See below for how the contradiction resolves. |
+| `pages/ScrapersPage.jsx` | **Already deleted** in `a4b186f`. |
+| `styles/modern-components.css` | **Deleted by me**, with its `@import`, in one commit. |
+
+**The `BillingPage.jsx` contradiction, settled.** One agent found zero importers; a
+later grep found 6 references. **Both were right about their own numbers, and the
+second was measuring the wrong thing.** Classifying every occurrence:
+
+- `App.jsx:66` — `lazy(() => import('./pages/AdminBillingPage'))`. This is
+  **`AdminBillingPage`, a different file**; `BillingPage` matches only as a substring.
+- `App.jsx:260` — `<Route path="billing" element={<AdminBillingPage />} />`, same substring.
+- `AdminBillingPage.jsx:2` and `:82` — the other file's own name, twice more.
+- `App.jsx:62`, `App.jsx:223`, `navConfig.js:94`, `statusColors.js:77`,
+  `org/TabBilling.jsx:15`, `kartavaya-design.css:438` — **prose comments**.
+
+So: **zero real importers, and 4 of the 6 "references" were the substring
+`AdminBillingPage`.** This is precisely the failure the brief warns about — a grep for
+a filename catches comments and strings, and here it also caught a *longer filename
+containing the shorter one*. Moot now, but the method is the lesson.
+
+**`ScrapersPage.jsx`** — the "zero importers" claim was correct; already actioned.
+
+**`modern-components.css` — done, and here is the proof, because this one had a
+specific trap.** An earlier agent had already emptied the file to a pure comment and
+left the handoff in it: *"Delete the file and its `@import './modern-components.css';`
+line together."* That pairing is the whole point — an unresolvable `@import` is a hard
+Vite error, and splitting the two edits has broken HEAD twice in this repo.
+
+Removed in **one commit**: the file, the `@import` in `styles/index.css`, both
+`styles/README.md` entries, and the load-order comment in `mobile-responsive.css`
+(which enumerated the barrel and would otherwise have been wrong about its own
+position — it said "EIGHTH of thirteen", now "SEVENTH of twelve").
+
+**Verified from a clean checkout of the commit, not from my working tree** — a working
+tree still has the deleted file on disk and resolves an import a fresh clone cannot.
+Method: `git archive HEAD frontend/src/styles … | tar -x` into a scratch directory,
+then resolve every `@import` specifier in that extracted tree against the filesystem,
+with `/* … */` comments stripped first so commented-out imports don't mask a real one.
+Result: **12 local `@import` specifiers, 0 dangling.** Both gates green.
+
+*Honest limit:* `frontend/node_modules` is not installed in this worktree, and
+installing it would risk the lockfile rule, so I could not run a real `vite build`.
+The import-resolution check over the committed tree is the strongest proof available
+here, and it is the check that catches this specific failure — but it is not a build.
+
+### 4.2 Duplication — measured
+
+**Buttons — the "3×" claim is now stale; it is 2.** `.k-btn-primary` /
+`.k-btn-outline` / `.k-btn-ghost` were already collapsed by a sibling: the only two
+surviving occurrences of `k-btn-primary` in the whole tree are inside a **comment** in
+`brand.css:74,81` recording that removal. Live counts: `k-btn` **939** occurrences,
+bare `btn` in a `className` **510**, `k-btn--primary` (BEM) **213**, `k-btn-primary`
+(single-dash) **0 in code**.
+
+`.btn` vs `.k-btn` remain two genuinely different vocabularies. Per the coordinator
+this is a design decision, not a stylesheet edit — **reported, not converged.** (My
+939/510 are occurrence counts, not element counts, so they are not comparable to the
+coordinator's 454 figure; different method, same conclusion.)
+
+**Drop zones — 4, and the shared component already exists at 1/4 adoption.** This is
+more useful than the raw count:
+
+| Site | Status |
+|---|---|
+| `components/documents/FileDropZone.jsx` | **the shared component** |
+| `pages/esign/CreateTab.jsx:147` | ✅ uses it — the only adopter |
+| `components/drawer/DrawerAttachments.jsx` | hand-rolled (2 × `onDragOver`) |
+| `components/NewTaskModal.jsx` | hand-rolled |
+| `pages/org/LogoUpload.jsx` | hand-rolled |
+
+(`components/views/CalendarView.jsx` also has drag handlers, but it drags *tasks onto
+dates*, not files — not a fifth drop zone.) The convergence target is built and
+proven; three call sites need to adopt it. Safe, but it touches three files owned by
+other agents this batch, so it is a follow-up rather than a mid-swarm edit.
+
+**`.k-segctrl` hand-rolled at 6 sites — the best convergence candidate in the
+codebase.** `ViewToolbar.jsx`, `ActivityFeedPage.jsx`, `ApprovalsPage.jsx`,
+`BoardsPage.jsx`, `ProjectBoardPage.jsx`, `TasksListPage.jsx` each rebuild the same
+`<div className="k-segctrl">` plus mapped
+`<button className={'k-segctrl__btn' + (active ? ' is-active' : '')}>`. The CSS is
+already shared; only the JSX is duplicated. One small presentational component, six
+mechanical call-site edits, no behaviour change.
+
+It also has a correctness payoff: `_SOURCE-MAP.md` records that `26 §5` specifies an
+invalid `aria-selected` on `role="radio"`, and **two agents independently had to
+rediscover the right answer**. One component means that decision is made once instead
+of six times.
+
+**The "same table 9 times" — confirmed as a pattern, with a caveat that changes the
+recommendation.** The module tabs (`ganit/*Tab.jsx`, `graha/*Tab.jsx`, `manav/*Tab.jsx`,
+`esign/DocumentsTab.jsx`) share a near-identical *shape* — `ENDPOINT` map, `useEffect`
+fetch, loading skeleton, `k-table` markup — but **not identical column sets or row
+actions**. A shared `<DataTable>` would need a column-descriptor API rich enough to
+express all nine, at which point it is a framework, not a component. The
+high-value/low-risk extraction is the **fetch + loading/empty/error state machine**,
+which genuinely is identical across all nine. The markup is not the duplication that
+costs.
+
+---
+
+## 5. Claims from my own pre-stop report that are now STALE
+
+Recorded so nobody acts on the earlier version of this file.
+
+| Pre-stop claim | Status |
+|---|---|
+| `ApprovalsPage.jsx` renders `/client/approvals` with the wrong shape; client Approve/Reject buttons never render | **Fixed by `e366f50`** — client-endpoint calls are gone from staff pages entirely |
+| `TasksListPage.jsx` filters on renamed fields; Mine/Done/Overdue empty for clients | **Fixed by `e366f50`** |
+| `POST /client/tasks/request` returns `response_model=TaskOut` | **Fixed by `e366f50`** — now `ClientTaskOut` |
+| `GET /client/projects` has no `response_model`, returns `SELECT t.*` | **Fixed by `e366f50`** — now `ClientProjectOut` |
+| Six call sites use bare `role === 'client'` vs `navContext().isClient` | **Fixed by `e366f50`** — one shared predicate |
+| `pages/BillingPage.jsx` needs adjudicating | **Moot** — deleted in `a4b186f` |
+| `pages/ScrapersPage.jsx` reported as dead | **Correct, and already deleted** in `a4b186f` |
+| Buttons exist 3× | **Stale — 2 now**; the third vocabulary was already removed |
+| `test_ganit.py::test_create_invoice_success` fails | **Fixed by a sibling mid-run.** Suite is 498 passed, 0 failed |
+
+The mobile half of the client-shape defect (§2.5) was **not** in `e366f50`, was still
+live, and I fixed it.
+
+---
+
+## 6. What I did not finish
+
+- **No real `vite build`** — `frontend/node_modules` is absent and installing risks the
+  lockfile rule. See the honest limit in §4.1.
+- **Duplication convergence** — mapped and measured, not converged. `.k-segctrl` (6
+  sites) is the one I would do first; drop-zone adoption (3 sites onto the existing
+  `FileDropZone`) is second. Both were left because they touch files other agents own
+  this batch.
+- **`/api/auth/me` and `/api/auth/logout` double registration** (§3.6) — unowned.
+- **`routers/dashboards.py`** — whole router uncalled (§3.3). Needs a product decision,
+  not a code one.
+- The 168 uncalled routes were checked against the static scan plus the 27 hand-checked
+  computed paths. A route called *only* from a computed path I misread would still read
+  as uncalled; the exposure is small but not zero.
