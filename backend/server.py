@@ -168,12 +168,42 @@ if _SENTRY_DSN:
 # default — and an empty ENVIRONMENT is easy to end up with in a Railway config.
 # Read naively, "" != "production" and the docs come back on in production. This
 # has to fail CLOSED, so empty is treated as unset.
+#
+# The empty case was fixed. The SPELLING case was not, and it reopened the same
+# hole: `_ENVIRONMENT != "production"` is a denylist with exactly one entry, so
+# every value that is not that precise 10-character lowercase string turned the
+# docs back on. Measured, before this change:
+#
+#     ENVIRONMENT=production   docs off
+#     ENVIRONMENT=Production   DOCS ON      <- Railway environment names are
+#     ENVIRONMENT=PRODUCTION   DOCS ON         free text and are title-cased by
+#     ENVIRONMENT=prod         DOCS ON         hand all the time
+#     ENVIRONMENT=main         DOCS ON
+#     ENVIRONMENT=live         DOCS ON
+#
+# `RAILWAY_ENVIRONMENT` carries whatever the environment was NAMED in the
+# dashboard, so "Production" is not a hypothetical typo — it is what you get by
+# creating the environment through the UI and capitalising it.
+#
+# So the test is inverted into an ALLOWLIST. Docs are served only when the
+# environment is a name we recognise as non-production. Anything unrecognised —
+# a new environment name, a typo, a capitalisation, an empty value, a variable
+# that never got set — is treated as production and serves nothing. Adding a new
+# non-production environment now requires adding it here, which is a visible
+# change in a security-relevant list rather than a silent default.
 def _env(name: str, default: str = "") -> str:
     return (os.environ.get(name) or "").strip() or default
 
-_ENVIRONMENT = _env("ENVIRONMENT") or _env("RAILWAY_ENVIRONMENT") or "production"
-_EXPOSE_DOCS = _env("EXPOSE_API_DOCS").lower() in ("1", "true", "yes")
-_DOCS_ON = _EXPOSE_DOCS or _ENVIRONMENT != "production"
+#: The only environments that may serve the API map. Compared case-insensitively.
+_NON_PRODUCTION_ENVIRONMENTS: frozenset[str] = frozenset({
+    "staging", "stage",
+    "local", "dev", "development",
+    "test", "testing", "qa", "preview",
+})
+
+_ENVIRONMENT = (_env("ENVIRONMENT") or _env("RAILWAY_ENVIRONMENT") or "production").casefold()
+_EXPOSE_DOCS = _env("EXPOSE_API_DOCS").casefold() in ("1", "true", "yes")
+_DOCS_ON = _EXPOSE_DOCS or _ENVIRONMENT in _NON_PRODUCTION_ENVIRONMENTS
 
 app = FastAPI(
     title="Kartavaya API v2",
