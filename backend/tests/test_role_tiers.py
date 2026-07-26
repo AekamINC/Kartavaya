@@ -224,7 +224,11 @@ _EXPECTED_LEVELS = {
     # No approver — nothing in them to approve.
     "dristi":   ("viewer", "editor", "admin"),
     "srijan":   ("viewer", "editor", "admin"),
-    "samvada":  ("viewer", "editor", "admin"),
+    # `sanvaad`, one spelling. It was `samvada` here while the subscriptions
+    # table, the nav and the design reference all said `sanvaad`, so the module
+    # was unreachable for every user in every org. The TABLES keep the
+    # `samvada_` prefix — a table name is not a module code.
+    "sanvaad":  ("viewer", "editor", "admin"),
     "esign":    ("viewer", "editor", "admin"),
     # The full ladder.
     "graha":    ("viewer", "editor", "approver", "admin"),
@@ -255,7 +259,7 @@ def test_kartavya_is_the_only_module_without_a_viewer():
 
 def test_the_no_approver_set_is_exactly_the_five_modules_with_nothing_to_approve():
     assert NO_APPROVER_MODULES == frozenset(
-        {"kartavya", "dristi", "srijan", "samvada", "esign"}
+        {"kartavya", "dristi", "srijan", "sanvaad", "esign"}
     )
     for module_code in NO_APPROVER_MODULES:
         assert "approver" not in valid_levels_for(module_code), module_code
