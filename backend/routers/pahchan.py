@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
-from middleware.roles import require_org_role
+from middleware.roles import require_org_role, is_org_admin
 from middleware.subscription import require_module
 from services.audit import emit as audit
 from services import storage
@@ -546,6 +546,217 @@ async def create_site(
         org_id, body.name, body.lat, body.lng, body.radius_m,
     )
     return dict(row)
+
+
+# ── Enrollment: the reference pair ────────────────────────────────────────────
+
+class EnrollBody(BaseModel):
+    employee_id: UUID
+    slot: int = Field(..., ge=1, le=2)
+    object_key: str = Field(..., min_length=1)
+    # A photo HR uploads is vouched for by HR. One the employee takes is not
+    # vouched for by anyone until HR looks at it.
+    source: str = Field(..., pattern="^(hr_upload|self_capture)$")
+    replaces_reason: Optional[str] = None
+
+
+@router.get("/enrollment/{employee_id}")
+async def get_enrollment(
+    employee_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """
+    An employee's live reference pair.
+
+    Readable by the employee themselves as well as by HR, because 07 §9 puts the
+    employee's own reference pair on their *Me* tab — someone whose face is on file
+    is entitled to see which photographs those are.
+    """
+    pool = await get_pool()
+    caller = await _employee_for(pool, org_id, user["user_id"])
+    is_self = caller and str(caller["id"]) == str(employee_id)
+    if not is_self:
+        # Not their own record, so this needs the reviewer gate. Checked inline
+        # rather than as a dependency because the answer depends on whose record
+        # it is, which a dependency cannot see.
+        # is_org_admin already returns True for platform staff, so it is the
+        # whole check — adding is_platform_staff beside it would read as if one
+        # did not cover the other.
+        if not await is_org_admin(user["user_id"], org_id):
+            raise HTTPException(403, "Only an org admin can view another employee's reference photos")
+
+    rows = await pool.fetch(
+        "SELECT id, slot, object_key, source, captured_at, approved_at, approved_by "
+        "FROM staging.pahchan_enrollment_photos "
+        "WHERE employee_id=$1::uuid AND org_id=$2::uuid AND replaced_at IS NULL "
+        "ORDER BY slot",
+        str(employee_id), org_id,
+    )
+    photos = [dict(r) for r in rows]
+    approved = [p for p in photos if p["approved_at"]]
+    return {
+        "photos": photos,
+        # The flag the punch path reads. Two APPROVED photos, not two photos —
+        # a pending self-capture is not yet something to compare against.
+        "complete": len(approved) >= 2,
+        "pending_approval": len(photos) - len(approved),
+    }
+
+
+@router.post("/enrollment", status_code=201)
+async def enroll_photo(
+    body: EnrollBody,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """
+    Attach a reference photo to a slot.
+
+    Two upload paths, per the agreed v1: HR uploads during employee creation, or
+    the employee self-captures on first run. A self-capture lands PENDING and
+    appears in HR's approval queue; an HR upload is approved on arrival, because
+    HR verified the person's identity at hiring and is the one vouching.
+
+    An employee may only ever enroll THEMSELVES. Without that check, anyone with
+    module access could put their own face on a colleague's record and then punch
+    as them — which would defeat the entire verification model in one request.
+
+    Replacing an existing slot marks the old row `replaced_at` rather than
+    overwriting it. Swapping a reference photo to match a different face is the
+    obvious attack, so a replacement has to be visible.
+    """
+    pool = await get_pool()
+    caller = await _employee_for(pool, org_id, user["user_id"])
+    is_self = caller and str(caller["id"]) == str(body.employee_id)
+
+    if body.source == "self_capture":
+        if not is_self:
+            raise HTTPException(403, "A self-capture can only enroll your own record")
+    else:
+        if not await is_org_admin(user["user_id"], org_id):
+            raise HTTPException(403, "Only an org admin can upload a reference photo for someone else")
+
+    # The employee must belong to this org. Without this an admin could attach a
+    # photo to any employee_id in the database by guessing a UUID.
+    exists = await pool.fetchval(
+        "SELECT 1 FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(body.employee_id), org_id,
+    )
+    if not exists:
+        raise HTTPException(404, "Employee not found")
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # Retire whatever is live in this slot. Same transaction as the insert,
+            # so the unique-live index can never see two rows at once.
+            await conn.execute(
+                "UPDATE staging.pahchan_enrollment_photos "
+                "SET replaced_at = NOW(), replaced_reason = $3 "
+                "WHERE employee_id=$1::uuid AND slot=$2 AND replaced_at IS NULL",
+                str(body.employee_id), body.slot,
+                body.replaces_reason or "replaced by a newer capture",
+            )
+            row = await conn.fetchrow(
+                """INSERT INTO staging.pahchan_enrollment_photos
+                       (org_id, employee_id, slot, object_key, source, uploaded_by,
+                        approved_by, approved_at)
+                   VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8)
+                   RETURNING id, slot, source, approved_at""",
+                org_id, str(body.employee_id), body.slot, body.object_key,
+                body.source, user["user_id"],
+                user["user_id"] if body.source == "hr_upload" else None,
+                datetime.now(timezone.utc) if body.source == "hr_upload" else None,
+            )
+
+    audit(
+        "pahchan.reference_enrolled",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="pahchan_enrollment_photo",
+        resource_id=str(row["id"]),
+        detail={"employee_id": str(body.employee_id), "slot": body.slot, "source": body.source},
+        severity="warn",
+    )
+    return dict(row)
+
+
+@router.post("/enrollment/{photo_id}/approve")
+async def approve_enrollment(
+    photo_id: UUID,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+    _r=Depends(_review_gate),
+):
+    """Approve a self-captured reference photo. Audited: approving it is the act of
+    vouching that this face belongs to this employee, and everything downstream
+    rests on that."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """UPDATE staging.pahchan_enrollment_photos
+              SET approved_by=$1, approved_at=NOW()
+            WHERE id=$2::uuid AND org_id=$3::uuid AND replaced_at IS NULL
+        RETURNING id, employee_id, slot""",
+        user["user_id"], str(photo_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Reference photo not found")
+
+    audit(
+        "pahchan.reference_approved",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="pahchan_enrollment_photo",
+        resource_id=str(photo_id),
+        detail={"employee_id": str(row["employee_id"]), "slot": row["slot"]},
+        severity="warn",
+    )
+    return dict(row)
+
+
+@router.get("/enrollment/queue/pending")
+async def enrollment_queue(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+    _r=Depends(_review_gate),
+):
+    """Self-captured photos awaiting HR approval, plus employees with no pair at
+    all — the `noref` flag's other half. An employee who cannot be verified is a
+    gap in the register, so both cases surface in one queue."""
+    pool = await get_pool()
+    pending = await pool.fetch(
+        "SELECT r.id, r.slot, r.object_key, r.captured_at, "
+        "       e.id AS employee_id, e.name AS employee_name, e.employee_code "
+        "FROM staging.pahchan_enrollment_photos r "
+        "JOIN staging.manav_employees e ON e.id = r.employee_id "
+        "WHERE r.org_id=$1::uuid AND r.approved_at IS NULL AND r.replaced_at IS NULL "
+        "ORDER BY r.captured_at",
+        org_id,
+    )
+    missing = await pool.fetch(
+        "SELECT e.id AS employee_id, e.name AS employee_name, e.employee_code, "
+        "       COUNT(r.id) FILTER (WHERE r.approved_at IS NOT NULL) AS approved_count "
+        "FROM staging.manav_employees e "
+        "LEFT JOIN staging.pahchan_enrollment_photos r "
+        "       ON r.employee_id = e.id AND r.replaced_at IS NULL "
+        "WHERE e.org_id=$1::uuid AND e.is_active = TRUE "
+        "GROUP BY e.id, e.name, e.employee_code "
+        "HAVING COUNT(r.id) FILTER (WHERE r.approved_at IS NOT NULL) < 2 "
+        "ORDER BY e.name",
+        org_id,
+    )
+    return {
+        "pending_approval": [dict(r) for r in pending],
+        "incomplete": [dict(r) for r in missing],
+    }
 
 
 @router.get("/policy")
