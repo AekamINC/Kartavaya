@@ -79,7 +79,10 @@ async def list_plans(user=Depends(require_user)):
     mod_list = []
     for r in modules:
         m = dict(r)
-        if not is_admin:
+        # is_staff, not is_admin — the latter was never defined, so this raised
+        # NameError for any org with an active add-on module, which failed the
+        # whole billing page (its four requests are awaited together).
+        if not is_staff:
             m.pop("price_per_user_monthly", None)
         mod_list.append(m)
 

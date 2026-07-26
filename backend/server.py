@@ -541,11 +541,20 @@ async def _refresh_task_attachments(pool, task: "TaskOut") -> "TaskOut":
     task.attachments = refreshed
     return task
 
+def _pj(v, d):
+    """Parse a JSONB column that asyncpg may hand back as str or as a decoded value.
+
+    Module level because two attachment endpoints already called it as `pj`
+    from module scope, where it did not exist — it was nested inside
+    row_to_task. Both of those raised NameError on every request.
+    """
+    if isinstance(v, str): return json.loads(v)
+    return v if v is not None else d
+
+
 def row_to_task(r) -> TaskOut:
     """Convert an asyncpg Record from the tasks table to a TaskOut Pydantic model."""
-    def pj(v,d):
-        if isinstance(v,str): return json.loads(v)
-        return v if v is not None else d
+    pj = _pj
     def col(key,default=None):
         try:
             if key in r: return r[key]
@@ -1405,7 +1414,7 @@ async def create_team(payload:TeamCreate,pool=Depends(get_db),user=Depends(requi
 @api_router.patch("/teams/{team_id}/brand")
 async def update_team_brand(team_id:str, body:dict, pool=Depends(get_db), user=Depends(require_user)):
     """Update a project's brand kit (colors + fonts). Owner/admin of the project only."""
-    mem = await _team_membership(pool, team_id, user)
+    mem = await is_project_member(pool, team_id, user)
     if not mem or mem["role"] not in ("owner","admin"): raise HTTPException(403)
     await pool.execute(
         "UPDATE teams SET brand_settings=$1::jsonb, updated_at=NOW() WHERE team_id=$2",
@@ -2034,7 +2043,7 @@ async def add_task_attachment(
     folder = f"projects/{row['team_id']}" if row.get("team_id") else None
     result = await upload_file(file_bytes=content, filename=file.filename or "upload", content_type=mime, user_id=user["user_id"], folder=folder)
 
-    current = pj(row["attachments"], [])
+    current = _pj(row["attachments"], [])
     if len(current) >= 5:
         raise HTTPException(400, "Maximum 5 attachments per task")
 
@@ -2062,7 +2071,7 @@ async def delete_task_attachment(
     if not row:
         raise HTTPException(404)
 
-    current  = pj(row["attachments"], [])
+    current  = _pj(row["attachments"], [])
     filtered = [a for a in current if a.get("key") != key]
     updated  = await pool.fetchrow(
         "UPDATE tasks SET attachments=$1::jsonb, updated_at=$2 WHERE task_id=$3 RETURNING *",

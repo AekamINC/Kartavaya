@@ -333,7 +333,7 @@ async def create_contact(
             body.tags, body.notes, body.contact_type, body.source, user["user_id"], body.client_id,
         )
     except Exception as e:
-        logger.error("create_contact failed: %s", e, exc_info=True)
+        log.error("create_contact failed: %s", e, exc_info=True)
         raise
     if body.contact_type == "lead":
         asyncio.ensure_future(fire_automations(pool, org_id, "lead_created", {
