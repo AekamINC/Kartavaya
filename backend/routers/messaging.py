@@ -338,13 +338,45 @@ async def list_messages(
     if not mem and ch["type"] != "public":
         raise HTTPException(403, "Not a member of this channel")
 
-    if before:
-        rows = await pool.fetch("""
-            SELECT m.*, u.full_name AS sender_name, u.avatar_url AS sender_avatar,
+    # `seen_by` is the read receipt `ScreensSanvaad.jsx` renders as the `.seen`
+    # row ("Seen by Aanya, Rohan +1") and that no endpoint returned. It is
+    # derived entirely from columns that already exist — `mark_read` below
+    # stamps `samvada_channel_members.last_read_at`, so a member has seen a
+    # message iff they have opened the channel since it was posted. No schema
+    # change, no migration, and it costs one correlated sub-select on a query
+    # that already runs two.
+    #
+    # The sender is excluded because "seen by yourself" is not a receipt, and
+    # the list is capped at four names: the client renders two and a "+n", and
+    # a 300-member channel would otherwise ship 300 names per message per poll.
+    _SEEN = """
+                   (SELECT COALESCE(json_agg(x.full_name), '[]') FROM (
+                        SELECT u2.full_name
+                        FROM staging.samvada_channel_members cm
+                        JOIN staging.users u2 ON u2.user_id = cm.user_id
+                        WHERE cm.channel_id = m.channel_id
+                          AND cm.user_id <> m.sender_id
+                          AND cm.last_read_at IS NOT NULL
+                          AND cm.last_read_at >= m.created_at
+                        ORDER BY cm.last_read_at LIMIT 4
+                   ) x) AS seen_by,
+                   (SELECT COUNT(*) FROM staging.samvada_channel_members cm2
+                    WHERE cm2.channel_id = m.channel_id
+                      AND cm2.user_id <> m.sender_id
+                      AND cm2.last_read_at IS NOT NULL
+                      AND cm2.last_read_at >= m.created_at) AS seen_count"""
+
+    _COLS = """m.*, u.full_name AS sender_name, u.avatar_url AS sender_avatar,
                    (SELECT COUNT(*) FROM staging.samvada_messages t
                     WHERE t.parent_message_id = m.id AND t.is_deleted = FALSE) AS thread_count,
+                   (SELECT MAX(t2.created_at) FROM staging.samvada_messages t2
+                    WHERE t2.parent_message_id = m.id AND t2.is_deleted = FALSE) AS last_reply_at,
                    (SELECT COALESCE(json_agg(json_build_object('emoji', r.emoji, 'user_id', r.user_id)), '[]')
-                    FROM staging.samvada_message_reactions r WHERE r.message_id = m.id) AS reactions
+                    FROM staging.samvada_message_reactions r WHERE r.message_id = m.id) AS reactions,""" + _SEEN
+
+    if before:
+        rows = await pool.fetch(f"""
+            SELECT {_COLS}
             FROM staging.samvada_messages m
             JOIN staging.users u ON u.user_id = m.sender_id
             WHERE m.channel_id = $1::uuid AND m.is_deleted = FALSE
@@ -353,12 +385,8 @@ async def list_messages(
             ORDER BY m.created_at DESC LIMIT $2
         """, channel_id, limit, before)
     else:
-        rows = await pool.fetch("""
-            SELECT m.*, u.full_name AS sender_name, u.avatar_url AS sender_avatar,
-                   (SELECT COUNT(*) FROM staging.samvada_messages t
-                    WHERE t.parent_message_id = m.id AND t.is_deleted = FALSE) AS thread_count,
-                   (SELECT COALESCE(json_agg(json_build_object('emoji', r.emoji, 'user_id', r.user_id)), '[]')
-                    FROM staging.samvada_message_reactions r WHERE r.message_id = m.id) AS reactions
+        rows = await pool.fetch(f"""
+            SELECT {_COLS}
             FROM staging.samvada_messages m
             JOIN staging.users u ON u.user_id = m.sender_id
             WHERE m.channel_id = $1::uuid AND m.is_deleted = FALSE
