@@ -8,6 +8,15 @@ import { KLogo, KWordmark } from '../../../lib/brand';
  * rather than pointed at '#', because a privacy policy link that goes nowhere
  * is a worse signal to this audience than an honest "coming" state — and a '#'
  * link looks live until someone clicks it.
+ *
+ * NO LANGUAGE SELECTOR, and that is a decision rather than an omission. `22`'s
+ * structure diagram lists one, but `24` §"The language selector cannot do what
+ * it offers" records that there is no translation layer in the codebase — the
+ * setting is a bilingual *navigation* preference inside the app, and it is
+ * stored per signed-in user. A selector here would offer a stranger a choice
+ * that changes nothing on the page they are reading, which is the exact failure
+ * `24` argues against: an option that silently renders English is worse than
+ * one not yet offered.
  */
 const COLUMNS = [
   {
@@ -38,10 +47,10 @@ export default function Footer() {
       <div className="lwrap">
         <div className="lfoot__grid">
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <div className="lfoot__brand">
               <KLogo size={28} /><KWordmark />
             </div>
-            <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--on-surface-2)', maxWidth: '32ch' }}>
+            <p className="lfoot__blurb">
               Practice management for Indian accounting firms.
             </p>
           </div>
@@ -53,7 +62,10 @@ export default function Footer() {
                 {c.links.map(l => (
                   l.href
                     ? <a className="lfoot__a" key={l.label} href={l.href}>{l.label}</a>
-                    : <span className="lfoot__a" key={l.label} style={{ color: 'var(--on-surface-faint)' }}>{l.label}</span>
+                    /* --on-surface-3, not --on-surface-faint: the faint token is
+                       2.3:1 and carries a NON-TEXT ONLY comment at its
+                       declaration. A pending legal link still has to be read. */
+                    : <span className="lfoot__a lfoot__a--off" key={l.label}>{l.label}</span>
                 ))}
               </div>
             </div>
@@ -62,7 +74,11 @@ export default function Footer() {
 
         <div className="lfoot__base">
           <span>© {new Date().getFullYear()} Aekam Inc</span>
-          <span lang="sa" style={{ fontFamily: 'var(--font-indic)' }}>कर्तव्य — that which must be done</span>
+          {/* --font-hindi, not --font-indic (24 §Which token, where): this is a
+              fixed glyph — the product's own name — not a label that follows the
+              language setting. In EN+GU, --font-indic resolves to Noto Sans
+              Gujarati, which has no Devanagari coverage. */}
+          <span className="lfoot__sans" lang="sa">कर्तव्य — that which must be done</span>
         </div>
       </div>
     </footer>

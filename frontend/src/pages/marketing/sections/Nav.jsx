@@ -28,7 +28,7 @@ export default function Nav() {
           <KLogo size={28} /><KWordmark />
         </a>
 
-        <div className={`lnav__links${open ? ' open' : ''}`}>
+        <div className={`lnav__links${open ? ' open' : ''}`} id="lnav-links">
           {LINKS.map(l => (
             <a key={l.href} className="lnav__a" href={l.href} onClick={() => setOpen(false)}>{l.label}</a>
           ))}
@@ -42,8 +42,10 @@ export default function Nav() {
 
         <button
           className="lnav__burger k-iconbtn"
+          type="button"
           onClick={() => setOpen(o => !o)}
           aria-expanded={open}
+          aria-controls="lnav-links"
           aria-label={open ? 'Close menu' : 'Open menu'}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">

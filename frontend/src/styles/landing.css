@@ -27,6 +27,14 @@
   transition: opacity var(--dur-slow) var(--ease-standard),
               transform var(--dur-slow) var(--ease-standard);
 }
+/* `--motion-scale` is KEPT, having been checked rather than assumed. It is not
+   in 00, which was the reason to suspect it — but it is written at runtime by
+   applyPrefs (CustomizePanel.jsx) and read the same way, with the same `, 1`
+   fallback, by .sw and .tgl in components.css. Removing it here would have been
+   the regression: the observer above only tests the OS media query, so a
+   visitor who set Animations = Reduced in Customization still arms it, and this
+   is what shortens their travel to 9px. --dur-slow carries --ix for the
+   duration; --motion-scale carries the distance. */
 .js-rev [data-rev]:not(.in) {
   opacity: 0;
   transform: translateY(calc(18px * var(--motion-scale, 1)));
@@ -68,7 +76,16 @@
   font-weight: 400; line-height: 1.06; letter-spacing: -.034em;
   margin: 0 0 18px; color: var(--on-surface); text-wrap: balance;
 }
+/* The Devanagari half of the headline needs a font that HAS Devanagari.
+   Without this it inherited --font-display (Newsreader, and eight of the nine
+   user-selectable display faces are Latin-only), so आपकी भाषा rendered through
+   per-glyph fallback — one phrase assembled from whatever the OS had, in the
+   largest type on the page. Measured in the browser, not inferred: computed
+   font-family was "Newsreader, Georgia, serif" before this rule.
+   --font-hindi, not --font-indic: a fixed phrase, not a label that follows the
+   language setting (24 §Which token, where). */
 .lhero__h em {
+  font-family: var(--font-hindi);
   font-style: italic;
   color: var(--primary-text);
 }
@@ -91,7 +108,23 @@
   border-color: var(--outline);
 }
 .lcta--out:hover { background: var(--s-container); }
-.lhero__trust { font-size: 12.5px; color: var(--on-surface-3); }
+
+/* The primary CTA has no destination yet (pages/marketing/cta.js) and renders
+   disabled. Without this it kept .lcta--fill's full primary fill and read as
+   the liveliest control on the page right up until the click did nothing —
+   worse than the dead link the stub exists to prevent.
+   --on-surface-3 rather than 00 §11's --on-surface-disabled: that token is
+   documented in the handover and DECLARED NOWHERE in src/styles, so using it
+   would resolve to nothing and drop the declaration silently. */
+.lcta:disabled {
+  background: var(--s-container);
+  color: var(--on-surface-3);
+  border-color: var(--outline-variant);
+  cursor: default;
+}
+.lcta:disabled:hover { background: var(--s-container); }
+
+.lhero__trust { font-size: 12.5px; color: var(--on-surface-3); max-width: 46ch; }
 
 /* ── Product visual frame ─────────────────────────────────────────────────
    The fragments inside are real components, so the frame must not restyle
@@ -129,22 +162,34 @@
 }
 
 /* ── Modules ──────────────────────────────────────────────────────────────
-   Devanagari LEADS here, and this is the one place the bilingual hierarchy
-   inverts from 24's rule. On the marketing page the Devanagari IS the
-   differentiator rather than a recognition cue, and a firm in Ahmedabad
-   reads गणित faster than "Invoicing". */
-.lmods { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 12px; }
+   Devanagari LEADS here. It inverts 24's global rule, and 24 now carries the
+   exception in writing (§"The landing page is an exception") — in the app the
+   sub-label is wayfinding, here it is positioning, and the visitor is not
+   navigating. Do not "fix" it back.
+
+   The track is sized so fifteen modules land as 5 × 3 at full width rather
+   than 6 + 6 + 3; a ragged last row reads as an incomplete list, which is the
+   opposite of what a grid of everything the product does is for. */
+.lmods { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 12px; }
 .lmod {
   padding: 18px; border-radius: var(--r-md);
   border: 1px solid var(--outline-variant); background: var(--surface);
   transition: border-color var(--dur-fast), transform var(--dur-fast);
 }
 .lmod:hover { border-color: var(--primary); }
+/* --font-hindi, not --font-indic (24 §Which token, where). These fifteen names
+   are FIXED glyphs, not labels that follow the language setting: the array in
+   Modules.jsx is Devanagari in every language. --font-indic becomes Noto Sans
+   Gujarati under EN+GU, which has no Devanagari coverage, and the browser then
+   falls back glyph by glyph — one word, several weights. */
 .lmod__hi {
-  font-family: var(--font-indic); font-size: 21px;
+  font-family: var(--font-hindi); font-size: 21px;
   color: var(--on-surface); line-height: 1.35; margin-bottom: 2px;
 }
 .lmod__en { font-size: 12.5px; color: var(--on-surface-3); }
+
+/* Devanagari inside a product fragment — same reasoning, smaller. */
+.lfrag__hi { font-family: var(--font-hindi); }
 
 /* ── Feature rows ─────────────────────────────────────────────────────── */
 .lfeat {
@@ -171,16 +216,21 @@
   color: var(--on-surface); margin-bottom: 4px;
 }
 .lplan__d { font-size: 12.5px; color: var(--on-surface-3); line-height: 1.5; }
-/* margin-top:auto pins the credit row to the bottom of every card regardless
-   of how tall the description above it runs. A fixed description height was
-   what put the chips 20px out of alignment. */
-.lplan__cr { margin-top: auto; padding-top: 20px; }
-.lplan__n2 {
-  font-family: var(--font-display); font-size: 32px; font-weight: 400;
-  letter-spacing: -.03em; font-variant-numeric: tabular-nums;
-  color: var(--on-surface); line-height: 1;
+/* `.lplan__n2` (the big tabular-nums figure) and `.lplan__cr` / `.lplan__u`
+   (the pinned credit chip and its unit label) are deleted rather than left
+   unused. They were the styling for the price and the per-tier credit
+   allowance, and this page carries neither — a dead rule that is exactly the
+   right shape for a forbidden thing is an invitation to fill it in. 22's
+   `margin-top:auto` fix comes back with the chip if the chip ever comes back;
+   the cards are equal-height grid items either way. */
+
+.lplans__note {
+  font-size: 13.5px; line-height: 1.6;
+  color: var(--on-surface-2); margin-top: 22px;
 }
-.lplan__u { font-size: 11.5px; color: var(--on-surface-3); margin-top: 4px; }
+/* --primary-text (5.2:1), never --primary (4.04:1 on --bg, a FILL). 00 §12. */
+.lplans__a { color: var(--primary-text); }
+.lplans__a--off { color: var(--on-surface-3); }
 
 /* ── Trust ────────────────────────────────────────────────────────────── */
 .ltrust { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
@@ -197,6 +247,11 @@
   padding: 44px 0 34px; background: var(--s-lowest);
 }
 .lfoot__grid { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 32px; }
+.lfoot__brand { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.lfoot__blurb {
+  font-size: 13px; line-height: 1.6;
+  color: var(--on-surface-2); max-width: 32ch;
+}
 .lfoot__h {
   font-size: 10.5px; font-weight: 700; letter-spacing: .14em;
   text-transform: uppercase; color: var(--on-surface-3); margin-bottom: 12px;
@@ -204,12 +259,17 @@
 .lfoot__l { display: flex; flex-direction: column; gap: 9px; }
 .lfoot__a { font-size: 13px; color: var(--on-surface-2); text-decoration: none; }
 .lfoot__a:hover { color: var(--on-surface); }
+/* A legal link that does not exist yet still has to be readable — it is the
+   line a cautious visitor looks for. --on-surface-faint is 2.3:1 and its own
+   declaration says NON-TEXT ONLY. */
+.lfoot__a--off { color: var(--on-surface-3); }
 .lfoot__base {
   margin-top: 34px; padding-top: 20px;
   border-top: 1px solid var(--outline-variant);
   display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between;
   font-size: 12px; color: var(--on-surface-3);
 }
+.lfoot__sans { font-family: var(--font-hindi); }
 
 /* ── Responsive: three breakpoints ────────────────────────────────────── */
 @media (max-width: 1080px) {

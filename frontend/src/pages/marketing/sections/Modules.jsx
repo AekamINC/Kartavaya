@@ -3,14 +3,30 @@ import React from 'react';
 /**
  * Modules — the product's actual vocabulary.
  *
- * Devanagari LEADS here, and this is the one place the bilingual hierarchy
- * deliberately inverts from 24-bilingual-devanagari.md's rule. Everywhere
- * inside the product the Devanagari is a recognition cue beside an English
- * label; on this page it IS the differentiator, and a firm in Ahmedabad reads
- * गणित faster than "Invoicing".
+ * ── DEVANAGARI LEADS HERE. DO NOT "FIX" IT ─────────────────────────────────
+ * This inverts 24-bilingual-devanagari.md's global "English main, Devanagari
+ * sub" rule, and the inversion is now a STATED EXCEPTION in `24` itself
+ * (§"The landing page is an exception, and it is deliberate") rather than a
+ * comment in this file — which is what it was, and which read as drift.
  *
- * Names taken from components/layout/navConfig.js rather than retyped, so the
- * page cannot drift from the product's own menu.
+ * The two surfaces do different jobs. In the app a Devanagari sub-label is
+ * WAYFINDING for someone who walks the same eight items every day, so English
+ * leads because that is what they are scanning for. Here it is POSITIONING: it
+ * says this product was built for an Indian practice, by people who name things
+ * in Sanskrit, before a single feature is read. The visitor is not navigating,
+ * so nothing is slowed down by a word they skim past.
+ *
+ * Bounded to this page. It does not extend to the app screenshots, the auth
+ * screens or onboarding — by the time someone signs in they are navigating.
+ *
+ * ── Names ──────────────────────────────────────────────────────────────────
+ * Checked against components/layout/navConfig.js rather than retyped, so the
+ * page cannot drift from the product's own menu. Where the English differs it
+ * is an expansion for a reader who has never seen the product ("Invoicing" →
+ * "Invoicing & GST"), not a second vocabulary.
+ *
+ * CRM is ग्राहक — grāhak, customer. Not ग्राह, which means seizing, or a
+ * crocodile, and was live in both navConfig and here until it was corrected.
  */
 const MODULES = [
   { hi: 'ग्राहक',    en: 'CRM' },

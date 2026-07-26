@@ -88,15 +88,22 @@ export default function Features() {
           </div>
           <Frame>
             <div className="k-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {[['गणित · Invoicing', true], ['वेतन · Payroll', false], ['ग्राहक · CRM', true]].map(([label, on]) => (
-                <div key={label} style={{
+              {/* The Devanagari carries lang="hi" and .lfrag__hi so it renders in
+                  --font-hindi. Without a font that covers the script the browser
+                  falls back per glyph and the word arrives in mixed weights —
+                  which is what --font-ui alone was doing here. */}
+              {[['गणित', 'Invoicing', true], ['वेतन', 'Payroll', false], ['ग्राहक', 'CRM', true]].map(([hi, en, on]) => (
+                <div key={en} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   fontSize: 12.5, padding: '6px 9px', borderRadius: 'var(--r-sm)',
                   border: `1px solid ${on ? 'var(--primary)' : 'var(--outline-variant)'}`,
                   color: on ? 'var(--on-surface)' : 'var(--on-surface-3)',
                 }}>
-                  <span>{label}</span>
-                  <span style={{ fontSize: 10, fontWeight: 700, color: on ? 'var(--primary)' : 'var(--on-surface-faint)' }}>
+                  <span><span className="lfrag__hi" lang="hi">{hi}</span> · {en}</span>
+                  {/* --primary-text, not --primary: this is text on a surface.
+                      And --on-surface-3, not --on-surface-faint, which is 2.3:1
+                      and declared NON-TEXT ONLY in kartavaya-design.css. */}
+                  <span style={{ fontSize: 10, fontWeight: 700, color: on ? 'var(--primary-text)' : 'var(--on-surface-3)' }}>
                     {on ? 'GRANTED' : 'NO ACCESS'}
                   </span>
                 </div>
