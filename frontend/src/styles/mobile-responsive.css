@@ -102,6 +102,64 @@
     align-items: center;
     min-height: 44px;
   }
+
+  /* ── Second pass, found by scripts/check-touch-targets.mjs ──────────────
+     The list above is hand-maintained, so the only thing keeping it complete
+     was somebody remembering. These seven were not on it. Measured sizes are
+     the declared ones, verified in the source files named.
+
+     TWO STRATEGIES, chosen per control rather than uniformly, because
+     15 §Hit targets offers both and they fail in opposite directions:
+
+     · REAL SIZE where the control stands alone in its row. Growing it moves
+       nothing that matters.
+     · PSEUDO-ELEMENT OVERLAY where the visual size carries meaning and the
+       neighbour is text. A 44px checkbox beside a 13px label is not a
+       checkbox any more. The overlay is a child of the control, so a tap on
+       it still activates the control; it overlaps only the label, where
+       stealing the tap is the behaviour you want anyway.
+
+     The overlay is NOT used for `.k-onboard__iconbtn`: its row is
+     `gap: 2px`, so two 24px buttons expanded to 44px would overlap by 18px
+     and steal each other's taps — trading a small-target failure for an
+     ambiguous-target one. That row grows instead. */
+
+  /* Real size. All four sit alone at one end of their row. */
+  .svbtn.svbtn,
+  .k-file__more.k-file__more,
+  .k-onboard__iconbtn.k-onboard__iconbtn {
+    width: 44px;
+    height: 44px;
+  }
+  /* Doubled class: sanvaad.css and editorial.css both load after this file. */
+  .cmp__send.cmp__send {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Overlay. 17px control, so (44 - 17) / 2 = 13.5px of reach on each side;
+     the toggle is 38x22, so 3px horizontally and 11px vertically.
+     position:relative is added here rather than in components.css so nothing
+     changes on a desktop. The overlay is absolutely positioned, so it is out
+     of flow and cannot become a grid item in `.cbx`/`.rdo`'s
+     `display: grid; place-items: center`. ::before is free on all three —
+     ::after is the toggle knob, the radio dot and the checkbox mixed-dash. */
+  .cbx,
+  .rdo,
+  .tgl {
+    position: relative;
+  }
+  .cbx::before,
+  .rdo::before {
+    content: '';
+    position: absolute;
+    inset: -13.5px;
+  }
+  .tgl::before {
+    content: '';
+    position: absolute;
+    inset: -11px -3px;
+  }
 }
 
 /* ── Hover has no mobile equivalent (15 §Hover) ───────────────────────────
