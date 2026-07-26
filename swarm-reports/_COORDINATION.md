@@ -197,6 +197,60 @@ only checks that a grant row *exists*, never its level.
 Both cannot be true. Building enforcement against the wrong one is **worse than the
 current gap**, because it would look enforced. Do not guess — flag it.
 
+### ✅ OWNER DECISION — RESOLVED 2026-07-26. THE LADDER WINS.
+
+**`RBAC-SPEC.md:65` is the defect. `:56-58` is correct.**
+
+Sensitive modules (`vetana`, `ganit`, `manav`) **DO** carry per-member grant rows with
+levels, and **approver is held as an explicit grant**. Build against this.
+
+The evidence that decided it, found by the migrations agent: `SENS_BY_ROLE` at
+`RBAC-SPEC.md:67` **has no `approver` value at all**. So following `:65` literally makes
+approving a payroll run **unreachable by construction** — the control the whole
+separated-duty design exists to enforce could never be exercised by anyone. A spec branch
+that makes its own purpose impossible is the wrong branch.
+
+**What this unblocks, concretely:**
+- **`PROPOSED_075` (two partial unique indexes) is the shape to build.** It preserves the
+  per-row `granted_by`/`granted_at` that the owner's auditability requirement depends on,
+  and encodes the real rule — one ladder grant plus one separate approver grant — rather
+  than permitting viewer+editor+approver+admin as four rows.
+- **`PROPOSED_074` and `075` are alternatives, not complements.** 074 was offered as the
+  other horn. It is now the discarded one; `held_level()` points at
+  `org_member_modules.role`.
+- **`level_satisfies` should be given real call sites.** The dormant `module_levels.py`
+  guard already shipped wired to the two money-releasing endpoints and currently falls
+  back to today's access — it can now be made live.
+- `PROPOSED_065`'s `not_sensitive` CHECK, which forbids grant rows on `vetana`/`ganit`, is
+  **wrong under this decision** and must not be applied. Its guard header already aborts it.
+
+**Sequencing still matters.** `org_member_modules` is empty, so the schema change is free
+today and expensive later — but two `ON CONFLICT (user_id, org_id, module_code)` sites
+raise SQLSTATE 42P10 the instant the old constraint drops. Ship the bare
+`ON CONFLICT DO NOTHING` code change first; it is valid against both constraints.
+
+**Record `:65` and `SENS_BY_ROLE:67` as spec defects** in `design-handover/_SOURCE-MAP.md`.
+
+### ✅ OWNER DECISION — pricing on tenant surfaces, RESOLVED 2026-07-26
+
+`GET /api/hub/org/credits` served `price_per_credit_inr`, and `OrgSrijanPage` rendered a
+"Pricing" panel converting balances and every action into rupees — with a hardcoded rate
+in the JSX as a fallback, so removing the API field alone would have left the figure on
+screen. **Both are now removed** (`a54a1ef`).
+
+- **Credit costs stay.** What an action *spends* is a product mechanic the org needs.
+- **The maths is deliberately unchanged.** `SCRAPER_MARGIN` and `CREDIT_PRICE_INR` still
+  drive every calculation exactly as before. **Nothing costs a different amount.**
+- **Do NOT move scraper margin onto `hub_scraper_catalog.margin_pct`.** It is the correct
+  long-term home, but switching changes what a run costs — a pricing decision, explicitly
+  left un-made.
+- `admin_orgs.py` keeps `r2_cost_usd`/`billed_usd`/`margin_pct`. That router is behind
+  `require_platform_role` end to end — it is the internal console, which is where margin
+  belongs.
+
+If you find our rupee price on any client-reachable surface, remove it. That includes
+comments and docs.
+
 **Sharpened by the migrations agent — the spec contradicts ITSELF, ten lines apart,
 and one branch of it is provably unimplementable:**
 
