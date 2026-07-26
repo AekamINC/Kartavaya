@@ -171,6 +171,20 @@ async def oauth_authorize(
     if not config:
         raise HTTPException(400, f"Unsupported platform: {platform}")
 
+    # The client id decides WHOSE social account this token gets filed under, and
+    # it arrives as an unvalidated query parameter. Every other
+    # `/clients/{client_id}/…` route in this file proves ownership first; this one
+    # did not, and it is the route that WRITES TOKENS.
+    #
+    # Without this check a member of any org holding a Srijan grant could pass
+    # another org's client id, complete consent with their own social account, and
+    # have the callback file their Page token under that org's client — after
+    # which the victim's operators schedule their customer's content straight to
+    # the attacker's Page. The ON CONFLICT ... DO UPDATE in the callback makes it
+    # worse: matching an existing (platform, account_id) OVERWRITES a live token.
+    pool = await get_pool()
+    await _require_client_in_org(pool, str(client_id), org_id)
+
     app_id = os.getenv(config["env_id"], "")
     if not app_id:
         raise HTTPException(500, f"{config['env_id']} not configured")
@@ -234,6 +248,24 @@ async def oauth_callback(
         raise HTTPException(400, "Invalid or expired OAuth state")
 
     config = OAUTH_CONFIGS.get(platform)
+    if not config:
+        raise HTTPException(400, f"Unsupported platform: {platform}")
+
+    # This route is unauthenticated by necessity — the provider redirects the
+    # browser here and there is no bearer token on the request. Its ONLY proof of
+    # who this is for is the state row, so the pairing recorded in that row is
+    # re-proved here rather than assumed.
+    #
+    # `org_id` was written into the state at authorize time and then never read,
+    # which meant the insert below was keyed on client_id alone. Re-checking costs
+    # one query on a once-per-connection route and closes the window where the
+    # client is deleted, or moved to another org, during the consent round-trip.
+    pool = await get_pool()
+    state_org_id = state_data.get("org_id")
+    if not state_org_id:
+        raise HTTPException(400, "Invalid or expired OAuth state")
+    await _require_client_in_org(pool, state_data["client_id"], state_org_id)
+
     app_id = os.getenv(config["env_id"], "")
     app_secret = os.getenv(config["env_secret"], "")
     backend_url = os.getenv("BACKEND_URL", "").rstrip("/")
@@ -284,7 +316,6 @@ async def oauth_callback(
         page_id = account_info.get("location_name", "")
 
     cid = state_data["client_id"]
-    pool = await get_pool()
     await pool.execute(
         "INSERT INTO staging.hub_social_accounts "
         "(client_id, platform, account_name, account_id, page_id, "

@@ -79,18 +79,36 @@ def _extract_roas(purchase_roas: list[dict] | None) -> float:
 
 
 async def sync_meta_account(pool, org_id: str, social_account_id: str) -> dict:
-    """Full sync: refresh token → fetch accounts → campaigns → insights → upsert."""
+    """Full sync: refresh token → fetch accounts → campaigns → insights → upsert.
+
+    `social_account_id` arrives from a request body, so the token read below MUST
+    be scoped to `org_id`. It was not: the row was fetched by bare id while
+    `org_id` was used only to file the RESULTS. A caller in one org could pass
+    another org's `social_account_id` and the server would call Meta with that
+    org's OAuth token, then write their ad accounts, campaigns, budgets and spend
+    into the caller's tables.
+
+    `hub_social_accounts` has no `org_id` column — its only tenant path is
+    `client_id → hub_clients.org_id` — so the scope has to come from that join.
+    Scoping here rather than at the caller closes it for every future caller too.
+    """
     from services.social_publisher import _refresh_meta_token
 
     row = await pool.fetchrow(
-        "SELECT id, access_token, platform_data FROM staging.hub_social_accounts "
-        "WHERE id=$1::uuid",
-        social_account_id,
+        "SELECT sa.id, sa.access_token, sa.platform_data "
+        "FROM staging.hub_social_accounts sa "
+        "JOIN staging.hub_clients c ON c.id = sa.client_id "
+        "WHERE sa.id=$1::uuid AND c.org_id=$2::uuid",
+        social_account_id, org_id,
     )
     if not row:
         return {"error": "Social account not found"}
 
-    token = await _refresh_meta_token(pool, str(row["id"]), row["access_token"])
+    # `_refresh_meta_token(current_token)` takes ONE argument. This called it with
+    # three, so the sync raised TypeError before it ever reached the network —
+    # which is the only reason the scoping hole above was never exploited. Had it
+    # run, `pool` would have been sent to Facebook as the access token.
+    token = await _refresh_meta_token(row["access_token"])
 
     ad_accounts = await fetch_meta_ad_accounts(token)
     if not ad_accounts:
