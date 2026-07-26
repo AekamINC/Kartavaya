@@ -46,10 +46,28 @@ DEFAULTS = {
     "record_retention_years": 3,
 }
 
-# A single run is capped so one very old tenant cannot hold the daily job open for
-# an hour. Whatever is left is picked up tomorrow; retention is a deadline, not a
-# stopwatch, and being a day late is survivable where a timeout mid-delete is not.
+# Rows per statement. Keeps each query and each transaction small; it is NOT the
+# amount of work a run does — see MAX_PER_RUN.
 BATCH = 500
+
+# The ceiling on one pass of one run.
+#
+# This used to be a single BATCH slice per run, and that quietly could not keep
+# up. An employee makes two punches a day, so an org of N employees produces 2N
+# photos a day that fall due 90 days later. At 500 deletions per daily run the
+# break-even is 250 EMPLOYEES: above that the backlog grows without bound and
+# punch selfies are retained past the promised window forever.
+#
+# The failure was invisible, which is what made it serious. The job completed,
+# logged `photos_deleted: 500` and looked healthy every single day while falling
+# further behind — a retention job that reports success while not keeping the
+# promise is worse than one that fails loudly, because it manufactures a record
+# of compliance.
+#
+# So a run now DRAINS, in BATCH-sized statements, up to this ceiling. The ceiling
+# still exists so one very old tenant cannot hold the daily job open indefinitely,
+# but it is set where a real workload fits rather than where a small one does.
+MAX_PER_RUN = 50_000
 
 
 async def _delete_object(org_id: str, key: Optional[str]) -> bool:
@@ -81,34 +99,53 @@ async def purge_punch_photos() -> dict:
     The punch row itself is untouched.
     """
     pool = await get_pool()
-    rows = await pool.fetch(
-        f"""SELECT p.id, p.org_id, p.photo_key
-              FROM staging.pahchan_punches p
-              LEFT JOIN staging.pahchan_policy pol ON pol.org_id = p.org_id
-             WHERE p.photo_key IS NOT NULL
-               AND p.captured_at < NOW() - (
-                     COALESCE(pol.punch_photo_retention_days, {DEFAULTS['punch_photo_retention_days']})
-                     * INTERVAL '1 day')
-             ORDER BY p.captured_at
-             LIMIT {BATCH}"""
-    )
 
     deleted = 0
     failed = 0
-    for row in rows:
-        ok = await _delete_object(str(row["org_id"]), row["photo_key"])
-        if not ok:
-            # Leave photo_key in place. Clearing it on a failed delete would lose
-            # the only pointer to an object that is still sitting in the bucket.
-            failed += 1
-            continue
-        await pool.execute(
-            "UPDATE staging.pahchan_punches SET photo_key = NULL WHERE id = $1::uuid",
-            str(row["id"]),
-        )
-        deleted += 1
+    drained = False
 
-    return {"photos_deleted": deleted, "photos_failed": failed}
+    while deleted + failed < MAX_PER_RUN:
+        rows = await pool.fetch(
+            f"""SELECT p.id, p.org_id, p.photo_key
+                  FROM staging.pahchan_punches p
+                  LEFT JOIN staging.pahchan_policy pol ON pol.org_id = p.org_id
+                 WHERE p.photo_key IS NOT NULL
+                   AND p.captured_at < NOW() - (
+                         COALESCE(pol.punch_photo_retention_days, {DEFAULTS['punch_photo_retention_days']})
+                         * INTERVAL '1 day')
+                 ORDER BY p.captured_at, p.id
+                 LIMIT {BATCH} OFFSET {failed}"""
+            # OFFSET past the rows this run has already tried and failed to
+            # delete. A successful delete NULLs photo_key and so leaves the
+            # result set on its own; a failed one does not, and without the
+            # offset the next statement would fetch the same failing rows
+            # forever. `p.id` breaks ties so the ordering is deterministic and
+            # the offset means the same thing between statements.
+        )
+        if not rows:
+            drained = True
+            break
+
+        for row in rows:
+            ok = await _delete_object(str(row["org_id"]), row["photo_key"])
+            if not ok:
+                # Leave photo_key in place. Clearing it on a failed delete would
+                # lose the only pointer to an object still sitting in the bucket.
+                failed += 1
+                continue
+            await pool.execute(
+                "UPDATE staging.pahchan_punches SET photo_key = NULL WHERE id = $1::uuid",
+                str(row["id"]),
+            )
+            deleted += 1
+
+    return {
+        "photos_deleted": deleted,
+        "photos_failed": failed,
+        # False means work was still outstanding when the run stopped. This is the
+        # signal that the promise is not being kept, and it has to be visible.
+        "photos_drained": drained,
+    }
 
 
 async def purge_reference_photos() -> dict:
@@ -124,32 +161,43 @@ async def purge_reference_photos() -> dict:
     A real `exited_on` column would tighten it and is worth adding.
     """
     pool = await get_pool()
-    rows = await pool.fetch(
-        f"""SELECT r.id, r.org_id, r.object_key
-              FROM staging.pahchan_enrollment_photos r
-              JOIN staging.manav_employees e ON e.id = r.employee_id
-              LEFT JOIN staging.pahchan_policy pol ON pol.org_id = r.org_id
-             WHERE e.status IN ('terminated', 'resigned', 'absconding')
-               AND e.updated_at < NOW() - (
-                     COALESCE(pol.reference_photo_grace_days, {DEFAULTS['reference_photo_grace_days']})
-                     * INTERVAL '1 day')
-             ORDER BY e.updated_at
-             LIMIT {BATCH}"""
-    )
 
     deleted = 0
     failed = 0
-    for row in rows:
-        if not await _delete_object(str(row["org_id"]), row["object_key"]):
-            failed += 1
-            continue
-        await pool.execute(
-            "DELETE FROM staging.pahchan_enrollment_photos WHERE id = $1::uuid",
-            str(row["id"]),
-        )
-        deleted += 1
+    drained = False
 
-    return {"references_deleted": deleted, "references_failed": failed}
+    while deleted + failed < MAX_PER_RUN:
+        rows = await pool.fetch(
+            f"""SELECT r.id, r.org_id, r.object_key
+                  FROM staging.pahchan_enrollment_photos r
+                  JOIN staging.manav_employees e ON e.id = r.employee_id
+                  LEFT JOIN staging.pahchan_policy pol ON pol.org_id = r.org_id
+                 WHERE e.status IN ('terminated', 'resigned', 'absconding')
+                   AND e.updated_at < NOW() - (
+                         COALESCE(pol.reference_photo_grace_days, {DEFAULTS['reference_photo_grace_days']})
+                         * INTERVAL '1 day')
+                 ORDER BY e.updated_at, r.id
+                 LIMIT {BATCH} OFFSET {failed}"""
+        )
+        if not rows:
+            drained = True
+            break
+
+        for row in rows:
+            if not await _delete_object(str(row["org_id"]), row["object_key"]):
+                failed += 1
+                continue
+            await pool.execute(
+                "DELETE FROM staging.pahchan_enrollment_photos WHERE id = $1::uuid",
+                str(row["id"]),
+            )
+            deleted += 1
+
+    return {
+        "references_deleted": deleted,
+        "references_failed": failed,
+        "references_drained": drained,
+    }
 
 
 async def purge_punch_records() -> dict:
@@ -165,31 +213,43 @@ async def purge_punch_records() -> dict:
     purge has been failing silently, which is exactly when it matters.
     """
     pool = await get_pool()
-    rows = await pool.fetch(
-        f"""SELECT p.id, p.org_id, p.photo_key
-              FROM staging.pahchan_punches p
-              LEFT JOIN staging.pahchan_policy pol ON pol.org_id = p.org_id
-             WHERE p.captured_at < NOW() - (
-                     COALESCE(pol.record_retention_years, {DEFAULTS['record_retention_years']})
-                     * INTERVAL '1 year')
-             ORDER BY p.captured_at
-             LIMIT {BATCH}"""
-    )
 
     deleted = 0
     blocked = 0
-    for row in rows:
-        if row["photo_key"] and not await _delete_object(str(row["org_id"]), row["photo_key"]):
-            # Keep the row. A punch record is cheap; an orphaned photograph of
-            # someone's face is not, and the row is the only thing that can find it.
-            blocked += 1
-            continue
-        await pool.execute(
-            "DELETE FROM staging.pahchan_punches WHERE id = $1::uuid", str(row["id"])
-        )
-        deleted += 1
+    drained = False
 
-    return {"records_deleted": deleted, "records_blocked": blocked}
+    while deleted + blocked < MAX_PER_RUN:
+        rows = await pool.fetch(
+            f"""SELECT p.id, p.org_id, p.photo_key
+                  FROM staging.pahchan_punches p
+                  LEFT JOIN staging.pahchan_policy pol ON pol.org_id = p.org_id
+                 WHERE p.captured_at < NOW() - (
+                         COALESCE(pol.record_retention_years, {DEFAULTS['record_retention_years']})
+                         * INTERVAL '1 year')
+                 ORDER BY p.captured_at, p.id
+                 LIMIT {BATCH} OFFSET {blocked}"""
+        )
+        if not rows:
+            drained = True
+            break
+
+        for row in rows:
+            if row["photo_key"] and not await _delete_object(str(row["org_id"]), row["photo_key"]):
+                # Keep the row. A punch record is cheap; an orphaned photograph of
+                # someone's face is not, and the row is the only thing that can
+                # find it.
+                blocked += 1
+                continue
+            await pool.execute(
+                "DELETE FROM staging.pahchan_punches WHERE id = $1::uuid", str(row["id"])
+            )
+            deleted += 1
+
+    return {
+        "records_deleted": deleted,
+        "records_blocked": blocked,
+        "records_drained": drained,
+    }
 
 
 async def run_pahchan_retention() -> dict:
@@ -215,5 +275,18 @@ async def run_pahchan_retention() -> dict:
             log.exception("pahchan retention: %s pass failed", name)
             result[f"{name}_error"] = str(exc)
 
-    log.info("pahchan retention: %s", result)
+    # A pass that stopped with work outstanding is the case that matters, and it
+    # is the one that used to look identical to success. Raised to a warning so it
+    # is findable, because the consequence is biometric data retained past the
+    # window an organisation promised its employees.
+    backlog = [k.rsplit("_", 1)[0] for k, v in result.items()
+               if k.endswith("_drained") and v is False]
+    if backlog:
+        log.warning(
+            "pahchan retention: INCOMPLETE — %s still had work outstanding at the "
+            "per-run ceiling. Data is being retained past its window. %s",
+            ", ".join(backlog), result,
+        )
+    else:
+        log.info("pahchan retention: %s", result)
     return result
