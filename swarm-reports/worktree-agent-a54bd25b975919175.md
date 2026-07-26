@@ -13,6 +13,26 @@ Deliverable: `backend/migrations/PROPOSED_075_module_grant_composite_key.sql`.
 
 ---
 
+## 0 · Worktree base correction — read this before reproducing
+
+This worktree was created from `origin/main`, **not** `staging`: 271 commits
+behind, and `design-handover/` did not exist in it. `backend/migrations/` held
+five files instead of the 57 on `staging`. Corrected mid-run with
+`git rebase --onto origin/staging $(git merge-base origin/main HEAD) HEAD`;
+the pre-rebase state is preserved on `backup/agent-a54bd25b975919175-premain`.
+
+**No finding in this report is affected.** Every file was read with an explicit
+`git show origin/staging:<path>` ref and every schema claim came from querying
+the live catalog, so nothing here was ever read out of the stale working tree.
+The one thing the bad base did produce — an early `ls backend/migrations/`
+returning five files — is what exposed it.
+
+Gates re-run from `frontend/` after the rebase (a run from the repo root exits 1
+and is a failure, not a pass): `check-tokens` 339 declared / **0 missing**;
+`check-classes` 2114 selectors / **0 missing a rule**.
+
+---
+
 ## 1 · Executive summary
 
 1. **Defect one (the UNIQUE) is real, was previously reported as fixed, and is
