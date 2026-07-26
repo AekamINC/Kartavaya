@@ -1,10 +1,12 @@
 # Backend — admin, invites, subscriptions
 
-Branch: `agent/backend-admin-invites-subs`
-Base: rebased onto `origin/staging` after the spend-limit stop (59 commits landed meanwhile).
-Gates: `check-tokens` exit 0, `check-classes` exit 0, both run from `frontend/` with no pipe.
-Tests: **424 passed**, 1 failed — `test_ganit.py::test_create_invoice_success`, the known
-pre-existing failure in `_COORDINATION.md` §8. Confirmed identical on clean staging.
+Branch: `agent/backend-admin-invites-subs` — **merged to `staging`**, 8 commits.
+Base: rebased onto `origin/staging` after the spend-limit stop (59 commits landed meanwhile,
+then ~30 more during the merge race).
+Gates on the merged result: `check-tokens` exit 0, `check-classes` exit 0, both run from
+`frontend/` with no pipe.
+Tests on the merged result: **559 passed, 0 failed.** The `test_ganit` failure recorded in
+`_COORDINATION.md` §8 was fixed by a sibling while I worked; it is green now.
 
 Files changed: `backend/invite_router.py`, `backend/routers/admin_orgs.py`,
 `backend/routers/subscription.py`, `backend/middleware/roles.py`,
@@ -214,5 +216,11 @@ SRJ = `srijan_admin`, SUP = `platform_support`.
 - `OUTBOUND_MODE` respected throughout; **no invite email was sent**. `create_invite`'s
   send is wrapped and `email_service` is guarded at the choke point in `outbound.py`.
 - No migration written, no database write, `main` untouched, no lockfile committed.
-- `test_ganit.py::test_create_invoice_success` fails identically on clean staging
-  (`_COORDINATION.md` §8) — I verified this myself before making any change.
+- Three siblings and I converged independently on the same defects. Where staging already
+  had the fix I took **staging's** side and kept only my non-overlapping tests: the
+  `platform_support` fix in `org_resolver.py` (theirs is better — `CROSS_ORG_HEADER_ROLES`,
+  and it correctly notes `hub.py` depends on `get_org_id` in 44 places), the
+  `require_org_role` god-mode probe, and the `admin_orgs.ALL_MODULES` import.
+- `_COORDINATION.md` §6 listed `org_resolver.py:31-40` and `roles.py:74` as unowned. Both
+  are now closed, plus a third instance of the same literal in `roles.py:is_org_admin` that
+  the coordination file did not list.
