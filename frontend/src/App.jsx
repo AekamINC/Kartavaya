@@ -27,6 +27,7 @@ import './styles/settings.css';
 
 import { ToastProvider }               from './components/ui/toast';
 import AppShell, { Protected }         from './components/layout/AppShell';
+import { currentUser }                 from './lib/auth';
 import PageLoader                      from './components/layout/PageLoader';
 import { CustomizeProvider } from './components/CustomizePanel';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -78,6 +79,7 @@ const EsignPage             = lazy(() => import('./pages/EsignPage'));
 const SanvaadPage           = lazy(() => import('./pages/SanvaadPage'));
 const SigningPage           = lazy(() => import('./pages/SigningPage'));
 const CustomizeSettingsPage = lazy(() => import('./pages/CustomizeSettingsPage'));
+const LandingPage           = lazy(() => import('./pages/marketing/LandingPage'));
 
 // ── Outlet context wrappers ────────────────────────────────────────────────────
 // Pages that need teamId or teams from AppShell's outlet context.
@@ -96,6 +98,20 @@ const AutomationsWithContext  = withContext(AutomationsPage,  'teamId');
 const TimeWithContext         = withContext(TimeReportPage,   'teamId');
 const ReportsWithContext      = withContext(ReportsPage,      ctx => ({ teams: ctx.teams }));
 
+/**
+ * `/` serves two audiences. An anonymous visitor gets the public landing page;
+ * someone already signed in gets their dashboard, because a logged-in user
+ * landing on marketing copy has to click again to reach the product they were
+ * going to.
+ *
+ * This sits OUTSIDE <Protected> deliberately — inside it, an anonymous visitor
+ * would be bounced to /login and never see the page at all, which is the whole
+ * problem the landing page exists to solve.
+ */
+function RootGate() {
+  return currentUser() ? <Navigate to="/dashboard" replace /> : <LandingPage />;
+}
+
 // ── Route tree ─────────────────────────────────────────────────────────────────
 function AppRouter() {
   return (
@@ -109,9 +125,12 @@ function AppRouter() {
         <Route path="/approve"          element={<ApprovePage />} />
         <Route path="/sign/:token"      element={<SigningPage />} />
 
+        {/* Public landing at `/` — see RootGate. Declared before the protected
+            shell so the exact-match wins for an anonymous visitor. */}
+        <Route path="/" element={<RootGate />} />
+
         {/* Protected shell — all child routes inherit auth + layout */}
         <Route path="/" element={<Protected><AppShell /></Protected>}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
 
           {/* Core */}
           <Route path="dashboard"              element={<DashboardWithContext />} />
