@@ -25,12 +25,14 @@ export default function AdminShell() {
   const [navOpen, setNavOpen] = React.useState(false);
   const [orgCount, setOrgCount] = React.useState(null);
 
+  // `currentUser()` JSON.parses localStorage, so it hands back a NEW object on
+  // every render and is useless as a memo dependency. Keying on the joined
+  // string instead makes `platformRoles` — and therefore `items`, and therefore
+  // the redirect effect below — stable across renders that changed nothing.
   const user = currentUser();
-  const platformRoles = React.useMemo(
-    () => (Array.isArray(user?.platform_roles) ? user.platform_roles : []),
-    [user],
-  );
+  const roleKey = Array.isArray(user?.platform_roles) ? user.platform_roles.join(',') : '';
   const legacyAdmin = user?.role === 'admin';
+  const platformRoles = React.useMemo(() => (roleKey ? roleKey.split(',') : []), [roleKey]);
 
   /**
    * Admittance is the union of the rows this operator can open, NOT "holds any
