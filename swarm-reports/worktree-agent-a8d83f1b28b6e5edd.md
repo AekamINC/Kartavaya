@@ -216,4 +216,209 @@ So the portal is safe without the migration on both counts. No change needed.
 
 ---
 
-*(Sections below are appended as work lands.)*
+## 8 · One more leak, not on the list — `GET /client/projects`
+
+Found while auditing the endpoints the portal actually calls. It was the one
+client endpoint still returning a raw row:
+
+```py
+rows = await pool.fetch("SELECT DISTINCT ON (t.team_id) t.* FROM teams t ...")
+return [dict(r) for r in rows]
+```
+
+So every column of `teams` reached an external browser — `created_by` (an
+internal user id), `org_id` (tenancy internals), `brand_settings`, `deleted_at`
+— for the sake of the two fields the portal reads. Now
+`response_model=List[ClientProjectOut]`, the SELECT names only `team_id`,
+`name` and the `created_at` its own `DISTINCT ON` orders by, and the handler
+builds the model by hand.
+
+---
+
+## The exact response shape each portal page now consumes
+
+All three views share **one** fetch (`useClientPortal.js`) and every payload
+crosses `clientShape.js` before a component sees it. The hook exposes no raw
+row.
+
+### `GET /api/client/tasks` → `List[ClientTaskOut]`
+
+```
+{ taskId, ref, title, note, state, expectedAt, updatedAt, createdAt,
+  requestedBy, projectId,
+  files: [{ name, url, size, sharedBy, sharedAt }],
+  decision: { outcome, note, at } | null,
+  awaitingMe }
+```
+
+`state` is one of `with_us` | `with_you` | `done` — the six internal statuses
+collapse in `_client_state` (server.py:916) so the portal cannot drift from the
+mapping. `ref` is `#` + the last six of the task id.
+
+### `GET /api/client/approvals` → `List[ClientApprovalOut]`
+
+```
+{ approvalId, taskId, ref, title, ask, requestedBy, requestedAt }
+```
+
+No `files`: the portal joins to the task by `taskId` and reads them there, so
+attachment filtering has one home rather than two.
+
+### `GET /api/client/projects` → `List[ClientProjectOut]`  *(newly shaped)*
+
+```
+{ projectId, name }
+```
+
+### `POST /api/client/tasks/request` → `ClientTaskOut`  *(newly shaped)*
+
+Same shape as a row of `/client/tasks`, so a request a client just submitted
+comes back exactly as the list will hand it to them a moment later.
+
+### `GET /v1/org/profile` → reduced by `toFirm` to `{ name, logoUrl }`
+
+Optional by design: the hook `.catch`es it, because a portal-only account may
+have no org membership and the firm's wordmark is a nicety while the work is the
+page.
+
+### Which page reads what
+
+| Page | Consumes |
+|---|---|
+| `ClientHome` (Overview) | `tasks` split by `state`; `approvals.length` for the banner; `projects` for Request work |
+| `ClientApprovals` | `approvals` for the queue; `tasks` for the decision log (`decision`) |
+| `ClientFiles` | `tasks[].files` flattened |
+| `ClientProject` | `tasks` filtered by `projectId` |
+| `ClientShell` | `firm`, `approvals.length`, the client's own name |
+
+---
+
+## Design fidelity
+
+`19-client-portal.md` supplies its own CSS for this surface, and the reference
+implementation under `design-reference/Kartavaya Redesign/` has **no dedicated
+client-portal screen** — the client block at `ScreensRBAC2.jsx:313`
+(`RolesClient`) is an illustration inside the RBAC gallery, built from
+`lvlmock` / `mockcard` gallery classes, showing what a guest sees conceptually.
+It is not the portal's pixel source. `ScreensMore.jsx:255` "Hub (Client Portal)"
+is the **Hub module** — the firm-side view of its clients — a different surface.
+So 19's own CSS block is the specification here, and `styles/client.css`
+implements it.
+
+Checked line by line against 19:
+- Shell structure (`header` → `nav` → main) matches `ClientShell.jsx` exactly,
+  including "three items, horizontal, no icons".
+- `.cl-appr`, `.cl-appr__ask`, `.cl-appr__act` match 19's declarations.
+- Approve is one click with no confirm; Request changes keeps Send disabled
+  until there is text and the disabled button says why — both behavioural rules
+  are implemented and covered by the smoke test.
+- Firm logo from `/v1/org/profile`, falling back to the firm's **name** in
+  `--font-display`, never a Kartavaya mark.
+- `--primary` is used only as a 2px rule on the current nav tab; every coloured
+  text token in `client.css` is `--primary-text`. `--on-surface-faint` is not
+  used in the file at all.
+- Fixed Devanagari sub-labels use `--font-hindi`, per the known spec defect in
+  `_SOURCE-MAP.md` (`--font-indic` resolves to Noto Sans Gujarati under EN+GU,
+  which has zero Devanagari coverage).
+
+### Spec defects recorded (not silently deviated from)
+
+1. **`19` · Shell specifies `.cl-main{max-width:1040px;margin:0 auto}`.**
+   Overridden by the owner's standing rule that all pages are fluid and
+   left-aligned with no fixed-width centring. `client.css` implements the fluid
+   form and documents why in its header. A centred column was also the one thing
+   in the portal that did not match what the firm's own staff see — on the one
+   surface where a mismatch reads as two different products.
+2. **`19` · Endpoints says "The two `POST`s are new"** and names
+   `/api/client/approvals/:id/approve` and `.../request-changes`. They are not
+   new. `backend/approvals_router.py` already carries
+   `POST /tasks/{id}/client-approve` and `POST /tasks/{id}/client-reject`, with
+   the required-note rule enforced server-side. Building the two 19 names would
+   be a second way to approve the same thing. The portal uses the existing pair.
+3. **`19` · Files to modify/create/delete is stale in four of its six lines** —
+   `ClientPagesImpl.jsx` and `ClientPortalPage.jsx` do not exist, and
+   `ClientPages.jsx` is the implementation rather than a barrel over them. This
+   was already recorded in `ClientPages.jsx`'s header; re-verified.
+
+### Generated documents
+
+The coordinator flagged the eight print documents under
+`design-reference/Kartavaya Redesign/docs/` as in scope because the portal is
+where clients receive them. **The portal does not currently render or link to
+any of them**, and `19` does not ask it to: its Files section is scoped to
+task attachments ("Only attachments marked client-visible… name, size, who
+shared it, when. Download, no delete."), and its Endpoints block lists no
+document endpoint. Those documents reach a client by email and via the public
+`/sign/:token` route, neither of which is this surface. I have not invented a
+documents panel; flagging it as a genuine product gap rather than a defect —
+see "Not done" below.
+
+---
+
+## Route changes
+
+`/client/approvals` and `/client/files` were `<Navigate>` redirects to
+`/client?view=…`; they are real routes now, mounted on `ClientProjectsPage`
+inside `<Protected>`. The justification for the redirect ("making them real
+needs a `view` prop on `ClientProjectsPage`") was wrong: `viewFromLocation`
+(`ClientPages.jsx:64`) already resolves the view from the pathname first, and
+`client/__tests__/smoke.test.jsx:122` already mounted all three paths on the
+same element. The redirect cost the canonical URL — a client who bookmarked the
+`/client/approvals` link from their email watched the address bar rewrite
+itself. The `?view=` fallback is retained so links already emailed keep working.
+
+---
+
+## Verification
+
+| Check | Result |
+|---|---|
+| `node frontend/scripts/check-tokens.mjs` | **pass** — 339 declared, 233 referenced, 0 missing |
+| `node frontend/scripts/check-classes.mjs` | **pass** — 2096 selectors, 1413 classes, 0 missing a rule |
+| `npx vitest run` (frontend, all) | **226 passed**, 14 files |
+| `pytest tests/` (backend, all) | **314 passed, 1 failed** |
+
+The one backend failure is `tests/test_ganit.py::test_create_invoice_success`
+(`TypeError: 'MagicMock' object can't be awaited` inside
+`utils.next_doc_number`). **Pre-existing and unrelated** — it fails identically
+with my backend changes stashed, and its call path (`routers/ganit.py`,
+`utils.py`) is in no file this branch touches.
+
+Both gates and both suites were re-run after the final rebase onto
+`origin/staging`, which had advanced (the token gate itself changed, from 279
+declared tokens to 339).
+
+Note: this worktree had no `node_modules`, so the frontend suite could not run
+at first. I junctioned `frontend/node_modules` to the main checkout's rather
+than installing — installing would have rewritten `yarn.lock`, and Windows yarn
+rewrites esbuild `linux-x64` → `win32-x64`, which breaks the Vercel and Railway
+Linux builds. `frontend/.gitignore:5` ignores `node_modules/`, so nothing from
+it can be committed. Neither lockfile is modified on this branch.
+
+---
+
+## Not done / open
+
+- **No documents panel in the portal.** The eight print documents
+  (`design-reference/Kartavaya Redesign/docs/`) — Tax Invoice, Statement of
+  Account, Quotation, Service Agreement and the rest — have no client-facing
+  surface here, and `19` does not spec one. If clients are meant to receive
+  invoices and statements *in* the portal rather than only by email and signing
+  link, that needs a spec and an endpoint (there is no
+  `GET /client/documents`). Flagged rather than invented.
+- **`PROPOSED_056` is still unapplied**, so a client sees no comments at all.
+  That is the correct fail-closed state and the portal does not request comments
+  anyway, but until the migration lands there is no way for the firm to say
+  something to a client on a task. I did not apply it — migrations are out of
+  scope for this run and staging shares a database with production.
+- **The `isClient` UI conditionals in `TasksListPage` / `ApprovalsPage` /
+  `BoardsPage` are now provably unreachable** (the guard redirects every portal
+  client away from those routes). I removed the client *endpoint* calls, which
+  were the hazard, and left the cosmetic branches — ripping ~25 conditionals out
+  of three files I do not own is a larger risk than the reward. Worth a
+  follow-up cleanup by whoever owns those pages.
+- **`GET /api/client/files` and `GET /api/client/files/:id/download`** from
+  19's endpoint list do not exist and were not built: the portal derives its
+  file list from `tasks[].files`, which is already filtered and re-signed
+  server-side, so a second endpoint would be a second place to get attachment
+  filtering right. Recorded as a deliberate deviation, not an omission.
