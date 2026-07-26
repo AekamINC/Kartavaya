@@ -77,7 +77,13 @@ export default function ViewToolbar({
           {groups?.length > 0 && (
             <label className="vtb__group">
               <span className="vtb__lbl">{groupLabel}</span>
-              <select className="k-input" value={group} onChange={e => onGroup?.(e.target.value)}>
+              {/* `.inp`, not `.k-input`: the legacy class hard-codes
+                  `border-radius: 8px`, which 00 §3 forbids because it ignores
+                  the Sharp/Pill setting, and takes its focus border from
+                  `--k-primary` (an alias of `--primary-vivid`, a FILL). `.inp`
+                  is the same object on `--r-sm` with the `--primary` focus
+                  ring, and `select.inp` already carries the chevron. */}
+              <select className="inp" value={group} onChange={e => onGroup?.(e.target.value)}>
                 {groups.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
               </select>
             </label>

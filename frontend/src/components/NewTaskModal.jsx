@@ -11,7 +11,14 @@ import { createPortal } from 'react-dom';
 
 import { api } from '../lib/api';
 
-import { AVATAR_COLORS, PRIORITY_COLOR, userInitials, logger } from '../lib/utils';
+import { PRIORITY_COLOR, logger } from '../lib/utils';
+// `Avatar` rather than a hand-rolled circle: `AVATAR_COLORS` is the legacy list
+// and still carries the retired `#0082c6`, `#8b5cf6` and `#f59e0b` (00 §9), and
+// both call sites keyed it off the array INDEX — so a person's colour changed
+// whenever someone above them was filtered out of the list (the `!name` skip
+// below does exactly that). `Avatar` hashes the name, so the same person is the
+// same colour here, on the board and in the drawer.
+import { Avatar } from './ui/Avatar';
 
 // `PRIORITY_COLOR` holds `var(--pr-*)` REFERENCES, not hexes. The old tint here
 // was `${color}18` — a hex-alpha suffix, which on a var() reference evaluates to
@@ -596,7 +603,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
               <input
                 aria-labelledby="ntm-lbl-due"
                 type="date"
-                className="k-input"
+                className="inp"
                 style={{ width: '100%' }}
                 value={dueAt}
                 onChange={e => {
@@ -674,11 +681,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
                         <span key={m.user_id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--primary-container)', borderRadius: "var(--r-pill)", padding: '2px 8px 2px 4px', fontSize: 12, fontWeight: 500 }}>
 
-                          <span style={{ width: 18, height: 18, borderRadius: '50%', fontSize: 9, fontWeight: 700, background: AVATAR_COLORS[i % AVATAR_COLORS.length], color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-
-                            {userInitials(name)}
-
-                          </span>
+                          <Avatar name={name} size={18} />
 
                           {name.split(' ')[0]}
 
@@ -744,11 +747,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
                         >
 
-                          <span style={{ width: 30, height: 30, borderRadius: '50%', fontSize: 11, fontWeight: 700, background: AVATAR_COLORS[i % AVATAR_COLORS.length], color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-
-                            {userInitials(name)}
-
-                          </span>
+                          <Avatar name={name} size={30} />
 
                           <div style={{ flex: 1, minWidth: 0 }}>
 
@@ -817,7 +816,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
               aria-labelledby="ntm-lbl-desc"
 
-              className="k-input"
+              className="inp"
 
               rows={3}
 
