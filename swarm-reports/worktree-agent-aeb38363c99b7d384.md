@@ -277,11 +277,233 @@ RBAC-SPEC denied state 1 must not advertise them.
 | Analytics | `dristi` | god, manager, staff, members granted `dristi` |
 | Marketing | `prachar` | god, manager, staff, members granted `prachar` |
 | E-Sign | `esign` | god, manager, members granted `esign` — **not staff** |
-| Messages | `samvada` | god, manager, staff, members granted `samvada` |
+| Messages | `sanvaad` | god, manager, staff, members granted `sanvaad` |
 | Attendance | `pahchan` | god, manager, members granted `pahchan` — **not staff** |
 | Srijan / Srijan Admin | `srijan` | god, manager, staff — **not `platform_support`** |
 
 Derived by running `role_tiers.modules_for()` over each code and by mirroring
 `require_module`'s three gates in `auth_router.py::_module_grants`.
 
+### 2.6 What enforcement actually is, versus what `role_tiers.py` describes
+
+Recording this because the file reads as though more is enforced than is.
+
+**Module LEVEL is not enforced anywhere.** `level_satisfies` (`role_tiers.py:241`)
+encodes the viewer/editor/approver/admin ladder and the separated-duty carve-out
+for Vetana and Ganit correctly — and has **zero call sites in the entire
+backend**. There is no `require_module_level` dependency. `require_module` checks
+only that a grant row *exists*, never what level it names. Independently verified
+by the coordinator (`_COORDINATION.md` §5) and by grepping this tree.
+
+The practical consequence: **an `org_admin` can approve a payroll run today**
+(`PATCH /payroll/runs/{run_id}/approve`, `vetana.py:664`), which is precisely the
+separation `role_tiers.py:212-224` says must not exist — *"whoever defines what
+people are paid must not also be the one who releases the money."*
+
+This does **not** change my nav work: the nav gates on grant *existence*, which is
+exactly what the backend gates on, so the sidebar and the API still agree. It does
+mean the Tier-4 half of the "4-tier role model" is documentation, not behaviour.
+
+`_COORDINATION.md` §5 records an unresolved contradiction blocking the fix
+(RBAC-SPEC says sensitive modules have no grant row at all; the Tier-4 model
+assumes a grant row carrying a level is how approver is held). Both cannot be
+true, and building enforcement against the wrong one is worse than the gap. **Not
+mine to guess — flagged, not fixed.**
+
 ---
+
+## 3 · What I changed
+
+### 3.1 `module_grants[]` — the field `01 §4` requires and nothing sent
+
+`backend/auth_router.py` — `_module_grants()` plus a fourth argument to
+`_safe_user`. It mirrors `middleware/subscription.py::require_module` gate for
+gate, so the sidebar cannot promise what the API refuses:
+
+| Caller | Returned | Why |
+|---|---|---|
+| any platform role | `sorted(modules_for(role))` | mirrors gate 1 |
+| `org_owner` / `org_admin` | key **absent** | mirrors gate 2 — their reach is the plan, not a grant row |
+| `org_member` | `org_member_modules` **minus** `SENSITIVE_MODULES` | mirrors gate 3 + RBAC-SPEC's role-derived rule |
+| no org at all | key **absent** | a portal client renders no module rail |
+
+`_safe_user` tests `module_grants is not None`, not truthiness — an **empty list**
+is the one answer that has to survive the trip, because "granted nothing" is
+exactly the case the nav must act on.
+
+> **BEHAVIOUR CHANGE, and the highest-visibility one I made.** A plain
+> `org_member` now sees **no modules group at all** unless someone has granted
+> them something, and `routers/org_modules.py:109` states
+> `staging.org_member_modules` **is empty**. So in practice every plain member
+> loses all ten module links.
+>
+> I checked this before shipping it rather than after: **every** module router
+> applies `require_module` — `graha.py:27`, `ganit.py:27`, `manav.py:23`,
+> `vikray.py:21`, `vetana.py:29`, `dristi.py:24`, `prachar.py:24`, `esign.py:40`,
+> `pahchan.py:45`, `messaging.py:27`. A grant-less member gets 403 on all of them
+> today. **Nobody loses working access; they lose ten links that already failed.**
+> That is what RBAC-SPEC denied state 1 asks for, and it makes an existing
+> breakage visible instead of hiding it behind links.
+>
+> Rollback if the owner disagrees: return `None` instead of the list in
+> `_module_grants`' final branch. One line.
+
+### 3.2 Platform console gated on the sets its endpoints require
+
+`adminNav.js` had no role predicate at all — see §2.4 for the resulting matrix and
+the call sites behind each row. `Protected` imports the same exported
+`ADMIN_SURFACE_ROLES` that `AdminShell` uses, so the two cannot drift again.
+
+### 3.3 Two guards upstream of every route (`_COORDINATION.md` §6, unowned)
+
+**`middleware/roles.py` · `require_org_role`** probed the bare string
+`role_code = 'platform_admin'`, so a `platform_owner` row failed the god-mode pass
+and fell through to the org-role lookup — where god mode has no row, because it is
+not org-scoped. Now reads `GOD_MODE_ROLES`. Renaming the legacy rows is a data
+change and nothing else.
+
+**`middleware/org_resolver.py`** admitted all eight Tier-1 codes on the
+`X-Org-Id` path. Narrowed to exclude **`platform_support` only**.
+
+> The brief named four zero-reach roles. **Excluding all four would have been an
+> outage, not a fix.** The evidence, checked before acting:
+>
+> - `account_finance`, `account_manager` — `subscription.py`'s admin endpoints
+>   (`:144` set-plan, `:208`, `:260`, `:302`) take
+>   `require_platform_role(*BILLING_CONSOLE_ROLES)` **and** `Depends(get_org_id)`,
+>   and `AdminBillingPage` reaches them by sending this very header
+>   (`pages/admin/orgScope.js:69`). Both roles are in `BILLING_CONSOLE_ROLES`.
+>   Denying them breaks the billing console for the two roles it exists for.
+> - `srijan_admin` — `routers/hub.py` depends on `get_org_id` in **44** places.
+>
+> `modules_for()` returning `frozenset()` for those three is about MODULE reach
+> *inside* a customer org — a different question from whether they may resolve
+> one. `platform_support` is the one unambiguous case: RBAC-SPEC says "Zero by
+> default", `role_tiers.py:41` says it "gets nothing", and
+> `platform_support_sessions` does not exist. Excluding it cannot break anything
+> because no endpoint admits it today.
+>
+> **The real fix for the other three** is an explicit `{org_id}` path parameter on
+> the billing and hub endpoints, the way `admin_orgs.py` already does it, so the
+> org is an argument the guard can see rather than a header the resolver trusts.
+> That is an endpoint-shape change across two routers — recorded, not smuggled in.
+> **Please do not re-broaden this exclusion without doing that work first.**
+
+Two tests in `test_rbac_isolation.py` keyed on the literal SQL string rather than
+on behaviour; updated to assert on the role set passed, which is the stronger
+assertion. Added the `platform_owner` case the fix exists for — it fails against
+the old code.
+
+### 3.4 Shell chrome
+
+- **Rail toggle rendered in rail.** It was hidden whenever Rail was the stored
+  preference, so choosing Sidebar = Rail in Customize left no way to widen it
+  again. `editorial.css:324-326` had already been written for the state that never
+  mounted (32px button, chevron rotated 180°); `Chrome.jsx:124-125` spells it
+  `setRail(!rail)` with `rail ? I.chevR : I.chevL`. `COLLAPSED_KEY` keeps its name
+  and its `'1'`/`'0'` values verbatim (01 §5) — what changed is that an *absent*
+  key is no longer folded into `'0'`, which is what made "never touched the
+  control" read as "chose wide".
+- **Breadcrumb names the page.** It printed a hardcoded `कर्तव्य`, so every screen
+  read the same thing on the left — "कर्तव्य / CRM" on Graha. `ROUTE_META` had
+  been returning `hi` and `gu` for that slot the whole time and nothing read
+  either, which is also why the earlier first-wins `ROUTE_META` fix (Organisation
+  no longer resolving to "Billing") could not be seen on this surface.
+  `Chrome.jsx:260-261` is the reference. `.crumb__hi` keeps `--font-hindi` and
+  takes `--font-indic` only on `[lang="gu"]`, because the Gujarati face has zero
+  Devanagari coverage and drops conjuncts silently rather than failing visibly.
+
+### 3.5 Dead code — adjudicated
+
+**`pages/BillingPage.jsx` — DELETED.** The prior report said dead; a later grep
+found "6 remaining references" and blocked it. All six are prose:
+
+| Reference | Kind |
+|---|---|
+| `App.jsx:62`, `App.jsx:217` | comments explaining the redirect |
+| `navConfig.js:76` | comment |
+| `lib/statusColors.js:77` | comment |
+| `pages/org/TabBilling.jsx:15` | comment naming what it replaced |
+| `pages/BillingPage.jsx:214` | its own `export default` |
+
+**Zero import statements** in `frontend/src/`. The two other grep hits are
+`AdminBillingPage`, a different file. Folded into `org/TabBilling.jsx` by
+`10-org-settings.md`; `/billing` survives as a redirect.
+
+**`pages/ScrapersPage.jsx` — DELETED.** Zero importers, zero references outside
+itself. Superseded by the inline tab at `OrgSrijanPage.jsx:932`.
+
+---
+
+## 4 · Stale, wrong, and corrected claims
+
+| Claim | Verdict |
+|---|---|
+| Client could reach the entire staff product | **Real, and genuinely fixed.** Allow-list verified airtight — §2.3 |
+| `/admin` gated on org role while shell gated on platform | **Real, fixed.** Both now read `platform_roles` |
+| `canSeeNavItem` never read `item.module` | **Half stale.** Filter present; the *data* was never sent, so entitlements still hid nothing. Fixed this pass |
+| `ICONS.settings` never existed | **Stale** — present at `navIcons.jsx:13`. All 28 icon keys resolve |
+| Pahchan in no nav list | **Stale** — present at `navConfig.js:66` |
+| `ROUTE_META` last-wins | **Stale** — first-wins via `claim()`. But the fix was *invisible* until §3.4 |
+| `components/icons/**` does not exist | **Confirmed.** Path is `components/layout/navIcons.jsx` — every brief and `_SOURCE-MAP.md` omit `components/` |
+| `BillingPage.jsx` has 6 live references | **Wrong** — all six are prose. Deleted |
+| `ScrapersPage.jsx` zero importers | **Correct.** Deleted |
+| `org_resolver` — 4 zero-reach roles must be excluded | **Half wrong.** Excluding all four is an outage. Only `platform_support` is safe — §3.3 |
+| My own `module: 'samvada'` change | **I was wrong.** `4a966c6` settled it as `sanvaad`, correctly. Reverted |
+
+### A correction to my own earlier gate claims
+
+My first three commits reported gates green from output that had been piped
+through `tail`, which reports **`tail`'s** exit status, not the script's — the
+same mistake `_COORDINATION.md` §2 says three agents made. The *text* those runs
+printed did say `0 missing` / `0 missing a rule`, so the conclusion held, but the
+method was unsound. Every gate run from §3.3 onward is unpiped with the real exit
+code checked. Final state verified that way: **exit 0.**
+
+---
+
+## 5 · Recorded, not fixed
+
+1. **`MOBILE_NAV` is not entitlement-filtered.** `MobileNav.jsx:31` maps it
+   directly, and its Messages slot carries no `module` key — so a member without a
+   `sanvaad` grant still gets a bottom-bar tap that 403s. I did **not** change it:
+   01 §1 is unconditional that there are **five slots — Today · Tasks · ＋ ·
+   Messages · More** — and dropping one silently deviates from a pixel spec. **Spec
+   gap**: 01 does not say what the bottom bar does when a slot is not entitled.
+   Needs a designer decision, not an agent's guess.
+2. **Route ranking at `/` is order-dependent.** `RootGate` and the protected shell
+   both declare `path="/"` and score identically; the tie breaks on declaration
+   order. Correct today, fragile — reordering those two `<Route>`s would send
+   anonymous visitors to `/login` instead of the landing page. An `index` route on
+   the shell would make it explicit.
+3. **Module-level enforcement is absent backend-wide** — §2.6. Blocked on an
+   owner decision, per `_COORDINATION.md` §5.
+4. **`role_tiers.py:33` says god mode is "Four people."** `RBAC-SPEC.md:18` says
+   **exactly 3**, and names them. Prose defect in the backend, not code — I did not
+   edit it because the count appears in a comment I have no authority to settle.
+5. **The plans catalogue and the grant vocabulary are separate namespaces.**
+   `migrations/010_…:147` sells modules under catalogue codes; `org_member_modules`
+   stores `require_module` codes. `sanvaad` is now consistent across both, but
+   nothing structurally prevents the next divergence.
+
+### Divergences from `Chrome.jsx` I deliberately did **not** implement
+
+`01-navigation.md` supersedes the reference mock in each case, explicitly:
+
+- **Toolbar affordances.** `Chrome.jsx:248-278` has a SyncChip, a `?` shortcuts
+  button and an Appearance popover. 01 §2's tree lists only `Crumb`,
+  `SearchTrigger` and `actions bell · new task`. Followed 01.
+- **Search control.** `Chrome.jsx:264` is a real `<input>`; 01 §1 explicitly
+  overrides it — *"Search is a button that opens the palette, not an input"*.
+  Followed 01.
+- **Bottom bar.** `Chrome.jsx:301-307` is Home/Tasks/CRM/Chat/Money with
+  Devanagari labels and no FAB. 01 §1 mandates Today · Tasks · ＋ · Messages ·
+  More, one English label per slot. Followed 01.
+- **Sidebar taxonomy.** `Chrome.jsx:36-69` groups nav as
+  Workspace/Revenue/People/Growth/Settings/Clients; the build uses
+  workspace/operations/team/srijan/modules/settings. **Not changed**, for three
+  reasons: Chrome's ids (`dash`, `roles`, `aekam`) are not routes; 01 §5's diff
+  table asks only that the existing `NAV_FULL` **move** into `navConfig.js`, not be
+  re-taxonomised; and section names are the localStorage keys inside
+  `kartavya_sidebar_sections`, so renaming them silently resets every user's
+  expanded/collapsed state — the exact failure 01 §5 warns about for those keys.
