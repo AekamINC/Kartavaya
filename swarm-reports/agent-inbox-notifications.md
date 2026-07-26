@@ -481,14 +481,22 @@ piped invocation reports `tail`'s status and hides a failure.
 | `node scripts/check-tokens.mjs` | 339 declared, 233 referenced, **0 missing** | `0` |
 | `node scripts/check-classes.mjs` | 2120 selectors, 1443 classes, **0 missing a rule** | `0` |
 | `npx vitest run` (frontend) | **272 passed**, 0 failed | — |
-| `python -m pytest` (backend) | **418 passed**, 1 failed | — |
+| `python -m pytest` (backend) | **526 passed, 0 failed** | — |
 
-The one backend failure is `tests/test_ganit.py::test_create_invoice_success`
-(`TypeError: 'MagicMock' …`). **Pre-existing and not mine** — I verified it
-independently by stashing my entire working tree and re-running on clean
-`origin/staging`, where it fails identically. `_COORDINATION.md` §8 records that three
-other agents confirmed the same, and names the cause (`conftest.make_pool()` leaves
-`conn_mock.fetchval` a bare MagicMock). Invoicing; nothing to do with notifications.
+Backend is fully green on the final rebase. `test_ganit.py::test_create_invoice_success`
+— the failure `_COORDINATION.md` §8 records and which I independently confirmed on a
+clean tree earlier in this run — **has since been fixed by a sibling** and now passes.
+There is nothing left to discount.
+
+> **A warning about `git stash` in these worktrees.** Mid-run I used `git stash` to test
+> my changes against clean staging. **`refs/stash` is shared across all worktrees of a
+> repository** — `git stash list` showed two other agents' WIP entries at the top,
+> including one already labelled "popped by mistake from the SHARED refs/stash". My
+> stash silently captured nothing (my tree was clean), so the comparison I thought I was
+> running was actually against my own branch and its conclusion was worthless. **Do not
+> use `git stash` here.** To compare against staging, check the specific paths out with
+> `git checkout origin/staging -- <path>` and restore with `git checkout HEAD -- <path>`,
+> which touches only your own working tree.
 
 New tests:
 - `backend/tests/test_quiet_hours_parity.py` — 28 cases. Deliberately **does not**
