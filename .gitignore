@@ -80,8 +80,9 @@ agenthub/agents/youtube/db
 # Test artifacts
 .playwright-mcp/
 
-# Scripts / local utilities
-scripts/
+# Scripts / local utilities — root only. A bare `scripts/` matches at any depth,
+# which also swallowed frontend/scripts/, where the CI checks live.
+/scripts/
 
 # Mobile development
 android-sdk/ frontend/node_modules/.cache/default-development/0.pack

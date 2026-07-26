@@ -353,6 +353,23 @@
   --k-danger:  var(--danger);   /* 08 records --k-danger and --danger both in use */
 
   --font-devanagari: var(--font-indic);   /* FormGroup.jsx — 02 says use --font-indic */
+
+  /* Seven tokens that were referenced only with a fallback, so every one of
+     them "worked" while being declared nowhere. `check-tokens.mjs` found them;
+     nothing was visibly broken, which is exactly the failure mode 25 §1
+     describes — a fallback turns a loud failure into a silent wrong value.
+
+     Two were painting the retired brand blue #0082c6 out of their fallbacks
+     (--k-primary-dim at 8%, --k-primary-bg at 4%) long after 00 §9 retired it.
+     Declared as aliases rather than literals so they track the accent: a user
+     on the Emerald preset was getting blue tints on hover surfaces. */
+  --side-rule-2:    var(--side-rule);
+  --surface-dim:    var(--s-container);
+  --accent:         var(--k-primary);
+  --page-x:         var(--pad-page);
+  --k-primary-dim:  color-mix(in srgb, var(--primary) 8%, transparent);
+  --k-primary-bg:   color-mix(in srgb, var(--primary) 4%, transparent);
+  --k-deep-bg:      color-mix(in srgb, var(--k-deep) 8%, transparent);
 }
 
 /* ── Global canvas ─────────────────────────────────────────────────────── */
