@@ -235,7 +235,12 @@ textarea.inp { resize: vertical; min-height: 76px; }
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
   background: var(--scrim);
-  animation: modalIn calc(var(--dur-fast) * var(--ix)) var(--ease-standard);
+  /* Was `calc(var(--dur-fast) * var(--ix))`. `--dur-fast` is ALREADY
+     `calc(140ms * var(--ix))` (kartavaya-design.css §5), so that squared the
+     scale: correct at --ix 1 by coincidence, but 35ms instead of 70ms at the
+     Customization "Reduced" setting (--ix .5). The token carries the scale;
+     nothing may multiply by --ix a second time. */
+  animation: modalIn var(--dur-fast) var(--ease-standard);
 }
 .modal__panel {
   width: 100%; max-height: calc(100vh - 32px);
@@ -245,7 +250,18 @@ textarea.inp { resize: vertical; min-height: 76px; }
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-3);
   overflow: hidden;
+  /* The panel had no entrance at all — the scrim faded and the dialog simply
+     existed. MOTION-SPEC.md §3 and reference motion.css:260 (`.ov-modal`) both
+     specify one, and both start it AFTER the scrim so the surface reads as
+     arriving onto the dim rather than with it. `calc(var(--dur-fast) * .3)` is
+     the reference's own delay (42ms; §3 rounds it to "40ms after the scrim").
+     `backwards` holds the from-state during that delay, without which the
+     panel paints at full size for one frame and then jumps. */
+  animation: modalPanelIn var(--dur-base) var(--ease-emph) calc(var(--dur-fast) * .3) backwards;
 }
+/* Reference `@keyframes ovIn`, minus its translate(-50%,-50%) centring — this
+   panel is centred by the scrim's flexbox, so only the 8px rise is ours. */
+@keyframes modalPanelIn { from { opacity: 0; transform: translateY(8px) scale(.96) } }
 .modal__panel--sm { max-width: 420px; }
 .modal__panel--md { max-width: 620px; }
 .modal__panel--lg { max-width: 900px; }
