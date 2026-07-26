@@ -207,8 +207,33 @@ COMMIT;
 -- its own table. It and this file solve the SAME requirement two ways, and
 -- applying both leaves two places to look for one fact.
 --
--- The fork is a product decision that is ALREADY OPEN — PROPOSED_065 §5(a)
--- raises it and does not settle it:
+-- The fork is a product decision that is ALREADY OPEN, and the specification
+-- CONTRADICTS ITSELF ON IT, ten lines apart:
+--
+--   RBAC-SPEC.md:56-58 gives Vetana, Ganit and Manav a full four-level ladder
+--   with named per-level capabilities. Vetana's Approver cell reads "Approve
+--   payroll, release payments"; Ganit's reads "Approve entries, close periods".
+--
+--   RBAC-SPEC.md:65, immediately below: "Sensitive modules are role-derived,
+--   not granted. Vetana, Ganit and Manav have NO PER-MEMBER GRANT ROW AT ALL
+--   ... a grant row naming a sensitive module is invalid input and must be
+--   rejected."
+--
+-- Four levels defined for exactly the three modules that may not carry a level.
+-- And the code block at RBAC-SPEC.md:67 settles which branch is unimplementable:
+--
+--   SENS_BY_ROLE = { org_owner: 'admin', org_admin: 'admin', manager: 'none',
+--                    member: 'none', client: 'none' }
+--
+-- THERE IS NO `approver` VALUE IN IT. Under the role-derived model the most
+-- anyone can hold on Vetana or Ganit is `admin`, and `level_satisfies` says
+-- admin does not satisfy approver in those two modules. Follow :65 literally and
+-- NOBODY IN ANY ORG CAN EVER APPROVE A PAYROLL RUN OR CLOSE A PERIOD. That is
+-- not an enforcement gap; it is an unreachable state by construction, and it is
+-- the reason PROPOSED_074 had to invent a table rather than reuse this one.
+--
+-- PROPOSED_065 §5(a) raises the same fork from the other side and does not
+-- settle it either:
 --
 --   IF ganit/vetana access follows the ORG ROLE only (065's `not_sensitive`
 --   CHECK forbids grant rows for vetana/ganit/manav/pahchan), then:

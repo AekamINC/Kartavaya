@@ -1,3 +1,29 @@
+-- ═════════════════════════════════════════════════════════════════════════════
+-- ⚠️ THIS FILE HAS ALREADY BEEN APPLIED. The header below is out of date and is
+-- kept only so the reasoning survives.
+--
+-- Verified against the LIVE schema (project toacecaewujfxjfrjwco, read-only) by
+-- the migrations-consolidation agent:
+--
+--   §1 staging.org_member_modules.role            EXISTS, TEXT NOT NULL DEFAULT 'viewer'
+--   §1 org_member_modules_role_check              APPLIED (viewer/editor/approver/admin)
+--   §1 org_member_modules_level_is_meaningful     APPLIED — and it names `samvada`,
+--        which is the spelling defect PROPOSED_070 fixes. Do not re-run this file
+--        after 070 lands: §1 would re-create the CHECK with the OLD spelling and
+--        silently undo it.
+--   §2 public.team_members_role_check             APPLIED — live value is
+--        (owner, admin, member, client), i.e. `admin` is already in production's
+--        tenancy table.
+--
+-- §2 was the one statement this file flagged as touching a table `main` reads,
+-- and it went in without the header ever being updated. THAT is how this
+-- directory and the database diverged: the labels are not maintained, so only
+-- the catalog can be trusted. Re-verify before believing any "PROPOSED" header.
+--
+-- DO NOT RE-RUN. It is close to idempotent, but the `level_is_meaningful`
+-- re-creation is a genuine regression risk once 070 has landed.
+-- ═════════════════════════════════════════════════════════════════════════════
+
 -- PROPOSED — Tier 3 (project) and Tier 4 (module levels). Review before running.
 --
 -- Owner's decisions, 2026-07-26. Code already understands all of this

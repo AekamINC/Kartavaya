@@ -1,3 +1,63 @@
+-- README.md documents the apply method as `psql "$DATABASE_URL" -f <file>`.
+-- Without ON_ERROR_STOP, psql reports the guard's error and then CARRIES ON to
+-- the next statement, which is exactly the failure this guard exists to prevent.
+\set ON_ERROR_STOP on
+
+-- ═════════════════════════════════════════════════════════════════════════════
+-- ⛔ STOP — THIS FILE MUST NOT BE RUN AS WRITTEN. HARD GUARD BELOW.
+--
+-- Added by the migrations-consolidation agent after verifying this file against
+-- the LIVE schema. Three of its statements are already satisfied, one is
+-- actively harmful in the current order, and one is blocked on an unmade
+-- product decision. Running it top-to-bottom now would damage the Tier-4 model.
+--
+-- VERIFIED LIVE (project toacecaewujfxjfrjwco, read-only):
+--
+--   §2 ADD COLUMN role ... DEFAULT 'admin'   → ALREADY EXISTS, DEFAULT 'viewer'.
+--        PROPOSED_066 created it first. `IF NOT EXISTS` makes this line a NO-OP
+--        THAT REPORTS SUCCESS — the 'admin' default silently does not happen.
+--        Had the order been reversed, every grant would default to full control
+--        and `role_tiers.DEFAULT_GRANT_LEVEL = VIEWER` would disagree with the
+--        column backing it. THIS LINE MUST BE DELETED, not reordered: it cannot
+--        do anything except mislead the next reader.
+--
+--   §2 org_member_modules_role_check          → ALREADY APPLIED, identical text.
+--
+--   §2 org_member_modules_not_sensitive       → NOT applied, and BLOCKED.
+--        Forbids grant rows on vetana/ganit/manav/pahchan. `vetana` and `ganit`
+--        are exactly `role_tiers.SEPARATED_DUTY_MODULES` — the only two modules
+--        where admin does not satisfy approver, and therefore the ONLY two where
+--        a distinct approver grant means anything. Applying this AFTER 066
+--        keeps the four-level ladder and simultaneously forbids any grant row on
+--        the two modules the ladder exists for. Tier 4 survives as a column that
+--        can never be exercised where it matters.
+--        This is mutually exclusive with PROPOSED_075. See §5 of that file.
+--
+--   §3 platform_support_sessions              → NOT applied. INDEPENDENT AND SAFE
+--        in any position. This is the only section that can go today.
+--
+--   §1's claim "the CHECK has never heard of platform_support" → STALE. The live
+--        user_roles_role_code_check already admits platform_owner,
+--        platform_manager, platform_staff AND platform_support.
+--
+-- WHAT TO DO: split this file. Take §3 as its own migration. Delete §2's
+-- ADD COLUMN and role_check (both already true). Hold §2's not_sensitive until
+-- the owner resolves the RBAC-SPEC self-contradiction recorded in
+-- swarm-reports/_COORDINATION.md §5 — and if it loses, DELETE it rather than
+-- leaving it here to be applied later by someone reading numbers.
+-- ═════════════════════════════════════════════════════════════════════════════
+
+DO $$
+BEGIN
+    RAISE EXCEPTION
+        'PROPOSED_065 must not be applied as written. Its ADD COLUMN is a silent '
+        'no-op (066 already created the column with a DIFFERENT default), its '
+        'role_check is already applied, and its not_sensitive CHECK forbids grant '
+        'rows on vetana/ganit — the only two separated-duty modules — which '
+        'removes the Tier-4 approver rung entirely. Split the file: section 3 is '
+        'safe alone. See the header, and swarm-reports/_COORDINATION.md section 5.';
+END $$;
+
 -- PROPOSED — NOT APPLIED. Needs a product decision first (see §1 and §5).
 --
 -- Filename deliberately carries no runnable sequence number. Migrations in this

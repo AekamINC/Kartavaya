@@ -266,6 +266,30 @@ Both fixes are cheap only at zero rows. **Run them in one window.**
 1.1 before 1.2/1.3 is a recommendation, not a hard dependency — 070 touches a
 CHECK, 075 touches a UNIQUE, and they do not overlap.
 
+**⚠️ A regression trap created by stage 1.1: never re-run `PROPOSED_066` after
+`070` has landed.** 066 §1 re-creates `org_member_modules_level_is_meaningful`
+with the OLD `samvada` spelling. Since 066 is already applied but still carries a
+"PROPOSED — review before running" header, a later reader tidying up the
+directory could easily run it and silently revert the spelling fix, with no
+error. A guard header has been added to 066 recording that it is applied and why
+it must not be re-run.
+
+### Making the 065 ordering impossible to get wrong
+
+Comments were not enough — 065 is already partly superseded and still reads as
+runnable. Two mechanisms were added to the file itself:
+
+- `\set ON_ERROR_STOP on` as the first line. `README.md` documents the apply
+  method as `psql "$DATABASE_URL" -f <file>`, and **without this psql prints an
+  error and carries on to the next statement**, which is precisely the partial
+  application the guard exists to prevent.
+- A `DO $$ ... RAISE EXCEPTION $$` block before any DDL, naming the three
+  reasons and pointing at the split.
+
+Applying 065 as written is now a hard abort rather than a judgement call. Its §3
+(`platform_support_sessions`) remains safe and should be lifted into its own
+migration.
+
 ### Stage 2 — blocked on a product decision
 
 | # | Action | Blocker |
