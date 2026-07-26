@@ -29,18 +29,14 @@
  * ── How the three views are routed
  *
  * 19 asks for `/client/approvals` and `/client/files` under a `ClientShell`
- * route outside `AppShell`. Those two routes do not exist on this branch —
- * `App.jsx:188-190` declares `client`, `client/projects` and
- * `client/project/:projectId` and nothing else, all three INSIDE `AppShell`, so
- * two of the three built views were unreachable and a client saw the staff
- * sidebar around the third. `App.jsx` is owned elsewhere and the routes are
- * being added there; this file is built for that target.
+ * outside `AppShell`. Both are real routes now, and the portal's routes sit
+ * outside `AppShell` as 19 requires — a client no longer gets the staff sidebar
+ * wrapped around their one screen.
  *
  * `viewFromLocation` resolves the view from the PATHNAME, and falls back to
- * `?view=` when the path carries none. Both forms work, which is what lets the
- * route move land in either order: before it, `/client?view=files` still
- * renders Files; after it, `/client/files` does, and every link already sent to
- * a client in an email keeps resolving.
+ * `?view=` when the path carries none. Both forms still work, which is what
+ * keeps every `/client?view=…` link already sent to a client in an email
+ * resolving after the move to paths.
  */
 import React from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';

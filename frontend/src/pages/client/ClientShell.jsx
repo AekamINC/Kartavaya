@@ -30,12 +30,13 @@ import '../../styles/client.css';
 /**
  * Three destinations, three paths.
  *
- * These are the routes `App.jsx` is adding — `/client/approvals` and
- * `/client/files` do not exist yet, and until they land the app's catch-all
- * (`App.jsx:218`, `<Route path="*" element={<Navigate to="/dashboard" />}`)
- * swallows them. `ClientPages.jsx` resolves the view from the PATHNAME first
- * and falls back to `?view=`, so the old query links in already-sent emails
- * keep working after the routes land.
+ * All three are real routes in `App.jsx` now, mounted on `ClientProjectsPage`
+ * directly. They were `<Navigate>` redirects to `/client?view=…` for one
+ * revision, which worked but cost the canonical URL: a client who bookmarked
+ * the `/client/approvals` link from their email watched the address bar rewrite
+ * itself to something else. `ClientPages.jsx` still resolves the view from the
+ * PATHNAME first and falls back to `?view=`, so the query links in emails
+ * already sent keep working.
  */
 export const NAV = [
   { view: 'overview', label: 'Overview', to: '/client' },
