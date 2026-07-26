@@ -2027,7 +2027,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
   padding: 3px 9px; border-radius: 99px; margin-left: auto;
 }
 .k-rule__status--on  { background: color-mix(in srgb, var(--ok) 12%, transparent);    color: var(--ok); }
-.k-rule__status--off { background: color-mix(in srgb, var(--ink-3) 12%, transparent); color: var(--ink-3); }
+/* Text is --ink-2, not --ink-3, for the same reason .k-actitem__verb--changed
+   pairs an --ink-3 tint with --ink-2 text: a chip sits on a 12% tint OF ITS OWN
+   FOREGROUND, so the background moves toward the text and costs ~0.7:1 that the
+   token's rating against --bg never accounted for. --ink-3 on its own 12% tint
+   measures 4.15:1 at 11px — below the 4.5:1 floor. --ink-2 measures 6.37:1
+   light / 8.96:1 dark on the identical tint, and the tint is unchanged, so the
+   chip looks the same. */
+.k-rule__status--off { background: color-mix(in srgb, var(--ink-3) 12%, transparent); color: var(--ink-2); }
 .k-rule__status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .k-rule__head .k-mute { font-size: 12px; }
 .k-rule__flow {

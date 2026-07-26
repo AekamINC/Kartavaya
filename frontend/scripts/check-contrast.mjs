@@ -49,6 +49,13 @@ import { join } from 'path';
 
 const STYLE_DIR = 'src/styles';
 const SHOW_MATRIX = process.argv.includes('--matrix');
+/**
+ * --md emits the matrix as markdown tables on stdout, so the report table is
+ * GENERATED rather than transcribed. Hand-copying ratios into a document is how
+ * a measured audit turns back into an estimated one — I typed four wrong values
+ * into the report before this flag existed.
+ */
+const AS_MD = process.argv.includes('--md');
 
 if (!existsSync(STYLE_DIR)) {
   console.error(`check-contrast: ${STYLE_DIR} not found — run from the frontend/ directory.`);
@@ -400,6 +407,32 @@ function isLargeText(d) {
 const isDisabledState = (sel) =>
   /:disabled|\[disabled\]|\[aria-disabled=["']?true["']?\]|\.is-disabled|\.disabled(?![\w-])|:not\(\.on\)/.test(sel);
 
+/**
+ * What a translucent element is actually sitting ON.
+ *
+ * Compositing everything over --bg was this script's second wrong assumption:
+ * it flagged fourteen sidebar rules at ~1.1:1, because the sidebar is an
+ * INVERTED surface — near-black in both themes — and white-on-white is only a
+ * failure if you believe the ground is cream. The sidebar is where a15-link nav
+ * lives, so measuring it wrongly is worse than not measuring it.
+ *
+ * Ordered; first match wins. SKIP means the ground genuinely is not knowable
+ * statically and no number should be invented for it.
+ */
+const SKIP = Symbol('unknown backdrop');
+const BACKDROPS = [
+  // The accent sidebar paints in the user's chosen accent, resolved at runtime.
+  [/\[data-sidebar-bg=["']?accent["']?\]/, SKIP],
+  // Sidebar, admin rail and the legacy .k-sidebar: --side-ink, both themes.
+  [/(^|[\s,>])\.(side|adm)__|(^|[\s,>])\.k-sidebar/, 'rgb(var(--side-ink))'],
+  // Anything painting on the scrim is over an unknown page.
+  [/\.scrim|\.overlay/, SKIP],
+];
+function backdropFor(sel) {
+  for (const [re, ground] of BACKDROPS) if (re.test(sel)) return ground;
+  return 'var(--bg)';
+}
+
 const realFails = [];
 const exempted = [];
 for (const r of allRules) {
@@ -411,18 +444,28 @@ for (const r of allRules) {
   // position) is not a flat backdrop — skip rather than guess.
   if (/url\(|gradient/i.test(bgRaw)) continue;
 
+  const backdropExpr = backdropFor(r.selector);
+  if (backdropExpr === SKIP) continue;
+
   for (const [tname, vars] of Object.entries(themes)) {
-    const bg = parseColor(bgRaw, vars);
+    const bgRes = parseColor(bgRaw, vars);
     const fg = parseColor(fgRaw, vars);
-    if (!bg || !fg) continue;
-    if ((bg[3] ?? 1) < 1) continue;   // translucent backdrop — unknown backing
-    const ratio = contrast(over(fg, bg.slice(0, 3)), bg.slice(0, 3));
+    if (!bgRes || !fg) continue;
+    // A TRANSLUCENT background — `color-mix(var(--c) 14%, transparent)`, the
+    // standard tint here — is not a reason to skip. Skipping it is how the
+    // module-header icon tint went unmeasured. Composite it over the surface
+    // the element actually sits on, per BACKDROPS.
+    const ground = parseColor(backdropExpr, vars);
+    if (!ground) continue;
+    const bg = over(bgRes, ground.slice(0, 3));
+    const assumed = (bgRes[3] ?? 1) < 1;
+    const ratio = contrast(over(fg, bg), bg);
     const large = isLargeText(d);
     const need = large ? 3 : 4.5;
     if (ratio + 1e-9 < need) {
       const row = {
         theme: tname, selector: r.selector, at: `${r.file}:${r.line}`,
-        fg: fgRaw, bg: bgRaw, ratio, need, large,
+        fg: fgRaw, bg: bgRaw, ratio, need, large, assumed,
       };
       (isDisabledState(r.selector) ? exempted : realFails).push(row);
     }
@@ -433,6 +476,36 @@ for (const r of allRules) {
 
 const f2 = (n) => n.toFixed(2).padStart(5);
 let failed = false;
+
+if (AS_MD) {
+  const hex = (c) => c ? '#' + c.slice(0, 3).map((n) => Math.round(n).toString(16).padStart(2, '0')).join('').toUpperCase() : '?';
+  for (const [tname, vars] of Object.entries(themes)) {
+    console.log(`\n#### ${tname.toUpperCase()}\n`);
+    console.log(`| foreground | resolved | ${BACKGROUNDS.map((b) => `\`${b}\``).join(' | ')} |`);
+    console.log(`|---|---|${BACKGROUNDS.map(() => '---').join('|')}|`);
+    for (const fgName of FOREGROUNDS) {
+      const fgRaw = parseColor(`var(${fgName})`, vars);
+      if (!fgRaw) continue;
+      const cells = BACKGROUNDS.map((bgName) => {
+        const bg = parseColor(`var(${bgName})`, vars);
+        if (!bg) return '—';
+        const r = contrast(over(fgRaw, bg.slice(0, 3)), bg.slice(0, 3));
+        return r < 4.5 ? `**${r.toFixed(2)}**` : r.toFixed(2);
+      });
+      console.log(`| \`${fgName}\` | ${hex(fgRaw)} | ${cells.join(' | ')} |`);
+    }
+    console.log(`\n| on-pair | ratio |`);
+    console.log(`|---|---|`);
+    for (const [fgName, bgName] of ON_PAIRS) {
+      const bg = parseColor(`var(${bgName})`, vars);
+      const fg = parseColor(`var(${fgName})`, vars);
+      if (!bg || !fg) continue;
+      const r = contrast(over(fg, bg.slice(0, 3)), bg.slice(0, 3));
+      console.log(`| \`${fgName}\` on \`${bgName}\` | ${r < 4.5 ? `**${r.toFixed(2)}**` : r.toFixed(2)} |`);
+    }
+  }
+  process.exit(0);
+}
 
 console.log(`check-contrast: ${files.length} stylesheets, ${allRules.length} rules, ` +
   `${Object.keys(light).length} light tokens, ${Object.keys(dark).length} dark tokens\n`);
@@ -470,7 +543,8 @@ if (!realFails.length) console.log('   every co-located colour/background pair c
 else {
   failed = true;
   for (const r of realFails.sort((a, b) => a.ratio - b.ratio)) {
-    console.log(`   ${r.theme.padEnd(5)} ${f2(r.ratio)}:1  need ${r.need}:1${r.large ? ' (large)' : ''}`);
+    console.log(`   ${r.theme.padEnd(5)} ${f2(r.ratio)}:1  need ${r.need}:1${r.large ? ' (large)' : ''}` +
+      `${r.assumed ? '  [translucent bg composited over --bg]' : ''}`);
     console.log(`          ${r.selector}`);
     console.log(`          ${r.at} · color: ${r.fg} · background: ${r.bg}`);
   }

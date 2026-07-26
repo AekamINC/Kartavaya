@@ -30,7 +30,7 @@ node scripts/check-contrast.mjs --matrix   # adds the full 412-pair token matrix
 |---|---|---|
 | `--on-surface-disabled` is undeclared (reported by four agents) | **STALE — fixed** | Declared in BOTH themes: light `#9DA096` `kartavaya-design.css:163`, dark `#64645F` `kartavaya-design.css:237` |
 | Stale workarounds around that gap survive in `drawer.css` and `landing.css` | **STALE — already migrated** | `drawer.css:72` documents `.bar__crumb-sep` as a legitimate `--on-surface-disabled` user; no `--on-surface-3` workaround remains in either file. Nothing to switch. |
-| `--on-surface-faint` measures 2.3:1 and any text use is a defect | **STALE — resolved by aliasing** | It no longer carries a literal. `kartavaya-design.css:156` (light) and `:236` (dark) alias it to `--on-surface-3`. Measured now: **5.03:1 light / 5.13:1 dark on `--bg`**. The ~30 text call sites are compliant as-is. |
+| `--on-surface-faint` measures 2.3:1 and any text use is a defect | **STALE — resolved by aliasing** | It no longer carries a literal. `kartavaya-design.css:156` (light) and `:236` (dark) alias it to `--on-surface-3`. Measured now: **4.82:1 light / 5.81:1 dark on `--bg`**. Its ~30 text call sites are compliant on `--bg`, `--surface` and `--s-low`; see SPEC-A11Y-2 for the raised surfaces. |
 | `PageHeader` hardcodes `lang="sa"` | **STALE — fixed** | see §4 |
 | Segmented control uses `aria-selected` on `role="radio"` | **STALE — standard won** | see §5 |
 | Avatar comment: "six colours dark enough that white initials clear AA" | **ACCURATE — verified** | 5.87:1 – 7.73:1, see §3 |
@@ -56,131 +56,215 @@ token has a counterpart.
 
 ### 2b · Foreground ramp on surface ramp — the reusable table
 
-Contrast ratios, WCAG 2.1. **Bold = below 4.5:1** (fails body text).
-Thresholds: 4.5:1 body, 3:1 large text (>=24px, or >=18.66px at >=700) and non-text UI.
+GENERATED, not transcribed: `node scripts/check-contrast.mjs --md`. **Bold = below 4.5:1**
+(fails body text). Thresholds are WCAG 2.1: 4.5:1 body, 3:1 large text (>=24px, or
+>=18.66px at >=700 weight) and non-text UI.
 
 #### LIGHT
 
-| foreground | `--bg` | `--surface` | `--s-low` | `--s-container` | `--s-high` | `--s-highest` |
-|---|---|---|---|---|---|---|
-| `--on-surface` #1B1D1A | 15.30 | 15.94 | 15.48 | 14.24 | 13.35 | 12.16 |
-| `--on-surface-2` #4A4E48 | 8.09 | 8.43 | 8.19 | 7.53 | 7.06 | 6.43 |
-| `--on-surface-3` #666A61 | 5.03 | 5.24 | 5.09 | 4.68 | **4.39** | **4.00** |
-| `--on-surface-faint` → `-3` | 5.03 | 5.24 | 5.09 | 4.68 | **4.39** | **4.00** |
-| `--on-surface-disabled` #9DA096 | **2.32** | **2.48** | **2.36** | **2.19** | **2.04** | **1.87** |
-| `--primary` #04837A | **4.04** | **4.21** | **4.09** | **3.76** | **3.53** | **3.21** |
-| `--primary-text` #046B64 | 5.71 | 5.95 | 5.78 | 5.31 | 4.98 | **4.54** |
-| `--primary-hover` #026B64 | 5.73 | 5.97 | 5.80 | 5.33 | 5.00 | **4.55** |
-| `--secondary` #5C6450 | 6.22 | 6.48 | 6.30 | 5.79 | 5.43 | 4.94 |
-| `--tertiary` #8A5730 | 5.65 | 5.89 | 5.72 | 5.26 | 4.93 | **4.49** |
-| `--ok` #14743A | 5.44 | 5.67 | 5.51 | 5.06 | 4.75 | **4.32** |
-| `--warn` #955806 | 5.53 | 5.76 | 5.60 | 5.15 | 4.83 | **4.39** |
-| `--danger` #B42318 | 5.53 | 5.76 | 5.60 | 5.15 | 4.82 | **4.39** |
-| `--outline` #ADA692 | **2.12** | **2.27** | **2.15** | **2.00** | **1.86** | **1.71** |
-| `--st-todo` #5A6270 | 5.66 | 5.89 | 5.73 | 5.27 | 4.93 | **4.49** |
-| `--st-in-progress` #3E5C8A | 6.11 | 6.36 | 6.18 | 5.68 | 5.32 | 4.85 |
-| `--st-in-review` #6E5AA0 | 5.60 | 5.83 | 5.67 | 5.21 | 4.88 | **4.45** |
-| `--pr-medium` #3E5C8A | 6.11 | 6.36 | 6.18 | 5.68 | 5.32 | 4.85 |
+| foreground | resolved | `--bg` | `--surface` | `--s-low` | `--s-container` | `--s-high` | `--s-highest` |
+|---|---|---|---|---|---|---|---|
+| `--on-surface` | #1B1D1A | 14.79 | 15.86 | 15.05 | 14.00 | 13.00 | 11.93 |
+| `--on-surface-2` | #4A4E48 | 7.40 | 7.93 | 7.52 | 7.00 | 6.50 | 5.97 |
+| `--on-surface-3` | #666A61 | 4.82 | 5.17 | 4.90 | 4.56 | **4.23** | **3.89** |
+| `--on-surface-faint` | #666A61 | 4.82 | 5.17 | 4.90 | 4.56 | **4.23** | **3.89** |
+| `--on-surface-disabled` | #9DA096 | **2.32** | **2.48** | **2.36** | **2.19** | **2.04** | **1.87** |
+| `--primary` | #04837A | **4.04** | **4.33** | **4.11** | **3.82** | **3.55** | **3.26** |
+| `--primary-text` | #046B64 | 5.56 | 5.96 | 5.66 | 5.26 | 4.89 | **4.49** |
+| `--primary-hover` | #026B64 | 5.56 | 5.97 | 5.66 | 5.27 | 4.89 | **4.49** |
+| `--secondary` | #5C6450 | 5.39 | 5.78 | 5.49 | 5.10 | 4.74 | **4.35** |
+| `--tertiary` | #8A5730 | 5.25 | 5.63 | 5.34 | 4.97 | 4.61 | **4.24** |
+| `--ok` | #14743A | 5.10 | 5.47 | 5.19 | 4.83 | **4.48** | **4.11** |
+| `--warn` | #955806 | 4.98 | 5.34 | 5.06 | 4.71 | **4.38** | **4.02** |
+| `--danger` | #B42318 | 5.73 | 6.14 | 5.83 | 5.42 | 5.04 | 4.62 |
+| `--outline` | #ADA692 | **2.12** | **2.27** | **2.15** | **2.00** | **1.86** | **1.71** |
+| `--st-todo` | #5A6270 | 5.36 | 5.75 | 5.45 | 5.07 | 4.71 | **4.32** |
+| `--st-in-progress` | #3E5C8A | 5.90 | 6.33 | 6.00 | 5.58 | 5.19 | 4.76 |
+| `--st-in-review` | #6E5AA0 | 5.04 | 5.40 | 5.12 | 4.77 | **4.43** | **4.06** |
+| `--pr-medium` | #3E5C8A | 5.90 | 6.33 | 6.00 | 5.58 | 5.19 | 4.76 |
+| `--m-graha` | #2F6690 | 5.34 | 5.73 | 5.44 | 5.06 | 4.70 | **4.31** |
+| `--m-ganit` | #2E7D52 | **4.39** | 4.71 | **4.46** | **4.15** | **3.86** | **3.54** |
+| `--m-manav` | #A65A2E | **4.44** | 4.76 | 4.52 | **4.20** | **3.90** | **3.58** |
+| `--m-vikray` | #A83E63 | 5.18 | 5.55 | 5.27 | 4.90 | 4.55 | **4.18** |
+| `--m-vetana` | #6B4FA8 | 5.53 | 5.93 | 5.63 | 5.24 | 4.86 | **4.46** |
+| `--m-dristi` | #24707F | 4.95 | 5.31 | 5.03 | 4.68 | **4.35** | **3.99** |
+| `--m-prachar` | #8A6A18 | **4.40** | 4.72 | **4.48** | **4.17** | **3.87** | **3.55** |
+| `--m-esign` | #2B7A6B | **4.46** | 4.79 | 4.54 | **4.23** | **3.93** | **3.60** |
+| `--m-sanvaad` | #8E4A86 | 5.27 | 5.65 | 5.36 | 4.99 | 4.63 | **4.25** |
+| `--m-hub` | #45569E | 5.95 | 6.38 | 6.05 | 5.63 | 5.23 | 4.80 |
+| `--m-srijan` | #7A4E9E | 5.37 | 5.75 | 5.46 | 5.08 | 4.72 | **4.33** |
+| `--m-pahchan` | #A24A38 | 5.12 | 5.49 | 5.21 | 4.85 | 4.50 | **4.13** |
+| `--m-boards` | #4F5BA6 | 5.42 | 5.81 | 5.51 | 5.13 | 4.76 | **4.37** |
+| `--m-approvals` | #5A7A33 | **4.29** | 4.60 | **4.36** | **4.06** | **3.77** | **3.46** |
+| `--m-reports` | #2F7268 | 4.91 | 5.27 | 4.99 | 4.65 | **4.32** | **3.96** |
 
-Module accents, LIGHT (used as heading/label colour on `--bg` and `--surface`):
-
-| token | `--bg` | `--surface` | `--s-high` |
-|---|---|---|---|
-| `--m-graha` #2F6690 | 5.62 | 5.85 | 4.90 |
-| `--m-ganit` #2E7D52 | 4.63 | 4.82 | **4.04** |
-| `--m-manav` #A65A2E | 4.79 | 4.99 | **4.18** |
-| `--m-vikray` #A83E63 | 5.61 | 5.85 | 4.90 |
-| `--m-vetana` #6B4FA8 | 6.36 | 6.62 | 5.54 |
-| `--m-dristi` #24707F | 4.94 | 5.15 | **4.31** |
-| `--m-prachar` #8A6A18 | 4.68 | 4.87 | **4.08** |
-| `--m-esign` #2B7A6B | 4.65 | 4.85 | **4.06** |
-| `--m-sanvaad` #8E4A86 | 6.28 | 6.54 | 5.48 |
-| `--m-hub` #45569E | 6.57 | 6.85 | 5.73 |
-| `--m-srijan` #7A4E9E | 6.44 | 6.71 | 5.62 |
-| `--m-pahchan` #A24A38 | 5.75 | 5.99 | 5.02 |
-| `--m-boards` #4F5BA6 | 6.05 | 6.30 | 5.28 |
-| `--m-approvals` #5A7A33 | 4.60 | 4.79 | **4.01** |
-| `--m-reports` #2F7268 | 4.90 | 5.10 | **4.27** |
+| on-pair | ratio |
+|---|---|
+| `--on-primary` on `--primary` | 4.63 |
+| `--on-primary-container` on `--primary-container` | 13.63 |
+| `--on-secondary-container` on `--secondary-container` | 13.16 |
+| `--on-tertiary-container` on `--tertiary-container` | 12.75 |
+| `--on-ok-container` on `--ok-container` | 11.02 |
+| `--on-warn-container` on `--warn-container` | 10.10 |
+| `--on-danger-container` on `--danger-container` | 10.45 |
+| `--on-danger` on `--danger` | 6.57 |
 
 #### DARK
 
-| foreground | `--bg` | `--surface` | `--s-low` | `--s-container` | `--s-high` | `--s-highest` |
-|---|---|---|---|---|---|---|
-| `--on-surface` #E9E7E1 | 16.35 | 14.72 | 13.44 | 11.85 | 9.98 | 8.35 |
-| `--on-surface-2` #BFBDB6 | 10.75 | 9.68 | 8.84 | 7.79 | 6.56 | 5.49 |
-| `--on-surface-3` #8E8D87 | 5.13 | 4.62 | **4.22** | **3.72** | **3.13** | **2.62** |
-| `--on-surface-faint` → `-3` | 5.13 | 4.62 | **4.22** | **3.72** | **3.13** | **2.62** |
-| `--on-surface-disabled` #64645F | **3.25** | **2.93** | **2.67** | **2.36** | **1.98** | **1.66** |
-| `--primary` #4FD8CB | 11.31 | 10.18 | 9.30 | 8.20 | 6.90 | 5.78 |
-| `--primary-text` → `--primary` | 11.31 | 10.18 | 9.30 | 8.20 | 6.90 | 5.78 |
-| `--secondary` #C3CBB0 | 11.75 | 10.58 | 9.66 | 8.52 | 7.17 | 6.00 |
-| `--tertiary` #F0BB90 | 10.44 | 9.40 | 8.58 | 7.57 | 6.37 | 5.33 |
-| `--ok` #5BD98A | 11.38 | 10.25 | 9.36 | 8.25 | 6.95 | 5.81 |
-| `--warn` #E8B45C | 9.72 | 8.75 | 7.99 | 7.05 | 5.93 | 4.96 |
-| `--danger` #F2867A | 7.30 | 6.57 | 6.00 | 5.29 | 4.46 | **3.73** |
-| `--outline` #5B626C | **2.97** | **2.67** | **2.44** | **2.15** | **1.81** | **1.51** |
-| `--st-todo` #9AA3B2 | 6.86 | 6.18 | 5.64 | 4.98 | **4.19** | **3.50** |
-| `--st-in-progress` #8FAEDC | 7.87 | 7.08 | 6.47 | 5.70 | 4.80 | **4.01** |
-| `--st-in-review` #B6A6E0 | 8.10 | 7.29 | 6.66 | 5.87 | 4.94 | **4.13** |
-| `--pr-medium` #8FAEDC | 7.87 | 7.08 | 6.47 | 5.70 | 4.80 | **4.01** |
+| foreground | resolved | `--bg` | `--surface` | `--s-low` | `--s-container` | `--s-high` | `--s-highest` |
+|---|---|---|---|---|---|---|---|
+| `--on-surface` | #E9E7E1 | 15.63 | 14.79 | 13.98 | 12.93 | 11.54 | 10.02 |
+| `--on-surface-2` | #BFBDB6 | 10.28 | 9.73 | 9.19 | 8.51 | 7.59 | 6.59 |
+| `--on-surface-3` | #8E8D87 | 5.81 | 5.50 | 5.19 | 4.81 | **4.29** | **3.72** |
+| `--on-surface-faint` | #8E8D87 | 5.81 | 5.50 | 5.19 | 4.81 | **4.29** | **3.72** |
+| `--on-surface-disabled` | #64645F | **3.25** | **3.08** | **2.90** | **2.69** | **2.40** | **2.08** |
+| `--primary` | #4FD8CB | 11.06 | 10.47 | 9.89 | 9.15 | 8.16 | 7.09 |
+| `--primary-text` | #4FD8CB | 11.06 | 10.47 | 9.89 | 9.15 | 8.16 | 7.09 |
+| `--primary-hover` | #6FE6DA | 12.89 | 12.20 | 11.53 | 10.67 | 9.52 | 8.26 |
+| `--secondary` | #C3CBB0 | 11.49 | 10.88 | 10.28 | 9.51 | 8.48 | 7.37 |
+| `--tertiary` | #F0BB90 | 11.24 | 10.64 | 10.05 | 9.30 | 8.30 | 7.21 |
+| `--ok` | #5BD98A | 10.80 | 10.22 | 9.66 | 8.94 | 7.97 | 6.92 |
+| `--warn` | #E8B45C | 10.23 | 9.68 | 9.15 | 8.46 | 7.55 | 6.56 |
+| `--danger` | #F2867A | 7.79 | 7.38 | 6.97 | 6.45 | 5.75 | 5.00 |
+| `--outline` | #5B626C | **3.14** | **2.97** | **2.80** | **2.60** | **2.32** | **2.01** |
+| `--st-todo` | #9AA3B2 | 7.60 | 7.19 | 6.79 | 6.29 | 5.61 | 4.87 |
+| `--st-in-progress` | #8FAEDC | 8.52 | 8.06 | 7.62 | 7.05 | 6.29 | 5.46 |
+| `--st-in-review` | #B6A6E0 | 8.76 | 8.29 | 7.83 | 7.25 | 6.47 | 5.62 |
+| `--pr-medium` | #8FAEDC | 8.52 | 8.06 | 7.62 | 7.05 | 6.29 | 5.46 |
+| `--m-graha` | #8FB8DC | 9.26 | 8.76 | 8.28 | 7.66 | 6.83 | 5.93 |
+| `--m-ganit` | #7ED4A2 | 10.88 | 10.30 | 9.73 | 9.01 | 8.03 | 6.98 |
+| `--m-manav` | #E8AE82 | 9.95 | 9.42 | 8.89 | 8.23 | 7.34 | 6.38 |
+| `--m-vikray` | #E894B4 | 8.58 | 8.12 | 7.67 | 7.10 | 6.34 | 5.50 |
+| `--m-vetana` | #B9A6E8 | 8.91 | 8.44 | 7.97 | 7.37 | 6.58 | 5.71 |
+| `--m-dristi` | #7CC5D4 | 9.93 | 9.40 | 8.88 | 8.22 | 7.33 | 6.37 |
+| `--m-prachar` | #DCC072 | 10.88 | 10.30 | 9.73 | 9.01 | 8.03 | 6.98 |
+| `--m-esign` | #7FCFBE | 10.65 | 10.08 | 9.52 | 8.81 | 7.86 | 6.83 |
+| `--m-sanvaad` | #DFA2D8 | 9.48 | 8.97 | 8.47 | 7.84 | 7.00 | 6.08 |
+| `--m-hub` | #A3AEE8 | 9.00 | 8.52 | 8.05 | 7.45 | 6.64 | 5.77 |
+| `--m-srijan` | #C4A2E4 | 8.87 | 8.39 | 7.93 | 7.34 | 6.55 | 5.68 |
+| `--m-pahchan` | #E8A08E | 9.07 | 8.58 | 8.11 | 7.50 | 6.69 | 5.81 |
+| `--m-boards` | #A8B2E4 | 9.34 | 8.85 | 8.36 | 7.73 | 6.90 | 5.99 |
+| `--m-approvals` | #ADC97E | 10.52 | 9.96 | 9.41 | 8.71 | 7.77 | 6.75 |
+| `--m-reports` | #85C6BA | 9.93 | 9.39 | 8.87 | 8.21 | 7.33 | 6.36 |
 
-Module accents, DARK: all 15 clear 4.5:1 on `--bg` (range **6.44** `--m-vetana`
-to **11.16** `--m-ganit`) and on `--surface` (**5.80** – **10.05**).
+| on-pair | ratio |
+|---|---|
+| `--on-primary` on `--primary` | 7.93 |
+| `--on-primary-container` on `--primary-container` | 7.01 |
+| `--on-secondary-container` on `--secondary-container` | 7.23 |
+| `--on-tertiary-container` on `--tertiary-container` | 6.96 |
+| `--on-ok-container` on `--ok-container` | 8.94 |
+| `--on-warn-container` on `--warn-container` | 9.49 |
+| `--on-danger-container` on `--danger-container` | 10.00 |
+| `--on-danger` on `--danger` | 7.40 |
 
-#### Container / `on-` pairs — all pass, both themes
+### 2c · Agreement with `23-accessibility.md` §Contrast, and where it diverges
 
-| pair | light | dark |
-|---|---|---|
-| `--on-primary` on `--primary` | 4.63 | 7.93 |
-| `--on-primary-container` on `--primary-container` | 13.63 | 7.01 |
-| `--on-secondary-container` on `--secondary-container` | 13.16 | 7.23 |
-| `--on-tertiary-container` on `--tertiary-container` | 12.75 | 6.96 |
-| `--on-ok-container` on `--ok-container` | 11.02 | 8.94 |
-| `--on-warn-container` on `--warn-container` | 10.10 | 9.49 |
-| `--on-danger-container` on `--danger-container` | 10.45 | 10.00 |
-| `--on-danger` on `--danger` | 6.57 | 7.40 |
+The spec ships its own ratio table. Mine reproduces it, which is the check that
+the maths is right — then it disagrees in two places, both in the spec's favour
+being *optimistic*.
 
-### 2c · What the numbers say
+| Token, on `--bg` | `23` says | measured | |
+|---|---|---|---|
+| `--on-surface` | 14.7 | **14.79** | agrees |
+| `--on-surface-2` | 7.4 | **7.40** | agrees |
+| `--on-surface-3` `#666A61` | 4.8 | **4.82** | agrees |
+| `--ok` `#14743A` | 5.1 | **5.10** | agrees |
+| `--warn` `#955806` | 4.9 | **4.98** | agrees |
+| `--danger` `#B42318` | 5.8 | **5.73** | agrees |
+| `--primary` `#04837A` | 4.04 | **4.04** | agrees |
+| `--primary-text` `#046B64` | 5.2 | **5.56** | spec understates; still passes |
+| `--on-primary` on `--primary` | 5.1 | **4.63** | **spec overstates by 0.47** — passes AA, but the margin is half what the table claims |
+| `--on-surface-faint` | 2.3 | **4.82** | spec is stale; the token was re-aliased after `23` was written |
 
-1. **`--primary` as text is confirmed failing** — 4.04:1 on `--bg`, 3.53:1 on
-   `--s-high` in light. The brief's rule is measured-correct. `--primary-text`
-   is 5.71:1 on `--bg`. Note the brief quotes 5.2:1; the current declared
-   `#046B64` measures **5.71:1** on `--bg` / 5.95:1 on `--surface`. Better than
-   documented, same conclusion.
-2. **`--on-surface-faint` is no longer a defect** (see §1). Its 2.3:1 reputation
-   belongs to the retired literal `#9DA096`, which now lives on as
-   `--on-surface-disabled` for WCAG-1.4.3-exempt inactive controls only.
-3. **`--on-surface-3` degrades on the top two surface steps.** Light: 4.39:1 on
-   `--s-high`, 4.00:1 on `--s-highest`. Dark is worse — 3.13:1 and 2.62:1. Any
-   secondary text on a raised surface fails. See §2d for what actually renders
-   there.
-4. **`--outline` never reaches 3:1 against any surface, in either theme**
-   (light 1.71–2.27, dark 1.51–2.97). See §2d.
+1. **`--primary` as text is confirmed failing.** 4.04:1 on `--bg`, 3.55:1 on
+   `--s-high`. The brief's rule is measured-correct, and `--primary-text` at
+   5.56:1 is the right substitute.
+2. **`--on-surface-faint` is no longer a defect.** Its 2.3:1 reputation belongs
+   to the retired literal `#9DA096`, which now lives on as
+   `--on-surface-disabled` for WCAG-1.4.3-exempt inactive controls only. `23`
+   §12's row for it is stale — the spec has not caught up with the token.
+3. **`--on-surface-3` degrades on the top two surface steps** — light 4.23 on
+   `--s-high`, 3.89 on `--s-highest`; dark 4.29 and 3.72.
+4. **`--outline` reaches 3:1 exactly once** (dark, on `--bg`, 3.14) and fails on
+   all eleven other surface/theme combinations (1.71–2.97).
 
 ### 2d · Spec defects — accessibility vs. the design files
 
-Recorded as spec defects per the escalation rule, **not** silently shipped.
+Recorded per the escalation rule: measured, reported, **not** silently shipped.
 
-**SPEC-A11Y-1 — `--outline` fails WCAG 1.4.11 (non-text contrast) everywhere.**
-Measured light `#ADA692`: 2.12:1 on `--bg`, 2.27:1 on `--surface`, 1.71:1 on
-`--s-highest`. Dark `#5B626C`: 2.97:1 / 2.67:1 / 1.51:1. It is the border of
-text inputs, checkboxes (`.cbx` `components.css:728`), radios (`.rdo`
-`components.css:739`) and select triggers — exactly the "visual information
-required to identify user interface components" that 1.4.11 requires at 3:1.
-NOT fixed on this branch: `--outline` is referenced across the whole system and
-a global luminance change is precisely the kind of edit that collides with a
-dozen concurrent agents. It needs to be one deliberate token change, measured,
-on a quiet tree. **Required light value ≥3:1 on `--s-highest` #DFD8C5: around
-`#78725F`.** Dark, ≥3:1 on `--s-highest` #2E353E: around `#7E8590`.
+**SPEC-A11Y-1 — `--outline` fails WCAG 1.4.11 (non-text contrast) almost
+everywhere.** Light `#ADA692`: 2.12 on `--bg`, 2.27 on `--surface`, 1.71 on
+`--s-highest`. Dark `#5B626C`: 3.14 on `--bg` (the only pass), 2.97 on
+`--surface`, 2.01 on `--s-highest`. It is the border of text inputs, checkboxes
+(`.cbx` `components.css:728`), radios (`.rdo` `components.css:739`) and select
+triggers — exactly the "visual information required to identify user interface
+components and states" that 1.4.11 requires at 3:1.
+**Not fixed here, deliberately.** `--outline` is referenced system-wide; a
+luminance change to it is a whole-app visual diff and the single likeliest edit
+to collide with a dozen concurrent agents. It wants one deliberate, measured
+token change on a quiet tree. Target values that clear 3:1 on the *worst*
+surface (`--s-highest`): light ≈ `#78725F`, dark ≈ `#7E8590`.
 
-**SPEC-A11Y-2 — `--on-surface-3` on raised surfaces.** Fails on `--s-high` and
-`--s-highest` in light (4.39, 4.00) and from `--s-low` upward in dark (4.22,
-3.72, 3.13, 2.62). The token comment at `kartavaya-design.css:143-155` already
-documents why a compliant fourth step is impossible on `--bg`; the same argument
-does not cover the raised steps, which are darker still in light and lighter in
-dark. Not a token bug so much as a placement rule: secondary text should not sit
-on `--s-high`/`--s-highest`. No live rule pairs them (§2e), so this is
-preventive.
+**SPEC-A11Y-2 — `--on-surface-3` on raised surfaces.** Fails on `--s-high`
+(4.23 light / 4.29 dark) and `--s-highest` (3.89 / 3.72). The token comment at
+`kartavaya-design.css:143-155` explains why a compliant *fourth* step is
+impossible on `--bg`; that argument does not extend to the raised steps. This is
+a placement rule rather than a token bug — secondary text should not sit on
+`--s-high`/`--s-highest`. No live rule pairs them today, so it is preventive.
+
+**SPEC-A11Y-3 — the tinted-chip pattern loses ~0.9:1 and nobody accounted for
+it.** This is the significant new finding, and it is systemic.
+
+The pattern is `background: color-mix(in srgb, var(--X) 14%, transparent);
+color: var(--X)` — a chip in one hue. `23` §12 blesses `--ok`/`--warn`/`--danger`
+for "chip labels" on the strength of their ratio **against `--bg`**. But a chip
+does not sit on `--bg`; it sits on a 14% tint of *its own foreground*, which
+moves the background toward the text and costs about 0.9:1. Measured, light:
+
+| foreground | on `--bg` (0%) | 8% tint | 12% tint | 14% tint |
+|---|---|---|---|---|
+| `--ok` `#14743A` | 5.10 | 4.58 | 4.33 | **4.21** |
+| `--warn` `#955806` | 4.98 | 4.48 | 4.25 | **4.13** |
+| `--st-in-review` `#6E5AA0` | 5.04 | 4.55 | 4.31 | **4.20** |
+| `--on-surface-3` `#666A61` | 4.82 | 4.37 | 4.15 | **4.04** |
+| `--danger` `#B42318` | 5.73 | 5.05 | 4.73 | 4.57 |
+| `--primary-text` `#046B64` | 5.56 | 4.96 | 4.68 | 4.55 |
+
+Six live rules land below 4.5:1 at 9.5–11px, all in light mode:
+
+| rule | file:line | measured |
+|---|---|---|
+| `.k-apcard__kind--creative` | `editorial.css:1820` | **4.13** |
+| `.k-actitem__verb--attached` | `editorial.css:1904` | **4.13** |
+| `.k-rule__status--off` | `editorial.css:1935` | **4.15** |
+| `.k-actitem__verb--assigned` | `editorial.css:1906` | **4.20** |
+| `.k-actitem__verb--approved` | `editorial.css:1903` | **4.21** |
+| `.k-rule__status--on` | `editorial.css:1934` | **4.33** |
+
+Live in `AutomationsPage.jsx`, `TasksListPage.jsx`, `ModuleUI.jsx`.
+`--danger` and `--primary-text` survive at 4.57 and 4.55 — a 0.05 margin, so
+any future tint increase breaks them too.
+
+Reducing the tint does not fix it: even at 6% the `--ink-3` chip is 4.48.
+The remedy is to darken the *text* while keeping the tint, which the file
+already does in two places — `.k-actitem__verb--moved` uses `--primary-text`
+rather than `--primary`, and `.k-actitem__verb--changed` pairs an `--ink-3`
+tint with `--ink-2` text (6.37 light / 8.96 dark). Measured remedies, both
+themes:
+
+| chip | remedy | light | dark |
+|---|---|---|---|
+| `--ok` tint + `--on-ok-container` | same hue, darker | 9.98–10.26 | 11.94–12.49 |
+| `--warn` tint + `--on-warn-container` | same hue, darker | 9.12 | 12.15 |
+| `--ink-3` tint + `--ink-2` | already the sibling's pattern | 6.37 | 8.96 |
+
+**One is fixed on this branch** — `.k-rule__status--off`, because an identical
+sibling rule 30 lines away already demonstrates the intended pairing, so it is
+an omission rather than a design choice. The rest need a token decision that is
+not mine to invent: `--st-in-review` is a violet with no `on-` counterpart in
+the system, and inventing one mid-swarm in the most-edited file in the repo is
+how merge conflicts get made. All numbers needed to land it are above.
 
 **SPEC-A11Y-3 — `.k-pill-*` / `.k-role-*` in `brand.css` pair a hardcoded
 light background with a theme-flipping foreground.** `brand.css:114`
