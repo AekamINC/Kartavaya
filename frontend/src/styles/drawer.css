@@ -46,7 +46,16 @@
   background: var(--surface);
   border-left: 1px solid var(--outline-variant);
   box-shadow: var(--shadow-4);
-  animation: dmDrawerIn var(--dur-slow) var(--ease-emph-in) both;
+  /* `--ease-emph`, not `--ease-emph-in`. MOTION-SPEC §3 gives the desktop task
+     drawer `--dur-slow --ease-emph`; §2 reserves `--ease-emph-in`
+     (`cubic-bezier(.05,.7,.1,1)`) for "bottom sheets rising", and its very
+     early acceleration reads as a sheet being thrown up from the edge rather
+     than a panel sliding in from the side. The keyframes were already right —
+     `translateX(28px)` + `opacity .3→1` in, `translateX(16px)` out — only the
+     curve was the sheet's. The `.ix-enter-drawer` utility in animations.css
+     still carries `--ease-emph-in`, as does that file's own summary table;
+     both are reported rather than edited, being another surface's file. */
+  animation: dmDrawerIn var(--dur-slow) var(--ease-emph) both;
 }
 .dr.is-closing { animation: dmDrawerOut var(--dur-base) var(--ease-exit) forwards; }
 

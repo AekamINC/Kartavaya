@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import TaskDrawer from '../TaskDrawer';
-import { AvatarStack, DueChip, StatusChip } from '../ui';
+import { AvatarStack, DueChip, EmptyState, StatusChip } from '../ui';
 import { PRIORITY_COLORS, PRIORITY_LABELS } from '../../lib/statusColors';
 
 /**
@@ -51,6 +51,19 @@ export default function PriorityView({ tasks = [], columns = [], teamMembers = [
   }, [tasks]);
 
   const now = new Date();
+
+  // All four groups empty is not four empty groups — it is an empty board, and
+  // rendering "Nothing at this priority" four times says the same thing four
+  // times without ever saying the useful one.
+  if (tasks.length === 0) {
+    return (
+      <EmptyState
+        illustration="tasks"
+        title="No tasks yet"
+        description="Tasks added to this project will appear here, grouped by priority."
+      />
+    );
+  }
 
   return (
     <div className="stack">
