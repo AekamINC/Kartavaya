@@ -20,10 +20,10 @@ const SUB_TABS = [
 ];
 
 const ENDPOINT = {
-  conversations: '/whatsapp/conversations',
-  templates: '/whatsapp/templates',
-  'auto-replies': '/whatsapp/auto-replies',
-  accounts: '/whatsapp/accounts',
+  conversations: '/v1/whatsapp/conversations',
+  templates: '/v1/whatsapp/templates',
+  'auto-replies': '/v1/whatsapp/auto-replies',
+  accounts: '/v1/whatsapp/accounts',
 };
 
 /**

@@ -10,7 +10,7 @@
  *
  * This claim held on the branch. The panel is built rather than the feature
  * dropped, because the endpoint it needs already exists and is unused:
- * `GET /messaging/messages/:id/thread` returns the replies oldest-first.
+ * `GET /v1/messaging/messages/:id/thread` returns the replies oldest-first.
  * `06` §4 lists it as new; it is not.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -34,7 +34,7 @@ export default function ThreadPanel({ channelId, root, me, meId, meName, onClose
   const load = useCallback(async ({ quiet } = {}) => {
     if (!quiet) setLoading(true);
     try {
-      const r = await api.get(`/messaging/messages/${root.id}/thread`);
+      const r = await api.get(`/v1/messaging/messages/${root.id}/thread`);
       setReplies(Array.isArray(r.data) ? r.data : []);
       setError(null);
     } catch (e) {
@@ -53,7 +53,7 @@ export default function ThreadPanel({ channelId, root, me, meId, meName, onClose
 
   const send = async (content) => {
     try {
-      const r = await api.post(`/messaging/channels/${channelId}/messages`, {
+      const r = await api.post(`/v1/messaging/channels/${channelId}/messages`, {
         content,
         parent_message_id: root.id,
       });
@@ -91,8 +91,8 @@ export default function ThreadPanel({ channelId, root, me, meId, meName, onClose
     };
     apply(toggleReactionLocal(before, emoji, meId));
     try {
-      if (mine) await api.delete(`/messaging/messages/${msg.id}/reactions/${encodeURIComponent(emoji)}`);
-      else await api.post(`/messaging/messages/${msg.id}/reactions?emoji=${encodeURIComponent(emoji)}`);
+      if (mine) await api.delete(`/v1/messaging/messages/${msg.id}/reactions/${encodeURIComponent(emoji)}`);
+      else await api.post(`/v1/messaging/messages/${msg.id}/reactions?emoji=${encodeURIComponent(emoji)}`);
     } catch {
       apply(before);
     }

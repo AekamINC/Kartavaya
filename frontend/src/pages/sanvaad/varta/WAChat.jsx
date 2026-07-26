@@ -38,7 +38,7 @@ export default function WAChat({ conversation, onBack }) {
 
     const load = async () => {
       try {
-        const r = await api.get(`/whatsapp/conversations/${convId}/messages`);
+        const r = await api.get(`/v1/whatsapp/conversations/${convId}/messages`);
         if (dead) return;
         const page = (Array.isArray(r.data) ? r.data : []).slice().reverse();
         setMessages(prev => mergeById(prev, page));
@@ -65,7 +65,7 @@ export default function WAChat({ conversation, onBack }) {
 
   const post = useCallback(async (content, type) => {
     try {
-      const r = await api.post(`/whatsapp/conversations/${convId}/messages`, { content, type });
+      const r = await api.post(`/v1/whatsapp/conversations/${convId}/messages`, { content, type });
       setMessages(prev => mergeById(prev, [r.data]));
     } catch (e) {
       pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to send' });
@@ -76,7 +76,7 @@ export default function WAChat({ conversation, onBack }) {
   const sendText = useCallback(body => post(body, 'text'), [post]);
 
   /**
-   * `06` §4 asks for `POST /whatsapp/conversations/:id/template`. It does not
+   * `06` §4 asks for `POST /v1/whatsapp/conversations/:id/template`. It does not
    * exist, and the backend is not this module's to add it to — so the template
    * goes through the existing send with `type: 'template'`, which the
    * `varta_messages.type` CHECK already allows. What is lost is

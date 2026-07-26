@@ -16,7 +16,7 @@ export default function TemplatePicker({ onSend, disabled }) {
 
   useEffect(() => {
     let dead = false;
-    api.get('/whatsapp/templates')
+    api.get('/v1/whatsapp/templates')
       .then(r => {
         if (dead) return;
         const ok = (Array.isArray(r.data) ? r.data : []).filter(t => t.status === 'approved');

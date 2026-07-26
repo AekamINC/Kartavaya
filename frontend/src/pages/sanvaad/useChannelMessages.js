@@ -51,7 +51,7 @@ export function useChannelMessages(channelId, meId, me = null) {
   // the client reverses. `06` §4 asks the API to return oldest-first instead;
   // that is a backend change and is noted rather than made.
   const fetchPage = useCallback(async () => {
-    const r = await api.get(`/messaging/channels/${channelId}/messages`);
+    const r = await api.get(`/v1/messaging/channels/${channelId}/messages`);
     return (Array.isArray(r.data) ? r.data : []).slice().reverse();
   }, [channelId]);
 
@@ -80,7 +80,7 @@ export function useChannelMessages(channelId, meId, me = null) {
     };
 
     load();
-    api.post(`/messaging/channels/${channelId}/read`).catch(() => {});
+    api.post(`/v1/messaging/channels/${channelId}/read`).catch(() => {});
 
     const tick = () => { if (!document.hidden) load(); };
     const iv = setInterval(tick, POLL_MS);
@@ -99,7 +99,7 @@ export function useChannelMessages(channelId, meId, me = null) {
   }, []);
 
   const send = useCallback(async (content, parentId) => {
-    const r = await api.post(`/messaging/channels/${channelId}/messages`, {
+    const r = await api.post(`/v1/messaging/channels/${channelId}/messages`, {
       content,
       parent_message_id: parentId || null,
     });
@@ -141,7 +141,7 @@ export function useChannelMessages(channelId, meId, me = null) {
     if (!oldest || older || !more) return;
     setOlder(true);
     try {
-      const r = await api.get(`/messaging/channels/${channelId}/messages`, {
+      const r = await api.get(`/v1/messaging/channels/${channelId}/messages`, {
         params: { before: oldest.id, limit: PAGE },
       });
       const page = (Array.isArray(r.data) ? r.data : []).slice().reverse();
@@ -156,7 +156,7 @@ export function useChannelMessages(channelId, meId, me = null) {
   }, [channelId, messages, older, more]);
 
   /**
-   * `PATCH /messaging/messages/:id` and `DELETE /messaging/messages/:id` have
+   * `PATCH /v1/messaging/messages/:id` and `DELETE /v1/messaging/messages/:id` have
    * existed since migration 058 and NO client had ever called either one, so
    * `is_edited` and `is_deleted` were columns the UI could render but never
    * produce. `MESSAGING-ATTENDANCE-SPEC.md:24` requires both.
@@ -167,7 +167,7 @@ export function useChannelMessages(channelId, meId, me = null) {
    * courtesy and the server-side one is the rule.
    */
   const edit = useCallback(async (msg, content) => {
-    const r = await api.patch(`/messaging/messages/${msg.id}`, { content });
+    const r = await api.patch(`/v1/messaging/messages/${msg.id}`, { content });
     // `edit_message` returns the bare row — no `sender_name`, no `reactions`,
     // no `thread_count`, because those are joins only `list_messages` performs.
     // Merging it raw would blank all three until the next poll, so only the
@@ -181,7 +181,7 @@ export function useChannelMessages(channelId, meId, me = null) {
   }, [patch]);
 
   const remove = useCallback(async (msg) => {
-    await api.delete(`/messaging/messages/${msg.id}`);
+    await api.delete(`/v1/messaging/messages/${msg.id}`);
     // `list_messages` filters `is_deleted = FALSE`, so the next poll drops the
     // row entirely. Until then the tombstone is what the deleter sees, which is
     // the acknowledgement that the delete landed.
@@ -204,11 +204,11 @@ export function useChannelMessages(channelId, meId, me = null) {
     patch(msg.id, { reactions: toggleReactionLocal(before, emoji, meId) });
     try {
       if (mine) {
-        await api.delete(`/messaging/messages/${msg.id}/reactions/${encodeURIComponent(emoji)}`);
+        await api.delete(`/v1/messaging/messages/${msg.id}/reactions/${encodeURIComponent(emoji)}`);
       } else {
         // `emoji` is a query parameter server-side. `06` §4 wants it moved into
         // the body; that is a backend change and is noted rather than made.
-        await api.post(`/messaging/messages/${msg.id}/reactions?emoji=${encodeURIComponent(emoji)}`);
+        await api.post(`/v1/messaging/messages/${msg.id}/reactions?emoji=${encodeURIComponent(emoji)}`);
       }
     } catch {
       patch(msg.id, { reactions: before });

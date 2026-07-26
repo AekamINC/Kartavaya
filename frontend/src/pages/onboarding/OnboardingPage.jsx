@@ -28,7 +28,7 @@ import { Check, ChevLeft } from './icons';
  *    write that the same paragraph asks for — and only that. Dropping off on a
  *    phone does NOT resume on a laptop yet; nothing here claims it does.
  *
- * 2. Two of the five steps can be applied for real (`POST /invites`,
+ * 2. Two of the five steps can be applied for real (`POST /admin/invites`,
  *    `POST /teams` + `/projects/:id/columns`) and three cannot: there is no
  *    endpoint for a user profile, an organisation record, or an org's enabled
  *    module set. Those three save locally, and StepDone reports them in the
@@ -37,7 +37,7 @@ import { Check, ChevLeft } from './icons';
  *
  * An invited member skips Organisation and Modules — AUTH-SPEC: "An invited
  * user must not see module selection — the org already decided" — and skips
- * Team, because `POST /invites` requires admin and offering a form that will
+ * Team, because `POST /admin/invites` requires admin and offering a form that will
  * 403 is worse than not offering it.
  */
 
@@ -173,8 +173,15 @@ export default function OnboardingPage() {
     const failed = [];
     for (const inv of state.invites) {
       try {
+        // The path is `/admin/invites`, not `/invites`. `invite_router.py:274`
+        // declares `@router.post("/invites")` under `APIRouter(prefix="/api/admin")`,
+        // and `AdminPage.jsx:547` has always called it by its real name — this
+        // was the one caller that did not, so every invite sent from onboarding
+        // 404'd. The loop reports per-invite failures rather than throwing, so it
+        // surfaced as "all invites failed" instead of as an error.
+        //
         // `noRetry` is load-bearing, not caution. The response interceptor in
-        // lib/api.js retries 502/503/504 up to three times, and POST /invites
+        // lib/api.js retries 502/503/504 up to three times, and this endpoint
         // SENDS AN EMAIL. Measured in the browser: one call against a 503 put
         // FOUR requests on the wire. A gateway 503 in the Railway restart
         // window — the exact case that retry was written for — arrives after
@@ -183,7 +190,7 @@ export default function OnboardingPage() {
         // client is not a transient failure the user can undo.
         // api.js documents this opt-out for uploads "to avoid double-sending";
         // an invite is the same hazard with a person on the other end.
-        await api.post('/invites', { email: inv.email, role: inv.role }, { noRetry: true });
+        await api.post('/admin/invites', { email: inv.email, role: inv.role }, { noRetry: true });
         sent += 1;
       } catch (err) {
         failed.push(`${inv.email}${err?.response?.data?.detail ? ` — ${err.response.data.detail}` : ''}`);

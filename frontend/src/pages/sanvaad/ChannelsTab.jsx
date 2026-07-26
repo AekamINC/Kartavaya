@@ -28,7 +28,7 @@ export default function ChannelsTab() {
 
   const loadChannels = useCallback(async () => {
     try {
-      const r = await api.get('/messaging/channels');
+      const r = await api.get('/v1/messaging/channels');
       setChannels(Array.isArray(r.data) ? r.data : []);
     } catch {
       setChannels([]);
@@ -42,7 +42,7 @@ export default function ChannelsTab() {
   const createChannel = async (name, type) => {
     setCreating(true);
     try {
-      const r = await api.post('/messaging/channels', { name, type });
+      const r = await api.post('/v1/messaging/channels', { name, type });
       setChannels(prev => [r.data, ...prev]);
       setSelected(r.data);
       setThread(null);
