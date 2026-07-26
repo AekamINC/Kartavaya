@@ -91,6 +91,13 @@ const LOADING_INDICATORS = new Set([
   '.prg--ind .prg__f',
   '.gr__spin',
   '[data-k-palette] .k-cmdk__spin',
+  // `.k-spinner` used to carry `animation: none` under reduce and was the only
+  // spinner in the build that did. That stop was removed deliberately —
+  // editorial.css:3613 states it, and animations.css §9 is the policy: a frozen
+  // spinner is a broken-looking page, and the progress text beside it already
+  // carries the meaning. This entry records that review; the test flagged the
+  // change, which is what it is for.
+  '.k-spinner',
 ]);
 
 /* ══════════════════════════════════════════════════════════════════════════

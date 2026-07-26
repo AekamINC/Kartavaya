@@ -84,23 +84,14 @@ jobs:
 
       - name: Design class gate
         run: node scripts/check-classes.mjs
+      # Both run from `frontend/` (this job's working-directory) and unpiped.
+      # They process.exit(1) when src/styles is absent, so a root invocation is
+      # a loud failure rather than a silent pass — do not "helpfully" pipe them
+      # through `tail`, which reports tail's exit status and always passes.
 
       - name: Type check
         run: npx tsc --noEmit --skipLibCheck
         continue-on-error: true  # JSX project has no tsconfig yet; best-effort
-
-      # The two mechanical gates from 25-qa-acceptance.md §1. They take under a
-      # second and would have caught eight of the defects that document lists —
-      # an unresolved var() returns an empty string and CSS drops the
-      # declaration silently, with no console warning, so these are invisible to
-      # review and obvious to a script.
-      #
-      # Run from `frontend/` (this job's working-directory). Both scripts
-      # process.exit(1) when src/styles is absent, so a root invocation is a
-      # loud failure rather than a silent pass — do not "fix" that by piping
-      # them through `tail`, which reports tail's exit status and always passes.
-      - name: Design gates — tokens and classes
-        run: yarn check
 
       # Covers `src/**/__tests__/**`, which includes the end-to-end suite at
       # `src/__tests__/e2e/`. That suite runs entirely in-process against a

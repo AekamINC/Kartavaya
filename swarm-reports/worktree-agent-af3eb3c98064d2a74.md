@@ -3,8 +3,9 @@
 Owner of this branch: the browser-level / end-to-end suite. Backend unit and
 router tests belong to a different agent and are not touched here.
 
-**160 tests, 8 files, all green.** Full frontend suite 386 passing across 22
-files. Both mechanical gates exit 0.
+**160 tests, 8 files, all green.** Full frontend suite **433 passing across 22
+files**. Both mechanical gates exit 0. Rebased onto `origin/staging` twice
+(199 sibling commits) and re-verified after each.
 
 ```
 cd frontend && yarn test:e2e          # the e2e suite alone
@@ -98,7 +99,7 @@ deliberately not wired into CI.
 | `auth-session.test.jsx` | 14 | Login stores token+user together **or neither**; staff land on `/dashboard` and clients on `/client`; a network failure is not reported as bad credentials; `/auth/me` re-verifies on every guarded load and refreshes a stale role; a 401 evicts the token; a guarded page renders nothing while verification is in flight; sign-out clears all six keys it owns and completes even when the server refuses. |
 | `client-isolation.test.jsx` | 58 | **The highest-value file.** A client is bounced off every staff path, and off a path nobody has declared yet. Staff are kept out of the portal. `/clients` is not `/client`. A flagged client who also holds an org role keeps the staff product. The client nav offers nothing that leads out. No `/client` route is nested inside the staff shell. |
 | `separated-duty.test.jsx` | 21 | On `vetana` and `ganit`, admin does not satisfy approver but still satisfies every rung below it; the picker never offers a level the DB constraint rejects; the frontend mirror agrees with `role_tiers.py` on all three module sets. **Plus two pinned known-open gaps** — see §4. |
-| `module-entitlement.test.jsx` | 16 | A granted module is visible and every ungranted one is hidden; an empty grant list hides all modules but not the core workspace; an **absent** list is permissive, not empty; a malformed list is treated as absent. **Plus two pinned gaps** — the URL half has no gate. |
+| `module-entitlement.test.jsx` | 17 | A granted module is visible and every ungranted one is hidden; an empty grant list hides all modules but not the core workspace; an **absent** list is permissive, not empty; a malformed list is treated as absent; `/auth/me` now sends `module_grants` and serialises `[]` distinctly from absent. **Plus two pinned gaps** — the URL half has no gate. |
 | `task-flow.test.jsx` | 16 | Inline create lands in the column it was typed into with the right status; a failed create returns the draft rather than losing it. The move is **one** `PATCH` carrying column and order together; the card appears in the destination before the server answers; a failure rolls back the **whole** previous task, not just its column; drops outside a column, onto the same slot, or onto a synthetic column do not write. Clicking a card opens a dialog labelled for that task. |
 | `theme-motion.test.jsx` | 16 | **No infinite animation is scaled by `var(--ix)`**, and none resolves under 100ms of loop period under reduce — the strobe, asserted both as mechanism and as measurement. Every decorative infinite animation has a reduce escape; the loading-indicator exemption is checked for dead and for non-spinner entries. No token exists only in dark. `[data-theme]` is the only theme mechanism and its only values are light/dark. |
 | `visual-regression.test.jsx` | 6 | Semantic palette baseline, light and dark side by side. Surface control outlines by role and accessible name, asserted identical across themes. No binary baseline is committed. |
@@ -142,6 +143,24 @@ allow-list. 38 derived staff paths plus one undeclared path all bounce.
 
 ---
 
+## 3a · What the suite caught on the final rebase
+
+Rebasing onto 140 further sibling commits produced exactly four failures. None
+was a false alarm and none was noise — this is the suite doing its job on day
+one, so it is worth recording what each turned out to be.
+
+| Signal | Verdict |
+|---|---|
+| `.k-spinner` has no reduced-motion escape | **Intended change, confirmed.** A sibling removed its `animation: none` on purpose (`editorial.css:3613`): it was the only spinner in the build that froze, and a frozen spinner reads as a broken page. Added to the loading-indicator allow-list with the citation. |
+| `/hub` hidden when no grant list was sent | **My test was over-broad.** A sibling added `module: 'srijan'` to the two Srijan rows, and `/hub` is *also* `adminOnly`. The permissive-default assertion is about the module predicate, so it now runs over entries where no other predicate is in play. |
+| `_safe_user` now sends `module_grants` | **The gap closed while I was writing.** The test was recording the opposite and went red, which is what it was for. **The nav entitlement gate is now LIVE**, not dormant. A second test now pins the subtle half: the field is serialised on `is not None`, not truthiness — an empty list is a real answer ("granted nothing") and dropping it on falsiness would read back as "no opinion" and show every module. |
+| Palette snapshot mismatch | **One line: `--on-ok` added, both themes.** A missing `on-` partner filled in — precisely the defect class `25-qa-acceptance.md` §1 lists. Reviewed and accepted. |
+
+The URL half of entitlement is **still open**: `Protected` has no module gate,
+so the two `it.fails` pins remain correct and remain red-on-fix.
+
+---
+
 ## 4 · Known-open gaps, pinned rather than papered over
 
 Four tests use `it.fails`. That is not a weakened assertion — it passes **only
@@ -178,10 +197,14 @@ Anyone who bookmarks, guesses or is sent a link reaches the page.
 The fix is small and belongs in `Protected.jsx` beside the other three: resolve
 the path to a module code via `ROUTE_META`, then apply the same
 `null`-is-permissive rule `canSeeNavItem` already uses. Not done here because
-this branch owns tests, and because a route gate written against a signal the
-API does not send cannot be verified end to end — `/auth/me` still does not
-return `module_grants` (`auth_router.py:125 _safe_user`), which is asserted, so
-the nav gate is **dormant rather than broken**.
+this branch owns tests.
+
+**This is now more urgent than when I started.** `/auth/me` *does* send
+`module_grants` as of the final rebase (`auth_router.py:126 _safe_user`), so the
+nav gate is live: an org can now genuinely hide a module from the sidebar and
+believe it is unsubscribed. The URL remains wide open. A gate that works in the
+nav and nowhere else is more misleading than one that works nowhere, because it
+looks like it is doing something. **Recommend closing this next.**
 
 ---
 

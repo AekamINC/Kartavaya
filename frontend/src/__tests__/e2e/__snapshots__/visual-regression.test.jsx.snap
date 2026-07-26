@@ -43,6 +43,7 @@ exports[`e2e · visual · the theme palette baseline > light and dark resolve ev
 --ok-container               light=#C6EFD2  dark=#14432A
 --on-danger                  light=#FFFFFF  dark=#2A0A06
 --on-danger-container        light=#5C1109  dark=#FBDAD5
+--on-ok                      light=#FFFFFF  dark=#06341A
 --on-ok-container            light=#06341A  dark=#C6EFD2
 --on-primary                 light=#FFFFFF  dark=#00332F
 --on-primary-container       light=#00201D  dark=#74F5E8

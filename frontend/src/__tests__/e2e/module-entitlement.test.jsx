@@ -55,6 +55,23 @@ afterEach(() => {
 const MODULE_ITEMS = NAV_FULL.flatMap(g => g.items).filter(i => i.module);
 const ALL_MODULES = MODULE_ITEMS.map(i => i.module);
 
+/**
+ * Module entries whose visibility is decided by the grant ALONE.
+ *
+ * `canSeeNavItem` applies four independent predicates, and an entry may carry
+ * more than one: `/hub` is `adminOnly: true, module: 'srijan'`, so it is hidden
+ * from a plain member whatever their grants say. Asserting "every module entry
+ * is visible when grants are absent" over the unfiltered list therefore fails on
+ * `/hub` for a reason that has nothing to do with entitlement — which is exactly
+ * what happened when a sibling added `module: 'srijan'` to those two rows.
+ *
+ * The permissive-default assertions below are about the MODULE predicate, so
+ * they run over entries where no other predicate is in play.
+ */
+const GRANT_ONLY_ITEMS = MODULE_ITEMS.filter(
+  i => !i.adminOnly && !i.orgAdminOnly && !i.ownerOnly,
+);
+
 /** Nav destinations a user can see, flattened. */
 const destinationsFor = (user) =>
   navGroupsFor(user).flatMap(g => g.items.map(i => i.to.split('?')[0]));
@@ -122,7 +139,8 @@ describe('e2e · module entitlement · the nav', () => {
     expect(navContext(user).moduleGrants).toBeNull();
 
     const seen = destinationsFor(user);
-    for (const item of MODULE_ITEMS) {
+    expect(GRANT_ONLY_ITEMS.length).toBeGreaterThan(8);
+    for (const item of GRANT_ONLY_ITEMS) {
       expect(seen, `${item.to} hidden when the server sent no grant list`).toContain(item.to);
     }
   });
@@ -161,24 +179,34 @@ describe('e2e · module entitlement · the signal is not wired yet', () => {
     expect(nav).toMatch(/item\.module\s*&&\s*ctx\.moduleGrants/);
   });
 
-  it('RECORDED: /auth/me does not return module_grants, so nothing is gated today', () => {
-    // Not a defect being asserted away — a fact with a citation, so the report
-    // and the code agree and the next reader knows the gate is dormant rather
-    // than broken. When `_safe_user` grows the field, this test goes red and
-    // the entitlement story becomes live with no other change.
-    const path = ['../backend/auth_router.py', 'backend/auth_router.py'];
+  it('/auth/me now returns module_grants, so the nav gate is LIVE', () => {
+    // This test used to record the opposite. It went red when a sibling wired
+    // the field, which is what it was for — the entitlement story is live and
+    // the nav predicate above is now load-bearing rather than dormant.
     // eslint-disable-next-line global-require
     const { readFileSync, existsSync } = require('node:fs');
-    const file = path.find(existsSync);
+    const file = ['../backend/auth_router.py', 'backend/auth_router.py'].find(existsSync);
     expect(file, 'backend/auth_router.py not found from ' + process.cwd()).toBeTruthy();
 
     const src = readFileSync(file, 'utf8');
-    const safeUser = src.slice(src.indexOf('def _safe_user'), src.indexOf('@router.post("/accept-invite")'));
+    const safeUser = src.slice(src.indexOf('def _safe_user'), src.indexOf('@router.post'));
     expect(safeUser).toContain('platform_roles');
-    expect(
-      safeUser.includes('module_grants'),
-      '_safe_user now sends module_grants — the nav gate is live; flip the URL pins below',
-    ).toBe(false);
+    expect(safeUser).toContain('module_grants');
+  });
+
+  it('the API distinguishes "granted nothing" from "no opinion"', () => {
+    // The trap the frontend comment warns about, on the server side. An EMPTY
+    // list is a real answer — "this member has been granted nothing" — and it
+    // is the answer the nav needs in order to hide the modules group. Serialised
+    // on truthiness, `[]` would be dropped and read back as `null`, which is
+    // permissive: the one case that matters would silently show every module.
+    // eslint-disable-next-line global-require
+    const { readFileSync, existsSync } = require('node:fs');
+    const file = ['../backend/auth_router.py', 'backend/auth_router.py'].find(existsSync);
+    const src = readFileSync(file, 'utf8');
+    const safeUser = src.slice(src.indexOf('def _safe_user'), src.indexOf('@router.post'));
+
+    expect(safeUser).toMatch(/module_grants\s+is\s+not\s+None/);
   });
 });
 
