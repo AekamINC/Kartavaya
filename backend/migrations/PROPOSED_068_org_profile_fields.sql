@@ -59,14 +59,18 @@ COMMENT ON COLUMN staging.organisations.description IS
     'over-long paste is a 400 naming the field rather than a row-size surprise.';
 
 COMMENT ON COLUMN staging.organisations.industry IS
-    'Free text, not an enum. An enum here would need a list of Indian '
-    'accounting-firm verticals that nobody has agreed, and a wrong enum '
-    'rejects the customer''s own description of themselves.';
+    'Free text, not an enum. The design reference DOES name a list — SetOrg.jsx '
+    'renders a select of IT Services / Manufacturing / Retail & Trading / '
+    'Agency / Consulting / CA & Legal practice / Other — and the control should '
+    'offer exactly those. It stays TEXT in storage because the list ends in '
+    '"Other": an enum could not store what someone picks Other to say, and a '
+    'wrong enum rejects the customer''s own description of themselves.';
 
 COMMENT ON COLUMN staging.organisations.team_size IS
-    'TEXT, not INTEGER. The design says "team size" without saying whether the '
-    'control is a count or a band; TEXT accepts "12" and "11-50", INTEGER '
-    'rejects the band. Widening later is a migration, narrowing is data loss.';
+    'TEXT, not INTEGER — and the design settles it. SetOrg.jsx renders team '
+    'size as a select of BANDS (1-10, 11-50, 51-200, 200+), not a count. TEXT '
+    'accepts a band, INTEGER cannot. Widening later is a migration, narrowing '
+    'is data loss.';
 
 COMMENT ON COLUMN staging.organisations.founded_year IS
     'Year the firm was founded. Range-checked in ProfileUpdate so a typo is a '

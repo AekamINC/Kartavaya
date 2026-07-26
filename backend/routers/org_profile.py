@@ -139,11 +139,10 @@ class ProfileUpdate(BaseModel):
     description: str | None = None
     industry: str | None = None
 
-    #: TEXT, not an integer. The control for this has not been built, and the
-    #: design calls it "team size" without saying whether it is a count or a
-    #: band. TEXT accepts "12" and "11-50"; INTEGER rejects the band and there is
-    #: no migration back from a rejected save. A column that accepts what the
-    #: eventual control produces is the one that cannot be wrong here.
+    #: TEXT, not an integer, and the design reference settles what was a guess
+    #: when this was written: `SetOrg.jsx` renders team size as a select of
+    #: BANDS — 1-10, 11-50, 51-200, 200+ — never a count. TEXT accepts a band;
+    #: INTEGER rejects it and there is no migration back from a rejected save.
     team_size: str | None = None
 
     #: A real year, so it is a real integer and is range-checked. Stored

@@ -219,3 +219,65 @@ The brief named three. There was a fourth.
 
 None were left as identity functions. An identity translator implies a split that no
 longer exists, and the next reader has to re-derive that it is a no-op.
+
+## 6. Design fidelity — checked against `_SOURCE-MAP.md`, spec and reference JSX
+
+My surface is backend endpoints, not screens, so there is no pixel work here. What IS
+in scope is the coordinator's "backend must supply exactly what the designed screens
+read". Checked `10-org-settings.md`, `SETTINGS-ADMIN-SPEC.md` and `SetOrg.jsx`.
+
+### `/v1/org/security` matches the contract exactly — do NOT widen it
+
+Both spec tables define the contract identically:
+
+- `10-org-settings.md`:212 — `GET/PATCH /v1/org/security` → `tfa_allowed`, `tfa_enforced`, `idle_timeout`, `ip_ranges[]`, `password_policy`
+- `SETTINGS-ADMIN-SPEC.md`:236 — same five, same names
+
+`SecurityPatch` implements exactly those five. The salvaged router is correct as written.
+`SETTINGS-ADMIN-SPEC.md`:138 confirms the behaviours too, and the router implements each:
+enforce disabled until allow is on (CHECK `NOT (tfa_enforced AND NOT tfa_allowed)`),
+enforce "names how many members would be locked out" (`acknowledge_lockout` must equal the
+server's own count — a boolean could be sent by a client that never displayed the number,
+a matching integer cannot), and "IP ranges with a self-lockout check before save"
+(`_check_admin_inside`).
+
+### TWO NEW SPEC DEFECTS — reference mockup vs. API contract
+
+Both are cases where `SetOrg.jsx` renders a control the contract does not define. I did
+**not** invent schema for either.
+
+1. **"One device at a time"** (`SetOrg.jsx`:270) is a switch in the Sessions card, but it
+   is in neither API table. Session/device management is separately specified as
+   `GET /v1/me/sessions` + `DELETE /v1/me/sessions/:id` + `DELETE /v1/me/sessions`
+   (`SETTINGS-ADMIN-SPEC.md`:239-240). So the control belongs to the `/v1/me/sessions`
+   surface, not to `/v1/org/security`. **Cross-agent note: that surface is
+   `feat/me-account-self-service` — the same branch as the 067 collision.** Whoever owns
+   it should confirm the org-level "one device" toggle has a home; today it has none.
+2. **`password_policy` is one field in both contract tables**, but `SetOrg.jsx`:276-286
+   renders four controls — a minimum-length segment (8/12/16) plus three independent
+   toggles (require number+symbol, block common passwords, expire every 90 days). The
+   router's two-value enum (`standard`/`strong`) satisfies the contract; it cannot
+   express the mockup. Recording rather than resolving: expanding the column against an
+   explicit contract in two spec files is not a call to make silently, and the whole
+   security surface is stored-but-unenforced today anyway (the router reports
+   `enforced:false` for each, honestly).
+
+### Spec CONFIRMED two guesses in the salvaged work — comments corrected
+
+The salvaged migration hedged on two column types because "the design does not say".
+It does say, and it agrees with what was chosen. I replaced the hedges with the evidence:
+
+- **`team_size` TEXT** — the salvage note said the design "calls it team size without
+  saying whether the control is a count or a band". `SetOrg.jsx`:29 renders a select of
+  **bands** (`1–10`, `11–50`, `51–200`, `200+`). TEXT is right; INTEGER would have been
+  a defect. Corrected in `PROPOSED_068` and in `ProfileUpdate`.
+- **`industry` TEXT** — the salvage note said an enum "would need a list that nobody has
+  agreed". `SetOrg.jsx`:28 **does** name one: IT Services / Manufacturing / Retail &
+  Trading / Agency / Consulting / CA / Legal practice / Other. Storage still stays TEXT,
+  because the list ends in "Other" and an enum could not store what someone picks Other
+  to say — but the control should offer exactly those options, and the comment now says
+  so instead of claiming no list exists. **For whoever builds `TabProfile.jsx`.**
+
+`ProfileUpdate` otherwise covers every field the designed Profile tab reads: name, gstin,
+pan, billing_address, logo_url, email, phone, website, bank_details, invoice_note,
+description, industry, team_size, founded_year.
