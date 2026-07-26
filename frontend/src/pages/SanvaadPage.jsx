@@ -158,6 +158,7 @@ function ChatView({ channel, onRefreshChannels }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
+  const scrollRef = useRef(null);
   const [threadMsg, setThreadMsg] = useState(null);
 
   const loadMessages = useCallback(() => {
@@ -173,8 +174,15 @@ function ChatView({ channel, onRefreshChannels }) {
     api.post(`/messaging/channels/${channel.id}/read`).catch(() => {});
   }, [channel.id, loadMessages]);
 
+  // Was an unconditional scrollIntoView on every `messages` change. Combined
+  // with the 5s poll below — which replaces the whole array — scrolling up to
+  // read history yanked you back to the bottom within five seconds, every time.
+  // Only follow the conversation if the reader is already at the bottom.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   // Poll for new messages every 5s (Realtime can be wired later)
@@ -218,7 +226,7 @@ function ChatView({ channel, onRefreshChannels }) {
       </div>
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
         {loading && <p style={{ color: 'var(--ink-3)', fontSize: 12 }}>Loading messages...</p>}
         {!loading && messages.length === 0 && (
           <p style={{ color: 'var(--ink-3)', fontSize: 12, textAlign: 'center', marginTop: 40 }}>
@@ -304,7 +312,11 @@ function ChatView({ channel, onRefreshChannels }) {
 
       {/* Composer */}
       <div style={{ padding: '10px 18px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8 }}>
-        <input className="k-input" style={{ flex: 1, fontSize: 13 }}
+        {/* Was an <input> with a `!e.shiftKey` guard — a guard against a newline
+            an <input> can never produce. Shift+Enter did nothing at all: no
+            send, no newline. A textarea makes the guard mean what it says, and
+            messages can be more than one line. */}
+        <textarea className="k-input" rows={1} style={{ flex: 1, fontSize: 13, resize: 'none', lineHeight: 1.5, maxHeight: 120 }}
           placeholder="Type a message... (संदेश लिखें)"
           value={text} onChange={e => setText(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), send())} />
@@ -465,6 +477,7 @@ function WAChat({ conversation }) {
   const [sending, setSending] = useState(false);
   const { pushToast } = useToast();
   const bottomRef = useRef(null);
+  const scrollRef = useRef(null);
 
   useEffect(() => {
     setLoading(true);
@@ -474,8 +487,15 @@ function WAChat({ conversation }) {
       .finally(() => setLoading(false));
   }, [conversation.id]);
 
+  // Was an unconditional scrollIntoView on every `messages` change. Combined
+  // with the 5s poll below — which replaces the whole array — scrolling up to
+  // read history yanked you back to the bottom within five seconds, every time.
+  // Only follow the conversation if the reader is already at the bottom.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const send = async () => {
@@ -492,7 +512,17 @@ function WAChat({ conversation }) {
     }
   };
 
-  const STATUS_ICONS = { pending: '🕐', sent: '✓', delivered: '✓✓', read: '✓✓', failed: '✕' };
+  // delivered and read were BOTH '✓✓', so the read receipt — the entire point
+  // of the second tick — carried no information. WhatsApp distinguishes them by
+  // COLOUR, not glyph, which is why --tick-read (#4FC3F7, WhatsApp's own blue)
+  // exists in the token set: users read it from muscle memory.
+  const STATUS_ICONS = {
+    pending:   { glyph: '·',  color: 'inherit' },
+    sent:      { glyph: '✓',  color: 'inherit' },
+    delivered: { glyph: '✓✓', color: 'inherit' },
+    read:      { glyph: '✓✓', color: 'var(--tick-read)' },
+    failed:    { glyph: '✕',  color: 'var(--danger)' },
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
@@ -501,7 +531,7 @@ function WAChat({ conversation }) {
         <span style={{ fontSize: 11, color: 'var(--ink-3)', marginLeft: 8 }}>{conversation.phone_number}</span>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
         {loading && <p style={{ color: 'var(--ink-3)', fontSize: 12 }}>Loading...</p>}
         {messages.map(m => (
           <div key={m.id} style={{
@@ -515,7 +545,12 @@ function WAChat({ conversation }) {
             }}>
               <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{m.content}</div>
               <div style={{ fontSize: 'var(--t-label-sm)', marginTop: 4, opacity: 0.85, textAlign: 'right' }}>
-                {relTime(m.created_at)} {m.direction === 'outbound' && (STATUS_ICONS[m.status] || '')}
+                {relTime(m.created_at)}{' '}
+                {m.direction === 'outbound' && STATUS_ICONS[m.status] && (
+                  <span style={{ color: STATUS_ICONS[m.status].color }} title={m.status}>
+                    {STATUS_ICONS[m.status].glyph}
+                  </span>
+                )}
               </div>
             </div>
           </div>
