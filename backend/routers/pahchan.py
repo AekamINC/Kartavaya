@@ -1,0 +1,621 @@
+"""
+pahchan.py — Pahchan · पहचान (attendance)
+
+v1 is: the employee signs in with their own account, takes a live selfie, and
+punches in or out. The organisation verifies by HUMAN COMPARISON against two
+reference photos captured at enrollment. Face matching is parked to v2 and device
+enrollment is dropped.
+
+Spec: design-handover/07-pahchan.md. Two of its rules shape almost every handler
+here and are easy to undo by accident:
+
+  §2 NOTHING BLOCKS A PUNCH. Location off, accuracy worse than ±100m, outside the
+  geofence, no reference pair, mock location detected — every one of those records
+  and flags. None of them refuse. "Field staff are the reason this module exists.
+  A blocked punch at a client site becomes a payroll dispute a week later, and the
+  employee is right." So there is exactly one 4xx on the punch path: a malformed
+  body. Everything else is a flag.
+
+  §7 AEKAM SEES A COUNT. The platform surface gets the number of Pahchan users per
+  org and nothing else — no names, photographs, locations or times. Enforced in
+  the query, via a view that aggregates before the data leaves the database,
+  because "a console endpoint that fetches the roster and returns a length has
+  already read the roster".
+
+Schema: migrations/PROPOSED_064_pahchan.sql (not yet applied).
+"""
+import math
+from datetime import date, datetime, timedelta, timezone
+from typing import Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
+from pydantic import BaseModel, Field
+
+from auth_router import require_user
+from db import get_pool
+from middleware.org_resolver import get_org_id
+from middleware.roles import require_org_role
+from middleware.subscription import require_module
+from services.audit import emit as audit
+from services import storage
+
+router = APIRouter(prefix="/api/v1/pahchan", tags=["pahchan-attendance"])
+
+_gate = require_module("pahchan")
+# Reviewing someone else's attendance, and reading the photographs attached to
+# it, is not something module membership alone should permit.
+_review_gate = require_org_role("org_owner", "org_admin")
+
+# 07 §1: front camera, in-app, retake limit 3. Enforced on the client; the server
+# only sees the result. Kept here as the reason the size ceiling is small.
+MAX_PHOTO_BYTES = 4 * 1024 * 1024
+
+EARTH_RADIUS_M = 6_371_000.0
+
+
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    """Great-circle distance in metres. Adequate at geofence scale — the error
+    against a proper geodesic is centimetres at 150m, and the radius itself is a
+    policy guess to ±tens of metres."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = p2 - p1
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * EARTH_RADIUS_M * math.asin(math.sqrt(a))
+
+
+# ── Models ────────────────────────────────────────────────────────────────────
+
+class PunchBody(BaseModel):
+    direction: str = Field(..., pattern="^(in|out)$")
+    # Device clock at capture. 07 §4: this and received_at are not
+    # interchangeable, and this one is what payroll reads.
+    captured_at: datetime
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    # Never defaulted to 0 — a missing accuracy is None and flags. Zero would read
+    # as a perfect fix and clear the very check it should fail.
+    accuracy_m: Optional[float] = None
+    site_id: Optional[UUID] = None
+    photo_key: Optional[str] = None
+    device_id: Optional[str] = None
+    # None = not checked on this platform, which is not the same as False.
+    mock_location: Optional[bool] = None
+    source: str = Field("live", pattern="^(live|offline)$")
+    client_punch_id: str = Field(..., min_length=8, max_length=64)
+
+
+class ReviewBody(BaseModel):
+    verdict: str = Field(..., pattern="^(ok|flagged)$")
+
+
+class PolicyBody(BaseModel):
+    default_radius_m: Optional[int] = Field(None, gt=0)
+    grace_minutes: Optional[int] = Field(None, ge=0)
+    allow_outside_geofence: Optional[bool] = None
+    accuracy_flag_threshold_m: Optional[int] = Field(None, gt=0)
+    punch_photo_retention_days: Optional[int] = Field(None, gt=0)
+    reference_photo_grace_days: Optional[int] = Field(None, gt=0)
+    record_retention_years: Optional[int] = Field(None, gt=0)
+    report_recipients: Optional[list[str]] = None
+    report_daily: Optional[bool] = None
+    report_weekly: Optional[bool] = None
+    report_monthly: Optional[bool] = None
+
+
+class SiteBody(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    lat: float
+    lng: float
+    radius_m: int = Field(150, gt=0)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+DEFAULT_POLICY = {
+    "default_radius_m": 150,
+    "grace_minutes": 10,
+    "allow_outside_geofence": True,
+    "accuracy_flag_threshold_m": 100,
+    "punch_photo_retention_days": 90,
+    "reference_photo_grace_days": 45,
+    "record_retention_years": 3,
+    "report_recipients": [],
+    "report_daily": True,
+    "report_weekly": True,
+    "report_monthly": True,
+}
+
+
+async def _policy(pool, org_id: str) -> dict:
+    """The org's policy, or the defaults. An org with no policy row must still be
+    able to punch — requiring setup before the first punch is a blocker, and §2
+    says nothing blocks a punch."""
+    row = await pool.fetchrow(
+        "SELECT * FROM staging.pahchan_policy WHERE org_id=$1::uuid", org_id
+    )
+    return dict(row) if row else dict(DEFAULT_POLICY)
+
+
+async def _employee_for(pool, org_id: str, user_id: str) -> Optional[dict]:
+    return await pool.fetchrow(
+        "SELECT id, name FROM staging.manav_employees "
+        "WHERE org_id=$1::uuid AND user_id=$2 AND is_active=TRUE",
+        org_id, user_id,
+    )
+
+
+async def _nearest_site(pool, org_id: str, lat: float, lng: float):
+    """Nearest active site and the distance to it. Python-side because the table
+    is a handful of rows per org and PostGIS is not installed — adding an
+    extension for a ten-row nearest-neighbour would be the wrong trade."""
+    sites = await pool.fetch(
+        "SELECT id, name, lat, lng, radius_m FROM staging.pahchan_sites "
+        "WHERE org_id=$1::uuid AND is_active=TRUE",
+        org_id,
+    )
+    best, best_d = None, None
+    for site in sites:
+        d = _haversine_m(lat, lng, float(site["lat"]), float(site["lng"]))
+        if best_d is None or d < best_d:
+            best, best_d = site, d
+    return best, best_d
+
+
+def _compute_flags(
+    body: PunchBody,
+    policy: dict,
+    distance_m: Optional[float],
+    site_radius_m: Optional[int],
+    has_reference_pair: bool,
+) -> list[str]:
+    """
+    07 §2's table, in one place.
+
+    Every branch RECORDS and flags. There is no branch that refuses, and adding
+    one is the single change most likely to break the module's purpose.
+    """
+    flags: list[str] = []
+
+    if body.lat is None or body.lng is None:
+        flags.append("geo")          # location off entirely
+    if body.accuracy_m is None:
+        flags.append("accuracy")     # missing is not zero
+    elif body.accuracy_m > float(policy["accuracy_flag_threshold_m"]):
+        # Weak GPS is not fraud. Indoor and basement fixes routinely exceed
+        # ±100m, and blocking on accuracy would lock out warehouse and
+        # parking-level staff specifically. So: flag, never block.
+        flags.append("accuracy")
+    if distance_m is not None and site_radius_m is not None and distance_m > site_radius_m:
+        if "geo" not in flags:
+            flags.append("geo")
+    if body.mock_location is True:
+        flags.append("mock")
+    if body.source == "offline":
+        flags.append("offline")
+    if not has_reference_pair:
+        # Nothing to compare the selfie against yet. Records, flags, and HR is
+        # prompted to enroll — it does not stop the employee being paid.
+        flags.append("noref")
+    return flags
+
+
+# ── Punch ─────────────────────────────────────────────────────────────────────
+
+@router.post("/punch/photo")
+async def upload_punch_photo(
+    request: Request,
+    file: UploadFile = File(...),
+    kind: str = Form("punch"),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """
+    Store a capture and return its object key.
+
+    Separate from the punch itself because capture and upload fail independently:
+    the punch is recorded the moment the button is pressed, and the image may take
+    three days and four networks to arrive. The client holds the local URI in its
+    punch queue until this returns a key.
+
+    Returns the KEY only, never a URL. 07 §4: photo_key is an object-store key and
+    never a URL in any payload — URLs are minted per request, signed and
+    short-lived, so a key in a log or a cache is not an exposure.
+    """
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty upload")
+    if len(data) > MAX_PHOTO_BYTES:
+        raise HTTPException(413, f"Photo exceeds {MAX_PHOTO_BYTES // (1024 * 1024)}MB")
+    if not (file.content_type or "").startswith("image/"):
+        raise HTTPException(400, "Not an image")
+
+    folder = f"pahchan/{org_id}/{'reference' if kind == 'reference' else 'punch'}"
+    result = await storage.upload_file(
+        file_bytes=data,
+        filename=file.filename or "capture.jpg",
+        content_type=file.content_type or "image/jpeg",
+        user_id=user["user_id"],
+        folder=folder,
+        org_id=org_id,
+    )
+    if not result.get("key"):
+        # The data-URI fallback in storage.py has no key, and a punch photo held
+        # as base64 in a column is not a photo we can retain or delete on schedule.
+        raise HTTPException(503, "Object storage is not configured for this organisation")
+    return {"photo_key": result["key"], "size": result["size"]}
+
+
+@router.post("/punch")
+async def create_punch(
+    body: PunchBody,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """
+    Record a punch. Idempotent on (org_id, client_punch_id).
+
+    The only 4xx here is a malformed body or an unlinked account. Every degraded
+    condition in §2 records and flags — see _compute_flags.
+    """
+    pool = await get_pool()
+
+    employee = await _employee_for(pool, org_id, user["user_id"])
+    if not employee:
+        # Not a degraded punch — there is no employee record to attach it to, so
+        # there is nothing to record. This is the one genuine precondition.
+        raise HTTPException(
+            409,
+            "Your account is not linked to an employee record. Ask HR to link it before clocking in.",
+        )
+
+    # Idempotency first, before any work. A replayed punch after a timeout must
+    # return the original rather than creating a second attendance record.
+    existing = await pool.fetchrow(
+        "SELECT id, direction, captured_at, flags FROM staging.pahchan_punches "
+        "WHERE org_id=$1::uuid AND client_punch_id=$2",
+        org_id, body.client_punch_id,
+    )
+    if existing:
+        return {"punch": dict(existing), "duplicate": True}
+
+    policy = await _policy(pool, org_id)
+
+    site = None
+    distance_m = None
+    if body.lat is not None and body.lng is not None:
+        if body.site_id:
+            site = await pool.fetchrow(
+                "SELECT id, lat, lng, radius_m FROM staging.pahchan_sites "
+                "WHERE id=$1::uuid AND org_id=$2::uuid",
+                str(body.site_id), org_id,
+            )
+            if site:
+                distance_m = _haversine_m(
+                    body.lat, body.lng, float(site["lat"]), float(site["lng"])
+                )
+        else:
+            site, distance_m = await _nearest_site(pool, org_id, body.lat, body.lng)
+
+    ref_count = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.pahchan_enrollment_photos "
+        "WHERE employee_id=$1::uuid AND replaced_at IS NULL AND approved_at IS NOT NULL",
+        str(employee["id"]),
+    )
+    flags = _compute_flags(
+        body, policy, distance_m,
+        int(site["radius_m"]) if site else None,
+        has_reference_pair=(ref_count or 0) >= 2,
+    )
+
+    row = await pool.fetchrow(
+        """INSERT INTO staging.pahchan_punches
+               (org_id, employee_id, direction, captured_at, synced_at, photo_key,
+                lat, lng, accuracy_m, distance_m, geofence_id, source,
+                mock_location, flags, client_punch_id)
+           VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6,
+                   $7, $8, $9, $10, $11, $12,
+                   $13, $14::text[], $15)
+           RETURNING id, direction, captured_at, received_at, flags, source""",
+        org_id, str(employee["id"]), body.direction, body.captured_at,
+        # An offline punch synced now; a live one has no separate sync moment.
+        datetime.now(timezone.utc) if body.source == "offline" else None,
+        body.photo_key,
+        body.lat, body.lng, body.accuracy_m, distance_m,
+        str(site["id"]) if site else None,
+        body.source, body.mock_location, flags, body.client_punch_id,
+    )
+
+    audit(
+        "pahchan.punch",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="pahchan_punch",
+        resource_id=str(row["id"]),
+        detail={"direction": body.direction, "flags": flags, "source": body.source},
+        severity="warn" if flags else "info",
+    )
+    return {"punch": dict(row), "duplicate": False}
+
+
+# ── The employee's own record ─────────────────────────────────────────────────
+
+@router.get("/me")
+async def my_punches(
+    days: int = 30,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """
+    The signed-in employee's own punches. No photo keys.
+
+    This is what the attendance-only shell's *Me* tab reads. 07 §9 is specific
+    that Me is not a reduced Settings — it carries the employee's own register and
+    the retention promise in plain words, which is why the policy's retention
+    figures come back with it.
+    """
+    pool = await get_pool()
+    employee = await _employee_for(pool, org_id, user["user_id"])
+    if not employee:
+        return {"employee": None, "punches": [], "retention": await _policy(pool, org_id)}
+
+    since = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 120)))
+    rows = await pool.fetch(
+        "SELECT id, direction, captured_at, received_at, source, flags, "
+        "       accuracy_m, distance_m, review_verdict "
+        "FROM staging.pahchan_punches "
+        "WHERE employee_id=$1::uuid AND captured_at >= $2 "
+        "ORDER BY captured_at DESC",
+        str(employee["id"]), since,
+    )
+    policy = await _policy(pool, org_id)
+    return {
+        "employee": {"id": str(employee["id"]), "name": employee["name"]},
+        "punches": [dict(r) for r in rows],
+        # Stated in plain words on the Me tab, not buried in a policy page.
+        "retention": {
+            "punch_photo_days": policy["punch_photo_retention_days"],
+            "reference_photo_grace_days": policy["reference_photo_grace_days"],
+            "record_retention_years": policy["record_retention_years"],
+        },
+    }
+
+
+# ── The register ──────────────────────────────────────────────────────────────
+
+@router.get("/register")
+async def register(
+    on: Optional[date] = None,
+    flagged_only: bool = False,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+    _r=Depends(_review_gate),
+):
+    """
+    A day's punches with the reference pair alongside, for human comparison.
+
+    07 §3 calls this "the surface that decides whether this works": human
+    comparison is the only verification, so if the reviewer cannot keep up, the
+    feature is theatre. That is why the reference keys come back on the same row
+    rather than needing a call per employee — a request per face is what makes a
+    day unclearable.
+
+    Photo keys, not URLs. The client asks for a signed URL per image it actually
+    displays, so scrolling past a row never mints a link to that person's face.
+    """
+    pool = await get_pool()
+    day = on or datetime.now(timezone.utc).date()
+
+    rows = await pool.fetch(
+        """SELECT p.id, p.direction, p.captured_at, p.received_at, p.source,
+                  p.flags, p.accuracy_m, p.distance_m, p.mock_location,
+                  p.photo_key, p.review_verdict, p.reviewed_at, p.reviewed_by,
+                  e.id AS employee_id, e.name AS employee_name, e.employee_code,
+                  s.name AS site_name,
+                  (SELECT array_agg(r.object_key ORDER BY r.slot)
+                     FROM staging.pahchan_enrollment_photos r
+                    WHERE r.employee_id = e.id
+                      AND r.replaced_at IS NULL
+                      AND r.approved_at IS NOT NULL) AS reference_keys
+             FROM staging.pahchan_punches p
+             JOIN staging.manav_employees e ON e.id = p.employee_id
+             LEFT JOIN staging.pahchan_sites s ON s.id = p.geofence_id
+            WHERE p.org_id = $1::uuid
+              AND p.captured_at >= $2::date
+              AND p.captured_at <  ($2::date + INTERVAL '1 day')
+              AND ($3::bool IS FALSE OR (p.flags <> '{}' AND p.review_verdict IS NULL))
+            ORDER BY p.captured_at ASC""",
+        org_id, day, flagged_only,
+    )
+    return {"date": str(day), "punches": [dict(r) for r in rows]}
+
+
+@router.patch("/punches/{punch_id}/review")
+async def review_punch(
+    punch_id: UUID,
+    body: ReviewBody,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+    _r=Depends(_review_gate),
+):
+    """Record a reviewer's verdict. Audited — a verdict is an attendance decision
+    about a person, and who made it has to survive."""
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        """UPDATE staging.pahchan_punches
+              SET review_verdict=$1, reviewed_by=$2, reviewed_at=NOW()
+            WHERE id=$3::uuid AND org_id=$4::uuid
+        RETURNING id, review_verdict, reviewed_at""",
+        body.verdict, user["user_id"], str(punch_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Punch not found")
+
+    audit(
+        "pahchan.punch_reviewed",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="pahchan_punch",
+        resource_id=str(punch_id),
+        detail={"verdict": body.verdict},
+    )
+    return dict(row)
+
+
+@router.get("/punches/{punch_id}/photo")
+async def punch_photo_url(
+    punch_id: UUID,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+    _r=Depends(_review_gate),
+):
+    """
+    Mint a short-lived signed URL for one punch photo.
+
+    Per image, on demand, and audited. Photographs of employees' faces are the
+    most sensitive thing this module holds, so every view is attributable — and a
+    URL that expires cannot be pasted into a chat and still work tomorrow.
+    """
+    pool = await get_pool()
+    key = await pool.fetchval(
+        "SELECT photo_key FROM staging.pahchan_punches WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(punch_id), org_id,
+    )
+    if not key:
+        # Also the 90-day retention case: the record outlives the photo, so a
+        # missing key on an existing punch is expected rather than an error.
+        raise HTTPException(404, "No photo on file for this punch")
+
+    url = await storage.sign_key(org_id, key)
+    if not url:
+        raise HTTPException(503, "Could not sign the photo URL")
+
+    audit(
+        "pahchan.photo_viewed",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="pahchan_punch",
+        resource_id=str(punch_id),
+        severity="warn",
+    )
+    return {"url": url}
+
+
+# ── Sites and policy ──────────────────────────────────────────────────────────
+
+@router.get("/sites")
+async def list_sites(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id, name, lat, lng, radius_m, is_active FROM staging.pahchan_sites "
+        "WHERE org_id=$1::uuid ORDER BY name",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/sites", status_code=201)
+async def create_site(
+    body: SiteBody,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+    _r=Depends(_review_gate),
+):
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.pahchan_sites (org_id, name, lat, lng, radius_m) "
+        "VALUES ($1::uuid, $2, $3, $4, $5) RETURNING id, name, radius_m",
+        org_id, body.name, body.lat, body.lng, body.radius_m,
+    )
+    return dict(row)
+
+
+@router.get("/policy")
+async def get_policy(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    return await _policy(pool, org_id)
+
+
+@router.patch("/policy")
+async def update_policy(
+    body: PolicyBody,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+    _r=Depends(_review_gate),
+):
+    """Upsert the org's policy. Retention changes are audited: shortening a
+    retention window deletes people's records sooner, which is a decision someone
+    has to own."""
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    pool = await get_pool()
+    merged = {**DEFAULT_POLICY, **(await _policy(pool, org_id)), **updates}
+
+    import json
+    row = await pool.fetchrow(
+        """INSERT INTO staging.pahchan_policy
+               (org_id, default_radius_m, grace_minutes, allow_outside_geofence,
+                accuracy_flag_threshold_m, punch_photo_retention_days,
+                reference_photo_grace_days, record_retention_years,
+                report_recipients, report_daily, report_weekly, report_monthly)
+           VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12)
+           ON CONFLICT (org_id) DO UPDATE SET
+               default_radius_m           = EXCLUDED.default_radius_m,
+               grace_minutes              = EXCLUDED.grace_minutes,
+               allow_outside_geofence     = EXCLUDED.allow_outside_geofence,
+               accuracy_flag_threshold_m  = EXCLUDED.accuracy_flag_threshold_m,
+               punch_photo_retention_days = EXCLUDED.punch_photo_retention_days,
+               reference_photo_grace_days = EXCLUDED.reference_photo_grace_days,
+               record_retention_years     = EXCLUDED.record_retention_years,
+               report_recipients          = EXCLUDED.report_recipients,
+               report_daily               = EXCLUDED.report_daily,
+               report_weekly              = EXCLUDED.report_weekly,
+               report_monthly             = EXCLUDED.report_monthly,
+               updated_at                 = NOW()
+        RETURNING *""",
+        org_id, merged["default_radius_m"], merged["grace_minutes"],
+        merged["allow_outside_geofence"], merged["accuracy_flag_threshold_m"],
+        merged["punch_photo_retention_days"], merged["reference_photo_grace_days"],
+        merged["record_retention_years"], json.dumps(merged["report_recipients"]),
+        merged["report_daily"], merged["report_weekly"], merged["report_monthly"],
+    )
+
+    retention_keys = {
+        "punch_photo_retention_days", "reference_photo_grace_days", "record_retention_years",
+    }
+    if retention_keys & updates.keys():
+        audit(
+            "pahchan.retention_changed",
+            request,
+            org_id=org_id,
+            user_id=user["user_id"],
+            detail={k: updates[k] for k in retention_keys & updates.keys()},
+            severity="warn",
+        )
+    return dict(row)
