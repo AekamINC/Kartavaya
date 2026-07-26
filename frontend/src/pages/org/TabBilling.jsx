@@ -1,0 +1,228 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { api } from '../../lib/api';
+import {
+  Button, Card, CardBody, CardHead, Cell, ErrorState, HeadCell, Row,
+  SkeletonPage, StatTile, Table, TableBody, TableHead, Tag, useToast,
+} from '../../components/ui';
+import { billingColor, billingLabel } from '../../lib/statusColors';
+import { inr, grouped } from '../../lib/inr';
+import { formatDate, formatPeriod } from '../../lib/timeFormat';
+import PlanComparison from './PlanComparison';
+
+/**
+ * TabBilling — plan, credits, plan comparison and invoices.
+ *
+ * `10-org-settings.md` §5 folds `pages/BillingPage.jsx` in here and redirects
+ * `/billing` to `/settings/organisation?tab=billing`. The redirect is a routing
+ * change in `App.jsx`, which this batch does not own, so both surfaces exist
+ * until that lands — see the handover note in the report.
+ *
+ * Four of the defects §"What's wrong today" lists were already fixed on staging
+ * before this file existed, and the fixes are carried across rather than redone:
+ * the `${c}18` hex-alpha concatenation (now `Tag`, which mixes properly), the
+ * `return null` that deleted the whole credit block on a failed request, the raw
+ * `active` enum, and the raw ISO invoice period. The rupee formatter had already
+ * been promoted to `lib/inr.js`.
+ */
+
+function CreditUsage() {
+  const [data, setData] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  const load = useCallback(() => {
+    setFailed(false);
+    return api.get('/v1/subscription/cost-report?period=30d')
+      .then(r => setData(r.data))
+      .catch(() => setFailed(true));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // A failed request used to `return null`, so the entire credit block vanished
+  // with no message. Someone checking whether they were near their limit got a
+  // page that simply did not mention credits, which reads as "no limit exists".
+  if (failed) {
+    return (
+      <Card>
+        <CardHead title="Credits this month" />
+        <CardBody>
+          <p className="of__h">
+            Couldn’t load credit usage. Your credits are unaffected — this is a display
+            problem, not a billing one.
+          </p>
+          <Button variant="out" onClick={load} style={{ marginTop: 10 }}>Try again</Button>
+        </CardBody>
+      </Card>
+    );
+  }
+  if (!data) {
+    return (
+      <Card>
+        <CardHead title="Credits this month" />
+        <CardBody><p className="of__h">Loading…</p></CardBody>
+      </Card>
+    );
+  }
+
+  const pct = data.plan_credits > 0
+    ? Math.min(100, Math.round((data.total_credits_used / data.plan_credits) * 100))
+    : 0;
+  const over = pct >= 100;
+
+  return (
+    <Card>
+      <CardHead title="Credits this month" sanskrit="श्रेय" />
+      <CardBody>
+        <div className="ostats" style={{ marginBottom: 16 }}>
+          <StatTile label="Plan credits" value={grouped(data.plan_credits)} />
+          <StatTile label="Used" value={grouped(data.total_credits_used)}
+            variant={data.is_over_plan ? 'danger' : 'neutral'} />
+          <StatTile label="Balance" value={grouped(data.current_balance)}
+            variant={data.current_balance <= 0 ? 'danger' : 'ok'} />
+          {data.overage_credits > 0 && (
+            <StatTile label="Overage" value={grouped(data.overage_credits)} variant="danger"
+              sub="Chargeable" />
+          )}
+        </div>
+
+        <div className="omtr" role="progressbar" aria-valuenow={pct} aria-valuemin={0}
+          aria-valuemax={100} aria-label="Plan credits used">
+          <div className={`omtr__f${over ? ' over' : ''}`} style={{ width: `${pct}%` }} />
+        </div>
+        <div className="omtr__lg">
+          <span>AI {grouped(data.ai_credits_used)} · Scrapers {grouped(data.scraper_credits_used)}</span>
+          <span>{pct}% used</span>
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+export default function TabBilling() {
+  const { pushToast } = useToast();
+  const [sub, setSub] = useState(null);
+  const [active, setActive] = useState([]);
+  const [invoices, setInvoices] = useState([]);
+  const [usage, setUsage] = useState(null);
+  const [plans, setPlans] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+
+  const load = useCallback(async () => {
+    setFailed(false);
+    try {
+      const [cur, inv, usg, catalog] = await Promise.all([
+        api.get('/v1/subscription/current'),
+        api.get('/v1/subscription/invoices'),
+        api.get('/v1/subscription/usage'),
+        api.get('/v1/subscription/plans'),
+      ]);
+      setSub(cur.data.subscription);
+      setActive(cur.data.active_modules || []);
+      setInvoices(inv.data.data || []);
+      setUsage(usg.data);
+      setPlans(catalog.data.plans || []);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const downloadReport = async (period) => {
+    try {
+      const res = await api.get(`/v1/subscription/cost-report/pdf?period=${period}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `UsageReport-${period}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      pushToast({ type: 'error', title: 'Report generation failed' });
+    }
+  };
+
+  if (loading) return <SkeletonPage withStats withTable />;
+  if (failed) {
+    return <ErrorState kind="server" detail="Couldn’t load billing data." onRetry={() => { setLoading(true); load(); }} />;
+  }
+
+  const planName = sub?.plan_name || 'Free';
+  const maxUsers = sub?.max_users;
+  const userCount = usage?.user_count || 0;
+
+  return (
+    <div>
+      <section className="st__group">
+        <div className="ostats">
+          <StatTile label="Plan" value={planName} />
+          <StatTile label="Seats" value={maxUsers != null ? `${userCount} / ${maxUsers}` : String(userCount)}
+            sub={maxUsers != null && userCount >= maxUsers ? 'Full' : undefined}
+            variant={maxUsers != null && userCount >= maxUsers ? 'warn' : 'neutral'} />
+          {/* billingLabel, not the raw enum — this printed a lowercase "active". */}
+          <StatTile label="Status" value={billingLabel(sub?.status || 'active')} />
+          <StatTile label="Modules" value={active.length} />
+        </div>
+      </section>
+
+      <section className="st__group">
+        <CreditUsage />
+      </section>
+
+      <section className="st__group">
+        <h2 className="st__gt">Plans</h2>
+        <PlanComparison plans={plans} currentPlanName={sub?.plan_name} currentPlanCode={sub?.plan_code} />
+        <p className="of__h" style={{ marginTop: 10 }}>
+          Changing plan is handled by your account manager at Aekam — there is no
+          self-serve upgrade, and pricing is agreed per organisation.
+        </p>
+      </section>
+
+      <section className="st__group">
+        <h2 className="st__gt">Usage report</h2>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {[['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['90d', 'Last 90 days'], ['ytd', 'Year to date']]
+            .map(([p, label]) => (
+              <Button key={p} variant="out" size="sm" onClick={() => downloadReport(p)}>{label}</Button>
+            ))}
+        </div>
+      </section>
+
+      <section className="st__group">
+        <h2 className="st__gt">Invoices</h2>
+        {invoices.length === 0 ? (
+          <p className="of__h">No invoices yet.</p>
+        ) : (
+          /* The shared Table, not a seventh hand-rolled one: `num` puts money in
+             mono tabular figures so a column of totals lines up on the decimal. */
+          <Table>
+            <TableHead>
+              <HeadCell>Invoice</HeadCell>
+              <HeadCell>Period</HeadCell>
+              <HeadCell num>Total</HeadCell>
+              <HeadCell num>GST</HeadCell>
+              <HeadCell>Status</HeadCell>
+              <HeadCell>Due</HeadCell>
+            </TableHead>
+            <TableBody>
+              {invoices.map(iv => (
+                <Row key={iv.id}>
+                  <Cell><span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{iv.invoice_number}</span></Cell>
+                  {/* "Jul 2026", not "2026-07-01 → 2026-07-31". */}
+                  <Cell>{formatPeriod(iv.period_start, iv.period_end)}</Cell>
+                  <Cell num>{inr(iv.total)}</Cell>
+                  <Cell num>{inr(iv.gst)}</Cell>
+                  <Cell><Tag color={billingColor(iv.payment_status)}>{billingLabel(iv.payment_status)}</Tag></Cell>
+                  <Cell>{formatDate(iv.due_date)}</Cell>
+                </Row>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </section>
+    </div>
+  );
+}

@@ -1,0 +1,243 @@
+/* org.css — the organisation settings hub (10-org-settings.md §1).
+ *
+ * Imported from pages/OrgSettingsPage.jsx rather than from styles/index.css:
+ * the hub is one route and its stylesheet has no other consumer, so the barrel
+ * would load ~9 KB on every page that is not this one.
+ *
+ * The layout vocabulary (.st, .st__group, .sr, .seg) comes from settings.css,
+ * which 09-customization.md owns and this file deliberately does not restate —
+ * two definitions of a settings row is how the two component systems in
+ * 02-common-components.md happened.
+ *
+ * Every colour resolves to a token. The page whose job is to hold a company's
+ * legal identity is not the place to guess a hex.
+ */
+
+/* ── Form grid ─────────────────────────────────────────────────────────────
+   auto-fit rather than a fixed column count, so the same grid is three-up on a
+   desktop card and one-up in a 360px viewport with no media query and no
+   second component. */
+.of { display: grid; grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); gap: 14px; }
+.of--3 { grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); }
+.of__f { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.of__l { font-size: 11.5px; font-weight: 500; color: var(--on-surface-2); }
+.of__i {
+  padding: 9px 11px; border-radius: var(--r-sm);
+  border: 1px solid var(--outline-variant); background: var(--s-lowest);
+  font: inherit; font-size: 13px; color: var(--on-surface); min-width: 0;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              box-shadow var(--dur-fast) var(--ease-standard);
+}
+/* The focus ring is a box-shadow, not an outline: outline cannot take a radius
+   on every engine and clips against overflow parents (02 §1). */
+.of__i:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+.of__i:disabled { opacity: .42; cursor: not-allowed; }
+/* GSTIN, PAN and IFSC are fixed-format codes. Uppercase monospace signals that
+   and makes a mistyped character findable by eye. Validated on BLUR — a GSTIN
+   is invalid for the first 14 characters you type, and flagging it the whole
+   way trains people to ignore the warning. */
+.of__i--mono { font-family: var(--font-mono); letter-spacing: .02em; text-transform: uppercase; }
+.of__h { font-size: 11px; color: var(--on-surface-3); line-height: 1.45; }
+/* The hint never leaves when an error appears (26 §3): the error stacks below
+   it, because swapping them deletes the format instruction at the exact moment
+   the user has proven they need it. */
+.of__e { font-size: 11px; color: var(--danger); line-height: 1.45; }
+.of__i[aria-invalid="true"] { border-color: var(--danger); }
+.of__i[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 17%, transparent);
+}
+
+/* ── Logo drop zone ────────────────────────────────────────────────────────
+   border-style flips dashed → solid on dragover as well as the colour change.
+   A colour-only cue is invisible to a colour-blind user mid-drag, which is the
+   one moment they cannot ask anyone. */
+.olg { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.olg__z {
+  width: 172px; height: 172px; border-radius: var(--r-md);
+  border: 1px dashed var(--outline-variant); background: var(--s-lowest);
+  display: grid; place-items: center; text-align: center; padding: 16px;
+  color: var(--on-surface-3); font-size: 11.5px; cursor: pointer;
+  transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+.olg__z.over { border-color: var(--primary); border-style: solid; background: color-mix(in srgb, var(--primary) 8%, transparent); }
+.olg__z:focus-within { border-color: var(--primary); }
+.olg__z img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.olg__hint { font-size: 11.5px; color: var(--on-surface-3); line-height: 1.5; }
+.olg__where { flex: 1; min-width: 200px; display: flex; flex-direction: column; gap: 8px; }
+.olg__w { display: flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--on-surface-2); }
+.olg__w svg { flex-shrink: 0; }
+/* A destination the logo does NOT currently reach reads as pending, not as a
+   feature — the point of the list is to stop the first sighting of a wrongly
+   sized logo being on a customer's invoice. */
+.olg__w.pending { color: var(--on-surface-3); }
+
+/* ── Member table ──────────────────────────────────────────────────────────
+   A real <table>: the header/cell association a screen reader needs is what
+   <th scope> is for, and the div-grid version of this had none of it. */
+.omt { width: 100%; border-collapse: collapse; font-size: 13px; }
+.omt th {
+  padding: 9px 12px; text-align: left; font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-3);
+  border-bottom: 1px solid var(--outline-variant); white-space: nowrap;
+}
+.omt td {
+  padding: 11px 12px; vertical-align: middle;
+  border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent);
+}
+.omt tr:last-child td { border-bottom: 0; }
+.omt__wrap { overflow-x: auto; }
+.omt__who { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.omt__av {
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center; font-size: 12px; font-weight: 700;
+  color: #fff; background: var(--av-bg, var(--s-high)); overflow: hidden;
+}
+.omt__av img { width: 100%; height: 100%; object-fit: cover; }
+/* display:block, not the inline default — text-overflow does nothing on an
+   inline box, so a long name would have overflowed the cell rather than
+   ellipsing. */
+.omt__n { display: block; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.omt__e { display: block; font-size: 11.5px; color: var(--on-surface-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Three chips then +n. A member with eleven grants would otherwise make the row
+   60px tall and push everyone else off the screen. */
+.omt__gr { display: flex; flex-wrap: wrap; gap: 4px; max-width: 280px; }
+.omt__more { font-size: 10.5px; color: var(--on-surface-3); padding: 2px 6px; }
+.omt__act { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+
+/* ── Grant chip and role badge ─────────────────────────────────────────────
+   Both are specified in 08-rbac-screens.md §1, which had not landed when this
+   file was written. Declared here verbatim so the member table is not styled
+   from a rule that does not exist; when 08 lands, delete these two blocks and
+   keep its copy — do not keep both. */
+.gc {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  padding: 2px 8px; border-radius: var(--r-sm); font-size: 11px;
+  background: color-mix(in srgb, var(--c) 12%, transparent);
+  color: var(--c); white-space: nowrap;
+}
+.gc__m { font-weight: 600; }
+/* Reads "Ganit · admin" — module then level, one chip. The LEVEL carries the
+   colour, not the module: the level is what you are scanning for when you are
+   working out who can do what. */
+.gc__l { font-size: 10px; opacity: .8; text-transform: lowercase; }
+.rb {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+  background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c);
+}
+.rb__dot { width: 5px; height: 5px; border-radius: 50%; background: var(--c); flex-shrink: 0; }
+
+/* ── Grant editor (inside the member sheet) ────────────────────────────── */
+.ogr { display: flex; flex-direction: column; gap: 7px; }
+.ogr__r {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 11px; border-radius: var(--r-sm);
+  border: 1px solid var(--outline-variant); background: var(--s-lowest);
+}
+.ogr__r.on { border-color: color-mix(in srgb, var(--c) 45%, var(--outline-variant)); background: color-mix(in srgb, var(--c) 6%, transparent); }
+.ogr__n { flex: 1; min-width: 120px; font-size: 12.5px; font-weight: 500; color: var(--on-surface); }
+.ogr__hi { font-family: var(--font-indic); font-size: 11px; color: var(--on-surface-3); margin-left: 6px; }
+.ogr__lv { display: inline-flex; padding: 2px; border-radius: var(--r-pill); background: var(--s-container); }
+.ogr__b {
+  padding: 4px 10px; border: 0; background: none; cursor: pointer;
+  border-radius: var(--r-pill); font-family: inherit; font-size: 11px;
+  font-weight: 500; color: var(--on-surface-3);
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.ogr__b.on { background: var(--surface); color: var(--on-surface); font-weight: 600; box-shadow: var(--shadow-1); }
+.ogr__b:disabled { opacity: .42; cursor: not-allowed; }
+.ogr__b:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* ── Module cards ──────────────────────────────────────────────────────────
+   opacity .68 for inactive rather than a grey palette swap: the module keeps
+   its identity colour so the grid stays scannable, and the toggle is the state
+   rather than the styling. */
+.omod { display: grid; grid-template-columns: repeat(auto-fill, minmax(226px, 1fr)); gap: 11px; }
+.omod__c {
+  display: flex; flex-direction: column; gap: 8px; padding: 15px;
+  border-radius: var(--r-md); border: 1px solid var(--outline-variant);
+  background: var(--surface);
+}
+.omod__c.off { opacity: .68; }
+.omod__h { display: flex; align-items: flex-start; gap: 10px; }
+.omod__ic {
+  width: 32px; height: 32px; border-radius: var(--r-sm); flex-shrink: 0;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c);
+}
+.omod__t { flex: 1; min-width: 0; font-size: 13.5px; font-weight: 600; color: var(--on-surface); }
+.omod__d { font-size: 11.5px; color: var(--on-surface-3); line-height: 1.5; }
+/* Vetana, Ganit and Manav carry the lock tag. --danger-container / --danger is
+   a declared container pair, so the tag is legible in both themes; a self-tint
+   of --danger never reaches 4.5:1 (00 §11). */
+.omod__lock {
+  display: inline-flex; align-items: center; gap: 4px; align-self: flex-start;
+  font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  padding: 2px 7px; border-radius: var(--r-pill);
+  background: var(--danger-container); color: var(--on-danger-container);
+}
+.omod__f { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 4px; }
+.omod__s { font-size: 11px; font-weight: 600; color: var(--on-surface-3); }
+.omod__s.on { color: var(--primary-text); }
+
+/* ── Plan comparison ───────────────────────────────────────────────────────
+   Credits are the headline, not a price. Pricing is per-org negotiated and is
+   stripped server-side for anyone who is not platform staff, so a rupee figure
+   here would be either absent or invented. */
+.opl { display: grid; grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); gap: 12px; }
+.opl__c {
+  display: flex; flex-direction: column; gap: 13px; padding: 19px;
+  border-radius: var(--r-md); border: 1px solid var(--outline-variant);
+  background: var(--surface);
+}
+.opl__c.cur { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.opl__cur { font-size: 9.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--primary-text); }
+.opl__n { font-size: 15px; font-weight: 600; text-transform: capitalize; color: var(--on-surface); }
+.opl__cr {
+  font-family: var(--font-display); font-size: 29px; font-weight: 400;
+  letter-spacing: -.03em; font-variant-numeric: tabular-nums; color: var(--on-surface);
+}
+.opl__u { font-size: 11.5px; color: var(--on-surface-3); }
+.opl__p { font-size: 12.5px; color: var(--on-surface-2); margin-top: auto; }
+
+/* ── Stat row ──────────────────────────────────────────────────────────── */
+.ostats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--sp-4); }
+
+/* ── Credit meter ──────────────────────────────────────────────────────── */
+.omtr { background: var(--s-container); border-radius: var(--r-pill); height: 8px; overflow: hidden; }
+.omtr__f { height: 100%; background: var(--primary); border-radius: var(--r-pill); transition: width var(--dur-slow) var(--ease-standard); }
+.omtr__f.over { background: var(--danger); }
+.omtr__lg { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--on-surface-3); }
+
+/* ── Danger zone ───────────────────────────────────────────────────────── */
+.odz {
+  padding: 19px; border-radius: var(--r-md);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  background: color-mix(in srgb, var(--danger) 5%, transparent);
+}
+.odz__t { font-size: 14px; font-weight: 600; color: var(--danger); margin-bottom: 6px; }
+.odz__p { font-size: 13px; line-height: 1.6; color: var(--on-surface-2); margin: 0 0 10px; text-wrap: pretty; }
+/* 10 §1 also specifies `.odz__i`, the type-the-org-name confirmation input. It
+   is deliberately absent: the two actions that would have used it — transfer
+   ownership and delete org — moved to Aekam platform staff on 2026-07-26, so
+   there is no destructive control on this tab to confirm. `ConfirmDialog`
+   already carries a typed confirmation (`confirmText`) for anything that needs
+   one elsewhere. */
+
+/* ── Not-yet-wired notice ──────────────────────────────────────────────────
+   Used wherever a control is designed but its endpoint does not exist. The
+   control renders disabled and this states why, because a switch that accepts
+   a click and stores nothing is worse than an absent one — it reports success
+   for work that did not happen. */
+.opend {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px 14px; border-radius: var(--r-sm);
+  background: var(--s-container); color: var(--on-surface-2);
+  font-size: 12.5px; line-height: 1.55; text-wrap: pretty;
+}
+.opend svg { flex-shrink: 0; margin-top: 2px; color: var(--on-surface-3); }
+.opend code { font-family: var(--font-mono); font-size: 11.5px; color: var(--on-surface); }
