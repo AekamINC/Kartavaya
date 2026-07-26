@@ -77,8 +77,29 @@ environment was **named** in the dashboard, and that name is free text. Now an
 unrecognised is treated as production.
 
 ### S3. Four zero-reach platform roles could read every org
-`middleware/roles.py`, `middleware/org_resolver.py` · **fixed** ·
-`tests/test_platform_role_reach.py` · *(both flagged unowned in `_COORDINATION.md` §6)*
+`middleware/roles.py`, `middleware/org_resolver.py` · **fixed on staging by a sibling —
+my commit was dropped, and theirs is the correct one.** *(both were flagged unowned in
+`_COORDINATION.md` §6; a sibling reached them first and scoped them better)*
+
+> **I was wrong about the fix and it is worth recording why.** I narrowed both gates to
+> GOD_MODE + MANAGER + STAFF, excluding all four zero-reach roles. That **would have
+> broken the platform console.** The sibling checked the call sites I did not:
+> `subscription.py`'s admin billing endpoints (`:144`, `:208`, `:260`, `:302`) take
+> `require_platform_role(*BILLING_CONSOLE_ROLES)` **and** `Depends(get_org_id)`, and
+> `AdminBillingPage` reaches them by sending `X-Org-Id` — so `account_manager` and
+> `account_finance` legitimately need to resolve an org by header. `hub.py` depends on
+> `get_org_id` in 44 places, so `srijan_admin` does too.
+>
+> `modules_for()` returning `frozenset()` is about **module reach inside a customer org**,
+> which is a different question from **whether the role may resolve one**. I collapsed the
+> two. Staging's `CROSS_ORG_HEADER_ROLES` / `PLATFORM_ORG_ADMIN_ROLES` exclude only
+> `platform_support` — the one role with a genuinely absent approval gate — and record
+> that the real fix for the other three is an explicit `{org_id}` path parameter, so the
+> org becomes an argument the guard can see rather than a header the resolver trusts.
+>
+> My `test_platform_role_reach.py` asserted the boundary staging deliberately rejected, so
+> it was dropped with the commit rather than left to push someone into re-breaking this.
+> The analysis below is the finding; the fix is theirs.
 
 `role_tiers.modules_for()` returns an **empty set** for `account_manager`,
 `account_finance`, `srijan_admin` and `platform_support`, so `require_module` refuses all
@@ -116,10 +137,9 @@ excluding `platform_owner` — the same god mode under its current name, the exa
 `role_tiers.py:115-121` warns about. Invisible only because all four god-mode accounts
 still carry the legacy row; a total lockout of all four the day those rows are renamed.
 
-Now one home: **`DATA_REACH_PLATFORM_ROLES`** = GOD_MODE + MANAGER + STAFF, i.e. exactly
-the roles `modules_for()` gives a non-empty set. The test pins the *invariant* — every
-platform code must agree between module reach and data reach — so a role added to the
-enum later cannot inherit either by omission.
+Staging's resolution: `CROSS_ORG_HEADER_ROLES` and `PLATFORM_ORG_ADMIN_ROLES`, both
+`ALL_PLATFORM_ROLES` minus `SUPPORT_ROLES`. The list now has one home either way, which
+was the point — the failure was three gates each keeping their own copy.
 
 ### S4. WhatsApp webhook was unauthenticated when its secret was unset
 `routers/whatsapp.py:322` · **fixed** · `tests/test_whatsapp_security.py`
@@ -313,12 +333,13 @@ to your own branch, or copy files aside. Worth adding to `_COORDINATION.md`.
 
 | SHA | What |
 |---|---|
-| `999897c` | sweep scaffold + route inventory |
-| `5cae16c` | S1 — attachment privacy regression tests (server.py fix superseded by sibling on rebase) |
-| `a134e2e` | S2 — docs gate allowlist + 56 cases |
-| `4209804` | S3 — `DATA_REACH_PLATFORM_ROLES`; org_resolver, is_org_admin, require_org_role |
-| `28a78b3` | S4/S5/S6 — webhook fail-closed, PII log, constant-time secrets, header form |
+| `7fb7ff3` | sweep scaffold + route inventory |
+| `4cda069` | S1 — attachment privacy regression tests (server.py fix superseded by a sibling on rebase; tests kept) |
+| `b9bf6f5` | S2 — docs gate allowlist + 56 cases |
+| *dropped* | S3 — superseded by a sibling's better-scoped fix; see the note under S3 |
+| `30337fc` | S4/S5/S6 — webhook fail-closed, PII log, constant-time secrets, header form |
+| `716e0c3` | this report + constant-time eSign OTP |
 
 Gates green from `frontend/`: `check-tokens` 0 missing, `check-classes` 0 missing.
-Backend suite 492 passed, 1 failed — `test_ganit.py::test_create_invoice_success`, the
-pre-existing failure confirmed in `_COORDINATION.md` §8.
+Backend suite **643 passed, 0 failed** — the `test_ganit` failure noted in
+`_COORDINATION.md` §8 has since been fixed by another agent.
