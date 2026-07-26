@@ -14,7 +14,7 @@ from fastapi import Depends, HTTPException
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
-from middleware.role_tiers import ALL_PLATFORM_ROLES
+from middleware.role_tiers import ALL_PLATFORM_ROLES, GOD_MODE_ROLES
 
 
 def require_role(*allowed_roles: str):
@@ -54,8 +54,17 @@ def require_platform_role(*allowed_roles: str):
 def require_org_role(*allowed_roles: str):
     """Check staging.user_roles for org-scoped roles.
 
-    `platform_admin` passes unconditionally — that is god mode, held by exactly
-    three people, and removing it would lock support out of every org.
+    God mode passes unconditionally — removing it would lock support out of
+    every org.
+
+    That check reads `GOD_MODE_ROLES`, not the bare string `'platform_admin'`.
+    The literal excluded `platform_owner`, which is the exact lockout
+    `role_tiers.py` warns about at length: today it is invisible, because every
+    god-mode account still holds the legacy `platform_admin` row, and it becomes
+    a total lockout of all of them on the day the data migration renames those
+    rows — which is the migration the tier model was designed for. Widening to
+    the named set changes nothing today (no `platform_owner` rows exist yet) and
+    prevents the failure later.
 
     `account_manager` used to pass here too. It no longer does. It is a
     commercial role (create orgs, toggle modules, chase invoices) and this
@@ -71,8 +80,8 @@ def require_org_role(*allowed_roles: str):
         is_platform = await pool.fetchval(
             "SELECT 1 FROM staging.user_roles "
             "WHERE user_id=$1 AND org_id IS NULL "
-            "AND role_code = 'platform_admin'",
-            user["user_id"],
+            "AND role_code = ANY($2::text[])",
+            user["user_id"], list(GOD_MODE_ROLES),
         )
         if is_platform:
             return user

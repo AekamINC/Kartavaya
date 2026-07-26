@@ -303,9 +303,13 @@ async def test_require_org_role_no_longer_waves_account_manager_through(
     seen = {}
 
     async def _fetchval(sql, *args):
-        if "role_code = 'platform_admin'" in sql:
-            seen["probe"] = sql
-            return None  # not a platform_admin
+        # The platform probe is the one scoped to org_id IS NULL. It used to
+        # spell the role as a literal; it now passes GOD_MODE_ROLES as a
+        # parameter, so the assertion reads the parameter rather than the SQL.
+        if "org_id IS NULL" in sql:
+            seen["probe_sql"] = sql
+            seen["probe_roles"] = args[1] if len(args) > 1 else []
+            return None  # not god mode
         return None  # and no org role either
 
     mock_pool.fetchval.side_effect = _fetchval
@@ -314,18 +318,53 @@ async def test_require_org_role_no_longer_waves_account_manager_through(
     with pytest.raises(HTTPException) as exc:
         await check(user={"user_id": "user_am"}, org_id=ORG_A)
     assert exc.value.status_code == 403
-    # The probe must ask only about platform_admin, never account_manager.
-    assert "account_manager" not in seen["probe"]
+    # The probe must ask only about god mode, never account_manager.
+    assert "account_manager" not in seen["probe_roles"]
+    assert "account_manager" not in seen["probe_sql"]
 
 
 async def test_require_org_role_still_passes_platform_admin(mock_pool):
     from middleware.roles import require_org_role
 
     async def _fetchval(sql, *args):
-        return 1 if "role_code = 'platform_admin'" in sql else None
+        return 1 if "org_id IS NULL" in sql else None
 
     mock_pool.fetchval.side_effect = _fetchval
 
     check = require_org_role("org_owner", "org_admin")
     user = await check(user={"user_id": "user_pa"}, org_id=ORG_A)
     assert user["user_id"] == "user_pa"
+
+
+async def test_require_org_role_probes_for_platform_owner_too(mock_pool):
+    """The god-mode probe was the bare string `'platform_admin'`, which omits
+    `platform_owner` — the exact lockout role_tiers.py warns about.
+
+    It is invisible today because every god-mode account still holds a legacy
+    `platform_admin` row. It becomes a simultaneous lockout of all of them on the
+    day the data migration renames those rows, which is the migration the tier
+    model exists for. This pins the probe to the named set.
+    """
+    from fastapi import HTTPException
+
+    from middleware.role_tiers import GOD_MODE_ROLES
+    from middleware.roles import require_org_role
+
+    seen = {}
+
+    async def _fetchval(sql, *args):
+        if "org_id IS NULL" in sql:
+            seen["roles"] = args[1] if len(args) > 1 else []
+        return None
+
+    mock_pool.fetchval.side_effect = _fetchval
+
+    check = require_org_role("org_owner", "org_admin")
+    with pytest.raises(HTTPException):
+        await check(user={"user_id": "user_po"}, org_id=ORG_A)
+
+    assert "platform_owner" in seen["roles"], (
+        "god-mode probe must admit platform_owner, not only the legacy spelling"
+    )
+    assert "platform_admin" in seen["roles"], "legacy rows must keep working"
+    assert set(seen["roles"]) == set(GOD_MODE_ROLES)
