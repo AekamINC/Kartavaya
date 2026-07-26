@@ -235,3 +235,110 @@ textarea.inp { resize: vertical; min-height: 76px; }
   display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0;
 }
 @keyframes modalIn { from { opacity: 0 } to { opacity: 1 } }
+
+/* ── Switch ───────────────────────────────────────────────────────────────
+   A boolean that applies immediately, as distinct from a checkbox inside a
+   form that is committed on submit. Wrap it in a <label> with the text after
+   it so the whole row is the hit target. */
+.sw {
+  position: relative; width: 38px; height: 22px; flex-shrink: 0;
+  border-radius: var(--r-pill); border: 0; padding: 0; cursor: pointer;
+  background: var(--s-high);
+  transition: background var(--dur-base) var(--ease-standard);
+}
+.sw::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: var(--shadow-1);
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+.sw[aria-checked="true"] { background: var(--primary); }
+/* Travel is scaled by --motion-scale so "reduced" moves less, not just faster. */
+.sw[aria-checked="true"]::after { transform: translateX(calc(16px * var(--motion-scale, 1))); }
+.sw:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.sw__row {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  font-size: var(--t-body-sm); color: var(--on-surface-2);
+}
+
+/* ── Menu / typeahead results ─────────────────────────────────────────────
+   The floating list under a search field. Every page that has a person or
+   product picker had rebuilt this with inline styles and its own hover
+   handlers written in JS (onMouseEnter setting style.background), which is a
+   repaint per row and invisible to the theme. */
+.menu {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+  margin-top: 4px; max-height: 220px; overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-3);
+}
+.menu__item {
+  display: block; width: 100%; text-align: left;
+  padding: 10px 14px; border: 0; background: transparent; cursor: pointer;
+  font-family: inherit;
+  border-bottom: 1px solid var(--outline-variant);
+  transition: background var(--dur-fast);
+}
+.menu__item:last-child { border-bottom: 0; }
+.menu__item:hover  { background: var(--s-container); }
+.menu__item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.menu__t { font-size: var(--t-body-sm); font-weight: 500; color: var(--on-surface); }
+.menu__d { font-size: var(--t-label); color: var(--on-surface-3); margin-top: 1px; }
+.menu__empty { padding: 10px 14px; font-size: var(--t-body-sm); color: var(--on-surface-3); }
+
+/* ── Avatar sizes ─────────────────────────────────────────────────────── */
+.k-avatar--sm { width: 28px; height: 28px; font-size: 11px; }
+.k-avatar--md { width: 36px; height: 36px; font-size: 13px; }
+.k-avatar--lg { width: 44px; height: 44px; font-size: 16px; }
+
+/* ── Selected-entity chip ─────────────────────────────────────────────────
+   A person or record already chosen, with a means of clearing it. */
+.picked {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--r-sm);
+  border: 1px solid var(--primary); background: var(--primary-container);
+}
+.picked__body { flex: 1; min-width: 0; }
+.picked__t { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-primary-container); }
+.picked__d { font-size: var(--t-label); color: var(--on-primary-container); opacity: .8; }
+.picked__x {
+  background: none; border: 0; cursor: pointer; padding: 0; line-height: 1;
+  font-size: 18px; color: var(--on-primary-container);
+}
+
+/* ── Dashed "add" affordance ──────────────────────────────────────────── */
+.addbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 11px 18px;
+  border: 1.5px dashed var(--primary); border-radius: var(--r-sm);
+  background: transparent; color: var(--primary);
+  font-family: inherit; font-size: var(--t-body-sm); font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-fast);
+}
+.addbtn:hover { background: var(--primary-container); }
+.addbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── Layout primitives ────────────────────────────────────────────────────
+   The two arrangements that inline styles were being written for over and
+   over: a vertical rhythm inside a card body, and a positioning context for a
+   floating menu. Naming them stops each page inventing its own gap value. */
+.stack  { display: flex; flex-direction: column; gap: 14px; }
+.stack--tight { gap: 8px; }
+.anchor { position: relative; display: flex; flex-direction: column; gap: 8px; }
+
+/* A quiet note between sections — "nothing here yet", "showing 20 of 340". */
+.k-note {
+  padding: 32px 0; text-align: center;
+  font-size: var(--t-body-sm); font-style: italic; color: var(--on-surface-3);
+}
+
+/* Admin row at the foot of a member card: role select + destructive action. */
+.k-mcard__admin {
+  display: flex; gap: 8px; align-items: center;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--outline-variant);
+}
+.k-mcard__admin .inp { flex: 1; padding: 6px 9px; font-size: var(--t-label); }
