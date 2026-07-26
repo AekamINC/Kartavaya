@@ -99,6 +99,32 @@ Do not "fix" the code to match these. Record any new ones you find.
   icons live in `frontend/src/layout/navIcons.jsx`.
 - **`24`'s own "No" list is violated in ~6 places** (content, not font): Devanagari
   in table column headers, input placeholders, and error text.
+- **`16-animations.md`:44 mandates the reduced-motion strobe.** Its worked example is
+  `animation: dmSpin calc(.7s * var(--ix)) linear infinite` — an `infinite` animation
+  whose duration is multiplied by `--ix`, which the same file sets to `.001` under
+  reduce. That is a 0.7ms spinner. Scaling duration is correct for a FINITE transition
+  (it ends sooner) and an accessibility harm on an infinite one (it never ends, it
+  accelerates). Three real strobe sites in the build came from this instruction and were
+  measured at 2ms / 1.5ms / 0.8ms before being fixed. Infinite decorative animations take
+  a FIXED duration plus `animation: none` under reduce; amplitude rides `--motion-scale`.
+- **`design-reference/…/motion.css`:117 carries the same bug** (`.dm-spin`, same
+  `calc(.7s * var(--ix)) … infinite`), and `motion.css` has no per-element
+  `animation: none` under reduced motion anywhere. It is also inconsistent with itself:
+  `.tt2__dot`:371 uses a fixed `2s`. The reference gets it RIGHT in `app.css`:286 —
+  `.sk::after { animation: shim 1.7s var(--ease-standard) infinite }` with
+  `@media (prefers-reduced-motion: reduce) { .sk::after { display: none } }`. That is the
+  pattern to copy; `MOTION-SPEC.md` §4 agrees with it.
+- **`design-reference/…/tokens.css`:241 sets every `--dur-*` to `0s` under reduce.**
+  `16-animations.md` §1 rule 2 and `MOTION-SPEC.md` §1 both explicitly require `.001`,
+  not `0`, because a zero-duration animation never fires `animationend` and any handler
+  that unmounts on exit-complete leaks its node. Build uses `.001`; tokens.css is wrong.
+  (Related divergence, not a defect: `tokens.css` has no `--ix` at all while `motion.css`
+  derives every duration from it — two mechanisms in two reference files.)
+- **`--motion-scale` is a build invention and should stay one.** It appears nowhere in the
+  reference implementation; its only mention is `SETTINGS-ADMIN-SPEC.md`:74, which gives it
+  `1 / 0.5 / 0.001` — i.e. treats it as a duration scalar. The build separates `--ix`
+  (duration, bottoms at `.001`) from `--motion-scale` (distance, bottoms at `0`), which is
+  what makes amplitude collapse possible. Do not "correct" this toward the spec.
 
 ## Standing owner rules that override any spec
 
