@@ -15,7 +15,7 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import require_platform_role
-from middleware.role_tiers import BILLING_CONSOLE_ROLES
+from middleware.role_tiers import ALL_MODULES, BILLING_CONSOLE_ROLES, is_god_mode, strongest
 from middleware.subscription import clear_module_cache
 
 router = APIRouter(prefix="/api/v1/subscription", tags=["subscription"])
@@ -222,14 +222,37 @@ async def activate_module(
     if not sub or sub["code"] == "free":
         raise HTTPException(403, "Add-on modules require a paid plan")
 
+    # The module vocabulary is role_tiers', not the seed table's.
+    #
+    # This used to reject anything absent from `staging.add_on_modules`, which is
+    # seeded with EIGHT codes (migrations/010:141 and 011:8): graha, ganit,
+    # manav, pahchan, vetana, sanvaad, dristi, srijan. `vikray`, `prachar` and
+    # `varta` have no row and never did — so this endpoint answered "Invalid
+    # module code" for three modules that have live `require_module()` gates and
+    # working routers behind them, and the only way to switch them on was
+    # `POST /v1/admin/orgs/{org_id}/modules/{code}`, which validates against
+    # role_tiers and writes the same table.
+    #
+    # Two activation paths at the same trust level (both BILLING/CONSOLE
+    # platform-role guards, both writing `module_subscriptions`) disagreeing on
+    # which modules exist is how a customer ends up paying for Vikray and being
+    # told it is not a module. Agreeing on role_tiers widens no guard.
+    if body.module_code not in ALL_MODULES:
+        raise HTTPException(
+            400,
+            f"Unknown module: {body.module_code}. "
+            f"Valid: {', '.join(sorted(ALL_MODULES))}",
+        )
+
+    # The dependency graph still comes from the catalogue, because that is where
+    # `requires_module` lives. A module with no catalogue row simply has no
+    # declared dependency — it must not be an activation failure.
     mod = await pool.fetchrow(
         "SELECT code, requires_module FROM staging.add_on_modules WHERE code=$1 AND is_active=TRUE",
         body.module_code,
     )
-    if not mod:
-        raise HTTPException(400, "Invalid module code")
 
-    for dep in (mod["requires_module"] or []):
+    for dep in ((mod["requires_module"] if mod else None) or []):
         dep_active = await pool.fetchval(
             "SELECT 1 FROM staging.module_subscriptions "
             "WHERE org_id=$1::uuid AND module_code=$2 AND is_active=TRUE",
@@ -621,5 +644,13 @@ async def get_my_roles(user=Depends(require_user)):
     return {
         "platform_roles": platform_roles,
         "org_roles": org_roles,
-        "is_platform_admin": "platform_admin" in platform_roles,
+        # `is_god_mode(strongest(...))`, not `"platform_admin" in platform_roles`.
+        #
+        # The literal test returns False for a `platform_owner`, which is the
+        # CURRENT spelling of god mode — `platform_admin` is the legacy alias
+        # that role_tiers.py:19-22 keeps only until the rows are migrated. On the
+        # day those rows are renamed this flag would have silently flipped to
+        # False for all three god-mode accounts, which is the exact lockout
+        # role_tiers.py:115-121 was written to warn about.
+        "is_platform_admin": is_god_mode(strongest(platform_roles)),
     }
