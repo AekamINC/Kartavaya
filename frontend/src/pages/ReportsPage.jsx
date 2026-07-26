@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import { PageHeader, DataTable, Td } from '../components/editorial';
+import { ErrorState, errorKind } from '../components/ui';
 import { PROJECT_COLORS, userInitials } from '../lib/utils';
 
 const TODAY     = new Date().toISOString().slice(0, 10);
@@ -71,6 +72,7 @@ function SchedulesPanel({ teams }) {
   const [teamId,    setTeamId]    = useState(teams[0]?.team_id || '');
   const [schedules, setSchedules] = useState([]);
   const [loading,   setLoading]   = useState(false);
+  const [err,       setErr]       = useState(null);
   const [showForm,  setShowForm]  = useState(false);
   const [submitting,setSubmitting]= useState(false);
   const [form, setForm] = useState({
@@ -78,12 +80,17 @@ function SchedulesPanel({ teams }) {
     day_of_week: 1, day_of_month: 1, send_hour_utc: 2,
   });
 
+  /* Previously `.catch(() => setSchedules([]))`, so a 403 or a 500 rendered the
+     "No schedules yet" empty state and invited the user to create a schedule
+     that may already exist. Classified and rendered as a real failure state
+     now (02-common-components.md). */
   const loadSchedules = useCallback((tid) => {
     if (!tid) return;
     setLoading(true);
+    setErr(null);
     api.get(`/reports/schedules/${tid}`)
       .then(r => setSchedules(Array.isArray(r.data) ? r.data : []))
-      .catch(() => setSchedules([]))
+      .catch(e => { setErr(e); setSchedules([]); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -250,6 +257,12 @@ function SchedulesPanel({ teams }) {
       {/* List */}
       {loading ? (
         <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>Loading…</div>
+      ) : err ? (
+        <ErrorState
+          kind={errorKind(err)}
+          grant="owner access to this project"
+          onRetry={() => loadSchedules(teamId)}
+        />
       ) : schedules.length === 0 ? (
         <div className="k-empty">
           <div className="k-empty__icon"><CalIcon /></div>

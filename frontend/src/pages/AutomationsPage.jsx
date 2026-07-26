@@ -7,6 +7,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import { PageHeader } from '../components/editorial';
+import { ErrorState, errorKind } from '../components/ui';
 import { useToast } from '../components/ui/toast';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 
@@ -60,6 +61,7 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
   const [teamId,      setTeamId]      = useState(propTeamId || '');
   const [testingId,   setTestingId]   = useState(null);   // automation_id being test-run
   const [confirmState, setConfirmState] = useState(null);
+  const [err,         setErr]         = useState(null);
 
   // ── Load teams for project picker ───────────────────────────────────────
   useEffect(() => {
@@ -72,12 +74,17 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
   }, [propTeamId]); // eslint-disable-line
 
   // ── Load automations for selected project ────────────────────────────────
+  /* A swallowed rejection here rendered the "No automations yet" empty state,
+     which on this page is actively dangerous: it tells someone whose rules
+     failed to load that they have none, and the obvious next action is to
+     recreate a rule that is already live and firing. */
   const load = useCallback(() => {
     if (!teamId) { setLoading(false); return; }
     setLoading(true);
+    setErr(null);
     api.get(`/automations/team/${teamId}`)
        .then(r => setAutomations(Array.isArray(r.data) ? r.data : []))
-       .catch(() => setAutomations([]))
+       .catch(e => { setErr(e); setAutomations([]); })
        .finally(() => setLoading(false));
   }, [teamId]);
 
@@ -286,8 +293,17 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
         </div>
       )}
 
+      {/* Failure — distinct from empty, see load() above */}
+      {!loading && err && (
+        <ErrorState
+          kind={errorKind(err)}
+          grant="access to this project's automations"
+          onRetry={load}
+        />
+      )}
+
       {/* Empty state */}
-      {!loading && automations.length === 0 && !creating && (
+      {!loading && !err && automations.length === 0 && !creating && (
         <div className="k-empty">
           <div className="k-empty__icon">⚡</div>
           <div className="k-empty__title">No automations yet</div>
@@ -296,7 +312,7 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
       )}
 
       {/* Rules list */}
-      {!loading && automations.length > 0 && (
+      {!loading && !err && automations.length > 0 && (
         <div className="k-rules">
           {automations.map((auto, idx) => {
             const filters  = auto.trigger?.filters || [];

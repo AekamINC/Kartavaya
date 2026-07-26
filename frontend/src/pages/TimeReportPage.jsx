@@ -2,9 +2,10 @@
  * TimeReportPage.jsx — editorial Time Report.
  * Layout: filters card → two-col (daily distribution chart + by member) → entries table → quote
  */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from '../lib/api';
 import { PageHeader, DataTable, Td } from '../components/editorial';
+import { ErrorState, errorKind } from '../components/ui';
 import { AVATAR_COLORS, userInitials } from '../lib/utils';
 
 function fmtHours(mins) {
@@ -136,21 +137,30 @@ export default function TimeReportPage({ teamId }) {
   const [to,      setTo]      = useState(TODAY_ISO);
   const [memberF, setMemberF] = useState('');
   const [members, setMembers] = useState([]);
+  const [err,     setErr]     = useState(null);
 
   useEffect(() => {
     if (!teamId) return;
     api.get(`/teams/${teamId}`).then(r => setMembers(Array.isArray(r.data?.members) ? r.data.members : [])).catch(() => {});
   }, [teamId]);
 
-  useEffect(() => {
+  /* A failed fetch used to resolve to `{entries: []}`, which renders the empty
+     state — so a 403, a 500 and a dead connection all told the user "No entries
+     for this period". That is a wrong answer presented as a right one. The
+     rejection is classified now and rendered as one of the four failure states
+     (02-common-components.md); empty means empty. */
+  const load = useCallback(() => {
     setLoading(true);
+    setErr(null);
     const params = { team_id: teamId, from, to };
     if (memberF) params.user_id = memberF;
     api.get('/time/report', { params })
        .then(r => setData(r.data && Array.isArray(r.data.entries) ? r.data : { entries: [], total_minutes: 0 }))
-       .catch(() => setData({ entries: [], total_minutes: 0 }))
+       .catch(e => { setErr(e); setData({ entries: [], total_minutes: 0 }); })
        .finally(() => setLoading(false));
   }, [teamId, from, to, memberF]);
+
+  useEffect(() => { load(); }, [load]);
 
   const byMember = useMemo(() => {
     const m = {};
@@ -218,7 +228,15 @@ export default function TimeReportPage({ teamId }) {
         </div>
       )}
 
-      {!loading && (
+      {!loading && err && (
+        <ErrorState
+          kind={errorKind(err)}
+          grant="viewer access to this project's time entries"
+          onRetry={load}
+        />
+      )}
+
+      {!loading && !err && (
         <>
           {/* Charts row */}
           {data.entries.length > 0 && (
