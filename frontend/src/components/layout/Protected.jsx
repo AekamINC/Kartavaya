@@ -6,7 +6,7 @@
  *
  *   1. client        — a portal client is confined to /client/*
  *   2. onboarding    — an org that has not finished setup goes to /onboarding
- *   3. platform      — /admin needs a platform role
+ *   3. platform      — /admin needs a CONSOLE platform role, not merely any one
  *
  * The client rule is FIRST on purpose; see the comment at rule 1.
  *
@@ -47,6 +47,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { KLogo } from '../../lib/brand';
 import { navContext } from './navConfig';
+import { ADMIN_SURFACE_ROLES } from '../admin/adminNav';
 
 /** Where a confined client is sent, and the only prefix they may occupy. */
 const CLIENT_HOME = '/client';
@@ -101,10 +102,24 @@ export default function Protected({ children, requiredRole }) {
 
   const path = location.pathname;
   const ctx = navContext(user);
-  // Matches `AdminShell.jsx:30` exactly. The legacy `role === 'admin'` fallback
-  // stays until every operator carries a row in `platform_roles`; the two
-  // gates must agree, or the route resolves and then renders nothing.
+  // The legacy `role === 'admin'` fallback stays until every operator carries a
+  // row in `platform_roles`.
   const isPlatform = ctx.isPlatform || user?.role === 'admin';
+
+  /**
+   * Who may open `/admin` — the SAME test `AdminShell` applies, from the same
+   * exported set, so the two cannot drift.
+   *
+   * "Holds any platform role" is too wide. `srijan_admin`'s surface is the
+   * Srijan hub at `/hub`, not the console; `platform_support` reaches nothing at
+   * all until an org admin approves a time-boxed session. Both used to resolve
+   * `/admin` and land on four rows that each 403 — the same shape as the defect
+   * where the route was gated on an ORG role while the shell gated on platform
+   * roles: it resolves, and then there is nothing behind it.
+   */
+  const platformRoles = Array.isArray(user?.platform_roles) ? user.platform_roles : [];
+  const canOpenAdmin =
+    user?.role === 'admin' || platformRoles.some(r => ADMIN_SURFACE_ROLES.includes(r));
 
   // 1 · Client confinement. Allow-list, not deny-list.
   //
@@ -141,7 +156,7 @@ export default function Protected({ children, requiredRole }) {
   if (underPath(path, CLIENT_HOME)) return <Navigate to="/dashboard" replace />;
 
   // 3 · Platform console.
-  if (underPath(path, PLATFORM_PREFIX) && !isPlatform) {
+  if (underPath(path, PLATFORM_PREFIX) && !canOpenAdmin) {
     return <Navigate to="/dashboard" replace />;
   }
 

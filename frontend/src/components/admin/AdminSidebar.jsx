@@ -8,12 +8,22 @@
  */
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ADMIN_NAV } from './adminNav';
+import { adminNavFor } from './adminNav';
 import { ICONS } from '../layout/navIcons';
 
-export default function AdminSidebar({ open = false, orgCount = null, onNavigate }) {
+/**
+ * @param {string[]} platformRoles  Tier-1 codes from `/auth/me`. Rows the holder
+ *   cannot open are ABSENT, not disabled — RBAC-SPEC denied state 1.
+ * @param {boolean}  legacyAdmin    `users.role === 'admin'`, the pre-user_roles
+ *   fallback. Shows every row, as it did before there were role rows to read.
+ */
+export default function AdminSidebar({ open = false, orgCount = null, onNavigate, platformRoles, legacyAdmin = false }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const items = React.useMemo(
+    () => adminNavFor(platformRoles, legacyAdmin),
+    [platformRoles, legacyAdmin],
+  );
 
   const isActive = (to) =>
     location.pathname === to ||
@@ -37,7 +47,7 @@ export default function AdminSidebar({ open = false, orgCount = null, onNavigate
       </div>
 
       <nav className="adm__nav" aria-label="Platform admin">
-        {ADMIN_NAV.map(({ to, icon, en, hi, count }) => (
+        {items.map(({ to, icon, en, hi, count }) => (
           <button
             key={to}
             type="button"

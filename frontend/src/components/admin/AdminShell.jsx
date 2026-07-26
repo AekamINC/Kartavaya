@@ -15,7 +15,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { currentUser } from '../../lib/auth';
 import AdminSidebar from './AdminSidebar';
-import { resolveAdminMeta } from './adminNav';
+import { adminNavFor, resolveAdminMeta } from './adminNav';
 import { ICONS } from '../layout/navIcons';
 import SkipLink from '../ui/SkipLink';
 
@@ -26,8 +26,48 @@ export default function AdminShell() {
   const [orgCount, setOrgCount] = React.useState(null);
 
   const user = currentUser();
-  const hasPlatformRole = Array.isArray(user?.platform_roles) && user.platform_roles.length > 0;
-  const isPlatform = hasPlatformRole || user?.role === 'admin';
+  const platformRoles = React.useMemo(
+    () => (Array.isArray(user?.platform_roles) ? user.platform_roles : []),
+    [user],
+  );
+  const legacyAdmin = user?.role === 'admin';
+
+  /**
+   * Admittance is the union of the rows this operator can open, NOT "holds any
+   * platform role".
+   *
+   * The old test let every Tier-1 code in. `srijan_admin` and `platform_support`
+   * therefore reached a console whose every endpoint refuses them — and
+   * `platform_support` is specified to hold zero access until an org admin
+   * approves a time-boxed session, a flow whose table does not exist yet. An
+   * operator who can open no row is sent back rather than shown a shell with an
+   * empty rail.
+   *
+   * `Protected` in App.jsx applies the same test before this component mounts;
+   * the two must agree or the route resolves and then renders nothing, which is
+   * exactly the defect that put an org-role check on a platform surface.
+   */
+  const items = React.useMemo(
+    () => adminNavFor(platformRoles, legacyAdmin),
+    [platformRoles, legacyAdmin],
+  );
+  const isPlatform = items.length > 0;
+
+  /**
+   * Which console row this URL belongs to, and whether this operator holds it.
+   *
+   * Resolved through `resolveAdminMeta` — longest prefix over the FULL nav —
+   * rather than by testing the permitted rows directly. A direct test would let
+   * `/admin/costs` satisfy the `/admin` row's own prefix, so anyone who could
+   * see Overview would count as allowed everywhere under it, which is every
+   * admin page. Resolving first and checking membership second cannot do that.
+   *
+   * This matters for `account_finance`, whose rows are Billing and Cost
+   * dashboard but NOT Overview: `/admin` is a real route for them and lands on a
+   * page where every request 403s. They are moved to their first real row.
+   */
+  const meta = resolveAdminMeta(location.pathname);
+  const pathAllowed = items.some(it => it.to === meta.to);
 
   // Route change closes the overlay nav, or the drawer stays over the page it
   // just navigated to.
@@ -50,18 +90,23 @@ export default function AdminShell() {
   // Not a platform operator: send them back rather than render an empty
   // console. The route is still <Protected>; this is the surface-level guard.
   React.useEffect(() => {
-    if (!isPlatform) navigate('/dashboard', { replace: true });
-  }, [isPlatform, navigate]);
-  if (!isPlatform) return null;
-
-  const meta = resolveAdminMeta(location.pathname);
+    if (!isPlatform) { navigate('/dashboard', { replace: true }); return; }
+    if (!pathAllowed) navigate(items[0].to, { replace: true });
+  }, [isPlatform, pathAllowed, items, navigate]);
+  if (!isPlatform || !pathAllowed) return null;
 
   return (
     <div data-testid="admin-shell" className="adm" data-surface="platform">
       <SkipLink />
 
       {navOpen && <button type="button" className="adm__scrim" aria-label="Close navigation" onClick={() => setNavOpen(false)} />}
-      <AdminSidebar open={navOpen} orgCount={orgCount} onNavigate={() => setNavOpen(false)} />
+      <AdminSidebar
+        open={navOpen}
+        orgCount={orgCount}
+        onNavigate={() => setNavOpen(false)}
+        platformRoles={platformRoles}
+        legacyAdmin={legacyAdmin}
+      />
 
       <div className="adm__main">
         <div className="adm__bar">
