@@ -40,9 +40,12 @@ and is a failure, not a pass): `check-tokens` 339 declared / **0 missing**;
    `UNIQUE (user_id, org_id, module_code)` and holds **0 rows**. Proposal 075
    below; free today, expensive after the first grant.
 
-2. **Defect two (the spelling) is real, and is already owned** by
-   `verify/org-endpoints` as `PROPOSED_070_sanvaad_spelling.sql`. I have not
-   duplicated it. Its position in the order is fixed in §5.
+2. **Defect two (the spelling) is real, is already owned** by
+   `verify/org-endpoints` as `PROPOSED_070_sanvaad_spelling.sql`, and **its code
+   half has now landed on staging while its SQL half has not.** That is the
+   asymmetric half-state 070 explicitly warned against. Re-verified live; it
+   supersedes what I wrote at checkpoint 1. Detail in §3e — this is now the most
+   time-sensitive item in the order.
 
 3. **The ordering hazard is real and has ALREADY PARTLY HAPPENED.**
    `PROPOSED_066` is **fully applied** — including its `public.team_members`
@@ -170,6 +173,46 @@ mechanism by which this directory and the database diverge, and it matters more
 than any individual row above: the labels cannot be trusted, only the catalog
 can.
 
+### 3e · The spelling fix is now HALF LANDED — re-verified, supersedes checkpoint 1
+
+At checkpoint 1 the code and the CHECK agreed on `samvada` and only
+`module_subscriptions` said `sanvaad`. **That is no longer true.** Another agent
+landed the Python half while I was stopped:
+
+| Where | Spelling now |
+|---|---|
+| `role_tiers.py:75, 82, 248, 267` (`ALL_MODULES`, `STAFF_MODULES`, `HIERARCHICAL_MODULES`, `NO_APPROVER_MODULES`) | **`sanvaad`** |
+| `org_modules.py:229-230` — the `_ENTITLEMENT_SPELLING` bridge is gone | **`sanvaad`** |
+| `staging.module_subscriptions` | `sanvaad` |
+| **live CHECK `org_member_modules_level_is_meaningful`** | **`samvada`** ← still |
+
+`PROPOSED_070` states the risk in its own words: *"Apply the code FIRST and the
+SQL second → for the gap, a grant naming `sanvaad` violates the OLD CHECK and
+returns 500. Worse."* **We are in that gap.**
+
+The practical consequence is milder than 070 predicted, and worse in a different
+way. Traced through:
+
+- A `sanvaad` grant at viewer/editor/admin **inserts fine** — the CHECK's
+  `samvada` list cannot match `sanvaad`, so no 500.
+- A `sanvaad` grant at `approver` is rejected **400 by Python**
+  (`NO_APPROVER_MODULES` now holds `sanvaad`, so `valid_levels_for` excludes it)
+  before the CHECK is ever consulted.
+
+So there is no crash — but the CHECK is now **completely dead for messaging**:
+it constrains a string the code can no longer emit. "Sanvaad has no approver
+level" is currently enforced in Python only, with **no database backstop**. Any
+path that bypasses `_validate_grant` — a direct SQL write, a fixture, a future
+endpoint — can now create an approver grant on Sanvaad and nothing will stop it.
+
+`staging.org_member_modules` is still empty, so nothing is mis-stored yet. This
+is cheap to close today and stops being cheap at the first messaging grant.
+
+**One thing this settles:** `role_tiers.py:71` records that the TABLES keep the
+`samvada_` prefix deliberately. So `058_sanvaad_messaging.sql` creating
+`staging.samvada_channels` is correct as written, and stage 0.3 below needs no
+spelling decision after all.
+
 ### 3d · Other verified divergences
 
 - **`staging.users` does not exist.** `routers/messaging.py` joins it at lines
@@ -259,7 +302,7 @@ Both fixes are cheap only at zero rows. **Run them in one window.**
 
 | # | Action | Owner | Risk |
 |---|---|---|---|
-| 1.1 | **`PROPOSED_070_sanvaad_spelling.sql`** — SQL half FIRST, then the `role_tiers.py` / `org_modules.py` / `catalogue.js` change in the same deploy. | `verify/org-endpoints` | MEDIUM. Not self-contained. Order is asymmetric: SQL-then-code leaves a harmless gap at zero rows; code-then-SQL returns 500. |
+| 1.1 | **`PROPOSED_070_sanvaad_spelling.sql` — SQL HALF ONLY, and it is OVERDUE.** The Python/frontend half is already on staging (§3e), so the sequencing advice inside 070 is spent: do not re-apply its step 2, and do not revert the code to re-order. Just run the CHECK re-creation. Its two `UPDATE`s are no-ops (both tables verified clean). | `verify/org-endpoints` | **Now LOW to apply and MEDIUM to leave.** At zero rows the CHECK swap cannot reject anything. Leaving it means the no-approver-on-Sanvaad rule has no database backstop at all. |
 | 1.2 | **Step 1 of `PROPOSED_075`** — deploy the `ON CONFLICT DO NOTHING` code change alone. | this branch | LOW. Valid against both the old and new constraints, so it is safe to ship days ahead. |
 | 1.3 | **Step 2 of `PROPOSED_075`** — the SQL. | this branch | LOW at zero rows; the file aborts itself if the table is not empty. |
 

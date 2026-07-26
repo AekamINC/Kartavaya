@@ -108,6 +108,38 @@ Not done by me: renaming another agent's in-flight file mid-run is how `067`
 happened. Whoever owns task-comment visibility, or the last agent standing,
 should take it.
 
+### ⚠️ The sanvaad spelling fix is HALF LANDED right now
+
+Re-verified live by the migrations agent after the restart. The **code half is on
+staging**; the **SQL half is not applied**:
+
+| Where | Spelling |
+|---|---|
+| `role_tiers.py:75, 82, 248, 267` | `sanvaad` ✅ |
+| `org_modules.py` — the `_ENTITLEMENT_SPELLING` bridge is deleted | `sanvaad` ✅ |
+| `staging.module_subscriptions` | `sanvaad` ✅ |
+| **live CHECK `org_member_modules_level_is_meaningful`** | **`samvada`** ❌ |
+
+`PROPOSED_070` warned that code-before-SQL is the worse order. It does **not**
+crash — a `sanvaad` grant at viewer/editor/admin inserts fine because the CHECK's
+`samvada` list cannot match, and approver-on-sanvaad is refused 400 by Python
+before the CHECK is reached. The real cost is that **the CHECK is now dead**: it
+constrains a string the code can no longer produce, so "Sanvaad has no approver
+level" is enforced in Python only, with no database backstop.
+
+**What to do: run only the CHECK re-creation from `PROPOSED_070`.** Do not
+re-apply its step 2 (already done) and do not revert the Python to restore the
+documented order. Its two `UPDATE`s are verified no-ops. `org_member_modules` is
+still empty, so this is free today.
+
+**Do not re-run `PROPOSED_066` after that lands** — its §1 re-creates the same
+CHECK with the old `samvada` spelling and would silently revert the fix. 066 is
+already applied; a guard header now says so.
+
+Related, and it settles an open question: `role_tiers.py:71` records that the
+TABLES deliberately keep the `samvada_` prefix. So `058_sanvaad_messaging.sql`
+creating `staging.samvada_channels` is correct as written — no rename needed.
+
 ### Gaps that are NOT missing files
 
 `003`–`006`, `054`, `062` have never existed on any ref. `README.md` lists

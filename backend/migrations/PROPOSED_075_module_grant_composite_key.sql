@@ -55,12 +55,18 @@
 -- queries, all verified on `origin/staging`:
 --
 --   READ   org_members.py:93    SELECT module_code, role  → [{code, role}, ...]
---   READ   admin_orgs.py:913    SELECT module_code, granted_at
---   REACH  subscription.py:127  SELECT 1 ... WHERE user_id AND org_id AND module_code
+--   READ   admin_orgs.py:932    SELECT module_code, granted_at
+--   COUNT  org_modules.py:234   SELECT module_code, COUNT(*) ... GROUP BY module_code
+--   REACH  subscription.py:129  SELECT 1 ... WHERE user_id AND org_id AND module_code
 --   WRITE  org_members.py:230   INSERT ... ON CONFLICT (user_id,org_id,module_code) DO NOTHING
---   WRITE  admin_orgs.py:700    INSERT ... ON CONFLICT (user_id,org_id,module_code) DO NOTHING
+--   WRITE  admin_orgs.py:706    INSERT ... ON CONFLICT (user_id,org_id,module_code) DO NOTHING
 --   WRITE  org_members.py:337   DELETE all for (user,org) then INSERT each  [no ON CONFLICT]
---   WRITE  admin_orgs.py:884    DELETE all for (user,org) then INSERT each  [no ON CONFLICT]
+--   WRITE  admin_orgs.py:903    DELETE all for (user,org) then INSERT each  [no ON CONFLICT]
+--
+-- Line numbers re-verified against staging at the time of writing; they drift as
+-- other agents land work, and every hit above is executable SQL rather than a
+-- docstring. `org_modules.py`, `search.py` and `messaging.py` also NAME this
+-- table, but only in prose — do not count those as call sites.
 --
 -- ROLE ARRAY (`roles TEXT[]`) — REJECTED.
 --   `granted_by` and `granted_at` are per-grant facts. Collapsing two grants
@@ -145,6 +151,18 @@
 --   reason to delay §4 — but `"modules"` should be de-duplicated
 --   (`sorted(set(...))`) in the same deploy as step 1 so the chip list stays
 --   honest.
+--
+--   Same deploy, second one-liner: `org_modules.py:234` reads
+--
+--       SELECT module_code, COUNT(*) AS n FROM staging.org_member_modules
+--        WHERE org_id=$1::uuid GROUP BY module_code
+--
+--   and uses `n` as "how many members hold this module" on the modules screen.
+--   A user holding both admin and approver on ganit is ONE member and TWO rows,
+--   so after §4 that figure over-counts. It must become
+--   `COUNT(DISTINCT user_id)`. Nothing else in the file changes; the count is
+--   read-only and feeds a card, so the failure is a wrong number rather than an
+--   error — which is why it is easy to miss and worth naming here.
 --
 -- ─────────────────────────────────────────────────────────────────────────────
 -- §4 · APPLY (step 2 of 2 — only after step 1 is deployed)
