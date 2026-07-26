@@ -633,15 +633,23 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   min-width: 236px; max-width: 320px; padding: 5px;
   border: 1px solid var(--outline-variant); border-radius: var(--r-md);
   background: var(--s-lowest); box-shadow: var(--shadow-3);
-  animation: dmPop var(--dur-base) var(--ease-enter) both;
+  /* Reference motion.css:143 (`.dm-pop`) and MOTION-SPEC.md §3 both say
+     --dur-fast --ease-spring. The build had --dur-base --ease-enter: 220ms of
+     decelerate where the reference wants 140ms with a small overshoot, which is
+     what makes a menu feel like it snaps open rather than unfolds. */
+  animation: dmPop var(--dur-fast) var(--ease-spring) both;
   transform-origin: top left;
 }
 .pk__pop--up    { top: auto; bottom: calc(100% + 5px); transform-origin: bottom left; }
 .pk__pop--right { left: auto; right: 0; transform-origin: top right; }
 /* The close path is setClosing(true) → unmount after 130ms, not a bare
    setOpen(false): the current pickers unmount instantly, so the exit keyframe
-   never plays at all. */
-.pk__pop.is-closing { animation: dmPopOut var(--dur-fast) var(--ease-exit) both; }
+   never plays at all.
+   `calc(var(--dur-fast) * .85)` is the reference's exit (motion.css:145); §3
+   states it as a flat 119ms, which is the same number. It also has to be under
+   the 130ms unmount above — at the previous --dur-fast (140ms) the keyframe was
+   being cut off 10ms early, so this fixes the mismatch as well as the fidelity. */
+.pk__pop.is-closing { animation: dmPopOut calc(var(--dur-fast) * .85) var(--ease-exit) both; }
 .pk__srch { display: flex; align-items: center; gap: 7px; padding: 5px 8px 7px; margin-bottom: 4px; border-bottom: 1px solid var(--outline-variant); }
 .pk__srch svg { flex: none; opacity: .45; }
 .pk__srch input { flex: 1; min-width: 0; border: 0; background: none; font: inherit; font-size: 13px; color: var(--on-surface); outline: none; }
@@ -710,7 +718,11 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
     padding: 6px 10px calc(10px + env(safe-area-inset-bottom));
     border: 0; border-radius: var(--r-xl) var(--r-xl) 0 0;
     box-shadow: var(--shadow-4);
-    animation: dmSheetIn var(--dur-slow) var(--ease-enter) both;
+    /* Reference motion.css:147 (`.dm-bsheet`): a rising sheet uses
+       --ease-emph-in, not the generic decelerate, and runs slightly under
+       --dur-slow. --ease-enter here made the picker sheet the only rising
+       surface in the app on a different curve from every other one. */
+    animation: dmSheetIn calc(var(--dur-slow) * .8) var(--ease-emph-in) both;
     transform-origin: bottom center;
   }
   .pk__pop.is-closing { animation: dmSheetOut var(--dur-base) var(--ease-exit) both; }
@@ -937,9 +949,10 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   position: fixed; z-index: 340; min-width: 200px; max-width: 340px; padding: var(--sp-3);
   border: 1px solid var(--outline-variant); border-radius: var(--r-md);
   background: var(--s-lowest); box-shadow: var(--shadow-3);
-  animation: dmPop var(--dur-base) var(--ease-enter) both;
+  /* Same pair as .pk__pop above — motion.css:143/145, MOTION-SPEC.md §3. */
+  animation: dmPop var(--dur-fast) var(--ease-spring) both;
 }
-.pop.is-closing { animation: dmPopOut var(--dur-fast) var(--ease-exit) both; }
+.pop.is-closing { animation: dmPopOut calc(var(--dur-fast) * .85) var(--ease-exit) both; }
 .menu--float { position: fixed; z-index: 340; top: auto; left: auto; right: auto; min-width: 180px; max-width: 320px; padding: 4px; }
 .menu--float .menu__item { border-bottom: 0; border-radius: var(--r-sm); padding: 7px 10px; }
 .menu__sep { height: 1px; margin: 4px 2px; background: var(--outline-variant); }
@@ -956,7 +969,11 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   padding-bottom: env(safe-area-inset-bottom);
   border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--surface);
   box-shadow: var(--shadow-4);
-  animation: dmSheetIn var(--dur-slow) var(--ease-emph-in) both;
+  /* Curve was already right; the duration was not. Reference motion.css:97
+     (`.dm-sheet`) runs `calc(var(--dur-slow) * .84)` — 302ms, which is the
+     "300ms" MOTION-SPEC.md §3 quotes for a bottom sheet. A flat --dur-slow
+     made every sheet 58ms slower than the reference. */
+  animation: dmSheetIn calc(var(--dur-slow) * .84) var(--ease-emph-in) both;
 }
 .sheet.is-closing { animation: dmSheetOut var(--dur-base) var(--ease-exit) both; }
 .sheet__grab { flex: none; width: 100%; padding: 9px 0 5px; border: 0; background: none; cursor: grab; }
