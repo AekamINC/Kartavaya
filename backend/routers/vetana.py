@@ -650,12 +650,20 @@ async def process_payroll(
     # payroll run 500'd here AFTER the payslips had been written and the run
     # marked processed. Verified against the live schema, 2026-07-26.
     payslip_rows = await pool.fetch(
+        # `esi_number` added alongside: the column exists on manav_employees and
+        # was never selected, so the payslip could not show the identifier for an
+        # ESI deduction it was already printing.
         "SELECT p.*, e.name AS employee_name, e.email, e.employee_code AS emp_code, "
-        "e.pan, e.uan, e.bank_details, e.designation, "
-        "COALESCE(d.name, '') AS department_name "
+        "e.pan, e.uan, e.esi_number, e.bank_details, e.designation, "
+        # `e.department`, not a join on `e.department_id`. No migration adds
+        # `department_id`, manav.py's INSERT (:292) writes `department` as a NAME,
+        # and its department roster counts members with `WHERE department = d.name`
+        # (:450). The failure modes are asymmetric: if `department_id` is absent
+        # the join makes this a hard UndefinedColumnError, whereas `e.department`
+        # is a column that exists either way and at worst reads empty.
+        "COALESCE(e.department, '') AS department_name "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
-        "LEFT JOIN staging.manav_departments d ON d.id = e.department_id "
         "WHERE p.run_id=$1::uuid AND e.email IS NOT NULL AND e.email != ''",
         run_id,
     )
@@ -670,6 +678,7 @@ async def process_payroll(
         if org_dict.get("logo_key"):
             from services.storage import sign_key
             org_dict["logo_url"] = await sign_key(org_id, org_dict["logo_key"]) or org_dict.get("logo_url", "")
+        from services.doc_validation import DocumentIncomplete
         from services.payslip_pdf import generate_payslip_pdf
         from services.employee_email import send_payslip_email
         for ps in payslip_rows:
@@ -686,12 +695,23 @@ async def process_payroll(
                 "department_name": ps_dict.get("department_name", ""),
                 "designation": ps_dict.get("designation", ""),
                 "pan": ps_dict.get("pan", ""), "uan": ps_dict.get("uan", ""),
+                "esi_number": ps_dict.get("esi_number", ""),
                 "bank_account": emp_bank.get("account_number", ""),
                 "bank_name": emp_bank.get("bank_name", ""),
                 "email": ps["email"],
             }
             try:
                 pdf_bytes = generate_payslip_pdf(ps_dict, emp_dict, org_dict)
+            except DocumentIncomplete as e:
+                # Mail the notification without the slip rather than attach an
+                # incomplete one. Logged by field name so an admin can see WHY
+                # a run went out with no attachments; no employee PII in the log.
+                logging.getLogger(__name__).warning(
+                    "payslip PDF refused as incomplete during payroll run: "
+                    "run=%s payslip=%s missing=%s",
+                    run_id, ps.get("payslip_number", ""), [g.field for g in e.check.blocking],
+                )
+                pdf_bytes = None
             except Exception:
                 pdf_bytes = None
             send_payslip_email(
@@ -967,6 +987,7 @@ async def download_payslip_pdf(
     org_id: str = Depends(get_org_id),
     levels=Depends(_gate),
 ):
+    from services.doc_validation import DocumentIncomplete
     from services.payslip_pdf import generate_payslip_pdf
 
     logger = logging.getLogger(__name__)
@@ -986,10 +1007,11 @@ async def download_payslip_pdf(
         "e.pan AS emp_pan, e.uan, e.esi_number, e.date_of_joining, "
         "e.bank_details, e.email AS emp_email, "
         "e.user_id AS employee_user_id, e.id AS emp_row_id, "
-        "COALESCE(d.name, e.department, '') AS department_name "
+        # See the payroll-run query above for why this reads `e.department`
+        # rather than joining `staging.manav_departments` on `e.department_id`.
+        "COALESCE(e.department, '') AS department_name "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
-        "LEFT JOIN staging.manav_departments d ON d.id = e.department_id "
         "WHERE p.id=$1::uuid AND p.org_id=$2::uuid",
         payslip_id, org_id,
     )
@@ -1092,6 +1114,13 @@ async def download_payslip_pdf(
 
     try:
         pdf_bytes = generate_payslip_pdf(payslip, employee, org_dict)
+    except DocumentIncomplete as e:
+        # The slip is missing a statutory identifier for a deduction it records,
+        # or its figures do not reconcile. Refuse rather than issue a wage record
+        # the employee cannot verify. No employee PII goes in the log line.
+        logger.info("payslip PDF refused as incomplete: payslip=%s org=%s missing=%s",
+                    payslip_id, org_id, [g.field for g in e.check.blocking])
+        raise HTTPException(422, detail=e.as_payload())
     except Exception as e:
         logger.error("payslip PDF generation failed: payslip=%s org=%s err=%s\n%s",
                      payslip_id, org_id, e, traceback.format_exc())

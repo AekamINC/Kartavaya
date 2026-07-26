@@ -481,6 +481,7 @@ async def download_invoice_pdf(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    from services.doc_validation import DocumentIncomplete
     from services.invoice_pdf import generate_invoice_pdf
 
     pool = await get_pool()
@@ -554,6 +555,13 @@ async def download_invoice_pdf(
 
     try:
         pdf_bytes = generate_invoice_pdf(invoice, org_dict, contact)
+    except DocumentIncomplete as e:
+        # Not a server failure — the document is legally incomplete and we
+        # refuse to emit one that looks finished. 422 with every missing field
+        # named, so the UI can point at the setting that fixes it.
+        logger.info("invoice PDF refused as incomplete: invoice=%s org=%s missing=%s",
+                    invoice_id, org_id, [g.field for g in e.check.blocking])
+        raise HTTPException(422, detail=e.as_payload())
     except Exception as e:
         logger.error("invoice PDF generation failed: invoice=%s org=%s err=%s\n%s",
                      invoice_id, org_id, e, traceback.format_exc())
