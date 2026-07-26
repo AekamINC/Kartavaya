@@ -20,7 +20,8 @@ from services.forex import get_usd_inr, get_usd_inr_sync
 from services.storage import create_org_bucket, verify_r2_credentials, clear_org_r2_cache
 from middleware.role_tiers import (
     ALL_PLATFORM_ROLES, GOD_MODE_ROLES, MANAGER_ROLES, STAFF_ROLES,
-    FINANCE_CONSOLE_ROLES, SUPERUSER_ONLY_ROLES,
+    BILLING_CONSOLE_ROLES, FINANCE_CONSOLE_ROLES, SRIJAN_COMMERCIAL_ROLES,
+    SUPERUSER_ONLY_ROLES,
     ALL_MODULES as ROLE_TIER_MODULES,
     SENSITIVE_MODULES,
 )
@@ -620,6 +621,61 @@ async def update_org_settings(
 
 # ── Member Management ───────────────────────────────────────
 
+ORG_MEMBER_ROLES = ("org_owner", "org_admin", "org_member")
+
+
+async def _assert_seat_available(pool, org_id: str, target_user_id: str) -> None:
+    """Refuse to seat a new member once the org is at its allowance.
+
+    The owner's rule is that Aekam enters the maximum users by hand when the org
+    is created — there is no self-serve seat purchase — so the number in
+    `organisations.max_users` is a commercial term, not a soft target.
+
+    `org_members.add_member` already enforced this. THIS path did not, and it is
+    the path Aekam's own console uses, so the cap was real on the door the
+    customer knocks at and absent on the one behind the counter. A limit
+    enforced on one of two paths is a limit that reports itself as met while
+    being exceeded.
+
+    Resolution is COALESCE(org, plan) per migration 061: the org column is what
+    this customer bought, the plan column is the tier default, and NULL on both
+    means unlimited — which must not collapse to zero.
+
+    An existing member re-added with another role does not consume a second
+    seat; the count is DISTINCT on user_id and this returns early for them.
+    """
+    already_in = await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
+        target_user_id, org_id, list(ORG_MEMBER_ROLES),
+    )
+    if already_in:
+        return
+
+    limit = await pool.fetchval(
+        "SELECT COALESCE(o.max_users, p.max_users) "
+        "FROM staging.organisations o "
+        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
+        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
+        "WHERE o.id=$1::uuid",
+        org_id,
+    )
+    if limit is None:
+        return
+
+    seats_used = await pool.fetchval(
+        "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+        "WHERE org_id=$1::uuid AND role_code = ANY($2::text[])",
+        org_id, list(ORG_MEMBER_ROLES),
+    ) or 0
+    if seats_used >= limit:
+        raise HTTPException(
+            403,
+            f"This organisation is using all {limit} of its seats. "
+            "Raise max_users on the org before adding another member.",
+        )
+
+
 @router.post("/{org_id}/members")
 async def add_member(
     org_id: str,
@@ -653,6 +709,8 @@ async def add_member(
     for role in body.roles:
         if role not in valid_org_roles:
             raise HTTPException(400, f"Invalid org role: {role}. Valid: {', '.join(valid_org_roles)}")
+
+    await _assert_seat_available(pool, org_id, target["user_id"])
 
     is_team_member = await pool.fetchval(
         "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'",
@@ -697,7 +755,7 @@ async def add_member(
                 "WHERE org_id=$1::uuid AND is_active=TRUE",
                 org_id,
             )
-            grant_codes = [r["module_code"] for r in enabled if r["module_code"] not in SENSITIVE]
+            grant_codes = [r["module_code"] for r in enabled if r["module_code"] not in SENSITIVE_MODULES]
 
     for mc in grant_codes:
         if mc not in ALL_MODULES:
