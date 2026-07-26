@@ -18,10 +18,54 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
+from middleware.module_levels import held_level
 
 router = APIRouter(prefix="/api/v1/dristi", tags=["dristi-analytics"])
 
 _gate = require_module("dristi")
+
+
+# ── Cross-module reach ───────────────────────────────────────────────────────
+#
+# Dristi reads from every other module by design — that is what an analytics
+# module is. The problem is that it was gated on `dristi` ALONE, so the
+# entitlement that governs the SOURCE data was never consulted.
+#
+# Concretely, before this: `GET /overview` returned payroll totals from
+# `vetana_payroll_runs`, headcount from `manav_employees` and revenue from
+# `ganit_invoices` to anyone holding a `dristi` grant. All three of those are
+# SENSITIVE modules — withheld by default, audited on platform bypass. And
+# `dristi` is in `STAFF_MODULES` while ganit, manav and vetana are deliberately
+# not, so `platform_staff` — a role whose whole definition is "the operating
+# set, excluding finance and all HR" — could read any customer's payroll and
+# revenue through the analytics endpoint, with no audit row.
+#
+# The fix is per-source, not per-endpoint. Refusing the whole dashboard would
+# break it for every legitimate user; instead each block is included only if the
+# caller can reach the module it comes from, and the response says which were
+# withheld so the UI can render an honest gap rather than a silent zero.
+
+_OVERVIEW_SOURCES = {
+    "crm": "graha",
+    "deals": "graha",
+    "revenue": "ganit",
+    "hr": "manav",
+    "orders": "vikray",
+    "payroll": "vetana",
+}
+
+
+async def reachable_modules(pool, user_id: str, org_id: str, codes) -> set[str]:
+    """Which of `codes` this caller may actually read, via the Tier-4 resolver.
+
+    `held_level` returns None when the caller has no platform reach, no org
+    admin role and no grant row — which is exactly "may not read this module".
+    """
+    reachable = set()
+    for code in codes:
+        if await held_level(pool, user_id, org_id, code) is not None:
+            reachable.add(code)
+    return reachable
 
 
 # ── Pydantic Models ──────────────────────────────────────────
@@ -56,15 +100,36 @@ def _month_range(months_back: int = 6):
     return ranges
 
 
+#: Which module each exportable report reads. `_fetch_report_data` is reached by
+#: `GET /exports/{type}` and by scheduled reports, and both bypassed every
+#: source-module check the GET endpoints have — exporting "hr" returned the
+#: employee register, and "revenue" the invoice ledger, behind `dristi` alone.
+#: A report may read more than one, and ALL of them are required — a partial
+#: export of the books is still an export of the books.
+_REPORT_SOURCE_MODULES: dict[str, set[str]] = {
+    "overview": {"graha", "ganit"},   # task counts, contact count, paid revenue
+    "revenue": {"ganit"},
+    "pipeline": {"graha"},
+    "hr": {"manav"},
+    "sales": {"vikray"},
+}
+
+
 async def _fetch_report_data(pool, org_id: str, report_type: str) -> dict:
     """Fetch report data by type, reusing the same queries as the GET endpoints."""
     today = date.today()
     month_ago = today - timedelta(days=30)
 
     if report_type == "overview":
+        # `teams` has no `id` column — its primary key is `team_id` (TEXT), and
+        # the forward tenancy path is `teams.org_id` (migration 028). The old
+        # query joined `tm.id` twice, so it raised UndefinedColumn and this
+        # branch 500'd every time: `GET /exports/overview` had never returned,
+        # and neither had a scheduled report of type "overview".
         tasks = await pool.fetchval(
-            "SELECT COUNT(*) FROM tasks t JOIN teams tm ON tm.id=t.team_id "
-            "JOIN staging.organisations o ON o.team_id=tm.id WHERE o.id=$1::uuid",
+            "SELECT COUNT(*) FROM tasks t "
+            "JOIN teams tm ON tm.team_id = t.team_id "
+            "WHERE tm.org_id=$1::uuid AND tm.deleted_at IS NULL",
             org_id,
         )
         contacts = await pool.fetchval(
@@ -109,6 +174,9 @@ async def overview(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    allowed = await reachable_modules(
+        pool, user["user_id"], org_id, set(_OVERVIEW_SOURCES.values()),
+    )
 
     tasks_stats = await pool.fetchrow(
         "SELECT COUNT(*) AS total_tasks, "
@@ -121,7 +189,9 @@ async def overview(
         org_id,
     )
 
-    crm = await pool.fetchrow(
+    crm = None
+    if "graha" in allowed:
+        crm = await pool.fetchrow(
         "SELECT COUNT(*) AS total_contacts, "
         "COUNT(*) FILTER (WHERE contact_type='lead') AS leads, "
         "COUNT(*) FILTER (WHERE contact_type='customer') AS customers "
@@ -129,7 +199,9 @@ async def overview(
         org_id,
     )
 
-    deals = await pool.fetchrow(
+    deals = None
+    if "graha" in allowed:
+        deals = await pool.fetchrow(
         "SELECT COUNT(*) AS total_deals, "
         "COALESCE(SUM(value),0) AS pipeline_value, "
         "COUNT(*) FILTER (WHERE stage='Won') AS won_deals, "
@@ -139,7 +211,9 @@ async def overview(
         org_id,
     )
 
-    revenue = await pool.fetchrow(
+    revenue = None
+    if "ganit" in allowed:
+        revenue = await pool.fetchrow(
         "SELECT COALESCE(SUM(total),0) AS total_invoiced, "
         "COALESCE(SUM(amount_paid),0) AS total_collected, "
         "COALESCE(SUM(total - amount_paid) FILTER (WHERE payment_status NOT IN ('paid','cancelled')),0) AS outstanding "
@@ -147,14 +221,18 @@ async def overview(
         org_id,
     )
 
-    hr = await pool.fetchrow(
+    hr = None
+    if "manav" in allowed:
+        hr = await pool.fetchrow(
         "SELECT COUNT(*) AS headcount, "
         "COUNT(*) FILTER (WHERE department IS NOT NULL AND department != '') AS in_departments "
         "FROM staging.manav_employees WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
 
-    orders = await pool.fetchrow(
+    orders = None
+    if "vikray" in allowed:
+        orders = await pool.fetchrow(
         "SELECT COUNT(*) AS total_orders, "
         "COALESCE(SUM(total),0) AS order_value, "
         "COUNT(*) FILTER (WHERE status='delivered' OR status='closed') AS fulfilled "
@@ -162,7 +240,9 @@ async def overview(
         org_id,
     )
 
-    payroll = await pool.fetchrow(
+    payroll = None
+    if "vetana" in allowed:
+        payroll = await pool.fetchrow(
         "SELECT COALESCE(SUM(total_net),0) AS ytd_payroll, "
         "COALESCE(SUM(total_pf + total_esi + total_tds),0) AS ytd_statutory "
         "FROM staging.vetana_payroll_runs "
@@ -170,6 +250,9 @@ async def overview(
         org_id, f"{date.today().year}-%",
     )
 
+    # `withheld` is named rather than left as an empty object so the UI can say
+    # "you do not have access to payroll" instead of drawing a zero, which is
+    # indistinguishable from a company that paid nobody this year.
     return {
         "tasks": dict(tasks_stats) if tasks_stats else {},
         "crm": dict(crm) if crm else {},
@@ -178,6 +261,9 @@ async def overview(
         "hr": dict(hr) if hr else {},
         "orders": dict(orders) if orders else {},
         "payroll": dict(payroll) if payroll else {},
+        "withheld": sorted({
+            block for block, mod in _OVERVIEW_SOURCES.items() if mod not in allowed
+        }),
     }
 
 
@@ -191,6 +277,16 @@ async def revenue_trends(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+
+    # Every figure here is invoices and expenses — the ledger, not "analytics".
+    # Ganit is a sensitive module and a `dristi` grant is not a grant to it.
+    if not await reachable_modules(pool, user["user_id"], org_id, {"ganit"}):
+        raise HTTPException(
+            403,
+            "Revenue analytics reads the accounting ledger. Ask your org admin "
+            "for access to the Ganit module.",
+        )
+
     labels = _month_range(min(months, 12))
 
     invoiced = await pool.fetch(
@@ -298,6 +394,18 @@ async def hr_analytics(
 ):
     pool = await get_pool()
 
+    # Every block below is HR or payroll. Unlike /overview there is no
+    # non-sensitive remainder worth returning, so this refuses outright rather
+    # than serving an empty shell — a `dristi` grant is not a grant to the
+    # salary register.
+    allowed = await reachable_modules(pool, user["user_id"], org_id, {"manav", "vetana"})
+    if "manav" not in allowed:
+        raise HTTPException(
+            403,
+            "HR analytics reads employee records. Ask your org admin for access "
+            "to the Manav module.",
+        )
+
     dept_breakdown = await pool.fetch(
         "SELECT COALESCE(NULLIF(e.department,''), 'Unassigned') AS department, COUNT(*) AS count "
         "FROM staging.manav_employees e "
@@ -306,7 +414,11 @@ async def hr_analytics(
         org_id,
     )
 
-    payroll_trend = await pool.fetch(
+    # Payroll is a separate entitlement from HR — reaching Manav does not mean
+    # reaching what people are paid.
+    payroll_trend = []
+    if "vetana" in allowed:
+        payroll_trend = await pool.fetch(
         "SELECT month, total_gross, total_net, total_pf, total_esi, total_tds, employee_count "
         "FROM staging.vetana_payroll_runs "
         "WHERE org_id=$1::uuid ORDER BY month DESC LIMIT 12",
@@ -617,17 +729,45 @@ async def run_report_now(
     if not report:
         raise HTTPException(404, "Scheduled report not found")
 
+    # Same source check as the export endpoint. Running a report on demand must
+    # not reach further than reading it would.
+    required = _REPORT_SOURCE_MODULES.get(report["report_type"], set())
+    missing = required - await reachable_modules(pool, user["user_id"], org_id, required)
+    if missing:
+        raise HTTPException(
+            403,
+            f"This report reads {', '.join(sorted(missing))}, which you do not "
+            f"have access to.",
+        )
+
     try:
         data = await _fetch_report_data(pool, org_id, report["report_type"])
 
-        from services.email_service import send_email
+        # `services.email_service` does not exist — send_email lives in
+        # `email_service` at the backend root. The ImportError was swallowed by
+        # the except below, logged as a generic 'failed' report_log row and
+        # returned as a 500, so run-now had never sent a report and the logs
+        # said nothing about why.
+        from email_service import send_email
+        # send_email is sync (it threads internally) and its parameters are
+        # to_email / subject / html_content. It was called as an awaitable with
+        # to= and html=, so even a corrected import would have raised. It is
+        # also the single choke point that honours OUTBOUND_MODE, so going
+        # through it is what keeps dry runs dry.
+        import html as _html
+
+        safe_name = _html.escape(str(report["name"]))
+        safe_type = _html.escape(str(report["report_type"]))
+        safe_data = _html.escape(json.dumps(data, indent=2, default=str)[:5000])
         for recipient in report["recipients"]:
-            await send_email(
-                to=recipient,
+            send_email(
+                to_email=recipient,
                 subject=f"Report: {report['name']}",
-                html=f"<p>Your scheduled report <strong>{report['name']}</strong> is ready.</p>"
-                     f"<p>Report type: {report['report_type']}</p>"
-                     f"<pre>{json.dumps(data, indent=2, default=str)[:5000]}</pre>",
+                html_content=(
+                    f"<p>Your scheduled report <strong>{safe_name}</strong> is ready.</p>"
+                    f"<p>Report type: {safe_type}</p>"
+                    f"<pre>{safe_data}</pre>"
+                ),
             )
 
         await pool.execute(
@@ -683,6 +823,15 @@ async def export_report(
     if report_type not in valid_types:
         raise HTTPException(400, f"report_type must be one of: {', '.join(valid_types)}")
 
+    required = _REPORT_SOURCE_MODULES.get(report_type, set())
+    missing = required - await reachable_modules(pool, user["user_id"], org_id, required)
+    if missing:
+        raise HTTPException(
+            403,
+            f"This export reads {', '.join(sorted(missing))}, which you do not "
+            f"have access to.",
+        )
+
     data = await _fetch_report_data(pool, org_id, report_type)
 
     if format == "csv":
@@ -709,46 +858,71 @@ async def export_report(
 
 # ── Custom Dashboard / Pivot Query Builder ──────────────────
 
+# `module` is what the source belongs to, and is checked against the caller's
+# entitlement before the query runs. Without it the pivot builder was a
+# general-purpose reader over eight tables — including the invoice ledger and
+# the employee register — behind the `dristi` grant alone.
+#
+# `soft_delete` records whether the table actually has an `is_active` column
+# rather than inferring it. All eight do today, which is why the broken
+# always-true check that preceded this never misfired; the next source added
+# would have been the one to break.
 _ALLOWED_QUERY_TABLES = {
     "invoices": {
         "table": "staging.ganit_invoices",
+        "module": "ganit",
+        "soft_delete": True,
         "columns": ["invoice_date", "invoice_type", "total", "subtotal", "amount_paid",
                      "payment_status", "currency", "created_at"],
         "date_col": "invoice_date",
     },
     "deals": {
         "table": "staging.graha_deals",
+        "module": "graha",
+        "soft_delete": True,
         "columns": ["stage", "value", "expected_close", "created_at", "updated_at"],
         "date_col": "created_at",
     },
     "contacts": {
         "table": "staging.graha_contacts",
+        "module": "graha",
+        "soft_delete": True,
         "columns": ["contact_type", "source", "company", "lead_score", "created_at"],
         "date_col": "created_at",
     },
     "orders": {
         "table": "staging.vikray_orders",
+        "module": "vikray",
+        "soft_delete": True,
         "columns": ["order_date", "status", "total", "subtotal", "created_at"],
         "date_col": "order_date",
     },
     "employees": {
         "table": "staging.manav_employees",
+        "module": "manav",
+        "soft_delete": True,
         "columns": ["department", "designation", "employment_type", "status",
                      "date_of_joining", "created_at"],
         "date_col": "date_of_joining",
     },
     "expenses": {
         "table": "staging.ganit_expenses",
+        "module": "ganit",
+        "soft_delete": True,
         "columns": ["category", "amount", "total", "expense_date", "status", "created_at"],
         "date_col": "expense_date",
     },
     "tickets": {
         "table": "staging.graha_tickets",
+        "module": "graha",
+        "soft_delete": True,
         "columns": ["priority", "status", "category", "created_at", "resolved_at"],
         "date_col": "created_at",
     },
     "events": {
         "table": "staging.prachar_events",
+        "module": "prachar",
+        "soft_delete": True,
         "columns": ["event_type", "status", "starts_at", "created_at"],
         "date_col": "starts_at",
     },
@@ -774,6 +948,15 @@ async def run_pivot_query(
     if not spec:
         raise HTTPException(400, f"source must be one of: {', '.join(_ALLOWED_QUERY_TABLES)}")
 
+    pool = await get_pool()
+    source_module = spec["module"]
+    if not await reachable_modules(pool, user["user_id"], org_id, {source_module}):
+        raise HTTPException(
+            403,
+            f"'{body.source}' reads the {source_module} module, which you do not "
+            f"have access to.",
+        )
+
     table = spec["table"]
     allowed = spec["columns"]
 
@@ -793,7 +976,13 @@ async def run_pivot_query(
     where = ["org_id=$1::uuid"]
     params: list = [org_id]
 
-    if "is_active" in [c for t in [spec] for c in ["is_active"]]:
+    # This was:
+    #     if "is_active" in [c for t in [spec] for c in ["is_active"]]:
+    # which is a comprehension over the literal ["is_active"] and so is ALWAYS
+    # true — `is_active=TRUE` was appended for every source, including the ones
+    # whose table has no such column. The intent was plainly to check the
+    # source's own column list, and it is declared per source now.
+    if spec.get("soft_delete"):
         where.append("is_active=TRUE")
 
     date_col = spec.get("date_col", "created_at")
@@ -811,7 +1000,6 @@ async def run_pivot_query(
 
     where_clause = " AND ".join(where)
 
-    pool = await get_pool()
     if body.group_by:
         rows = await pool.fetch(
             f"SELECT {body.group_by} AS label, {measure_sql} AS value "
