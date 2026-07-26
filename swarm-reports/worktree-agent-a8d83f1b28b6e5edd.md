@@ -253,6 +253,41 @@ builds the model by hand.
 
 ---
 
+## 9 · The attachment leak — the portal's two paths, re-verified
+
+`_COORDINATION.md` §6 records that the private-attachment leak was **four sites,
+not one**: `GET /api/tasks`, `PUT /api/tasks/{id}` and `PATCH /api/tasks/{id}/move`
+applied no filter at all, and `GET /api/tasks/{id}` filtered *after* minting the
+signed URL. Signed R2 URLs live **nine hours** (`ExpiresIn=32400`), so a URL that
+escaped once is a working download link for whoever received it — filtering after
+minting is not a near miss, it is the leak.
+
+Re-checked every call site on current staging (`backend/server.py`), since the
+ordering is the part that matters and my brief only named one endpoint:
+
+| Site | Line | Order |
+|---|---|---|
+| `GET /client/tasks` | 1085-1086 | filter → sign ✓ |
+| `POST /client/tasks/request` | 1330-1331 | filter → sign ✓ |
+| `GET /api/tasks` (list) | 2172-2173 | filter → sign ✓ |
+| `_fetch_enriched_task` (single read, `PUT`, `PATCH …/move`) | 2394-2395 | filter → sign ✓ |
+
+All four now filter before signing. The single-task path was fixed by moving the
+filter *inside* `_fetch_enriched_task` (comment at line 2419 records why), and
+every one of its four call sites passes `viewer_id`, which is what arms the
+filter — `viewer_id=None` is the deliberately unfiltered form, documented as
+correct only for internal callers that do not serialise to a response.
+
+**The two paths I own are covered.** They are also the portal's *only* attachment
+exposure: `ClientApprovalOut` carries no `files` at all (by design — the portal
+joins an approval to its task by `taskId` and reads files there, so filtering has
+one home), and `ClientFiles` renders `tasks[].files`, which comes from
+`/client/tasks`. Covered by `test_client_portal.py::test_private_attachment_never_crosses`,
+which asserts the private row is absent from the serialised body entirely rather
+than merely absent from the rendered list.
+
+---
+
 ## The exact response shape each portal page now consumes
 
 All three views share **one** fetch (`useClientPortal.js`) and every payload
@@ -389,18 +424,25 @@ itself. The `?view=` fallback is retained so links already emailed keep working.
 
 ## Verification
 
+Run from `frontend/`, and **unpiped** — `_COORDINATION.md` §2 records three
+agents mistaking a piped invocation for a pass, because `node script.mjs | tail`
+reports `tail`'s status, not the script's. Exit codes below were read directly.
+
 | Check | Result |
 |---|---|
-| `node frontend/scripts/check-tokens.mjs` | **pass** — 339 declared, 233 referenced, 0 missing |
-| `node frontend/scripts/check-classes.mjs` | **pass** — 2096 selectors, 1413 classes, 0 missing a rule |
+| `node scripts/check-tokens.mjs` | **exit 0** — 339 declared, 233 referenced, 0 missing |
+| `node scripts/check-classes.mjs` | **exit 0** — 2114 selectors, 1437 classes, 0 missing a rule |
 | `npx vitest run` (frontend, all) | **226 passed**, 14 files |
 | `pytest tests/` (backend, all) | **314 passed, 1 failed** |
+| `pytest tests/test_client_portal.py` | **10 passed** (re-run after the final rebase) |
 
 The one backend failure is `tests/test_ganit.py::test_create_invoice_success`
 (`TypeError: 'MagicMock' object can't be awaited` inside
 `utils.next_doc_number`). **Pre-existing and unrelated** — it fails identically
 with my backend changes stashed, and its call path (`routers/ganit.py`,
-`utils.py`) is in no file this branch touches.
+`utils.py`) is in no file this branch touches. `_COORDINATION.md` §8 now records
+the same failure confirmed independently by three other agents, with the root
+cause: `conftest.make_pool()` leaves `conn_mock.fetchval` a bare `MagicMock`.
 
 Both gates and both suites were re-run after the final rebase onto
 `origin/staging`, which had advanced (the token gate itself changed, from 279
