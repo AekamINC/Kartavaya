@@ -2963,3 +2963,31 @@ select.k-formpanel__input { appearance: none;
   .k-hero-kpi { flex-direction: column; }
   .k-hero-kpi__value { font-size: 28px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DARK MODE — tint portability (14-dark-mode.md §5)
+
+   color-mix percentages are NOT theme-portable. 4% of the accent over cream is
+   a clearly visible row tint; 4% over #0C0E11 is very nearly nothing. 14 calls
+   this "the most common dark-mode defect in the codebase: a selected row that
+   is obvious in light and invisible in dark", and these are exactly those rows
+   — hover, unread and selection states, where the tint IS the information.
+
+   Roughly 2x, per 14's 1.5–2x guidance. Only states that carry meaning are
+   boosted; decorative tints are left alone, because lifting everything would
+   just move the problem and wash out the surface hierarchy.
+   ═══════════════════════════════════════════════════════════════════════════ */
+[data-theme="dark"] .k-trow:hover          { background: color-mix(in srgb, var(--k-primary) 10%, var(--surface)); }
+[data-theme="dark"] .k-approval-row:hover  { background: color-mix(in srgb, var(--k-primary) 8%,  var(--surface)); }
+[data-theme="dark"] .k-file-attach:hover   { background: color-mix(in srgb, var(--k-primary) 13%, var(--surface)); }
+[data-theme="dark"] .k-tmpl-card--new:hover{ background: color-mix(in srgb, var(--k-primary) 10%, transparent); }
+[data-theme="dark"] .k-btn--reject:hover   { background: color-mix(in srgb, var(--danger) 16%, transparent); }
+[data-theme="dark"] .k-inboxrow.is-unread  {
+  background: color-mix(in srgb, var(--k-primary) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--k-primary) 38%, var(--rule));
+}
+
+/* §6 · A photo at full brightness on a dark page is a light source. 8% is
+   enough — more and it reads as broken. Logos and status icons opt out with
+   data-no-dim, since dimming a brand mark is its own kind of wrong. */
+[data-theme="dark"] img:not([data-no-dim]) { filter: brightness(.92); }
