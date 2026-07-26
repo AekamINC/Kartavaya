@@ -4,6 +4,7 @@ import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { safeArray, Badge, UpiPayBlock, INV_TYPE_LABELS, STATUS_COLORS, DOC_STATUS_COLORS, PAY_METHODS } from './_shared';
 import { inr } from '../../lib/inr';
+import { describeDocumentError } from '../../lib/docErrors';
 
 export default function InvoicesTab() {
   const { pushToast } = useToast();
@@ -166,7 +167,13 @@ export default function InvoicesTab() {
       const a = document.createElement('a');
       a.href = url; a.download = `${detail.invoice.invoice_number}.pdf`; a.click();
       URL.revokeObjectURL(url);
-    } catch (err) { pushToast({ title: 'Failed to generate PDF', type: 'error' }); }
+    } catch (err) {
+      // A 422 here is a refusal, not a failure: the invoice is missing a
+      // mandatory GST particular and the backend declines to emit a document
+      // that would look complete. Surface which field, not just "failed".
+      const { title, message } = await describeDocumentError(err, 'Failed to generate PDF');
+      pushToast({ title, message, type: 'error' });
+    }
     finally { setDownloading(false); }
   }
 
