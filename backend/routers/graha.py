@@ -16,6 +16,7 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import require_org_role, is_org_admin
+from middleware.role_tiers import ORG_MANAGEMENT_ROLES
 from middleware.subscription import require_module
 from services.contact_dedupe import find_duplicates, merge_contacts, undo_merge
 from services.lead_parser import parse_lead_email
@@ -430,7 +431,10 @@ async def list_merges(
 @router.post("/contacts/merges/{merge_id}/undo")
 async def undo_contact_merge(
     merge_id: UUID,
-    user=Depends(require_org_role("org_admin")),
+    # Was `require_org_role("org_admin")`, which omitted org_owner — the org's
+    # MOST privileged role could not undo a merge its own admin could perform.
+    # A hardcoded role string is exactly the failure role_tiers.py exists to end.
+    user=Depends(require_org_role(*ORG_MANAGEMENT_ROLES)),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
@@ -472,7 +476,9 @@ async def contact_duplicates(
 async def merge_into_contact(
     contact_id: UUID,
     body: ContactMerge,
-    user=Depends(require_org_role("org_admin")),
+    # See the note on undo_contact_merge: org_owner was locked out of a
+    # destructive action that org_admin could take.
+    user=Depends(require_org_role(*ORG_MANAGEMENT_ROLES)),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
