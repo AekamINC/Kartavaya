@@ -2,6 +2,7 @@
  * TasksListPage.jsx — editorial Tasks screen with resizable + toggleable columns.
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useDismiss } from '../hooks/useDismiss';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import { useToast } from '../components/ui/toast';
@@ -59,11 +60,10 @@ function useResizableCols(cols) {
 
 function ColumnsPopover({ visible, onToggle, onClose }) {
   const ref = useRef(null);
-  useEffect(() => {
-    function handler(e) { if (ref.current && !ref.current.contains(e.target)) onClose(); }
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [onClose]);
+  // This effect had NO `visible` guard: the listener attached unconditionally,
+  // so onClose() fired on every outside mousedown even while the popover was
+  // shut. Now gated on visible, and Escape closes it too.
+  useDismiss(visible, ref, onClose);
 
   return (
     <div ref={ref} className="k-col-popover">

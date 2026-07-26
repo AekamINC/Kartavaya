@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
+import { useDismiss } from '../hooks/useDismiss';
 
 /**
  * ReminderPicker — pick one or more due-date reminder offsets, each with its
@@ -50,12 +51,8 @@ export default function ReminderPicker({ value = [], onChange, disabled = false 
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
+  // Outside-click AND Escape — this used to be outside-click only.
+  useDismiss(open, ref, useCallback(() => setOpen(false), []));
 
   const find = (mins) => value.find(r => r.offset_minutes === mins);
 

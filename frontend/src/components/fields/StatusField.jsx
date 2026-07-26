@@ -1,4 +1,5 @@
-﻿import React, { useState, useRef, useEffect } from "react";
+﻿import React, { useState, useRef, useCallback } from 'react';
+import { useDismiss } from '../../hooks/useDismiss';
 
 const DEFAULT_OPTIONS = [
   { label: "Not Started", color: "#94a3b8" },
@@ -13,12 +14,8 @@ export default function StatusField({ field, value, onChange, readOnly }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [open]);
+  // Outside-click AND Escape — this used to be outside-click only.
+  useDismiss(open, ref, useCallback(() => setOpen(false), []));
 
   const pill = (opt, onClick) => (
     <span

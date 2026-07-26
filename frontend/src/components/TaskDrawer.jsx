@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useDismiss } from '../hooks/useDismiss';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import ConfirmDialog from './ui/ConfirmDialog';
@@ -90,15 +91,10 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   const [showRequestPanel, setShowRequestPanel] = useState(false);
   const [showRejectInput,  setShowRejectInput]  = useState(false);
 
-  // ── Close assignee dropdown on outside click ──────────────────────────────
-  useEffect(() => {
-    if (!assigneeOpen) return;
-    const handler = e => {
-      if (assigneeRef.current && !assigneeRef.current.contains(e.target)) setAssigneeOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [assigneeOpen]);
+  // Dismissal for the assignee dropdown. This handler lived here rather than in
+  // the component that renders the dropdown, which is why it drifted from the
+  // other three copies; all four now share one hook, and all four gain Escape.
+  useDismiss(assigneeOpen, assigneeRef, useCallback(() => setAssigneeOpen(false), []));
 
   // ── Load task on open ─────────────────────────────────────────────────────
   const mentionSource = teamMembers.length > 0 ? teamMembers : members;
