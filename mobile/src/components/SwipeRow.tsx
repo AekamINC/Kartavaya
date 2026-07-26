@@ -4,6 +4,7 @@ import {
   AccessibilityInfo, type AccessibilityActionEvent,
 } from 'react-native';
 import { PanGestureHandler, type PanGestureHandlerStateChangeEvent, State } from 'react-native-gesture-handler';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
 
@@ -61,13 +62,24 @@ export interface SwipeRowProps {
 }
 
 /**
- * Commit feedback. 17 asks for `impactAsync` on iOS and a short `Vibration`
- * pulse on Android. expo-haptics is not a dependency, so iOS gets no haptic
- * rather than a fake one — Vibration on iOS is a 400ms buzz, which is worse than
- * silence for a swipe confirmation. Add expo-haptics and this is a one-line change.
+ * Commit feedback, as 17's platform table specifies: `impactAsync` on iOS, a
+ * short `Vibration` pulse on Android.
+ *
+ * Not the same call on both, deliberately. `Vibration.vibrate` on iOS is a fixed
+ * ~400ms buzz with no intensity control, which for a swipe confirmation reads as
+ * an error rather than an acknowledgement. iOS gets the light impact; Android
+ * gets 12ms, which is the shortest pulse most devices render distinctly.
+ *
+ * Failure here is swallowed on purpose. A device with haptics disabled, or an
+ * emulator with no motor, must not turn a completed swipe into a rejected
+ * promise — the action already happened.
  */
 function commitFeedback() {
-  if (Platform.OS === 'android') Vibration.vibrate(12);
+  if (Platform.OS === 'ios') {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    return;
+  }
+  Vibration.vibrate(12);
 }
 
 export default function SwipeRow({

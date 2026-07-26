@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#050e1a"
+      "backgroundColor": "#0C0E11"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -19,9 +19,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.aekaminc.Kartavaya",
       "infoPlist": {
-        "NSCameraUsageDescription": "Capture site photos and receipts to attach to tasks.",
+        "NSCameraUsageDescription": "Take the selfie that records your clock in and clock out, and capture site photos and receipts to attach to tasks. Attendance photos are visible only to your HR team and your reporting manager.",
         "NSMicrophoneUsageDescription": "Record voice notes that turn into task comments.",
-        "NSPhotoLibraryUsageDescription": "Attach photos from your library to tasks.",
+        "NSPhotoLibraryUsageDescription": "Attach photos from your library to tasks. Attendance selfies are always taken with the camera and can never come from your library.",
+        "NSLocationWhenInUseUsageDescription": "Record where you clocked in and out, so your attendance can be confirmed against your site. Your location is read at the moment you punch and at no other time.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -30,7 +31,7 @@
       "versionCode": 7,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0082c6"
+        "backgroundColor": "#04837A"
       },
       "permissions": [
         "android.permission.INTERNET",
@@ -38,7 +39,9 @@
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
         "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
       ]
     },
     "plugins": [
