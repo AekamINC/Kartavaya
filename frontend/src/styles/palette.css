@@ -1,0 +1,432 @@
+/* palette.css — the ⌘K palette and the shortcuts overlay.
+ * `20-search-palette.md` §Styling, on `00-tokens.md` values only.
+ *
+ * ── Why every rule is scoped by [data-k-palette] ─────────────────────────
+ *
+ * `20` says to replace the `.k-cmdk*` block in `kartavaya-design.css`. The
+ * block is not there — it is in `editorial.css` at ~3076, on the retired
+ * `--ink` / `--rule` / `--k-primary` vocabulary. `App.jsx` imports
+ * `styles/index.css` FIRST and `editorial.css` after it, so anything this file
+ * declares at plain class specificity loses the tie to the legacy block no
+ * matter where in `index.css` the import goes.
+ *
+ * The palette root and the shortcuts root each carry `data-k-palette`, which
+ * lifts every selector here to (0,2,0) and wins outright. It is not a hack
+ * looking for a home: it is also what makes this file correct on the day
+ * someone deletes the legacy block, because none of it depends on that block
+ * existing. Drop the attribute selectors then.
+ *
+ * The class NAMES stay as `20` specifies them, and `.k-kbd` keeps its name
+ * because `layout/Topbar.jsx` renders one too — `26` §7 rules out renaming a
+ * shared class as a standalone sweep. `.k-kbd` is only re-tinted INSIDE these
+ * overlays, so Topbar's is untouched.
+ *
+ * Keyframe names are new (`k-cmdk-*-v2`). Keyframes are global and the LAST
+ * declaration wins, so reusing `k-cmdk-slideIn` would have handed the animation
+ * back to `editorial.css` — the one thing the attribute scoping cannot fix.
+ */
+
+/* ── Overlay ─────────────────────────────────────────────────────────────── */
+
+[data-k-palette].k-cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 620;
+  background: var(--scrim);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  animation: k-cmdk-fade-v2 var(--dur-fast) var(--ease-enter);
+}
+
+/* `dmFade` has no transform at all (26 §6) — a scrim that also moves reads as a
+   second object arriving. */
+@keyframes k-cmdk-fade-v2 { from { opacity: 0 } }
+@keyframes k-cmdk-in-v2 { from { opacity: 0; transform: translateY(-10px) scale(.985) } }
+
+/* ── Panel ───────────────────────────────────────────────────────────────── */
+
+[data-k-palette] .k-cmdk {
+  width: min(620px, calc(100vw - 32px));
+  max-height: 64vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-lg);
+  background: rgba(var(--glass-tint), var(--glass-alpha));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--outline-variant);
+  box-shadow: var(--shadow-4);
+  overflow: hidden;
+  animation: k-cmdk-in-v2 var(--dur-base) var(--ease-emph);
+}
+
+/* Windows gets no glass — 00 §6. */
+[data-platform="win"] [data-k-palette] .k-cmdk,
+[data-platform="win"] [data-k-palette] .k-shortcuts {
+  background: var(--s-low);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+[data-k-palette] .k-cmdk__input-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--outline-variant);
+  color: var(--on-surface-3);
+}
+
+/* 16px is deliberate and must NOT be tokenised down: iOS Safari zooms the
+   viewport when a field below 16px takes focus and never fully restores it
+   (`15-mobile-web.md`). */
+[data-k-palette] .k-cmdk__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  color: var(--on-surface);
+}
+
+[data-k-palette] .k-cmdk__input::placeholder { color: var(--on-surface-3) }
+
+/* ── Scope chips ─────────────────────────────────────────────────────────── */
+
+[data-k-palette] .k-cmdk__scopes {
+  display: flex;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--outline-variant);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+[data-k-palette] .k-cmdk__scopes::-webkit-scrollbar { display: none }
+
+[data-k-palette] .k-cmdk__scope {
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-pill);
+  background: none;
+  font-family: var(--font-ui);
+  font-size: var(--t-label);
+  font-weight: 500;
+  color: var(--on-surface-2);
+  cursor: pointer;
+  transition: background var(--dur-instant), color var(--dur-instant), border-color var(--dur-instant);
+}
+[data-k-palette] .k-cmdk__scope:hover { background: var(--s-container); color: var(--on-surface) }
+[data-k-palette] .k-cmdk__scope[aria-pressed="true"] {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+  border-color: transparent;
+}
+
+/* ── List ────────────────────────────────────────────────────────────────── */
+
+[data-k-palette] .k-cmdk__list {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--sp-2) 0;
+}
+
+[data-k-palette] .k-cmdk__section {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  font-family: var(--font-ui);
+  font-size: var(--t-label-sm);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  /* `20` specifies --on-surface-faint here. That token ships at #9DA096, which
+     is 2.3:1 on --bg and marked NON-TEXT ONLY in the token block itself, so a
+     section header painted with it is unreadable. --on-surface-3 is the lowest
+     step 00 §12 clears for text. */
+  color: var(--on-surface-3);
+}
+
+[data-k-palette] .k-cmdk__section-meta {
+  margin-left: auto;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
+  color: var(--on-surface-3);
+}
+
+/* Selection is a FILLED ROW, not a border. A 1px border on the active row
+   shifts its text by a subpixel as selection moves, which reads as jitter
+   during fast arrowing. */
+[data-k-palette] .k-cmdk__item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: 9px var(--sp-4);
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--on-surface);
+  font-family: var(--font-ui);
+  font-size: var(--t-body-sm);
+  transition: background var(--dur-instant);
+}
+
+/* The ONE legacy rule the attribute scoping does not outrank on its own:
+   `editorial.css` has `.k-cmdk__item:hover` at (0,2,0), the same weight as
+   `[data-k-palette] .k-cmdk__item`, and it loads later. Left alone it paints a
+   second highlighted row in `--k-primary` under a stationary cursor while the
+   user is arrowing — precisely the two-selections confusion `keyboardNav`
+   exists to prevent. Hover carries no fill of its own here: mouse-enter sets
+   the active row, so the fill below is the hover state. */
+[data-k-palette] .k-cmdk__item:hover { background: none; box-shadow: none }
+
+[data-k-palette] .k-cmdk__item[data-active="true"] {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+[data-k-palette] .k-cmdk__icon {
+  display: flex;
+  flex: none;
+  color: var(--on-surface-3);
+}
+[data-k-palette] .k-cmdk__item[data-active="true"] .k-cmdk__icon { color: var(--on-primary-container) }
+
+[data-k-palette] .k-cmdk__label {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-k-palette] .k-cmdk__hi {
+  flex: none;
+  font-family: var(--font-indic);
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+}
+
+[data-k-palette] .k-cmdk__meta {
+  flex: none;
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40%;
+}
+
+/* Without these two the Hindi label and the metadata keep --on-surface-3
+   against the selected fill and drop below 3:1. */
+[data-k-palette] .k-cmdk__item[data-active="true"] .k-cmdk__hi,
+[data-k-palette] .k-cmdk__item[data-active="true"] .k-cmdk__meta {
+  color: var(--on-primary-container);
+  opacity: .72;
+}
+
+[data-k-palette] .k-cmdk__hint { flex: none; display: flex; align-items: center }
+
+/* ── Empty, searching, failed ────────────────────────────────────────────── */
+
+[data-k-palette] .k-cmdk__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-7) var(--sp-5);
+  text-align: center;
+}
+
+[data-k-palette] .k-cmdk__empty-t {
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: var(--t-title-w);
+  letter-spacing: -.01em;
+  color: var(--on-surface);
+}
+
+[data-k-palette] .k-cmdk__empty-d {
+  max-width: 42ch;
+  font-size: var(--t-body-sm);
+  line-height: var(--line-height-base);
+  color: var(--on-surface-3);
+  text-wrap: pretty;
+}
+
+/* --primary is a FILL at 4.04:1 on --bg; primary-coloured TEXT is
+   --primary-text at 5.2:1 (00 §12). */
+[data-k-palette] .k-cmdk__retry {
+  padding: 6px 11px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  font-family: var(--font-ui);
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+  /* It can sit inside .k-cmdk__section, which is uppercase and widely tracked.
+     Neither is inherited by accident here. */
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--primary-text);
+  cursor: pointer;
+}
+[data-k-palette] .k-cmdk__retry:hover { background: var(--primary-container); color: var(--on-primary-container) }
+
+/* dmSpin is linear, never eased — an eased spin looks like it is struggling
+   (26 §6). */
+[data-k-palette] .k-cmdk__spin {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: .78;
+  animation: k-cmdk-spin-v2 640ms linear infinite;
+}
+@keyframes k-cmdk-spin-v2 { to { transform: rotate(360deg) } }
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+
+[data-k-palette] .k-cmdk__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--outline-variant);
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+}
+[data-k-palette] .k-cmdk__foot-i { display: inline-flex; align-items: center; gap: 5px }
+
+/* The polite announcer. Not display:none — a hidden node is not announced. */
+[data-k-palette] .k-cmdk__live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Keys ────────────────────────────────────────────────────────────────── */
+
+/* Re-tinted onto 00 tokens INSIDE the overlays only. `.k-kbd` keeps its name
+   and its `editorial.css` base for Topbar's copy. */
+[data-k-palette] .k-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: var(--t-label-sm);
+  font-weight: 600;
+  color: var(--on-surface-2);
+  background: var(--s-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-xs);
+  box-shadow: 0 1px 0 var(--outline-variant);
+}
+[data-k-palette] .k-cmdk__hint .k-kbd { min-width: 18px; height: 18px; padding: 0 5px }
+
+/* ── Keyboard shortcuts overlay ──────────────────────────────────────────── */
+
+[data-k-palette] .k-shortcuts {
+  width: min(480px, calc(100vw - 32px));
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-lg);
+  background: rgba(var(--glass-tint), var(--glass-alpha));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border: 1px solid var(--outline-variant);
+  box-shadow: var(--shadow-4);
+  overflow: hidden;
+  animation: k-cmdk-in-v2 var(--dur-base) var(--ease-emph);
+}
+
+[data-k-palette] .k-shortcuts__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+[data-k-palette] .k-shortcuts__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-title-lg);
+  font-weight: var(--t-title-lg-w);
+  letter-spacing: -.01em;
+  color: var(--on-surface);
+}
+
+[data-k-palette] .k-shortcuts__body { flex: 1; overflow-y: auto; padding: var(--sp-2) var(--sp-3) var(--sp-4) }
+
+[data-k-palette] .k-shortcuts__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 7px var(--sp-3);
+  font-size: var(--t-body-sm);
+}
+
+[data-k-palette] .k-shortcuts__keys { display: flex; align-items: center; gap: var(--sp-1); min-width: 104px }
+[data-k-palette] .k-shortcuts__then { font-size: var(--t-label-sm); color: var(--on-surface-3) }
+[data-k-palette] .k-shortcuts__label { flex: 1; min-width: 0; color: var(--on-surface); font-weight: 500 }
+[data-k-palette] .k-shortcuts__hi { font-family: var(--font-indic); font-size: var(--t-label); color: var(--on-surface-3) }
+
+[data-k-palette] .k-shortcuts__footer {
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--outline-variant);
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  text-align: center;
+}
+
+/* ── Mobile ──────────────────────────────────────────────────────────────── */
+
+/* `20` §Mobile: a full-screen sheet, opening with the keyboard up and the scope
+   chips visible. It also says to drop the command section on a phone — that is
+   NOT done here, deliberately. Hiding rows in CSS leaves them in the flat index
+   the active row is chosen from, so Enter would fire an invisible command. It
+   needs a JS breakpoint, and it needs a mobile trigger first: `.kv__top` (and
+   with it Topbar's search button) is hidden below 1024px, and MobileNav has no
+   search control, so the palette has no way to open on a phone today. */
+@media (max-width: 767px) {
+  [data-k-palette].k-cmdk-overlay { padding-top: 0 }
+
+  [data-k-palette] .k-cmdk,
+  [data-k-palette] .k-shortcuts {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  [data-k-palette] .k-cmdk__item { padding: 12px var(--sp-4) }
+}

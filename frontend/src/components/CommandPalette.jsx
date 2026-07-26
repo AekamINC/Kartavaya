@@ -1,219 +1,479 @@
+/**
+ * CommandPalette.jsx — ⌘K. `20-search-palette.md`.
+ *
+ * ── What this file used to be ────────────────────────────────────────────
+ *
+ * A magnifying glass, the placeholder "Type a command or search…", and 30
+ * hardcoded routes. Type a client's name, an invoice number or a colleague's
+ * name and it answered "No results found" — for data the user had open in
+ * another tab. The placeholder was a promise the component could not keep, and
+ * "no results" is a stronger claim than "I didn't look".
+ *
+ * ── What it is now ───────────────────────────────────────────────────────
+ *
+ * Commands render immediately from `lib/commands.js` and never wait on the
+ * network — `⌘K → "new task" → Enter` is a muscle-memory path. Records arrive
+ * below them, debounced 180ms, from `GET /api/search`, without reordering what
+ * is already on screen: a list that reflows under a moving selection causes
+ * wrong activations.
+ *
+ * ── The endpoint does not exist yet, and this file does not pretend it does ──
+ *
+ * There is no `/api/search` in `backend/server.py`. Rather than ship a
+ * placeholder that lies in the other direction, record search is PROVEN before
+ * it is advertised:
+ *
+ *   unknown → the placeholder reads "Type a command…" and no scope chips show.
+ *   live    → one successful response, and the palette starts promising search.
+ *   absent  → a 404/501 once per session, and it stops asking and says so.
+ *
+ * So the component is correct today (commands only, and it says so), correct
+ * the day the endpoint lands (search appears with no frontend change), and it
+ * never renders "no results" for a query it did not run. `20` calls that
+ * distinction out twice and it is the whole reason the state is tri-valued
+ * rather than a boolean.
+ *
+ * The mode is module-scoped, not component state, so a 404 costs one request
+ * per page load rather than one per palette open.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
+import { fuzzyMatch } from '../lib/fuzzyMatch';
+import { SCOPES, ENTITIES, rankCommands, loadRecent, pushRecent } from '../lib/commands';
+import { FocusTrap } from './ui';
 
 const ICONS = {
-  nav: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M6 3l5 5-5 5"/></svg>,
-  action: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 3v10M3 8h10"/></svg>,
-  search: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>,
+  nav: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg>,
+  action: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>,
+  search: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5L14 14" /></svg>,
+  record: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M4 2.5h5L12 6v7.5H4z" /><path d="M9 2.5V6h3" /></svg>,
+  clock: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3.2l2 1.2" /></svg>,
 };
 
-const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Today', hi: 'आज', section: 'Navigate', route: '/dashboard', keywords: 'dashboard home today' },
-  { id: 'tasks', label: 'Tasks', hi: 'कर्तव्य', section: 'Navigate', route: '/tasks', keywords: 'tasks todo' },
-  { id: 'boards', label: 'Boards', hi: 'फ़लक', section: 'Navigate', route: '/boards', keywords: 'boards kanban' },
-  { id: 'projects', label: 'Projects', hi: 'योजना', section: 'Navigate', route: '/projects', keywords: 'projects' },
-  { id: 'approvals', label: 'Approvals', hi: 'सम्मति', section: 'Navigate', route: '/approvals', keywords: 'approvals pending' },
-  { id: 'activity', label: 'Activity', hi: 'क्रिया', section: 'Navigate', route: '/activity', keywords: 'activity feed log' },
-  { id: 'automations', label: 'Automations', hi: 'स्वचालन', section: 'Navigate', route: '/automations', keywords: 'automations rules' },
-  { id: 'time', label: 'Time Report', hi: 'काल', section: 'Navigate', route: '/time', keywords: 'time tracking report hours' },
-  { id: 'reports', label: 'Reports', hi: 'प्रतिवेदन', section: 'Navigate', route: '/reports', keywords: 'reports analytics' },
-  { id: 'templates', label: 'Templates', hi: 'साँचा', section: 'Navigate', route: '/templates', keywords: 'templates' },
-  { id: 'teams', label: 'Team', hi: 'सहयोगी', section: 'Navigate', route: '/teams', keywords: 'team members people' },
-  { id: 'inbox', label: 'Inbox', hi: 'सन्देश', section: 'Navigate', route: '/inbox', keywords: 'inbox messages chat' },
-  { id: 'graha', label: 'CRM', hi: 'ग्राहक', section: 'Navigate', route: '/graha', keywords: 'crm contacts leads graha' },
-  { id: 'ganit', label: 'Invoicing', hi: 'गणित', section: 'Navigate', route: '/ganit', keywords: 'invoicing billing ganit invoices' },
-  { id: 'manav', label: 'HRMS', hi: 'मानव', section: 'Navigate', route: '/manav', keywords: 'hrms hr employees manav' },
-  { id: 'vikray', label: 'Sales', hi: 'विक्रय', section: 'Navigate', route: '/vikray', keywords: 'sales pipeline vikray deals' },
-  { id: 'vetana', label: 'Payroll', hi: 'वेतन', section: 'Navigate', route: '/vetana', keywords: 'payroll salary vetana' },
-  { id: 'dristi', label: 'Analytics', hi: 'दृष्टि', section: 'Navigate', route: '/dristi', keywords: 'analytics dashboard dristi charts' },
-  { id: 'prachar', label: 'Marketing', hi: 'प्रचार', section: 'Navigate', route: '/prachar', keywords: 'marketing campaigns prachar' },
-  { id: 'esign', label: 'E-Sign', hi: 'प्रमाण', section: 'Navigate', route: '/esign', keywords: 'esign documents signatures' },
-  { id: 'srijan', label: 'Srijan', hi: 'सृजन', section: 'Navigate', route: '/hub/org', keywords: 'srijan content ai generate' },
-  // Was also '/hub/org', identical to Srijan above — picking "Data Tools" and
-  // landing on Srijan is the kind of thing that stops a user trusting the
-  // palette. Data Tools live as tabs inside Srijan, so it deep-links there.
-  { id: 'scrapers', label: 'Data Tools', hi: 'डेटा टूल्स', section: 'Navigate', route: '/hub/org?tab=scrapers', keywords: 'scrapers data tools leads' },
-  { id: 'categories', label: 'Categories', hi: 'वर्ग', section: 'Navigate', route: '/settings/categories', keywords: 'settings categories tags' },
-  { id: 'notifications', label: 'Notifications', hi: 'सूचना', section: 'Navigate', route: '/settings/customize?tab=notifications', keywords: 'settings notifications' },
-  { id: 'customize', label: 'Customize', hi: 'सजावट', section: 'Navigate', route: '/settings/customize', keywords: 'settings customize theme' },
-  { id: 'billing', label: 'Billing', hi: 'बिलिंग', section: 'Navigate', route: '/billing', keywords: 'billing subscription plan' },
-];
+/** 'unknown' until a request proves otherwise. See the header. */
+let RECORD_SEARCH = 'unknown';
 
-const ACTION_ITEMS = [
-  { id: 'new-task', label: 'New Task', hi: 'नया कार्य', section: 'Actions', action: 'newTask', keywords: 'create new task add' },
-  { id: 'new-invoice', label: 'New Invoice', hi: 'नया चालान', section: 'Actions', route: '/ganit', keywords: 'create new invoice bill' },
-  { id: 'new-contact', label: 'New Contact', hi: 'नया संपर्क', section: 'Actions', route: '/graha', keywords: 'create new contact lead crm' },
-  { id: 'new-project', label: 'New Project', hi: 'नई योजना', section: 'Actions', route: '/projects', keywords: 'create new project' },
-];
+const IDLE = { status: 'idle', data: null };
 
-const ALL_ITEMS = [...ACTION_ITEMS, ...NAV_ITEMS];
+function useDebounced(value, ms) {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(value), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return settled;
+}
 
 /**
- * Score by WHERE the match lands and HOW early — never rank a subsequence hit
- * above a substring hit.
+ * `20` §Search hook, hand-rolled because there is no react-query in this
+ * project (`package.json` has axios and nothing else in that family).
  *
- * The previous version ran one subsequence test over a 40-character
- * concatenation of label + hi + keywords, so almost any three-letter query
- * matched almost everything: type "ate" and most of the 30 items scored 1, then
- * sorted in source order because the comparator had nothing to break ties with.
- * The list barely changed as you typed, which reads as "search is broken".
+ * Four details from the spec that are load-bearing:
+ *
+ * - `q.length >= 2`. One character matches everything and costs a round trip
+ *   for nothing.
+ * - The previous list stays visible while the next one loads, rather than
+ *   flashing empty between keystrokes. That is the difference between search
+ *   that feels instant and search that feels broken.
+ * - The `signal` is passed so superseded requests abort — without it a slow
+ *   response for "ra" can land after "rakesh" and overwrite it.
+ * - `noRetry`. `lib/api.js`'s response interceptor treats ANY rejection with no
+ *   `response` as retryable, and an aborted axios request is exactly that — so
+ *   without this flag every keystroke that supersedes an in-flight query would
+ *   be retried three times, at 800/1600/2400ms, against a query the user has
+ *   already moved past. Flagged for `api.js`'s owner; opting out is the fix
+ *   available from inside this file.
+ *
+ * There is deliberately NO client-side cache. `20` asks for `staleTime: 60s`,
+ * which needs a cache keyed by query — and a module-level cache outlives an org
+ * switch, so it would serve one tenant's records to the next. A cache that can
+ * cross the org boundary is worse than no cache.
  */
-export function fuzzyMatch(query, item) {
-  const q = query.trim().toLowerCase();
-  if (!q) return 100;
+function useRecordSearch(query, scope, open) {
+  const q = useDebounced(query.trim(), 180);
+  const [state, setState] = useState(IDLE);
+  const [mode, setMode] = useState(RECORD_SEARCH);
+  const [attempt, setAttempt] = useState(0);
 
-  const label = (item.label || '').toLowerCase();
-  const hi = (item.hi || '').toLowerCase();
-  const keywords = (item.keywords || '').toLowerCase();
+  useEffect(() => {
+    if (!open || RECORD_SEARCH === 'absent' || q.length < 2) {
+      setState(IDLE);
+      return undefined;
+    }
+    const ctrl = new AbortController();
+    setState((prev) => ({ status: 'loading', data: prev.data, for: prev.for }));
 
-  if (label.startsWith(q)) return 90 - Math.min(label.length - q.length, 20);
-  if (hi.startsWith(q)) return 88;
+    api.get('/search', { params: { q, scope, limit: 5 }, signal: ctrl.signal, noRetry: true })
+      .then((res) => {
+        RECORD_SEARCH = 'live';
+        setMode('live');
+        setState({ status: 'ready', data: res.data || {}, for: q });
+      })
+      .catch((err) => {
+        if (ctrl.signal.aborted || err?.code === 'ERR_CANCELED') return;
+        const code = err?.response?.status;
+        // 404/501 is "this build has no search", not "this query failed".
+        // Stop asking, and stop advertising it.
+        if (code === 404 || code === 501) {
+          RECORD_SEARCH = 'absent';
+          setMode('absent');
+          setState(IDLE);
+          return;
+        }
+        setState({ status: 'failed', data: null, for: q });
+      });
 
-  const at = label.indexOf(q);
-  if (at > -1) {
-    // Word-boundary hits beat mid-word ones: "inv" should find "New Invoice"
-    // before it finds anything merely containing "inv".
-    const boundary = at === 0 || label[at - 1] === ' ';
-    return (boundary ? 75 : 60) - Math.min(at, 15);
-  }
-  if (hi.includes(q)) return 55;
-  if (keywords.includes(q)) return 40;
+    return () => ctrl.abort();
+  }, [q, scope, open, attempt]);
 
-  // Subsequence, last resort, and only over the label — running it across the
-  // keyword blob is what made everything match.
-  let qi = 0;
-  for (let i = 0; i < label.length && qi < q.length; i++) {
-    if (label[i] === q[qi]) qi++;
-  }
-  return qi === q.length ? 10 : 0;
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  return { ...state, mode, q, retry };
 }
 
 export default function CommandPalette({ open, onClose, onNewTask }) {
   const [query, setQuery] = useState('');
+  const [scope, setScope] = useState('all');
   const [activeIdx, setActiveIdx] = useState(0);
+  const [recent, setRecent] = useState([]);
   const inputRef = useRef(null);
   const listRef = useRef(null);
+  // Set by the keyboard, cleared by real pointer movement. Without it a
+  // stationary cursor sitting over a row steals the selection back on every
+  // re-render, so arrowing past it is impossible.
+  const keyboardNav = useRef(false);
   const navigate = useNavigate();
 
-  const results = useMemo(() => {
-    if (!query.trim()) return ALL_ITEMS;
-    return ALL_ITEMS
-      .map(item => ({ item, score: fuzzyMatch(query, item) }))
-      .filter(r => r.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .map(r => r.item);
-  }, [query]);
+  const search = useRecordSearch(query, scope, open);
+  const showScopes = search.mode === 'live';
 
-  useEffect(() => { setActiveIdx(0); }, [query]);
+  const commands = useMemo(() => rankCommands(query, fuzzyMatch), [query]);
 
   useEffect(() => {
-    if (open) {
-      setQuery('');
-      setActiveIdx(0);
-      setTimeout(() => inputRef.current?.focus(), 10);
-    }
+    if (!open) return;
+    setQuery('');
+    setScope('all');
+    setActiveIdx(0);
+    setRecent(loadRecent());
+    // No setTimeout focus call: FocusTrap takes `initialFocus` and focuses the
+    // input during its own mount effect, with `preventScroll`. Two focus calls
+    // racing on one element is how a palette ends up stealing focus back from
+    // whatever the first one triggered.
   }, [open]);
 
-  const execute = useCallback((item) => {
-    onClose();
-    if (item.action === 'newTask') {
-      onNewTask?.();
-    } else if (item.route) {
-      navigate(item.route);
+  useEffect(() => { setActiveIdx(0); }, [query, scope]);
+
+  /**
+   * One flat list of selectable rows, plus the section headers between them.
+   * The flat index is what ArrowDown moves and what `aria-activedescendant`
+   * points at, so it must be built in exactly render order — a second traversal
+   * that drifts from the first is how a palette activates the wrong row.
+   */
+  const { sections, rows } = useMemo(() => {
+    const out = [];
+    const flat = [];
+    const push = (title, meta, items) => {
+      if (!items.length) return;
+      const withIdx = items.map((r) => {
+        const idx = flat.length;
+        flat.push(r);
+        return { ...r, idx };
+      });
+      out.push({ title, meta, items: withIdx });
+    };
+
+    const isBlank = !query.trim();
+    const recentIds = new Set(isBlank ? recent.map((c) => c.id) : []);
+
+    if (isBlank && recent.length) {
+      push('Recent', null, recent.map((c) => ({ key: `recent-${c.id}`, kind: 'recent', item: c })));
     }
+
+    for (const title of ['Actions', 'Navigate']) {
+      push(
+        title,
+        null,
+        commands
+          .filter((c) => c.section === title && !recentIds.has(c.id))
+          .map((c) => ({ key: `cmd-${c.id}`, kind: 'command', item: c })),
+      );
+    }
+
+    // `search.data`, not `search.status === 'ready'`. The previous list stays
+    // on screen while the next one loads rather than flashing empty between
+    // keystrokes — that is `placeholderData: prev => prev` in `20`'s hook, and
+    // it is the difference between search that feels instant and search that
+    // feels broken. The spinner in the input says a newer answer is coming.
+    if (search.data) {
+      const counts = search.data.counts || {};
+      for (const ent of ENTITIES) {
+        if (scope !== 'all' && scope !== ent.key) continue;
+        const hits = Array.isArray(search.data[ent.key]) ? search.data[ent.key] : [];
+        const total = Number.isFinite(counts[ent.key]) ? counts[ent.key] : hits.length;
+        push(
+          ent.label,
+          // `20` wants "See all 23 →". There is no search-results page to send
+          // them to, and a link to nowhere is the defect this handover keeps
+          // finding — so the count is stated, not offered as an affordance.
+          total > hits.length ? `${hits.length} of ${total}` : null,
+          hits.map((r) => ({ key: `${ent.key}-${r.id}`, kind: 'record', entity: ent, item: r })),
+        );
+      }
+    }
+
+    return { sections: out, rows: flat };
+  }, [commands, recent, query, scope, search.status, search.data]);
+
+  useEffect(() => {
+    setActiveIdx((i) => (rows.length ? Math.min(i, rows.length - 1) : 0));
+  }, [rows.length]);
+
+  const execute = useCallback((row) => {
+    if (!row) return;
+    onClose();
+    if (row.kind === 'record') {
+      navigate(row.item.route || row.entity.route);
+      return;
+    }
+    pushRecent(row.item.id);
+    if (row.item.action === 'newTask') onNewTask?.();
+    else if (row.item.route) navigate(row.item.route);
   }, [navigate, onClose, onNewTask]);
 
+  const cycleScope = useCallback((dir) => {
+    setScope((cur) => {
+      const i = SCOPES.findIndex((s) => s.id === cur);
+      return SCOPES[(i + dir + SCOPES.length) % SCOPES.length].id;
+    });
+  }, []);
+
   const onKeyDown = useCallback((e) => {
-    if (e.key === 'ArrowDown') {
+    // Arrows only. Home/End are NOT bound: this is a text input, and stealing
+    // them to jump the list costs the user the two keys that move the caret to
+    // the ends of a query they are still editing.
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      setActiveIdx(i => Math.min(i + 1, results.length - 1));
-    } else if (e.key === 'ArrowUp') {
+      keyboardNav.current = true;
+      const last = Math.max(rows.length - 1, 0);
+      if (e.key === 'ArrowDown') setActiveIdx((i) => Math.min(i + 1, last));
+      else setActiveIdx((i) => Math.max(i - 1, 0));
+      return;
+    }
+    if (e.key === 'Enter') {
       e.preventDefault();
-      setActiveIdx(i => Math.max(i - 1, 0));
-    } else if (e.key === 'Enter' && results[activeIdx]) {
-      e.preventDefault();
-      execute(results[activeIdx]);
-    } else if (e.key === 'Escape') {
+      execute(rows[activeIdx]);
+      return;
+    }
+    if (e.key === 'Escape') {
       e.preventDefault();
       onClose();
+      return;
     }
-  }, [results, activeIdx, execute, onClose]);
+    // Tab cycles the scope chips rather than moving focus. stopPropagation
+    // keeps FocusTrap — which listens for Tab on the panel — from also wrapping
+    // focus on the same keystroke.
+    if (e.key === 'Tab' && showScopes) {
+      e.preventDefault();
+      e.stopPropagation();
+      cycleScope(e.shiftKey ? -1 : 1);
+    }
+  }, [rows, activeIdx, execute, onClose, cycleScope, showScopes]);
 
-  // scrollIntoView — even with block:'nearest' — can scroll ANCESTOR containers,
-  // which is the same call that made Sanvaad's scrollback unreadable. The list
-  // is a known height with known rows, so scroll it directly and touch nothing
-  // outside it.
+  /**
+   * scrollIntoView — even with `block: 'nearest'` — can scroll ANCESTOR
+   * containers, which is the call that made Sanvaad's scrollback unreadable.
+   * The list is a known height with known rows, so scroll it directly and touch
+   * nothing outside it.
+   */
   useEffect(() => {
     const el = listRef.current;
-    const row = el?.children[activeIdx];
+    const row = el?.querySelector('[data-active="true"]');
     if (!el || !row) return;
     const top = row.offsetTop;
     const bottom = top + row.offsetHeight;
     if (top < el.scrollTop) el.scrollTop = top;
     else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight;
-  }, [activeIdx]);
+  }, [activeIdx, rows.length]);
 
   if (!open) return null;
 
-  const grouped = {};
-  results.forEach(item => {
-    if (!grouped[item.section]) grouped[item.section] = [];
-    grouped[item.section].push(item);
-  });
+  const q = query.trim();
+  const activeId = rows[activeIdx] ? `cmdk-${rows[activeIdx].key}` : undefined;
+  const searching = search.status === 'loading';
 
-  let flatIdx = 0;
+  /**
+   * `20`: the empty states are distinct on purpose. "No results found" for a
+   * request that failed is a lie about the data, and so is "no results" for a
+   * request that was never made.
+   */
+  let empty = null;
+  if (!rows.length) {
+    if (searching) {
+      empty = { title: 'Searching…', detail: null };
+    } else if (search.status === 'failed') {
+      empty = { title: 'Search failed', detail: "Couldn't reach the server. Your commands are still here.", retry: true };
+    } else if (q.length >= 2 && search.mode === 'live' && search.status === 'ready') {
+      empty = { title: `No matches for “${q}”`, detail: 'No command and no record matches this. Try fewer words.' };
+    } else if (q.length >= 2) {
+      empty = {
+        title: `No command matches “${q}”`,
+        detail: search.mode === 'absent'
+          ? 'Record search is not available in this workspace yet, so only commands were searched.'
+          : 'Only commands were searched.',
+      };
+    } else if (q) {
+      empty = { title: `No command matches “${q}”`, detail: 'Records are searched from two characters.' };
+    }
+  }
+
+  /* When records cannot be shown, say so WHERE the records would have been —
+     below the commands, which the user can still act on. Replacing the whole
+     list with an error would take those away over a failure that did not
+     affect them. Suppressed once real record rows are on screen; a "Results"
+     header sitting under the results it describes is noise. */
+  const hasRecords = rows.some((r) => r.kind === 'record');
+  const showResultsNote = rows.length > 0 && q.length >= 2 && search.mode !== 'absent' &&
+    (search.status === 'failed' || (!hasRecords && (searching || search.status === 'ready')));
+
+  const announce = searching
+    ? 'Searching records'
+    : search.status === 'failed'
+      ? 'Record search failed'
+      : `${rows.length} ${rows.length === 1 ? 'result' : 'results'}`;
 
   return (
-    <div className="k-cmdk-overlay" onClick={onClose}>
-      <div className="k-cmdk" onClick={e => e.stopPropagation()}>
-        <div className="k-cmdk__input-wrap">
-          {ICONS.search}
-          <input
-            ref={inputRef}
-            className="k-cmdk__input"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Type a command or search…"
-            spellCheck={false}
-            autoComplete="off"
-          />
-          <kbd className="k-kbd" style={{ fontSize: 11, padding: '2px 6px' }}>ESC</kbd>
-        </div>
-        <div className="k-cmdk__list" ref={listRef}>
-          {results.length === 0 && (
-            <div className="k-cmdk__empty">No results found</div>
+    <div
+      className="k-cmdk-overlay"
+      data-k-palette=""
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <FocusTrap active initialFocus={inputRef}>
+        <div className="k-cmdk" role="dialog" aria-modal="true" aria-label="Search and commands">
+          <div className="k-cmdk__input-wrap">
+            <span className="k-cmdk__icon">{ICONS.search}</span>
+            <input
+              ref={inputRef}
+              className="k-cmdk__input"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onKeyDown}
+              /* The placeholder only promises search once search has answered
+                 once. See the file header. */
+              placeholder={search.mode === 'live' ? 'Type a command or search…' : 'Type a command…'}
+              spellCheck={false}
+              autoComplete="off"
+              role="combobox"
+              aria-expanded="true"
+              aria-controls="cmdk-list"
+              aria-activedescendant={activeId}
+              aria-autocomplete="list"
+              aria-label="Search and commands"
+            />
+            {searching && <span className="k-cmdk__spin" aria-hidden="true" />}
+            <kbd className="k-kbd">ESC</kbd>
+          </div>
+
+          {showScopes && (
+            <div className="k-cmdk__scopes" role="group" aria-label="Search scope">
+              {SCOPES.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className="k-cmdk__scope"
+                  aria-pressed={scope === s.id}
+                  /* Out of the Tab order on purpose: Tab cycles them from the
+                     input, which keeps one tab stop for the group (26 §5)
+                     without spending six keystrokes to cross it. */
+                  tabIndex={-1}
+                  onClick={() => { setScope(s.id); inputRef.current?.focus(); }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
           )}
-          {Object.entries(grouped).map(([section, items]) => (
-            <React.Fragment key={section}>
-              <div className="k-cmdk__section">{section}</div>
-              {items.map(item => {
-                const idx = flatIdx++;
-                return (
-                  <button
-                    key={item.id}
-                    className={`k-cmdk__item ${idx === activeIdx ? 'k-cmdk__item--active' : ''}`}
-                    onMouseEnter={() => setActiveIdx(idx)}
-                    onClick={() => execute(item)}
-                    data-active={idx === activeIdx}
+
+          <div
+            className="k-cmdk__list"
+            id="cmdk-list"
+            role="listbox"
+            aria-label="Commands and results"
+            ref={listRef}
+            onMouseMove={() => { keyboardNav.current = false; }}
+          >
+            {empty && (
+              <div className="k-cmdk__empty">
+                <div className="k-cmdk__empty-t">{empty.title}</div>
+                {empty.detail && <div className="k-cmdk__empty-d">{empty.detail}</div>}
+                {empty.retry && (
+                  <button type="button" className="k-cmdk__retry" onClick={search.retry}>Try again</button>
+                )}
+              </div>
+            )}
+
+            {sections.map((sec) => (
+              <React.Fragment key={sec.title}>
+                <div className="k-cmdk__section">
+                  {sec.title}
+                  {sec.meta && <span className="k-cmdk__section-meta">{sec.meta}</span>}
+                </div>
+                {sec.items.map((row) => (
+                  /* role="option" on a DIV, not a button — a button inside a
+                     listbox is announced twice. The click handler stays. */
+                  <div
+                    key={row.key}
+                    id={`cmdk-${row.key}`}
+                    className="k-cmdk__item"
+                    role="option"
+                    aria-selected={row.idx === activeIdx}
+                    data-active={row.idx === activeIdx}
+                    onMouseEnter={() => { if (!keyboardNav.current) setActiveIdx(row.idx); }}
+                    onClick={() => execute(row)}
                   >
                     <span className="k-cmdk__icon">
-                      {item.section === 'Actions' ? ICONS.action : ICONS.nav}
+                      {row.kind === 'record' ? ICONS.record
+                        : row.kind === 'recent' ? ICONS.clock
+                          : row.item.section === 'Actions' ? ICONS.action : ICONS.nav}
                     </span>
-                    <span className="k-cmdk__label">{item.label}</span>
-                    <span className="k-cmdk__hi">{item.hi}</span>
-                    {idx === activeIdx && (
-                      <span className="k-cmdk__hint">
-                        <kbd className="k-kbd" style={{ fontSize: 10, padding: '1px 5px' }}>↵</kbd>
-                      </span>
+                    <span className="k-cmdk__label">
+                      {row.kind === 'record' ? row.entity.title(row.item) : row.item.label}
+                    </span>
+                    {row.kind === 'record'
+                      ? (row.entity.meta(row.item) && <span className="k-cmdk__meta">{row.entity.meta(row.item)}</span>)
+                      : <span className="k-cmdk__hi" lang="hi">{row.item.hi}</span>}
+                    {row.idx === activeIdx && (
+                      <span className="k-cmdk__hint"><kbd className="k-kbd">↵</kbd></span>
                     )}
-                  </button>
-                );
-              })}
-            </React.Fragment>
-          ))}
+                  </div>
+                ))}
+              </React.Fragment>
+            ))}
+
+            {showResultsNote && (
+              <div className="k-cmdk__section">
+                Results
+                <span className="k-cmdk__section-meta">
+                  {searching ? 'Searching…'
+                    : search.status === 'failed' ? "Couldn't reach the server"
+                      : 'No records match'}
+                </span>
+                {search.status === 'failed' && (
+                  <button type="button" className="k-cmdk__retry" onClick={search.retry}>Try again</button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="k-cmdk__foot">
+            <span className="k-cmdk__foot-i"><kbd className="k-kbd">↑</kbd><kbd className="k-kbd">↓</kbd>navigate</span>
+            <span className="k-cmdk__foot-i"><kbd className="k-kbd">↵</kbd>open</span>
+            {showScopes && <span className="k-cmdk__foot-i"><kbd className="k-kbd">tab</kbd>scope</span>}
+            <span className="k-cmdk__foot-i"><kbd className="k-kbd">esc</kbd>close</span>
+          </div>
         </div>
-      </div>
+      </FocusTrap>
+
+      <div className="k-cmdk__live" role="status" aria-live="polite">{announce}</div>
     </div>
   );
 }
