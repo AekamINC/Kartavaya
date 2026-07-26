@@ -32,3 +32,10 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Pixel screenshot baselines from scripts/visual-baseline.mjs.
+# Never committed: font rasterisation differs between the Windows machines
+# these are authored on and the Linux container CI compares them in, so a
+# committed PNG fails on every glyph every time. Same class of platform bug
+# as the yarn.lock/esbuild rule above. Generate them where you compare them.
+visual-baselines/

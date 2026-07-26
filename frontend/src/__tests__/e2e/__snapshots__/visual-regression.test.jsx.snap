@@ -1,0 +1,91 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`e2e · visual · surface outlines > sign in offers the same controls in both themes > surface-login 1`] = `
+"heading "Your business,one platform."
+button "Show panel 1 of 3: Module — Ganit · Finance"
+button "Show panel 2 of 3: Module — Dristi · Reports"
+button "Show panel 3 of 3: Access — Invite only"
+main "Welcome backSign in to Kartavayaप्रवेशPick up where your tea"
+heading "Sign in to Kartavayaप्रवेश"
+form "Email addressPasswordRemember my email on this deviceForgot "
+input:email
+input:password
+button "Show password"
+input:checkbox
+button "Forgot password?"
+button "Sign in"
+region "Notifications""
+`;
+
+exports[`e2e · visual · the theme palette baseline > light and dark resolve every semantic token, side by side > semantic-palette 1`] = `
+"--bg                         light=#F3EFE6  dark=#0C0E11
+--bg-1                       light=var(--s-low)  dark=var(--s-low)
+--bg-2                       light=var(--s-container)  dark=var(--s-container)
+--bg-raised                  light=var(--s-low)  dark=var(--s-low)
+--bg-soft                    light=var(--s-low)  dark=var(--s-low)
+--danger                     light=#B42318  dark=#F2867A
+--danger-container           light=#FBDAD5  dark=#55201B
+--glass-alpha                light=calc(1 - (.28 * var(--glass-mix)))  dark=calc(1 - (.28 * var(--glass-mix)))
+--glass-blur                 light=calc(22px * var(--glass-mix))  dark=calc(22px * var(--glass-mix))
+--glass-mix                  light=.6  dark=.6
+--glass-sat                  light=calc(1 + .5 * var(--glass-mix))  dark=calc(1 + .5 * var(--glass-mix))
+--glass-tint                 light=250, 247, 240  dark=18, 21, 26
+--ink                        light=var(--on-surface)  dark=var(--on-surface)
+--ink-1                      light=var(--on-surface)  dark=var(--on-surface)
+--ink-2                      light=var(--on-surface-2)  dark=var(--on-surface-2)
+--ink-3                      light=var(--on-surface-3)  dark=var(--on-surface-3)
+--ink-4                      light=var(--on-surface-3)  dark=var(--on-surface-3)
+--ink-faint                  light=var(--on-surface-faint)  dark=var(--on-surface-faint)
+--ink-fixed                  light=#23262B  dark=#23262B
+--ink-fixed-dark             light=#E9E7E1  dark=#E9E7E1
+--ink3                       light=var(--on-surface-3)  dark=var(--on-surface-3)
+--ok                         light=#14743A  dark=#5BD98A
+--ok-container               light=#C6EFD2  dark=#14432A
+--on-danger                  light=#FFFFFF  dark=#2A0A06
+--on-danger-container        light=#5C1109  dark=#FBDAD5
+--on-ok-container            light=#06341A  dark=#C6EFD2
+--on-primary                 light=#FFFFFF  dark=#00332F
+--on-primary-container       light=#00201D  dark=#74F5E8
+--on-secondary-container     light=#1A2013  dark=#DFE7CB
+--on-surface                 light=#1B1D1A  dark=#E9E7E1
+--on-surface-2               light=#4A4E48  dark=#BFBDB6
+--on-surface-3               light=#666A61  dark=#8E8D87
+--on-surface-disabled        light=#9DA096  dark=#64645F
+--on-surface-faint           light=var(--on-surface-3)  dark=var(--on-surface-3)
+--on-tertiary-container      light=#301A07  dark=#FFDCC3
+--on-warn-container          light=#4A2D00  dark=#FBE3BE
+--outline                    light=#ADA692  dark=#5B626C
+--outline-variant            light=#D8D1BE  dark=#333A43
+--primary                    light=#04837A  dark=#4FD8CB
+--primary-container          light=#B4F1E8  dark=#00514B
+--primary-hover              light=#026B64  dark=#6FE6DA
+--primary-text               light=#046B64  dark=var(--primary)
+--primary-vivid              light=#05b7aa  dark=#05b7aa
+--rule                       light=var(--outline-variant)  dark=var(--outline-variant)
+--rule-soft                  light=var(--outline-variant)  dark=var(--outline-variant)
+--rule-strong                light=var(--outline)  dark=var(--outline)
+--s-container                light=#EEE9DC  dark=#1D2229
+--s-high                     light=#E7E1D1  dark=#252B33
+--s-highest                  light=#DFD8C5  dark=#2E353E
+--s-low                      light=#F5F1E7  dark=#171B21
+--s-lowest                   light=#FFFEFB  dark=#080A0C
+--scrim                      light=rgba(28, 26, 20, .34)  dark=rgba(0, 0, 0, .58)
+--secondary                  light=#5C6450  dark=#C3CBB0
+--secondary-container        light=#E1E7D4  dark=#434A36
+--shadow-1                   light=0 1px 2px rgba(30, 28, 22, .07)  dark=0 1px 2px rgba(0, 0, 0, .5)
+--shadow-2                   light=0 4px 16px -6px rgba(30, 28, 22, .16)  dark=0 4px 16px -6px rgba(0, 0, 0, .6)
+--shadow-3                   light=0 18px 44px -18px rgba(30, 28, 22, .3)  dark=0 18px 44px -18px rgba(0, 0, 0, .8)
+--shadow-4                   light=0 32px 72px -28px rgba(30, 28, 22, .38)  dark=0 32px 72px -28px rgba(0, 0, 0, .9)
+--shadow-lg                  light=var(--shadow-3)  dark=var(--shadow-3)
+--shadow-md                  light=var(--shadow-2)  dark=var(--shadow-2)
+--shadow-sm                  light=var(--shadow-1)  dark=var(--shadow-1)
+--surface                    light=#FAF7F0  dark=#12151A
+--surface-0                  light=var(--s-low)  dark=var(--s-low)
+--surface-1                  light=var(--surface)  dark=var(--surface)
+--surface-2                  light=var(--s-lowest)  dark=var(--s-lowest)
+--surface-dim                light=var(--s-container)  dark=var(--s-container)
+--tertiary                   light=#8A5730  dark=#F0BB90
+--tertiary-container         light=#FFDCC3  dark=#6A3F1A
+--warn                       light=#955806  dark=#E8B45C
+--warn-container             light=#FBE3BE  dark=#4A3312"
+`;

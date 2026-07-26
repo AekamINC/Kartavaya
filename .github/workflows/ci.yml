@@ -89,7 +89,28 @@ jobs:
         run: npx tsc --noEmit --skipLibCheck
         continue-on-error: true  # JSX project has no tsconfig yet; best-effort
 
-      - name: Run Vitest unit tests
+      # The two mechanical gates from 25-qa-acceptance.md §1. They take under a
+      # second and would have caught eight of the defects that document lists —
+      # an unresolved var() returns an empty string and CSS drops the
+      # declaration silently, with no console warning, so these are invisible to
+      # review and obvious to a script.
+      #
+      # Run from `frontend/` (this job's working-directory). Both scripts
+      # process.exit(1) when src/styles is absent, so a root invocation is a
+      # loud failure rather than a silent pass — do not "fix" that by piping
+      # them through `tail`, which reports tail's exit status and always passes.
+      - name: Design gates — tokens and classes
+        run: yarn check
+
+      # Covers `src/**/__tests__/**`, which includes the end-to-end suite at
+      # `src/__tests__/e2e/`. That suite runs entirely in-process against a
+      # mocked axios instance with fetch/XHR/WebSocket/sendBeacon replaced by
+      # throwers: it cannot open a socket, so it cannot reach the database that
+      # staging and production share. `src/__tests__/e2e/network-isolation.test.js`
+      # asserts exactly that and is the file to read if this is ever in doubt.
+      #
+      # To run only the e2e suite: `yarn test:e2e` (from frontend/).
+      - name: Tests — unit and end-to-end
         run: yarn test
 
       - name: Dependency security audit
@@ -114,9 +135,30 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
 
-  # ── E2E: Playwright (deployed app, optional) ─────────────────────────────────
+  # ── Playwright against a DEPLOYED app (opt-in, and read the warning) ─────────
+  #
+  # ⚠ THIS JOB SIGNS INTO A LIVE DEPLOYMENT WITH REAL CREDENTIALS.
+  #
+  # `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` are used against
+  # `PLAYWRIGHT_BASE_URL`. Staging and production SHARE ONE SUPABASE PROJECT, so
+  # whatever this job touches, production's database is what it touches. A login
+  # is itself a write — it creates a session row and moves `last_login`.
+  #
+  # The specs in `e2e/` are currently read-only (they open modals, they never
+  # submit), but nothing enforces that, and the next spec added to that
+  # directory inherits a live admin session pointed at production.
+  #
+  # The behavioural end-to-end suite is `frontend/src/__tests__/e2e/`. It runs
+  # in the `frontend` job above, in-process, against a mocked network that
+  # cannot open a socket, and it covers auth, client isolation, the board, the
+  # drawer, separated duty, module entitlement, dark mode and reduced motion.
+  # Add new e2e coverage THERE. Anything added here must be provably read-only
+  # and should say so in the spec.
+  #
+  # Gated on `vars.PLAYWRIGHT_BASE_URL` being set, so it does not run by
+  # default.
   e2e:
-    name: E2E tests (Playwright)
+    name: E2E smoke (Playwright, deployed — writes to the shared database)
     runs-on: ubuntu-latest
     # Only run E2E in CI when the deployed URL is provided as a secret
     if: vars.PLAYWRIGHT_BASE_URL != ''
