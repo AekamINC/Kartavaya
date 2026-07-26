@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
-from middleware.roles import require_platform_role
+from middleware.roles import require_org_role, require_platform_role
 from middleware.role_tiers import ALL_MODULES, BILLING_CONSOLE_ROLES, is_god_mode, strongest
 from middleware.subscription import clear_module_cache
 
@@ -410,7 +410,19 @@ async def list_overdue(user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES
 # ── Org Billing History ──────────────────────────────────────
 
 @router.get("/invoices")
-async def list_invoices(user=Depends(require_user), org_id: str = Depends(get_org_id)):
+async def list_invoices(
+    user=Depends(require_org_role("org_admin", "org_owner")),
+    org_id: str = Depends(get_org_id),
+):
+    """The org's own invoices. Owner and admin only.
+
+    This was `Depends(require_user)`, so any `org_member` could read the whole
+    invoice history with totals. `OrgSettingsPage.jsx:31` already gates the
+    entire settings surface — Billing tab included — on
+    `ORG_ROLES = ['org_owner','org_admin']`, so the control was hidden in the UI
+    and open in the API. RBAC-SPEC Tier 2 puts `org_member` at "base membership,
+    only explicitly granted modules", and billing is not a module grant.
+    """
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT * FROM staging.subscription_invoices "
@@ -460,10 +472,15 @@ async def get_usage(user=Depends(require_user), org_id: str = Depends(get_org_id
 @router.get("/cost-report")
 async def cost_report(
     period: str = "30d",
-    user=Depends(require_user),
+    user=Depends(require_org_role("org_admin", "org_owner")),
     org_id: str = Depends(get_org_id),
 ):
-    """Client-facing usage report. Shows credit consumption only — no money disclosed."""
+    """Client-facing usage report. Shows credit consumption only — no money disclosed.
+
+    Owner and admin, for the same reason as `list_invoices`: it was open to every
+    `org_member` while the only screen that renders it sits behind an
+    owner/admin gate.
+    """
     pool = await get_pool()
 
     period_map = {"7d": 7, "30d": 30, "90d": 90, "ytd": None}
@@ -534,10 +551,15 @@ async def cost_report(
 @router.get("/cost-report/pdf")
 async def cost_report_pdf(
     period: str = "30d",
-    user=Depends(require_user),
+    user=Depends(require_org_role("org_admin", "org_owner")),
     org_id: str = Depends(get_org_id),
 ):
-    """Download client usage report as PDF. Shows credits only — no money."""
+    """Download client usage report as PDF. Shows credits only — no money.
+
+    Owner and admin. This one also carries `authorized_signatory_name` and
+    `authorized_signatory_designation` into the rendered document, which is org
+    identity data rather than usage data, and it was reachable by every member.
+    """
     from fastapi.responses import Response
     from services.cost_report_pdf import generate_credit_report_pdf
 

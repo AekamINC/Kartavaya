@@ -14,7 +14,14 @@ from fastapi import Depends, HTTPException
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
-from middleware.role_tiers import ALL_PLATFORM_ROLES, GOD_MODE_ROLES
+from middleware.role_tiers import ALL_PLATFORM_ROLES, GOD_MODE_ROLES, SUPPORT_ROLES
+
+#: Platform roles that count as "org admin" for the visibility helpers below.
+#: Everything except support, which holds nothing until an org approves it —
+#: see `org_resolver.ORG_SWITCH_ROLES` for the full reasoning.
+PLATFORM_ORG_ADMIN_ROLES: tuple[str, ...] = tuple(
+    r for r in ALL_PLATFORM_ROLES if r not in SUPPORT_ROLES
+)
 
 
 def require_role(*allowed_roles: str):
@@ -139,22 +146,30 @@ async def is_org_admin(user_id: str, org_id: str | None = None) -> bool:
     and should be done wherever the org is known; omitting it preserves the
     previous global behaviour, which is still strictly narrower than the column
     it replaces (6 role holders rather than every user flagged admin).
+
+    The platform half used to be an eight-name Postgres array literal written
+    inline, twice. Two consequences, both now gone: it was a ninth copy of a set
+    role_tiers already exports, so a new platform role would have been admitted
+    here only if someone remembered both copies; and it listed
+    `platform_support`, making a support account an org admin in EVERY org —
+    the same absent approval gate closed in `org_resolver.py`.
     """
     pool = await get_pool()
+    platform = list(PLATFORM_ORG_ADMIN_ROLES)
     if org_id:
         return bool(await pool.fetchval(
             "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND ("
-            "  (org_id IS NULL AND role_code = ANY('{platform_owner,platform_admin,platform_manager,platform_staff,account_manager,account_finance,srijan_admin,platform_support}'::text[]))"
+            "  (org_id IS NULL AND role_code = ANY($3::text[]))"
             "  OR (org_id=$2::uuid AND role_code IN ('org_owner','org_admin'))"
             ")",
-            user_id, org_id,
+            user_id, org_id, platform,
         ))
     return bool(await pool.fetchval(
         "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND ("
-        "  (org_id IS NULL AND role_code = ANY('{platform_owner,platform_admin,platform_manager,platform_staff,account_manager,account_finance,srijan_admin,platform_support}'::text[]))"
+        "  (org_id IS NULL AND role_code = ANY($2::text[]))"
         "  OR (org_id IS NOT NULL AND role_code IN ('org_owner','org_admin'))"
         ")",
-        user_id,
+        user_id, platform,
     ))
 
 
