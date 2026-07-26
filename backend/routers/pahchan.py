@@ -26,6 +26,8 @@ Schema: migrations/PROPOSED_064_pahchan.sql (not yet applied).
 """
 import math
 from datetime import date, datetime, timedelta, timezone
+
+import asyncpg
 from typing import Optional
 from uuid import UUID
 
@@ -309,10 +311,18 @@ async def create_punch(
 
     # Idempotency first, before any work. A replayed punch after a timeout must
     # return the original rather than creating a second attendance record.
+    #
+    # Scoped to THIS employee, not just the org. `client_punch_id` is a
+    # client-supplied string, and matching on (org, id) alone meant a caller who
+    # sent an id that happened to exist got back somebody else's punch — its id,
+    # direction, capture time and flags — without any ownership check. Real clients
+    # send a UUIDv4 so a collision is vanishingly unlikely, but the field accepts
+    # any 8–64 character string, so "unlikely" was a property of the well-behaved
+    # client rather than of this endpoint.
     existing = await pool.fetchrow(
         "SELECT id, direction, captured_at, flags FROM staging.pahchan_punches "
-        "WHERE org_id=$1::uuid AND client_punch_id=$2",
-        org_id, body.client_punch_id,
+        "WHERE org_id=$1::uuid AND client_punch_id=$2 AND employee_id=$3::uuid",
+        org_id, body.client_punch_id, str(employee["id"]),
     )
     if existing:
         return {"punch": dict(existing), "duplicate": True}
@@ -346,23 +356,40 @@ async def create_punch(
         has_reference_pair=(ref_count or 0) >= 2,
     )
 
-    row = await pool.fetchrow(
-        """INSERT INTO staging.pahchan_punches
-               (org_id, employee_id, direction, captured_at, synced_at, photo_key,
-                lat, lng, accuracy_m, distance_m, geofence_id, source,
-                mock_location, flags, client_punch_id)
-           VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6,
-                   $7, $8, $9, $10, $11, $12,
-                   $13, $14::text[], $15)
-           RETURNING id, direction, captured_at, received_at, flags, source""",
-        org_id, str(employee["id"]), body.direction, body.captured_at,
-        # An offline punch synced now; a live one has no separate sync moment.
-        datetime.now(timezone.utc) if body.source == "offline" else None,
-        body.photo_key,
-        body.lat, body.lng, body.accuracy_m, distance_m,
-        str(site["id"]) if site else None,
-        body.source, body.mock_location, flags, body.client_punch_id,
-    )
+    try:
+        row = await pool.fetchrow(
+            """INSERT INTO staging.pahchan_punches
+                   (org_id, employee_id, direction, captured_at, synced_at, photo_key,
+                    lat, lng, accuracy_m, distance_m, geofence_id, source,
+                    mock_location, flags, client_punch_id)
+               VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6,
+                       $7, $8, $9, $10, $11, $12,
+                       $13, $14::text[], $15)
+               RETURNING id, direction, captured_at, received_at, flags, source""",
+            org_id, str(employee["id"]), body.direction, body.captured_at,
+            # An offline punch synced now; a live one has no separate sync moment.
+            datetime.now(timezone.utc) if body.source == "offline" else None,
+            body.photo_key,
+            body.lat, body.lng, body.accuracy_m, distance_m,
+            str(site["id"]) if site else None,
+            body.source, body.mock_location, flags, body.client_punch_id,
+        )
+    except asyncpg.UniqueViolationError:
+        # (org_id, client_punch_id) is unique org-wide, so this is a different
+        # employee in this org having already used that id. The lookup above is
+        # scoped to the caller, so it did not match, and returning the other
+        # person's row here is exactly what that scoping exists to prevent.
+        #
+        # This is one of the two 4xx on the punch path and it does not contradict
+        # §2. A well-behaved client sends a UUIDv4 and can never reach this; a
+        # client that reaches it has sent a malformed identifier, which §2 already
+        # excepts. Refusing is also the safe direction — the alternative is
+        # silently attributing this punch to whoever owns the colliding row.
+        raise HTTPException(
+            409,
+            "That punch identifier is already in use. Retry with a new one — "
+            "your punch has not been recorded.",
+        )
 
     audit(
         "pahchan.punch",
