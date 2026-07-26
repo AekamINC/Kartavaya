@@ -1,6 +1,7 @@
 /**
  * TableView.jsx — sortable, filterable, grouped table on k-* design system.
  */
+import DueChip from '../editorial/DueChip';
 import React, { useState, useMemo } from 'react';
 import TaskDrawer from '../TaskDrawer';
 import FieldRenderer from '../fields/FieldRenderer';
@@ -170,7 +171,6 @@ export default function TableView({ tasks, columns, fieldDefs, fieldValueMap, te
                 )}
                 {rows.map(task => {
                   const col = colMap[task.column_id];
-                  const isOverdue = task.due_at && new Date(task.due_at) < new Date() && task.status !== 'done';
                   const fvals = fieldValueMap?.[task.task_id] || {};
                   return (
                     <tr key={task.task_id}
@@ -198,13 +198,12 @@ export default function TableView({ tasks, columns, fieldDefs, fieldValueMap, te
                       <td style={{ padding: '10px 14px', color: 'var(--ink-3)', verticalAlign: 'middle' }}>
                         {task.created_by_name || '—'}
                       </td>
-                      <td style={{
-                        padding: '10px 14px', verticalAlign: 'middle',
-                        color: isOverdue ? 'var(--danger)' : 'var(--ink-3)',
-                        fontWeight: isOverdue ? 700 : 400,
-                      }}>
-                        {task.due_at ? new Date(task.due_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—'}
-                        {isOverdue && ' ⚠'}
+                      {/* Was an inline third copy of the rule, formatted with
+                          toLocaleDateString(undefined, …) — the BROWSER's locale,
+                          where the list and board both pin en-IN, so the same
+                          date rendered two ways in one app. */}
+                      <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
+                        <DueChip date={task.due_at} status={task.status} completedAt={task.completed_at} flush />
                       </td>
                       {shownFields.map(f => (
                         <td key={f.field_id} style={{ padding: '10px 14px', verticalAlign: 'middle' }} onClick={e => e.stopPropagation()}>

@@ -1,33 +1,19 @@
 import React from 'react';
 import { priorityColor, avatarColor, userInitials } from '../../lib/utils';
-import { formatTime, hasTimeComponent } from '../../lib/timeFormat';
+import DueChip from '../editorial/DueChip';
 import { PRIORITY_LABELS } from '../drawer/constants';
 
-function relDue(due) {
-  if (!due) return null;
-  const time = hasTimeComponent(due) ? `, ${formatTime(due)}` : '';
-  const d = new Date(due); d.setHours(0, 0, 0, 0); // compare calendar dates, ignore time-of-day
-  const now = new Date(); now.setHours(0, 0, 0, 0);
-  const diff = Math.round((d - now) / 86400000);
-  if (diff < 0)  return { label: `${Math.abs(diff)}d overdue`, tone: 'overdue' };
-  if (diff === 0) return { label: `Due today${time}`, tone: 'today' };
-  if (diff <= 2)  return { label: `In ${diff}d${time}`, tone: 'soon' };
-  if (diff < 7)   return { label: `In ${diff}d${time}`, tone: 'normal' };
-  return { label: `${new Date(due).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}${time}`, tone: 'muted' };
-}
+// relDue and DUE_COLORS lived here as a second, disagreeing copy of the rule
+// in editorial/DueChip.jsx. Both are gone; the board renders the same chip as
+// the list and the table.
 
 
 export default function KanbanCard({ task, onClick, dragging = false, draggable = false, onDragStart, onDragEnd }) {
   const priority = task.priority || 'medium';
   const color    = priorityColor(priority);
-  const due      = relDue(task.due_at);
   const assignees = task.assignee_user_ids || [];
   const names     = task.assignee_names || [];
   const approvalPending = task.approval_status === 'pending' || task.approval_status === 'pending_client';
-  const isDone = task.status === 'done' || task.status === 'approved';
-  const completedOnTime = isDone && task.completed_at && task.due_at && new Date(task.completed_at) <= new Date(task.due_at);
-
-  const DUE_COLORS = { overdue: 'var(--k-danger)', today: '#d97706', soon: '#d97706', normal: 'var(--ink-3)', muted: 'var(--ink-3)' };
 
   return (
     <button
@@ -42,8 +28,11 @@ export default function KanbanCard({ task, onClick, dragging = false, draggable 
       <div className="k-bcard__top">
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0, display: 'inline-block' }} />
         <span className="k-bcard__id">#{task.task_id?.slice(-6) || '—'}</span>
+        {/* The approval badge was #d97706 on #fef3c7 with a #fbbf24 border —
+            three baked ambers that stay light-mode weight on a dark board.
+            --warn and its container flip with the theme. */}
         {approvalPending && (
-          <span style={{ fontSize: 10.5, color: '#d97706', background: '#fef3c7', border: '1px solid #fbbf24', borderRadius: 99, padding: '1px 7px', fontWeight: 600 }}>
+          <span style={{ fontSize: 'var(--t-label-sm)', color: 'var(--warn)', background: 'var(--warn-container)', border: '1px solid color-mix(in srgb, var(--warn) 35%, transparent)', borderRadius: 'var(--r-pill)', padding: '1px 7px', fontWeight: 600 }}>
             {task.approval_status === 'pending_client' ? 'Client review' : 'Needs approval'}
           </span>
         )}
@@ -55,20 +44,12 @@ export default function KanbanCard({ task, onClick, dragging = false, draggable 
 
       {/* Footer: due chip + meta icons + avatars */}
       <div className="k-bcard__foot">
-        {completedOnTime ? (
-          <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Done on time</span>
-        ) : isDone && task.completed_at && task.due_at ? (() => {
-          const dueDay  = new Date(task.due_at);       dueDay.setHours(0,0,0,0);
-          const doneDay = new Date(task.completed_at); doneDay.setHours(0,0,0,0);
-          const lateDays = Math.round((doneDay - dueDay) / 86400000);
-          return lateDays <= 0
-            ? <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 600 }}>✓ Done on time</span>
-            : <span style={{ fontSize: 11, color: 'var(--k-danger)', fontWeight: 600 }}>{`✓ Done · ${lateDays}d late`}</span>;
-        })()
-        : due && !isDone && (
-          <span style={{ fontSize: 11, color: DUE_COLORS[due.tone] || 'var(--ink-3)', fontWeight: due.tone === 'overdue' ? 700 : 400 }}>
-            {due.tone === 'overdue' && '⚠ '}{due.label}
-          </span>
+        {/* The done-on-time / done-late comparison was written out here too,
+            with #16a34a hardcoded twice. DueChip already does all of it —
+            on-time, same-day-but-late, and the N-days-late count — so the whole
+            branch collapses to the shared chip. */}
+        {task.due_at && (
+          <DueChip date={task.due_at} status={task.status} completedAt={task.completed_at} flush />
         )}
 
         <span className="k-bcard__meta">
