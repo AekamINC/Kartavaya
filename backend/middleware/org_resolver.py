@@ -58,13 +58,14 @@ async def get_org_id(request: Request, user=Depends(require_user)):
             "AND role_code IN ('org_owner','org_admin','org_member')",
             user["user_id"], header_org,
         )
-        # Platform staff can access any org
+        # Platform staff can access any org — except support, which holds nothing
+        # until an org admin approves a session. See CROSS_ORG_HEADER_ROLES.
         if not is_member:
             is_platform = await pool.fetchval(
                 "SELECT 1 FROM staging.user_roles "
                 "WHERE user_id=$1 AND org_id IS NULL "
                 "AND role_code = ANY($2::text[])",
-                user["user_id"], list(ALL_PLATFORM_ROLES),
+                user["user_id"], list(CROSS_ORG_HEADER_ROLES),
             )
             if not is_platform:
                 raise HTTPException(403, "You do not belong to this organisation")
