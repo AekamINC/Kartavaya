@@ -3082,6 +3082,8 @@ app.include_router(me_router)
 # the symptom was a quiet ⌘K that only ever returned the static commands.
 # `/api/v1/tasks/bulk` is what BulkBar.jsx:74,102 calls; without it every bulk
 # action fell back to nothing. Registering a router is the whole fix in both cases.
+# search.py defers its `from server import get_visible_team_ids` to call time
+# precisely so this import is not circular.
 app.include_router(search_router)
 app.include_router(tasks_bulk_router)
 
