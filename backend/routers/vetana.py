@@ -103,27 +103,19 @@ _gate = require_module_or_self(MODULE)
 #: The rung demanded by the three routes that RELEASE MONEY — approve a run,
 #: revert an approval, mark a payslip disbursed.
 #:
-#: This SHOULD BE `APPROVER`, and it is `APPROVER` on the branch
-#: `verify/hr-payroll-separated-duty`, together with the tests that prove admin
-#: is refused there. It is `ADMIN` on staging for one reason, and it is a data
-#: reason rather than a disagreement about the rule:
+#: `APPROVER`, which is the owner's rule: admin defines what people are paid and
+#: does not release the money. `level_satisfies` refuses admin at this rung on
+#: vetana and ganit by design.
 #:
-#:   `staging.org_member_modules` holds ZERO rows — verified against the live
-#:   catalog. So `held_module_levels` resolves org_owner and org_admin to
-#:   exactly `{admin}`, everybody else to `{}`, and NOBODY holds `approver` on
-#:   vetana in any organisation. Ship `APPROVER` against that and the set of
-#:   people who can approve a payroll run is not narrowed, it is EMPTY. Payroll
-#:   stops company-wide.
-#:
-#: `backend/migrations/PROPOSED_071_vetana_approver_backfill.sql` grants the
-#: rung to each org's owner and carries the query to verify no org is left
-#: without one. **Apply 071, verify, then change this line to APPROVER and merge
-#: `verify/hr-payroll-separated-duty`.** That is the whole remaining change.
-#:
-#: Deliberately a named constant rather than three literals: the flip is one
-#: line, and the reason it has not happened yet is written where the next person
-#: to look at these routes will read it.
-_RELEASE_LEVEL = ADMIN
+#: DO NOT MERGE THIS BRANCH UNTIL
+#: `backend/migrations/PROPOSED_071_vetana_approver_backfill.sql` HAS RUN and its
+#: verification query shows every org with Vetana active has at least one
+#: approver. `staging.org_member_modules` held ZERO rows when this was written,
+#: which means `held_module_levels` resolved org_owner and org_admin to exactly
+#: `{admin}` and nobody anywhere held `approver`. Deployed against that, this
+#: line does not narrow the set of people who can approve a payroll run — it
+#: empties it, and payroll stops company-wide.
+_RELEASE_LEVEL = APPROVER
 
 
 def _can(levels, required: str) -> bool:

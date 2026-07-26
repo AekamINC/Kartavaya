@@ -120,37 +120,40 @@ def test_admin_does_not_satisfy_approver_in_vetana():
 
 
 @pytest.mark.parametrize("method,path", APPROVER_ROUTES)
-async def test_money_moving_routes_are_held_at_admin_pending_the_backfill(
+async def test_admin_is_refused_on_the_routes_that_release_money(
     api_client, mock_pool, as_member, org_a, levels, method, path,
 ):
-    """Documents the ONE thing on this branch that is deliberately not finished.
+    """The separated duty, enforced at the route rather than only in the
+    resolver.
 
-    `_RELEASE_LEVEL` is `ADMIN`, not `APPROVER`, because
-    `staging.org_member_modules` holds zero rows: nobody anywhere holds an
-    approver grant on Vetana, so shipping the approver requirement would empty
-    the set of people who can approve a payroll run rather than narrow it.
-
-    `backend/migrations/PROPOSED_071_vetana_approver_backfill.sql` fixes the
-    data. When it has run, `_RELEASE_LEVEL` becomes `APPROVER`, this test is
-    deleted, and the assertions on `verify/hr-payroll-separated-duty` — which
-    demand 403 for admin on all three routes — replace it.
-
-    Asserted rather than left as a comment so that flipping the constant fails
-    loudly here and nobody discovers the sequencing by accident.
+    An org_owner and an org_admin both resolve to exactly this level set, so
+    this is not a hypothetical grant — it is what the person who runs the
+    company holds, and after PROPOSED_071 they still cannot release the payroll
+    without a second, explicit, auditable approver grant.
     """
-    from routers.vetana import _RELEASE_LEVEL
-
-    assert _RELEASE_LEVEL == ADMIN, (
-        "_RELEASE_LEVEL was flipped to approver — apply PROPOSED_071 first, "
-        "then delete this test and take the assertions from "
-        "verify/hr-payroll-separated-duty"
-    )
-
     levels(ADMIN)
     mock_pool.fetchrow.return_value = {"status": "processed", "run_id": "r1"}
     mock_pool.fetch.return_value = []
 
     resp = await getattr(api_client, method)(path)
+
+    assert resp.status_code == 403
+    assert "approver" in resp.json()["detail"].lower()
+
+
+@pytest.mark.parametrize("method,path", APPROVER_ROUTES)
+async def test_an_explicit_approver_grant_does_reach_them(
+    api_client, mock_pool, as_member, org_a, levels, method, path,
+):
+    """The other half: the separation must refuse admin without also refusing
+    the person who actually holds the authority. Without this, "nobody can
+    approve anything" would pass the test above."""
+    levels(APPROVER)
+    mock_pool.fetchrow.return_value = {"status": "processed", "run_id": "r1"}
+    mock_pool.fetch.return_value = []
+
+    resp = await getattr(api_client, method)(path)
+
     assert resp.status_code != 403
 
 
