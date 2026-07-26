@@ -2552,7 +2552,15 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
             updates.append(f"{k}=${len(vals)+1}::jsonb")
             v=data[k]; vals.append(json.dumps([i.model_dump(mode="json") if hasattr(i,'model_dump') else i for i in v] if isinstance(v,list) else v))
     if "due_at" in data:      updates.append(f"due_at=${len(vals)+1}");      vals.append(parse_dt(data["due_at"]))
-    if "reminder_at" in data: updates.append(f"reminder_at=${len(vals)+1}"); vals.append(parse_dt(data["reminder_at"]))
+    if "reminder_at" in data:
+        updates.append(f"reminder_at=${len(vals)+1}"); vals.append(parse_dt(data["reminder_at"]))
+        # Clear the sent-marker whenever the time is rewritten. Both dispatch
+        # queries require `reminder_sent_at IS NULL`, and nothing else in the
+        # backend ever sets it back — so without this a reminder fires exactly
+        # once per task, ever. Snoozing or rescheduling was accepted by the API,
+        # stored, shown in the UI, and then silently never delivered, which is
+        # the worst shape a reminder bug can take.
+        updates.append("reminder_sent_at=NULL")
     if "recurrence" in data and data["recurrence"]:
         rec=data["recurrence"]
         updates.append(f"recurrence_rule=${len(vals)+1}");     vals.append(rec.get("rule","none") if isinstance(rec,dict) else rec.rule)
