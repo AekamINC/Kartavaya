@@ -170,7 +170,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
   color: #fff;
   letter-spacing: -.01em;
 }
-/* Same fixed-glyph exception as .crumb__hi — the brand word never translates. */
+/* 24's fixed-glyph exception, and this one really is fixed: कर्तव्य here is the
+   brand word beside the mark, not a label, so it never translates and never
+   takes the Gujarati face. (It used to cite .crumb__hi for the same reason;
+   the breadcrumb now prints the page's own name and is no longer an example
+   of this.) */
 .side__wm-hi {
   font-family: var(--font-hindi);
   font-size: var(--t-body); font-weight: 400;
@@ -339,11 +343,22 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .crumb { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; min-width: 0; }
 /* --primary-text, not --primary: 00 §12 makes --primary a 4.04:1 fill and
    --primary-text the 5.2:1 text value. 01 §1 predates that split. */
-/* --font-hindi, not --font-indic: this कर्तव्य is a fixed decorative glyph,
-   not a translated label, so it must not follow the language setting into a
-   Gujarati face that has no Devanagari coverage (24 §fixed-glyph exception).
-   01 §1 specifies --font-indic here; that is the one place it is wrong. */
+/* --font-hindi is the DEFAULT, and the [lang="gu"] rule below is the exception.
+   Topbar.jsx no longer prints a hardcoded कर्तव्य here: it prints the page's own
+   Indic name from ROUTE_META, which is Devanagari for most rows and genuinely
+   Gujarati under an EN+GU preference for the nav rows that carry a `gu`.
+
+   So the script varies per row, and the font has to be chosen by what the span
+   actually holds rather than by the preference — Topbar sets `lang` to exactly
+   that and these two rules follow it. Devanagari in the Gujarati face is the
+   silent per-glyph fallback failure 24's fixed-glyph exception exists to stop:
+   the face has no Devanagari coverage, so the word loses its conjuncts rather
+   than failing visibly. 01 §1 specifies --font-indic unconditionally; that is
+   the one place it is wrong, and it is wrong in this direction. */
 .crumb__hi { font-family: var(--font-hindi); font-size: var(--t-body); color: var(--primary-text); }
+/* Set only when the row really has a Gujarati string; --font-indic is repointed
+   per language by applyPrefs, so under EN+GU it is the Gujarati face. */
+.crumb__hi[lang="gu"] { font-family: var(--font-indic); }
 .crumb__sep { color: var(--on-surface-faint); }
 .crumb__cur { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); overflow: hidden; text-overflow: ellipsis; }
 
@@ -2512,14 +2527,18 @@ input, textarea, select { font-family: inherit; color: inherit; }
    repoints --font-indic per language, so no [data-language] selector is
    needed here any more.
 
-   `.crumb__hi` and `.k-pageh__sans` must NOT follow --font-indic. Neither ever
-   holds Gujarati — the breadcrumb is a hardcoded कर्तव्य, and PageHeader's
-   `sanskrit` prop is a fixed Sanskrit term (सजावट, संगठन, प्रमाण). Forcing a
-   Gujarati face onto Devanagari is the same per-glyph fallback failure as the
-   reverse, just less obvious: the font has no Devanagari coverage, so every
-   glyph silently resolves through the fallback chain and the word loses its
-   conjuncts. Both use --font-hindi — 24-bilingual-devanagari.md's fixed-glyph
-   exception. */
+   `.k-pageh__sans` must NOT follow --font-indic: its `sanskrit` prop is a fixed
+   Sanskrit term (सजावट, संगठन, प्रमाण) that never translates. Forcing a Gujarati
+   face onto Devanagari is the same per-glyph fallback failure as the reverse,
+   just less obvious: the font has no Devanagari coverage, so every glyph
+   silently resolves through the fallback chain and the word loses its
+   conjuncts. It uses --font-hindi — 24-bilingual-devanagari.md's fixed-glyph
+   exception.
+
+   `.crumb__hi` was in this list while the breadcrumb printed a hardcoded
+   कर्तव्य. It now prints the page's own name and can legitimately be Gujarati,
+   so it defaults to --font-hindi and takes --font-indic only on [lang="gu"] —
+   see its rule above. */
 
 /* ── Devanagari metrics ───────────────────────────────────────────────────
    Devanagari hangs a headline (शिरोरेखा) above the baseline and drops

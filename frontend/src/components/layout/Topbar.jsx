@@ -12,6 +12,7 @@ import { useLocation } from 'react-router-dom';
 import { resolveRouteMeta } from './navConfig';
 import { ICONS } from './navIcons';
 import { NotificationsModal } from '../NotificationsModal';
+import { useCustomize } from '../CustomizePanel';
 
 // PAGE_META removed — the breadcrumb now derives from navConfig.js.
 // It had 21 entries against far more live routes, so /sanvaad, /graha,
@@ -23,10 +24,34 @@ export default function Topbar({ unread = 0, notifOpen = false, onNotifOpenChang
   const location = useLocation();
   const meta = resolveRouteMeta(location.pathname);
 
+  /**
+   * The Indic half is the PAGE's name, not the product's.
+   *
+   * It was a hardcoded `कर्तव्य`, so every breadcrumb in the app read
+   * "कर्तव्य / <page>" — "कर्तव्य / CRM" on Graha, "कर्तव्य / Payroll" on
+   * Vetana. `resolveRouteMeta` had been returning `hi` and `gu` for exactly this
+   * the whole time and nothing read either field, which is why the earlier fix
+   * to `ROUTE_META`'s first-wins ordering (so Organisation stopped resolving to
+   * "Billing") could not actually be seen on this surface.
+   *
+   * `Chrome.jsx:260-261` is the reference: `{m.hi}` then `{m.en}`, the module's
+   * own pair, and 01 §1's `.crumb__hi` / `.crumb__sep` / `.crumb__cur` is the
+   * three-part structure that renders it.
+   *
+   * It follows the language preference the same way the sidebar does. That is
+   * also what keeps `--font-indic` honest here: the token resolves to Noto Sans
+   * Gujarati under an EN+GU preference, which has zero Devanagari coverage, so a
+   * span that is Devanagari-whatever-the-setting must not use it. This one is
+   * Gujarati under a Gujarati preference, so it may.
+   */
+  const { prefs } = useCustomize();
+  const showGu = prefs.language === 'gu' || prefs.language === 'en+gu';
+  const indic  = (showGu && meta.gu) ? meta.gu : meta.hi;
+
   return (
     <header className="top">
       <div className="crumb">
-        <span className="crumb__hi" lang="hi">कर्तव्य</span>
+        <span className="crumb__hi" lang={(showGu && meta.gu) ? 'gu' : 'hi'}>{indic}</span>
         <span className="crumb__sep" aria-hidden="true">/</span>
         <span className="crumb__cur">{meta.en}</span>
       </div>

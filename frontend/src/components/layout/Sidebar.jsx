@@ -32,8 +32,21 @@ function loadSectionState() {
   return null; // signals "no saved prefs yet" so callers can apply defaults per-section
 }
 
+/**
+ * `true` | `false` | `null`, where NULL means "follow the Customize preference".
+ *
+ * The key keeps its exact name and its exact `'1'` / `'0'` values — 01 §5 says
+ * keep both localStorage keys verbatim, and every stored value still parses to
+ * what it always parsed to. What changes is that ABSENT is no longer folded
+ * into `'0'`: `getItem` returning null used to become `false`, which read as
+ * "the user chose wide" for someone who had never touched the control at all.
+ * That is what made the rail preference and the toggle fight each other.
+ */
 function loadCollapsed() {
-  try { return localStorage.getItem(COLLAPSED_KEY) === '1'; } catch (_) { return false; }
+  try {
+    const v = localStorage.getItem(COLLAPSED_KEY);
+    return v === null ? null : v === '1';
+  } catch (_) { return null; }
 }
 
 /**
@@ -67,16 +80,39 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
     });
   };
 
+  // `prefs.sidebar` seeds the width; the toggle overrides it until the
+  // preference itself changes. One boolean drives the rail, which is what
+  // `Chrome.jsx:124` does with `setRail(!rail)` — there is no second, parallel
+  // notion of collapsed in the reference implementation either.
+  const isRail = prefs.sidebar === 'rail';
+  const rail = !forceWide && (collapsed === null ? isRail : collapsed);
+
   const toggleCollapsed = () => {
-    setCollapsed(prev => {
-      const next = !prev;
-      try { localStorage.setItem(COLLAPSED_KEY, next ? '1' : '0'); } catch (_) { /* ignore */ }
-      return next;
-    });
+    const next = !rail;
+    setCollapsed(next);
+    try { localStorage.setItem(COLLAPSED_KEY, next ? '1' : '0'); } catch (_) { /* ignore */ }
   };
 
-  const isRail = prefs.sidebar === 'rail';
-  const rail = !forceWide && (isRail || collapsed);
+  /**
+   * Changing Sidebar in Customize clears the override.
+   *
+   * Without this the two controls deadlock in the other direction: someone who
+   * had ever pressed Collapse carries a stored `'0'`, and switching the
+   * preference to Rail would then do nothing at all, so the Customize control
+   * reads as broken. The preference sets the default, the toggle overrides it,
+   * and a NEW preference wins back.
+   *
+   * The ref is what keeps this off the mount pass — a bare effect on
+   * `prefs.sidebar` would wipe the stored override on every page load, which is
+   * the same bug wearing different clothes.
+   */
+  const seededFrom = React.useRef(prefs.sidebar);
+  React.useEffect(() => {
+    if (seededFrom.current === prefs.sidebar) return;
+    seededFrom.current = prefs.sidebar;
+    setCollapsed(null);
+    try { localStorage.removeItem(COLLAPSED_KEY); } catch (_) { /* ignore */ }
+  }, [prefs.sidebar]);
 
   // Role predicates moved to navConfig.js and expressed against org_roles.
   // The old `isMember` boolean folded platform roles into the owner test, so
@@ -179,20 +215,32 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
         })}
       </nav>
 
-      {/* The rail toggle is hidden when the rail is the stored preference —
-          there is nothing to toggle back to, and a control that appears to do
-          nothing is worse than no control. */}
-      {!isRail && !forceWide && (
+      {/* Rendered in RAIL TOO. It used to be hidden whenever the rail was the
+          stored preference, on the reasoning that there was nothing to toggle
+          back to — which was only true because the toggle wrote to a second
+          boolean the preference already overrode. The result was that anyone
+          who chose Sidebar = Rail in Customize had no way to widen it again
+          without going back into Customize.
+
+          `editorial.css:324-326` had already been written for this: it sizes
+          `.side--rail .side__toggle` to 32px and rotates `.side__toggle-chev`
+          180°, turning the left chevron into a right one. Both rules were dead
+          because the element never mounted in that state. Rotating one glyph is
+          also how `Chrome.jsx:125` spells it — `rail ? I.chevR : I.chevL`.
+
+          `forceWide` still suppresses it: MobileDrawer pins the sidebar wide,
+          and a collapse control inside a 280px overlay has nothing to do. */}
+      {!forceWide && (
         <button
           type="button"
           className="side__toggle"
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!rail}
+          aria-label={rail ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={rail ? 'Expand sidebar' : 'Collapse sidebar'}
           onClick={toggleCollapsed}
         >
           <span className="side__toggle-chev" aria-hidden="true">{ICONS.chevL}</span>
-          {!collapsed && <span>Collapse</span>}
+          {!rail && <span>Collapse</span>}
         </button>
       )}
 
