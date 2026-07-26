@@ -77,8 +77,16 @@ export default function Footer() {
           {/* --font-hindi, not --font-indic (24 §Which token, where): this is a
               fixed glyph — the product's own name — not a label that follows the
               language setting. In EN+GU, --font-indic resolves to Noto Sans
-              Gujarati, which has no Devanagari coverage. */}
-          <span className="lfoot__sans" lang="sa">कर्तव्य — that which must be done</span>
+              Gujarati, which has no Devanagari coverage.
+
+              lang="sa" covers कर्तव्य ONLY. It previously wrapped the English
+              gloss too, which hands "that which must be done" to a screen
+              reader's Sanskrit voice — the same defect class as the PageHeader
+              lang="sa" sweep, in the one place that sweep did not reach.
+              CustomizeSettingsPage already does it this way: Devanagari inside
+              the lang span, English outside it. */}
+          <span className="lfoot__sans" lang="sa">कर्तव्य</span>
+          <span> — that which must be done</span>
         </div>
       </div>
     </footer>

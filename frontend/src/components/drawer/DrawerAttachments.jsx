@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Paperclip, ExternalLink, Trash2, Upload, Image as ImageIcon, FileText, Film, Lock, Unlock, X, Eye, Check } from 'lucide-react';
 import Popover from '../ui/Popover';
+import FocusTrap from '../ui/FocusTrap';
 
 /**
  * DrawerAttachments — the largest file in the drawer, restyled to the drop-zone
@@ -112,6 +113,7 @@ function PrivacyPicker({ file, members, currentUserId, onChange }) {
 
 function Lightbox({ file, onClose }) {
   const name = file.name || file.url?.split('/').pop() || 'File';
+  const closeRef = useRef(null);
   const [imgError, setImgError] = useState(false);
   const isHttp = /^https?:\/\//i.test(file.url || '');
   const showDoc = isPdf(name) || (isOffice(name) && isHttp);
@@ -123,6 +125,18 @@ function Lightbox({ file, onClose }) {
     || (!isImage(name) && !isVideo(name) && !showDoc);
 
   return (
+    /* aria-modal="true" was a promise this overlay did not keep: it told a
+       screen reader the rest of the page was inert while Tab walked straight
+       out of it into the drawer behind. The lightbox is opened FROM the drawer,
+       which is itself trapped, so escaping it landed focus in a second modal
+       layer with no way back.
+
+       autoFocus on the close button is replaced by initialFocus. autoFocus
+       fires on mount only, so re-opening the lightbox for a different file
+       within the same mount left focus wherever it was; and it gave no focus
+       RESTORE at all, so closing the preview dropped a keyboard user at the top
+       of the document instead of back on the file row they opened. */
+    <FocusTrap active initialFocus={closeRef}>
     <div
       className="dr__lb"
       role="dialog"
@@ -131,7 +145,7 @@ function Lightbox({ file, onClose }) {
       onClick={e => e.target === e.currentTarget && onClose()}
       onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }}
     >
-      <button type="button" className="dr__lb-x" onClick={onClose} aria-label="Close preview" autoFocus>
+      <button type="button" ref={closeRef} className="dr__lb-x" onClick={onClose} aria-label="Close preview">
         <X size={18} />
       </button>
 
@@ -173,6 +187,7 @@ function Lightbox({ file, onClose }) {
         </a>
       )}
     </div>
+    </FocusTrap>
   );
 }
 

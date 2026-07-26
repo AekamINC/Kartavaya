@@ -9,6 +9,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
+import FocusTrap from './ui/FocusTrap';
 import { api } from '../lib/api';
 
 import { PRIORITY_COLOR, logger } from '../lib/utils';
@@ -368,10 +369,18 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
           <div>, so a screen reader kept announcing the page behind it and never
           said a dialog had opened.
 
-          STILL MISSING, and outside an ARIA-only change: no <FocusTrap>. Tab
-          walks out of this panel into the board underneath. Wrap the
-          `.k-modal` div in <FocusTrap active> the way modal.jsx, Sheet.jsx and
-          ConfirmDialog.jsx already do. */}
+          The FocusTrap below closes the gap this comment used to describe: Tab
+          walked out of the panel into the board underneath, so a keyboard user
+          was editing a row they could not see, inside a modal they had no way
+          to tell they were still in. Wrapping the `.k-modal` div — not the
+          scrim — is FocusTrap's own contract, and its display:contents wrapper
+          means the panel does not move by a pixel.
+
+          The preview lightbox stays OUTSIDE this trap deliberately. It portals
+          to document.body, so it is not a DOM descendant of the panel; a trap
+          around it here would rebuild its focusable list from a subtree the
+          lightbox is not in and strand focus. It carries its own trap. */}
+      <FocusTrap active>
       <div className="k-modal" role="dialog" aria-modal="true" aria-labelledby="ntm-title">
 
 
@@ -1003,6 +1012,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
         </div>
 
       </div>
+      </FocusTrap>
 
       {/* Preview lightbox — portalled to body to escape modal stacking context */}
       {previewFile && createPortal(
