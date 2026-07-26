@@ -39,7 +39,7 @@ function formatBytes(bytes) {
 // ── Create Org Form ─────────────────────────────────────────
 
 function CreateOrgForm({ onCreated, pushToast }) {
-  const [form, setForm] = useState({ name: '', owner_email: '', plan_code: 'starter', markup_pct: 0.30, monthly_credits: 500, monthly_price: 10000 });
+  const [form, setForm] = useState({ name: '', owner_email: '', plan_code: 'starter', markup_pct: 0.30, monthly_credits: 500, monthly_price: 10000, max_users: 5 });
   const [r2, setR2] = useState({ account_id: '', access_key_id: '', secret_access_key: '', bucket_name: 'kartavya-storage' });
   const [showR2, setShowR2] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -77,7 +77,7 @@ function CreateOrgForm({ onCreated, pushToast }) {
       if (showR2 && r2.account_id) payload.r2 = r2;
       const res = await api.post('/v1/admin/orgs', payload);
       pushToast({ type: 'success', title: `Org "${res.data.name}" created`, message: `Plan: ${res.data.plan}` });
-      setForm({ name: '', owner_email: '', plan_code: 'starter', markup_pct: 0.30, monthly_credits: 500, monthly_price: 10000 });
+      setForm({ name: '', owner_email: '', plan_code: 'starter', markup_pct: 0.30, monthly_credits: 500, monthly_price: 10000, max_users: 5 });
       setR2({ account_id: '', access_key_id: '', secret_access_key: '', bucket_name: 'kartavya-storage' });
       setShowR2(false);
       setR2Valid(null);
@@ -136,6 +136,19 @@ function CreateOrgForm({ onCreated, pushToast }) {
             value={form.monthly_price}
             onChange={e => setForm(f => ({ ...f, monthly_price: Number(e.target.value) }))}
             style={{ width: '100%' }} />
+        </div>
+        <div>
+          <label style={labelSt}>Seats (users)</label>
+          {/* step=5 so the arrows walk the pricing increments, but the field
+              stays a plain number — a negotiated 12 must remain typable, and
+              the constraint is commercial rather than technical. */}
+          <input className="k-input" type="number" min="1" step="5"
+            value={form.max_users}
+            onChange={e => setForm(f => ({ ...f, max_users: Number(e.target.value) }))}
+            style={{ width: '100%' }} />
+          <div style={{ fontSize: 11, color: 'var(--on-surface-3)', marginTop: 3 }}>
+            Basic starts at 5, sold in fives. Enforced when adding members.
+          </div>
         </div>
       </div>
 

@@ -103,6 +103,38 @@ async def add_member(
     if existing:
         raise HTTPException(409, f"{body.email} is already a member of this organisation")
 
+    # Seat limit. max_users was previously READ in two places and enforced in
+    # none — /v1/subscription/usage returned it and BillingPage displayed it,
+    # but nothing stopped an org adding members past it. A limit that is
+    # displayed and not applied is worse than no limit: it tells the customer
+    # they are capped at 5 while letting them add 50, and the discrepancy
+    # surfaces at billing.
+    #
+    # COALESCE order matters — the org's own seat count wins over the tier
+    # default. NULL on both means unlimited, which is correct for the tiers
+    # that are not sold per user; it must not collapse to 0.
+    limit = await pool.fetchval(
+        "SELECT COALESCE(o.max_users, p.max_users) "
+        "FROM staging.organisations o "
+        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
+        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
+        "WHERE o.id=$1::uuid",
+        org_id,
+    )
+    if limit is not None:
+        seats_used = await pool.fetchval(
+            "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+            "WHERE org_id=$1::uuid "
+            "AND role_code IN ('org_owner','org_admin','org_member')",
+            org_id,
+        ) or 0
+        if seats_used >= limit:
+            raise HTTPException(
+                403,
+                f"This organisation is using all {limit} of its seats. "
+                "Remove a member, or ask your account manager to add seats.",
+            )
+
     await pool.execute(
         "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
         "VALUES ($1, $2::uuid, $3, $4) "
