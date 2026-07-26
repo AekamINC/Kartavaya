@@ -22,7 +22,7 @@ from middleware.role_tiers import (
     OPERATIONS_CONSOLE_ROLES, SRIJAN_COMMERCIAL_ROLES,
 )
 from middleware.subscription import require_module
-from services.ai_router import generate, generate_image, generate_rich_content, deduct_credits, deduct_org_credits, CREDIT_COSTS, CREDIT_PRICE_INR
+from services.ai_router import generate, generate_image, generate_rich_content, deduct_credits, deduct_org_credits, CREDIT_COSTS
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
 
@@ -1561,7 +1561,11 @@ async def get_org_credits(
         "user_allocation": dict(user_alloc) if user_alloc else {"allocated": 0, "used": 0},
         "recent_transactions": [dict(r) for r in recent_tx],
         "credit_costs": CREDIT_COSTS,
-        "price_per_credit_inr": CREDIT_PRICE_INR,
+        # `price_per_credit_inr` was served here. Our rupee price is not a tenant
+        # fact — the org needs its balance and what each action spends, not what
+        # a credit costs us to sell. Owner's standing rule: no pricing figures on
+        # any client-reachable surface. The platform console keeps its margin
+        # view; that router is behind require_platform_role end to end.
     }
 
 

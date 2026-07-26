@@ -838,7 +838,6 @@ function GenerateTab({ credits, onCreditsChange }) {
 
 function CreditsTab({ credits }) {
   const txns = credits?.recent_transactions || [];
-  const pricePerCredit = credits?.price_per_credit_inr || 4;
 
   const planCredits = credits?.org_balance?.plan_credits ?? 0;
   const orgUsed = credits?.org_balance?.used ?? 0;
@@ -850,9 +849,6 @@ function CreditsTab({ credits }) {
         <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: 16 }}>
           <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 4, fontWeight: 600 }}>Org Balance</div>
           <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--k-primary)' }}>{computedBalance}</div>
-          <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2 }}>
-            ≈ ₹{(computedBalance * pricePerCredit).toLocaleString('en-IN')}
-          </div>
         </div>
         <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: 16 }}>
           <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 4, fontWeight: 600 }}>Your Allocation</div>
@@ -870,12 +866,16 @@ function CreditsTab({ credits }) {
         </div>
       </div>
 
-      <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Pricing — ₹{pricePerCredit} per credit</h3>
+      {/* This block used to price every action in rupees, off a per-credit rate
+          the API served and a hardcoded fallback here. What an org needs is what
+          an action SPENDS — credits. The rupee value of a credit is our price
+          and does not belong on a tenant surface. */}
+      <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Credit cost per action</h3>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
         {Object.entries(credits?.credit_costs || {}).map(([k, v]) => (
           <span key={k} style={{ fontSize: 11, padding: '4px 12px', borderRadius: 99,
             background: 'var(--surface-1)', border: '1px solid var(--rule-soft)' }}>
-            <strong>{AGENT_LABELS[k] || k}</strong>: {v} cr · ₹{v * pricePerCredit}
+            <strong>{AGENT_LABELS[k] || k}</strong>: {v} cr
           </span>
         ))}
       </div>
