@@ -944,11 +944,20 @@ async def download_payslip_pdf(
     logger = logging.getLogger(__name__)
     pool = await get_pool()
 
+    # `date_of_joining` and `esi_number` are here because the payslip
+    # specification asks for them — `design-reference/Kartavaya Redesign/docs/
+    # Payslip.html` prints "Joined 14 Mar 2023" in the employee block and
+    # "ESI 3101234567" in the statutory block. Both columns already exist on
+    # `staging.manav_employees` (they are in manav's `_EMP_SAFE_COLS`); nothing
+    # was selecting them, so the renderer could not have shown them even once it
+    # is rewritten to. See the payslip gap list in the swarm report for the two
+    # fields that have no column at all yet.
     row = await pool.fetchrow(
         "SELECT p.*, "
         "e.name AS employee_name, e.employee_code, e.designation, "
-        "e.pan AS emp_pan, e.uan, e.bank_details, e.email AS emp_email, "
-        "e.user_id AS employee_user_id, "
+        "e.pan AS emp_pan, e.uan, e.esi_number, e.date_of_joining, "
+        "e.bank_details, e.email AS emp_email, "
+        "e.user_id AS employee_user_id, e.id AS emp_row_id, "
         "COALESCE(d.name, e.department, '') AS department_name "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
@@ -997,6 +1006,23 @@ async def download_payslip_pdf(
     if isinstance(bank_details, str):
         bank_details = json.loads(bank_details or "{}")
 
+    # The leave-balance table is part of the payslip specification — four
+    # columns, Type / Opening / Taken / Balance. `manav_leave_balances` already
+    # holds all four (opening is allocated + carried_forward); nothing was
+    # reading them here.
+    emp_row_id = payslip.pop("emp_row_id", None)
+    leave_rows = await pool.fetch(
+        "SELECT lt.name AS leave_name, lb.allocated, lb.used, lb.carried_forward "
+        "FROM staging.manav_leave_balances lb "
+        "JOIN staging.manav_leave_types lt ON lt.id = lb.leave_type_id "
+        "WHERE lb.employee_id=$1::uuid "
+        "AND lb.year=EXTRACT(YEAR FROM CURRENT_DATE)::int "
+        "ORDER BY lt.name",
+        str(emp_row_id),
+    ) if emp_row_id else []
+
+    account_number = bank_details.get("account_number", "") or ""
+
     employee = {
         "name": payslip.pop("employee_name", ""),
         "employee_code": payslip.pop("employee_code", ""),
@@ -1004,9 +1030,29 @@ async def download_payslip_pdf(
         "designation": payslip.pop("designation", ""),
         "pan": payslip.pop("emp_pan", ""),
         "uan": payslip.pop("uan", ""),
-        "bank_account": bank_details.get("account_number", ""),
+        "esi_number": payslip.pop("esi_number", "") or "",
+        "date_of_joining": payslip.pop("date_of_joining", None),
+        "bank_account": account_number,
+        # The specification prints "A/c ending 4417", not the whole number — the
+        # payslip is a document that gets forwarded and filed, and the last four
+        # are all it needs to identify the account. Supplied separately so the
+        # renderer can move to it without this endpoint changing again.
+        "bank_account_last4": account_number[-4:] if account_number else "",
         "bank_name": bank_details.get("bank_name", ""),
         "email": payslip.pop("emp_email", ""),
+        "leave_balances": [
+            {
+                "name": r["leave_name"],
+                "opening": float(r["allocated"] or 0) + float(r["carried_forward"] or 0),
+                "taken": float(r["used"] or 0),
+                "balance": (
+                    float(r["allocated"] or 0)
+                    + float(r["carried_forward"] or 0)
+                    - float(r["used"] or 0)
+                ),
+            }
+            for r in leave_rows
+        ],
     }
 
     org_dict = dict(org) if org else {}

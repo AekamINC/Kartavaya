@@ -518,6 +518,57 @@ async def test_someone_elses_payslip_pdf_is_audited_for_an_admin(
     assert kw["detail"]["fields"] == ["pan", "uan", "bank_account"]
 
 
+# ── The payslip document gets the fields its specification asks for ──────────
+
+async def test_payslip_pdf_payload_carries_the_specified_employee_fields(
+    api_client, mock_pool, as_member, org_a, monkeypatch,
+):
+    """`design-reference/Kartavaya Redesign/docs/Payslip.html` is the
+    specification for this document. It prints a joining date, an ESI number, a
+    leave-balance table and "A/c ending NNNN" — none of which the query behind
+    this endpoint was selecting, so the renderer could not have shown them.
+
+    This asserts the DATA reaches the renderer. The renderer itself still does
+    not lay them out; that gap is recorded in the swarm report.
+    """
+    captured = {}
+
+    def _fake_pdf(payslip, employee, org):
+        captured["employee"] = employee
+        captured["payslip"] = payslip
+        return b"%PDF-1.4 fake"
+
+    monkeypatch.setattr("services.payslip_pdf.generate_payslip_pdf", _fake_pdf)
+
+    mock_pool.fetchrow.return_value = {
+        **PAYSLIP_ROW,
+        "employee_user_id": "user_mem001",
+        "emp_row_id": EMP_SELF,
+        "emp_pan": "ABCDE1234F",
+        "esi_number": "3101234567",
+        "date_of_joining": "2023-03-14",
+        "designation": "Manager",
+        "department_name": "Finance",
+        "emp_email": "member@test.com",
+    }
+    mock_pool.fetch.return_value = [
+        {"leave_name": "Earned leave", "allocated": 18, "used": 3, "carried_forward": 0},
+    ]
+
+    resp = await api_client.get(
+        "/api/v1/vetana/payslips/p0000000-0000-0000-0000-000000000001/pdf"
+    )
+    assert resp.status_code == 200
+
+    emp = captured["employee"]
+    assert emp["date_of_joining"] == "2023-03-14"
+    assert emp["esi_number"] == "3101234567"
+    assert emp["bank_account_last4"] == "8901"
+    assert emp["leave_balances"] == [
+        {"name": "Earned leave", "opening": 18.0, "taken": 3.0, "balance": 15.0},
+    ]
+
+
 # ── Cross-tenant write guards ─────────────────────────────────────
 
 async def test_create_loan_rejects_an_employee_from_another_org(
