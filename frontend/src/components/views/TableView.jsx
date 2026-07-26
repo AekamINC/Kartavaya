@@ -1,237 +1,461 @@
-/**
- * TableView.jsx — sortable, filterable, grouped table on k-* design system.
- */
-import DueChip from '../editorial/DueChip';
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+
+import { api } from '../../lib/api';
+import { logger } from '../../lib/utils';
+import { PRIORITY_COLORS, PRIORITY_LABELS } from '../../lib/statusColors';
+
 import TaskDrawer from '../TaskDrawer';
 import FieldRenderer from '../fields/FieldRenderer';
-import { EmptyState } from '../ui/EmptyState';
+import {
+  Checkbox, DueChip, EmptyState, Popover, nextSort, useToast,
+} from '../ui';
 
-import { priorityColor } from '../../lib/utils';
+import ViewToolbar from './ViewToolbar';
+import FilterBuilder, { applyFilters, filterFields } from './FilterBuilder';
+import BulkBar from './BulkBar';
+import { groupTasks, PRIORITY_RANK } from './grouping';
+import { useColumnResize, useTableSelection } from './tableHooks';
 
-const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
+/**
+ * TableView — sortable, filterable, groupable, selectable task table
+ * (04-boards-table-views.md §5).
+ *
+ * The five defects 04 names, and what each is now:
+ *
+ *  1 · **Sort was two-state and reflowed the header.** It appended `' ↑'` to
+ *      the label text, so toggling sort widened the cell and every column
+ *      beside it shifted. It is now the `.tbl__sort` button from
+ *      `ui/Table.jsx`: a 12px SVG slot that holds its space and fades in, and
+ *      `nextSort` — ascending → descending → **none**. The third state matters
+ *      because none is `sort_order`, the board's manual sequence, and a
+ *      two-state sort gives a user no way back to it.
+ *  2 · **`:hover` was an inline style.** `onMouseEnter` wrote
+ *      `e.currentTarget.style.background`, an inline declaration that then
+ *      outranks any selection or focus styling added later — which is exactly
+ *      what happened the moment rows became selectable. It is CSS now.
+ *  3 · **Grouping was insertion-ordered.** `Object.entries` listed priority
+ *      groups in whatever order rows arrived, so adding one task could
+ *      reshuffle the page. `grouping.js` emits declared order.
+ *  4 · **The field-visibility reset.** `useEffect(… , [fieldDefs?.length])`
+ *      rebuilt the visible list from scratch whenever a field was added or
+ *      removed, discarding every column the user had hidden. Visibility is now
+ *      persisted per board and reconciled **by id**: a new field appears, an
+ *      existing choice is left alone.
+ *  5 · **The `<details>` field menu.** It did not close on outside click, did
+ *      not close on Escape, and announced as a disclosure. It is a `Popover`,
+ *      which owns all three. 04 names `Menu`; `Menu` closes on select, and this
+ *      is a multi-toggle list where that turns hiding three columns into six
+ *      round trips. `Popover` is the same portal, the same z-index, the same
+ *      Escape and outside-click contract — it just does not dismiss on pick.
+ *
+ * `--danger` for overdue, not `--k-danger`: the two were used in sibling files
+ * for the same colour and one of them is undefined. Both are gone from here —
+ * overdue tone belongs to `DueChip`.
+ */
 
-function Th({ label, sortKey, sort, onSort, width }) {
-  const active = sort?.key === sortKey;
+const GROUPS = [
+  { id: 'none', label: 'No grouping' },
+  { id: 'column', label: 'Column' },
+  { id: 'status', label: 'Status' },
+  { id: 'priority', label: 'Priority' },
+];
+
+const BASE_COLS = [
+  { key: 'title', label: 'Title', sortKey: 'title', width: 320, min: 160 },
+  { key: 'column_id', label: 'Column', sortKey: 'column_id', width: 150, min: 110 },
+  { key: 'priority', label: 'Priority', sortKey: 'priority', width: 120, min: 100 },
+  { key: 'created_by', label: 'Created by', sortKey: 'created_by_name', width: 150, min: 110 },
+  { key: 'due_at', label: 'Due', sortKey: 'due_at', width: 150, min: 120 },
+];
+
+/**
+ * A sortable, resizable header cell.
+ *
+ * `ui/Table.jsx`'s `HeadCell` renders the label inside the sort button, and the
+ * resize grip has to live in the `<th>` but outside that button — a grip inside
+ * a button is a grip that sorts the column every time you finish dragging it.
+ * So this reuses the primitive's state machine (`nextSort`) and its class
+ * (`.tbl__sort`, including the reserved-width chevron) rather than its markup.
+ */
+function Th({ col, sort, onSort, width, onGrip, gripActive }) {
+  const dir = sort?.key === col.sortKey ? sort.dir : null;
   return (
-    <th onClick={() => sortKey && onSort(sortKey)} style={{
-      padding: '9px 14px', textAlign: 'left',
-      fontSize: 10.5, fontWeight: 700, color: 'var(--ink-3)',
-      textTransform: 'uppercase', letterSpacing: '0.08em',
-      whiteSpace: 'nowrap', width,
-      cursor: sortKey ? 'pointer' : 'default', userSelect: 'none',
-      borderBottom: '1px solid var(--rule)',
-      background: 'var(--bg-soft)',
-    }}>
-      {label}{active ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
+    <th scope="col" style={{ width }} aria-sort={dir || 'none'}>
+      {col.sortKey ? (
+        <button
+          type="button"
+          className="tbl__sort"
+          aria-sort={dir || 'none'}
+          onClick={() => {
+            const d = nextSort(dir);
+            onSort(d ? { key: col.sortKey, dir: d } : null);
+          }}
+        >
+          {col.label}
+          <svg className="ch" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+      ) : col.label}
+      {onGrip && (
+        <span
+          className={['tb__grip', gripActive && 'on'].filter(Boolean).join(' ')}
+          onPointerDown={e => onGrip(e, col.key, col.min)}
+          onClick={e => e.stopPropagation()}
+        />
+      )}
     </th>
   );
 }
 
-function PriorityBadge({ priority }) {
-  const color = priorityColor(priority);
-  return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 5,
-      fontSize: 11, fontWeight: 600, color,
-    }}>
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0, display: 'inline-block' }} />
-      {priority || '—'}
-    </span>
-  );
-}
-
-function ColBadge({ col }) {
-  if (!col) return <span style={{ color: 'var(--ink-faint)' }}>—</span>;
-  return (
-    <span style={{
-      fontSize: 11, fontWeight: 600,
-      background: col.color + '22', color: col.color,
-      border: `1px solid ${col.color}44`,
-      borderRadius: 99, padding: '2px 8px', whiteSpace: 'nowrap',
-    }}>{col.name}</span>
-  );
-}
-
-export default function TableView({ tasks, columns, fieldDefs, fieldValueMap, teamMembers, onTasksChange }) {
-  const [sort,    setSort]    = useState({ key: 'sort_order', dir: 'asc' });
-  const [filter,  setFilter]  = useState('');
+export default function TableView({
+  tasks, columns, fieldDefs, fieldValueMap, teamMembers, onTasksChange, boardId,
+}) {
+  const { pushToast } = useToast();
+  const [sort, setSort] = useState(null);
+  const [search, setSearch] = useState('');
+  const [clauses, setClauses] = useState([]);
   const [groupBy, setGroupBy] = useState('none');
-  const [drawer,  setDrawer]  = useState(null);
-  const [visibleFields, setVisible] = useState(() => (fieldDefs || []).map(f => f.field_id));
-  React.useEffect(() => { setVisible((fieldDefs || []).map(f => f.field_id)); }, [fieldDefs?.length]);
+  const [drawer, setDrawer] = useState(null);
+  const [valueEdits, setValueEdits] = useState({});
 
-  const colMap = useMemo(() => Object.fromEntries((columns || []).map(c => [c.column_id, c])), [columns]);
-  const handleSort = (key) => setSort(s => ({ key, dir: s.key === key && s.dir === 'asc' ? 'desc' : 'asc' }));
+  const boardKey = boardId || columns?.[0]?.team_id || columns?.[0]?.project_id || 'default';
+  const defs = useMemo(() => fieldDefs || [], [fieldDefs]);
+
+  // ── Field visibility, persisted and reconciled by id ──────────────────────
+  // The old effect keyed on `fieldDefs?.length` and rebuilt the whole list, so
+  // adding one custom field un-hid every column the user had hidden.
+  const visKey = `kv.table.fields.${boardKey}`;
+  const [hidden, setHidden] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(visKey) || '[]')); }
+    catch { return new Set(); }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(visKey, JSON.stringify([...hidden])); }
+    catch { /* quota or private mode — visibility is not worth failing over */ }
+  }, [hidden, visKey]);
+
+  const shownFields = useMemo(() => defs.filter(f => !hidden.has(f.field_id)), [defs, hidden]);
+
+  const allCols = useMemo(() => [
+    ...BASE_COLS,
+    ...shownFields.map(f => ({ key: `f:${f.field_id}`, label: f.name, sortKey: null, width: 140, min: 90 })),
+  ], [shownFields]);
+
+  const { widths, activeKey, onPointerDown, onPointerMove, onPointerUp } =
+    useColumnResize(allCols, `kv.table.widths.${boardKey}`);
+
+  // ── Filter · search · sort · group ────────────────────────────────────────
+  const fields = useMemo(() => filterFields(columns), [columns]);
+  const colMap = useMemo(
+    () => Object.fromEntries((columns || []).map(c => [c.column_id, c])),
+    [columns],
+  );
 
   const filtered = useMemo(() => {
-    const q = filter.toLowerCase();
-    return (tasks || []).filter(t => !q || t.title.toLowerCase().includes(q));
-  }, [tasks, filter]);
+    const q = search.trim().toLowerCase();
+    const base = q
+      ? (tasks || []).filter(t => (t.title || '').toLowerCase().includes(q))
+      : (tasks || []);
+    return applyFilters(base, clauses, fields);
+  }, [tasks, search, clauses, fields]);
 
   const sorted = useMemo(() => {
+    if (!sort) {
+      return [...filtered].sort((a, b) => (a.order ?? a.sort_order ?? 0) - (b.order ?? b.sort_order ?? 0));
+    }
+    const mul = sort.dir === 'ascending' ? 1 : -1;
     return [...filtered].sort((a, b) => {
-      let av = a[sort.key], bv = b[sort.key];
-      if (sort.key === 'priority') { av = PRIORITY_ORDER[av] ?? 99; bv = PRIORITY_ORDER[bv] ?? 99; }
-      if (sort.key === 'due_at') { av = av ? new Date(av).getTime() : Infinity; bv = bv ? new Date(bv).getTime() : Infinity; }
-      if (av < bv) return sort.dir === 'asc' ? -1 : 1;
-      if (av > bv) return sort.dir === 'asc' ? 1 : -1;
+      let av = a[sort.key];
+      let bv = b[sort.key];
+      if (sort.key === 'priority') { av = PRIORITY_RANK[av] ?? 99; bv = PRIORITY_RANK[bv] ?? 99; }
+      else if (sort.key === 'due_at') {
+        // Undated tasks sort last in BOTH directions. Treating "no due date" as
+        // year zero puts every undated task at the top of an ascending sort,
+        // which is the opposite of what "show me what is due soonest" means.
+        av = av ? new Date(av).getTime() : Infinity;
+        bv = bv ? new Date(bv).getTime() : Infinity;
+        if (av === Infinity || bv === Infinity) return av === bv ? 0 : (av === Infinity ? 1 : -1);
+      } else if (sort.key === 'column_id') {
+        av = colMap[av]?.name ?? '';
+        bv = colMap[bv]?.name ?? '';
+      } else {
+        av = av ?? '';
+        bv = bv ?? '';
+      }
+      if (av < bv) return -1 * mul;
+      if (av > bv) return 1 * mul;
       return 0;
     });
-  }, [filtered, sort]);
+  }, [filtered, sort, colMap]);
 
-  const grouped = useMemo(() => {
-    if (groupBy === 'none') return [{ label: null, rows: sorted }];
-    const groups = {};
-    sorted.forEach(t => {
-      const key = groupBy === 'column' ? (colMap[t.column_id]?.name || 'Uncategorised')
-        : groupBy === 'status' ? t.status : t.priority;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(t);
-    });
-    return Object.entries(groups).map(([label, rows]) => ({ label, rows }));
-  }, [sorted, groupBy, colMap]);
+  const grouped = useMemo(() => groupTasks(sorted, groupBy, columns), [sorted, groupBy, columns]);
 
-  const shownFields = (fieldDefs || []).filter(f => visibleFields.includes(f.field_id));
+  // ── Selection ─────────────────────────────────────────────────────────────
+  const orderedIds = useMemo(() => sorted.map(t => t.task_id), [sorted]);
+  const { selected, toggle, toggleAll, clear, allSelected, someSelected } = useTableSelection(orderedIds);
+
+  // ── Inline custom-field editing ───────────────────────────────────────────
+  // `FieldRenderer` has taken `onChange` and `readOnly` all along; the table was
+  // the thing calling it with `readOnly` and `onChange={() => {}}`, which is why
+  // custom-field cells were permanently read-only.
+  const saveValue = useCallback(async (taskId, fieldId, value) => {
+    setValueEdits(prev => ({ ...prev, [taskId]: { ...(prev[taskId] || {}), [fieldId]: value } }));
+    try {
+      await api.put(`/fields/task/${taskId}/values`, [{ field_id: fieldId, value }]);
+    } catch (e) {
+      logger.error('Field value save failed', e);
+      pushToast({ type: 'error', title: 'Could not save that value' });
+      setValueEdits(prev => {
+        const next = { ...(prev[taskId] || {}) };
+        delete next[fieldId];
+        return { ...prev, [taskId]: next };
+      });
+    }
+  }, [pushToast]);
+
+  const colCount = 1 + allCols.length;
 
   return (
     <>
-      {/* Toolbar */}
-      <div className="k-filterbar" style={{ marginBottom: 14 }}>
-        <input
-          className="k-input"
-          style={{ width: 220 }}
-          placeholder="Filter tasks…"
-          value={filter}
-          onChange={e => setFilter(e.target.value)}
-        />
-        <select
-          className="k-input"
-          style={{ width: 'auto' }}
-          value={groupBy}
-          onChange={e => setGroupBy(e.target.value)}
-        >
-          <option value="none">No grouping</option>
-          <option value="column">Group by column</option>
-          <option value="status">Group by status</option>
-          <option value="priority">Group by priority</option>
-        </select>
-        {(fieldDefs || []).length > 0 && (
-          <details style={{ position: 'relative' }}>
-            <summary className="k-btn k-btn--ghost k-btn--sm" style={{ listStyle: 'none', cursor: 'pointer' }}>
-              Fields ▾
-            </summary>
-            <div style={{
-              position: 'absolute', top: '100%', left: 0, zIndex: 50, marginTop: 4,
-              background: 'var(--surface)', border: '1px solid var(--rule)',
-              borderRadius: 'var(--r-md)', boxShadow: 'var(--shadow-md)',
-              padding: 10, minWidth: 180,
-            }}>
-              {(fieldDefs || []).map(f => (
-                <label key={f.field_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13, cursor: 'pointer', color: 'var(--ink-2)' }}>
-                  <input type="checkbox" checked={visibleFields.includes(f.field_id)}
-                    onChange={e => setVisible(v => e.target.checked ? [...v, f.field_id] : v.filter(id => id !== f.field_id))} />
-                  {f.name}
-                </label>
-              ))}
+      <ViewToolbar
+        search={search}
+        onSearch={setSearch}
+        searchPlaceholder="Filter tasks…"
+        groups={GROUPS}
+        group={groupBy}
+        onGroup={setGroupBy}
+        count={filtered.length}
+        end={defs.length > 0 && (
+          <Popover
+            label="Column visibility"
+            align="right"
+            trigger={
+              <span className="btn btn--out btn--sm">
+                Fields{hidden.size > 0 ? ` · ${defs.length - hidden.size}/${defs.length}` : ''}
+              </span>
+            }
+          >
+            {/* The whole row is the control, not a 17px box beside a label.
+                `role="checkbox"` with `aria-checked` on the row is the same
+                shape `Picker`'s multi mode uses, so the two read identically
+                to a screen reader. */}
+            <div className="tb__fields">
+              {defs.map(f => {
+                const on = !hidden.has(f.field_id);
+                return (
+                  <button
+                    key={f.field_id}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={on}
+                    className="tb__field"
+                    onClick={() => setHidden(prev => {
+                      const next = new Set(prev);
+                      if (next.has(f.field_id)) next.delete(f.field_id);
+                      else next.add(f.field_id);
+                      return next;
+                    })}
+                  >
+                    <span className={on ? 'cbx on' : 'cbx'} aria-hidden="true">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M20 6L9 17l-5-5" />
+                      </svg>
+                    </span>
+                    {f.name}
+                  </button>
+                );
+              })}
             </div>
-          </details>
+          </Popover>
         )}
-        <span style={{ marginLeft: 'auto', color: 'var(--ink-3)', fontSize: 12, fontFamily: 'var(--font-mono)' }}>
-          {filtered.length} tasks
-        </span>
-      </div>
+      >
+        <FilterBuilder fields={fields} clauses={clauses} onChange={setClauses} />
+      </ViewToolbar>
 
-      {/* Table */}
-      <div style={{ overflowX: 'auto', borderRadius: 'var(--r-md)', border: '1px solid var(--rule)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr>
-              <Th label="Title"      sortKey="title"     sort={sort} onSort={handleSort} width="36%" />
-              <Th label="Column"     sortKey="column_id" sort={sort} onSort={handleSort} width="13%" />
-              <Th label="Priority"   sortKey="priority"  sort={sort} onSort={handleSort} width="10%" />
-              <Th label="Created by" sortKey={null}      sort={sort} onSort={handleSort} width="14%" />
-              <Th label="Due"        sortKey="due_at"    sort={sort} onSort={handleSort} width="11%" />
-              {shownFields.map(f => <Th key={f.field_id} label={f.name} sortKey={null} sort={sort} onSort={handleSort} width="120px" />)}
-            </tr>
-          </thead>
-          <tbody>
-            {grouped.map(({ label, rows }, gi) => (
-              <React.Fragment key={gi}>
-                {label && (
-                  <tr>
-                    <td colSpan={5 + shownFields.length} style={{
-                      padding: '8px 14px', fontSize: 10.5, fontWeight: 700,
-                      color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em',
-                      background: 'var(--bg-soft)', borderBottom: '1px solid var(--rule)',
-                    }}>
-                      {label} <span style={{ fontWeight: 400, opacity: 0.6 }}>({rows.length})</span>
-                    </td>
-                  </tr>
-                )}
-                {rows.map(task => {
-                  const col = colMap[task.column_id];
-                  const fvals = fieldValueMap?.[task.task_id] || {};
-                  return (
-                    <tr key={task.task_id}
-                      onClick={() => setDrawer(task.task_id)}
-                      style={{ borderBottom: '1px solid var(--rule-soft)', cursor: 'pointer' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <td style={{ padding: '10px 14px', fontWeight: 500, color: 'var(--ink)', verticalAlign: 'middle' }}>
-                        {task.approval_status === 'pending' && <span style={{ marginRight: 6, fontSize: 12 }}>⏳</span>}
-                        {task.title}
-                        {task.attachments?.length > 0 && (
-                          <span title={`${task.attachments.length} attachment${task.attachments.length > 1 ? 's' : ''}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--ink-3)', marginLeft: 6, flexShrink: 0 }}>
-                            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M10 3l-5 5a2.5 2.5 0 003.5 3.5l5-5a4 4 0 00-5.7-5.7L3 5.5"/></svg>
-                            {task.attachments.length}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
-                        <ColBadge col={col} />
-                      </td>
-                      <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
-                        <PriorityBadge priority={task.priority} />
-                      </td>
-                      <td style={{ padding: '10px 14px', color: 'var(--ink-3)', verticalAlign: 'middle' }}>
-                        {task.created_by_name || '—'}
-                      </td>
-                      {/* Was an inline third copy of the rule, formatted with
-                          toLocaleDateString(undefined, …) — the BROWSER's locale,
-                          where the list and board both pin en-IN, so the same
-                          date rendered two ways in one app. */}
-                      <td style={{ padding: '10px 14px', verticalAlign: 'middle' }}>
-                        <DueChip date={task.due_at} status={task.status} completedAt={task.completed_at} flush />
-                      </td>
-                      {shownFields.map(f => (
-                        <td key={f.field_id} style={{ padding: '10px 14px', verticalAlign: 'middle' }} onClick={e => e.stopPropagation()}>
-                          <FieldRenderer field={f} value={fvals[f.field_id] ?? null} onChange={() => {}} readOnly />
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </React.Fragment>
-            ))}
-            {filtered.length === 0 && (
+      <div
+        className="tbv"
+        onPointerMove={activeKey ? onPointerMove : undefined}
+        onPointerUp={activeKey ? onPointerUp : undefined}
+      >
+        <div className="tbl__wrap">
+          <table className="tbl">
+            <colgroup>
+              <col style={{ width: 40 }} />
+              {allCols.map(c => <col key={c.key} style={{ width: widths[c.key] }} />)}
+            </colgroup>
+            <thead>
               <tr>
-                <td colSpan={5 + shownFields.length}>
-                  <EmptyState
-                    illustration="search"
-                    title="No tasks found"
-                    description="Try adjusting your filter or create a new task."
+                <th scope="col" className="tb__sel">
+                  <Checkbox
+                    checked={allSelected}
+                    mixed={someSelected}
+                    onChange={toggleAll}
+                    label={allSelected ? 'Clear selection' : 'Select all tasks'}
                   />
-                </td>
+                </th>
+                {allCols.map(c => (
+                  <Th
+                    key={c.key}
+                    col={c}
+                    sort={sort}
+                    onSort={setSort}
+                    width={widths[c.key]}
+                    onGrip={onPointerDown}
+                    gripActive={activeKey === c.key}
+                  />
+                ))}
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+
+            <tbody>
+              {grouped.map(({ key, label, rows }) => (
+                <React.Fragment key={key}>
+                  {label && (
+                    <tr className="tb__grp">
+                      <td colSpan={colCount}>
+                        {label}<span className="tb__grpn">{rows.length}</span>
+                      </td>
+                    </tr>
+                  )}
+                  {rows.map(task => {
+                    const col = colMap[task.column_id];
+                    const priority = task.priority || 'medium';
+                    const values = { ...(fieldValueMap?.[task.task_id] || {}), ...(valueEdits[task.task_id] || {}) };
+                    const isSel = selected.has(task.task_id);
+
+                    return (
+                      <tr
+                        key={task.task_id}
+                        className={isSel ? 'on' : undefined}
+                        onClick={() => setDrawer(task.task_id)}
+                      >
+                        {/* `onClick` rather than `onChange`, because the shift
+                            key is on the event and a boolean callback drops it —
+                            and shift-range is the whole point of the anchor. */}
+                        <td className="tb__sel" onClick={e => e.stopPropagation()}>
+                          <Checkbox
+                            checked={isSel}
+                            label={`Select ${task.title}`}
+                            onClick={e => toggle(task.task_id, e.shiftKey)}
+                          />
+                        </td>
+
+                        <td>
+                          <span className="tb__ttl">
+                            {task.approval_status === 'pending' && (
+                              <span className="bc__appr">Needs approval</span>
+                            )}
+                            <span>{task.title}</span>
+                            {task.attachments?.length > 0 && (
+                              <span
+                                className="tb__att"
+                                title={`${task.attachments.length} attachment${task.attachments.length > 1 ? 's' : ''}`}
+                              >
+                                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+                                  <path d="M10 3l-5 5a2.5 2.5 0 003.5 3.5l5-5a4 4 0 00-5.7-5.7L3 5.5" />
+                                </svg>
+                                {task.attachments.length}
+                              </span>
+                            )}
+                          </span>
+                        </td>
+
+                        <td>
+                          {col ? (
+                            <span className="tb__col">
+                              <span className="tb__coldot" style={{ '--c': col.color || 'var(--on-surface-3)' }} />
+                              {col.name}
+                            </span>
+                          ) : <span className="tb__none">—</span>}
+                        </td>
+
+                        {/* A colour dot is never the only carrier of meaning —
+                            26 §8. The label rides beside it. */}
+                        <td>
+                          <span className="tb__prio" style={{ '--c': PRIORITY_COLORS[priority] || 'var(--on-surface-3)' }}>
+                            <span className="tb__coldot" />
+                            {PRIORITY_LABELS[priority] || '—'}
+                          </span>
+                        </td>
+
+                        <td>{task.created_by_name || <span className="tb__none">—</span>}</td>
+
+                        <td>
+                          <DueChip date={task.due_at} status={task.status} completedAt={task.completed_at} flush />
+                        </td>
+
+                        {shownFields.map(f => (
+                          <td key={f.field_id} onClick={e => e.stopPropagation()}>
+                            <FieldRenderer
+                              field={f}
+                              value={values[f.field_id] ?? null}
+                              onChange={v => saveValue(task.task_id, f.field_id, v)}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </React.Fragment>
+              ))}
+
+              {filtered.length === 0 && (
+                <tr>
+                  <td className="tb__empty" colSpan={colCount}>
+                    {/* A filtered list reaching zero is not the same state as a
+                        list with nothing in it — 02, "Two empty states". One is
+                        a filter to undo, the other is a board to fill. */}
+                    {(search || clauses.length) ? (
+                      <EmptyState
+                        illustration="search"
+                        title="No tasks match these filters"
+                        description={`${clauses.length + (search ? 1 : 0)} filter${clauses.length + (search ? 1 : 0) === 1 ? '' : 's'} applied.`}
+                        action="Clear all"
+                        onAction={() => { setSearch(''); setClauses([]); }}
+                      />
+                    ) : (
+                      <EmptyState
+                        illustration="tasks"
+                        title="No tasks yet"
+                        description="Tasks added to this board will appear here."
+                      />
+                    )}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <BulkBar
+          ids={[...selected]}
+          columns={columns}
+          teamMembers={teamMembers}
+          onClear={clear}
+          onPatched={updated => onTasksChange?.(prev => {
+            const byId = Object.fromEntries(updated.map(u => [u.task_id, u]));
+            return prev.map(t => byId[t.task_id] || t);
+          })}
+          onDeleted={gone => {
+            const dead = new Set(gone);
+            onTasksChange?.(prev => prev.filter(t => !dead.has(t.task_id)));
+          }}
+        />
       </div>
 
-      <TaskDrawer taskId={drawer} open={!!drawer} onClose={() => setDrawer(null)}
-        teamMembers={teamMembers} onSaved={u => onTasksChange?.(p => p.map(t => t.task_id === u.task_id ? u : t))} />
+      <TaskDrawer
+        taskId={drawer}
+        open={!!drawer}
+        onClose={() => setDrawer(null)}
+        teamMembers={teamMembers}
+        onSaved={u => {
+          if (!u) { setDrawer(null); return; }
+          onTasksChange?.(p => p.map(t => (t.task_id === u.task_id ? u : t)));
+        }}
+      />
     </>
   );
 }

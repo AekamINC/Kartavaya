@@ -168,7 +168,7 @@ export default function TimelineView({ tasks = [], columns = [], teamMembers = [
                           style={{
                             position: 'absolute', left: barStart * DAY_W, width: barW,
                             height: 20, borderRadius: 4, cursor: 'pointer',
-                            background: isOverdue ? '#dc2626' : pColor,
+                            background: isOverdue ? 'var(--danger)' : pColor,
                             opacity: task.status === 'done' ? 0.4 : 0.85,
                             display: 'flex', alignItems: 'center', paddingLeft: 6,
                             fontSize: 10.5, color: '#fff', fontWeight: 600,

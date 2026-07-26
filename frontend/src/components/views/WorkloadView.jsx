@@ -1,10 +1,31 @@
-/**
- * WorkloadView.jsx — per-member task load: open tasks, due soon, overdue.
- */
 import React, { useMemo, useState } from 'react';
 import TaskDrawer from '../TaskDrawer';
-import { priorityColor, AVATAR_COLORS, userInitials } from '../../lib/utils';
-import { STATUS_COLORS } from '../drawer/constants';
+import { Avatar, DueChip, EmptyState, StatusChip } from '../ui';
+import { PRIORITY_COLORS } from '../../lib/statusColors';
+
+/**
+ * WorkloadView — per-member load: open, overdue, due soon, done
+ * (04-boards-table-views.md §5, "restyle only").
+ *
+ * Four literals and one silent failure went with the restyle:
+ *
+ *  · **The load bar used `#0082c6`**, the retired brand blue, alongside
+ *    `#dc2626` and `#f59e0b`. The bar encodes over/under-load, which is
+ *    ok/warn/danger — three tokens that already exist and already flip.
+ *  · **`sColor + '18'` rendered no background at all**, because
+ *    `STATUS_COLORS` holds `var(--st-*)` now and `"var(--st-todo)18"` is not a
+ *    colour. `StatusChip`.
+ *  · **The avatar colour keyed off the array index**, and the array is sorted by
+ *    open-task count — so a person's colour changed whenever anyone finished a
+ *    task. `Avatar` hashes the name.
+ *  · **A fifth copy of the due-date rule**, with its own `⚠` and its own
+ *    weight. `DueChip`.
+ *
+ * The bar itself is not `.prg`: `.prg` is a determinate progress bar toward a
+ * goal, and this is a load *relative to the busiest person*, which has no goal
+ * and is not progress toward anything. Same shape, different meaning.
+ */
+function daysBetween(a, b) { return Math.round((b - a) / 86400000); }
 
 export default function WorkloadView({ tasks = [], teamMembers = [] }) {
   const [drawer, setDrawer] = useState(null);
@@ -13,12 +34,16 @@ export default function WorkloadView({ tasks = [], teamMembers = [] }) {
   const now = new Date();
 
   const members = useMemo(() => {
-    // Build member list; include anyone who has tasks even if not in teamMembers
+    // Anyone with tasks counts, even if they are not on the member list —
+    // otherwise a departed assignee's work disappears from the workload view
+    // while still being open.
     const base = (teamMembers || []).map(m => ({ ...m, id: m.user_id }));
     const seen = new Set(base.map(m => m.user_id));
     tasks.forEach(t => {
-      (t.assignee_user_ids || []).forEach(uid => {
-        if (!seen.has(uid)) { base.push({ user_id: uid, display_name: uid, email: uid, id: uid }); seen.add(uid); }
+      (t.assignee_user_ids || []).forEach((uid, i) => {
+        if (seen.has(uid)) return;
+        base.push({ user_id: uid, display_name: (t.assignee_names || [])[i] || uid, id: uid });
+        seen.add(uid);
       });
     });
     return base;
@@ -33,114 +58,106 @@ export default function WorkloadView({ tasks = [], teamMembers = [] }) {
         map[uid].push(t);
       });
     });
-    // Unassigned bucket
     const unassigned = tasks.filter(t => !(t.assignee_user_ids || []).length);
-    if (unassigned.length) map['__unassigned__'] = unassigned;
+    if (unassigned.length) map.__unassigned__ = unassigned;
     return map;
   }, [members, tasks]);
 
   const allMembers = useMemo(() => {
+    const openCount = m => m.tasks.filter(t => t.status !== 'done').length;
     const list = members.map(m => ({ ...m, tasks: byMember[m.user_id] || [] }));
-    if (byMember['__unassigned__']?.length) {
-      list.push({ user_id: '__unassigned__', display_name: 'Unassigned', tasks: byMember['__unassigned__'] });
+    if (byMember.__unassigned__?.length) {
+      list.push({ user_id: '__unassigned__', display_name: 'Unassigned', tasks: byMember.__unassigned__ });
     }
-    return list.sort((a, b) => b.tasks.filter(t => t.status !== 'done').length - a.tasks.filter(t => t.status !== 'done').length);
+    return list.sort((a, b) => openCount(b) - openCount(a));
   }, [members, byMember]);
 
   const maxLoad = Math.max(...allMembers.map(m => m.tasks.filter(t => t.status !== 'done').length), 1);
 
+  if (allMembers.length === 0) {
+    return (
+      <EmptyState
+        illustration="tasks"
+        title="Nobody has work on this board"
+        description="Assign a task and the person picks up a row here."
+      />
+    );
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-      {allMembers.map((m, mi) => {
-        const open     = m.tasks.filter(t => t.status !== 'done');
-        const done     = m.tasks.filter(t => t.status === 'done');
-        const overdue  = open.filter(t => t.due_at && new Date(t.due_at) < now);
-        const dueSoon  = open.filter(t => t.due_at && new Date(t.due_at) >= now && daysBetween(now, new Date(t.due_at)) <= 3);
-        const isExp    = expanded[m.user_id];
-        const barPct   = Math.min((open.length / maxLoad) * 100, 100);
-        const barColor = open.length > maxLoad * 0.75 ? '#dc2626' : open.length > maxLoad * 0.5 ? '#f59e0b' : '#0082c6';
-        const memberBg = m.user_id === '__unassigned__' ? '#94a3b8' : AVATAR_COLORS[mi % AVATAR_COLORS.length];
+    <div className="stack">
+      {allMembers.map(m => {
+        const open = m.tasks.filter(t => t.status !== 'done');
+        const done = m.tasks.filter(t => t.status === 'done');
+        const overdue = open.filter(t => t.due_at && new Date(t.due_at) < now);
+        const dueSoon = open.filter(t => t.due_at && new Date(t.due_at) >= now && daysBetween(now, new Date(t.due_at)) <= 3);
+        const isExp = !!expanded[m.user_id];
+        const barPct = Math.min((open.length / maxLoad) * 100, 100);
+        const tone = open.length > maxLoad * 0.75 ? 'var(--danger)'
+          : open.length > maxLoad * 0.5 ? 'var(--warn)'
+            : 'var(--primary)';
         const name = m.display_name || m.full_name || m.email || m.user_id;
 
         return (
-          <div key={m.user_id} style={{ background: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
-            {/* Member row */}
-            <div
-              style={{ display: 'grid', gridTemplateColumns: '40px 1fr auto auto auto auto', gap: 16, alignItems: 'center', padding: '14px 20px', cursor: 'pointer' }}
+          <section key={m.user_id} className="tg" style={{ '--c': tone }}>
+            <button
+              type="button"
+              className="tg__h wl__h"
+              aria-expanded={isExp}
               onClick={() => setExpanded(e => ({ ...e, [m.user_id]: !e[m.user_id] }))}
             >
-              {/* Avatar */}
-              <span style={{ width: 36, height: 36, borderRadius: '50%', background: memberBg, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
-                {userInitials(name)}
+              <Avatar name={name} size={36} />
+
+              <span className="wl__who">
+                <span className="wl__name">{name}</span>
+                <span className="wl__bar">
+                  <span className="wl__fill" style={{ width: `${barPct}%` }} />
+                </span>
               </span>
 
-              {/* Name + bar */}
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>{name}</div>
-                <div style={{ height: 5, background: 'var(--rule-soft)', borderRadius: 99, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: barPct + '%', background: barColor, borderRadius: 99, transition: 'width .4s' }} />
-                </div>
-              </div>
+              <Stat n={open.length} label="open" />
+              <Stat n={overdue.length} label="overdue" tone={overdue.length ? 'var(--danger)' : undefined} />
+              <Stat n={dueSoon.length} label="due soon" tone={dueSoon.length ? 'var(--warn)' : undefined} />
+              <Stat n={done.length} label="done" tone="var(--ok)" />
+            </button>
 
-              {/* Stats */}
-              <Stat n={open.length}    label="open"    color="var(--ink)" />
-              <Stat n={overdue.length} label="overdue" color={overdue.length ? '#dc2626' : 'var(--ink-3)'} />
-              <Stat n={dueSoon.length} label="due soon" color={dueSoon.length ? '#f59e0b' : 'var(--ink-3)'} />
-              <Stat n={done.length}    label="done"    color="#16a34a" />
-            </div>
+            {isExp && open.length === 0 && <p className="tg__empty">Nothing open.</p>}
 
-            {/* Expanded task list */}
-            {isExp && open.length > 0 && (
-              <div style={{ borderTop: '1px solid var(--rule-soft)' }}>
-                {open.map(t => {
-                  const isOv = t.due_at && new Date(t.due_at) < now;
-                  const pColor = priorityColor(t.priority);
-                  const sColor = STATUS_COLORS[t.status] || '#64748b';
-                  return (
-                    <div key={t.task_id}
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px 10px 76px', borderBottom: '1px solid var(--rule-soft)', cursor: 'pointer' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
-                      onMouseLeave={e => e.currentTarget.style.background = ''}
-                      onClick={() => setDrawer(t.task_id)}
-                    >
-                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: pColor, flexShrink: 0 }} />
-                      <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: sColor, background: sColor + '18', borderRadius: 99, padding: '2px 8px', whiteSpace: 'nowrap' }}>{t.status?.replace('_', ' ')}</span>
-                      {t.due_at && (
-                        <span style={{ fontSize: 11, color: isOv ? '#dc2626' : 'var(--ink-3)', fontWeight: isOv ? 700 : 400, whiteSpace: 'nowrap' }}>
-                          {isOv ? '⚠ ' : ''}{new Date(t.due_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+            {isExp && open.map(t => (
+              <button
+                key={t.task_id}
+                type="button"
+                className="tg__row wl__row"
+                onClick={() => setDrawer(t.task_id)}
+              >
+                <span className="tg__pdot" style={{ '--c': PRIORITY_COLORS[t.priority] || 'var(--on-surface-3)' }} />
+                <span className="tg__title">{t.title}</span>
+                <StatusChip status={t.status} approvalStatus={t.approval_status} />
+                {t.due_at && (
+                  <DueChip date={t.due_at} status={t.status} completedAt={t.completed_at} flush />
+                )}
+              </button>
+            ))}
+          </section>
         );
       })}
 
-      {allMembers.length === 0 && (
-        <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--ink-3)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>
-          No team members
-        </div>
-      )}
-
-      <TaskDrawer taskId={drawer} open={!!drawer} onClose={() => setDrawer(null)} teamMembers={teamMembers}
-        onSaved={() => setDrawer(null)} />
+      <TaskDrawer
+        taskId={drawer}
+        open={!!drawer}
+        onClose={() => setDrawer(null)}
+        teamMembers={teamMembers}
+        onSaved={() => setDrawer(null)}
+      />
     </div>
   );
 }
 
-function Stat({ n, label, color }) {
+function Stat({ n, label, tone }) {
   return (
-    <div style={{ textAlign: 'center', minWidth: 52 }}>
-      <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 400, color, lineHeight: 1 }}>{n}</div>
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginTop: 2 }}>{label}</div>
-    </div>
+    <span className="mt__stat">
+      <span className="mt__n" style={tone ? { color: tone } : undefined}>{n}</span>
+      <span className="mt__l">{label}</span>
+    </span>
   );
-}
-
-function daysBetween(a, b) {
-  return Math.round((b - a) / 86400000);
 }

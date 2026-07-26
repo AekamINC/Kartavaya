@@ -9,54 +9,30 @@ import { useToast } from '../components/ui/toast';
 import TaskDrawer  from '../components/TaskDrawer';
 import NewTaskModal from '../components/NewTaskModal';
 import { PageHeader, DueChip, PriorityDot, StatusChip, ProjectTag } from '../components/editorial';
-import { AVATAR_COLORS, avatarColor, priorityColor, userInitials, relTime } from '../lib/utils';
-import { PRIORITY_LABELS, STATUS_LABELS, STATUS_COLORS } from '../components/drawer/constants';
+import { avatarBg } from '../components/ui/Avatar';
+import { userInitials, relTime } from '../lib/utils';
+import {
+  PRIORITY_COLORS, PRIORITY_LABELS, STATUS_COLORS, STATUS_LABELS, STATUS_LABELS_HI,
+} from '../lib/statusColors';
 import { SkeletonTable, SkeletonRegion } from '../components/ui/Skeleton';
+import { useColumnResize } from '../components/views/tableHooks';
 
 const PRIORITY_ORDER = ['urgent','high','medium','low'];
 const PRIORITY_HI    = { urgent:'अत्यावश्यक', high:'उच्च', medium:'मध्यम', low:'न्यून' };
 const STATUS_ORDER   = ['todo','in_progress','in_review','done','requested'];
-const STATUS_HI      = { todo:'कार्य', in_progress:'चालू', in_review:'समीक्षा', done:'सम्पन्न', requested:'अनुरोध' };
 
 // All available columns. 'task' is always visible and cannot be hidden.
 const ALL_COLS = [
-  { key: 'task',       label: 'Task',         defaultW: 340, min: 180, fixed: true  },
-  { key: 'project',    label: 'Project',      defaultW: 180, min: 100, fixed: false },
-  { key: 'assignees',  label: 'Assignees',    defaultW: 200, min: 120, fixed: false },
-  { key: 'category',   label: 'Category',     defaultW: 140, min: 90,  fixed: false },
-  { key: 'due',        label: 'Due',          defaultW: 150, min: 120, fixed: false },
-  { key: 'updated',    label: 'Last Updated', defaultW: 130, min: 100, fixed: false },
-  { key: 'status',     label: 'Status',       defaultW: 130, min: 90,  fixed: false },
+  { key: 'task',       label: 'Task',         width: 340, min: 180, fixed: true  },
+  { key: 'project',    label: 'Project',      width: 180, min: 100, fixed: false },
+  { key: 'assignees',  label: 'Assignees',    width: 200, min: 120, fixed: false },
+  { key: 'category',   label: 'Category',     width: 140, min: 90,  fixed: false },
+  { key: 'due',        label: 'Due',          width: 150, min: 120, fixed: false },
+  { key: 'updated',    label: 'Last Updated', width: 130, min: 100, fixed: false },
+  { key: 'status',     label: 'Status',       width: 130, min: 90,  fixed: false },
 ];
 
 const DEFAULT_VISIBLE = new Set(['task','project','assignees','due','status']);
-
-
-function useResizableCols(cols) {
-  const [widths, setWidths] = useState(() => Object.fromEntries(cols.map(c => [c.key, c.defaultW])));
-  const dragging = useRef(null);
-
-  const onMouseDown = useCallback((e, key, min) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = widths[key];
-    dragging.current = { key, startX, startW, min };
-    function onMove(ev) {
-      if (!dragging.current) return;
-      const { key, startX, startW, min } = dragging.current;
-      setWidths(prev => ({ ...prev, [key]: Math.max(min, startW + ev.clientX - startX) }));
-    }
-    function onUp() {
-      dragging.current = null;
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    }
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  }, [widths]);
-
-  return { widths, onMouseDown };
-}
 
 function ColumnsPopover({ visible, onToggle, onClose }) {
   const ref = useRef(null);
@@ -104,7 +80,13 @@ export default function TasksListPage() {
   const [showArchived, setShowArchived] = useState(false);
 
   const activeCols = ALL_COLS.filter(c => c.fixed || visible.has(c.key));
-  const { widths, onMouseDown } = useResizableCols(ALL_COLS);
+  // Was a local `useResizableCols` bound to `mousemove`/`mouseup`, which do not
+  // fire for touch or pen — the grip was dead on exactly the devices most
+  // likely to need a narrower column. The shared hook is pointer-based, uses
+  // `setPointerCapture` so the drag survives leaving the 7px target, and
+  // remembers the widths.
+  const { widths, activeKey, onPointerDown, onPointerMove, onPointerUp } =
+    useColumnResize(ALL_COLS, 'kv.taskslist.widths');
 
   const gridTemplate = activeCols.map(c => `${widths[c.key]}px`).join(' ');
   const rowStyle = { gridTemplateColumns: gridTemplate };
@@ -175,25 +157,31 @@ export default function TasksListPage() {
     return matchSearch && matchFilter;
   });
 
+  // `#94a3b8` was the old `todo` grey, hardcoded here as a catch-all after the
+  // map it came from moved to tokens; `--on-surface-3` is the token that
+  // carries "no particular state" and it flips with the theme.
   const groups = [];
   if (group === 'priority') {
     PRIORITY_ORDER.forEach(p => {
       const items = filtered.filter(t => t.priority === p);
-      if (items.length) groups.push({ key: p, title: PRIORITY_LABELS[p], sans: PRIORITY_HI[p], color: priorityColor(p), items });
+      if (items.length) groups.push({ key: p, title: PRIORITY_LABELS[p], sans: PRIORITY_HI[p], color: PRIORITY_COLORS[p], items });
     });
     const rest = filtered.filter(t => !PRIORITY_ORDER.includes(t.priority));
-    if (rest.length) groups.push({ key: 'other', title: 'Other', sans: 'अन्य', color: '#94a3b8', items: rest });
+    if (rest.length) groups.push({ key: 'other', title: 'Other', sans: 'अन्य', color: 'var(--on-surface-3)', items: rest });
   } else if (group === 'project') {
     teams.forEach(team => {
       const items = filtered.filter(t => t.team_id === team.team_id);
-      if (items.length) groups.push({ key: team.team_id, title: team.name, sans: '', color: AVATAR_COLORS[groups.length % AVATAR_COLORS.length], items });
+      // Was `AVATAR_COLORS[groups.length % …]` — keyed off how many groups had
+      // been pushed so far, so a project changed colour whenever a project
+      // above it emptied out. `avatarBg` hashes the name and is stable.
+      if (items.length) groups.push({ key: team.team_id, title: team.name, sans: '', color: avatarBg(team.name), items });
     });
     const orphans = filtered.filter(t => !teams.find(tm => tm.team_id === t.team_id));
-    if (orphans.length) groups.push({ key: 'none', title: 'No project', sans: 'अन्य', color: '#94a3b8', items: orphans });
+    if (orphans.length) groups.push({ key: 'none', title: 'No project', sans: 'अन्य', color: 'var(--on-surface-3)', items: orphans });
   } else {
     STATUS_ORDER.forEach(s => {
       const items = filtered.filter(t => t.status === s);
-      if (items.length) groups.push({ key: s, title: STATUS_LABELS[s], sans: STATUS_HI[s], color: STATUS_COLORS[s], items });
+      if (items.length) groups.push({ key: s, title: STATUS_LABELS[s], sans: STATUS_LABELS_HI[s], color: STATUS_COLORS[s], items });
     });
   }
 
@@ -295,14 +283,19 @@ export default function TasksListPage() {
           <SkeletonTable rows={8} columns={activeCols.length} />
         </SkeletonRegion>
       ) : (
-        <div className="k-tablewrap" style={{ overflowX: 'auto' }}>
+        <div
+          className="k-tablewrap"
+          style={{ overflowX: 'auto' }}
+          onPointerMove={activeKey ? onPointerMove : undefined}
+          onPointerUp={activeKey ? onPointerUp : undefined}
+        >
           {/* Header */}
           <div className="k-table__head k-trow--resizable" style={rowStyle}>
             {activeCols.map((col, idx) => (
               <div key={col.key} className={`k-table__hcell k-c-${col.key}`} style={{ position: 'relative', userSelect: 'none' }}>
                 {col.label}
                 {idx < activeCols.length - 1 && (
-                  <span className="k-col-resize" onMouseDown={e => onMouseDown(e, col.key, col.min)} />
+                  <span className="k-col-resize" onPointerDown={e => onPointerDown(e, col.key, col.min)} />
                 )}
               </div>
             ))}
@@ -325,7 +318,7 @@ export default function TasksListPage() {
               {g.items.map((t, idx) => {
                 const team      = teams.find(tm => tm.team_id === t.team_id);
                 const cat       = categories.find(c => c.category_id === t.category_id);
-                const assignees = (t.assignee_names || []).map(name => ({ name, color: avatarColor(name) }));
+                const assignees = (t.assignee_names || []).map(name => ({ name, color: avatarBg(name) }));
                 return (
                   <button
                     key={t.task_id}

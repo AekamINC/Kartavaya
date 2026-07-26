@@ -16,9 +16,12 @@ const MyTasksView  = lazy(() => import('../components/views/MyTasksView'));
 import { useFields }    from '../hooks/useFields';
 import { useRealtimeTasks } from '../hooks/useRealtimeTasks';
 import { usePresence }  from '../hooks/usePresence';
-import { PageHeader, AvatarStack } from '../components/editorial';
-import { useToast } from '../components/ui/toast';
-import { AVATAR_COLORS } from '../lib/utils';
+import { PageHeader } from '../components/editorial';
+import {
+  AvatarStack, avatarBg, useToast,
+  SkeletonBoard, SkeletonList, SkeletonRegion,
+} from '../components/ui';
+import ViewToolbar from '../components/views/ViewToolbar';
 import AutomationsPage from './AutomationsPage';
 import NewTaskModal from '../components/NewTaskModal';
 
@@ -120,7 +123,11 @@ export default function BoardsPage() {
   };
 
   const activeProject = projects.find(p => p.team_id === activeId);
-  const onlineAvatars = onlineUsers.map((u, i) => ({ name: u.name || u.email || '?', color: AVATAR_COLORS[i % AVATAR_COLORS.length] }));
+  // `AVATAR_COLORS` is the legacy list and still carries the retired brand blue
+  // `#0082c6` (00 §9). It also keyed off the array INDEX, so the same person
+  // changed colour whenever someone else joined or left the presence channel.
+  // `Avatar` hashes the name, which is stable and drawn from the palette.
+  const onlineAvatars = onlineUsers.map(u => ({ name: u.name || u.email || '?' }));
 
   return (
     <div className="k-screen">
@@ -135,13 +142,13 @@ export default function BoardsPage() {
               <AvatarStack users={onlineAvatars} size={24} max={4} />
             )}
             <div className="k-projectpicker">
-              {projects.map((p, idx) => (
+              {projects.map(p => (
                 <button
                   key={p.team_id}
                   className={'k-projectpicker__chip' + (p.team_id === activeId ? ' is-active' : '')}
                   onClick={() => switchProject(p.team_id)}
                 >
-                  <span className="k-projectpicker__dot" style={{ background: AVATAR_COLORS[idx % AVATAR_COLORS.length] }} />
+                  <span className="k-projectpicker__dot" style={{ background: avatarBg(p.name) }} />
                   {p.name}
                 </button>
               ))}
@@ -167,22 +174,10 @@ export default function BoardsPage() {
         }
       />
 
-      {/* View switcher bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--rule-soft)', paddingBottom: 0, marginBottom: 4, overflowX: 'auto' }}>
-        <div className="k-segctrl">
-          {VIEWS.map(v => (
-            <button
-              key={v.id}
-              className={'k-segctrl__btn' + (view === v.id ? ' is-active' : '')}
-              onClick={() => setView(v.id)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-            >
-              {v.icon}
-              {v.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* One toolbar, shared with every other view — 04 §2. The switcher was a
+          hand-rolled `.k-segctrl` in an inline-styled flex row here, and again
+          in ProjectBoardPage, which is why the two drifted. */}
+      <ViewToolbar views={VIEWS} view={view} onView={setView} />
 
       {/* Field manager panel */}
       {showFieldMgr && (
@@ -267,13 +262,16 @@ export default function BoardsPage() {
         </div>
       )}
 
-      {/* Content */}
+      {/* Content. A skeleton is shaped like the content it replaces — 26 §9 —
+          so the board gets columns of cards and the list gets rows. The
+          italic "Loading…" line was a different shape from all seven views and
+          produced a visible jump on every load. */}
       {loading ? (
-        <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--ink-3)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>
-          Loading…
-        </div>
+        <SkeletonRegion label="Loading board…">
+          {view === 'kanban' ? <SkeletonBoard columns={4} cards={3} /> : <SkeletonList rows={8} />}
+        </SkeletonRegion>
       ) : (
-        <Suspense fallback={<div style={{padding:'40px',textAlign:'center',color:'var(--ink3)'}}>Loading view…</div>}>
+        <Suspense fallback={<SkeletonRegion label="Loading view…"><SkeletonList rows={6} /></SkeletonRegion>}>
           {view === 'kanban' && (
             <KanbanView
               columns={columns}
@@ -296,6 +294,7 @@ export default function BoardsPage() {
               columns={columns}
               teamMembers={teamMembers}
               fieldDefs={fieldDefs}
+              boardId={activeId}
               onTasksChange={handleTasksChange}
             />
           )}
