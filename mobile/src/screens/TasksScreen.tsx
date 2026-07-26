@@ -5,11 +5,13 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
 import { tasksApi } from '../api/tasks';
 import { TaskCard } from '../components/TaskCard';
+import SwipeRow from '../components/SwipeRow';
+import { useOfflineMutation } from '../hooks/useOfflineMutation';
 import type { RootStackParamList } from '../nav/RootStack';
 import type { Task } from '../api/types';
 
@@ -53,9 +55,43 @@ export default function TasksScreen() {
   const nav = useNavigation<Nav>();
   const [segment, setSegment] = useState<Segment>('open');
 
+  const qc = useQueryClient();
+
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['tasks', 'mine'],
     queryFn: () => tasksApi.list(),
+  });
+
+  /**
+   * Swipe right to complete, through the offline queue rather than a plain
+   * mutation. A task ticked off on a site with no signal has to survive the trip
+   * home — the optimistic update makes the row move immediately either way, and
+   * the queue replays the PUT when the device reconnects.
+   */
+  const complete = useOfflineMutation<{ taskId: string }>({
+    method: 'PUT',
+    urlBuilder: ({ taskId }) => `/tasks/${taskId}`,
+    bodyBuilder: () => ({ status: 'done' }),
+    mutationFn: ({ taskId }) => tasksApi.update(taskId, { status: 'done' } as Partial<Task>),
+    entity_type: 'task',
+    entityId: ({ taskId }) => taskId,
+    // Dedup key, so swiping the same row twice before the first call lands does
+    // not enqueue two identical PUTs.
+    optimisticId: ({ taskId }) => `task_${taskId}_complete`,
+    snapshotKey: () => ['tasks', 'mine'],
+    optimisticUpdate: ({ taskId }, client) => {
+      client.setQueryData<Task[]>(['tasks', 'mine'], (prev: Task[] | undefined) =>
+        (prev ?? []).map((task: Task) =>
+          task.task_id === taskId ? { ...task, status: 'done' } as Task : task,
+        ),
+      );
+    },
+    rollback: (_vars, snapshot, client) => {
+      if (snapshot) client.setQueryData(['tasks', 'mine'], snapshot);
+    },
+    onlineOptions: {
+      onSettled: () => { void qc.invalidateQueries({ queryKey: ['tasks'] }); },
+    },
   });
 
   const tasks = useMemo(() => {
@@ -137,12 +173,31 @@ export default function TasksScreen() {
               </Text>
             </View>
           }
-          renderItem={({ item }) => (
-            <TaskCard
-              task={item}
-              onPress={() => nav.navigate('TaskDetail', { taskId: item.task_id })}
-            />
-          )}
+          renderItem={({ item }) => {
+            const card = (
+              <TaskCard
+                task={item}
+                onPress={() => nav.navigate('TaskDetail', { taskId: item.task_id })}
+              />
+            );
+            // An already-done task has nothing to complete, so it gets no swipe
+            // rather than a swipe that silently does nothing.
+            if (isDone(item)) return card;
+            return (
+              <SwipeRow
+                accessibilityLabel={item.title}
+                right={{
+                  label: 'Complete',
+                  icon: 'checkmark',
+                  color: t.success,
+                  onColor: t.onPrimary,
+                  onTrigger: () => complete.mutate({ taskId: item.task_id }),
+                }}
+              >
+                {card}
+              </SwipeRow>
+            );
+          }}
         />
       )}
     </View>

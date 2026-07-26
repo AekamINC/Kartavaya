@@ -31,10 +31,22 @@ function TaskCardInner({ task, onPress, showProject = true, syncing = false }: T
   const total  = (task.subtasks ?? []).length;
   const due    = task.due_at ? dueDateLabel(task.due_at) : null;
 
-  // Due chip colours — Android M3 containers vs iOS flat fills
+  // A finished task has no deadline pressure left. 17-mobile-app.md: "a completed
+  // task shouldn't render an alarming red due chip" — the date is still worth
+  // showing as a record of when it was due, but urgency is over, so it drops to
+  // the neutral chip regardless of how overdue it was.
+  const isComplete = String(task.status ?? '').toLowerCase() === 'done'
+    || String(task.status ?? '').toLowerCase() === 'completed';
+
+  // Due chip colours — Android M3 containers vs iOS flat fills.
+  // The iOS literals are Apple's system red and orange, kept on purpose: on iOS
+  // a due chip reads as a system affordance, and matching the platform is the
+  // point. They are the one deliberate exception to tokens-only in this file.
   let dueChipBg   = IS_ANDROID ? t.surface2 : t.surfaceLow;
   let dueChipText = IS_ANDROID ? t.ink      : t.ink2;
-  if (due?.danger) {
+  if (isComplete) {
+    // Neutral, and deliberately first so no later branch can re-redden it.
+  } else if (due?.danger) {
     dueChipBg   = IS_ANDROID ? t.errorBg  : 'rgba(255,69,58,0.12)';
     dueChipText = IS_ANDROID ? t.error    : '#FF453A';
   } else if (due?.warn || task.priority === 'high') {
