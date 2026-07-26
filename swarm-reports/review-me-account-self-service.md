@@ -148,4 +148,179 @@ placed above the app imports so it lands before `outbound` is imported.
 
 ---
 
-*(report continues — appended as findings are confirmed)*
+### FINDING 4 — the notification prefs PUT resets quiet hours it was never asked to touch. **CONFIRMED. FIXED.**
+**Severity: medium — silent data loss, reported as success.**
+
+`PUT /api/me/notification_prefs` (backend/server.py) read
+`body.get("quiet_start", "22:00")`. A field the client OMITS therefore did not
+mean "leave it alone", it meant "reset it to the default". A client sending only
+`{"prefs": {...}}` to flip one switch silently overwrote a user's customised
+overnight window with 22:00–07:00 and returned `{"ok": true}`.
+
+The same endpoint stored `body["prefs"]` **verbatim into jsonb** — any key, any
+value, any depth. That is how a mode becomes the string `"Off"` or a nested
+object, after which every read has to guess.
+
+`normalise_prefs()` and `normalise_window()` were added to push_service.py by
+this branch **for exactly this endpoint and then never called from anywhere** —
+dead code, like the router. Both are now wired in, and `current` is passed so an
+omitted field means unchanged.
+
+### FINDING 5 — two copies of the notification vocabulary, already drifted. **CONFIRMED. FIXED.**
+`server.py` carried its own `DEFAULT_PREFS` dict duplicating push_service's. The
+branch added a `reminder` kind to push_service's copy only, so that kind was
+**enforced on delivery and invisible in the UI** — the GET merges against
+server.py's copy. server.py now imports the one definition.
+
+### FINDING 6 — the double-click race returns 500. **CONFIRMED. FIXED.**
+PROPOSED_067 puts a partial unique index on `(user_id, kind) WHERE status IN
+('pending','processing')`. me.py's read-then-insert is not atomic, so two rapid
+clicks both see no open request and both insert. The index correctly rejects the
+second; me.py's handler only special-cased `UndefinedTableError`, so the loser
+got a 500 for doing the thing the docstring calls safe. Now returns
+`already_open: true`.
+
+### FINDING 7 — the test suite shared one rate-limit budget. **CONFIRMED. FIXED.**
+**Severity: medium — makes the whole suite order- and clock-dependent.**
+
+`server.global_write_rate_limit` counts every POST/PUT/PATCH/DELETE per client
+IP in a module-level dict, **120 per wall-clock minute**, and nothing reset it
+between tests. Under `ASGITransport` every test shares one IP, so the entire
+suite drew on a single budget.
+
+This is not theoretical — it bit immediately. Adding my tests pushed the run past
+120 writes in a minute and **two entirely unrelated WhatsApp tests started
+failing with 429**, pointing at a file I had not touched. Anyone adding tests
+anywhere would have hit this and lost time chasing the wrong module.
+
+Fixed with an autouse conftest fixture clearing both limiters per test. No test
+asserts 429, so nothing depended on the leaked state.
+
+---
+
+## 4 · `push_service.py` — outbound safety (task item 3)
+
+**Verified by reading every path, then by test.**
+
+* `send_push()` calls `suppressed("push", ...)` as its **first statement**,
+  before any DB read and before any HTTP client is constructed. Confirmed by
+  `test_send_push_short_circuits_before_any_query`, which asserts zero awaits on
+  the pool under dry mode.
+* `send_web_push()` and `fan_out_web_push()` are gated the same way
+  (`suppressed("push:web", ...)`).
+* `fan_out_push()` delegates to `send_push` per recipient, so it inherits the
+  gate rather than needing its own.
+* The branch's changes to `send_push` are confined to swapping an inline prefs
+  block for `prefs_allow()`. **The outbound gate was not moved, weakened or
+  bypassed** — it still sits above the `try`.
+
+**The gap was not in push_service.py, it was in the harness** — see FINDING 3.
+The guarantee "no real push during tests" did not hold before this branch and
+does now, with `test_outbound_mode_is_dry_during_tests` as the tripwire.
+
+`OUTBOUND_MODE` is honoured. Note for operators, unchanged by me: `outbound.MODE`
+is read **once at import**, so changing the env var requires a restart, and the
+default is `live` — an environment that forgets to set it sends for real.
+
+No notification templates are involved: `send_push` posts a JSON
+`{title, body, data}` to Expo and renders no markup, so the email/PDF design
+specs do not apply to this file.
+
+---
+
+## 5 · The 067 collision (task item 5)
+
+**Exactly two, as briefed — no third exists.** Searched every ref in the repo:
+
+| Branch | File |
+|---|---|
+| `salvage/org-endpoints` (43167f2) | `PROPOSED_067_org_profile_fields.sql` |
+| this branch (4f15485) | `PROPOSED_067_account_self_service.sql` |
+
+Mine is left at 067 and untouched, per instructions. The highest applied
+migration is `061_org_max_users.sql`; everything from 063 up is a proposal.
+
+### The migration itself — reviewed, sound
+Column names match every query in me.py. Part A is additive
+(`CREATE TABLE IF NOT EXISTS` + three indexes, one FK to `users`). Part B is
+commented out with the reason stated. Both parts carry rollback sections, and
+Part A's rollback correctly warns that dropping the table destroys pending
+requests. It also flags, correctly, that staging and production share one
+database so the table is visible to both with no environment marker on rows.
+
+**Nothing was applied. No migration was run. No database write was made.**
+
+---
+
+## 6 · Design fidelity (coordinator's second directive)
+
+Checked `design-handover/09-customization.md` §4, `21-notifications-inbox.md`,
+and the reference implementation in
+`design-reference/Kartavaya Redesign/SetCustomize.jsx`.
+
+| Design calls for | Reality |
+|---|---|
+| `GET /v1/me/sessions` | **Live now.** Cannot supply per-session `device`/`ip`/`location`/`last_seen` for *other* sessions — nothing records them |
+| `DELETE /v1/me/sessions/:id` · `DELETE /v1/me/sessions` | **Cannot be built** — see §1. Needs a `jti` and a `user_sessions` table, i.e. a migration |
+| `POST /v1/me/export` "emails a link valid 7 days" | Endpoint live; **queues only**. No worker, no email. Response says so in `automated_delivery: false` |
+| `POST /v1/me/delete` "queued, not immediate" | **Matches exactly** — 30-day grace, cancellable |
+| `GET/PATCH /v1/me/preferences`, table `user_preferences` | **Not built** — needs a migration |
+
+### The DND switch had no backend representation — FIXED
+The designed control is a **boolean** (`SSwitch on={p.dnd}`) above two time
+fields, and `21-notifications-inbox.md`'s `inDND()` returns early on
+`!prefs.dnd`. But `notification_prefs` has only `quiet_start`/`quiet_end` and
+**no off-switch**, so the designed switch had nothing to bind to and a frontend
+would have had to invent local state for it — precisely the "frontend fakes it"
+case the directive names.
+
+Fixed without a migration: a zero-length window already means "no quiet hours"
+throughout push_service, so `dnd` is **derived, not stored**. `GET` now returns
+`dnd`, `dnd_from`, `dnd_to`; `PUT` accepts them. `quiet_start`/`quiet_end` stay
+in both directions so the mobile client keeps working. **Delivery behaviour is
+unchanged for every existing row** — the UI stops disagreeing with the server
+because it now reads the server.
+
+Good fidelity found, worth recording: `_in_quiet_hours` implements exactly the
+half-open wrap semantics of the spec's `inDND()`, including the `m >= from ||
+m < to` midnight case. And DND suppressing push while the notification row is
+still written matches "DND suppresses the toast, the sound and the push. It
+never suppresses the notification."
+
+---
+
+## 7 · What I did NOT do, and why
+
+* **Did not build session revocation.** It needs `staging.user_sessions` and a
+  `jti` in `_create_token`. The table requires a migration, which is forbidden
+  here. PROPOSED_067 Part B is the correct deliverable and is already written.
+  Building the endpoint without the table would recreate the exact dishonesty
+  the branch was written to avoid.
+* **Did not build `/v1/me/preferences`.** Needs the `user_preferences` table —
+  same reason.
+* **Did not wire TabData.jsx to export/delete.** Those endpoints return **503 on
+  every environment today** because PROPOSED_067 is unapplied. Wiring buttons
+  that 503 everywhere is the dead-button problem in a new costume. `GET
+  /sessions` does work today and is the one piece safe to wire; I left the
+  frontend alone rather than half-wire the tab under time pressure. **This is
+  the main piece of unfinished work.**
+* **Did not renumber any migration**, per instructions.
+* **Did not fix `test_ganit.py::test_create_invoice_success`.** It fails
+  identically on clean `origin/staging` — pre-existing, unrelated to this
+  surface (`'MagicMock' object can't be awaited`).
+* **Did not fix `auth_router._create_token`'s stale "30-day" docstring** — one
+  word in a file owned elsewhere, reported instead.
+
+---
+
+## 8 · Verification
+
+* Full backend suite: **370 passed, 1 failed** — the single failure is the
+  pre-existing `test_ganit` one, verified failing on clean `origin/staging`
+  before any of my changes.
+* 66 new tests, all passing.
+* `node scripts/check-tokens.mjs` → `339 declared, 232 referenced, 0 missing`
+* `node scripts/check-classes.mjs` → `2114 selectors, 1439 classes used, 0 missing a rule`
+* No database write, no migration run, no email/push/WhatsApp sent.
+* `frontend/yarn.lock` and `package-lock.json` untouched.
+
