@@ -1,4 +1,4 @@
-﻿"""
+"""
 server.py — Kartavaya API v2 by Aekam Inc
 Monolith routes stay; new v2 routers mounted at the bottom.
 R2 upload router replaces the old base64 /api/upload endpoint.
@@ -32,6 +32,15 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.cors import CORSMiddleware
+
+# .env MUST load before any app module is imported. auth_router raises at import
+# time when JWT_SECRET is unset, and it used to be imported ~64 lines before
+# load_dotenv() ran further down this file — so the server could only ever start
+# when the variables were already exported by the shell. Railway exports them, so
+# this was invisible in deployment and fatal locally: `uvicorn server:app` died
+# with "JWT_SECRET environment variable must be set" while .env sat right there.
+_ROOT_DIR = Path(__file__).parent
+load_dotenv(_ROOT_DIR / ".env")
 
 from auth_router import require_user, JWT_SECRET as _JWT_SECRET
 from limiter import limiter
@@ -97,7 +106,6 @@ _SQL_GET_SUBTASKS = "SELECT subtasks,team_id FROM tasks WHERE task_id=$1 AND tea
 _SQL_SET_SUBTASKS = "UPDATE tasks SET subtasks=$1,updated_at=NOW() WHERE task_id=$2 AND team_id=ANY($3::text[]) RETURNING *"
 
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / ".env")
 
 # Whitelist for column names used in dynamic SQL fragments — never interpolate user input
 _VALID_SCOPE_COLS: frozenset = frozenset({"team_id", "user_id"})
