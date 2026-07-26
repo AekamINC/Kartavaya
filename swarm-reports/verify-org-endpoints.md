@@ -333,3 +333,95 @@ That last one is what made the spelling fix cheap: there were no grant rows to m
 - **`TabProfile.jsx` / `TabSecurity.jsx` / `TabModules.jsx` are not wired to these
   endpoints yet.** The endpoints now exist and are registered; the screens still need
   building per `10-org-settings.md`. `TabModules.jsx` reads a different endpoint today.
+
+---
+
+## 10. Coordinator challenge — three claims re-verified after merge
+
+A sibling agent contradicted parts of my brief. I re-checked all three against the live
+tree and the live database. **Two were stale, one was half-right.** No code change was
+needed; recording the evidence so this is not re-litigated.
+
+### Claim: "`org_modules.py` and `_ENTITLEMENT_SPELLING` DO NOT EXIST"
+
+**Stale — true of `staging` BEFORE my merge, false now.** Both files arrived on
+`salvage/org-endpoints` and had never been on `staging`; a sibling reading `staging`
+at that moment would correctly have found nothing.
+
+```
+git ls-tree origin/staging -- backend/routers  ->  org_modules.py, org_security.py
+```
+
+`_ENTITLEMENT_SPELLING` is genuinely gone, but because **I removed it** — that was the
+fix, not an omission. It survives only as prose in two comments and in `PROPOSED_070`'s
+checklist. Also to correct the framing: the brief did not tell me *not* to edit these.
+It told me to remove the workarounds if I could prove them unused. I proved it and did.
+
+### Claim: "the live CHECK naming `samvada` is not live"
+
+**Half-right, and the important half is wrong.** Re-queried `pg_constraint` on the live
+database just now:
+
+```
+staging.org_member_modules . org_member_modules_level_is_meaningful
+CHECK (NOT (module_code='kartavya' AND role='viewer')
+   AND NOT (module_code = ANY (ARRAY['kartavya','dristi','srijan','samvada','esign'])
+            AND role='approver'))
+```
+
+That constraint **is live**, it **does** name `samvada`, and `PROPOSED_066` §1 is what
+created it — so "unapplied" is wrong for that section (the constraint's existence proves
+it ran). This matches the `SWARM-FINDINGS-LEDGER` B12 note that 066 §1 is applied while
+still carrying a `PROPOSED_` name.
+
+Where the sibling **is right**: `staging.module_subscriptions.module_code` has **no CHECK
+at all** — I confirmed that independently (only PK, FK and a UNIQUE on `(org_id, module_code)`).
+The two facts got conflated: a live CHECK on `org_member_modules`, and no CHECK on
+`module_subscriptions`. Both are true simultaneously.
+
+This does not change anything I shipped: `PROPOSED_070` remains a proposal, and the code
+half was safe to ship first because that CHECK is a prohibition, not a whitelist (measured
+in §5).
+
+### Claim: "`admin_orgs.py` accepts eight codes, neither `samvada` nor `sanvaad` — no org can activate Sanvaad"
+
+**Stale, and it describes a tree ~271 commits behind — the main-based worktree defect the
+same message warned about.** The eight-code list was replaced by an import from
+`role_tiers` in commit **40124fb**, well before this run; the file's own comment says so.
+Resolved at runtime on current staging:
+
+```
+admin_orgs.ALL_MODULES  ->  12 codes
+['dristi','esign','ganit','graha','manav','pahchan','prachar','sanvaad','srijan','varta','vetana','vikray']
+'sanvaad' accepted -> True
+```
+
+**Also: `admin_orgs.py` is NOT the only writer of `module_subscriptions`.** There are two:
+
+| Writer | Validates against | Accepts `sanvaad`? |
+|---|---|---|
+| `admin_orgs.py`:850 | `role_tiers.ALL_MODULES` (12) | yes |
+| `subscription.py`:228 (`POST /v1/subscription/modules/activate`) | `staging.add_on_modules` | yes |
+
+Live check of the second one's source of truth: `staging.add_on_modules` holds
+`sanvaad`, `is_active = true`, `requires_module = []`. It has held `sanvaad` all along
+and has never held `samvada`.
+
+**So activation was never the break.** All three activation paths accept `sanvaad`. The
+break was entirely the GATE — `messaging.py` calling `require_module("samvada")`, looking
+up a code no writer has ever written. The second half of the sibling's sentence ("every
+messaging endpoint 403s") was correct, and worse than stated since it hit `org_owner`
+too; the diagnosed cause was not. Fixed in `4a966c6`, already on staging.
+
+### Branch base
+
+`git merge-base --is-ancestor origin/main HEAD` → **not main-based**. This branch came
+from `salvage/org-endpoints` (based on `staging` @ 2a2a27b) and was rebased onto
+`origin/staging` before each push. `design-handover/` was present throughout, which is
+what let §6 check the specs at all. Nothing to fix.
+
+### Gate invocation
+
+Confirmed: both gate scripts must run from `frontend/`, not the repo root — from root they
+print `src/styles not found` and exit 1. Every gate result in this report was produced
+from `frontend/`.
