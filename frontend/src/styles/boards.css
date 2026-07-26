@@ -28,16 +28,24 @@
    costs a hit-test per pointermove. */
 .bd { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 10px; }
 
+/* The drop target is DASHED, and that is the reference implementation's value,
+   not a preference — `motion.css` `.kb__col` carries `1px dashed transparent`
+   at rest so the border does not appear from nowhere on hover, and IxViews 9.1
+   names "a --primary tint and a dashed inner border". A solid border reads as a
+   card edge; dashed reads as a slot. The tint and border percentages (9% / 48%)
+   are the reference's too — 04 §1's prose gives 7% / 34% over `--s-low`, which
+   is the weaker of the two and loses the target on a busy board. Recorded as a
+   spec conflict in the report; the reference implementation wins. */
 .bd__col {
   width: 288px; flex-shrink: 0;
   display: flex; flex-direction: column; gap: 8px;
   padding: 10px; border-radius: var(--r-md);
-  background: var(--s-low); border: 1px solid transparent;
-  transition: background var(--dur-base) var(--ease-standard), border-color var(--dur-base) var(--ease-standard);
+  background: var(--s-low); border: 1px dashed transparent;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
 }
 .bd__col.over {
-  background: color-mix(in srgb, var(--primary) 7%, var(--s-low));
-  border-color: color-mix(in srgb, var(--primary) 34%, transparent);
+  background: color-mix(in srgb, var(--primary) 9%, var(--s-low));
+  border-color: color-mix(in srgb, var(--primary) 48%, transparent);
 }
 
 .bd__ch { display: flex; align-items: center; gap: 8px; padding: 2px 4px 8px; }
@@ -59,13 +67,43 @@
 .bd__list { display: flex; flex-direction: column; gap: 8px; min-height: 34px; }
 
 .bd__add {
-  width: 100%; padding: 7px 0;
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; padding: 7px 8px;
   background: transparent; border: 1px dashed var(--outline-variant);
   border-radius: var(--r-sm); color: var(--on-surface-3);
-  font: inherit; font-size: 12.5px; cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+  font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard);
 }
-.bd__add:hover { border-color: var(--outline); color: var(--on-surface); }
+.bd__add svg { width: 12px; height: 12px; flex-shrink: 0; }
+/* `--primary-text`, not `--primary`: --primary is a FILL at 4.04:1 and this is
+   text on the column's own ground. */
+.bd__add:hover { background: var(--s-container); border-color: var(--outline); color: var(--primary-text); }
+
+/* The inline composer — IxViews 9.3. It replaces the Add button rather than
+   opening the New Task modal, because "adding six cards means six modals" is
+   the defect the catalogue names. `max-height` + fade over --dur-base is the
+   reference's `sbGrow`; the collapse is instant because the node unmounts. */
+.bd__compose { display: flex; flex-direction: column; gap: 5px; animation: bdGrow var(--dur-base) var(--ease-emph); }
+@keyframes bdGrow {
+  from { opacity: 0; max-height: 0; }
+  to   { opacity: 1; max-height: 120px; }
+}
+.bd__composein {
+  width: 100%; padding: 7px 10px;
+  border: 1px solid var(--primary); border-radius: var(--r-sm);
+  background: var(--s-lowest); color: var(--on-surface);
+  font: inherit; font-size: 12.5px; line-height: 1.4; resize: none; outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+.bd__composerow { display: flex; align-items: center; gap: 5px; }
+/* A card created by the composer enters at the column's foot — 9.3 exit. */
+.bd__list .bc.fresh { animation: bcIn var(--dur-base) var(--ease-emph); }
+@keyframes bcIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
 
 .bd__newcol {
   width: 240px; flex-shrink: 0;
@@ -87,17 +125,71 @@
 .bd__swatch { width: 28px; height: 28px; padding: 0; border: 0; background: none; cursor: pointer; }
 
 /* ── 2 · Card ─────────────────────────────────────────────────────────────
-   `rotate(2deg)` on lift is staging's value and it is a good one. */
+   Values are `motion.css` `.kb__card`'s, which is the reference
+   implementation. 04 §1's prose gives `rotate(2deg)` + `--shadow-4` and argues
+   to keep it; IxViews 9.1 and `motion.css` both give `rotate(.6deg)` +
+   `--shadow-2` at 140ms. They cannot both be right and the reference is the
+   pixel source, so `.6deg` it is — 2deg on a 288px column also clips the
+   neighbouring card's edge at the top of a tall list. Spec conflict recorded in
+   the report rather than resolved silently. */
 .bc {
+  position: relative;
   display: flex; flex-direction: column; gap: 7px;
   width: 100%; padding: 11px 12px;
   border-radius: var(--r-sm); background: var(--surface);
   border: 1px solid var(--outline-variant); box-shadow: var(--shadow-1);
-  font: inherit; color: inherit; text-align: left; cursor: pointer;
-  transition: box-shadow var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+  font: inherit; color: inherit; text-align: left; cursor: grab;
+  transition: box-shadow var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard),
+              opacity var(--dur-fast) var(--ease-standard),
+              transform var(--dur-instant) var(--ease-standard);
 }
-.bc:hover { box-shadow: var(--shadow-2); }
-.bc.drag { transform: rotate(2deg) scale(1.02); box-shadow: var(--shadow-4); cursor: grabbing; }
+/* The border warms toward --primary at 46% on hover — IxViews 9.4. A shadow
+   alone does not say "this is grabbable", which is the whole job of card hover
+   on a board. */
+.bc:hover {
+  box-shadow: var(--shadow-1);
+  border-color: color-mix(in srgb, var(--primary) 46%, var(--outline-variant));
+}
+/* Press, not drag: `scale(.985)` in --dur-instant. IxViews 9.2 — "enough to
+   feel the target without looking like a drag has begun". `:active` gets this
+   for free and needs no pointer state in JS. */
+.bc:active { transform: scale(.985); }
+.bc.drag { transform: scale(1.02) rotate(.6deg); box-shadow: var(--shadow-2); z-index: 3; cursor: grabbing; }
+/* MOTION-SPEC §7.1 — optimistic UI renders at .6 until the server acknowledges,
+   then goes solid. Without this a move that is about to fail looks identical to
+   one that succeeded. `.bc:active` must not dim a card that is merely pressed,
+   so this is keyed on the pending class alone. */
+.bc.pending { opacity: .6; cursor: progress; }
+/* The settle flash — IxViews 9.1 exit, "one --primary flash so you can find it
+   in the new column". `motion.css` @keyframes kbJust, same duration and easing. */
+.bc.just { animation: bcJust calc(var(--dur-slow) * 1.5) var(--ease-exit); }
+@keyframes bcJust {
+  0%   { box-shadow: 0 0 0 2px var(--primary); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+/* Quick complete — IxViews 9.4. One quick action, not five: the tick is the
+   most common single change and everything else is a click into the drawer.
+   Hidden until card hover on pointer devices, permanently visible on touch,
+   where there is no hover to reveal it (MOTION-SPEC §7.7). */
+/* No `margin-left: auto` — `.bc__prio` above already claims the free space, and
+   a second auto margin would split it and leave the tick floating mid-row. */
+.bc__tick {
+  width: 17px; height: 17px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--outline); border-radius: 50%;
+  background: none; color: transparent; opacity: 0; cursor: pointer;
+  transition: opacity var(--dur-fast) var(--ease-standard),
+              background var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard);
+}
+.bc__tick svg { width: 11px; height: 11px; }
+.bc:hover .bc__tick, .bc__tick:focus-visible { opacity: 1; }
+.bc__tick:hover, .bc__tick:focus-visible { background: var(--ok); border-color: var(--ok); color: #fff; }
+.bc__tick.on { opacity: 1; background: var(--ok); border-color: var(--ok); color: #fff; }
+@media (hover: none) { .bc__tick { opacity: 1; } }
 
 .bc__top { display: flex; align-items: center; gap: 7px; }
 .bc__pdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--c); }

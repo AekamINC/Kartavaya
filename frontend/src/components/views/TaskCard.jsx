@@ -29,8 +29,19 @@ import { PRIORITY_COLORS, PRIORITY_LABELS } from '../../lib/statusColors';
  * Drag is not this component's business. `KanbanView` wraps it in a
  * `<Draggable>` and puts the handle props on the wrapper, so the card takes
  * only `dragging` for the lift transform.
+ *
+ *  · **The quick-complete tick** is IxViews 9.4: one quick action, not five,
+ *    because marking something done is the most common single change and it
+ *    took three clicks through the drawer. It is a real `<button>` nested in
+ *    the card's own click target, so it `stopPropagation`s — without that,
+ *    ticking a card also opens it, which the catalogue calls out by name.
+ *  · **`pending`** carries MOTION-SPEC §7.1: an optimistic write renders at
+ *    `opacity .6` until the server acknowledges. **`just`** is 9.1's settle
+ *    flash, so a card you dropped is findable in its new column.
  */
-export default function TaskCard({ task, onClick, dragging = false }) {
+export default function TaskCard({
+  task, onClick, dragging = false, pending = false, just = false, fresh = false, onComplete,
+}) {
   const priority = task.priority || 'medium';
   const color = PRIORITY_COLORS[priority] || 'var(--on-surface-3)';
   const names = task.assignee_names || [];
@@ -38,11 +49,13 @@ export default function TaskCard({ task, onClick, dragging = false }) {
   const people = ids.map((id, i) => ({ id, name: names[i] || id }));
   const approvalPending =
     task.approval_status === 'pending' || task.approval_status === 'pending_client';
+  const isDone = task.status === 'done';
 
   return (
     <button
       type="button"
-      className={['bc', dragging && 'drag'].filter(Boolean).join(' ')}
+      className={['bc', dragging && 'drag', pending && 'pending', just && 'just', fresh && 'fresh']
+        .filter(Boolean).join(' ')}
       onClick={onClick}
     >
       <span className="bc__top">
@@ -54,6 +67,31 @@ export default function TaskCard({ task, onClick, dragging = false }) {
           </span>
         )}
         <span className="bc__prio" style={{ '--c': color }}>{PRIORITY_LABELS[priority]}</span>
+        {onComplete && (
+          // `as="span"` is not an option — this must be focusable and it must
+          // announce its state, so it is a nested button with an explicit
+          // `aria-pressed`. Nested interactive content inside a <button> is
+          // invalid HTML, so the card itself is the one that gives way: see
+          // KanbanView, where the card's own role is what wraps this.
+          <span
+            role="button"
+            tabIndex={0}
+            aria-pressed={isDone}
+            aria-label={isDone ? `Mark ${task.title} as not done` : `Mark ${task.title} done`}
+            className={['bc__tick', isDone && 'on'].filter(Boolean).join(' ')}
+            onClick={e => { e.stopPropagation(); onComplete(task); }}
+            onKeyDown={e => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault(); e.stopPropagation(); onComplete(task);
+              }
+            }}
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4"
+              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3.5 8.4l3 3 6-6.6" />
+            </svg>
+          </span>
+        )}
       </span>
 
       <span className="bc__t">{task.title}</span>

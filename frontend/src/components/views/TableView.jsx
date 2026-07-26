@@ -443,9 +443,14 @@ export default function TableView({
           columns={columns}
           teamMembers={teamMembers}
           onClear={clear}
+          // MERGE, never replace. `PATCH /v1/tasks/bulk` answers
+          // `{task_id, ok, status}` per row rather than the whole record, so
+          // `BulkBar` hands up the patch it sent plus the server's status.
+          // Substituting that for the task would blank every field the bar does
+          // not set — title first.
           onPatched={updated => onTasksChange?.(prev => {
             const byId = Object.fromEntries(updated.map(u => [u.task_id, u]));
-            return prev.map(t => byId[t.task_id] || t);
+            return prev.map(t => (byId[t.task_id] ? { ...t, ...byId[t.task_id] } : t));
           })}
           onDeleted={gone => {
             const dead = new Set(gone);

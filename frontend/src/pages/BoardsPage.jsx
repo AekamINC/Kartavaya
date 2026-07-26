@@ -124,10 +124,6 @@ export default function BoardsPage() {
     setNewTaskEditor({ open: false, columnId: null, dueAt: '' });
   };
 
-  const handleColumnChange = useCallback((action, payload) => {
-    if (action === 'new_task') setNewTaskEditor({ open: true, columnId: payload, dueAt: '' });
-  }, []);
-
   const addField = async () => {
     if (!newFieldName.trim()) return;
     try {
@@ -326,7 +322,6 @@ export default function BoardsPage() {
               showRequested={me?.role !== 'client'}
               showClientApproval
               onTasksChange={handleTasksChange}
-              onColumnChange={handleColumnChange}
               onColumnsChange={setColumns}
             />
           )}

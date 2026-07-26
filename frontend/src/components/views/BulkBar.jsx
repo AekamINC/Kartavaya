@@ -14,21 +14,23 @@ import { PRIORITY_LABELS, STATUS_LABELS } from '../../lib/statusColors';
  * carries `role="status"`. This file supplies the verbs.
  *
  * **On the endpoints.** 04 §4 specs `PATCH /v1/tasks/bulk` and
- * `DELETE /v1/tasks/bulk`. Neither exists on the backend, and the backend is
- * not this batch's to write, so each action fans out over the per-task
- * endpoints that do exist. Two consequences are stated rather than hidden:
+ * `DELETE /v1/tasks/bulk`. Both now exist (`backend/routers/tasks_bulk.py`), so
+ * the `Promise.allSettled` fan-out this file used to carry is gone. Its own
+ * header promised "replace the fan-out the day the two bulk endpoints land; the
+ * call sites and the reporting stay as they are" — that is exactly what this
+ * is. Forty selected rows were forty round trips, forty authorisation checks
+ * and forty automation fires, with nothing stopping the selection ending up
+ * half-applied if the tab closed midway. One request now, transactional, with
+ * per-id savepoints.
  *
- *  · The fan-out is `allSettled`, never `all`. A rejected `all` abandons the
- *    remaining requests after the first failure, leaving a selection where an
- *    arbitrary prefix was applied and the rest was not — and the user has no
- *    way to tell which. `allSettled` finishes the batch and the toast reports
- *    the split honestly: "12 updated · 2 failed".
- *  · Only rows that actually succeeded are written back to local state, so a
- *    failed row keeps its old value on screen instead of showing a change the
- *    server rejected.
- *
- * Replace the fan-out the day the two bulk endpoints land; the call sites and
- * the reporting stay as they are.
+ * The reporting did stay. The route answers
+ * `{requested, updated, failed, results[]}` where each result is
+ * `{task_id, ok, status?, error?}`, which is strictly more than `allSettled`
+ * could tell us — it knows a request rejected, not whether the task was missing
+ * or the caller was refused. So a partial batch still reports the split
+ * honestly, and only ids the server confirmed are written back to local state:
+ * a refused row keeps its old value on screen rather than showing a change that
+ * did not happen (MOTION-SPEC §7.1 — never lie about state).
  */
 export default function BulkBar({ ids, columns = [], teamMembers = [], onClear, onPatched, onDeleted }) {
   const { pushToast } = useToast();
@@ -38,8 +40,16 @@ export default function BulkBar({ ids, columns = [], teamMembers = [], onClear, 
 
   const count = ids.length;
 
-  const report = (results, verb) => {
-    const ok = results.filter(r => r.status === 'fulfilled');
+  /**
+   * `{requested, updated, failed, results[]}` → a toast and the ids that stuck.
+   *
+   * The split is reported from `results`, not from whether the request threw:
+   * the route answers 200 for a partially-applied batch, because a savepoint
+   * rollback on one id is not a failure of the other thirty-nine.
+   */
+  const report = (data, verb) => {
+    const results = Array.isArray(data?.results) ? data.results : [];
+    const ok = results.filter(r => r.ok);
     const bad = results.length - ok.length;
     if (!bad) pushToast({ type: 'success', title: `${ok.length} ${ok.length === 1 ? 'task' : 'tasks'} ${verb}` });
     else if (!ok.length) pushToast({ type: 'error', title: `Could not ${verb === 'deleted' ? 'delete' : 'update'} ${bad} ${bad === 1 ? 'task' : 'tasks'}` });
@@ -47,15 +57,30 @@ export default function BulkBar({ ids, columns = [], teamMembers = [], onClear, 
     return ok;
   };
 
+  /** A whole batch that never reached the server — network, 4xx on the body. */
+  const reportThrow = (e, verb) => {
+    logger.error('Bulk request failed', e);
+    pushToast({
+      type: 'error',
+      title: `Could not ${verb === 'deleted' ? 'delete' : 'update'} ${count === 1 ? 'the task' : `these ${count} tasks`}`,
+      body: e?.response?.data?.detail,
+    });
+  };
+
   const patchAll = async (patch, verb = 'updated') => {
     if (!count || busy) return;
     setBusy(true);
     try {
-      const results = await Promise.allSettled(ids.map(id => api.patch(`/tasks/${id}`, patch)));
-      const ok = report(results, verb);
-      onPatched?.(ok.map(r => r.value.data).filter(Boolean));
+      const { data } = await api.patch('/v1/tasks/bulk', { task_ids: ids, patch });
+      const ok = report(data, verb);
+      // The route returns `{task_id, ok, status}` per row, not the whole task,
+      // so the local merge is the patch we sent plus the server's authoritative
+      // status — which is NOT always the status we asked for: moving into a
+      // column flagged `is_done` forces `done`. Taking the server's value here
+      // is what keeps a bar-moved card and a hand-dragged one in the same state.
+      onPatched?.(ok.map(r => ({ task_id: r.task_id, ...patch, ...(r.status ? { status: r.status } : {}) })));
     } catch (e) {
-      logger.error('Bulk patch failed', e);
+      reportThrow(e, verb);
     } finally {
       setBusy(false);
     }
@@ -71,11 +96,15 @@ export default function BulkBar({ ids, columns = [], teamMembers = [], onClear, 
       onConfirm: async () => {
         setBusy(true);
         try {
-          const results = await Promise.allSettled(ids.map(id => api.delete(`/tasks/${id}`)));
-          report(results, 'deleted');
-          const gone = ids.filter((_, i) => results[i].status === 'fulfilled');
-          onDeleted?.(gone);
+          // axios sends a DELETE body only under `data`. The route reads
+          // `task_ids` from the body rather than the query string because a
+          // 200-id selection would overflow a URL.
+          const { data } = await api.delete('/v1/tasks/bulk', { data: { task_ids: ids } });
+          const ok = report(data, 'deleted');
+          onDeleted?.(ok.map(r => r.task_id));
           onClear?.();
+        } catch (e) {
+          reportThrow(e, 'deleted');
         } finally {
           setBusy(false);
         }

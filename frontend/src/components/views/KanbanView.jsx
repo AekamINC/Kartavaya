@@ -10,7 +10,7 @@ import { playPraiseSound } from '../../lib/notifSound';
 import TaskCard from './TaskCard';
 import CardGhost from './CardGhost';
 import TaskDrawer from '../TaskDrawer';
-import { useToast, ConfirmDialog } from '../ui';
+import { useToast, ConfirmDialog, EmptyState } from '../ui';
 
 /**
  * KanbanView — columns, drag, and the drawer (04-boards-table-views.md §5).
@@ -62,7 +62,11 @@ const SYNTHETIC_IDS = new Set(['__requested__', '__pending_client__']);
 
 export default function KanbanView({
   columns, tasks, teamMembers,
-  onTasksChange, onColumnChange, onColumnsChange,
+  // `onColumnChange` is gone: its only action was `('new_task', columnId)`,
+  // which opened the New Task modal from a column foot. IxViews 9.3 replaces
+  // that with the inline composer below, so the callback had no remaining
+  // caller. The modal is still reached from the toolbar's "New task".
+  onTasksChange, onColumnsChange,
   teamId,
   // readOnly: disables ALL drag + hides "Add task" buttons
   readOnly = false,
@@ -95,6 +99,32 @@ export default function KanbanView({
   const [newColColor, setNewColColor] = useState('#6366f1');
   const [newColDone, setNewColDone] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
+
+  // ── Inline add composer (IxViews 9.3) ─────────────────────────────────────
+  // `composeCol` is the column whose composer is open, or null. The catalogue's
+  // "today" note for 9.3 is "Add opens a full New Task modal, so adding six
+  // cards means six modals" — this is that fix. The modal is still reachable
+  // from the toolbar for a task that needs assignees, a due date or a
+  // description; the composer is for the stand-up case, where the title IS the
+  // task and six of them arrive in a row.
+  const [composeCol, setComposeCol] = useState(null);
+  const [draft, setDraft] = useState('');
+  const [creating, setCreating] = useState(false);
+  // Cards that arrived or landed recently, for the one-shot entry and settle
+  // animations. Keyed by task id; the class is dropped after the animation so
+  // it can fire again next time.
+  const [freshIds, setFreshIds] = useState(() => new Set());
+  const [justIds, setJustIds] = useState(() => new Set());
+  const [pendingIds, setPendingIds] = useState(() => new Set());
+
+  const markTransient = useCallback((setter, id, ms) => {
+    setter(prev => new Set(prev).add(id));
+    setTimeout(() => setter(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    }), ms);
+  }, []);
 
   const canManageCols = !readOnly && !!teamId && ['admin', 'owner'].includes(currentUserRole);
 
@@ -148,6 +178,65 @@ export default function KanbanView({
     setNewColColor('#6366f1');
     setNewColDone(false);
   };
+
+  /**
+   * Create one task from the composer. `POST /tasks` — the same endpoint the
+   * modal uses, so a card added here is indistinguishable from one added there.
+   *
+   * Enter creates and CLEARS WITHOUT CLOSING (9.3): the composer stays focused
+   * so a stand-up's worth of work is one continuous typing session. Shift+Enter
+   * newlines. Esc, the Done link, or blurring while empty dismisses it.
+   */
+  const commitCompose = useCallback(async (colId) => {
+    const title = draft.trim();
+    if (!title || creating) return;
+    setCreating(true);
+    setDraft('');
+    try {
+      const status = columns.find(c => c.column_id === colId)?.is_done ? 'done' : 'todo';
+      const res = await api.post('/tasks', { title, team_id: teamId, column_id: colId, status });
+      const created = res.data;
+      onTasksChange?.(prev => [...prev, created]);
+      if (created?.task_id) markTransient(setFreshIds, created.task_id, 400);
+    } catch (e) {
+      logger.error('Inline task create failed', e);
+      pushToast({ type: 'error', title: 'Could not add that task' });
+      // The draft goes back in the box rather than being lost — the user typed
+      // it and the failure was not theirs.
+      setDraft(title);
+    } finally {
+      setCreating(false);
+    }
+  }, [draft, creating, columns, teamId, onTasksChange, markTransient, pushToast]);
+
+  /**
+   * The hover quick-complete tick (IxViews 9.4). Optimistic, at `opacity .6`
+   * until acknowledged (MOTION-SPEC §7.1), rolled back to the whole previous
+   * record on failure.
+   */
+  const toggleComplete = useCallback(async (task) => {
+    if (readOnly) return;
+    const next = task.status === 'done' ? 'todo' : 'done';
+    const previous = task;
+    setPendingIds(prev => new Set(prev).add(task.task_id));
+    onTasksChange?.(prev => prev.map(t => (t.task_id === task.task_id ? { ...t, status: next } : t)));
+    try {
+      const res = await api.patch(`/tasks/${task.task_id}`, { status: next });
+      onTasksChange?.(prev => prev.map(t => (t.task_id === task.task_id ? res.data : t)));
+      if (next === 'done') playPraiseSound();
+      markTransient(setJustIds, task.task_id, 600);
+    } catch (e) {
+      logger.error('Complete toggle failed', e);
+      pushToast({ type: 'error', title: 'Could not update that task' });
+      onTasksChange?.(prev => prev.map(t => (t.task_id === task.task_id ? previous : t)));
+    } finally {
+      setPendingIds(prev => {
+        const n = new Set(prev);
+        n.delete(task.task_id);
+        return n;
+      });
+    }
+  }, [readOnly, onTasksChange, markTransient, pushToast]);
 
   const isClient = currentUserRole === 'client';
 
@@ -218,18 +307,53 @@ export default function KanbanView({
       ));
     });
 
+    // MOTION-SPEC §7.1 — the card renders at `opacity .6` while the write is in
+    // flight, so an optimistic move never claims to have succeeded before it
+    // has. It goes solid, then flashes, on acknowledgement.
+    setPendingIds(prev => new Set(prev).add(taskId));
+
     try {
       const res = await api.patch(`/tasks/${taskId}/move`, { column_id: targetColId, order: newOrder });
       onTasksChange?.(prev => prev.map(t => (t.task_id === taskId ? res.data : t)));
       if (res.data.status === 'done') playPraiseSound();
+      // IxViews 9.1 exit — one --primary flash so the card is findable in the
+      // column it landed in.
+      markTransient(setJustIds, taskId, 600);
     } catch (e) {
       logger.error('Move failed', e);
       pushToast({ type: 'error', title: 'Could not move task' });
       // Restore the whole previous record. Putting back `column_id` alone left
       // the card in the right column at the position it was dragged to.
       if (previous) onTasksChange?.(prev => prev.map(t => (t.task_id === taskId ? previous : t)));
+    } finally {
+      setPendingIds(prev => {
+        const n = new Set(prev);
+        n.delete(taskId);
+        return n;
+      });
     }
-  }, [tasks, onTasksChange, pushToast]);
+  }, [tasks, onTasksChange, pushToast, markTransient]);
+
+  // A board with no columns rendered as an empty flex row — nothing at all for
+  // a member who cannot add one, and no explanation. `canManageCols` decides
+  // which of the two sentences is true for this user, because "add a column" is
+  // not an instruction you give someone who has no button for it.
+  // `&& !addingCol` matters: pressing the CTA opens the add-column form, which
+  // lives in the board below. Without it the empty state would swallow its own
+  // action and the button would do nothing visible.
+  if (visibleColumns.length === 0 && !addingCol) {
+    return (
+      <EmptyState
+        illustration="tasks"
+        title="This board has no columns yet"
+        description={canManageCols
+          ? 'Add a column to start moving work across the board.'
+          : 'An admin or owner can add columns to this project.'}
+        action={canManageCols ? 'Add column' : undefined}
+        onAction={canManageCols ? () => setAddingCol(true) : undefined}
+      />
+    );
+  }
 
   return (
     <>
@@ -277,7 +401,16 @@ export default function KanbanView({
                           {isSynth && col._hindi && <span className="bd__cn-hi">{col._hindi}</span>}
                         </span>
                       )}
-                      <span className="bd__cc">{colTasks.length}</span>
+                      {/* IxViews 9.1 — "its count badge previews the new
+                          total" while a card is held over the column. The
+                          dragged card is still counted in its source column
+                          until the drop commits, so the preview is +1 here and
+                          the source is left alone: showing both moving at once
+                          would double-count during the hover. */}
+                      <span className="bd__cc">
+                        {colTasks.length + (snapshot.isDraggingOver && droppable
+                          && !colTasks.some(t => t.task_id === draggingId) ? 1 : 0)}
+                      </span>
                       {canManageCols && !isSynth && (
                         <button
                           type="button"
@@ -317,6 +450,10 @@ export default function KanbanView({
                               <TaskCard
                                 task={task}
                                 dragging={dragSnapshot.isDragging}
+                                pending={pendingIds.has(task.task_id)}
+                                just={justIds.has(task.task_id)}
+                                fresh={freshIds.has(task.task_id)}
+                                onComplete={readOnly || isSynth ? undefined : toggleComplete}
                                 onClick={() => !draggingId && setDrawerTaskId(task.task_id)}
                               />
                             </div>
@@ -327,14 +464,61 @@ export default function KanbanView({
                       {colTasks.length === 0 && snapshot.isDraggingOver && droppable && <CardGhost />}
                     </div>
 
+                    {/* IxViews 9.3 — the composer replaces the Add button in
+                        place. It does NOT close on ⏎; that is the whole point,
+                        and it is why the confirm is a "Done" link rather than a
+                        Cancel. Blur closes only while the draft is empty, so
+                        clicking the Add button below does not discard typing. */}
                     {!readOnly && !isSynth && (
-                      <button
-                        type="button"
-                        className="bd__add"
-                        onClick={() => onColumnChange?.('new_task', col.column_id)}
-                      >
-                        + Add task
-                      </button>
+                      composeCol === col.column_id ? (
+                        <div className="bd__compose">
+                          <textarea
+                            className="bd__composein"
+                            rows={2}
+                            autoFocus
+                            value={draft}
+                            placeholder="Task title, ⏎ to add"
+                            aria-label={`New task in ${col.name}`}
+                            onChange={e => setDraft(e.target.value)}
+                            onBlur={() => { if (!draft.trim()) setComposeCol(null); }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                commitCompose(col.column_id);
+                              }
+                              if (e.key === 'Escape') { setDraft(''); setComposeCol(null); }
+                            }}
+                          />
+                          <div className="bd__composerow">
+                            <button
+                              type="button"
+                              className="btn btn--fill btn--sm"
+                              disabled={!draft.trim() || creating}
+                              onClick={() => commitCompose(col.column_id)}
+                            >
+                              Add
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn--text btn--sm"
+                              onClick={() => { setDraft(''); setComposeCol(null); }}
+                            >
+                              Done
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="bd__add"
+                          onClick={() => { setDraft(''); setComposeCol(col.column_id); }}
+                        >
+                          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                            <path d="M8 3v10M3 8h10" />
+                          </svg>
+                          Add task
+                        </button>
+                      )
                     )}
                   </div>
                 )}

@@ -113,10 +113,6 @@ export default function ProjectBoardPage() {
   // the same matrix in a single query, already keyed by task.
   const { map: fieldValueMap } = useFieldValueMap(projectId, (fieldDefs || []).length > 0);
 
-  const handleColumnChange = (action, payload) => {
-    if (action === 'new_task') setNewTaskEditor({ open: true, columnId: payload, dueAt: '' });
-  };
-
   const addField = async () => {
     if (!newFieldName.trim()) return;
     try {
@@ -305,7 +301,6 @@ export default function ProjectBoardPage() {
           fieldDefs={fieldDefs}
           fieldValueMap={fieldValueMap}
           teamId={projectId}
-          onColumnChange={handleColumnChange}
           onColumnsChange={setColumns}
           showRequested={me?.role === 'admin' || me?.role === 'owner'}
           showClientApproval
