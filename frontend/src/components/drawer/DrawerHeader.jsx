@@ -91,12 +91,22 @@ export default function DrawerHeader({
         </div>
       </div>
 
-      {/* Title — collapses when scrolled */}
+      {/* Title — collapses when scrolled.
+          The input below is the drawer's primary control and had no accessible
+          name — no label, no aria-label, no placeholder — so a screen reader
+          announced it only as "edit text". Enter also did not commit, though
+          MOTION-SPEC specifies onBlur|Enter; blur alone means a keyboard user
+          has to Tab away to save. */}
       <div className="k-dr__title">
         {task ? (
           <input
+            aria-label="Task title"
             value={draft.title || ''}
             onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); }
+              if (e.key === 'Escape') { setDraft(d => ({ ...d, title: task.title })); e.currentTarget.blur(); }
+            }}
             onBlur={() => draft.title !== task.title && saveTask({ title: draft.title })}
             style={{
               width: '100%', border: 'none', outline: 'none',

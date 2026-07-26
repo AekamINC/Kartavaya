@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import ConfirmDialog from './ui/ConfirmDialog';
+import FocusTrap from './ui/FocusTrap';
 import { StatusBar } from './ui/StatusBar';
 import { Tabs } from './ui/Tabs';
 import FieldRenderer from './fields/FieldRenderer';
@@ -504,8 +505,19 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
 
   return (
     <>
-      <div className="k-dr-scrim" onClick={e => e.target === e.currentTarget && onClose()}>
-        <div className={`k-dr${scrolled ? ' is-scrolled' : ''}`}>
+      <div className="k-dr-scrim" role="presentation" onClick={e => e.target === e.currentTarget && onClose()}>
+        {/* The drawer was the last overlay with no focus trap — modal,
+            ConfirmDialog and CommandPalette all have one. Tab walked straight
+            out of the open drawer into the board behind the scrim, and closing
+            dropped focus at <body> instead of returning it to the card that
+            opened it. Trap wraps the panel, not the scrim. */}
+        <FocusTrap active>
+        <div
+          className={`k-dr${scrolled ? ' is-scrolled' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label={task?.title ? `Task: ${task.title}` : 'Task details'}
+        >
 
           <DrawerHeader
             task={task} draft={draft} setDraft={setDraft} saving={saving}
@@ -667,6 +679,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
             )}
           </div>
         </div>
+        </FocusTrap>
       </div>
 
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
