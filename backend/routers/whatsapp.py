@@ -323,17 +323,45 @@ async def webhook_verify(request: Request):
 async def webhook_receive(request: Request):
     import os
     raw_body = await request.body()
-    app_secret = os.getenv("META_APP_SECRET", "")
-    if app_secret:
-        sig_header = request.headers.get("x-hub-signature-256", "")
-        if not sig_header.startswith("sha256="):
-            raise HTTPException(403, "Missing signature")
-        expected = hmac.HMAC(app_secret.encode(), raw_body, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(sig_header[7:], expected):
-            raise HTTPException(403, "Invalid signature")
+    # `if app_secret:` skipped verification ENTIRELY when the variable was unset
+    # or set-but-empty, which is the one state where nothing else is checking.
+    # This route is unauthenticated by design and WRITES: it creates rows in
+    # `varta_contacts` and `varta_conversations` for whichever org owns the
+    # `phone_number_id` in the body. Without the signature, anyone who can guess
+    # or read a phone_number_id can inject messages into any org's inbox and
+    # invent contacts in it.
+    #
+    # It now fails CLOSED, matching `scheduler._verify_cron`, which has always
+    # refused when its secret is missing rather than waving the request through.
+    # The error is logged loudly and names the variable, because a misconfigured
+    # deployment should be diagnosable in one line rather than silently accepting
+    # forged traffic.
+    app_secret = (os.getenv("META_APP_SECRET") or "").strip()
+    if not app_secret:
+        log.error(
+            "META_APP_SECRET is not set — refusing the WhatsApp webhook. Inbound "
+            "messages cannot be verified as coming from Meta, and this endpoint "
+            "writes to varta_contacts and varta_conversations."
+        )
+        raise HTTPException(503, "Webhook is not configured")
+
+    sig_header = request.headers.get("x-hub-signature-256", "")
+    if not sig_header.startswith("sha256="):
+        raise HTTPException(403, "Missing signature")
+    expected = hmac.HMAC(app_secret.encode(), raw_body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig_header[7:], expected):
+        raise HTTPException(403, "Invalid signature")
 
     payload = json.loads(raw_body)
-    log.info("WhatsApp webhook: %s", json.dumps(payload)[:500])
+    # The payload carries the CUSTOMER'S PHONE NUMBER and the text of their
+    # message. Logging 500 characters of it put both in the application log,
+    # where they outlive the retention policy that governs the conversation
+    # itself. Structure only.
+    log.info(
+        "WhatsApp webhook: %d entr%s",
+        len(payload.get("entry", []) or []),
+        "y" if len(payload.get("entry", []) or []) == 1 else "ies",
+    )
 
     entry = payload.get("entry", [])
     pool = await get_pool()

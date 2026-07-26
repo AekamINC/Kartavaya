@@ -30,6 +30,28 @@ from db import get_pool
 _CTRL_RE = re.compile(r'[\x00-\x1f\x7f]|\x1b\[[0-?]*[ -/]*[@-~]')
 
 
+def secret_matches(provided: object, expected: object) -> bool:
+    """Constant-time comparison of a shared secret.
+
+    `provided == expected` on a `str` short-circuits at the first differing
+    byte, so the time it takes to fail is a function of how many leading bytes
+    were right. Against an endpoint that can be called repeatedly — which every
+    cron dispatch route can — that is enough to recover the secret a byte at a
+    time. `hmac.compare_digest` takes the same time whatever the input.
+
+    Returns False when either side is empty, so an unset environment variable
+    can never be matched by an omitted parameter (both being "" would otherwise
+    compare EQUAL and authorise the request).
+    """
+    import hmac as _hmac
+
+    p = "" if provided is None else str(provided)
+    e = "" if expected is None else str(expected)
+    if not p or not e:
+        return False
+    return _hmac.compare_digest(p, e)
+
+
 def log_safe(value: object) -> str:
     """Sanitize a value for use in log messages (CWE-117 log injection prevention).
 

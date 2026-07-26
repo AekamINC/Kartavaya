@@ -19,7 +19,7 @@ import logging
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 
 from auth_router import require_user, security
 from middleware.roles import require_platform_role
@@ -49,16 +49,27 @@ async def dispatch_reminders(
     request: Request,
     pool = Depends(get_pool),
     request_secret: str = Query(""),
+    x_dispatch_secret: str = Header(""),
 ):
     """Called every few minutes by an external cron. Sends all due task reminders.
 
-    Auth: if TASK_REMINDER_DISPATCH_SECRET is set, a matching ?request_secret=
-    is sufficient on its own (the cron caller has no session cookie to send).
+    Auth: if TASK_REMINDER_DISPATCH_SECRET is set, a matching secret is
+    sufficient on its own (the cron caller has no session cookie to send).
     Only falls back to requiring an authenticated admin session when the
     secret env var isn't configured at all.
+
+    PREFER the `X-Dispatch-Secret` HEADER. `?request_secret=` still works so an
+    already-configured cron keeps running, but a secret in a query string is
+    written to every access log, proxy log and platform request log it passes
+    through, and those outlive and out-scope the secret itself. The header form
+    is not logged.
     """
+    from utils import secret_matches
+
     if DISPATCH_SECRET:
-        if request_secret != DISPATCH_SECRET:
+        # Header first; the query form is the deprecated fallback.
+        if not (secret_matches(x_dispatch_secret, DISPATCH_SECRET)
+                or secret_matches(request_secret, DISPATCH_SECRET)):
             raise HTTPException(403, "Invalid dispatch secret")
     else:
         creds = await security(request)

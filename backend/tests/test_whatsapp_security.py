@@ -113,23 +113,85 @@ async def test_webhook_rejects_missing_signature_header(api_client, mock_pool):
     assert r.status_code == 403
 
 
-# ── META_APP_SECRET not set — webhook still works (no sig check) ───
+# ── META_APP_SECRET not set — the webhook must REFUSE ──────────
+#
+# This block used to assert the opposite: that an empty META_APP_SECRET skipped
+# signature verification and returned 200. That is the one state in which nothing
+# is checking the caller at all, and the route is both unauthenticated and a
+# WRITE — it creates rows in varta_contacts and varta_conversations for whichever
+# org owns the phone_number_id in the body. Anyone who could guess or read a
+# phone_number_id could inject messages into that org's inbox and invent contacts
+# in it.
+#
+# `scheduler._verify_cron` has always refused when its own secret is missing.
+# This now matches it.
 
 
 @pytest.mark.anyio
-async def test_webhook_works_without_app_secret(api_client, mock_pool):
-    """When META_APP_SECRET is empty, signature check is skipped (200 OK)."""
+@pytest.mark.parametrize("value", ["", "   "])
+async def test_webhook_refuses_when_app_secret_is_unset(api_client, mock_pool, value):
+    """An unset or blank META_APP_SECRET must fail CLOSED, not skip the check."""
     payload = json.dumps(_make_webhook_payload())
     mock_pool.fetchrow = AsyncMock(return_value=None)
 
-    with patch.dict(os.environ, {"META_APP_SECRET": ""}, clear=False):
+    with patch.dict(os.environ, {"META_APP_SECRET": value}, clear=False):
         r = await api_client.post(
             "/api/v1/whatsapp/webhook",
             content=payload,
             headers={"Content-Type": "application/json"},
         )
-    # Should succeed — the code skips signature verification when secret is empty
-    assert r.status_code == 200
+    assert r.status_code == 503, (
+        "an unconfigured webhook secret must refuse the request — this endpoint "
+        "is unauthenticated and writes to varta_contacts/varta_conversations"
+    )
+
+
+@pytest.mark.anyio
+async def test_webhook_refuses_forged_body_when_secret_is_unset(api_client, mock_pool):
+    """The concrete attack: a forged inbound message with no signature at all."""
+    mock_pool.fetchrow = AsyncMock(return_value=None)
+
+    with patch.dict(os.environ, {"META_APP_SECRET": ""}, clear=False):
+        r = await api_client.post(
+            "/api/v1/whatsapp/webhook",
+            content=json.dumps(_make_webhook_payload()),
+            headers={"Content-Type": "application/json"},
+        )
+    assert r.status_code != 200
+
+
+@pytest.mark.anyio
+async def test_webhook_does_not_log_message_body_or_phone_number(
+    api_client, mock_pool, caplog
+):
+    """The payload carries a customer's phone number and the text they sent.
+
+    Logging it puts both in the application log, where they outlive the retention
+    policy that governs the conversation itself.
+    """
+    import logging
+
+    app_secret = "test_meta_app_secret_abc123"
+    payload_bytes = json.dumps(_make_webhook_payload()).encode()
+    expected_sig = hmac.new(
+        app_secret.encode(), payload_bytes, hashlib.sha256
+    ).hexdigest()
+    mock_pool.fetchrow = AsyncMock(return_value=None)
+
+    with caplog.at_level(logging.INFO):
+        with patch.dict(os.environ, {"META_APP_SECRET": app_secret}):
+            await api_client.post(
+                "/api/v1/whatsapp/webhook",
+                content=payload_bytes,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-hub-signature-256": f"sha256={expected_sig}",
+                },
+            )
+
+    logged = caplog.text
+    assert "919999999999" not in logged, "customer phone number written to the log"
+    assert "Hello" not in logged, "message body written to the log"
 
 
 # ── GET /webhook verify token ──────────────────────────────────

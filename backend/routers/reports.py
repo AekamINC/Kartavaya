@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, field_validator, EmailStr
@@ -404,16 +404,27 @@ async def delete_schedule(
 async def dispatch_reports(
     request: Request,
     request_secret: str = Query(""),
+    x_dispatch_secret: str = Header(""),
     pool = Depends(get_pool),
     credentials: _Optional[HTTPAuthorizationCredentials] = Depends(_dispatch_bearer),
 ):
     """Called hourly by Railway cron. Accepts REPORT_DISPATCH_SECRET OR an admin JWT.
 
-    Cron callers (no session): supply ?request_secret=<REPORT_DISPATCH_SECRET>.
+    Cron callers (no session): send the secret in the `X-Dispatch-Secret` HEADER.
     Manual callers (browser/admin): supply a valid admin Bearer token.
+
+    `?request_secret=` still works so an already-configured cron keeps running,
+    but it is deprecated: a secret in a query string is written to every access
+    log, proxy log and platform request log the request passes through, and
+    those outlive and out-scope the secret itself.
     """
+    from utils import secret_matches
+
     authorized = False
-    if DISPATCH_SECRET and request_secret == DISPATCH_SECRET:
+    # Constant-time, header preferred. `==` leaked how many leading bytes of the
+    # secret were correct via response timing.
+    if (secret_matches(x_dispatch_secret, DISPATCH_SECRET)
+            or secret_matches(request_secret, DISPATCH_SECRET)):
         authorized = True
     else:
         # Fall back to admin JWT check

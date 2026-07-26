@@ -24,7 +24,12 @@ CRON_SECRET = os.getenv("CRON_SECRET", "")
 
 
 async def _verify_cron(x_cron_secret: str = Header("")):
-    if not CRON_SECRET or x_cron_secret != CRON_SECRET:
+    # Constant-time. `!=` on a str short-circuits at the first differing byte,
+    # so the time to fail leaks how many leading bytes were correct — and a cron
+    # endpoint can be called as often as an attacker likes.
+    from utils import secret_matches
+
+    if not secret_matches(x_cron_secret, CRON_SECRET):
         raise HTTPException(403, "Invalid cron secret")
 
 
