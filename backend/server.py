@@ -1011,6 +1011,40 @@ async def approval_history(pool=Depends(get_db), user=Depends(require_user)):
     """, uid)
     return [dict(r) for r in task_rows]
 
+
+@api_router.get("/approvals/stats")
+async def approval_stats(pool=Depends(get_db), user=Depends(require_user)):
+    """Today's decision counts.
+
+    The approvals page derived these by filtering /approvals/history in the
+    browser, but that endpoint is capped at 50 rows. On a day with more than 50
+    decisions the tiles under-reported — silently, and with a plausible number,
+    which is the worst way for a count to be wrong. Counted in SQL against the
+    same visibility predicate so the two views cannot disagree.
+
+    "Today" is the caller's civil day in IST, which is the only timezone this
+    product operates in; UTC would roll the counter over at 5:30am local.
+    """
+    uid = user["user_id"]
+    row = await pool.fetchrow("""
+        SELECT
+            COUNT(*) FILTER (WHERE t.approval_status='approved') AS approved_today,
+            COUNT(*) FILTER (WHERE t.approval_status='rejected') AS rejected_today
+        FROM tasks t
+        WHERE t.approval_status IN ('approved','rejected')
+        AND t.approval_decided_at IS NOT NULL
+        AND (t.approval_decided_at AT TIME ZONE 'Asia/Kolkata')::date
+            = (NOW() AT TIME ZONE 'Asia/Kolkata')::date
+        AND (
+            EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1 AND pa.role IN ('owner','admin'))
+            OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id=t.team_id AND tm.user_id=$1 AND tm.role IN ('owner','admin') AND tm.status='active')
+        )
+    """, uid)
+    return {
+        "approved_today": row["approved_today"] or 0,
+        "rejected_today": row["rejected_today"] or 0,
+    }
+
 # ── Task-approval helpers (called by review_approval) ────────────────────────
 
 async def _reject_task_approval(pool, task: dict, task_id: str, notes: str, user: dict) -> dict:

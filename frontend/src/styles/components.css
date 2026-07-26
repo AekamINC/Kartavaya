@@ -196,3 +196,42 @@ textarea.inp { resize: vertical; min-height: 76px; }
 .k-err__d  { font-size: var(--t-body-sm); line-height: var(--line-height-base); color: var(--on-surface-3); text-wrap: pretty; margin: 0; }
 
 .k-offline { position: sticky; top: 0; z-index: 60; padding: 7px var(--pad-page); background: var(--warn-container); color: var(--warn); font-size: var(--t-label); font-weight: 500; text-align: center; }
+
+/* ── Modal ────────────────────────────────────────────────────────────────
+   Converted off the static Tailwind palette (bg-bgDefault/border-borderDefault
+   had no dark: variants, so the panel stayed cream over a near-black app). */
+.modal__scrim {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .45);
+  animation: modalIn calc(var(--dur-fast) * var(--ix)) var(--ease-standard);
+}
+.modal__panel {
+  width: 100%; max-height: calc(100vh - 32px);
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+.modal__panel--sm { max-width: 420px; }
+.modal__panel--md { max-width: 620px; }
+.modal__panel--lg { max-width: 900px; }
+.modal__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+.modal__title {
+  margin: 0; font-size: 14px; font-weight: 600;
+  color: var(--on-surface); font-family: var(--font-ui);
+}
+.modal__body { padding: 18px 20px; overflow: auto; flex: 1; min-height: 0; }
+.modal__foot {
+  padding: 14px 20px; border-top: 1px solid var(--outline-variant);
+  display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0;
+}
+@keyframes modalIn { from { opacity: 0 } to { opacity: 1 } }
