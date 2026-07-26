@@ -441,7 +441,7 @@ export default function TemplatesPage() {
 
                   {/* Brand colors reference — managed org-wide in Admin → Brand Colors */}
                   <div>
-                    <label className="k-label">Brand colors · ब्रांड रंग</label>
+                    <label className="k-label">Brand colors</label>
                     <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 10 }}>
                       Workspace palette — manage in <strong>Admin → Brand Colors</strong>.
                     </div>
@@ -450,7 +450,7 @@ export default function TemplatesPage() {
 
                   {/* Subtasks */}
                   <div>
-                    <label className="k-label">Subtasks · उप-कार्य</label>
+                    <label className="k-label">Subtasks</label>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
                       {(cfg.subtasks || []).map((s, i) => (
                         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--bg-soft)', borderRadius: 'var(--r-md)', border: '1px solid var(--rule-soft)' }}>
@@ -482,7 +482,7 @@ export default function TemplatesPage() {
 
                   {/* Attached files + URLs */}
                   <div>
-                    <label className="k-label">Pre-attached files & links · संलग्न</label>
+                    <label className="k-label">Pre-attached files & links</label>
                     <div style={{ fontSize: 12, color: 'var(--ink-faint)', marginBottom: 10 }}>
                       Upload files or paste URLs (Google Drive, Figma, brand kit) — all auto-attach when this template is used.
                     </div>
@@ -568,8 +568,8 @@ export default function TemplatesPage() {
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
               <div>
-                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--k-primary)', marginBottom: 4, fontFamily: 'var(--font-ui), var(--font-hindi)' }}>
-                  USE TEMPLATE · साँचा
+                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--k-primary)', marginBottom: 4, fontFamily: 'var(--font-ui)' }}>
+                  USE TEMPLATE <span className="k-lbl__in" lang="hi">साँचा</span>
                 </div>
                 <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 400, fontSize: 22, color: 'var(--ink)', lineHeight: 1.2 }}>
                   {applyModal.tmplName}

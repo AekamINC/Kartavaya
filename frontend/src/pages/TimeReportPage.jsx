@@ -4,7 +4,7 @@
  */
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../lib/api';
-import { PageHeader } from '../components/editorial';
+import { PageHeader, DataTable, Td } from '../components/editorial';
 import { AVATAR_COLORS, userInitials } from '../lib/utils';
 
 function fmtHours(mins) {
@@ -177,7 +177,7 @@ export default function TimeReportPage({ teamId }) {
         right={
           <div className="k-time-total">
             <div className="k-time-total__num">{totalHours}<span className="k-time-total__unit">h</span></div>
-            <div className="k-time-total__lbl">TOTAL · कुल</div>
+            <div className="k-time-total__lbl">TOTAL <span className="k-lbl__in" lang="hi">कुल</span></div>
           </div>
         }
       />
@@ -186,15 +186,15 @@ export default function TimeReportPage({ teamId }) {
       <section className="k-card">
         <div className="k-tfilters">
           <div>
-            <div className="k-fld-label">FROM · आरंभ</div>
+            <div className="k-fld-label">FROM</div>
             <input type="date" className="k-input" value={from} onChange={e => setFrom(e.target.value)} />
           </div>
           <div>
-            <div className="k-fld-label">TO · अंत</div>
+            <div className="k-fld-label">TO</div>
             <input type="date" className="k-input" value={to} onChange={e => setTo(e.target.value)} />
           </div>
           <div>
-            <div className="k-fld-label">MEMBER · सहयोगी</div>
+            <div className="k-fld-label">MEMBER</div>
             <select className="k-input" style={{ cursor: 'pointer' }} value={memberF} onChange={e => setMemberF(e.target.value)}>
               <option value=''>All members</option>
               {members.map(m => <option key={m.user_id} value={m.user_id}>{m.display_name || m.full_name || m.email}</option>)}
@@ -266,53 +266,36 @@ export default function TimeReportPage({ teamId }) {
                   <span className="k-card__sans">विवरण</span>
                 </div>
               </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: 'var(--bg-soft)' }}>
-                      {[['DATE','तारीख'], ['MEMBER','सदस्य'], ['TASK','कार्य'], ['NOTE','टिप्पणी'], ['HOURS','घंटे']].map(([en, hi]) => (
-                        <th key={en} style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--ink-3)', borderBottom: '1px solid var(--rule-soft)', whiteSpace: 'nowrap', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                          {en} <span style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, fontSize: 10, color: 'var(--ink-faint)', textTransform: 'none', letterSpacing: 0 }}>{hi}</span>
-                        </th>
-                      ))}
+              {/* Shared module table (see ReportsPage for the same convergence).
+                  Headers are English only — 24-bilingual-devanagari.md lists
+                  table column headers under "No". HOURS right-aligns because a
+                  left-aligned numeric column cannot be scanned for magnitude,
+                  which is the only reason anyone reads a column of hours. */}
+              <DataTable columns={[
+                'Date', 'Member', 'Task', 'Note',
+                { label: 'Hours', align: 'right' },
+              ]}>
+                {data.entries.map((e, i) => {
+                  const color    = memberColorMap[e.user_name] || 'var(--k-primary)';
+                  const initials = userInitials(e.user_name || '');
+                  const dateStr  = e.started_at ? new Date(e.started_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—';
+                  return (
+                    <tr key={e.entry_id || i}>
+                      <Td color="var(--ink-3)" mono>{dateStr}</Td>
+                      <Td className="trp__member">
+                        <span className="trp__avatar" style={{ background: color }}>{initials}</span>
+                        <span className="trp__name">{(e.user_name || '—').split(' ')[0]}</span>
+                      </Td>
+                      <Td className="trp__task">
+                        {e.task_title ? <span className="trp__ref">{e.task_ref || 'KAR'}</span> : null}
+                        {e.task_title || '—'}
+                      </Td>
+                      <Td color="var(--ink-3)" className="trp__note">{e.description || e.note || '—'}</Td>
+                      <Td align="right" bold mono>{fmtFull(e.minutes)}</Td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {data.entries.map((e, i) => {
-                      const color    = memberColorMap[e.user_name] || '#0082c6';
-                      const initials = userInitials(e.user_name || '');
-                      const dateStr  = e.started_at ? new Date(e.started_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—';
-                      return (
-                        <tr key={e.entry_id || i} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                          <td style={{ padding: '11px 16px', color: 'var(--ink-3)', fontSize: 12, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                            {dateStr}
-                          </td>
-                          <td style={{ padding: '11px 16px', whiteSpace: 'nowrap' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ width: 24, height: 24, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 9, fontWeight: 700, flexShrink: 0 }}>
-                                {initials}
-                              </span>
-                              <span style={{ fontWeight: 500, color: 'var(--ink)' }}>{(e.user_name || '—').split(' ')[0]}</span>
-                            </div>
-                          </td>
-                          <td style={{ padding: '11px 16px', fontWeight: 500, color: 'var(--k-primary)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {e.task_title ? <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, background: 'color-mix(in srgb, var(--k-primary) 10%, transparent)', padding: '2px 6px', borderRadius: 4, marginRight: 6, color: 'var(--k-primary)', fontWeight: 700 }}>
-                              {e.task_ref || 'KAR'}
-                            </span> : null}
-                            {e.task_title || '—'}
-                          </td>
-                          <td style={{ padding: '11px 16px', color: 'var(--ink-3)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {e.description || e.note || '—'}
-                          </td>
-                          <td style={{ padding: '11px 16px', fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-display)', whiteSpace: 'nowrap' }}>
-                            {fmtFull(e.minutes)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                  );
+                })}
+              </DataTable>
             </section>
           )}
 

@@ -556,6 +556,17 @@
   font-size:12px; color:var(--ink-3);
   margin-left:auto;
 }
+/* ── Schedules table ──────────────────────────────────────────────────────
+   Cell rules for the shared DataTable that replaced the hand-rolled schedules
+   table. The delete button previously carried a hardcoded #dc2626; it is
+   --danger now, so it follows the theme instead of staying crimson in dark
+   mode. */
+.rp-sched__rcpt{
+  max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.rp-sched__del{ color:var(--danger); border-color:transparent; }
+.rp-sched__del:hover{ background:var(--danger-container); }
+
 .gr__hrow{
   display:flex; align-items:center; gap:12px;
   padding:10px 16px;

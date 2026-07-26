@@ -5,7 +5,7 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
-import { PageHeader } from '../components/editorial';
+import { PageHeader, DataTable, Td } from '../components/editorial';
 import { PROJECT_COLORS, userInitials } from '../lib/utils';
 
 const TODAY     = new Date().toISOString().slice(0, 10);
@@ -130,7 +130,7 @@ function SchedulesPanel({ teams }) {
       <section className="k-card">
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 200px', minWidth: 0 }}>
-            <div className="k-fld-label">PROJECT · योजना</div>
+            <div className="k-fld-label">PROJECT</div>
             <select className="k-input" value={teamId} onChange={e => setTeamId(e.target.value)} style={{ cursor: 'pointer' }}>
               {teams.map(t => <option key={t.team_id} value={t.team_id}>{t.name}</option>)}
             </select>
@@ -154,7 +154,7 @@ function SchedulesPanel({ teams }) {
             <div className="k-card__body" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
               {/* Frequency */}
               <div>
-                <div className="k-fld-label">FREQUENCY · आवृत्ति</div>
+                <div className="k-fld-label">FREQUENCY</div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
                   {FREQ_OPTS.map(opt => (
                     <button key={opt.value} type="button"
@@ -177,7 +177,7 @@ function SchedulesPanel({ teams }) {
               {/* Day of week */}
               {form.frequency === 'weekly' && (
                 <div>
-                  <div className="k-fld-label">DAY · दिन</div>
+                  <div className="k-fld-label">DAY</div>
                   <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                     {DAYS.map((d, i) => (
                       <button key={d} type="button"
@@ -195,7 +195,7 @@ function SchedulesPanel({ teams }) {
               {/* Day of month */}
               {form.frequency === 'monthly' && (
                 <div>
-                  <div className="k-fld-label">DAY OF MONTH · दिनांक</div>
+                  <div className="k-fld-label">DAY OF MONTH</div>
                   <input type="number" min="1" max="28" className="k-input"
                     style={{ width: 80, marginTop: 6 }}
                     value={form.day_of_month}
@@ -204,7 +204,7 @@ function SchedulesPanel({ teams }) {
               )}
               {/* Send hour */}
               <div>
-                <div className="k-fld-label">SEND TIME (UTC) · समय</div>
+                <div className="k-fld-label">SEND TIME (UTC)</div>
                 <select className="k-input" style={{ width: 130, marginTop: 6, cursor: 'pointer' }}
                   value={form.send_hour_utc}
                   onChange={e => setForm(f => ({ ...f, send_hour_utc: e.target.value }))}>
@@ -215,7 +215,7 @@ function SchedulesPanel({ teams }) {
               </div>
               {/* Formats */}
               <div>
-                <div className="k-fld-label">FORMAT · प्रारूप</div>
+                <div className="k-fld-label">FORMAT</div>
                 <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
                   {['pdf', 'excel'].map(fmt => (
                     <label key={fmt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>
@@ -228,7 +228,7 @@ function SchedulesPanel({ teams }) {
               </div>
               {/* Recipients */}
               <div>
-                <div className="k-fld-label">RECIPIENTS · प्राप्तकर्ता</div>
+                <div className="k-fld-label">RECIPIENTS</div>
                 <textarea className="k-input"
                   placeholder="email@example.com, another@example.com"
                   rows={3} value={form.recipients}
@@ -264,43 +264,39 @@ function SchedulesPanel({ teams }) {
               <span className="k-card__sans">स्वचालित सूची</span>
             </div>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: 'var(--bg-soft)' }}>
-                  {[['FREQUENCY','आवृत्ति'],['FORMAT','प्रारूप'],['RECIPIENTS','प्राप्तकर्ता'],['NEXT RUN','अगला'],['LAST SENT','अंतिम'],['','']].map(([en, hi]) => (
-                    <th key={en} style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 700, color: 'var(--ink-3)', borderBottom: '1px solid var(--rule-soft)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>
-                      {en}{hi && <span style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, fontSize: 10, color: 'var(--ink-faint)', textTransform: 'none', letterSpacing: 0, marginLeft: 4 }}>{hi}</span>}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {schedules.map(s => (
-                  <tr key={s.schedule_id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                    <td style={{ padding: '11px 16px' }}>
-                      <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 99, background: 'color-mix(in srgb, var(--k-teal) 12%, transparent)', color: 'var(--k-teal)', fontWeight: 700, fontSize: 11, textTransform: 'capitalize' }}>
-                        {s.frequency}
-                      </span>
-                    </td>
-                    <td style={{ padding: '11px 16px', color: 'var(--ink-2)', fontSize: 12 }}>{(s.file_formats || []).map(f => f.toUpperCase()).join(' + ')}</td>
-                    <td style={{ padding: '11px 16px', color: 'var(--ink-2)', fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(s.recipients || []).join(', ')}</td>
-                    <td style={{ padding: '11px 16px', color: 'var(--ink-3)', fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDT(s.next_run_at)}</td>
-                    <td style={{ padding: '11px 16px', color: 'var(--ink-3)', fontSize: 12, whiteSpace: 'nowrap' }}>
-                      {s.last_sent_at ? fmtDT(s.last_sent_at) : <span style={{ color: 'var(--ink-faint)' }}>Never</span>}
-                    </td>
-                    <td style={{ padding: '11px 16px' }}>
-                      <button className="k-btn k-btn--ghost k-btn--sm"
-                        style={{ color: '#dc2626', borderColor: 'transparent' }}
-                        onClick={() => del(s.schedule_id)} title="Delete schedule">
-                        <TrashIcon />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* One table component, not a tenth hand-rolled one. `DataTable`/`Td`
+              from components/editorial is the module-surface table already used
+              by Vikray, Prachar, Dristi, Vetana and Pahchan; it brings the
+              sticky header, the --ix-scaled row hover and right-align/mono
+              support that this hand-rolled copy never had.
+
+              Column headers are English only: 24-bilingual-devanagari.md puts
+              table column headers on the "No" list. */}
+          <DataTable columns={['Frequency', 'Format', 'Recipients', 'Next run', 'Last sent', '']}>
+            {schedules.map(s => (
+              <tr key={s.schedule_id}>
+                <Td>
+                  <span className="k-statuschip" style={{ '--c': 'var(--k-teal)', textTransform: 'capitalize' }}>
+                    <span className="k-statuschip__dot" />
+                    {s.frequency}
+                  </span>
+                </Td>
+                <Td color="var(--ink-2)">{(s.file_formats || []).map(f => f.toUpperCase()).join(' + ')}</Td>
+                <Td color="var(--ink-2)" className="rp-sched__rcpt">{(s.recipients || []).join(', ')}</Td>
+                <Td color="var(--ink-3)" mono>{fmtDT(s.next_run_at)}</Td>
+                <Td color="var(--ink-3)" mono>
+                  {s.last_sent_at ? fmtDT(s.last_sent_at) : 'Never'}
+                </Td>
+                <Td align="right">
+                  <button className="k-btn k-btn--ghost k-btn--sm rp-sched__del"
+                    onClick={() => del(s.schedule_id)} title="Delete schedule"
+                    aria-label={`Delete ${s.frequency} schedule`}>
+                    <TrashIcon />
+                  </button>
+                </Td>
+              </tr>
+            ))}
+          </DataTable>
         </section>
       )}
     </div>

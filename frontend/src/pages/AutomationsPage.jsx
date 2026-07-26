@@ -324,7 +324,7 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
 
                 <div className="k-rule__flow">
                   <div className="k-rule__step k-rule__step--when">
-                    <div className="k-rule__step-lbl">WHEN · प्रसंग</div>
+                    <div className="k-rule__step-lbl">WHEN <span className="k-lbl__in" lang="hi">प्रसंग</span></div>
                     <div className="k-rule__step-body">{TRIGGERS.find(t => t.value === auto.trigger?.event)?.label || auto.trigger?.event || 'Trigger'}</div>
                     {TRIGGER_SANS[auto.trigger?.event] && <div className="k-rule__step-sans">{TRIGGER_SANS[auto.trigger?.event]}</div>}
                   </div>
@@ -332,14 +332,14 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 10h16M14 5l5 5-5 5"/></svg>
                   </div>
                   <div className="k-rule__step k-rule__step--cond">
-                    <div className="k-rule__step-lbl">IF · यदि</div>
+                    <div className="k-rule__step-lbl">IF <span className="k-lbl__in" lang="hi">यदि</span></div>
                     <div className="k-rule__step-body">{condText}</div>
                   </div>
                   <div className="k-rule__arrow">
                     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 10h16M14 5l5 5-5 5"/></svg>
                   </div>
                   <div className="k-rule__step k-rule__step--then">
-                    <div className="k-rule__step-lbl">THEN · क्रिया</div>
+                    <div className="k-rule__step-lbl">THEN <span className="k-lbl__in" lang="hi">क्रिया</span></div>
                     <div className="k-rule__step-body">{thenText}</div>
                   </div>
                 </div>
