@@ -126,3 +126,92 @@ def strongest(roles: list[str] | tuple[str, ...] | None) -> str | None:
         if candidate in roles:
             return candidate
     return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tier 4 — module levels
+#
+# Owner's decision, 2026-07-26.
+# ═══════════════════════════════════════════════════════════════════════════
+
+VIEWER, EDITOR, APPROVER, ADMIN = "viewer", "editor", "approver", "admin"
+
+#: The ladder, weakest first.
+LEVELS: tuple[str, ...] = (VIEWER, EDITOR, APPROVER, ADMIN)
+
+#: Modules where the ladder is a plain hierarchy: admin can do everything an
+#: approver can, and more. Eight of the eleven.
+#: "Admin can do all" — the owner's words, and true everywhere it does not
+#: move money.
+HIERARCHICAL_MODULES: frozenset[str] = frozenset({
+    "kartavya", "graha", "vikray", "prachar", "dristi", "srijan", "samvada", "esign",
+})
+
+#: Modules where APPROVER AND ADMIN ARE NOT A HIERARCHY.
+#:
+#: Admin is breadth, approver is depth. In Vetana, admin manages salary
+#: structures and statutory config; approver approves runs and releases payments.
+#: **Admin alone cannot approve a payroll run.** Whoever defines what people are
+#: paid must not also be the one who releases the money. Same shape in Ganit:
+#: admin owns the chart of accounts, approver closes periods.
+#:
+#: One person MAY hold both — that is allowed and sometimes necessary in a small
+#: firm. The point is that it becomes an explicit, auditable second grant rather
+#: than something admin quietly includes. Owner's note: "one user can have both
+#: FYI but auditable."
+SEPARATED_DUTY_MODULES: frozenset[str] = frozenset({"vetana", "ganit"})
+
+#: Modules with no approver level at all — nothing in them to approve.
+NO_APPROVER_MODULES: frozenset[str] = frozenset({
+    "kartavya", "dristi", "srijan", "samvada", "esign",
+})
+
+#: Kartavya has no viewer: everyone in the org edits tasks. Client is the
+#: exception and is handled by the Tier-3 project role, not by a module level.
+NO_VIEWER_MODULES: frozenset[str] = frozenset({"kartavya"})
+
+#: Modules where every employee gets read access to THEIR OWN record with no
+#: grant at all — own payslip, own profile, own attendance. Anything beyond
+#: their own row needs a grant.
+SELF_SCOPED_MODULES: frozenset[str] = frozenset({"vetana", "manav", "pahchan"})
+
+
+def level_satisfies(held: str | None, required: str, module_code: str) -> bool:
+    """
+    Does `held` satisfy `required` for this module?
+
+    Hierarchical for most modules. For Vetana and Ganit, ADMIN DOES NOT SATISFY
+    APPROVER — holding admin there means you configure it, not that you can
+    release money against it. A user who needs both holds both, visibly.
+    """
+    if held is None:
+        return False
+    if held not in LEVELS or required not in LEVELS:
+        return False
+
+    if module_code in SEPARATED_DUTY_MODULES and required == APPROVER:
+        # Only an explicit approver grant approves here. Admin is breadth, not
+        # seniority, so it does not climb into this rung.
+        return held == APPROVER
+
+    return LEVELS.index(held) >= LEVELS.index(required)
+
+
+def valid_levels_for(module_code: str) -> tuple[str, ...]:
+    """The levels that mean something for this module. Offering a level a module
+    has no use for invites a grant that silently does nothing."""
+    levels = list(LEVELS)
+    if module_code in NO_APPROVER_MODULES:
+        levels.remove(APPROVER)
+    if module_code in NO_VIEWER_MODULES:
+        levels.remove(VIEWER)
+    return tuple(levels)
+
+
+#: What a new grant starts at when no level is given.
+#:
+#: NOT the spec's `admin`. The owner's reason for wanting RBAC at all was to give
+#: specific, multiple, narrow roles to specific users — and a default of admin
+#: means every grant is full control and the four levels never get used. A grant
+#: starts at the least it can be and is raised deliberately.
+DEFAULT_GRANT_LEVEL: str = VIEWER
