@@ -568,9 +568,20 @@ async def deactivate_org(
 async def update_org_settings(
     org_id: str,
     body: dict,
-    user=Depends(require_platform_role(*CONSOLE_ROLES)),
+    user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES)),
 ):
-    """Update org markup, monthly credits, and/or monthly price."""
+    """Update org markup, monthly credits, and/or monthly price.
+
+    BILLING_CONSOLE_ROLES, not CONSOLE_ROLES. Every field this writes —
+    `markup_pct`, `monthly_price`, `monthly_credits` — is a commercial term, and
+    CONSOLE_ROLES includes `platform_staff`, whose remit role_tiers.py:36-38
+    defines as the operating set: CRM, sales, marketing, Srijan, analytics,
+    messaging, core PM. Not what a customer is charged.
+
+    `11-platform-admin.md` §3 is explicit on the same point from the design
+    side: `lib/platformRoles.js  5 roles; only admin + finance see cost`. A role
+    that must not SEE the margin must not be able to set it.
+    """
     pool = await get_pool()
     updates = []
     params = []
@@ -836,7 +847,14 @@ async def assign_role(
     if not target:
         raise HTTPException(404, "User not found")
 
-    platform_roles = set(ALL_PLATFORM_ROLES) | {"developer"}
+    # `developer` used to be admitted here alongside ALL_PLATFORM_ROLES. It is a
+    # role code that appears nowhere in role_tiers, so `modules_for()` returns
+    # nothing for it, `require_platform_role` never names it and
+    # `is_platform_staff` does not count it — it was assignable and then meant
+    # nothing, which is the worst state for a role to be in: it looks granted on
+    # the roles screen and grants zero. Removing it is not a narrowing; there is
+    # nothing it could reach.
+    platform_roles = set(ALL_PLATFORM_ROLES)
     org_roles = {"org_admin", "org_member"}
 
     if body.role_code in platform_roles:
@@ -849,6 +867,11 @@ async def assign_role(
     elif body.role_code in org_roles:
         if not body.org_id:
             raise HTTPException(400, "org_id required for org-scoped roles")
+        # The third way into an org, and it was the one with no seat check.
+        # `add_member` above and `org_members.add_member` both count seats; this
+        # writes the same `user_roles` row directly, so an org at its allowance
+        # could be pushed past it here without the cap ever being consulted.
+        await _assert_seat_available(pool, body.org_id, body.user_id)
         await pool.execute(
             "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
             "VALUES ($1, $2::uuid, $3, $4) "
@@ -867,6 +890,38 @@ async def revoke_role(
     user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
 ):
     pool = await get_pool()
+
+    # Refuse to revoke the LAST god-mode row.
+    #
+    # God mode is held by three people (RBAC-SPEC.md:18). Nothing here stopped
+    # the third revocation, and there is no other endpoint that can grant a
+    # platform role — `assign_role` above is itself SUPERUSER_ONLY_ROLES. So the
+    # last revocation is unrecoverable through the application: it would take a
+    # direct write to `staging.user_roles` on the shared Supabase project to undo.
+    #
+    # This is not a permission check. It is a refusal to let a correct
+    # permission be used to destroy the permission.
+    row = await pool.fetchrow(
+        "SELECT user_id, role_code FROM staging.user_roles WHERE id=$1::uuid",
+        role_id,
+    )
+    if not row:
+        raise HTTPException(404, "Role assignment not found")
+
+    if row["role_code"] in GOD_MODE_ROLES:
+        remaining = await pool.fetchval(
+            "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+            "WHERE org_id IS NULL AND role_code = ANY($1::text[]) AND id != $2::uuid",
+            list(GOD_MODE_ROLES), role_id,
+        ) or 0
+        if remaining == 0:
+            raise HTTPException(
+                409,
+                "This is the last platform owner. Revoking it would leave nobody "
+                "able to grant platform roles, and no endpoint could undo it. "
+                "Grant god mode to someone else first.",
+            )
+
     await pool.execute("DELETE FROM staging.user_roles WHERE id=$1::uuid", role_id)
     return {"status": "revoked"}
 
@@ -1329,9 +1384,19 @@ async def admin_org_cost_report_pdf(
 async def admin_topup_credits(
     org_id: str,
     body: dict,
-    user=Depends(require_platform_role(*CONSOLE_ROLES)),
+    user=Depends(require_platform_role(*SRIJAN_COMMERCIAL_ROLES)),
 ):
-    """Aekam tops up org credits. Preset or custom amount."""
+    """Aekam tops up org credits. Preset or custom amount.
+
+    SRIJAN_COMMERCIAL_ROLES, not CONSOLE_ROLES. role_tiers.py:162-164 defines
+    that set for exactly this endpoint and says why in as many words: "Authoring
+    a skill and topping up a client's credit balance are both 'Srijan', but only
+    one of them spends. The operating set exists to let staff do the work, not to
+    let them bill for it."
+
+    The set was written and then not used at the one call site it was written
+    for, so `platform_staff` could credit any org any amount.
+    """
     pool = await get_pool()
     amount = body.get("amount")
     if not amount or int(amount) <= 0:
