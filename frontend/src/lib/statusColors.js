@@ -77,6 +77,26 @@ export const BILLING_LABELS = {
   paused: 'Paused', cancelled: 'Cancelled', overdue: 'Overdue',
 };
 
+// Sales order lifecycle (Vikray). draft → confirmed → dispatched → delivered →
+// closed, plus cancelled. `cancelled` is NOT --danger: an order the customer
+// withdrew is a normal terminal state, not an error, and colouring it red makes
+// a routine list look like a list of failures.
+export const ORDER_COLORS = {
+  draft:      'var(--on-surface-2)',
+  confirmed:  'var(--st-in-progress)',
+  dispatched: 'var(--st-in-review)',
+  delivered:  'var(--ok)',
+  closed:     'var(--primary)',
+  cancelled:  'var(--on-surface-3)',
+};
+
+export const ORDER_LABELS = {
+  draft: 'Draft', confirmed: 'Confirmed', dispatched: 'Dispatched',
+  delivered: 'Delivered', closed: 'Closed', cancelled: 'Cancelled',
+};
+
+export const orderColor = s => ORDER_COLORS[s] || FALLBACK;
+
 export const billingColor = s => BILLING_COLORS[s] || FALLBACK;
 /** Title-cased label for an enum, so `active` never reaches the user as-is. */
 export const billingLabel = s =>
