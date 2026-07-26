@@ -1,6 +1,23 @@
+/**
+ * SigningPage.jsx — public signer view. Route: /sign/:token, NO <Protected>.
+ *
+ * `13-module-pages.md` calls this "public signer view — unauthenticated, needs
+ * its own minimal chrome", and `_REQUEST-2026-07-26.md` §4.1 confirms it has no
+ * handover file of its own and "genuinely does inherit from `02`". So the
+ * chrome below is `02-common-components.md` §1 verbatim — `.card`, `.btn`,
+ * `.inp`, `.fld`, `.chip` — rather than a private set of inline styles that
+ * happen to reference the same tokens. A hand-rolled button that reads the
+ * right variables still gets the wrong padding, the wrong weight, no
+ * `:active` scale and no hover, and this page is the commercial face of the
+ * e-sign product: it is what a client's client sees.
+ *
+ * The brand mark is `lib/brand.jsx`'s KLogo + KWordmark, the same pair the
+ * marketing nav and footer use. Its sub-line already reads "by Aekam Inc".
+ */
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
+import { KLogo, KWordmark } from '../lib/brand';
 
 const API = `${import.meta.env.VITE_BACKEND_URL}/api`;
 
