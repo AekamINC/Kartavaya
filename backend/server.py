@@ -1157,9 +1157,18 @@ async def update_brand_colors_compat(body: dict, pool=Depends(get_db), user=Depe
     )
     return {"brand_colors": colors}
 
-@api_router.post("/client/tasks/request", response_model=TaskOut)
+@api_router.post("/client/tasks/request", response_model=ClientTaskOut)
 async def client_request_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(require_user)):
-    """Create a task request from a client user, pending team approval."""
+    """Create a task request from a client user, pending team approval.
+
+    Returns `ClientTaskOut`, the same allow-list its two sibling client reads
+    use. It declared `TaskOut` before — the full internal shape, including the
+    firm's `custom_fields`, `subtasks`, `estimated_minutes` and assignee
+    identifiers. Nothing leaked in practice, because the row is created here and
+    is the client's own, so those fields are empty on the way out; it was a shape
+    violation, and the shape is what stops the next field added to `TaskOut` from
+    crossing to an external party without anyone deciding that it should.
+    """
     if user.get("role") != "client":
         raise HTTPException(403, "Only client users can submit task requests")
     if not payload.team_id: raise HTTPException(400,"team_id required")
@@ -1222,7 +1231,14 @@ async def client_request_task(payload:TaskCreate,pool=Depends(get_db),user=Depen
                     logger.warning("approval request email failed: %s", email_err)
     except Exception as notif_err:
         logger.warning("approval request notification failed: %s", notif_err)
-    return row_to_task(row)
+    task = row_to_task(row)
+    # Filter before re-signing, as at `/client/tasks`. The caller created this
+    # row a few lines above, so the filter is a no-op today — it is here so the
+    # ordering is the same at all three client task endpoints and stays correct
+    # if this ever returns a row the caller did not create.
+    task = _filter_private_attachments(task, user["user_id"], True)
+    task = await _refresh_task_attachments(pool, task)
+    return _to_client_task(task, user["user_id"])
 
 # ── Approvals ───────────────────────────────────────────────────
 
@@ -2043,8 +2059,27 @@ async def list_tasks(status:Optional[str]=None,category_id:Optional[str]=None,q:
         ORDER BY t.sort_order ASC
         LIMIT ${_lim_idx} OFFSET ${_off_idx}
     """,*vals, _lim, _off)
-    tasks = [row_to_task(r) for r in rows]
-    tasks = [await _refresh_task_attachments(pool, t) for t in tasks]
+    # `_refresh_task_attachments` re-signs every attachment against live R2
+    # credentials, so anything reaching it unfiltered leaves here with a working
+    # download URL. This list is the org-wide read — it was the one task read
+    # that never applied `_filter_private_attachments`, so a file the uploader
+    # had marked private went to every member of every visible team WITH A FRESH
+    # SIGNED URL. Filter first, exactly as `/client/tasks` does: a private
+    # attachment the caller may not see must never be handed a signed URL, even
+    # transiently.
+    uid = user["user_id"]
+    _admin: Optional[bool] = None
+    tasks: List[TaskOut] = []
+    for r in rows:
+        t = row_to_task(r)
+        if any(a.is_private for a in (t.attachments or [])):
+            is_creator = r["created_by_user_id"] == uid
+            if not is_creator and _admin is None:
+                # Resolved at most once per request, and only when a private
+                # attachment actually exists — not once per row.
+                _admin = await is_org_admin(uid)
+            t = _filter_private_attachments(t, uid, is_creator or bool(_admin))
+        tasks.append(await _refresh_task_attachments(pool, t))
     return tasks
 
 
@@ -2153,7 +2188,7 @@ async def create_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(requi
     await log_event(pool,task_id=task_id,team_id=payload.team_id,actor_id=user["user_id"],event_type="created",data={"title":payload.title})
     from services.automation_engine import fire_automations
     _bg(fire_automations(pool,"task_created",{"task":{"task_id":task_id,"team_id":payload.team_id},"team_id":payload.team_id}), label="fire_automations")
-    out=await _fetch_enriched_task(pool,task_id)
+    out=await _fetch_enriched_task(pool,task_id,viewer_id=user["user_id"])
     out.reminders=await _replace_task_reminders(pool,task_id,due_dt,payload.reminders)
     return out
 
@@ -2231,8 +2266,19 @@ async def _notify_status_changed(pool, row, existing, old_status: str, new_statu
             logger.warning("task_done notification failed: %s", _e)
 
 
-async def _fetch_enriched_task(pool, task_id: str) -> "TaskOut":
-    """Re-fetch a task with all JOIN'd fields (column_name, column_color, assignee_names)."""
+async def _fetch_enriched_task(pool, task_id: str, viewer_id: Optional[str] = None,
+                               viewer_is_admin: Optional[bool] = None) -> "TaskOut":
+    """Re-fetch a task with all JOIN'd fields (column_name, column_color, assignee_names).
+
+    Pass `viewer_id` to have private attachments stripped for that caller. It is
+    applied BEFORE the URLs are re-signed, so a file the caller may not see is
+    never handed a fresh signed R2 URL even transiently — the same ordering
+    `/client/tasks` uses.
+
+    Every caller that hands its result straight back to a user should pass it.
+    `viewer_id=None` is the un-filtered form and is only correct for internal
+    callers that are not serialising the result to an HTTP response.
+    """
     row = await pool.fetchrow("""
         SELECT t.*,
                COALESCE(cu.full_name, cu.name, cu.email) AS created_by_name,
@@ -2250,6 +2296,11 @@ async def _fetch_enriched_task(pool, task_id: str) -> "TaskOut":
     """, task_id)
     if not row: return None
     out = row_to_task(row)
+    if viewer_id is not None and any(a.is_private for a in (out.attachments or [])):
+        is_creator = row["created_by_user_id"] == viewer_id
+        if not is_creator and viewer_is_admin is None:
+            viewer_is_admin = await is_org_admin(viewer_id)
+        out = _filter_private_attachments(out, viewer_id, is_creator or bool(viewer_is_admin))
     out = await _refresh_task_attachments(pool, out)
     out.reminders = await _fetch_task_reminders(pool, task_id)
     return out
@@ -2274,8 +2325,11 @@ async def get_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
     # than the JWT's admin claim.
     _is_admin = await is_org_admin(uid)
     async def _out():
-        enriched = await _fetch_enriched_task(pool, task_id)
-        return _filter_private_attachments(enriched, uid, is_creator or _is_admin)
+        # Filtering moved inside `_fetch_enriched_task` so it runs BEFORE the
+        # URLs are re-signed. `_is_admin` is already resolved, so passing it
+        # keeps this to the same single `user_roles` lookup as before.
+        return await _fetch_enriched_task(pool, task_id, viewer_id=uid,
+                                          viewer_is_admin=is_creator or _is_admin)
     if _is_admin: return await _out()
     if is_creator: return await _out()
     if uid in (row["assignee_user_ids"] or []): return await _out()
@@ -2406,7 +2460,7 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
                 ))
             except Exception as _pe:
                 logger.warning("assignee push failed: %s", _pe)
-    return await _fetch_enriched_task(pool, task_id)
+    return await _fetch_enriched_task(pool, task_id, viewer_id=user["user_id"])
 
 
 @api_router.patch("/tasks/{task_id}",response_model=TaskOut)
@@ -2628,7 +2682,7 @@ async def move_task(task_id:str,payload:TaskMoveIn,pool=Depends(get_db),user=Dep
         await log_event(pool,task_id=task_id,actor_id=user["user_id"],event_type="status_changed",data={"from":doc["status"],"to":new_status})
         await _notify_status_changed(pool, row, dict(doc), doc["status"], new_status, user, task_id)
 
-    return await _fetch_enriched_task(pool, task_id)
+    return await _fetch_enriched_task(pool, task_id, viewer_id=user["user_id"])
 
 # ── Notifications ─────────────────────────────────────────────────
 

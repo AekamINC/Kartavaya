@@ -317,9 +317,15 @@ async def get_run(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # `r.cost_usd` is deliberately absent. It is what Aekam pays the upstream
+    # provider for this run, not what the org was charged — `billed_inr` and
+    # `credits_charged` are the tenant-facing figures and stay. `11-platform-admin.md`
+    # §1 puts that containment here, in the query that builds the response, not
+    # in whichever UI happens to render it. The admin views below select it under
+    # `require_platform_role`, which is where it belongs.
     row = await pool.fetchrow(
         "SELECT r.id, r.org_id, r.scraper_id, r.user_id, r.status, r.result_count, "
-        "r.billed_inr, r.cost_usd, r.credits_charged, r.error, r.created_at, r.finished_at, "
+        "r.billed_inr, r.credits_charged, r.error, r.created_at, r.finished_at, "
         "r.graha_imported_count, r.graha_imported_at, r.results_r2_key, r.results, "
         "c.name as scraper_name, c.result_columns "
         "FROM staging.hub_scraper_runs r "
@@ -487,9 +493,10 @@ async def list_runs(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # No `r.cost_usd` — see `get_run` above. This is a tenant-scoped list.
     rows = await pool.fetch(
         "SELECT r.id, r.scraper_id, r.status, r.result_count, r.billed_inr, "
-        "r.cost_usd, r.credits_charged, r.created_at, r.finished_at, c.name as scraper_name, c.icon "
+        "r.credits_charged, r.created_at, r.finished_at, c.name as scraper_name, c.icon "
         "FROM staging.hub_scraper_runs r "
         "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
         "WHERE r.org_id=$1::uuid ORDER BY r.created_at DESC LIMIT 50",

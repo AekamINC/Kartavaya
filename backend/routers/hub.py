@@ -1139,9 +1139,15 @@ async def list_ai_feedback(
     _=Depends(_hub_gate),
 ):
     pool = await get_pool()
+    # `cost_usd` is what Aekam pays the model provider. This endpoint is guarded
+    # by `require_user` + `get_org_id`, so every member of a tenant could read
+    # Aekam's own cost basis per AI call. It is dropped from the projection
+    # rather than hidden in the UI — `11-platform-admin.md` §1 requires the
+    # containment at the serializer. `tokens_used` stays: it is a property of
+    # the tenant's own request, not a price.
     query = (
         "SELECT id, skill_type, context_type, action, model_used, "
-        "tokens_used, cost_usd, user_id, created_at "
+        "tokens_used, user_id, created_at "
         "FROM staging.ai_feedback WHERE org_id=$1::uuid "
     )
     params: list = [org_id]
@@ -1168,10 +1174,12 @@ async def ai_feedback_stats(
     _=Depends(_hub_gate),
 ):
     pool = await get_pool()
+    # `SUM(cost_usd) as total_cost` removed: summing it does not make it any
+    # less Aekam's cost basis, and `by_skill_action` below hands each row
+    # straight to the caller. Counts and token totals are the tenant's own.
     rows = await pool.fetch(
         "SELECT skill_type, action, COUNT(*) as count, "
-        "COALESCE(SUM(tokens_used), 0) as total_tokens, "
-        "COALESCE(SUM(cost_usd), 0) as total_cost "
+        "COALESCE(SUM(tokens_used), 0) as total_tokens "
         "FROM staging.ai_feedback "
         "WHERE org_id=$1::uuid AND created_at >= NOW() - ($2 || ' days')::interval "
         "GROUP BY skill_type, action ORDER BY count DESC",

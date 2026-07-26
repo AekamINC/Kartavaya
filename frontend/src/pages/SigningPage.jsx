@@ -6,6 +6,20 @@ const API = `${import.meta.env.VITE_BACKEND_URL}/api`;
 
 const ax = axios.create({ baseURL: API });
 
+/* The signature canvas is the one place on this page that is NOT theme-aware,
+   and deliberately so. `toDataURL` ships these exact pixels into the signed
+   PDF, which is rendered on white paper by every viewer that opens it — ink
+   drawn in a dark-theme foreground would arrive as a near-white smudge on a
+   white page, i.e. an invisible signature on a legal document. So the drawing
+   area is pinned to the LIGHT palette's values in both themes: it is paper,
+   not chrome. The literals below are `--s-lowest` and `--on-surface` as the
+   light theme declares them, copied rather than referenced because a canvas
+   2D context cannot read a CSS custom property.
+   The typed-signature path has no such constraint — it submits a string, not
+   an image — so its preview is fully tokenised. */
+const PAPER = '#FFFEFB';
+const INK   = '#1B1D1A';
+
 export default function SigningPage() {
   const { token } = useParams();
   const [step, setStep] = useState('loading');
@@ -18,6 +32,26 @@ export default function SigningPage() {
   const [result, setResult] = useState(null);
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
+
+  /* This page's viewer is a stranger to the product: a client's client, with no
+     session and no stored prefs, so nothing has ever set [data-theme] on <html>
+     and every token here would resolve to the light palette regardless of what
+     their machine asks for. Follow the OS instead — but only when no theme has
+     been set already, so a signed-in user who opens a signing link keeps the
+     theme they picked. Cleaned up on unmount so this never outlives the route. */
+  useEffect(() => {
+    const root = document.documentElement;
+    if (root.getAttribute('data-theme')) return undefined;
+    const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
+    if (!mq) return undefined;
+    const apply = () => root.setAttribute('data-theme', mq.matches ? 'dark' : 'light');
+    apply();
+    mq.addEventListener?.('change', apply);
+    return () => {
+      mq.removeEventListener?.('change', apply);
+      root.removeAttribute('data-theme');
+    };
+  }, []);
 
   useEffect(() => {
     ax.get(`/v1/esign/verify/${token}`)
@@ -95,7 +129,12 @@ export default function SigningPage() {
     if (!canvas) return;
     canvasRef.current = canvas;
     const ctx = canvas.getContext('2d');
-    ctx.strokeStyle = '#1a1a1a';
+    // Paint the paper in, rather than leaving the canvas transparent: a
+    // transparent PNG dropped onto a dark viewer background hides the ink just
+    // as effectively as light ink would. See PAPER/INK above.
+    ctx.fillStyle = PAPER;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = INK;
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
 
@@ -124,61 +163,72 @@ export default function SigningPage() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Repaint the paper, not clearRect — clearing back to transparent would
+    // undo the fill laid down in initCanvas and reintroduce the invisible-ink
+    // problem for anyone who draws, clears, and draws again.
+    ctx.fillStyle = PAPER;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
   };
 
   const box = {
-    maxWidth: 560, margin: '0 auto', padding: '32px 24px',
-    fontFamily: '-apple-system, system-ui, sans-serif',
+    maxWidth: 560, margin: '0 auto', padding: 'var(--sp-7) var(--sp-6)',
+    fontFamily: 'var(--font-ui)',
   };
   const card = {
-    background: '#fff', borderRadius: 12, padding: 32,
-    boxShadow: '0 1px 3px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.04)',
+    background: 'var(--surface)', borderRadius: 'var(--r-lg)', padding: 'var(--sp-7)',
+    border: '1px solid var(--outline-variant)', boxShadow: 'var(--shadow-2)',
   };
+  // `--primary` is a FILL at 4.04:1 and pairs with `--on-primary`; it is correct
+  // for the button face and wrong for anything reading as text. Primary-coloured
+  // TEXT on this page uses `--primary-text` (5.2:1).
   const btn = (primary) => ({
-    padding: '12px 32px', borderRadius: 8, border: primary ? 'none' : '1px solid #d1d5db',
-    background: primary ? '#0082c6' : '#fff', color: primary ? '#fff' : '#374151',
+    padding: '12px 32px', borderRadius: 'var(--r-sm)',
+    border: primary ? '1px solid var(--primary)' : '1px solid var(--outline)',
+    background: primary ? 'var(--primary)' : 'var(--surface)',
+    color: primary ? 'var(--on-primary)' : 'var(--on-surface-2)',
     fontWeight: 700, cursor: busy ? 'default' : 'pointer', fontSize: 14, opacity: busy ? 0.6 : 1,
   });
   const inp = {
-    width: '100%', padding: '12px 16px', borderRadius: 8, border: '1px solid #d1d5db',
+    width: '100%', padding: '12px 16px', borderRadius: 'var(--r-sm)',
+    border: '1px solid var(--outline)', background: 'var(--s-lowest)',
+    color: 'var(--on-surface)',
     fontSize: 15, outline: 'none', boxSizing: 'border-box',
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f8f9fb', ...box }}>
+    <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--on-surface)', ...box }}>
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
-        <h1 style={{ fontSize: 20, fontWeight: 800, color: '#0082c6', margin: 0 }}>Kartavya</h1>
-        <p style={{ fontSize: 12, color: '#9ca3af', margin: '4px 0 0' }}>Secure Document Signing</p>
+        <h1 style={{ fontSize: 20, fontWeight: 800, color: 'var(--primary-text)', margin: 0 }}>Kartavaya</h1>
+        <p style={{ fontSize: 12, color: 'var(--on-surface-3)', margin: '4px 0 0' }}>Secure Document Signing</p>
       </div>
 
-      {step === 'loading' && <div style={card}><p style={{ textAlign: 'center', color: '#6b7280' }}>Loading...</p></div>}
+      {step === 'loading' && <div style={card}><p style={{ textAlign: 'center', color: 'var(--on-surface-2)' }}>Loading...</p></div>}
 
       {step === 'error' && (
         <div style={card}>
-          <p style={{ textAlign: 'center', color: '#ef4444', fontSize: 15, fontWeight: 600 }}>{error}</p>
+          <p style={{ textAlign: 'center', color: 'var(--danger)', fontSize: 15, fontWeight: 600 }}>{error}</p>
         </div>
       )}
 
       {step === 'otp_send' && data && (
         <div style={card}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px', color: '#111' }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px', color: 'var(--on-surface)' }}>
             Sign: {data.document_title}
           </h2>
-          {data.document_description && <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 16px' }}>{data.document_description}</p>}
-          <p style={{ fontSize: 14, color: '#374151', margin: '0 0 8px' }}>
+          {data.document_description && <p style={{ fontSize: 13, color: 'var(--on-surface-2)', margin: '0 0 16px' }}>{data.document_description}</p>}
+          <p style={{ fontSize: 14, color: 'var(--on-surface-2)', margin: '0 0 8px' }}>
             Hi <strong>{data.signer_name}</strong>, you need to verify your identity before signing.
           </p>
-          <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 24px' }}>
+          <p style={{ fontSize: 13, color: 'var(--on-surface-3)', margin: '0 0 24px' }}>
             We'll send a 6-digit code to your email.
           </p>
           {data.file_url && (
             <a href={data.file_url} target="_blank" rel="noopener noreferrer"
-              style={{ display: 'inline-block', marginBottom: 24, color: '#0082c6', fontSize: 13, fontWeight: 600 }}>
+              style={{ display: 'inline-block', marginBottom: 24, color: 'var(--primary-text)', fontSize: 13, fontWeight: 600 }}>
               View Document (PDF)
             </a>
           )}
-          {error && <p style={{ color: '#ef4444', fontSize: 13, marginBottom: 12 }}>{error}</p>}
+          {error && <p style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 12 }}>{error}</p>}
           <div style={{ display: 'flex', gap: 12 }}>
             <button onClick={sendOtp} disabled={busy} style={btn(true)}>
               {busy ? 'Sending...' : 'Send Verification Code'}
@@ -190,14 +240,14 @@ export default function SigningPage() {
 
       {step === 'otp_verify' && (
         <div style={card}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px', color: '#111' }}>Enter Verification Code</h2>
-          <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 24px' }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px', color: 'var(--on-surface)' }}>Enter Verification Code</h2>
+          <p style={{ fontSize: 13, color: 'var(--on-surface-2)', margin: '0 0 24px' }}>
             Sent to {data?.maskedEmail || 'your email'}. Valid for 10 minutes.
           </p>
           <input value={otp} onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
             style={{ ...inp, textAlign: 'center', fontSize: 28, letterSpacing: 8, fontWeight: 700 }}
             placeholder="000000" autoFocus />
-          {error && <p style={{ color: '#ef4444', fontSize: 13, margin: '12px 0 0' }}>{error}</p>}
+          {error && <p style={{ color: 'var(--danger)', fontSize: 13, margin: '12px 0 0' }}>{error}</p>}
           <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
             <button onClick={verifyOtp} disabled={busy} style={btn(true)}>
               {busy ? 'Verifying...' : 'Verify'}
@@ -209,19 +259,21 @@ export default function SigningPage() {
 
       {step === 'sign' && data && (
         <div style={card}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px', color: '#111' }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px', color: 'var(--on-surface)' }}>
             Sign: {data.document_title}
           </h2>
-          <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 24px' }}>
+          <p style={{ fontSize: 13, color: 'var(--on-surface-2)', margin: '0 0 24px' }}>
             Signing as <strong>{data.signer_name}</strong> ({data.signer_email})
           </p>
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
             {['type', 'draw'].map(t => (
-              <button key={t} onClick={() => setSigType(t)}
-                style={{ padding: '6px 16px', borderRadius: 99, fontSize: 12, fontWeight: sigType === t ? 700 : 400,
-                  background: sigType === t ? '#0082c618' : '#f3f4f6', color: sigType === t ? '#0082c6' : '#6b7280',
-                  border: sigType === t ? '1px solid #0082c6' : '1px solid #e5e7eb', cursor: 'pointer' }}>
+              <button key={t} onClick={() => setSigType(t)} aria-pressed={sigType === t}
+                style={{ padding: '6px 16px', borderRadius: 'var(--r-pill)', fontSize: 12, fontWeight: sigType === t ? 700 : 400,
+                  background: sigType === t ? 'var(--primary-container)' : 'var(--s-container)',
+                  color: sigType === t ? 'var(--on-primary-container)' : 'var(--on-surface-2)',
+                  border: sigType === t ? '1px solid var(--primary)' : '1px solid var(--outline-variant)',
+                  cursor: 'pointer' }}>
                 {t === 'type' ? 'Type Signature' : 'Draw Signature'}
               </button>
             ))}
@@ -232,8 +284,9 @@ export default function SigningPage() {
               <input value={typedName} onChange={e => setTypedName(e.target.value)} style={inp}
                 placeholder="Type your full name" autoFocus />
               {typedName && (
-                <div style={{ marginTop: 12, padding: 16, background: '#f8f9fb', borderRadius: 8, textAlign: 'center' }}>
-                  <span style={{ fontFamily: "'Brush Script MT', 'Segoe Script', cursive", fontSize: 32, color: '#111' }}>
+                <div style={{ marginTop: 12, padding: 16, background: 'var(--s-low)',
+                  border: '1px solid var(--outline-variant)', borderRadius: 'var(--r-sm)', textAlign: 'center' }}>
+                  <span style={{ fontFamily: "'Brush Script MT', 'Segoe Script', cursive", fontSize: 32, color: 'var(--on-surface)' }}>
                     {typedName}
                   </span>
                 </div>
@@ -243,20 +296,22 @@ export default function SigningPage() {
 
           {sigType === 'draw' && (
             <div>
-              <div style={{ border: '1px solid #d1d5db', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
+              {/* PAPER, not a surface token — see the note at the top of the
+                  file. This block is the document, not the chrome. */}
+              <div style={{ border: '1px solid var(--outline)', borderRadius: 'var(--r-sm)', overflow: 'hidden', background: PAPER }}>
                 <canvas ref={initCanvas} width={500} height={160}
                   style={{ width: '100%', height: 160, cursor: 'crosshair', display: 'block' }} />
               </div>
               <button onClick={clearCanvas}
-                style={{ marginTop: 8, fontSize: 12, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer' }}>
+                style={{ marginTop: 8, fontSize: 12, color: 'var(--on-surface-2)', background: 'none', border: 'none', cursor: 'pointer' }}>
                 Clear
               </button>
             </div>
           )}
 
-          {error && <p style={{ color: '#ef4444', fontSize: 13, margin: '12px 0 0' }}>{error}</p>}
+          {error && <p style={{ color: 'var(--danger)', fontSize: 13, margin: '12px 0 0' }}>{error}</p>}
 
-          <p style={{ fontSize: 11, color: '#9ca3af', margin: '16px 0' }}>
+          <p style={{ fontSize: 11, color: 'var(--on-surface-3)', margin: '16px 0' }}>
             By clicking "Sign Document" you agree that this electronic signature is legally binding
             and has the same effect as a handwritten signature under the IT Act, 2000.
           </p>
@@ -273,15 +328,15 @@ export default function SigningPage() {
       {step === 'done' && (
         <div style={card}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>&#10003;</div>
-            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#10b981', margin: '0 0 8px' }}>
+            <div style={{ fontSize: 48, marginBottom: 16, color: 'var(--ok)' }}>&#10003;</div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--ok)', margin: '0 0 8px' }}>
               Document Signed Successfully
             </h2>
-            <p style={{ fontSize: 14, color: '#6b7280' }}>
+            <p style={{ fontSize: 14, color: 'var(--on-surface-2)' }}>
               {result?.signers_completed}/{result?.signers_total} signers have signed.
               {result?.document_status === 'completed' && ' All signatures collected!'}
             </p>
-            <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 16 }}>
+            <p style={{ fontSize: 12, color: 'var(--on-surface-3)', marginTop: 16 }}>
               You can close this window. A copy will be sent to your email when all parties have signed.
             </p>
           </div>
@@ -291,8 +346,8 @@ export default function SigningPage() {
       {step === 'already_signed' && (
         <div style={card}>
           <div style={{ textAlign: 'center' }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: '#6b7280' }}>Already Signed</h2>
-            <p style={{ fontSize: 13, color: '#9ca3af' }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--on-surface)' }}>Already Signed</h2>
+            <p style={{ fontSize: 13, color: 'var(--on-surface-2)' }}>
               You have already signed this document{result?.signed_at ? ` on ${new Date(result.signed_at).toLocaleDateString()}` : ''}.
             </p>
           </div>
@@ -302,14 +357,14 @@ export default function SigningPage() {
       {step === 'declined' && (
         <div style={card}>
           <div style={{ textAlign: 'center' }}>
-            <h2 style={{ fontSize: 18, fontWeight: 700, color: '#ef4444' }}>Signing Declined</h2>
-            <p style={{ fontSize: 13, color: '#9ca3af' }}>You have declined to sign this document.</p>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--danger)' }}>Signing Declined</h2>
+            <p style={{ fontSize: 13, color: 'var(--on-surface-2)' }}>You have declined to sign this document.</p>
           </div>
         </div>
       )}
 
-      <p style={{ textAlign: 'center', fontSize: 10, color: '#9ca3af', marginTop: 32 }}>
-        Powered by Kartavya &middot; Aekam Inc &middot; Secure e-signatures
+      <p style={{ textAlign: 'center', fontSize: 10, color: 'var(--on-surface-3)', marginTop: 32 }}>
+        Powered by Kartavaya &middot; Aekam Inc &middot; Secure e-signatures
       </p>
     </div>
   );

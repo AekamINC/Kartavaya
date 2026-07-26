@@ -95,8 +95,22 @@ async def list_plans(user=Depends(require_user)):
 @router.get("/current")
 async def get_current(user=Depends(require_user), org_id: str = Depends(get_org_id)):
     pool = await get_pool()
+    # Explicit columns, not `s.*`. The wildcard returned whatever the table
+    # happened to hold, to any authenticated member of the org — so the first
+    # cost or margin column added to `staging.subscriptions` would have started
+    # crossing to tenants with no code change and no review. It also already
+    # carried `activated_by` and `notes`, which are ours, not theirs.
+    #
+    # Deliberately excluded:
+    #   activated_by  — the platform staff user_id who set the plan.
+    #   notes         — free text written by platform staff in `admin_set_plan`.
+    #   cancel_reason — internal; never written by any code path today.
+    #   plan_id       — internal FK; the plan is already named by plan_code/plan_name.
     sub = await pool.fetchrow(
-        "SELECT s.*, p.name as plan_name, p.code as plan_code, "
+        "SELECT s.org_id, s.billing_cycle, s.status, s.trial_ends_at, "
+        "s.current_period_start, s.current_period_end, s.next_billing_date, "
+        "s.cancelled_at, s.created_at, s.updated_at, "
+        "p.name as plan_name, p.code as plan_code, "
         "p.max_users, p.features "
         "FROM staging.subscriptions s "
         "JOIN staging.plans p ON p.id = s.plan_id "
