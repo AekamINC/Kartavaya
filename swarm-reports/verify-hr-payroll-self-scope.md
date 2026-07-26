@@ -74,6 +74,41 @@ Written incrementally. Each section is appended when the finding is confirmed, n
 
 ---
 
+## 0b. Final state — what landed, what is held, and one mistake I made
+
+**Merged to `staging`** (verified green at the merge commit: `498 passed, 0 failed`;
+`check-tokens` 0 missing, `check-classes` 0 missing a rule, both run from `frontend/`):
+
+- the self-scoping across Manav and Vetana, and the two routes that had lost their guard
+  entirely (§4.1, §4.2);
+- `viewer` on Vetana no longer opening the payroll register (§4.3);
+- `PROPOSED_071_vetana_approver_backfill.sql`;
+- the ported test suites — `test_manav.py` 32 → 63, `test_vetana_security.py` 23 → 49;
+- the payslip fields (§9.2) and the `conftest.py` fixes (§5.2).
+
+**Held on `verify/hr-payroll-separated-duty`** — one commit on top of `staging`, `501 passed`:
+`_RELEASE_LEVEL = APPROVER` plus the tests demanding 403 for admin on approve / revert /
+disburse. **Do not merge before `PROPOSED_071` has run and its verification query is clean.**
+Reason in §0.
+
+### The mistake: I pushed to `staging` from the middle of a conflicted rebase
+
+I ran `git rebase origin/staging && git push origin HEAD:staging` as one chained command. The
+rebase stopped on a conflict, so `HEAD` was detached three commits into a nine-commit replay —
+and the `&&` did not save me because I had chained with `;`-like semantics across a pipeline
+whose exit status was not the rebase's. The push succeeded and put the salvage commit plus one
+fix onto `staging` **without the test port that makes them pass**. For a few minutes `staging`
+carried code whose own suite failed 20 tests and errored 23.
+
+I caught it in the next command, finished the rebase, verified green, and pushed the completed
+series. No other agent appears to have branched from the broken window.
+
+The lesson, which I would want anyone reading this to take: **never chain a rebase and a push.**
+Rebase, check `git status` is clean, run the gates, then push as a separate command. A detached
+`HEAD` mid-rebase is a valid ref and `git push` will happily ship it.
+
+---
+
 ## 1. What the salvaged commit actually contains
 
 `git diff 2a2a27b 1819127 --stat`
