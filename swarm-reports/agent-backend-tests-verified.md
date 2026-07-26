@@ -238,3 +238,196 @@ users' `visible_to` ids reaching a client, and the internal approval review trai
 **Verdict: none of the five were vacuous.** One (`test_scraper_cost_basis.py`)
 had a test/fix mismatch that pushed the production fix to a better layer. All
 five assert something a regression would break.
+
+---
+
+## BUG 3 — the amount in words crashed, or printed a different number (REAL, FIXED)
+
+`backend/services/invoice_pdf.py`, `amount_in_words_inr`. Found by writing the
+first tests these documents have ever had.
+
+```python
+rupees = int(round(amount))
+paise  = int(round((amount - rupees) * 100))
+```
+
+`round()` goes to NEAREST, not down. Any paise part of half a rupee or more
+carried into the rupees and left `paise` **negative**, which then indexed a word
+list backwards. Three distinct failures:
+
+| amount | before |
+|---|---|
+| `1234.56` | **IndexError** — PDF generation crashed outright |
+| `999.99` | "Rupees One Thousand and Nineteen Paise Only" |
+| `250000.80` | "Rupees Two Lakh Fifty Thousand One and (blank) Paise Only" |
+
+Two of the three are silent, and those are the worse ones: a wrong amount in
+words beside a correct amount in figures is exactly the discrepancy the words
+field exists to catch — on a field GST requires on the face of every tax invoice.
+
+`services/payslip_pdf.py` imports the same helper for net pay, so the crash also
+took out payslip generation for any salary ending in 50 paise or more — payroll
+being the one place a stray half-rupee is routine.
+
+Fixed by splitting once in paise (`divmod(round(abs(amount) * 100), 100)`), with
+the sign taken off before the split so a negative credit-note total does not
+borrow and report the complement.
+
+The new `tests/test_document_generation.py` sweeps all 100 paise values rather
+than sampling, precisely because the bug only appeared above 50: a test checking
+`0.25` and `0.50` passed happily while every invoice ending `0.56` raised.
+
+## BUG 4 — the mocked connection had no `fetchval`, killing a whole code path (HARNESS)
+
+`tests/conftest.py`. `test_ganit.py::test_create_invoice_success` had been red on
+`staging`. Not a product bug: the `pool.acquire()` connection mock defined
+`execute` and `fetch` but not `fetchval`, so `utils.next_doc_number` — which
+reads the sequence on a connection, under an advisory lock — awaited a bare
+`MagicMock` and raised before the test reached an assertion.
+
+Every caller was affected, so invoice, order **and payslip numbering** were all
+untestable end to end.
+
+`fetchval`/`fetchrow` are now aliases of the pool's mocks rather than fresh ones.
+In asyncpg `pool.fetchval()` is exactly `acquire()` + `conn.fetchval()`, so a
+test routing queries by text now sees the same routing inside an `acquire()`
+block. Aliasing rather than duplicating is what stops a helper that takes a
+connection getting different data from one that takes a pool.
+
+## BUG 5 — the suite's result depended on test order (HARNESS)
+
+`slowapi`'s `Limiter` is a module-level singleton keyed on remote address, and
+every test hits it from the same one. `/api/auth/login` allows five attempts a
+minute, so the **sixth login anywhere in the session** got a 429.
+
+Not hypothetical — adding auth tests in a second file was enough to start
+failing tests in the first, with a `429` that looks nothing like the assertion
+that fails. Now reset per test in an autouse fixture, so each starts with a full
+budget and a test that wants to prove the limiter works can spend it
+deliberately. Verified order-independent by running the two auth files in both
+orders.
+
+---
+
+## THE LARGEST OPEN FINDING — grant levels are stored, surfaced, and enforced nowhere
+
+Not a regression, and deliberately **not** something I changed: rewiring the
+authorisation model across ~400 endpoints is not a test task and would be
+reckless without direction. But it is the most important thing on this branch.
+
+- `middleware/role_tiers.py::level_satisfies` implements the four-rung ladder
+  (viewer / editor / approver / admin) and the separated-duty rule that admin
+  does not satisfy approver in Vetana and Ganit.
+- `test_role_tiers.py` pins it thoroughly and correctly — 300+ cases.
+- **`level_satisfies` has no caller anywhere outside the tests.** Verified by
+  scanning every non-test `.py` under `backend/`.
+- `require_module` (`middleware/subscription.py`) reads
+  `SELECT 1 FROM staging.org_member_modules …`. The `role` column that holds the
+  level is not in the projection. A viewer grant and an admin grant are the same
+  grant at request time.
+
+So the separation of duty is true of the model and not in force at any endpoint.
+
+What *is* enforced, and is well covered, is a coarser org-role tier: Vetana's
+money-moving actions call `_require_payroll_admin` → `is_org_admin`, and
+`test_vetana_security.py` pins that properly. But it does not distinguish admin
+from approver at all — the same predicate guards `POST /salary-structures` and
+`PATCH /payroll/runs/{id}/approve`, so whoever defines what people are paid can
+also release the money.
+
+It is easy to read `test_role_tiers.py` as evidence the levels are enforced. They
+are not. `tests/test_module_grant_enforcement.py` §3 characterises this with
+tests that assert what is true today and **fail the moment someone wires levels
+in**, forcing a deliberate update rather than letting the gap stay invisible.
+
+---
+
+## The Aadhaar gate had no test at all
+
+Named in the task as a priority, and the gap was real.
+`GET /api/v1/manav/employees/{id}/sensitive` returns full Aadhaar, PAN and bank
+account. Its only protection is
+`_pii_gate = require_org_role("org_owner", "org_admin")`.
+
+**Every existing test of that endpoint begins by overriding `_pii_gate` to a
+no-op.** Proven by mutation: I deleted the gate from the route and re-ran — all
+39 tests in `test_manav.py` still passed. Three of the new tests caught it.
+
+Now covered: refusal on module membership alone; refusal *before* the identity
+columns are selected; the role lookup being scoped to the caller's org (an
+unscoped one would 403 against an empty mock while admitting another customer's
+admin in production); the org_admin success path; and a platform bypass being
+audited *as* a bypass.
+
+---
+
+## Coverage against `design-handover/25-qa-acceptance.md`
+
+The honest gap, as asked.
+
+| section | covered by tests? |
+|---|---|
+| 1 · mechanical gates | **Yes, and now in CI.** Both passed already but ran nowhere automatically |
+| 2 · contrast vs `--bg` | No. Browser-level; belongs to the e2e agent |
+| 3 · verify defect claims | Practised, not automatable — see note below |
+| 4 · per-screen acceptance | No. All DOM-level: nav, states, keyboard, CLS, burst input |
+| 5 · dark mode | No. Browser-level |
+
+Section 1 is the only part a backend suite can carry, and it is now carried.
+Sections 2, 4 and 5 are genuinely out of reach from Python and need the browser
+suite. Nothing in this report should be read as covering them.
+
+On section 3: I nearly filed a false claim myself. I measured the two gates from
+the repo root, read exit `0`, and was about to report that they fail open — the
+`0` was `tail`'s exit code through a pipe, not the script's. Re-measured
+properly, both correctly exit `1`. The section is right that grep-shaped claims
+are the ones that turn out false.
+
+---
+
+## CI
+
+`.github/workflows/ci.yml`:
+
+- **Branch filter removed.** It was `[main, staging, feat/**]`, so `fix/**`,
+  `salvage/**`, `audit/**` and every `agent/**` branch ran **no checks at all**
+  until after they were merged into staging — which is where essentially all the
+  work happens. Now every push and every PR.
+- **Both mechanical gates added** to the frontend job, ahead of the type check.
+  They need `working-directory: frontend`, which that job already sets; run from
+  the repo root they correctly exit 1 with "src/styles not found".
+
+Backend `pytest` was already wired and needed no change.
+
+---
+
+## Final numbers
+
+```
+740 passed, 0 failed          (cd backend && python -m pytest)
+check-tokens.mjs    279 declared, 229 referenced, 0 missing
+check-classes.mjs   2096 selectors, 1416 classes used, 0 missing a rule
+```
+
+Started at 265 passed + 1 failed, with 318 never-executed tests sitting on a
+salvage branch.
+
+New files: `test_document_generation.py` (133), `test_contract_flows.py` (13),
+`test_module_grant_enforcement.py` (10).
+
+---
+
+## What I did not finish
+
+- **The grant-level gap is characterised, not closed.** Closing it means deciding
+  whether `require_module` should take a required level and threading one through
+  ~400 endpoints. That needs the owner's direction, not an agent's.
+- **No test asserts Vetana's approver and admin are different people.** They
+  cannot be today — both resolve to `is_org_admin`. The test worth writing is the
+  one that fails until the model is wired in.
+- **The `results` array inside a scraper run is unaudited by me.** I projected the
+  run row; the array comes from R2 and I did not review its shape.
+- **`services/payslip_pdf.py` has no HTML-level tests**, only the shared
+  amount-in-words helper. The invoice got the full treatment; the payslip did not.
+- **`GET /approvals/by-token/{token}`** is an unauthenticated external surface I
+  noticed and did not test. Worth someone's time.
