@@ -4,7 +4,7 @@ import { useToast } from '../../components/ui/toast';
 import { Section, DataTable, Td, StatusChip } from '../../components/editorial';
 import Seg from '../../components/customize/Seg';
 import EmptyState from '../../components/ui/EmptyState';
-import ErrorState from '../../components/ui/ErrorState';
+import ErrorState, { errorKind, OfflineBanner } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 
 /**
@@ -244,11 +244,23 @@ export default function Register() {
     try {
       await api.patch(`/v1/pahchan/punches/${row.id}/review`, { verdict: val });
       setRows(rs => rs.map(p => (p.id === row.id ? { ...p, review_verdict: val } : p)));
-    } catch {
+    } catch (err) {
       // Roll the optimistic mark back. A verdict that failed to save must not
       // look recorded — this queue's whole value is that it is accurate.
       setVerdict(v => { const next = { ...v }; delete next[row.id]; return next; });
-      pushToast({ type: 'error', title: 'Could not save that verdict', message: 'Try again.' });
+      // Offline is the likely case mid-burst and it needs different words: there
+      // is nothing to try again until the connection returns, and a reviewer who
+      // keeps pressing ↵ through a dead network is advancing the cursor past
+      // people whose verdicts are not being saved.
+      pushToast(
+        errorKind(err) === 'offline'
+          ? {
+            type: 'warning',
+            title: 'You are offline — that verdict was not saved',
+            message: 'Stop here. Verdicts need a connection, and the rows you pass while offline stay unreviewed.',
+          }
+          : { type: 'error', title: 'Could not save that verdict', message: 'Try again.' },
+      );
     }
   }, [visible, seek, pushToast]);
 
@@ -302,22 +314,41 @@ export default function Register() {
         />
       }
     >
+      {/* Persistent while the connection is down, not just on the failed request
+          that revealed it. A reviewer clearing a day needs to know saves are not
+          landing BEFORE they burst through twelve rows, not after. */}
+      <OfflineBanner />
+
       {/* §3: the column header labels the table, so it belongs to any state where
           a table is present OR arriving — bound to hasTable, not to ready. Not
           shown for empty or error, where column labels would sit over nothing. */}
       {state === 'loading' && (
         <SkeletonRegion label="Loading the register…">
-          <SkeletonTable rows={6} cols={6} />
+          {/* `columns`, not `cols`. The prop is `columns` (Skeleton.jsx:75), so
+              `cols` was silently dropped and the skeleton fell back to its default
+              of 5 for a 6-column table — a column-count jump at exactly the moment
+              this state exists to avoid one. */}
+          <SkeletonTable rows={6} columns={6} />
         </SkeletonRegion>
       )}
 
       {state === 'error' && (
         <ErrorState
-          kind="server"
-          title="The register did not load"
-          // §3's exact reassurance. A read failure that reads like data loss sends
-          // an HR admin into a panic about attendance records that are perfectly safe.
-          message="Punches are safe — this is a read failure, not data loss."
+          // Classified, not hardcoded. A reviewer in a basement was being told
+          // "something broke on our side" — which is untrue, unactionable, and
+          // sends them to report a bug that is their own signal.
+          kind={errKind}
+          // `detail`, not `title`/`message`. ErrorState takes neither of those
+          // (its signature is kind/grant/detail/onRetry/backTo/backLabel), so
+          // §3's exact reassurance was being dropped on the floor and the generic
+          // server copy rendered in its place.
+          detail={
+            errKind === 'offline'
+              ? 'The register needs a connection to load. Punches already recorded are safe, and anything queued on a phone will still sync.'
+              // §3's exact words. A read failure that reads like data loss sends an
+              // HR admin into a panic about attendance records that are perfectly safe.
+              : 'Punches are safe — this is a read failure, not data loss.'
+          }
           onRetry={load}
         />
       )}

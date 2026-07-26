@@ -3,7 +3,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Section, DataTable, Td, StatusChip } from '../../components/editorial';
 import EmptyState from '../../components/ui/EmptyState';
-import ErrorState from '../../components/ui/ErrorState';
+import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import Note from '../../components/module/Note';
 
@@ -80,6 +80,7 @@ function RefThumb({ photoId, name }) {
 export default function EnrollQueue() {
   const { pushToast } = useToast();
   const [state, setState] = useState('loading');
+  const [errKind, setErrKind] = useState('server');
   const [data, setData] = useState({ pending_approval: [], incomplete: [] });
   const [busy, setBusy] = useState(null);
 
@@ -89,7 +90,8 @@ export default function EnrollQueue() {
       const r = await api.get('/v1/pahchan/enrollment/queue/pending');
       setData(r.data);
       setState('ready');
-    } catch {
+    } catch (err) {
+      setErrKind(errorKind(err));
       setState('error');
     }
   }, []);
@@ -112,7 +114,8 @@ export default function EnrollQueue() {
   if (state === 'loading') {
     return (
       <SkeletonRegion label="Loading the enrollment queue…">
-        <SkeletonTable rows={4} columns={4} />
+        {/* Five, matching the real table since the photo column was added. */}
+        <SkeletonTable rows={4} columns={5} />
       </SkeletonRegion>
     );
   }
@@ -120,8 +123,12 @@ export default function EnrollQueue() {
   if (state === 'error') {
     return (
       <ErrorState
-        kind="server"
-        detail="The enrollment queue did not load. Reference photos are safe — this is a read failure."
+        kind={errKind}
+        detail={
+          errKind === 'offline'
+            ? 'The enrollment queue needs a connection to load. Reference photos already submitted are safe.'
+            : 'The enrollment queue did not load. Reference photos are safe — this is a read failure.'
+        }
         onRetry={load}
       />
     );
