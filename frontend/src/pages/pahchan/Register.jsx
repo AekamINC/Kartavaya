@@ -42,7 +42,7 @@ const PHOTO_W = 50;
 const PHOTO_H = 62;
 
 /** Which flags mean "a human needs to look at this". */
-const NEEDS_LOOK = new Set(['geo', 'accuracy', 'noref', 'mock', 'offline', 'late']);
+const NEEDS_LOOK = new Set(['geo', 'accuracy', 'noref', 'mock', 'offline', 'late', 'reuse']);
 
 const FLAG_LABEL = {
   late:     'Late',
@@ -52,6 +52,7 @@ const FLAG_LABEL = {
   offline:  'Synced late',
   overtime: 'Overtime',
   mock:     'Simulated location',
+  reuse:    'Photo reused',
 };
 
 /** 07 §8: mock location is flagged PROMINENTLY. It is the only flag that implies
@@ -59,6 +60,9 @@ const FLAG_LABEL = {
  *  circumstance. */
 const FLAG_TONE = {
   mock:     'rejected',
+  // Like `mock`, this implies intent rather than circumstance: the same
+  // photograph on two punches is what §1's camera-only rule exists to prevent.
+  reuse:    'rejected',
   noref:    'requested',
   geo:      'requested',
   accuracy: 'in_review',

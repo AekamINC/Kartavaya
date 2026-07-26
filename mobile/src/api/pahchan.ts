@@ -9,7 +9,12 @@ import { apiClient } from './client';
  */
 
 export type PunchDirection = 'in' | 'out';
-export type PunchFlag = 'late' | 'geo' | 'noref' | 'accuracy' | 'offline' | 'overtime' | 'mock';
+export type PunchFlag =
+  | 'late' | 'geo' | 'noref' | 'accuracy' | 'offline' | 'overtime' | 'mock'
+  // The same photograph on more than one punch. Set by the server, never the
+  // client — 07 §1's camera-only rule is a UI control, and the API is the
+  // boundary that actually has to hold.
+  | 'reuse';
 
 export interface Punch {
   id:              string;

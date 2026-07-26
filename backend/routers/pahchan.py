@@ -356,6 +356,37 @@ async def create_punch(
         has_reference_pair=(ref_count or 0) >= 2,
     )
 
+    if body.photo_key:
+        # The key must be one this endpoint's own uploader minted for THIS org's
+        # punch folder — `pahchan/{org}/punch/{uuid}.ext`. Without this, a punch
+        # can name any object in the org's bucket: an invoice, a payslip, or a
+        # reference photograph. A malformed key is §2's one permitted 4xx.
+        expected = f"pahchan/{org_id}/punch/"
+        if not body.photo_key.startswith(expected):
+            raise HTTPException(400, "That photo does not belong to this organisation's attendance store")
+
+        # A photo already attached to a different punch.
+        #
+        # 07 §1 bans the gallery so that "one saved selfie works forever" is
+        # impossible — "every punch after the first is a file copy… not a degraded
+        # version of the feature; it is the absence of it". But camera-only is
+        # enforced in the mobile UI, and the UI is not the boundary: an employee
+        # calling this endpoint directly could send the same key every day and
+        # never take another photograph.
+        #
+        # RECORDED AND FLAGGED, not refused — §2. A blocked punch becomes a
+        # payroll dispute a week later, and a reused key is a question for the
+        # reviewer rather than a proven fraud: it is also what a buggy client
+        # retrying with a stale key looks like. The human comparison is what
+        # decides, and this is exactly the kind of thing it should be told about.
+        reused = await pool.fetchval(
+            "SELECT 1 FROM staging.pahchan_punches "
+            "WHERE org_id=$1::uuid AND photo_key=$2 AND client_punch_id <> $3 LIMIT 1",
+            org_id, body.photo_key, body.client_punch_id,
+        )
+        if reused:
+            flags.append("reuse")
+
     try:
         row = await pool.fetchrow(
             """INSERT INTO staging.pahchan_punches
