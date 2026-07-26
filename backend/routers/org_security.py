@@ -132,6 +132,7 @@ from pydantic import BaseModel
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import require_org_role
+from middleware.role_tiers import ORG_SETTINGS_ROLES, ORG_OWNER_ONLY
 from services.audit import emit as audit
 
 log = logging.getLogger(__name__)
@@ -376,7 +377,7 @@ async def _load(pool, org_id: str) -> dict:
 @router.get("")
 async def get_security(
     request: Request,
-    user=Depends(require_org_role("org_admin", "org_owner")),
+    user=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
     org_id: str = Depends(get_org_id),
 ):
     """The org's security policy, plus everything a client needs to render the
@@ -432,7 +433,7 @@ async def get_security(
 async def patch_security(
     body: SecurityPatch,
     request: Request,
-    user=Depends(require_org_role("org_owner")),
+    user=Depends(require_org_role(*ORG_OWNER_ONLY)),
     org_id: str = Depends(get_org_id),
 ):
     """Save the org's security policy. Refuses any save that would lock the

@@ -117,7 +117,9 @@ from pydantic import BaseModel
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import require_org_role
-from middleware.role_tiers import ALL_MODULES, SENSITIVE_MODULES
+from middleware.role_tiers import (
+    ALL_MODULES, SENSITIVE_MODULES, ORG_SETTINGS_ROLES, ORG_OWNER_ONLY,
+)
 from middleware.subscription import BUNDLED_MODULES, clear_module_cache
 from services.audit import emit as audit
 
@@ -194,7 +196,7 @@ async def _dependants(pool, org_id: str, ent_code: str) -> list[str]:
 
 @router.get("")
 async def get_modules(
-    user=Depends(require_org_role("org_admin", "org_owner")),
+    user=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
     org_id: str = Depends(get_org_id),
 ):
     """
@@ -293,7 +295,7 @@ async def get_modules(
 async def patch_modules(
     body: ModulesPatch,
     request: Request,
-    user=Depends(require_org_role("org_owner")),
+    user=Depends(require_org_role(*ORG_OWNER_ONLY)),
     org_id: str = Depends(get_org_id),
 ):
     """

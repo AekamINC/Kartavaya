@@ -425,3 +425,92 @@ what let §6 check the specs at all. Nothing to fix.
 Confirmed: both gate scripts must run from `frontend/`, not the repo root — from root they
 print `src/styles not found` and exit 1. Every gate result in this report was produced
 from `frontend/`.
+
+---
+
+## 11. Module-set audit — the coordinator's follow-up, done properly
+
+Two claims were passed to me as new findings. **Both were already fixed — by me, in
+`4a966c6`, before the spend limit stopped me.** Verified against `origin/staging` now:
+
+| Claim | Actual state on staging |
+|---|---|
+| "`search.py:138` carries the same bug" | reads `"messages": "sanvaad"` — fixed |
+| "`admin_orgs.py:812-816` accepts only eight codes" | `ALL_MODULES = frozenset(ROLE_TIER_MODULES)` → **12 codes**, `sanvaad` included |
+
+**I can see exactly how the second misreading happened, and it is worth naming.**
+Lines 812-816 of `admin_orgs.py` are not code — they are the **comment describing the
+historical bug**, and it literally contains the phrase "held EIGHT codes":
+
+```
+# The list used to be retyped here, and held EIGHT codes where role_tiers holds
+# twelve. `org_members.py` had the identical bug and was fixed the same way in 40124fb.
+```
+
+The live assignment is at **line 831**. A reader landing on 812-816 sees "EIGHT codes"
+and reports it as current state. This is the second time this run a comment describing a
+*fixed* defect has been re-reported as a live one. **When a finding's evidence is a line
+number, check whether that line is code or prose before acting on it.**
+
+### The audit itself — nothing is unreachable, but two paths disagree
+
+Resolved at runtime rather than by reading:
+
+```
+role_tiers.ALL_MODULES  (12) == admin_orgs.ALL_MODULES (12)   -> identical
+require_module("...") literals actually present in routers/   -> all 12, no orphans
+```
+
+Every gated code is in the activation list and every listed code is really gated. No
+module is unreachable by everyone. **But there are two writers of
+`module_subscriptions`, not one, and they validate against different sources:**
+
+| Path | Validates against | Reaches |
+|---|---|---|
+| `admin_orgs.py`:850 (platform console) | `role_tiers.ALL_MODULES` | all 12 |
+| `subscription.py`:228 `POST /v1/subscription/modules/activate` | `staging.add_on_modules` **WHERE is_active=TRUE** | 7 |
+
+Cross-checking the 12 gated codes against the live `add_on_modules` catalogue:
+
+| Code | In catalogue | `is_active` | Reachable via subscription path? |
+|---|---|---|---|
+| `varta` | **no row at all** | — | **NO** |
+| `prachar` | yes | **false** | **NO** |
+| `vikray` | yes | **false** | **NO** |
+| `esign` | no row | — | n/a — bundled via plan `features` |
+| `srijan` | yes | false | n/a — bundled via plan `features` |
+| the other 7 | yes | true | yes |
+
+**Finding: `varta`, `prachar` and `vikray` cannot be activated through
+`POST /v1/subscription/modules/activate`** — `varta` because it has no catalogue row,
+the other two because their rows are `is_active=false`. All three are still activatable
+through the platform-console path, so this is an asymmetry rather than an outage, and it
+is **data state, not code** — so it is reported, not fixed. I did not write to the
+database. `esign` and `srijan` having no usable catalogue row is correct: both are in
+`BUNDLED_MODULES` and gate on the plan's `features` map, never on this table.
+
+## 12. Tier-2 role constants — proposed and used, not just described
+
+`role_tiers.py` existed to end 84 hardcoded platform role strings and never gained an
+org-tier equivalent, so `require_org_role("org_admin", "org_owner")` stayed as literals
+at ~15 call sites. Added two named sets with the reasoning that was previously buried in
+`org_modules.py`'s docstring:
+
+- **`ORG_SETTINGS_ROLES = ("org_admin", "org_owner")`** — who may open org settings.
+- **`ORG_OWNER_ONLY = ("org_owner",)`** — writes that can lock the org out or
+  self-escalate. Narrower on purpose: `subscription.py`'s org-role short-circuit already
+  lets an `org_admin` reach every ACTIVE module with no grant row, so an `org_admin` who
+  could also switch a module ON could hand themselves payroll in one request.
+
+Wired through the three routers I own (`org_profile`, `org_modules`, `org_security`),
+which is a demonstrated use rather than an unused constant. Verified the substitution is
+value-identical — `('org_admin','org_owner')` and `('org_owner',)` — so behaviour is
+unchanged; this is naming, not a permission change.
+
+**Deliberately NOT churned:** the ~11 remaining literal call sites in `org_members.py`,
+`manav.py`, `pahchan.py` and `graha.py`. Those files are owned elsewhere and a
+cross-cutting rewrite during a swarm is how conflicts get made. The constants are there
+for whoever owns them.
+
+**Backend 390 passed / 1 pre-existing failure. Both gates exit 0** — run from `frontend/`
+without a pipe, so the status is the scripts' own, not `tail`'s.

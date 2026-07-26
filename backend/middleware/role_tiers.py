@@ -180,6 +180,34 @@ SRIJAN_COMMERCIAL_ROLES: tuple[str, ...] = (
 SENSITIVE_MODULES: frozenset[str] = HR_MODULES | {"ganit"}
 
 
+# ── Tier 2: org roles ─────────────────────────────────────────────────────────
+#
+# This file was created to end 84 hardcoded PLATFORM role strings. The same
+# smell exists one tier down and had no home until now: `require_org_role(
+# "org_admin", "org_owner")` is written out as literals at ~15 call sites across
+# org_members, org_profile, org_modules, org_security, manav, pahchan and graha.
+# It fails the same way — add or rename an org role and you must find every one,
+# and a missed site silently refuses access or grants it.
+#
+# These are named sets, not a hierarchy: `require_org_role` takes a varargs list
+# and `platform_admin` passes it unconditionally regardless, so there is nothing
+# to rank here.
+
+#: Everyone who may OPEN organisation settings. Read access across the org
+#: settings surface — profile, modules, security, the member list.
+ORG_SETTINGS_ROLES: tuple[str, ...] = ("org_admin", "org_owner")
+
+#: Writes that can lock the whole organisation out of something, or hand the
+#: writer access they did not have. `org_owner` ALONE — deliberately narrower
+#: than ORG_SETTINGS_ROLES, and the reason is a live gap rather than a taste:
+#: `subscription.py`'s org-role short-circuit reads
+#: `role_code IN ('org_owner','org_admin')` and skips the per-user grant check
+#: on a hit. So an org_admin already reaches every ACTIVE module with no grant
+#: row. If org_admin could also switch a module ON, an org_admin could hand
+#: themselves Vetana — payroll — in one request with no owner involved.
+ORG_OWNER_ONLY: tuple[str, ...] = ("org_owner",)
+
+
 #: Ranked most-privileged first. Where a user holds several platform rows, the
 #: strongest wins — matching how `subscription.py` already picks a role with
 #: `ORDER BY (role_code = 'platform_admin') DESC LIMIT 1`.

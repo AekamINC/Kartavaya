@@ -49,6 +49,7 @@ from pydantic import BaseModel, field_validator
 from auth_router import require_user
 from db import get_pool
 from middleware.roles import require_org_role
+from middleware.role_tiers import ORG_SETTINGS_ROLES
 from middleware.org_resolver import get_org_id
 
 router = APIRouter(prefix="/api/v1/org/profile", tags=["org-profile"])
@@ -216,7 +217,7 @@ async def get_profile(
 @router.patch("")
 async def update_profile(
     body: ProfileUpdate,
-    user=Depends(require_org_role("org_admin", "org_owner")),
+    user=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
     org_id: str = Depends(get_org_id),
 ):
     pool = await get_pool()

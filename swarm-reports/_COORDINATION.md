@@ -115,6 +115,13 @@ should take it.
 not reuse the numbers — `README.md`'s own rule is "never re-number", and the two
 renumbers this run were forced by collisions, not preference.
 
+**Before reporting a defect whose evidence is a line number, check that the line is CODE
+and not PROSE.** Twice this run a comment *describing an already-fixed bug* was
+re-reported as live. `admin_orgs.py:812-816` is the clearest case: it is the comment
+"held EIGHT codes where role_tiers holds twelve", describing a bug fixed in `40124fb`.
+The live assignment is line **831**, and it resolves to **12** codes. A `git grep` hit
+inside a `#` block is not a finding.
+
 When renumbering a run of files, **rename highest-first**. Renaming in file order makes
 `067→068` overwrite the branch's own `068`, and `git mv` reports success while the file
 is silently lost.
@@ -185,6 +192,23 @@ control and the four levels never get used. **The build is right; the spec is wr
 
 ## 6. Confirmed live defects worth knowing
 
+- **Sanvaad 403'd for EVERY user in EVERY org, `org_owner` included** — `require_module()`
+  uses one string for both the grant lookup (`org_member_modules`) and the entitlement
+  lookup (`module_subscriptions`), and the org-role short-circuit skips only the grant
+  half. `messaging.py` gated on `require_module("samvada")`, a code
+  `module_subscriptions` has never held. **Fixed** in `4a966c6`, with `search.py`'s
+  `_ENTITY_MODULE["messages"]` and 4 workarounds. `staging.samvada_*` TABLES keep their
+  names — a table name is not a module code.
+- **Three modules cannot be activated via `POST /v1/subscription/modules/activate`** —
+  it validates against `staging.add_on_modules WHERE is_active=TRUE`. `varta` has **no
+  catalogue row at all**; `prachar` and `vikray` have rows with `is_active=false`. All
+  three are still reachable through the platform-console path (`admin_orgs.py`), which
+  validates against `role_tiers.ALL_MODULES` instead. **This is DATA state, not code —
+  it needs a row/flag change nobody in this run may make.** `esign`/`srijan` having no
+  usable row is correct: they are `BUNDLED_MODULES` and gate on the plan's `features`.
+- **There are TWO writers of `module_subscriptions`, not one** — `admin_orgs.py:850` and
+  `subscription.py:228` — and they validate against different sources. Any audit of "can
+  this module be turned on" has to check both.
 - **Attachment leak was 4 sites, not 1** — `GET /api/tasks`, `PUT /api/tasks/{id}`,
   `PATCH /api/tasks/{id}/move` had no filter at all; `GET /api/tasks/{id}` filtered
   *after* minting. Signed R2 URLs last **9 hours** (`ExpiresIn=32400`). Now fixed.
