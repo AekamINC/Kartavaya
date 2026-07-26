@@ -282,6 +282,26 @@ SELECT column lists prove the real set. I did **not** query the database to conf
 that is out of bounds. Every replacement column is one `manav.py` demonstrably writes,
 so the fix is correct whether or not the originals were ever added out of band.
 
+**Independent corroboration, found on rebase — and one honest disagreement.**
+A sibling reached the payroll-run half of this independently and fixed
+`employee_id`→`employee_code` and `bank_account`/`bank_name`→`bank_details` with the
+note *"Verified against the live schema, 2026-07-26"*. That is better evidence than
+mine and I took their version for those columns.
+
+They left `LEFT JOIN staging.manav_departments d ON d.id = e.department_id` in place.
+So either `department_id` exists and I am wrong, or they fixed the columns they were
+looking at and did not examine the join. **I could not resolve this without querying
+the database.** I removed the join anyway, on the asymmetry of the failure modes:
+
+- if `department_id` is absent and the join stays → `UndefinedColumnError`, **every
+  payslip PDF is a 500**;
+- if `department_id` exists and I read `e.department` instead → the department line may
+  read empty on some rows. Cosmetic.
+
+`e.department` is a column that exists in both worlds. **Someone with database access
+should settle this** — it is one `information_schema` query, and it is the single
+open question in this report.
+
 **7. `except ImportError` around the WeasyPrint import — HELD, fixed.** A machine or
 image without pango/cairo fails at `dlopen` with `OSError`, not `ImportError`, so the
 intended "WeasyPrint is not available" message never fired and it surfaced as a 500
@@ -409,9 +429,10 @@ are spec only. The harness should not flatter that.
 
 ## 8. Handoffs
 
-- **vetana** — §2.2 and §3.6. The payslip PDF route was returning 500; fixed here, but
-  please confirm `department_id` really is absent when you next touch that schema.
-  Leave balance and UTR are the two remaining payslip gaps.
+- **vetana** — §2.2 and §3.6. **Please settle `manav_employees.department_id` with one
+  `information_schema` query** — a sibling and I disagree, and I chose the safer
+  failure mode rather than the confirmed one. UTR and the attendance-source line are
+  the remaining payslip gaps; leave balances landed on staging while I was stopped.
 - **ganit** — §2.1. Ganit's tax schema is **fine** for CGST+SGST; the `18-documents.md`
   worry does not apply. Real gaps are IRN/e-invoice fields and shipped-to.
   **Statement of Account is the cheapest document left to build** (§2.4).
