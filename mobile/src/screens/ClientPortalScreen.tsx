@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { apiClient } from '../api/client';
 import { apiLogout, getCachedUser } from '../api/auth';
 import { useTheme } from '../theme/ThemeProvider';
-import type { Task, Comment } from '../api/types';
+import type { ClientState, ClientTask, Comment } from '../api/types';
 import type { User } from '../api/types';
 import { BRAND_GRADIENT_2 } from '../theme/tokens';
 
@@ -20,23 +20,43 @@ interface Props {
   onLogout?: () => void;
 }
 
+/**
+ * The three client states, as words. `ClientTaskOut.state` replaced the raw
+ * six-value `status` this screen used to print — which meant it was rendering
+ * `undefined` into the pill, and the old `in_progress` special-case had nothing
+ * to match.
+ */
+const STATE_LABEL: Record<ClientState, string> = {
+  with_us:  'With us',
+  with_you: 'With you',
+  done:     'Done',
+};
+
 export default function ClientPortalScreen({ onLogout }: Props) {
   const { t } = useTheme();
-  const [tasks,    setTasks]    = useState<Task[]>([]);
-  const [selected, setSelected] = useState<Task | null>(null);
+  const [tasks,    setTasks]    = useState<ClientTask[]>([]);
+  const [selected, setSelected] = useState<ClientTask | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [comment,  setComment]  = useState('');
   const [user]                  = useState<User | null>(getCachedUser);
 
   useEffect(() => {
-    apiClient.get<Task[]>('/client/tasks')
-      .then(r => setTasks(r.data))
+    apiClient.get<ClientTask[]>('/client/tasks')
+      .then(r => setTasks(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   }, []);
 
+  /**
+   * `selected.taskId`, not `selected.task_id`. The snake_case read produced the
+   * literal URL `/api/tasks/undefined/comments`, which 404s — and both callers
+   * swallow the failure, so the thread was permanently empty and every post
+   * failed with the generic alert below. The endpoint itself is fine for a
+   * client: `server.py:1641-1647` authorises them against the task and returns
+   * only client-visible comments.
+   */
   useEffect(() => {
     if (!selected) return;
-    apiClient.get<Comment[]>(`/tasks/${selected.task_id}/comments`)
+    apiClient.get<Comment[]>(`/tasks/${selected.taskId}/comments`)
       .then(r => setComments(r.data))
       .catch(() => {});
   }, [selected]);
@@ -44,9 +64,9 @@ export default function ClientPortalScreen({ onLogout }: Props) {
   const postComment = useCallback(async () => {
     if (!comment.trim() || !selected) return;
     try {
-      await apiClient.post(`/tasks/${selected.task_id}/comments`, { body: comment.trim() });
+      await apiClient.post(`/tasks/${selected.taskId}/comments`, { body: comment.trim() });
       setComment('');
-      const r = await apiClient.get<Comment[]>(`/tasks/${selected.task_id}/comments`);
+      const r = await apiClient.get<Comment[]>(`/tasks/${selected.taskId}/comments`);
       setComments(r.data);
     } catch {
       Alert.alert('Error', 'Could not post comment');
@@ -122,7 +142,7 @@ export default function ClientPortalScreen({ onLogout }: Props) {
       <Text style={[s.sectionLabel, { color: t.primary }]}>Your Updates</Text>
       <FlatList
         data={tasks}
-        keyExtractor={item => item.task_id}
+        keyExtractor={item => item.taskId}
         contentContainerStyle={s.list}
         ListEmptyComponent={<Text style={[s.empty, { color: t.ink3 }]}>No tasks shared with you yet.</Text>}
         renderItem={({ item }) => (
@@ -134,15 +154,15 @@ export default function ClientPortalScreen({ onLogout }: Props) {
               <Text style={[s.taskTitleText, { color: t.ink }]} numberOfLines={2}>{item.title}</Text>
               <View style={[s.status, { backgroundColor: `${t.primary}22` }]}>
                 <Text style={[s.statusText, { color: t.primary }]}>
-                  {item.status === 'in_progress' ? 'In Progress' : item.status}
+                  {STATE_LABEL[item.state] ?? ''}
                 </Text>
               </View>
             </View>
-            {item.description
-              ? <Text style={[s.desc, { color: t.ink3 }]} numberOfLines={2}>{item.description}</Text>
+            {item.note
+              ? <Text style={[s.desc, { color: t.ink3 }]} numberOfLines={2}>{item.note}</Text>
               : null}
-            {item.due_at
-              ? <Text style={[s.due, { color: t.ink3 }]}>Due {new Date(item.due_at).toLocaleDateString()}</Text>
+            {item.expectedAt
+              ? <Text style={[s.due, { color: t.ink3 }]}>Due {new Date(item.expectedAt).toLocaleDateString()}</Text>
               : null}
             <Text style={[s.tapHint, { color: t.primary }]}>Tap to comment ›</Text>
           </TouchableOpacity>

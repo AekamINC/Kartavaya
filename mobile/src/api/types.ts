@@ -86,6 +86,50 @@ export interface Task {
   assignee_names?:      string[];
 }
 
+/**
+ * What `GET /api/client/tasks` actually returns — `ClientTaskOut`
+ * (`backend/server.py:609`), NOT `Task`.
+ *
+ * The two shapes share exactly one field name, `title`, which is why annotating
+ * the call as `Task[]` looked fine: the list rendered, with every other cell
+ * blank. `apiClient.get<T>()` is an unchecked cast, so TypeScript could not
+ * catch it either.
+ *
+ * The server serialises camelCase via Pydantic aliases while keeping snake_case
+ * internally, so these names are the wire names and are deliberately different
+ * from `Task`'s. `status` in particular has no counterpart: six internal
+ * statuses collapse to three client states, and the raw one does not cross.
+ */
+export type ClientState = 'with_us' | 'with_you' | 'done';
+
+export interface ClientAttachment {
+  name:       string;
+  url:        string;
+  size?:      number | null;
+  sharedBy?:  string | null;
+  sharedAt?:  string | null;
+}
+
+export interface ClientTask {
+  taskId:       string;
+  ref:          string;
+  title:        string;
+  /** `TaskOut.description`. */
+  note:         string;
+  /** `TaskOut.status`, reduced to the three states a client is shown. */
+  state:        ClientState;
+  /** `TaskOut.due_at`. */
+  expectedAt?:  string | null;
+  updatedAt?:   string | null;
+  createdAt?:   string | null;
+  requestedBy?: string | null;
+  projectId?:   string | null;
+  /** `TaskOut.attachments`, already filtered for private files server-side. */
+  files:        ClientAttachment[];
+  decision?:    { outcome: string; note: string; at?: string | null } | null;
+  awaitingMe:   boolean;
+}
+
 export interface Comment {
   comment_id: string;
   task_id:    string;
