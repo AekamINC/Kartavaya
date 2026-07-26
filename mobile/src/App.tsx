@@ -20,7 +20,7 @@ import { NotificationProvider } from './context/NotificationContext';
 import { NotificationBannerContainer } from './components/NotificationBanner';
 import { restoreToken } from './api/auth';
 import RootStack from './nav/RootStack';
-import { BRAND } from './theme/tokens';
+import { BRAND, tokens, withAlpha } from './theme/tokens';
 
 // Restore JWT from MMKV into axios headers before any component mounts
 restoreToken();
@@ -32,23 +32,43 @@ interface BannerProps {
   onRetry?:   () => void;
   onClear?:   () => void;
 }
+/**
+ * The banner's colours were six rgba literals and three hexes, tuned for the
+ * cream canvas and applied unchanged in dark mode. Measured over the real dark
+ * surface, the warn variant — dark brown `#92400e` on a 14%-orange pill that
+ * composites to near-black — came out at **2.03:1**. That is the banner telling
+ * you your writes are queued offline, and it was the least readable thing in the
+ * app in the mode where readability mattered most.
+ *
+ * Replaced with the container pairs, which exist for exactly this and are
+ * defined in both themes. Measured, foreground on background:
+ *
+ *     kind           light      dark
+ *     error          6.57:1     7.40:1     onError on error
+ *     warn          10.10:1     9.49:1     onApprovalContainer on approvalBg
+ *     info/syncing  13.63:1     7.01:1     onPrimaryContainer on primaryContainer
+ *
+ * The border keeps its translucent treatment, but derived from the same token
+ * via withAlpha rather than restating the channel values — `'rgba(4,131,122,0.3)'`
+ * was the light-mode primary hardcoded, so the border stayed teal-on-teal in
+ * dark where the fill had moved to the container.
+ */
 function OfflineBanner({ message, kind, onRetry, onClear }: BannerProps) {
+  const { t } = useTheme();
   if (!message) return null;
 
-  // Colours matched to iOS pill / Android strip spec
   const bg =
-    kind === 'error'   ? 'rgba(186,26,26,0.92)'   :
-    kind === 'warn'    ? 'rgba(255,159,10,0.14)'   :
-    kind === 'syncing' ? 'rgba(4,131,122,0.12)'    :
-                         'rgba(4,131,122,0.12)';
+    kind === 'error'   ? t.error            :
+    kind === 'warn'    ? t.approvalBg       :
+                         t.primaryContainer;
   const textColor =
-    kind === 'error'   ? '#fff'     :
-    kind === 'warn'    ? '#92400e'  :
-                         BRAND.blue;
+    kind === 'error'   ? t.onError              :
+    kind === 'warn'    ? t.onApprovalContainer  :
+                         t.onPrimaryContainer;
   const borderColor =
-    kind === 'error'   ? 'rgba(186,26,26,0.3)'   :
-    kind === 'warn'    ? 'rgba(255,159,10,0.35)'  :
-                         'rgba(4,131,122,0.3)';
+    kind === 'error'   ? withAlpha(t.error,    0.30) :
+    kind === 'warn'    ? withAlpha(t.approval, 0.35) :
+                         withAlpha(t.primary,  0.30);
 
   const iconName =
     kind === 'error'   ? 'alert-circle-outline'  :
@@ -79,13 +99,30 @@ function OfflineBanner({ message, kind, onRetry, onClear }: BannerProps) {
   );
 }
 
-// ── Splash screen (shown while auth is resolving) ─────────────────────────────
+/**
+ * Splash — shown while the fonts load, and again while auth resolves.
+ *
+ * This one renders OUTSIDE ThemeProvider (see `App` below: it returns before the
+ * providers mount), so it cannot call useTheme() and has to reach into `tokens`
+ * directly. That is the reason it drifted: with no hook to pull it back to the
+ * palette it kept `backgroundColor: '#020d1a'`, a navy from the retired-blue era.
+ *
+ * app.json's NATIVE splash is `backgroundColor: "#0C0E11"`. So every cold launch
+ * showed the native splash in one dark blue, then swapped to this one in a
+ * different dark blue, then swapped again to the real canvas — two visible
+ * flashes before the first screen. `tokens.dark.bg` IS `#0C0E11`, so pinning it
+ * there removes the first seam and cannot drift from app.json again without the
+ * token moving.
+ *
+ * Dark in both schemes on purpose: the native splash config is a single colour
+ * with no light/dark variant, so matching it beats matching the user's scheme.
+ */
 export function Splash() {
   return (
     <View style={s.splash}>
       <Text style={s.splashBrand}>Kartavaya</Text>
       <Text style={s.splashSub}>BY AEKAM INC</Text>
-      <ActivityIndicator color={BRAND.blue} size="large" style={{ marginTop: 32 }} />
+      <ActivityIndicator color={BRAND.teal} size="large" style={{ marginTop: 32 }} />
     </View>
   );
 }
@@ -273,18 +310,20 @@ export default function App() {
 const s = StyleSheet.create({
   splash: {
     flex: 1,
-    backgroundColor: '#020d1a',
+    // Must equal app.json's native splash backgroundColor, or the cold launch
+    // shows two different dark blues in sequence. Both are #0C0E11.
+    backgroundColor: tokens.dark.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   splashBrand: {
-    color: '#fff',
+    color: tokens.dark.ink,
     fontSize: 28,
     fontWeight: '900',
     letterSpacing: 5,
   },
   splashSub: {
-    color: '#05b7aa',
+    color: BRAND.teal,
     fontSize: 9,
     fontWeight: '700',
     letterSpacing: 4,
