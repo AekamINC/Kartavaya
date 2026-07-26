@@ -357,6 +357,9 @@ const ON_PAIRS = [
   ['--on-tertiary-container', '--tertiary-container'],
   ['--on-ok-container', '--ok-container'], ['--on-warn-container', '--warn-container'],
   ['--on-danger-container', '--danger-container'], ['--on-danger', '--danger'],
+  // --ok is a FILL that inverts, so it needs its own ink the same way --danger
+  // does. Measured here so the pair cannot drift apart unnoticed.
+  ['--on-ok', '--ok'],
 ];
 
 const themes = { light, dark };

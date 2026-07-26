@@ -28,12 +28,42 @@ node scripts/check-contrast.mjs --matrix   # adds the full 412-pair token matrix
 
 | Claim carried into this run | Verdict | Evidence |
 |---|---|---|
-| `--on-surface-disabled` is undeclared (reported by four agents) | **STALE — fixed** | Declared in BOTH themes: light `#9DA096` `kartavaya-design.css:163`, dark `#64645F` `kartavaya-design.css:237` |
-| Stale workarounds around that gap survive in `drawer.css` and `landing.css` | **STALE — already migrated** | `drawer.css:72` documents `.bar__crumb-sep` as a legitimate `--on-surface-disabled` user; no `--on-surface-3` workaround remains in either file. Nothing to switch. |
-| `--on-surface-faint` measures 2.3:1 and any text use is a defect | **STALE — resolved by aliasing** | It no longer carries a literal. `kartavaya-design.css:156` (light) and `:236` (dark) alias it to `--on-surface-3`. Measured now: **4.82:1 light / 5.81:1 dark on `--bg`**. Its ~30 text call sites are compliant on `--bg`, `--surface` and `--s-low`; see SPEC-A11Y-2 for the raised surfaces. |
+| `--on-surface-disabled` is undeclared (reported by four agents) | **STALE — fixed** | Declared in BOTH themes: light `#9DA096` `kartavaya-design.css:181`, dark `#64645F` `kartavaya-design.css:262` |
+| Stale workarounds around that gap survive in `drawer.css` and `landing.css` | **TRUE — and I got this wrong first time** | Both are still there. I initially recorded this as "already migrated"; that was a bad grep, not a verified reading. Corrected in §1a — and only ONE of the two should actually switch. |
+| `--on-surface-faint` measures 2.3:1 and any text use is a defect | **STALE — resolved by aliasing** | It no longer carries a literal. `kartavaya-design.css:174` (light) and `:261` (dark) alias it to `--on-surface-3`. Measured now: **4.82:1 light / 5.81:1 dark on `--bg`**. Its ~30 text call sites are compliant on `--bg`, `--surface` and `--s-low`; see SPEC-A11Y-2 for the raised surfaces. |
 | `PageHeader` hardcodes `lang="sa"` | **STALE — fixed** | see §4 |
 | Segmented control uses `aria-selected` on `role="radio"` | **STALE — standard won** | see §5 |
 | Avatar comment: "six colours dark enough that white initials clear AA" | **ACCURATE — verified** | 5.87:1 – 7.73:1, see §3 |
+
+### 1a · The two `--on-surface-disabled` workarounds — one switches, one must not
+
+The brief said the workarounds "should switch to the real token" now that it
+exists. Half of that is right. The two sites are not the same kind of thing, and
+measuring them is what separates them.
+
+**`landing.css` `.lcta:disabled` — SWITCHED.** Its comment said
+`--on-surface-disabled` was "DECLARED NOWHERE in src/styles". True when written,
+false now (`kartavaya-design.css:181` / `:262`). This is a genuinely **inactive
+control** — a primary CTA with no destination yet — and WCAG 1.4.3 exempts
+inactive controls from the contrast minimum outright. That exemption is the
+entire reason the token exists. Switched; measures 2.19:1 on `--s-container`,
+and reading as unmistakably dead is the intent.
+
+**`drawer.css` `.dr__crumb-sep` — LEFT ALONE, deliberately.** Its comment gives
+the same expired reason, but the answer does not change with it. A breadcrumb
+separator is **not an inactive control**: it is a glyph in the accessibility
+tree, on an enabled control, that a sighted user reads to parse the trail.
+Completing the migration would move visible text from **4.82:1 to 2.32:1**.
+`client.css:194` already reaches the same conclusion for its `·` separator.
+
+So `00 §11` naming `.bar__crumb-sep` as a legitimate `--on-surface-disabled`
+user is a **spec defect**, not a migration target. Both comments now record
+which case they are, so the next agent does not "finish the job".
+
+This is the one place my own first pass was wrong rather than the brief's, and
+the cause is worth recording: I grepped for `--on-surface-3` near the word
+"workaround" instead of opening the two files named. Re-reading found both in
+under a minute.
 
 ---
 
@@ -56,9 +86,10 @@ token has a counterpart.
 
 ### 2b · Foreground ramp on surface ramp — the reusable table
 
-GENERATED, not transcribed: `node scripts/check-contrast.mjs --md`. **Bold = below 4.5:1**
-(fails body text). Thresholds are WCAG 2.1: 4.5:1 body, 3:1 large text (>=24px, or
->=18.66px at >=700 weight) and non-text UI.
+GENERATED, never transcribed: `cd frontend && node scripts/check-contrast.mjs --md`.
+**Bold = below 4.5:1** (fails body text). Thresholds are WCAG 2.1: 4.5:1 body,
+3:1 large text (>=24px, or >=18.66px at >=700 weight) and non-text UI.
+Regenerated after rebasing onto staging at 58+ commits, so these are current.
 
 #### LIGHT
 
@@ -72,6 +103,7 @@ GENERATED, not transcribed: `node scripts/check-contrast.mjs --md`. **Bold = bel
 | `--primary` | #04837A | **4.04** | **4.33** | **4.11** | **3.82** | **3.55** | **3.26** |
 | `--primary-text` | #046B64 | 5.56 | 5.96 | 5.66 | 5.26 | 4.89 | **4.49** |
 | `--primary-hover` | #026B64 | 5.56 | 5.97 | 5.66 | 5.27 | 4.89 | **4.49** |
+| `--primary-vivid` | #05B7AA | **2.19** | **2.35** | **2.23** | **2.07** | **1.92** | **1.77** |
 | `--secondary` | #5C6450 | 5.39 | 5.78 | 5.49 | 5.10 | 4.74 | **4.35** |
 | `--tertiary` | #8A5730 | 5.25 | 5.63 | 5.34 | 4.97 | 4.61 | **4.24** |
 | `--ok` | #14743A | 5.10 | 5.47 | 5.19 | 4.83 | **4.48** | **4.11** |
@@ -108,6 +140,7 @@ GENERATED, not transcribed: `node scripts/check-contrast.mjs --md`. **Bold = bel
 | `--on-warn-container` on `--warn-container` | 10.10 |
 | `--on-danger-container` on `--danger-container` | 10.45 |
 | `--on-danger` on `--danger` | 6.57 |
+| `--on-ok` on `--ok` | 5.85 |
 
 #### DARK
 
@@ -121,6 +154,7 @@ GENERATED, not transcribed: `node scripts/check-contrast.mjs --md`. **Bold = bel
 | `--primary` | #4FD8CB | 11.06 | 10.47 | 9.89 | 9.15 | 8.16 | 7.09 |
 | `--primary-text` | #4FD8CB | 11.06 | 10.47 | 9.89 | 9.15 | 8.16 | 7.09 |
 | `--primary-hover` | #6FE6DA | 12.89 | 12.20 | 11.53 | 10.67 | 9.52 | 8.26 |
+| `--primary-vivid` | #05B7AA | 7.69 | 7.28 | 6.88 | 6.37 | 5.68 | 4.93 |
 | `--secondary` | #C3CBB0 | 11.49 | 10.88 | 10.28 | 9.51 | 8.48 | 7.37 |
 | `--tertiary` | #F0BB90 | 11.24 | 10.64 | 10.05 | 9.30 | 8.30 | 7.21 |
 | `--ok` | #5BD98A | 10.80 | 10.22 | 9.66 | 8.94 | 7.97 | 6.92 |
@@ -157,6 +191,7 @@ GENERATED, not transcribed: `node scripts/check-contrast.mjs --md`. **Bold = bel
 | `--on-warn-container` on `--warn-container` | 9.49 |
 | `--on-danger-container` on `--danger-container` | 10.00 |
 | `--on-danger` on `--danger` | 7.40 |
+| `--on-ok` on `--ok` | 7.75 |
 
 ### 2c · Agreement with `23-accessibility.md` §Contrast, and where it diverges
 

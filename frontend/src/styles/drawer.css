@@ -78,9 +78,17 @@
 
 .dr__crumb { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--on-surface-2); }
 .dr__crumb-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--on-surface-3); }
-/* 00 §11 names `.bar__crumb-sep` as a legitimate `--on-surface-disabled` user,
-   but that token is not declared in kartavaya-design.css — which this file does
-   not own. `--on-surface-3` until it is. */
+/* STAYS --on-surface-3, and the original reason for it has expired without
+   changing the answer. That reason was "--on-surface-disabled is not declared";
+   it is now (kartavaya-design.css:181 / :262). The migration still must not
+   happen here.
+   --on-surface-disabled measures 2.32:1 on --bg. WCAG 1.4.3 exempts INACTIVE
+   CONTROLS, and a breadcrumb separator is not one — it is a glyph in the
+   accessibility tree, on an enabled control, that a sighted user reads to parse
+   the trail. client.css:194 reaches the same conclusion for the `·` separator
+   there. Completing the migration would move visible text from 4.82:1 to
+   2.32:1, so 00 §11's naming of `.bar__crumb-sep` is a spec defect rather than
+   a target. --on-surface-3 is both the accessible choice and the consistent one. */
 .dr__crumb-sep { color: var(--on-surface-3); }
 /* The scrolled-title collapse. maxWidth 200 kept verbatim from staging — it is
    the reason a long title does not push the header actions off the panel. */

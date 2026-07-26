@@ -113,12 +113,17 @@
    disabled. Without this it kept .lcta--fill's full primary fill and read as
    the liveliest control on the page right up until the click did nothing —
    worse than the dead link the stub exists to prevent.
-   --on-surface-3 rather than 00 §11's --on-surface-disabled: that token is
-   documented in the handover and DECLARED NOWHERE in src/styles, so using it
-   would resolve to nothing and drop the declaration silently. */
+   --on-surface-disabled is now the right token and is DECLARED — light #9DA096
+   and dark #64645F, kartavaya-design.css:181 and :262. The note that used to
+   sit here said it was declared nowhere and fell back to --on-surface-3; that
+   was true when written and is not any more.
+   Switching is safe precisely because this is an INACTIVE control: WCAG 1.4.3
+   exempts those from the contrast minimum, which is what the token exists for.
+   It measures 2.19:1 on --s-container, and reading as unmistakably dead is the
+   point of a CTA that has no destination yet. */
 .lcta:disabled {
   background: var(--s-container);
-  color: var(--on-surface-3);
+  color: var(--on-surface-disabled);
   border-color: var(--outline-variant);
   cursor: default;
 }
