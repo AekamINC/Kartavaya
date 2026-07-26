@@ -169,6 +169,88 @@ if (Object.keys(light).length < 30) {
   process.exit(1);
 }
 
+/* ────────────────────────────────────────────────────────────────────────────
+ * app.json — the colours the generator CANNOT generate, checked instead.
+ *
+ * Four brand colours in this app are read by the NATIVE side, before any
+ * JavaScript runs, and therefore cannot come from palette.generated.ts:
+ *
+ *   · `expo.splash.backgroundColor`               — the launch screen, drawn by
+ *     the OS from the compiled app bundle
+ *   · `expo.android.adaptiveIcon.backgroundColor` — the launcher icon plate
+ *   · `expo.plugins[expo-notifications].color`    — the small-icon tint applied
+ *     by the Android system notification shade
+ *
+ * They live in `mobile/app.json`, which is CONFIGURATION, not a stylesheet. It
+ * is plain JSON: it cannot import, cannot alias, and is consumed by the Expo
+ * prebuild long before the palette exists. So it is a genuine second source of
+ * truth for colours that also exist in the first one — the exact condition a
+ * generated palette is supposed to eliminate.
+ *
+ * It had already drifted. `App.tsx`'s JS splash carried `backgroundColor:
+ * '#020d1a'`, a navy from the retired-blue era, while app.json's NATIVE splash
+ * said `#0C0E11`. Every cold launch showed the native splash in one dark blue,
+ * swapped to the JS splash in a different one, then swapped again to the real
+ * canvas — two visible flashes before the first screen, and nothing in the
+ * repo could notice.
+ *
+ * The generator cannot WRITE app.json: rewriting the native build configuration
+ * as a side effect of a palette refresh is far more dangerous than the drift it
+ * would prevent, and `expo prebuild` consumes fields here that have nothing to
+ * do with colour. So it ASSERTS instead, and fails the build. `npm run tokens`
+ * is the thing everyone runs after a token change, which makes it the right
+ * place to catch a token change that app.json needed to follow.
+ * ──────────────────────────────────────────────────────────────────────────── */
+const APP_JSON = 'app.json';
+const app = JSON.parse(readFileSync(APP_JSON, 'utf8')).expo;
+
+const notifPlugin = (app.plugins ?? []).find(
+  (p) => Array.isArray(p) && p[0] === 'expo-notifications'
+);
+
+const NATIVE_COLOURS = [
+  {
+    where: 'expo.splash.backgroundColor',
+    actual: app.splash?.backgroundColor,
+    expect: dark.bg,
+    token: 'darkPalette.bg',
+    why: 'the native splash must equal the JS splash in App.tsx, which pins itself to tokens.dark.bg — otherwise a cold launch flashes two different dark blues',
+  },
+  {
+    where: 'expo.android.adaptiveIcon.backgroundColor',
+    actual: app.android?.adaptiveIcon?.backgroundColor,
+    expect: light.primary,
+    token: 'lightPalette.primary',
+    why: 'the launcher icon plate is the brand mid-teal; #0082c6 lived here until 00 §9 retired it',
+  },
+  {
+    where: "expo.plugins['expo-notifications'].color",
+    actual: notifPlugin?.[1]?.color,
+    expect: light.primaryVivid,
+    token: 'lightPalette.primaryVivid',
+    why: 'Android tints the notification small icon with this; it disagreed with the channel lightColor for one release',
+  },
+];
+
+const drifted = NATIVE_COLOURS.filter(
+  (c) => (c.actual ?? '').toLowerCase() !== (c.expect ?? '').toLowerCase()
+);
+
+if (drifted.length) {
+  console.error(
+    `gen-tokens: ${APP_JSON} has drifted from the palette. It is the one place ` +
+    `a brand colour is read natively, so nothing else can catch this.\n`
+  );
+  for (const c of drifted) {
+    console.error(`  ${c.where}`);
+    console.error(`    is       ${c.actual ?? '(absent)'}`);
+    console.error(`    should be ${c.expect}   (${c.token})`);
+    console.error(`    because  ${c.why}\n`);
+  }
+  console.error(`Edit ${APP_JSON} by hand — the generator will not rewrite native build config.`);
+  process.exit(1);
+}
+
 const fmt = (o) =>
   Object.entries(o)
     .sort(([a], [b]) => a.localeCompare(b))
