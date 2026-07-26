@@ -521,7 +521,22 @@ input, textarea, select { font-family: inherit; color: inherit; }
   background: var(--pf-primary-dark); flex-shrink: 0;
   animation: adm-pulse 2s var(--ease-standard) infinite;
 }
-@keyframes adm-pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+/* 2s var(--ease-standard) is the specced "timer dot" loop (MOTION-SPEC.md §4)
+   and is left alone. What was missing is BOTH reduced-motion paths.
+
+   Amplitude was the literal `.35`, so it did not ride --motion-scale and the
+   in-app Animations = None preference — which CSS cannot select on and can only
+   reach through arithmetic — left this dot pulsing at full strength for a user
+   who had just turned animation off. Measured: 2000ms, full amplitude, under
+   both OS reduce and Animations = None. It is the same shape as `ixPulse` in
+   animations.css and now collapses the same way. */
+@keyframes adm-pulse {
+  0%, 100% { opacity: 1 }
+  50%      { opacity: calc(1 - .65 * var(--motion-scale, 1)) }
+}
+@media (prefers-reduced-motion: reduce) {
+  .adm__badge-d { animation: none; opacity: 1; }
+}
 .adm__badge-n { margin-left: auto; color: var(--side-fg-mute); font-weight: 500; }
 .adm__nav { flex: 1; overflow-y: auto; padding: 4px 0 12px; scrollbar-width: none; }
 .adm__nav::-webkit-scrollbar { width: 0; height: 0; }
@@ -1652,10 +1667,16 @@ input, textarea, select { font-family: inherit; color: inherit; }
      no animation. Measured on the live document before this change.
 
      Reduced motion scales AMPLITUDE here, not tempo: the sweep always takes
-     2s, and its visibility rides on --motion-scale, so at None the highlight
-     fades out entirely and the skeleton is a flat static block. */
+     1.7s, and its visibility rides on --motion-scale, so at None the highlight
+     fades out entirely and the skeleton is a flat static block.
+
+     1.7s var(--ease-standard) is the reference value, not a taste call:
+     `design-reference/Kartavaya Redesign/app.css` `.sk::after` is
+     `animation: shim 1.7s var(--ease-standard) infinite`, and MOTION-SPEC.md §4
+     gives the same pair. This was 2s / `ease-in-out` — a raw keyword where the
+     token was specced. */
   opacity: var(--motion-scale, 1);
-  animation: k-shimmer 2s ease-in-out infinite;
+  animation: k-shimmer 1.7s var(--ease-standard) infinite;
 }
 [data-theme="dark"] .k-skeleton {
   background: color-mix(in srgb, var(--surface) 60%, var(--bg));
@@ -1677,10 +1698,16 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 
 /* --motion-scale already collapses the highlight to opacity 0 under the OS
-   setting (kartavaya-design.css §5 media query). This additionally stops the
-   compositor work rather than painting an invisible layer forever. */
+   setting (kartavaya-design.css §5 media query). This additionally STOPS the
+   loop rather than painting an invisible layer forever.
+
+   `display: none` is restored beside `animation: none`: the reference
+   implementation (`design-reference/Kartavaya Redesign/app.css`) disables this
+   sweep with `@media (prefers-reduced-motion: reduce) { .sk::after { display:
+   none } }`, and removing the pseudo-element outright is strictly stronger than
+   leaving a transparent composited layer on every skeleton on the page. */
 @media (prefers-reduced-motion: reduce) {
-  .k-skeleton::after { animation: none; }
+  .k-skeleton::after { animation: none; display: none; }
   .k-skeleton { opacity: 0.7; }
 }
 
@@ -2631,8 +2658,13 @@ input, textarea, select { font-family: inherit; color: inherit; }
   /* FIXED duration, for the reason spelled out at .k-skeleton::after: an
      `infinite` animation multiplied by --ix does not stop under reduced
      motion, it accelerates without end. This one ran at 1.5ms at
-     Animations = None. Amplitude lives in the keyframe instead. */
-  animation: k-shimmer-tile 1.5s ease-in-out infinite;
+     Animations = None. Amplitude lives in the keyframe instead.
+
+     1.7s var(--ease-standard) to match the reference shimmer in
+     `design-reference/Kartavaya Redesign/app.css` (`.sk::after`) and
+     MOTION-SPEC.md §4. It was 1.5s / `ease-in-out`; there is one specced
+     shimmer tempo and both placeholder surfaces should sweep at it. */
+  animation: k-shimmer-tile 1.7s var(--ease-standard) infinite;
 }
 /* Renamed from `k-shimmer`, which was DECLARED TWICE in this file — here and
    at the skeleton block above — with opposite directions. Later wins, so this
@@ -2647,6 +2679,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
 @keyframes k-shimmer-tile {
   0%   { background-position: calc(100%  * var(--motion-scale, 1)) 0; }
   100% { background-position: calc(-100% * var(--motion-scale, 1)) 0; }
+}
+/* The keyframe collapse above handles the IN-APP preference, which CSS cannot
+   select on. The OS setting can be selected on, and an infinite decorative loop
+   must be STOPPED under it rather than left running with zero amplitude — the
+   reference disables its shimmer outright (app.css `.sk::after`), and a
+   perpetual compositor job on every placeholder tile is not free. Measured: at
+   OS reduce this was still running a live 1.5s animation before this block. */
+@media (prefers-reduced-motion: reduce) {
+  .k-shimmer__tile { animation: none; }
 }
 
 .k-formpanel {

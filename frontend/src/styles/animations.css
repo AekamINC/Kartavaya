@@ -196,11 +196,17 @@
 .ix-pulse      { animation: ixPulse 2s var(--ease-standard) infinite; }
 
 /* ── 4 · Skeleton shimmer ─────────────────────────────────────────────────
-   Fixed 1.6s — NOT scaled by --ix, because an infinite loop scaled to 1.6ms is
+   Fixed 1.7s — NOT scaled by --ix, because an infinite loop scaled to 1.7ms is
    a strobe (see the header). The sweep's visibility rides on --motion-scale
    instead, so Animations = None leaves a plain, still block: the skeleton's
    SHAPE is what says "loading", and 26 §9 requires that shape to match the
-   content either way. */
+   content either way.
+
+   1.7s, not the 1.6s this shipped with: the reference implementation at
+   `design-reference/Kartavaya Redesign/app.css` is
+   `.sk::after { animation: shim 1.7s var(--ease-standard) infinite }` and
+   MOTION-SPEC.md §4 gives the same value. Fidelity, and it costs nothing —
+   the reference also disables the sweep under reduced motion, which §9 does. */
 .ix-skeleton {
   position: relative;
   overflow: hidden;
@@ -217,7 +223,7 @@
     transparent 12%,
     var(--surface) 50%,
     transparent 88%);
-  animation: ixShimmer 1.6s var(--ease-standard) infinite;
+  animation: ixShimmer 1.7s var(--ease-standard) infinite;
 }
 
 /* ── 5 · Hover and press feedback ─────────────────────────────────────────
@@ -305,7 +311,14 @@
    spinner mid-cycle, removing the only feedback a slow request has. Loading
    indicators are functional motion, and WCAG 2.3.3 governs non-essential
    animation. The hardcoded timings that escape `--ix` elsewhere in the build
-   are listed in the handover report rather than papered over from here. */
+   are listed in the handover report rather than papered over from here.
+
+   The §10 legacy aliases `.skeleton` / `.animate-pulse` need the same stop, but
+   they CANNOT be named from here: they are declared further down this file, and
+   a media query adds no specificity, so the later §10 rule would simply win and
+   the loop would keep running. Their block sits at the end of §10 instead.
+   (Found by measurement, not by reading: naming them here left both still
+   running — 1.7s and 2s — under an emulated OS reduce.) */
 @media (prefers-reduced-motion: reduce) {
   .ix-skeleton::after { animation: none; opacity: 0; }
   .ix-stagger > *     { animation-delay: 0s; }
@@ -336,7 +349,17 @@
 .skeleton            { position: relative; overflow: hidden; display: block; border-radius: var(--r-sm); background: var(--surface-dim); }
 .skeleton::after     { content: ''; position: absolute; inset: 0; opacity: var(--motion-scale, 1);
                        background: linear-gradient(100deg, transparent 12%, var(--surface) 50%, transparent 88%);
-                       animation: ixShimmer 1.6s var(--ease-standard) infinite; }
+                       animation: ixShimmer 1.7s var(--ease-standard) infinite; }
+
+/* §9's stop for the two legacy aliases, repeated HERE because it has to be.
+   `@media` contributes no specificity, so `.skeleton::after` declared above
+   beats an identical selector inside the media query in §9 purely on source
+   order. These two are the last declarations of those names in the file, so
+   this is the only position from which the reduce stop actually lands. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; opacity: 0; }
+  .animate-pulse   { animation: none; }
+}
 
 /* Containment only — there is no ripple implementation behind this name, and
    there never was. Retained so an existing `className="ripple"` keeps its

@@ -32,7 +32,19 @@
   letter-spacing: -.03em; white-space: nowrap; pointer-events: none;
   animation: auWmDrift 40s var(--ease-standard) infinite alternate;
 }
-@keyframes auWmDrift { to { transform: translate3d(-14px, -10px, 0) rotate(-1.2deg); } }
+/* Travel rides --motion-scale so the in-app Animations preference reaches it.
+   The OS setting is handled by the media query below, but CSS has no attribute
+   to select the in-app preference on — only arithmetic gets there, and with a
+   literal transform this watermark kept drifting the full 14px for a user who
+   had set Animations = None. At scale 0 both ends of the alternation are
+   identical and it holds still. */
+@keyframes auWmDrift {
+  to {
+    transform: translate3d(calc(-14px * var(--motion-scale, 1)),
+                           calc(-10px * var(--motion-scale, 1)), 0)
+               rotate(calc(-1.2deg * var(--motion-scale, 1)));
+  }
+}
 @media (prefers-reduced-motion: reduce) { .au__wm { animation: none; } }
 
 /* Everything in the panel sits above the mesh and the watermark. */

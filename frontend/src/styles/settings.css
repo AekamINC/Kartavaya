@@ -193,6 +193,15 @@
   from { transform: scaleY(calc(1 - .55 * var(--motion-scale, 1))); }
   to   { transform: scaleY(1); }
 }
+/* The amplitude collapse above is the only mechanism that reaches the in-app
+   Animations preference, because there is no attribute for CSS to select on.
+   The OS setting CAN be selected on, and an infinite decorative loop must be
+   stopped under it, not merely flattened. Measured: at OS reduce these bars
+   were still running a live 800ms animation with zero amplitude — inert to look
+   at, but a permanent compositor job on the notification settings page. */
+@media (prefers-reduced-motion: reduce) {
+  .snd__c.on .snd__w i { animation: none; }
+}
 
 /* ── Notification kinds and quiet hours ────────────────────────────────── */
 .nqh { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
