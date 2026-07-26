@@ -152,14 +152,14 @@ function MSettings({ os, back }) {
         {SCOPE.map(([k, l]) => (
           <button key={k} className="msheet__r" onClick={() => { setNotif({ ...notif, [open]: k }); setOpen(null); }}>
             <span style={{ flex: 1, textAlign: 'left' }}><b>{l}</b><i className="msheet__sub">{{ always: 'Every time, on any project', mine_only: 'Only tasks assigned to me', project: 'Only projects I follow', off: 'Never notify' }[k]}</i></span>
-            {notif[open] === k && <span style={{ color: 'var(--primary)' }}>{TI.check}</span>}
+            {notif[open] === k && <span style={{ color: 'var(--primary-text)' }}>{TI.check}</span>}
           </button>
         ))}
       </MSheet>}
       {open === 'lang' && <MSheet title="Language" onClose={() => setOpen(null)}>
         {[['en', 'English', 'Interface in English only'], ['en+hi', 'English + हिन्दी', 'English labels with Hindi subtitles'], ['hi', 'हिन्दी', 'Interface in Hindi']].map(([k, l, d]) =>
           <button key={k} className="msheet__r" onClick={() => { setLang(k); setOpen(null); }}>
-            <span style={{ flex: 1, textAlign: 'left' }}><b>{l}</b><i className="msheet__sub">{d}</i></span>{lang === k && <span style={{ color: 'var(--primary)' }}>{TI.check}</span>}
+            <span style={{ flex: 1, textAlign: 'left' }}><b>{l}</b><i className="msheet__sub">{d}</i></span>{lang === k && <span style={{ color: 'var(--primary-text)' }}>{TI.check}</span>}
           </button>)}
       </MSheet>}
     </>

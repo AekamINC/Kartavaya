@@ -39,9 +39,12 @@ These five are set by the user in Customization and written to `documentElement`
 ```css
 :root {
   --font-display: "Newsreader", Georgia, serif;        /* user-swappable, 9 options */
-  --font-ui: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; /* user-swappable, 6 options */
+  --font-ui: "Public Sans", ui-sans-serif, system-ui, -apple-system, sans-serif; /* user-swappable, 6 options */
   --font-hindi: "Tiro Devanagari Hindi", "Noto Serif Devanagari", "Nirmala UI", "Kohinoor Devanagari", serif;
   --font-indic: var(--font-hindi);   /* → "Noto Sans Gujarati", "Shruti", sans-serif when language is gu | en+gu */
+  /* --font-indic must be DECLARED, not just documented. Nine files mandate it;
+     it was missing from tokens.css for a full batch and every Devanagari
+     sub-label silently rendered in the Latin fallback. */
   --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
 
   /* Derived from --font-size-base, so the Text size slider moves the whole
@@ -101,7 +104,7 @@ Never hard-code a radius. A literal `border-radius: 8px` breaks the Sharp and Pi
   --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px;  --sp-4: 16px;
   --sp-5: 20px; --sp-6: 24px; --sp-7: 32px;  --sp-8: 44px;
 }
-[data-density="compact"] { --row-h: 38px; --pad-page: 16px; --pad-card: 14px; --gap-section: 16px; --gap-tight: 8px; }
+[data-density="compact"] { --row-h: 34px; --pad-page: 18px; --pad-card: 12px; --gap-section: 14px; --gap-tight: 7px; }
 [data-density="comfy"]   { --row-h: 48px; --pad-page: 32px; --pad-card: 20px; --gap-section: 26px; --gap-tight: 12px; }
 ```
 
@@ -179,6 +182,7 @@ Applied as `background: rgba(var(--glass-tint), var(--glass-alpha))` plus `backd
   --outline:         #ADA692;
 
   --primary:              #04837A;
+  --primary-text:      #046B64;   /* light only; dark aliases --primary */
   --primary-hover:        #026B64;
   --on-primary:           #FFFFFF;
   --primary-container:    #B4F1E8;
@@ -192,9 +196,14 @@ Applied as `background: rgba(var(--glass-tint), var(--glass-alpha))` plus `backd
   --tertiary-container:     #FFDCC3;
   --on-tertiary-container:  #301A07;
 
-  --ok:     #14743A;  --ok-container:     #C6EFD2;   /* was #16803F — 4.4:1 on --bg */
-  --warn:   #955806;  --warn-container:   #FBE3BE;   /* was #A66207 — 4.2:1 on --bg */
-  --danger: #B42318;  --danger-container: #FBDAD5;
+  --ok:     #14743A;  --ok-container:     #C6EFD2;  --on-ok-container:     #06341A;
+  --warn:   #955806;  --warn-container:   #FBE3BE;  --on-warn-container:   #4A2D00;
+  --danger: #B42318;  --danger-container: #FBDAD5;  --on-danger-container: #5C1109;
+  --on-danger: #FFFFFF;
+
+/* dark */
+  --on-ok-container: #C6EFD2;  --on-warn-container: #FBE3BE;
+  --on-danger-container: #FBDAD5;  --on-danger: #2A0A06;
 
   --scrim:      rgba(28, 26, 20, .34);
   --glass-tint: 250, 247, 240;
@@ -211,6 +220,18 @@ Applied as `background: rgba(var(--glass-tint), var(--glass-alpha))` plus `backd
   --side-hover:    rgba(255, 255, 255, .08);
 }
 ```
+
+**Only containers may sit behind text, and every container has an `on-` half.**
+
+`--outline`, `--outline-variant` and `--scrim` are strokes and overlays. They have no `on-` partner *by design* — nothing is meant to be read on top of them. The surface ramp (`--s-lowest` → `--s-highest`) and the four container tokens are the only legal text grounds.
+
+The count badge broke this: `background: var(--outline)` with `--on-surface-2` text is 3.49:1 light and 3.28:1 dark, at 10.5px. It failed in **both** themes, which the container rule below would never have caught — the bug was using a stroke as a ground at all, not mispairing a container. A sweep of all 26 stroke-as-background rules found it was the only one carrying text; the rest are hairlines, grab handles, toggle tracks and scrims, which are correct uses.
+
+ `--primary-container` and `--tertiary-container` had theirs from the start; `ok`, `warn` and `danger` did not, and the omission produced three specimens that were unreadable in one theme each — white on light tan, dark brown on dark amber, white on salmon. Two of them were written *after* the contrast pass, by an author reading this file.
+
+`--on-danger` exists separately from `--on-danger-container` because `--danger` itself is a fill (badges, destructive buttons) and inverts hard between themes: `#B42318` takes white, `#F2867A` takes near-black. `color: #fff` on a danger fill is correct in light and 2.5:1 in dark.
+
+A `var(--x, fallback)` will hide a missing token indefinitely — the light theme worked for weeks on the fallback alone. Never give an on-* token a fallback; let it fail loudly.
 
 ## 8 · Dark palette
 
@@ -233,6 +254,7 @@ Applied as `background: rgba(var(--glass-tint), var(--glass-alpha))` plus `backd
   --outline:         #5B626C;
 
   --primary:              #4FD8CB;
+  --primary-text:      #046B64;   /* light only; dark aliases --primary */
   --primary-hover:        #6FE6DA;
   --on-primary:           #00332F;
   --primary-container:    #00514B;
@@ -281,9 +303,9 @@ Three of the six statuses are not new colours at all — they reuse the semantic
   --st-todo:        #5A6270;
   --st-in-progress: #3E5C8A;
   --st-in-review:   #6E5AA0;
-  --st-requested:   var(--warn);     /* #A66207 */
-  --st-done:        var(--ok);       /* #16803F */
-  --st-rejected:    var(--danger);   /* #B42318 */
+  --st-requested:   var(--warn);
+  --st-done:        var(--ok);
+  --st-rejected:    var(--danger);
 
   --ap-pending:        var(--warn);
   --ap-pending-client: #6E5AA0;      /* waiting on someone outside the org */
@@ -312,6 +334,8 @@ Three of the six statuses are not new colours at all — they reuse the semantic
 
 Every status sits at 38–42% saturation. Every accent preset except Slate is above 60%. That is what keeps a status chip from reading as an accent when a user picks Blue or Emerald — the hues do collide, the intensities don't.
 
+Two collisions to hold the line on. `--ap-pending` (amber) and `--ap-pending-client` (purple) must stay different hues — "waiting on us" versus "waiting on the client" is the distinction the approval flow exists to communicate, and a draft that aliased `--ap-pending-client` to `--tertiary` made it byte-identical to `--pr-high`. And `--st-in-review` must stay near s28%; a draft at `#7C5CD6` (s60%) sat inside the accent band and would read as an accent under Violet.
+
 The one residual collision is Slate accent `#64748b` against `--st-in-progress`. If it ever bites, move `in_progress` to 205° rather than saturating it.
 
 `--pr-medium` shares its blue with `--st-in-progress` deliberately — priority renders as a 6px dot, status as a chip with a label, and inventing a seventh hue costs more than it buys.
@@ -331,6 +355,14 @@ These do not flip, because they encode something external to our palette:
 ```
 
 **The read tick is `#4FC3F7`, not `#0082c6`.** It is WhatsApp's own blue and users read it from muscle memory — that recognition is the entire value of the colour, so matching it exactly matters more than palette harmony. `#0082c6` was the retired brand blue and appeared here only because I conflated two unrelated blues. `#4FC3F7` also clears 3:1 on both the light and dark outgoing bubble, which `#0082c6` does not.
+
+### `--tick-read`
+
+`#1E88C7` light, `#4FC3F7` dark. The retired `#0082c6` does not come back for this either.
+
+The conflict was real: `00` called `#0082c6` canonical, `06` and `14` both said `#4FC3F7`. `#4FC3F7` is right in dark and wrong in light — the read tick sits on `.wab--out`, which is `--primary-container` `#B4F1E8`, and a pale blue on pale mint is not a legible marker. `#1E88C7` is the same blue family, dark enough to read on the outgoing bubble.
+
+This is the one place a blue survives the retirement, because it is not a UI accent — it is a borrowed convention users already read as "seen", and changing its hue changes its meaning.
 
 ## 10 · Accent — 12 presets + custom
 
@@ -438,5 +470,9 @@ Dark mode has generous margins throughout; every failure in this system was in l
 Three tokens were darkened as a result: `--on-surface-3`, `--ok` and `--warn`. `--on-surface-3` mattered most — it carries metadata on every screen, and at `#74786F` it was the lowest-contrast text in the product that users were expected to read.
 
 Because `--st-done`, `--st-rejected`, `--st-requested`, `--ap-*` and `--pr-*` alias these tokens (§9), they all inherit the fix. That is the argument for aliasing rather than restating hexes.
+
+`--primary` `#04837A` is **4.04:1 on `--bg`** and is not in the table above because it is not a text colour. It is a fill — buttons, toggles, checkboxes, active states — where it pairs with `--on-primary` at 5.1:1. Any primary-coloured *text* on a surface uses **`--primary-text`** `#046B64`, 5.2:1.
+
+This matters more than a single token because the accent is user-configurable across 12 presets. `applyPrefs` must derive `--primary-text` for the chosen accent, not just `--primary` and `--primary-hover` — otherwise each preset is an unmeasured text-contrast risk. Dark mode aliases `--primary-text` to `--primary`; it clears AA at every size.
 
 Minimum type sizes: 11px for metadata, 12.5px for anything a decision depends on. Table cells never below 11.5px. `23-accessibility.md` states what each ratio *permits*, which is the part a table of numbers does not convey.

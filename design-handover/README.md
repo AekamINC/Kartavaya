@@ -1,6 +1,8 @@
 # Kartavaya design handover
 
-26 files, `00`–`25`. Read them in order — each states its own prerequisites.
+27 files, `00`–`26`. Read them in order — each states its own prerequisites.
+
+**`26-component-inventory.md` supersedes the state guidance in `02`** and carries the six things the rest of the set left to inference: the state vocabulary, the spacing ramp with per-step assignment, form layout rules, the unified picker, concrete keyframe values, and the legacy-class policy. Its live counterpart is `Kartavaya Redesign/Component Inventory.html` — every component in every state, interactive.
 
 **These files reference the six spec documents rather than restating them.** `RESEARCH.md`, `RBAC-SPEC.md`, `MESSAGING-ATTENDANCE-SPEC.md`, `AUTH-SPEC.md`, `SETTINGS-ADMIN-SPEC.md` and `MOTION-SPEC.md` hold the rules, rationale and product decisions. The handover files carry only what those don't: exact CSS, component trees, file paths, endpoints, and a before/after for every existing file that changes. Two documents, no duplicated content, one place to change each fact.
 

@@ -36,13 +36,13 @@
 .ob-hero__mark { display: block; margin-bottom: 20px; animation: obPop var(--dur-xslow) var(--ease-spring); }
 @keyframes obPop { from { opacity: 0; transform: scale(.72) } }
 .ob-h1 { font-family: var(--font-display); font-size: clamp(28px, 3.6vw, 40px); font-weight: 400; line-height: 1.14; letter-spacing: -.03em; margin: 0; }
-.ob-h1 em { font-style: italic; color: var(--primary); }
+.ob-h1 em { font-style: italic; color: var(--primary-text); }
 .ob-hi { font-family: var(--font-hindi); font-size: 15px; color: var(--on-surface-3); margin: 12px 0 0; }
 .ob-lede { font-size: 14.5px; line-height: 1.7; color: var(--on-surface-3); margin: 16px auto 0; max-width: 52ch; text-wrap: pretty; }
 .ob-cta { display: flex; flex-direction: column; align-items: center; gap: 11px; margin-top: 24px; width: min(300px, 100%); }
 .ob-fine { font-size: 11.5px; color: var(--on-surface-faint); margin-top: 16px; }
 .ob-marquee { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; margin-top: 24px; }
-.ob-marquee span { font-family: var(--font-hindi); font-size: 15px; color: var(--primary); padding: 4px 12px; border-radius: var(--r-pill); background: var(--primary-container); animation: obFade var(--dur-xslow) var(--ease-emph) backwards; }
+.ob-marquee span { font-family: var(--font-hindi); font-size: 15px; color: var(--primary-text); padding: 4px 12px; border-radius: var(--r-pill); background: var(--primary-container); animation: obFade var(--dur-xslow) var(--ease-emph) backwards; }
 @keyframes obFade { from { opacity: 0; transform: translateY(7px) } }
 
 .ob-head { margin-bottom: 20px; }
@@ -50,16 +50,16 @@
 .ob-sub { font-size: 13.5px; line-height: 1.65; color: var(--on-surface-3); margin: 11px 0 0; max-width: 62ch; text-wrap: pretty; }
 .ob-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 15px; padding-top: 13px; border-top: 1px solid var(--outline-variant); font-size: 12.5px; color: var(--on-surface-2); flex-wrap: wrap; }
 .ob-note { display: flex; align-items: flex-start; gap: 9px; margin-top: 14px; padding: 11px 13px; border-radius: var(--r-sm); background: var(--s-container); font-size: 12px; line-height: 1.55; color: var(--on-surface-2); text-wrap: pretty; }
-.ob-note svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; color: var(--primary); }
+.ob-note svg { width: 14px; height: 14px; flex-shrink: 0; margin-top: 1px; color: var(--primary-text); }
 
 /* ── Step 2 · modules ─────────────────────────────────────────────────── */
 .ob-mods { display: grid; grid-template-columns: repeat(auto-fill, minmax(202px, 1fr)); gap: 9px; }
 .ob-mod { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 13px; border-radius: var(--r-md); border: 1px solid var(--outline-variant); background: var(--surface); text-align: left; transition: border-color var(--dur-fast), background var(--dur-fast), transform var(--dur-fast) var(--ease-spring); }
 .ob-mod:hover { transform: translateY(-2px); border-color: var(--outline); }
-.ob-mod.on { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, transparent); }
+.ob-mod.on { border-color: var(--primary-text); background: color-mix(in srgb, var(--primary) 6%, transparent); }
 .ob-mod.on.sens { border-color: color-mix(in srgb, var(--danger) 44%, transparent); background: color-mix(in srgb, var(--danger) 5%, transparent); }
 .ob-mod__ic { display: inline-flex; color: var(--on-surface-3); }
-.ob-mod.on .ob-mod__ic { color: var(--primary); }
+.ob-mod.on .ob-mod__ic { color: var(--primary-text); }
 .ob-mod.on.sens .ob-mod__ic { color: var(--danger); }
 .ob-mod__t { display: flex; align-items: baseline; gap: 8px; }
 .ob-mod__t b { font-family: var(--font-hindi); font-size: 17px; font-weight: 400; line-height: 1.35; }
@@ -70,7 +70,7 @@
 .ob-mod__lock svg { width: 11px; height: 11px; }
 .ob-check { margin-left: auto; width: 19px; height: 19px; border-radius: 50%; border: 1.5px solid var(--outline); display: grid; place-items: center; color: transparent; flex-shrink: 0; transition: background var(--dur-fast), border-color var(--dur-fast); }
 .ob-check svg { width: 12px; height: 12px; }
-.ob-check.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); animation: obCk var(--dur-base) var(--ease-spring); }
+.ob-check.on { background: var(--primary); border-color: var(--primary-text); color: var(--on-primary); animation: obCk var(--dur-base) var(--ease-spring); }
 @keyframes obCk { 45% { transform: scale(1.22) } }
 .ob-mod.on.sens .ob-check.on { background: var(--danger); border-color: var(--danger); color: #fff; }
 
@@ -89,10 +89,10 @@
 .ob-tpls { display: grid; grid-template-columns: repeat(auto-fill, minmax(228px, 1fr)); gap: 9px; }
 .ob-tpl { display: flex; flex-direction: column; gap: 7px; padding: 13px; border-radius: var(--r-md); border: 1px solid var(--outline-variant); background: var(--surface); text-align: left; transition: border-color var(--dur-fast), background var(--dur-fast), transform var(--dur-fast) var(--ease-spring); }
 .ob-tpl:hover { transform: translateY(-2px); border-color: var(--outline); }
-.ob-tpl.on { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 6%, transparent); }
+.ob-tpl.on { border-color: var(--primary-text); background: color-mix(in srgb, var(--primary) 6%, transparent); }
 .ob-tpl__h { display: flex; align-items: baseline; gap: 8px; }
 .ob-tpl__h b { font-size: 13.5px; }
-.ob-tpl__h i { font-style: normal; font-family: var(--font-hindi); font-size: 12.5px; color: var(--primary); }
+.ob-tpl__h i { font-style: normal; font-family: var(--font-hindi); font-size: 12.5px; color: var(--primary-text); }
 .ob-tpl__d { font-size: 11.5px; color: var(--on-surface-3); line-height: 1.5; text-wrap: pretty; }
 .ob-tpl__cols { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 .ob-tpl__cols i { font-style: normal; font-size: 9.5px; font-weight: 600; letter-spacing: .04em; padding: 2px 7px; border-radius: var(--r-xs); background: var(--s-container); color: var(--on-surface-3); }

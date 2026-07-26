@@ -2,7 +2,7 @@
 
 **Not part of the numbered handover set.** Claude Design owns `00`–`25` and `README.md`. This file is mine — what I found, what I decided provisionally, what must be re-checked. Claude Design never sees it and should not be asked to reconcile against it.
 
-Last updated: 2026-07-25
+Last updated: 2026-07-26
 
 ---
 
@@ -10,8 +10,9 @@ Last updated: 2026-07-25
 
 | Files | State |
 |---|---|
-| `00`–`24`, `README.md` | **All 25 present.** `00` is canonical |
-| `14`, `17` | Claude Design's real reissues, **forward-patched by me** to `00` §7's darkened values — they shipped quoting `#16803F`/`#A66207`/`#74786F` while declaring `00` authoritative |
+| `00`–`24`, `26`, `README.md` | **All 26 present.** `00` is canonical |
+| `26-component-inventory.md` | New in the 2026-07-26 bundle. Supersedes the state guidance in `02`; live counterpart is `Kartavaya Redesign/Component Inventory.html` |
+| `14`, `17` | Claude Design's real reissues, **forward-patched by me** to `00` §7's darkened values — they shipped quoting `#16803F`/`#A66207`/`#74786F` while declaring `00` authoritative. **Shipped stale a second time in the 2026-07-26 bundle; held back again.** See §9 |
 | `06` | Bundle version restored — it carried a section heading the earlier copy had lost |
 | `25-qa-acceptance.md` | Parked by agreement — written after implementation starts |
 
@@ -242,3 +243,21 @@ token-level, and belong with the files that restyle those components.
 - Margin and cost data must never serialize outside `[data-surface='platform']` — enforced server-side, not by CSS.
 - Support access and impersonation are never silent: audit log, email to owner, visible violet banner.
 - Domain is **kartavaya.com**.
+
+---
+
+## 9 · Bundle sync — 2026-07-26
+
+`Kartavya (1).zip`, 105 files. Landed on `staging`: 4 handover files updated, `26` added, 23 prototype files updated, 6 added (`Component Inventory.html`, `Components{,2,3}.jsx`, `Picker.jsx`, `components.css`).
+
+**Two files held back, for the second bundle running.** `14-dark-mode.md` and `17-mobile-app.md` arrived quoting `--ok #16803F` / `--warn #A66207` — the pre-contrast-pass values — and `17` also reverted `onSurface3` to `#74786F`. All three fail on `--bg`. The bundle contradicts itself: its own `00-tokens.md` §7 carries `#14743A`/`#955806`, and so does `Kartavaya Redesign/tokens.css`, which is the stylesheet `00` is transcribed from. The repo's `14`/`17` already hold the corrected values plus the note explaining the correction, so taking the bundle's copies would have been a straight regression in the only two files that restate token hexes instead of aliasing them.
+
+Rule this confirms: **`00-tokens.md` and `tokens.css` are the only token sources.** Any handover file that restates a hex is a copy that can go stale, and `14` and `17` are the two that do. Check both against `00` §7 on every bundle before copying.
+
+Forward changes taken in full:
+
+- `00` §7 — `--primary-text` `#046B64` split out from `--primary` (`#04837A` is 4.04:1, a fill, never text); `--on-*-container` for ok/warn/danger; `--on-danger`; `--font-indic` must be *declared*, not just documented; the count-badge finding (a stroke token used as a text ground, failing in both themes); `--tick-read` `#1E88C7` light.
+- `23` — `--primary` and `--primary-text` rows added to the contrast table, with the note that the first version presented itself as a complete audit while omitting a token used as text at 11–13px in three places.
+- `00` §7 also changes `--font-ui` default to `"Public Sans"` and retunes `[data-density="compact"]` (`--row-h` 38 → 34px).
+
+**`applyPrefs` must now derive `--primary-text` per accent preset**, not just `--primary`/`--primary-hover`. Twelve presets ship; without it each one is an unmeasured text-contrast risk. Not yet done.

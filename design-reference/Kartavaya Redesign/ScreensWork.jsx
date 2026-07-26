@@ -179,7 +179,7 @@ function InvoiceSheet({ close }) {
       <div className="scrim" onClick={close} />
       <div className="sheet">
         <div className="sheet__head">
-          <h3 className="sheet__t">New invoice <span className="hi" style={{ fontSize: 15, color: 'var(--primary)' }}>बीजक</span></h3>
+          <h3 className="sheet__t">New invoice <span className="hi" style={{ fontSize: 15, color: 'var(--primary-text)' }}>बीजक</span></h3>
           <span className="mute mono" style={{ fontSize: 11, marginLeft: 'auto' }}>INV-2608</span>
           <button className="icobtn" onClick={close}>{I.x}</button>
         </div>
@@ -187,7 +187,7 @@ function InvoiceSheet({ close }) {
           <div className="fld">
             <span className="fld__l">Party</span>
             <input className="inp" defaultValue="Tata Steel" />
-            <span className="mute" style={{ fontSize: 11.5 }}>Unknown name? <b style={{ color: 'var(--primary)' }}>⌥C</b> creates it without leaving this sheet.</span>
+            <span className="mute" style={{ fontSize: 11.5 }}>Unknown name? <b style={{ color: 'var(--primary-text)' }}>⌥C</b> creates it without leaving this sheet.</span>
           </div>
           <div className="row2">
             <div className="fld"><span className="fld__l">Recipient GSTIN</span><input className="inp mono" value={gstin} onChange={e => setGstin(e.target.value.toUpperCase())} /></div>
@@ -232,7 +232,7 @@ function InvoiceSheet({ close }) {
             {[['Taxable value', 485000], [inter ? 'IGST 18%' : 'CGST 9%', inter ? 87300 : 43650], ...(inter ? [] : [['SGST 9%', 43650]])].map(([l, v]) => (
               <div key={l} className="between" style={{ fontSize: 13 }}><span className="mute">{l}</span><span className="mono">{inr(v)}</span></div>
             ))}
-            <div className="between" style={{ fontSize: 15, fontWeight: 600, paddingTop: 8, borderTop: '1px solid var(--outline-variant)' }}><span>Total</span><span className="mono" style={{ color: 'var(--primary)' }}>{inr(572300)}</span></div>
+            <div className="between" style={{ fontSize: 15, fontWeight: 600, paddingTop: 8, borderTop: '1px solid var(--outline-variant)' }}><span>Total</span><span className="mono" style={{ color: 'var(--primary-text)' }}>{inr(572300)}</span></div>
           </div>
         </div>
         <div className="sheet__foot">
@@ -293,7 +293,7 @@ function GenericSheet({ kind, close }) {
       <div className="scrim" onClick={close} />
       <div className="sheet" style={{ width: 'min(520px, calc(100% - 48px))' }}>
         <div className="sheet__head">
-          <h3 className="sheet__t">{t} <span className="hi" style={{ fontSize: 15, color: 'var(--primary)' }}>{hi}</span></h3>
+          <h3 className="sheet__t">{t} <span className="hi" style={{ fontSize: 15, color: 'var(--primary-text)' }}>{hi}</span></h3>
           <button className="icobtn" style={{ marginLeft: 'auto' }} onClick={close}>{I.x}</button>
         </div>
         <div className="sheet__body">

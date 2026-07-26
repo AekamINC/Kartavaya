@@ -247,7 +247,7 @@ function ScreenSanvaad() {
             <div className="chat__head">
               <button className="icobtn chat__mch" onClick={() => setPicker(true)}>{SI.hash}</button>
               <span className="rowflex" style={{ gap: 8, minWidth: 0 }}>
-                {cur.hi ? <b className="hi" style={{ fontSize: 16.5, color: 'var(--primary)' }}>{cur.hi}</b> : <b style={{ fontSize: 15 }}>{cur.en}</b>}
+                {cur.hi ? <b className="hi" style={{ fontSize: 16.5, color: 'var(--primary-text)' }}>{cur.hi}</b> : <b style={{ fontSize: 15 }}>{cur.en}</b>}
                 <span className="mute" style={{ fontSize: 12.5 }}>{cur.hi ? (cur.type === 'private' ? '🔒 ' : cur.ai ? '' : '#') + cur.en : cur.type === 'dm' ? 'Direct message' : ''}</span>
                 <button className="icobtn" style={{ width: 26, height: 26, color: cur.star ? 'var(--warn)' : undefined }} title="Star">{cur.star ? SI.starOn : SI.star}</button>
                 {cur.muted && <span className="tag" style={{ '--c': 'var(--on-surface-3)' }}>{SI.bellOff} muted</span>}

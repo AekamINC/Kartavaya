@@ -70,7 +70,7 @@ function ChatDemo({ hint, h, focus }) {
           <div className="cd__head">
             {search == null ? (
               <>
-                <b className="hi" style={{ fontSize: 14, color: 'var(--primary)' }}>{ch === 'gst' ? 'कर-विवरणी' : ch === 'general' ? 'सामान्य' : 'मुंबई'}</b>
+                <b className="hi" style={{ fontSize: 14, color: 'var(--primary-text)' }}>{ch === 'gst' ? 'कर-विवरणी' : ch === 'general' ? 'सामान्य' : 'मुंबई'}</b>
                 <span className="mute" style={{ fontSize: 11 }}>4 members</span>
                 <span style={{ flex: 1 }} />
                 <button className="icobtn" style={{ width: 26, height: 26 }} onClick={() => { setSearch(''); setHit(0); }}>{I.search}</button>

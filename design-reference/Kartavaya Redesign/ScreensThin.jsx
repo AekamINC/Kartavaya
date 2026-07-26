@@ -37,7 +37,7 @@ function DristiPivot() {
             <div className="tbl__row" style={{ gridTemplateColumns: 'minmax(0,1.4fr) repeat(5, 108px)', background: 'var(--s-container)', fontWeight: 600 }}>
               <span className="tbl__c"><span className="tbl__t">Total</span></span>
               {COLS.map((_, i) => <span key={i} className="tbl__c tbl__c--num">{tot(i) ? inr(tot(i)) : '—'}</span>)}
-              <span className="tbl__c tbl__c--num" style={{ color: 'var(--primary)' }}><b>{inr(grand)}</b></span>
+              <span className="tbl__c tbl__c--num" style={{ color: 'var(--primary-text)' }}><b>{inr(grand)}</b></span>
             </div>
           </div>
         </Card>
@@ -54,7 +54,7 @@ function DristiPivot() {
             </div>
             <div className="divider" />
             <div className="note note--info">
-              <span style={{ color: 'var(--primary)' }}>{I.check}</span>
+              <span style={{ color: 'var(--primary-text)' }}>{I.check}</span>
               <span>A pivot only aggregates rows you can already open. Two clients are excluded from your total because Ganit is set to <b>own records</b> for your role.</span>
             </div>
             <button className="btn btn--tonal" style={{ width: '100%' }}>Save as report</button>
@@ -223,7 +223,7 @@ function PracharTemplates() {
   return (
     <>
       <div className="note note--info" style={{ marginBottom: 'var(--gap-section)' }}>
-        <span style={{ color: 'var(--primary)' }}>{I.check}</span>
+        <span style={{ color: 'var(--primary-text)' }}>{I.check}</span>
         <span>Templates are approved by Meta, not by us — review takes minutes to a day. <b>Utility</b> templates can be sent to any contact with a prior conversation; <b>Marketing</b> templates need recorded opt-in and are blocked without it.</span>
       </div>
       <div className="grid" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px,1fr))' }}>
@@ -286,7 +286,7 @@ function SrijanCredits() {
             <button className="btn btn--out btn--sm">Buy top-up</button>
           </div>
           <div className="note note--info" style={{ marginTop: 13 }}>
-            <span style={{ color: 'var(--primary)' }}>{I.check}</span>
+            <span style={{ color: 'var(--primary-text)' }}>{I.check}</span>
             <span>Unused credits do not carry over. Top-ups do, and are billed in rupees on your next invoice — you will see the amount here before it appears on the invoice.</span>
           </div>
         </Card>
@@ -294,7 +294,7 @@ function SrijanCredits() {
           {LEDGER.map(([when, skill, what, n], i) => (
             <div key={i} className="between" style={{ padding: '12px var(--pad-card)', borderBottom: i < LEDGER.length - 1 ? '1px solid var(--outline-variant)' : 0 }}>
               <span className="rowflex" style={{ gap: 10, minWidth: 0 }}>
-                <span style={{ color: 'var(--primary)', flexShrink: 0 }}>{I.ai}</span>
+                <span style={{ color: 'var(--primary-text)', flexShrink: 0 }}>{I.ai}</span>
                 <span style={{ minWidth: 0 }}>
                   <b style={{ fontSize: 12.5, display: 'block' }}>{skill}</b>
                   <span className="mute" style={{ fontSize: 11.5 }}>{what}</span>
@@ -364,7 +364,7 @@ function HubPublish() {
             ))}
           </div>
           <div className="note note--info" style={{ marginTop: 13 }}>
-            <span style={{ color: 'var(--primary)' }}>{I.check}</span>
+            <span style={{ color: 'var(--primary-text)' }}>{I.check}</span>
             <span>This list is enforced in the API, not in the portal UI — a client token cannot request these fields even directly.</span>
           </div>
         </Card>
@@ -452,7 +452,7 @@ function EsignCreate() {
             <div className="between"><span style={{ fontSize: 12.5 }}>Remind every 3 days</span><button className="sw on" aria-label="Remind"><i /></button></div>
             <div className="between"><span style={{ fontSize: 12.5 }}>Expire after 30 days</span><button className="sw" aria-label="Expire"><i /></button></div>
             <div className="note note--info">
-              <span style={{ color: 'var(--primary)' }}>{I.check}</span>
+              <span style={{ color: 'var(--primary-text)' }}>{I.check}</span>
               <span>An OTP-verified signature with the audit trail is accepted under section 10A of the IT Act. It is not a digital signature certificate — a few registrars still insist on DSC.</span>
             </div>
             <button className="btn btn--fill" style={{ width: '100%' }}>Send for signature</button>

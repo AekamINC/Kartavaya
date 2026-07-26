@@ -5,6 +5,8 @@ branch: staging
 date: 2026-07-25T17:56:00Z
 
 ### Updated in this project
+- Added `26-component-inventory.md` + `Component Inventory.html` — state vocabulary, spacing assignment, form rules, unified Picker, keyframe values, legacy-class policy
+- Fixed two token gaps found writing it: `--shadow-4` was used in four files and defined nowhere; `--dur-instant`/`--dur-xslow` lived only in `motion.css`
 - Wrote the seven remaining handover files. **25 of 26 done**; `25-qa-acceptance.md` is deliberately last. Empty/loading/error folded into `02` rather than becoming its own file.
 - Resolved seven conflicts against `00-tokens.md`: **status colours now flip with the theme** (three of six just reuse `--ok`/`--warn`/`--danger`), the retired `#0082c6` removed from the three tokens it had crept back into, read tick fixed at `#4FC3F7`, `--shadow-4` defined, type scale `calc()`-derived with `max()` floors, radius default 12 → 10, and `applyPrefs` now writes `--ix-user` so the OS reduced-motion setting wins.
 - **No focus trap exists anywhere in `frontend/src`** — 0 matches for focusTrap/focusLock across 158 files.

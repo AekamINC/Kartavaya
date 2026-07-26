@@ -190,7 +190,7 @@ function DemoPalette() {
                     })}
                   </div>
                 ))}
-                {!f.length && <div className="ixhint" style={{ padding: 26 }}>Nothing matches “{q}”. <b style={{ color: 'var(--primary)' }}>Create a task called “{q}”</b></div>}
+                {!f.length && <div className="ixhint" style={{ padding: 26 }}>Nothing matches “{q}”. <b style={{ color: 'var(--primary-text)' }}>Create a task called “{q}”</b></div>}
               </div>
               <div className="ov-pal__f">
                 <span><kbd className="kbd">↑↓</kbd> navigate</span><span><kbd className="kbd">↵</kbd> select</span><span><kbd className="kbd">esc</kbd> close</span>

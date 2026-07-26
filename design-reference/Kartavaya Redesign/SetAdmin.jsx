@@ -533,7 +533,7 @@ function AdmCosts() {
                 <span className="tbl__c"><span className="tbl__s">{r[0]}</span></span>
                 <span className="tbl__c"><span className="mono" style={{ fontSize: 11.5 }}>{r[1]}</span></span>
                 <span className="tbl__c tbl__c--num" style={{ fontSize: 11.5 }}>{f2(r[2])}</span>
-                <span className="tbl__c tbl__c--num" style={{ fontSize: 11.5, color: 'var(--primary)', fontWeight: 600 }}>{Math.round(r[2] * RATE * (1 + mk / 100)).toLocaleString('en-IN')}</span>
+                <span className="tbl__c tbl__c--num" style={{ fontSize: 11.5, color: 'var(--primary-text)', fontWeight: 600 }}>{Math.round(r[2] * RATE * (1 + mk / 100)).toLocaleString('en-IN')}</span>
                 <span className="tbl__c tbl__c--num" style={{ fontSize: 11 }}>{r[3].toLocaleString('en-IN')}</span>
                 <span className="tbl__c tbl__c--num" style={{ fontSize: 10.5 }}>{r[4]}</span>
               </div>
@@ -548,7 +548,7 @@ function AdmCosts() {
               <div key={r[0]} className="tbl__row" style={{ gridTemplateColumns: 'minmax(0,1.3fr) 88px 92px 74px' }}>
                 <span className="tbl__c"><span className="mono" style={{ fontSize: 11.5 }}>{r[0]}</span></span>
                 <span className="tbl__c tbl__c--num" style={{ fontSize: 11.5 }}>{f2(r[1])}</span>
-                <span className="tbl__c tbl__c--num" style={{ fontSize: 11.5, color: 'var(--primary)', fontWeight: 600 }}>{Math.round(r[1] * RATE * (1 + mk / 100)).toLocaleString('en-IN')}</span>
+                <span className="tbl__c tbl__c--num" style={{ fontSize: 11.5, color: 'var(--primary-text)', fontWeight: 600 }}>{Math.round(r[1] * RATE * (1 + mk / 100)).toLocaleString('en-IN')}</span>
                 <span className="tbl__c tbl__c--num" style={{ fontSize: 11 }}>{r[2].toLocaleString('en-IN')}</span>
               </div>
             ))}
@@ -568,7 +568,7 @@ function AdmCosts() {
                 <span className="tbl__c"><span className="tbl__s">{o[2]}</span></span>
                 <span className="tbl__c tbl__c--num" style={{ fontSize: 11.5 }}>{o[10]}%</span>
                 <span className="tbl__c tbl__c--num" style={{ fontSize: 11.5 }}>{f2(cu)}</span>
-                <span className="tbl__c tbl__c--num" style={{ fontSize: 11.5, color: 'var(--primary)', fontWeight: 600 }}>{Math.round(ch).toLocaleString('en-IN')}</span>
+                <span className="tbl__c tbl__c--num" style={{ fontSize: 11.5, color: 'var(--primary-text)', fontWeight: 600 }}>{Math.round(ch).toLocaleString('en-IN')}</span>
                 <span className="tbl__c tbl__c--num" style={{ fontSize: 11.5, color: 'var(--ok)', fontWeight: 600 }}>{Math.round(ch - ci).toLocaleString('en-IN')}</span>
               </div>
             );

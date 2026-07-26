@@ -341,7 +341,7 @@ function InviteWizard({ close }) {
       <div className="scrim" onClick={close} />
       <div className="sheet" style={{ width: 'min(680px, calc(100% - 48px))' }}>
         <div className="sheet__head">
-          <h3 className="sheet__t">Invite to Aekam Inc <span className="hi" style={{ fontSize: 15, color: 'var(--primary)' }}>निमंत्रण</span></h3>
+          <h3 className="sheet__t">Invite to Aekam Inc <span className="hi" style={{ fontSize: 15, color: 'var(--primary-text)' }}>निमंत्रण</span></h3>
           <span className="mute mono" style={{ fontSize: 11, marginLeft: 'auto' }}>Step {step} of 5</span>
           <button className="icobtn" onClick={close}>{I.x}</button>
         </div>
@@ -556,7 +556,7 @@ function CellEdit({ data, close }) {
       <div className="scrim" onClick={close} />
       <div className="sheet" style={{ width: 'min(440px, calc(100% - 48px))' }}>
         <div className="sheet__head">
-          <h3 className="sheet__t" style={{ fontSize: 16 }}>{data.mem.n} · <span className="hi" style={{ color: 'var(--primary)' }}>{mod.hi}</span></h3>
+          <h3 className="sheet__t" style={{ fontSize: 16 }}>{data.mem.n} · <span className="hi" style={{ color: 'var(--primary-text)' }}>{mod.hi}</span></h3>
           <button className="icobtn" style={{ marginLeft: 'auto' }} onClick={close}>{I.x}</button>
         </div>
         <div className="sheet__body">

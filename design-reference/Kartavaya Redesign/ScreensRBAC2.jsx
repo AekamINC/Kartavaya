@@ -383,7 +383,7 @@ function RolesSettings() {
             <div>
               <div className="between" style={{ marginBottom: 8 }}>
                 <span className="fld__l">Approver required above</span>
-                <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary)' }}>{lakh(thr)}</span>
+                <span className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary-text)' }}>{lakh(thr)}</span>
               </div>
               <input className="sld" type="range" min="10000" max="1000000" step="10000" value={thr} onChange={e => setThr(parseInt(e.target.value))} />
               <div className="mute" style={{ fontSize: 11.5, marginTop: 6 }}>Editors post entries below this freely. At or above it, an Approver on गणित must sign off.</div>

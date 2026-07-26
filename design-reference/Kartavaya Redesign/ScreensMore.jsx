@@ -242,7 +242,7 @@ function ScreenSrijan() {
       {tab === 'skills' && <div className="grid">
         {SKILLS.map(([t, hi, d, runs]) => (
           <button key={t} className="card" style={{ padding: 'var(--pad-card)', textAlign: 'left' }}>
-            <div className="between"><span className="rowflex" style={{ gap: 8 }}><span style={{ color: 'var(--primary)' }}>{I.ai}</span><b style={{ fontSize: 13.5 }}>{t}</b></span><span className="hi mute" style={{ fontSize: 12 }}>{hi}</span></div>
+            <div className="between"><span className="rowflex" style={{ gap: 8 }}><span style={{ color: 'var(--primary-text)' }}>{I.ai}</span><b style={{ fontSize: 13.5 }}>{t}</b></span><span className="hi mute" style={{ fontSize: 12 }}>{hi}</span></div>
             <div className="mute" style={{ fontSize: 12, marginTop: 7, lineHeight: 1.5 }}>{d}</div>
             <div className="between" style={{ marginTop: 12 }}><span className="mono mute" style={{ fontSize: 11 }}>{runs} runs</span><Tag c="#04837A">Active</Tag></div>
           </button>

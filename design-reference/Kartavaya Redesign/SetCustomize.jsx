@@ -231,7 +231,7 @@ function TabType({ p, set }) {
             <SRow t="Base size" d="Everything scales from this. Tables and chips have their own floor so they never go unreadable." stack>
               <div className="rowflex" style={{ gap: 11, width: '100%' }}>
                 <input className="sld" type="range" min="12" max="20" step="1" value={p.fontSize} onChange={e => set({ fontSize: +e.target.value })} />
-                <span className="mono" style={{ fontSize: 12.5, width: 38, textAlign: 'right', color: 'var(--primary)', fontWeight: 600 }}>{p.fontSize}px</span>
+                <span className="mono" style={{ fontSize: 12.5, width: 38, textAlign: 'right', color: 'var(--primary-text)', fontWeight: 600 }}>{p.fontSize}px</span>
               </div>
             </SRow>
             <div className="divider" style={{ margin: '13px 0' }} />

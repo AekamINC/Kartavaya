@@ -286,7 +286,7 @@ function MobileTop({ view, onMenu, st, set }) {
         <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M3 5.5h14M3 10h14M3 14.5h14" /></svg>
       </button>
       <div style={{ minWidth: 0 }}>
-        <div className="hi" style={{ fontSize: 15, lineHeight: 1.1, color: 'var(--primary)' }}>{m.hi}</div>
+        <div className="hi" style={{ fontSize: 15, lineHeight: 1.1, color: 'var(--primary-text)' }}>{m.hi}</div>
         <div style={{ fontSize: 10, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--on-surface-3)', fontWeight: 600 }}>{m.en}</div>
       </div>
       <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>

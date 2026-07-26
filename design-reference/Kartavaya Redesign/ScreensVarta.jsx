@@ -371,7 +371,7 @@ function VartaPane() {
         <span className="wahdr__ic">{SI.wa}</span>
         <span style={{ minWidth: 0 }}>
           <b style={{ fontSize: 15 }}>WhatsApp</b>
-          <span className="hi" style={{ fontSize: 12.5, marginLeft: 8, color: 'var(--primary)' }}>वार्ता</span>
+          <span className="hi" style={{ fontSize: 12.5, marginLeft: 8, color: 'var(--primary-text)' }}>वार्ता</span>
           <span style={{ fontSize: 12.5, marginLeft: 8, color: 'var(--on-surface-3)' }}>Business · Meta Cloud API · one shared inbox for the whole team</span>
         </span>
         <span className="rowflex" style={{ gap: 7, marginLeft: 'auto' }}>

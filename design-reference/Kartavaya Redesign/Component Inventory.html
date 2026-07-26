@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-density="cozy" data-display="serif" data-platform="mac">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kartavaya — component inventory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Tiro+Devanagari+Hindi&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="app.css"><link rel="stylesheet" href="motion.css"><link rel="stylesheet" href="components.css">
+<style>body{margin:0;background:var(--bg);color:var(--on-surface);font-family:var(--font-ui);-webkit-font-smoothing:antialiased}
+.cbbar{position:sticky;top:0;z-index:800;display:flex;align-items:center;gap:9px;padding:9px 30px;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(14px) saturate(160%);border-bottom:1px solid var(--outline-variant)}
+.cbbar__t{font-family:var(--font-mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--on-surface-3);margin-right:auto}
+.cbbar__b{height:28px;padding:0 11px;border:1px solid var(--outline-variant);border-radius:var(--r-sm);background:var(--s-lowest);color:var(--on-surface-2);font:inherit;font-size:12px;cursor:pointer}
+.cbbar__b:hover{background:var(--s-low);color:var(--on-surface)}
+.cbbar__b.on{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+a{color:var(--primary)}a:hover{color:var(--primary-hover)}</style>
+</head>
+<body>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#0F6E66"/><g fill="#F3EFE6"><rect x="30" y="30" width="18" height="18" rx="4"/><rect x="52" y="30" width="18" height="18" rx="9"/><rect x="30" y="52" width="18" height="18" rx="9"/><rect x="52" y="52" width="18" height="18" rx="4"/></g></svg></template>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="Picker.jsx"></script>
+<script type="text/babel" src="Components.jsx"></script>
+<script type="text/babel" src="Components2.jsx"></script>
+<script type="text/babel" src="Components3.jsx"></script>
+<script type="text/babel">
+function Bar() {
+  const [th, setTh] = React.useState('light'), [dn, setDn] = React.useState('cozy'), [slow, setSlow] = React.useState(false);
+  React.useEffect(() => { const r = document.documentElement; r.dataset.theme = th; r.dataset.density = dn; if (slow) r.dataset.slowmo = '1'; else delete r.dataset.slowmo; }, [th, dn, slow]);
+  return (
+    <div className="cbbar">
+      <span className="cbbar__t">Kartavaya · component inventory</span>
+      <button className={'cbbar__b' + (th === 'dark' ? ' on' : '')} onClick={() => setTh(th === 'dark' ? 'light' : 'dark')}>Dark</button>
+      <button className={'cbbar__b' + (dn === 'compact' ? ' on' : '')} onClick={() => setDn(dn === 'compact' ? 'cozy' : 'compact')}>Compact</button>
+      <button className={'cbbar__b' + (slow ? ' on' : '')} onClick={() => setSlow(!slow)}>Slow motion 4×</button>
+    </div>
+  );
+}
+function Board() {
+  return (
+    <>
+      <Bar />
+      <div className="cb">
+        <header className="cb__hero">
+          <span className="cb__k">Missing layer · six answers</span>
+          <h1 className="cb__h">Component inventory</h1>
+          <p className="cb__sub">The system had 106 class roots and exactly one state modifier. Everything here is live — open the pickers, type in them, press Escape, switch the theme and density in the bar above. Written form in <code>design-handover/26-component-inventory.md</code>.</p>
+        </header>
+        <SecVocab /><SecSpacing /><SecButtons /><SecInputs /><SecForm /><SecToggle /><SecPicker /><SecDisplay /><SecOverlay /><SecFeedback /><SecLegacy /><SecMotion />
+      </div>
+    </>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Board />);
+</script>
+</body>
+</html>

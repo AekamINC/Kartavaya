@@ -264,7 +264,7 @@ function MTaskDetail({ back, os, offline, state }) {
 
       {sheet === 'status' && <MSheet title="Status" onClose={() => setSheet(null)}>
         {STATUSES.map(([k, l]) => <button key={k} className="msheet__r" onClick={() => { setT({ ...t, status: k }); setSheet(null); }}>
-          <i className="msheet__dot" style={{ background: SC[k] }} /><span>{l}</span>{t.status === k && <span style={{ color: 'var(--primary)' }}>{TI.check}</span>}
+          <i className="msheet__dot" style={{ background: SC[k] }} /><span>{l}</span>{t.status === k && <span style={{ color: 'var(--primary-text)' }}>{TI.check}</span>}
         </button>)}
       </MSheet>}
 

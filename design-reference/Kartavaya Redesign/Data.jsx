@@ -194,7 +194,7 @@ function TabBar({ tabs, val, set, max = 6, counts = {} }) {
 function TabStub({ tab, module }) {
   return (
     <Card>
-      <Empty ic={I.doc} t={<span style={{ textTransform: 'capitalize' }}>{tab} <span className="hi" style={{ color: 'var(--primary)', fontSize: '.8em' }}>{TAB_HI[tab] || ''}</span></span>}
+      <Empty ic={I.doc} t={<span style={{ textTransform: 'capitalize' }}>{tab} <span className="hi" style={{ color: 'var(--primary-text)', fontSize: '.8em' }}>{TAB_HI[tab] || ''}</span></span>}
         s={'This tab exists in ' + module + ' on staging and is carried through here. Styling is applied; the content is not built out in this pass.'} />
     </Card>
   );

@@ -156,6 +156,8 @@ Ratios are against **`--bg`** `#F3EFE6`, the canvas most of the app paints on �
 | `--warn` `#955806` | 4.9:1 | chip labels, status text, the offline banner | — |
 | `--danger` `#B42318` | 5.8:1 | error text, destructive labels | — |
 | `--on-primary` on `--primary` | 5.1:1 | filled button labels | — |
+| `--primary` `#04837A` | **4.04:1** | fills only — button/toggle/checkbox backgrounds, active bars | **any text on a surface** |
+| `--primary-text` `#046B64` | 5.2:1 | links, inline code, accent labels, Devanagari sub-labels | — |
 
 **Three tokens were failing before this pass**, all in light mode and all only on the canvas:
 
@@ -164,6 +166,8 @@ Ratios are against **`--bg`** `#F3EFE6`, the canvas most of the app paints on �
 - `--ok` at `#16803F` — **4.4:1**. Now `#14743A`, 5.1:1.
 
 Because `--st-done`, `--st-requested`, `--st-rejected`, the `--ap-*` set and `--pr-low` alias these tokens, every status chip and priority marker inherited the fix without a separate edit.
+
+`--primary` was missing from the first version of this table, which presented itself as a completed audit. It was excluded because it reads as a brand colour rather than a text colour — but it was being used as text at 11–13px in three patterns across the product. A contrast audit has to enumerate *every* token that reaches `color:`, not the ones that look like text colours.
 
 2.3:1 is not text. This was violated once already this session: the wayfinding hints on `Start Here.html` — the only copy telling a reader where Customization and Organisation live — were set in `--on-surface-faint` at 11.5px. Instructional copy is never decoration.
 
