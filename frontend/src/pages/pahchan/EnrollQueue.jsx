@@ -22,6 +22,61 @@ import Note from '../../components/module/Note';
  *   easy to leave out and is the more important one: an empty approval queue looks
  *   like success while twenty people remain unverifiable.
  */
+const THUMB_W = 58;
+const THUMB_H = 72;
+
+/**
+ * The photograph being approved.
+ *
+ * Approving is the act of vouching that this face belongs to this employee, and
+ * every punch that employee ever makes is verified against it. Approving without
+ * seeing it is not a weaker version of that check — it is the absence of one, and
+ * it was what this screen did: the queue rendered a name, a slot and an Approve
+ * button, and never the face.
+ *
+ * Signed per image on demand and never cached as a URL, the same discipline the
+ * register uses. States are distinguished for the same reason: a permanent
+ * spinner and a deleted photo must not look alike.
+ */
+function RefThumb({ photoId, name }) {
+  const [s, setS] = useState({ st: 'load' });
+
+  useEffect(() => {
+    let alive = true;
+    api.get(`/v1/pahchan/enrollment/photos/${photoId}/url`)
+      .then(r => { if (alive) setS({ st: 'ok', url: r.data.url }); })
+      .catch(err => {
+        if (alive) setS({ st: err?.response?.status === 404 ? 'gone' : 'err' });
+      });
+    return () => { alive = false; };
+  }, [photoId]);
+
+  return (
+    <div
+      style={{
+        width: THUMB_W, height: THUMB_H,
+        background: s.st === 'ok' ? 'var(--s-low)' : 'var(--s-container)',
+        border: '1px solid var(--outline-variant)',
+        borderRadius: 'var(--r-sm)',
+        overflow: 'hidden', flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      {s.st === 'ok' ? (
+        <img
+          src={s.url}
+          alt={`Reference photo submitted by ${name}`}
+          style={{ objectFit: 'cover', width: '100%', height: '100%' }}
+        />
+      ) : (
+        <span style={{ fontSize: 'var(--t-label-sm)', color: 'var(--on-surface-3)', textAlign: 'center', padding: 2 }}>
+          {s.st === 'load' ? '…' : s.st === 'err' ? 'failed' : 'deleted'}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function EnrollQueue() {
   const { pushToast } = useToast();
   const [state, setState] = useState('loading');
@@ -85,9 +140,10 @@ export default function EnrollQueue() {
             description="Every reference photo submitted has been approved."
           />
         ) : (
-          <DataTable columns={['Employee', 'Slot', 'Taken', 'Action']}>
+          <DataTable columns={['Photo', 'Employee', 'Slot', 'Taken', 'Action']}>
             {pending.map(p => (
               <tr key={p.id}>
+                <Td><RefThumb photoId={p.id} name={p.employee_name} /></Td>
                 <Td>
                   <strong style={{ fontSize: 13.5 }}>{p.employee_name}</strong>
                   {p.employee_code && (

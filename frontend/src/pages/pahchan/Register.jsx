@@ -80,49 +80,93 @@ function timeOf(iso) {
  * Keys, not URLs. A signed URL is fetched per image actually rendered, so
  * scrolling past a row never mints a link to that person's face.
  */
-function Triple({ punchKey, referenceKeys, punchId, name }) {
-  const [urls, setUrls] = useState({ punch: null, refs: [] });
+function Triple({ hasPhoto, referenceIds, punchId, name }) {
+  // Each slot is its own little state machine: 'load' | 'ok' | 'gone' | 'err'.
+  // A single nullable URL cannot express the difference between "still fetching"
+  // and "retention deleted this three weeks ago", and those must not look alike —
+  // a permanent spinner reads as a broken page, and a reviewer who thinks the
+  // page is broken stops reviewing.
+  const [punch, setPunch] = useState(() => (hasPhoto ? { st: 'load' } : { st: 'gone' }));
+  const [refs, setRefs] = useState(() =>
+    (referenceIds || []).slice(0, 2).map(() => ({ st: 'load' })));
 
   useEffect(() => {
     let alive = true;
-    if (!punchId) return undefined;
+    if (!punchId || !hasPhoto) return undefined;
+    setPunch({ st: 'load' });
     api.get(`/v1/pahchan/punches/${punchId}/photo`)
-      .then(r => { if (alive) setUrls(u => ({ ...u, punch: r.data.url })); })
-      .catch(() => {});
+      .then(r => { if (alive) setPunch({ st: 'ok', url: r.data.url }); })
+      // 404 is the retention case and is not an error: the punch record outlives
+      // the photo by law (07 §5/§8), so a missing photo on an old row is expected.
+      .catch(err => {
+        if (alive) setPunch({ st: err?.response?.status === 404 ? 'gone' : 'err' });
+      });
     return () => { alive = false; };
-  }, [punchId]);
+  }, [punchId, hasPhoto]);
 
-  const slot = (src, label, muted) => (
+  useEffect(() => {
+    let alive = true;
+    const ids = (referenceIds || []).slice(0, 2);
+    if (!ids.length) { setRefs([]); return undefined; }
+    setRefs(ids.map(() => ({ st: 'load' })));
+    ids.forEach((id, i) => {
+      api.get(`/v1/pahchan/enrollment/photos/${id}/url`)
+        .then(r => {
+          if (!alive) return;
+          setRefs(prev => { const next = prev.slice(); next[i] = { st: 'ok', url: r.data.url }; return next; });
+        })
+        .catch(err => {
+          if (!alive) return;
+          const st = err?.response?.status === 404 ? 'gone' : 'err';
+          setRefs(prev => { const next = prev.slice(); next[i] = { st }; return next; });
+        });
+    });
+    return () => { alive = false; };
+    // Joined, so a re-render with an equal-but-new array does not refetch every
+    // face on the page — which at 12 rows is 36 signed URLs per keystroke.
+  }, [(referenceIds || []).join(',')]);
+
+  const slot = (s, label, emptyWord) => (
     <div
       className="rv__slot"
       style={{
         width: PHOTO_W, height: PHOTO_H,
-        background: muted ? 'var(--s-container)' : 'var(--s-low)',
+        background: s?.st === 'ok' ? 'var(--s-low)' : 'var(--s-container)',
         border: '1px solid var(--outline-variant)',
         borderRadius: 'var(--r-sm)',
         overflow: 'hidden', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
     >
-      {src
-        ? <img src={src} alt={label} width={PHOTO_W} height={PHOTO_H}
-               style={{ objectFit: 'cover', width: '100%', height: '100%' }} />
-        : <span style={{ fontSize: 'var(--t-label-sm)', color: 'var(--on-surface-3)', textAlign: 'center', padding: 2 }}>
-            {muted ? 'none' : '…'}
-          </span>}
+      {s?.st === 'ok' ? (
+        <img src={s.url} alt={label} width={PHOTO_W} height={PHOTO_H}
+             style={{ objectFit: 'cover', width: '100%', height: '100%' }} />
+      ) : (
+        <span
+          style={{
+            fontSize: 'var(--t-label-sm)', color: 'var(--on-surface-3)',
+            textAlign: 'center', padding: 2, lineHeight: 1.2,
+          }}
+        >
+          {s?.st === 'load' ? '…' : s?.st === 'err' ? 'failed' : emptyWord}
+        </span>
+      )}
     </div>
   );
 
-  const hasRefs = (referenceKeys || []).length >= 2;
+  // Two APPROVED references are what makes a row verifiable. One is not half a
+  // comparison — 07 §0 is explicit that the pair exists because a single frontal
+  // photo fails on anyone who turns their head.
+  const hasRefs = (referenceIds || []).length >= 2;
 
   return (
     <div className="rv__trip" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-      {slot(urls.punch, `Clock-in photo for ${name}`, false)}
+      {slot(punch, `Clock-in photo for ${name}`, 'deleted')}
       {/* A divider, not a gap: the left image is the claim and the right two are
           the evidence, and the reviewer is comparing across that line. */}
       <span aria-hidden="true" style={{ width: 1, height: PHOTO_H - 12, background: 'var(--outline-variant)' }} />
-      {slot(hasRefs ? urls.refs[0] : null, `Reference 1 for ${name}`, !hasRefs)}
-      {slot(hasRefs ? urls.refs[1] : null, `Reference 2 for ${name}`, !hasRefs)}
+      {slot(hasRefs ? refs[0] : null, `Reference 1 for ${name}`, 'none')}
+      {slot(hasRefs ? refs[1] : null, `Reference 2 for ${name}`, 'none')}
     </div>
   );
 }
@@ -339,8 +383,8 @@ export default function Register() {
                   <Td className="rv__trip-cell">
                     <Triple
                       punchId={p.id}
-                      punchKey={p.photo_key}
-                      referenceKeys={p.reference_keys}
+                      hasPhoto={p.has_photo}
+                      referenceIds={p.reference_ids}
                       name={p.employee_name}
                     />
                   </Td>

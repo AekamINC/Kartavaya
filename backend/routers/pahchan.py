@@ -441,8 +441,17 @@ async def register(
     rather than needing a call per employee — a request per face is what makes a
     day unclearable.
 
-    Photo keys, not URLs. The client asks for a signed URL per image it actually
-    displays, so scrolling past a row never mints a link to that person's face.
+    IDs, not keys, and never URLs. The client asks for a signed URL per image it
+    actually displays, so scrolling past a row never mints a link to that person's
+    face.
+
+    The object key itself does not cross the wire either. The client cannot use a
+    key — signing is by row id, deliberately, so that there is no endpoint anywhere
+    that will sign an arbitrary key handed to it — so sending the key would be
+    exposing the storage path of a photograph of someone's face for no purpose.
+    `has_photo` is what the client actually needs: it distinguishes "still loading"
+    from "the 90-day retention job has deleted this", which are the same blank slot
+    otherwise.
     """
     pool = await get_pool()
     day = on or datetime.now(timezone.utc).date()
@@ -450,14 +459,15 @@ async def register(
     rows = await pool.fetch(
         """SELECT p.id, p.direction, p.captured_at, p.received_at, p.source,
                   p.flags, p.accuracy_m, p.distance_m, p.mock_location,
-                  p.photo_key, p.review_verdict, p.reviewed_at, p.reviewed_by,
+                  (p.photo_key IS NOT NULL) AS has_photo,
+                  p.review_verdict, p.reviewed_at, p.reviewed_by,
                   e.id AS employee_id, e.name AS employee_name, e.employee_code,
                   s.name AS site_name,
-                  (SELECT array_agg(r.object_key ORDER BY r.slot)
+                  (SELECT array_agg(r.id ORDER BY r.slot)
                      FROM staging.pahchan_enrollment_photos r
                     WHERE r.employee_id = e.id
                       AND r.replaced_at IS NULL
-                      AND r.approved_at IS NOT NULL) AS reference_keys
+                      AND r.approved_at IS NOT NULL) AS reference_ids
              FROM staging.pahchan_punches p
              JOIN staging.manav_employees e ON e.id = p.employee_id
              LEFT JOIN staging.pahchan_sites s ON s.id = p.geofence_id
@@ -841,7 +851,10 @@ async def enrollment_queue(
     gap in the register, so both cases surface in one queue."""
     pool = await get_pool()
     pending = await pool.fetch(
-        "SELECT r.id, r.slot, r.object_key, r.captured_at, "
+        # `r.id` and not `r.object_key`: approving is the act of vouching that this
+        # face belongs to this employee, so HR has to SEE it — and they see it by
+        # exchanging this id for a signed URL, never by being handed a storage path.
+        "SELECT r.id, r.slot, r.captured_at, "
         "       e.id AS employee_id, e.name AS employee_name, e.employee_code "
         "FROM staging.pahchan_enrollment_photos r "
         "JOIN staging.manav_employees e ON e.id = r.employee_id "
