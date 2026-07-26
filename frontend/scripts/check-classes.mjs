@@ -228,18 +228,8 @@ if (missing.length) {
   console.error(
     '\ncheck-classes: a class with no rule renders unstyled. Add the rule, or remove the class.'
   );
-  // REPORT-ONLY until the 15 pre-existing misses above are cleared. Wiring a
-  // red gate into CI on day one gets the gate removed, not the defects fixed.
-  //
-  // Each of these belongs to a numbered handover file that specifies what the
-  // rule should be — `k-col--main`/`k-col--side` to `05`, the `k-c-*` column
-  // classes to `04`, `k-skip` to `23` — so they get fixed as those files are
-  // implemented, and this check is what proves each one landed.
-  //
-  // FLIP TO BLOCKING (`process.exit(1)`) the first time this reports zero.
-  if (process.env.CHECK_CLASSES_STRICT === '1') process.exit(1);
-  console.error(
-    'Report-only for now. Set CHECK_CLASSES_STRICT=1 to fail the build; ' +
-    'make that the default once this reports zero.'
-  );
+  // Blocking. This was report-only for exactly one commit, while the 15
+  // pre-existing misses it found were cleared; it reported zero immediately
+  // after, so the gate went up rather than becoming a warning people scroll past.
+  process.exit(1);
 }

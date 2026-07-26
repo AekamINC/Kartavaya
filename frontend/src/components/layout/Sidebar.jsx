@@ -175,11 +175,11 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0 }) {
               )}
               <div
                 className="k-sidebar__section-items"
-                style={{
-                  maxHeight: expanded ? items.length * 44 + 'px' : '0px',
-                  overflow: 'hidden',
-                  transition: 'max-height .2s ease',
-                }}
+                /* Only maxHeight is per-section. overflow and the transition
+                   moved to .k-sidebar__section-items so the reduced-motion
+                   scale can reach them — an inline transition cannot be
+                   overridden by --ix. */
+                style={{ maxHeight: expanded ? items.length * 44 + 'px' : '0px' }}
               >
                 {items.filter(item => (!item.ownerOnly || !isMember) && (!item.adminOnly || isAdmin)).map(({ to, icon, en, hi, gu: guLabel, adminOnly, badge }) => {
                   // navConfig declares badge:'approvals' on /approvals, but this

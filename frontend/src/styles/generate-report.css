@@ -585,3 +585,14 @@
   font-weight:600; letter-spacing:0.01em; flex-shrink:0;
 }
 .gr__hrow-go:hover{ text-decoration:underline; }
+
+/* Format modifiers on .gr__export-btn — rendered since the export panel shipped
+   with no declaration, so the two buttons were identical apart from their label.
+   Found by scripts/check-classes.mjs. The tint identifies the format at a glance
+   the way the .gr__fmt-tag gradient already does for the icon. */
+.gr__export-btn--pdf:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--rule));
+}
+.gr__export-btn--xlsx:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ok) 35%, var(--rule));
+}

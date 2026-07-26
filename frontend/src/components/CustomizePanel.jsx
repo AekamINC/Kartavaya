@@ -89,6 +89,48 @@ function hslToHex(h, s, l) {
   return '#' + [f(0), f(8), f(4)].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
 }
 
+/** WCAG 2.x relative luminance. */
+function relLuminance(hex) {
+  const chan = (i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * chan(1) + 0.7152 * chan(3) + 0.0722 * chan(5);
+}
+
+/** Light `--bg` is #F3EFE6. Contrast is measured against the canvas, not the
+ *  card on top of it — 00 §12, and the mistake that passed three tokens which
+ *  failed on the page. */
+const BG_LIGHT_LUM = relLuminance('#F3EFE6');
+
+function contrastOnLightBg(hex) {
+  const l = relLuminance(hex);
+  const [hi, lo] = l > BG_LIGHT_LUM ? [l, BG_LIGHT_LUM] : [BG_LIGHT_LUM, l];
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/**
+ * The accent value that primary-coloured TEXT uses in light mode.
+ *
+ * `--primary` itself is 4.04:1 on `--bg` at the default teal — a fill, never
+ * text (00 §7, 23 §contrast table). `deep` is the right starting point, but
+ * twelve presets ship plus arbitrary custom hex, so taking `deep` on trust
+ * would leave each one an unmeasured contrast risk — which is exactly what 00
+ * says this function must stop doing. So measure, and darken until it clears.
+ *
+ * Steps lightness down 2% at a time rather than solving directly: it keeps the
+ * hue and saturation the preset was chosen for, and the loop is bounded.
+ */
+function deriveAccentText(h, s, l) {
+  let lightness = Math.max(l - 20, 10);
+  let hex = hslToHex(h, Math.min(s + 10, 100), lightness);
+  while (contrastOnLightBg(hex) < 4.5 && lightness > 4) {
+    lightness -= 2;
+    hex = hslToHex(h, Math.min(s + 10, 100), lightness);
+  }
+  return hex;
+}
+
 export function deriveAccentColors(hex) {
   const [h, s, l] = hexToHsl(hex);
   return {
@@ -98,6 +140,8 @@ export function deriveAccentColors(hex) {
     // `light` is new (00 §10). Hover must step AWAY from the page, which
     // reverses by theme: darker on light surfaces, lighter on dark ones.
     light: hslToHex(h, s, Math.min(l + 12, 92)),
+    // `text` is new (00 §7). Measured, not assumed — see deriveAccentText.
+    text:  deriveAccentText(h, s, l),
   };
 }
 
@@ -146,6 +190,14 @@ export function applyPrefs(prefs) {
   root.style.setProperty('--primary',       dark ? acc.color : acc.mid);
   root.style.setProperty('--primary-hover', dark ? acc.light : acc.deep);
   root.style.setProperty('--primary-vivid', acc.color);
+
+  // --primary-text carries any primary-coloured TEXT, because --primary is a
+  // fill at 4.04:1 and fails as text (00 §7). Dark aliases --primary, which
+  // clears AA at every size; light uses the measured value. Without this line
+  // each of the twelve presets is an unmeasured contrast risk — the accent is
+  // user-configurable, so a token that is safe at the default teal says nothing
+  // about the other eleven.
+  root.style.setProperty('--primary-text', dark ? acc.color : acc.text);
 
   // ── Type ─────────────────────────────────────────────────────────────────
   // --font-display and --font-ui are independent. The old SANS_IDS check set

@@ -3014,3 +3014,97 @@ select.k-formpanel__input { appearance: none;
    enough — more and it reads as broken. Logos and status icons opt out with
    data-no-dim, since dimming a brand mark is its own kind of wrong. */
 [data-theme="dark"] img:not([data-no-dim]) { filter: brightness(.92); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Rules for classes that were rendered with no declaration
+
+   Found by `scripts/check-classes.mjs`, which 25-qa-acceptance.md §1 asks for.
+   None of these were visible as bugs — a class with no rule renders unstyled
+   rather than erroring, which is the same silent failure mode as an unresolved
+   var(). `.k-skip` was the one that mattered: it is the skip-to-content link,
+   so it was rendering as a plain visible link at the top of every page instead
+   of a focus-only affordance.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Skip link — first tab stop, per 23-accessibility.md. Off-canvas until
+   focused. Not `display:none`, which removes it from the tab order and defeats
+   the point. SkipLink.jsx requires <main id="main" tabIndex={-1}>; without the
+   tabIndex the jump moves scroll but not focus. */
+.k-skip {
+  position: absolute; top: 0; left: 0; z-index: 200;
+  padding: 10px 16px;
+  background: var(--surface);
+  color: var(--primary-text);
+  font-size: 13px; font-weight: 600;
+  border: 1px solid var(--rule);
+  border-bottom-right-radius: var(--r-sm);
+  transform: translateY(-120%);
+  transition: transform calc(.14s * var(--ix)) var(--ease-standard);
+}
+.k-skip:focus-visible,
+.k-skip:focus {
+  transform: translateY(0);
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Upload spinner. Sized by the caller, so only the ring and rotation live here.
+   Reduced motion gets a static ring rather than a frozen quarter-turn — the
+   progress text beside it already carries the meaning. */
+.k-spinner {
+  border: 2px solid var(--rule);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .k-spinner { animation: none; border-top-color: var(--primary); opacity: .7; }
+}
+
+/* Hero date — the Gregorian half of the meta line, paired with
+   .k-hero__samvat above. Inherits the uppercase treatment from .k-hero__meta;
+   this only needs to opt out of the Devanagari font its sibling opts into. */
+.k-hero__date { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+
+/* Dashboard columns. .k-twocol is the grid, .k-col the shared column; these two
+   carry the asymmetry, so the side column stops competing with the main one. */
+.k-col--main { flex: 1 1 auto; min-width: 0; }
+.k-col--side { flex: 0 0 auto; }
+
+/* Inbox row body — the 1fr cell of .k-inboxrow's three-column grid. min-width:0
+   is set inline at the call site and repeated here so the ellipsis in
+   .k-inboxrow__snip survives if that inline style is ever removed. */
+.k-inboxrow__body { min-width: 0; display: flex; flex-direction: column; }
+
+/* Project card meter — the container above .k-pcard__meter-row. */
+.k-pcard__meter { display: flex; flex-direction: column; gap: 4px; }
+
+/* Kanban "add column" tile. Dashed rather than solid so it reads as a slot
+   instead of a populated column, and it does not carry .k-bcol's filled
+   background. */
+.k-bcol--add {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--rule);
+  align-items: stretch;
+  justify-content: flex-start;
+}
+.k-bcol--add:hover { border-color: var(--primary); background: var(--k-primary-bg); }
+
+/* Sidebar collapsible section. `maxHeight` is computed per section from its item
+   count so it stays inline, but overflow and the transition are static and
+   belong here — a transition in an inline style cannot be overridden by the
+   reduced-motion scale. */
+.k-sidebar__section-items {
+  overflow: hidden;
+  transition: max-height calc(.2s * var(--ix)) var(--ease-standard);
+}
+
+/* Task list column widths. Siblings of .k-c-task / .k-c-project / .k-c-assignees
+   above, which is why these four are modifiers on .k-trow__cell rather than
+   standalone rules. Right-aligned numerics get tabular figures so the column
+   does not jitter as values change. */
+.k-c-category { gap: 6px; flex-wrap: wrap; }
+.k-c-due      { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.k-c-updated  { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ink-3); font-size: 12px; }
+.k-c-status   { justify-content: flex-start; flex-shrink: 0; }

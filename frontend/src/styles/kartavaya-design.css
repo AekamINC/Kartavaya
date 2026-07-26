@@ -142,6 +142,12 @@
 
   --primary:              #04837A;
   --primary-hover:        #026B64;
+  /* --primary is 4.04:1 on --bg. It is a FILL — buttons, toggles, checkboxes,
+     active bars — where it pairs with --on-primary at 5.1:1. Any primary-
+     coloured TEXT uses --primary-text at 5.2:1 (00 §7, 23 contrast table).
+     applyPrefs overwrites this per accent with a measured value; the literal
+     here is the default teal, and the value that applies before JS runs. */
+  --primary-text:         #046B64;
   --on-primary:           #FFFFFF;
   --primary-container:    #B4F1E8;
   --on-primary-container: #00201D;
@@ -199,6 +205,9 @@
      lighter than primary breaks in exactly one theme. */
   --primary:              #4FD8CB;
   --primary-hover:        #6FE6DA;
+  /* Dark aliases --primary: on #0C0E11 it clears AA at every size, so no split
+     is needed and keeping two values would let them drift. */
+  --primary-text:         var(--primary);
   --on-primary:           #00332F;
   --primary-container:    #00514B;
   --on-primary-container: #74F5E8;
