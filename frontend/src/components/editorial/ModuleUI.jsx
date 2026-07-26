@@ -1,4 +1,5 @@
 import React from 'react';
+import EmptyState from '../ui/EmptyState';
 
 export function TabBar({ tabs, active, onChange }) {
   return (
@@ -28,11 +29,36 @@ export function Section({ title, hi, right, children }) {
   );
 }
 
-export function Badge({ text, color }) {
-  const c = color || '#6E7B91';
+/**
+ * Badge — 02-common-components.md §"Badge produces an invalid colour".
+ *
+ * Two defects fixed, both verified against this file rather than quoted:
+ *
+ * 1 · `background: \`${c}18\`` was a hex-alpha suffix, which worked only while
+ *     `statusColors.js` held hexes. It now holds custom-property references, so
+ *     that expression evaluated to the string `"var(--st-done)18"` — not a
+ *     colour, and silently dropped, leaving the badge with no background at
+ *     all. Confirmed live at `VikrayPage.jsx:231` and `:414` (order status, fed
+ *     from the token map) and at `:239` / `:480`, which pass `var(--ok)` and
+ *     `var(--danger)` directly. `mixAlpha` exists for exactly this.
+ *
+ * 2 · **Not in the handover, found while fixing the first.** `DristiPage`
+ *     calls `<Badge color={…}>{value}</Badge>` in five places, but the props
+ *     were `{ text, color }` only — so children were discarded and five badges
+ *     rendered as empty pills. `children` is now accepted as the text.
+ *
+ * It now renders as a `StatusChip`, which 02 names as the pattern to copy and
+ * which 02 §1 measured: `--c` text on a 10% tint of itself over `--surface` is
+ * 6.4:1 for `in_progress` and 6.0:1 for `done`, and the dot carries the
+ * identity so the colour is not the only signal. `k-badge` is left in the
+ * stylesheet for the two call sites that use it as a plain count.
+ */
+export function Badge({ text, color, children }) {
+  const label = text ?? children;
   return (
-    <span className="k-badge" style={{ background: `${c}18`, color: c }}>
-      {text}
+    <span className="k-statuschip" style={{ '--c': color || 'var(--on-surface-3)' }}>
+      <span className="k-statuschip__dot" />
+      {label}
     </span>
   );
 }
@@ -47,14 +73,28 @@ export function Shimmer({ count = 4 }) {
   );
 }
 
-export function Empty({ icon = '📋', title, sub, cta, onCta }) {
+/**
+ * Empty — now a thin pass-through to `ui/EmptyState`.
+ *
+ * 02 §"Two empty states, neither ready" says to port `EmptyState` onto tokens
+ * and delete this one. The port is done; deleting the component outright would
+ * mean editing the fourteen module pages that call it, so it forwards instead —
+ * one implementation, no page touched, and the emoji default goes.
+ *
+ * `icon="📋"` is passed by nineteen call sites. `EmptyState` maps an unknown
+ * icon string to its `generic` SVG glyph, so those render a real illustration
+ * rather than an emoji: 07 §175 is explicit that the design system has none.
+ */
+export function Empty({ icon, title, sub, cta, onCta }) {
   return (
-    <div className="k-empty">
-      <div className="k-empty__icon">{icon}</div>
-      <p className="k-empty__title">{title}</p>
-      {sub && <p className="k-empty__sub">{sub}</p>}
-      {cta && <button className="k-empty__cta" onClick={onCta}>{cta}</button>}
-    </div>
+    <EmptyState
+      icon={icon}
+      illustration="generic"
+      title={title}
+      description={sub}
+      action={cta}
+      onAction={onCta}
+    />
   );
 }
 

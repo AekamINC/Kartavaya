@@ -1,5 +1,4 @@
 import React from 'react';
-import { cn } from '../../lib/utils';
 
 /**
  * Named glyphs for `icon`. The previous implementation rendered a string icon as
@@ -127,7 +126,10 @@ export function EmptyState({
   const accent = tone === 'ok' ? 'var(--ok)' : 'var(--on-surface-faint)';
 
   return (
-    <div className={cn('empty', className)} style={{ maxWidth: 400 }}>
+    // `cn()` (clsx + twMerge) is gone from this file: it exists to reconcile
+    // conflicting Tailwind utilities, and there are none left here. 02 §5 keeps
+    // it in lib/utils until the last unconverted file goes.
+    <div className={`empty ${className || ''}`.trim()} style={{ maxWidth: 400 }}>
       <div className="empty__art" style={{ color: accent }}>
         {icon
           ? (typeof icon === 'string' ? GLYPHS[icon] || GLYPHS.generic : icon)

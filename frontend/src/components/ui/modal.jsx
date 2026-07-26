@@ -83,4 +83,23 @@ export function Modal({ open, onOpenChange, title, children, footer, dataTestId,
   );
 }
 
+/**
+ * Modal · ModalHead · ModalBody · ModalFoot — the tree 02 §2 asks for.
+ *
+ * `<Modal>` composes all three from `title` / `children` / `footer`, which is
+ * what every call site wants. These are the escape hatch for the dialog that
+ * needs something else in its header — a status chip beside the title, a
+ * back arrow in a two-step flow — without rebuilding the scrim, the focus trap
+ * and the Escape handler around it, which is how the app ended up with a dozen
+ * hand-rolled dialogs that have none of the three.
+ */
+export const ModalHead = ({ children, className = '' }) =>
+  <div className={`modal__head ${className}`.trim()}>{children}</div>;
+
+export const ModalBody = ({ children, className = '' }) =>
+  <div className={`modal__body ${className}`.trim()}>{children}</div>;
+
+export const ModalFoot = ({ children, className = '' }) =>
+  <div className={`modal__foot ${className}`.trim()}>{children}</div>;
+
 export default Modal;

@@ -18,6 +18,9 @@ export default function FieldRenderer({ field, value, onChange, readOnly = false
     case 'text':     return <TextField     {...props} />;
     case 'files':    return <FilesField    {...props} />;
     default:
-      return <span style={{ color: 'var(--ink-faint)', fontSize: 11 }}>Unknown: {field.type}</span>;
+      // Named, not silent. A custom field whose type the client does not know
+      // renders as its type rather than as nothing, so the mismatch is visible
+      // to the person who can fix it instead of looking like missing data.
+      return <span className="fld__hint">Unknown field type: {field.type}</span>;
   }
 }

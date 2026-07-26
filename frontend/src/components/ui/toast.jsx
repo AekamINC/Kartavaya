@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 const ToastCtx = createContext(null);
 
@@ -7,11 +7,25 @@ const ToastCtx = createContext(null);
 // cannot flip with the theme, so the accent bar was a light-mode colour sitting
 // on a dark card.
 const TYPE_STYLES = {
-  success: { color: 'var(--ok)',      icon: '✓' },
-  error:   { color: 'var(--danger)',  icon: '✕' },
-  warning: { color: 'var(--warn)',    icon: '!' },
-  info:    { color: 'var(--primary)', icon: 'i' },
+  success: { tone: 'tst--ok',   icon: '✓' },
+  error:   { tone: 'tst--err',  icon: '✕' },
+  warning: { tone: 'tst--warn', icon: '!' },
+  info:    { tone: 'tst--info', icon: 'i' },
 };
+
+/**
+ * 26-component-inventory.md §9: success and info dismiss at 4s, warning at 7s,
+ * ERROR NEVER AUTO-DISMISSES.
+ *
+ * A four-second success message is a courtesy; a four-second failure message is
+ * a bug report the user did not get to read. Every toast in this build used the
+ * same 3.2s timer, so the only messages a user could not act on were the ones
+ * that mattered.
+ *
+ * A toast that never leaves on its own must be dismissable by hand, which is
+ * why every card carries a real Dismiss button rather than relying on the timer.
+ */
+const DURATION = { success: 4000, info: 4000, warning: 7000, error: null };
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
@@ -20,6 +34,35 @@ export function ToastProvider({ children }) {
   // announced — which is why aria-live must never go on the toast card itself.
   const [polite, setPolite] = useState('');
   const [assertive, setAssertive] = useState('');
+  const timers = useRef(new Map());
+
+  const dismiss = useCallback((id) => {
+    clearTimeout(timers.current.get(id)?.handle);
+    timers.current.delete(id);
+    setToasts((prev) => prev.filter((x) => x.id !== id));
+  }, []);
+
+  const arm = useCallback((id, ms) => {
+    if (ms == null) return;
+    const handle = setTimeout(() => dismiss(id), ms);
+    timers.current.set(id, { handle, endsAt: Date.now() + ms, total: ms });
+  }, [dismiss]);
+
+  // Hover pauses the timer on all of them — a toast that expires while the
+  // pointer is resting on it is one the user was in the middle of reading.
+  const pause = useCallback((id) => {
+    const t = timers.current.get(id);
+    if (!t) return;
+    clearTimeout(t.handle);
+    timers.current.set(id, { ...t, remaining: Math.max(0, t.endsAt - Date.now()) });
+  }, []);
+
+  const resume = useCallback((id) => {
+    const t = timers.current.get(id);
+    if (!t || t.remaining == null) return;
+    const handle = setTimeout(() => dismiss(id), t.remaining);
+    timers.current.set(id, { handle, endsAt: Date.now() + t.remaining, total: t.total });
+  }, [dismiss]);
 
   const pushToast = useCallback((t) => {
     const id = `toast_${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -37,9 +80,13 @@ export function ToastProvider({ children }) {
     const spoken = [toast.title, toast.message].filter(Boolean).join('. ');
     if (spoken) (toast.type === 'error' ? setAssertive : setPolite)(spoken);
 
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((x) => x.id !== id));
-    }, 3200);
+    arm(id, DURATION[toast.type] ?? DURATION.info);
+    return id;
+  }, [arm]);
+
+  useEffect(() => () => {
+    for (const t of timers.current.values()) clearTimeout(t.handle);
+    timers.current.clear();
   }, []);
 
   const error = useCallback((title) => pushToast({ title, type: 'error' }), [pushToast]);
@@ -47,7 +94,10 @@ export function ToastProvider({ children }) {
   const warning = useCallback((title) => pushToast({ title, type: 'warning' }), [pushToast]);
   const info = useCallback((title) => pushToast({ title, type: 'info' }), [pushToast]);
 
-  const value = useMemo(() => ({ pushToast, error, success, warning, info }), [pushToast, error, success, warning, info]);
+  const value = useMemo(
+    () => ({ pushToast, error, success, warning, info, dismiss }),
+    [pushToast, error, success, warning, info, dismiss],
+  );
 
   return (
     <ToastCtx.Provider value={value}>
@@ -64,50 +114,20 @@ export function ToastProvider({ children }) {
         {toasts.map((t) => {
           const ts = TYPE_STYLES[t.type] || TYPE_STYLES.info;
           return (
-            <div key={t.id} style={{
-              background: 'var(--surface)',
-              border: '1px solid var(--outline-variant)',
-              borderLeft: `3px solid ${ts.color}`,
-              borderRadius: 'var(--r-md)',
-              padding: '10px 14px',
-              boxShadow: 'var(--shadow-2)',
-              pointerEvents: 'all',
-              display: 'flex',
-              gap: 10,
-              alignItems: 'flex-start',
-            }}>
-              <span aria-hidden="true" style={{
-                fontSize: 12,
-                fontWeight: 700,
-                color: ts.color,
-                marginTop: 1,
-                flexShrink: 0,
-              }}>
-                {ts.icon}
-              </span>
-              <div style={{ minWidth: 0 }}>
-                {t.title && (
-                  <div style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: 'var(--on-surface)',
-                    fontFamily: 'var(--font-ui)',
-                    lineHeight: 1.3,
-                  }}>
-                    {t.title}
-                  </div>
-                )}
-                {t.message && (
-                  <div style={{
-                    fontSize: 12,
-                    color: 'var(--on-surface-3)',
-                    marginTop: 2,
-                    fontFamily: 'var(--font-ui)',
-                  }}>
-                    {t.message}
-                  </div>
-                )}
+            <div
+              key={t.id}
+              className={`tst ${ts.tone}`}
+              onMouseEnter={() => pause(t.id)}
+              onMouseLeave={() => resume(t.id)}
+              onFocus={() => pause(t.id)}
+              onBlur={() => resume(t.id)}
+            >
+              <span className="tst__i" aria-hidden="true">{ts.icon}</span>
+              <div className="tst__b">
+                {t.title && <div className="tst__t">{t.title}</div>}
+                {t.message && <div className="tst__s">{t.message}</div>}
               </div>
+              <button type="button" className="tst__a" onClick={() => dismiss(t.id)}>Dismiss</button>
             </div>
           );
         })}

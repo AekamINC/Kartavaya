@@ -135,6 +135,71 @@ export function SkeletonPage({ withStats = true, withTable = false, className = 
   );
 }
 
+/* ── Per-page presets — 02-common-components.md §5 ─────────────────────────
+   "Skeletons are SHAPED LIKE THE CONTENT, not grey rectangles" (26 §9). A
+   skeleton whose shape does not match what loads produces a visible jump on
+   arrival, which is worse than a spinner: the spinner at least never lied about
+   what was coming.
+
+   Table and page presets already existed. These are the three that did not, and
+   each mirrors a real layout rather than approximating one — a list row is an
+   avatar plus two lines of unequal length, a board is columns of cards, and a
+   chat alternates sides because a one-sided chat skeleton reads as an empty
+   conversation. */
+
+/** List rows — tasks, contacts, invoices, anything with an avatar and a title. */
+export function SkeletonList({ rows = 6, showAvatar = true, className = '', style }) {
+  return (
+    <div className={`k-skeleton-table ${className}`} style={style} aria-hidden="true">
+      {Array.from({ length: rows }).map((_, r) => (
+        <div key={r} className="k-skeleton-table__row">
+          <div className="k-skeleton-table__cell" style={{ width: '100%' }}>
+            {showAvatar && <SkeletonAvatar size={24} />}
+            <SkeletonText width={`${52 + ((r * 13) % 26)}%`} height={13} />
+          </div>
+          <div className="k-skeleton-table__cell" style={{ width: '22%' }}>
+            <SkeletonText width="70%" height={11} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Kanban — columns, each with a header count and a few cards. */
+export function SkeletonBoard({ columns = 4, cards = 3, className = '', style }) {
+  return (
+    <div
+      className={`k-skeleton-grid ${className}`}
+      style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, ...style }}
+      aria-hidden="true"
+    >
+      {Array.from({ length: columns }).map((_, c) => (
+        <div key={c} className="k-col">
+          <SkeletonText width="45%" height={11} />
+          {Array.from({ length: cards }).map((_, i) => (
+            <SkeletonCard key={i} lines={2} showAvatar />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Chat scrollback. Alternating sides, so it reads as a conversation. */
+export function SkeletonChat({ rows = 5, className = '', style }) {
+  return (
+    <div className={`k-skeleton-chat ${className}`} style={style} aria-hidden="true">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className={`k-skeleton-chat__r${i % 3 === 2 ? ' k-skeleton-chat__r--out' : ''}`}>
+          {i % 3 !== 2 && <SkeletonAvatar size={26} />}
+          <SkeletonText width={`${34 + ((i * 17) % 34)}%`} height={30} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Wrapper that exposes the aria-busy/role="status" contract in one place.
  * Wrap any of the above (or a group of them) with this when the skeleton
@@ -155,6 +220,9 @@ export default {
   SkeletonCard,
   SkeletonCardGrid,
   SkeletonTable,
+  SkeletonList,
+  SkeletonBoard,
+  SkeletonChat,
   SkeletonPage,
   SkeletonRegion,
 };

@@ -1,0 +1,136 @@
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useDismiss } from '../../hooks/useDismiss';
+
+/**
+ * Menu — trigger + portal + roving tabindex (02-common-components.md §2).
+ *
+ * No menu primitive existed, so every overflow menu in the build is a hand-made
+ * absolutely-positioned div. Two consequences this fixes:
+ *
+ *  · **Clipping.** An absolute menu inside a card with `overflow: hidden` or a
+ *    scrolling table cell is cut off at the container edge. This one renders
+ *    through a portal at `position: fixed`, so it cannot be clipped by an
+ *    ancestor, and it sits at z-index 340 on the ladder in 26 §4 rather than at
+ *    whatever number the page happened to pick.
+ *  · **Keyboard.** Arrow keys move between items, Home/End jump, Escape closes
+ *    and returns focus to the trigger. A menu you can open with the keyboard
+ *    and not navigate is worse than one you cannot open at all.
+ *
+ * `items` is `[{ id, label, icon, danger, disabled, onSelect }]`; a falsy entry
+ * is skipped and `{ sep: true }` draws a divider, so call sites can build the
+ * list with `&&` without filtering.
+ */
+export function Menu({ trigger, items = [], align = 'left', label = 'More actions' }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null);
+  const [cursor, setCursor] = useState(-1);
+  const triggerRef = useRef(null);
+  const menuRef = useRef(null);
+  const rootRef = useRef(null);
+
+  const rows = items.filter(i => i && !i.sep && !i.disabled);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    setCursor(-1);
+    // Focus returns to the trigger, not to <body>. Without this a keyboard user
+    // who closes a row menu loses their place in the list entirely.
+    triggerRef.current?.focus?.();
+  }, []);
+
+  // `useDismiss` takes ONE ref, and a portalled overlay has two roots: the
+  // trigger in the React tree and the panel on document.body. This adapter
+  // answers "is the pointer inside either". Without it every click on a menu
+  // item reads as an outside click, unmounts the menu on mousedown, and the
+  // click never lands — the menu would open and be unusable.
+  const bothRef = useRef(null);
+  bothRef.current = {
+    contains: (n) => !!(rootRef.current?.contains(n) || menuRef.current?.contains(n)),
+  };
+  useDismiss(open, bothRef, close);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const r = triggerRef.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 5, left: align === 'right' ? undefined : r.left, right: align === 'right' ? window.innerWidth - r.right : undefined });
+  }, [open, align]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    // A menu that stays put while the page scrolls under it is a menu attached
+    // to nothing. Closing is the honest response; repositioning on every scroll
+    // frame is not worth the jank.
+    const onScroll = () => close();
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [open, close]);
+
+  useEffect(() => {
+    if (!open || cursor < 0) return;
+    menuRef.current?.querySelectorAll('[data-menuitem]')[cursor]?.focus();
+  }, [open, cursor]);
+
+  const onKeyDown = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setCursor(c => Math.min(rows.length - 1, c + 1)); }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); setCursor(c => Math.max(0, c - 1)); }
+    if (e.key === 'Home')      { e.preventDefault(); setCursor(0); }
+    if (e.key === 'End')       { e.preventDefault(); setCursor(rows.length - 1); }
+  };
+
+  return (
+    <span ref={rootRef} className="anchor">
+      <span
+        ref={triggerRef}
+        role="button"
+        tabIndex={0}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={label}
+        onClick={() => (open ? close() : setOpen(true))}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(true); setCursor(0); }
+          if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setCursor(0); }
+        }}
+      >
+        {trigger}
+      </span>
+
+      {open && pos && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label={label}
+          className="menu menu--float"
+          style={pos}
+          onKeyDown={onKeyDown}
+        >
+          {items.filter(Boolean).map((it, i) => it.sep
+            ? <div key={`sep-${i}`} className="menu__sep" role="separator" />
+            : (
+              <button
+                key={it.id ?? it.label}
+                type="button"
+                role="menuitem"
+                data-menuitem
+                disabled={it.disabled}
+                tabIndex={-1}
+                className={`menu__item ${it.danger ? 'menu__item--danger' : ''}`.trim()}
+                onClick={() => { it.onSelect?.(); close(); }}
+              >
+                <span className="menu__t">{it.icon}{it.label}</span>
+                {it.hint && <span className="menu__d">{it.hint}</span>}
+              </button>
+            ))}
+        </div>,
+        document.body,
+      )}
+    </span>
+  );
+}
+
+export default Menu;

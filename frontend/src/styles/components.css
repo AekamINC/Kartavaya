@@ -100,8 +100,12 @@ textarea.inp { resize: vertical; min-height: 76px; }
 .card__body--flush { padding: 0; }
 
 /* ── Chip and tag ──────────────────────────────────────────────────────── */
-.chip      { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: var(--r-sm); border: 1px solid var(--outline-variant); background: none; font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--on-surface-2); cursor: pointer; }
-.chip:hover{ background: var(--s-container); }
+/* Read-only by default — status, label. `cursor: pointer` and a hover state
+   used to be on the base rule, so a chip that does nothing when pressed looked
+   exactly like one that does. 26 §8: that is the most common source of dead
+   clicks in the current build, because filter chips and status chips are the
+   same object today. The interactive selectors are further down this file. */
+.chip      { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: var(--r-sm); border: 1px solid var(--outline-variant); background: none; font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--on-surface-2); cursor: default; }
 .chip.on   { background: var(--secondary-container); color: var(--on-secondary-container); border-color: transparent; }
 .chip__dot { width: 8px; height: 8px; border-radius: 3px; flex-shrink: 0; }
 .chips     { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -201,10 +205,10 @@ textarea.inp { resize: vertical; min-height: 76px; }
    Converted off the static Tailwind palette (bg-bgDefault/border-borderDefault
    had no dark: variants, so the panel stayed cream over a near-black app). */
 .modal__scrim {
-  position: fixed; inset: 0; z-index: 60;
+  position: fixed; inset: 0; z-index: 420;
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
-  background: rgba(0, 0, 0, .45);
+  background: var(--scrim);
   animation: modalIn calc(var(--dur-fast) * var(--ix)) var(--ease-standard);
 }
 .modal__panel {
@@ -235,6 +239,24 @@ textarea.inp { resize: vertical; min-height: 76px; }
   display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0;
 }
 @keyframes modalIn { from { opacity: 0 } to { opacity: 1 } }
+
+/* ConfirmDialog body. It shares .modal__* chrome rather than carrying a second
+   set of inline styles that merely resemble it — the previous version painted
+   `var(--k-danger, #dc2626)` and `var(--rule, #e2e8f0)`, two fallbacks that
+   would have hidden a missing token indefinitely (00 §7). Its scrim moved from
+   z-index 60 to 420 on the ladder in 26 §4: at 60 a confirm opened from the
+   task drawer (200) would have rendered BEHIND the drawer that opened it. */
+.cd__t { margin: 0 0 8px; font-size: 15px; font-weight: 600; color: var(--on-surface); }
+.cd__m { margin: 0; font-size: var(--t-body-sm); line-height: 1.55; color: var(--on-surface-2); }
+.cd__type { margin-top: var(--sp-4); }
+.cd__type code { font-family: var(--font-mono); font-size: .95em; color: var(--on-surface); }
+
+/* THE one place a filled red button is correct: a confirmed delete inside a
+   dialog the user opened deliberately. Everywhere else `--danger` is an outline
+   variant, because a filled red button reads as the primary action on the
+   screen and a destructive action never is. */
+.btn--dangerfill { background: var(--danger); color: var(--on-danger); }
+.btn--dangerfill:hover { background: color-mix(in srgb, var(--danger) 84%, var(--on-surface)); }
 
 /* ── Switch ───────────────────────────────────────────────────────────────
    A boolean that applies immediately, as distinct from a checkbox inside a
@@ -374,3 +396,539 @@ textarea.inp { resize: vertical; min-height: 76px; }
   color: var(--on-surface-2);
 }
 .empty__act { margin-top: var(--sp-3); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   26-component-inventory.md — supersedes the state guidance in 02.
+   A mechanical audit of the redesign stylesheets found 106 class roots and
+   exactly ONE state modifier (`.on`). No disabled, no error, no loading,
+   anywhere. Six pages therefore invented six disabled treatments. These are
+   the six selectors, and nothing else.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1 · State vocabulary ─────────────────────────────────────────────────
+   `.on` is what the USER chose; `.is-*` is what the SYSTEM is doing. A row can
+   be `.on.is-loading` — selected, and saving that selection — and the two never
+   contend for the same slot. */
+.is-disabled,
+[disabled],
+[aria-disabled="true"] { opacity: .42; pointer-events: none; cursor: default; }
+
+/* A read-only status pipeline is a DISPLAY, not an unavailable control.
+   StatusBar sets `disabled` on every segment when no handler is passed, so the
+   rule above would fade the whole pipeline — including the current stage — to
+   42%. Deviation from 26 §1, stated: opacity is for controls a user could
+   otherwise press, not for text they are meant to read. */
+.pipe__seg[disabled] { opacity: 1; }
+
+/* :focus-visible, never :focus. A bare :focus rings on mouse click too, which
+   is why teams end up deleting focus styles altogether — and then keyboard
+   users have nothing. Deviation from 26 §1: the prototype rule also sets
+   `border-radius: var(--r-xs)`, which in this codebase would OVERRIDE the
+   corner radius of every focused control that declares its own (a focused pill
+   button would square off mid-interaction). Modern engines already follow the
+   element's own border-radius when drawing an outline, so the radius line is
+   dropped and the shape is inherited instead. */
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.btn:focus-visible,
+.chip:focus-visible { outline-offset: 3px; }
+
+/* Never write `:hover, :focus { … }` as one rule — the ring must persist while
+   the pointer is elsewhere. */
+.is-loading { position: relative; pointer-events: none; }
+.is-loading > .spin { display: inline-block; }
+.spin {
+  width: 13px; height: 13px; flex: none;
+  border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%; opacity: .78;
+  animation: dmSpin 640ms linear infinite;
+}
+.spin--lg { width: 19px; height: 19px; border-width: 2.5px; }
+
+/* ── Keyframes — 26 §6, the concrete values ───────────────────────────────
+   THE EXIT IS NEVER THE REVERSE OF THE ENTRANCE. Every `out` is one duration
+   step faster and travels less than its `in`: entering is the system responding
+   to you and can afford to be gracious; leaving is a thing getting out of your
+   way, and reluctance there reads as lag. */
+@keyframes dmFade    { from { opacity: 0 } to { opacity: 1 } }
+@keyframes dmFadeOut { to   { opacity: 0 } }
+/* The drawer enters at .3 opacity, not 0 — a solid panel sliding in, not one
+   materialising. */
+@keyframes dmDrawerIn  { from { transform: translateX(28px); opacity: .3 } }
+@keyframes dmDrawerOut { to   { transform: translateX(16px); opacity: 0 } }
+/* The only symmetric pair: a sheet that exits partway looks stuck. */
+@keyframes dmSheetIn   { from { transform: translateY(100%) } }
+@keyframes dmSheetOut  { to   { transform: translateY(100%) } }
+/* dmPop needs transform-origin set per placement or it grows from the wrong
+   corner — see .pk__pop--up / --right below. */
+@keyframes dmPop    { from { opacity: 0; transform: scale(.97) translateY(-4px) } }
+@keyframes dmPopOut { to   { opacity: 0; transform: scale(.98) } }
+/* dmTip has no exit: a tooltip that fades out follows the cursor to the next
+   control and reads as lag. */
+@keyframes dmTip  { from { opacity: 0; transform: scale(.94) } }
+/* Linear, never eased — an eased spin looks like it is struggling. */
+@keyframes dmSpin { to { transform: rotate(360deg) } }
+/* Fires on the element, never a container. A whole flashing card is an alarm;
+   a flashing cell is information. */
+@keyframes ixflash {
+  0%   { background: color-mix(in srgb, var(--primary) 34%, transparent) }
+  100% { background: transparent }
+}
+@keyframes prgSlide { 0% { transform: translateX(-100%) } 100% { transform: translateX(330%) } }
+
+/* ── 2 · Form layout — 26 §3 ──────────────────────────────────────────────
+   The label sits ABOVE. Always. A beside-label column must be sized for the
+   longest string in it, and every label here is an English/Devanagari pair of
+   unpredictable width — switching the language to Gujarati would resize the
+   entire form. The one inversion is .fldc, for switches and checkboxes, where
+   the label reads as a sentence to the control's right.
+
+   Hint above error, and THE HINT NEVER LEAVES. The common pattern swaps them,
+   which deletes the format instruction at the exact moment the user has proven
+   they need it.
+
+   Optional is marked; required is not. Most fields here are required, so the
+   exception carries the mark. */
+.form      { display: flex; flex-direction: column; gap: var(--sp-4); }
+.form__sec { display: flex; flex-direction: column; gap: var(--sp-4); }
+.form__sec + .form__sec {
+  margin-top: var(--sp-6); padding-top: var(--sp-6);
+  border-top: 1px solid var(--outline-variant);
+}
+.form__sech { margin: 0 0 -4px; font-family: var(--font-display); font-size: 15px; letter-spacing: -.01em; color: var(--on-surface); }
+.form__row     { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); align-items: start; }
+.form__row--3  { grid-template-columns: 1fr 1fr 1fr; }
+.form__row--21 { grid-template-columns: 2fr 1fr; }
+@media (max-width: 767px) {
+  .form__row, .form__row--3, .form__row--21 { grid-template-columns: 1fr; }
+}
+
+.fldx      { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.fldx__lbl { display: flex; align-items: baseline; gap: 6px; overflow: hidden; font-size: 12.5px; font-weight: 500; color: var(--on-surface-2); }
+/* Wrap the label text in its own <span>. A bare text node is an anonymous flex
+   item and WILL shrink — "Registered address" renders as "Registered". */
+.fldx__lbl > * { flex: none; }
+.fldx__lbl .hi {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-indic); font-size: 11px; font-weight: 400; color: var(--on-surface-3);
+}
+.fldx__opt { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .02em; color: var(--on-surface-3); }
+.fldx__in {
+  width: 100%; height: 36px; padding: 0 11px;
+  border: 1px solid var(--outline); border-radius: var(--r-sm);
+  background: var(--s-lowest); color: var(--on-surface);
+  font: inherit; font-size: 13.5px;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              box-shadow   var(--dur-fast) var(--ease-standard);
+}
+/* --on-surface-faint is declared non-text in 00 §12 and placeholders often
+   carry the format hint (27AAAPA1234A1Z5, DD/MM/YYYY), so this is text. */
+.fldx__in::placeholder { color: var(--on-surface-3); opacity: 1; }
+.fldx__in:hover:not(:disabled) { border-color: var(--on-surface-3); }
+.fldx__in:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 17%, transparent);
+}
+textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-height: var(--line-height-base); resize: vertical; }
+.fldx__hint { font-size: 11.5px; line-height: 1.45; color: var(--on-surface-3); }
+.fldx__err  { display: flex; align-items: flex-start; gap: 5px; font-size: 11.5px; line-height: 1.45; color: var(--danger); }
+.fldx__err svg { flex: none; margin-top: 1px; }
+/* .is-error sits on the WRAPPER, so label, hint and border respond to one
+   class rather than three call sites remembering three of them. */
+.fldx.is-error .fldx__in { border-color: var(--danger); }
+.fldx.is-error .fldx__in:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 17%, transparent); }
+.fldx.is-loading .fldx__in { color: var(--on-surface-3); }
+
+/* The four fields that are NOT full-width — value length is known and fixed.
+   Nothing else gets one: a 300px input inside a 520px card breaks the first
+   time the card is used somewhere narrower. */
+.fldx--date { max-width: 140px; }
+.fldx--time { max-width: 100px; }
+.fldx--amt  { max-width: 120px; }
+.fldx--amt .fldx__in { font-family: var(--font-mono); font-size: 13px; text-align: right; }
+.fldx--otp  { max-width: 210px; }
+
+/* The one inversion: control beside label, for switches and checkboxes. */
+.fldc    { display: flex; align-items: flex-start; gap: 10px; }
+.fldc__b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fldc__t { font-size: 13px; color: var(--on-surface); }
+.fldc__s { font-size: 11.5px; line-height: 1.45; color: var(--on-surface-3); }
+
+/* ── 3 · The unified picker — 26 §4 ───────────────────────────────────────
+   ONE component, four modes: person · option · multi · date. The drawer shipped
+   four independently-written pickers: four dismiss behaviours (two ignored
+   Escape), a hardcoded z-index: 300, a hardcoded upward placement, no arrow
+   keys anywhere, and four separate mobile treatments.
+
+   Z-ORDER LADDER — every hardcoded z-index is replaced by this:
+   200 drawer · 340 picker and menu · 420 modal · 520 toast · 620 mobile sheet. */
+.pk { position: relative; display: inline-flex; min-width: 0; }
+.pk__tr {
+  display: inline-flex; align-items: center; gap: 7px;
+  min-width: 0; max-width: 100%; height: 30px; padding: 0 9px;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; color: var(--on-surface);
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard);
+}
+.pk__tr:hover { background: var(--s-low); border-color: var(--outline-variant); }
+.pk__tr[aria-expanded="true"] { background: var(--s-low); border-color: var(--outline); }
+.pk__tr.is-empty { color: var(--on-surface-3); }
+.pk__tr .ch { flex: none; margin-left: 1px; opacity: .5; transition: transform var(--dur-fast) var(--ease-standard); }
+.pk__tr[aria-expanded="true"] .ch { transform: rotate(180deg); }
+.pk__lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* `field` dress: full-width, 36px, bordered — matches .fldx__in exactly, so a
+   picker and an input in the same form row are the same object. */
+.pk--field { display: flex; width: 100%; }
+.pk--field .pk__tr { height: 36px; width: 100%; padding: 0 11px; border-color: var(--outline); background: var(--s-lowest); }
+
+.pk__pop {
+  position: absolute; z-index: 340; top: calc(100% + 5px); left: 0;
+  min-width: 236px; max-width: 320px; padding: 5px;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-md);
+  background: var(--s-lowest); box-shadow: var(--shadow-3);
+  animation: dmPop var(--dur-base) var(--ease-enter) both;
+  transform-origin: top left;
+}
+.pk__pop--up    { top: auto; bottom: calc(100% + 5px); transform-origin: bottom left; }
+.pk__pop--right { left: auto; right: 0; transform-origin: top right; }
+/* The close path is setClosing(true) → unmount after 130ms, not a bare
+   setOpen(false): the current pickers unmount instantly, so the exit keyframe
+   never plays at all. */
+.pk__pop.is-closing { animation: dmPopOut var(--dur-fast) var(--ease-exit) both; }
+.pk__srch { display: flex; align-items: center; gap: 7px; padding: 5px 8px 7px; margin-bottom: 4px; border-bottom: 1px solid var(--outline-variant); }
+.pk__srch svg { flex: none; opacity: .45; }
+.pk__srch input { flex: 1; min-width: 0; border: 0; background: none; font: inherit; font-size: 13px; color: var(--on-surface); outline: none; }
+.pk__srch input::placeholder { color: var(--on-surface-3); opacity: 1; }
+.pk__list { display: flex; flex-direction: column; gap: 1px; max-height: 258px; overflow-y: auto; scrollbar-width: thin; }
+.pk__row {
+  display: flex; align-items: center; gap: 9px; width: 100%; padding: 6px 8px;
+  border: 0; border-radius: var(--r-sm); background: none; color: var(--on-surface);
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.pk__row:hover, .pk__row.is-cursor { background: var(--s-low); }
+.pk__row.on { background: var(--primary-container); color: var(--on-primary-container); }
+.pk__row.on:hover { background: color-mix(in srgb, var(--primary-container) 82%, var(--on-primary-container)); }
+.pk__row:focus-visible { outline-offset: -2px; }
+.pk__b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.pk__n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk__m { font-size: 11px; color: var(--on-surface-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk__row.on .pk__m { color: color-mix(in srgb, var(--on-primary-container) 74%, transparent); }
+.pk__tick { flex: none; opacity: 0; }
+.pk__row.on .pk__tick { opacity: 1; }
+/* multi swaps the trailing checkmark for a leading box and STAYS OPEN after
+   each pick; single-select closes. */
+.pk__box { flex: none; width: 15px; height: 15px; display: grid; place-items: center; border: 1.5px solid var(--outline); border-radius: var(--r-xs); }
+.pk__row.on .pk__box { background: var(--primary); border-color: var(--primary-text); }
+.pk__box svg { opacity: 0; color: var(--on-primary); }
+.pk__row.on .pk__box svg { opacity: 1; }
+.pk__sep { height: 1px; margin: 4px 2px; background: var(--outline-variant); }
+.pk__none { padding: 15px 10px; text-align: center; font-size: 12.5px; color: var(--on-surface-3); }
+.pk__new {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px;
+  border: 0; border-radius: var(--r-sm); background: none; color: var(--primary-text);
+  font: inherit; font-size: 12.5px; text-align: left; cursor: pointer;
+}
+.pk__new:hover { background: var(--primary-container); color: var(--on-primary-container); }
+
+/* Calendar — date mode. Quick row ABOVE the calendar, not below: Today and
+   Tomorrow are the answer most of the time and should not be scrolled past. */
+.pk__quick { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 4px 6px; }
+.pk__q { padding: 4px 9px; border: 1px solid var(--outline-variant); border-radius: var(--r-pill); background: none; color: var(--on-surface-2); font: inherit; font-size: 11.5px; cursor: pointer; }
+.pk__q:hover { background: var(--s-low); color: var(--on-surface); }
+.pk__cal  { width: 244px; padding: 3px 4px 5px; }
+.pk__calh { display: flex; align-items: center; gap: 3px; padding: 2px 2px 7px; }
+.pk__calt { flex: 1; padding: 3px 6px; border: 0; border-radius: var(--r-xs); background: none; font-family: inherit; font-size: 12.5px; font-weight: 500; color: var(--on-surface); text-align: left; }
+.pk__cnav { width: 24px; height: 24px; display: grid; place-items: center; border: 0; border-radius: var(--r-xs); background: none; color: var(--on-surface-2); cursor: pointer; }
+.pk__cnav:hover { background: var(--s-low); color: var(--on-surface); }
+.pk__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
+.pk__dow  { height: 20px; display: grid; place-items: center; font-family: var(--font-mono); font-size: 10px; color: var(--on-surface-3); }
+.pk__d {
+  position: relative; height: 28px; display: grid; place-items: center;
+  border: 0; border-radius: var(--r-xs); background: none; color: var(--on-surface);
+  font: inherit; font-size: 12px; cursor: pointer;
+}
+.pk__d:hover  { background: var(--s-low); }
+.pk__d.out    { color: var(--on-surface-3); opacity: .55; }
+.pk__d.today  { font-weight: 600; color: var(--primary-text); }
+.pk__d.today::after { content: ''; position: absolute; bottom: 3px; width: 3px; height: 3px; border-radius: 50%; background: var(--primary); }
+.pk__d.on     { background: var(--primary); color: var(--on-primary); font-weight: 500; }
+.pk__d.on::after { background: var(--on-primary); }
+
+/* Mobile: ONE media query, not four hand-written variants. Every mode becomes
+   a bottom sheet with a grab handle and 44px rows. */
+@media (max-width: 767px) {
+  .pk__pop {
+    position: fixed; inset: auto 0 0 0; z-index: 620;
+    min-width: 0; max-width: none; max-height: 76vh;
+    padding: 6px 10px calc(10px + env(safe-area-inset-bottom));
+    border: 0; border-radius: var(--r-xl) var(--r-xl) 0 0;
+    box-shadow: var(--shadow-4);
+    animation: dmSheetIn var(--dur-slow) var(--ease-enter) both;
+    transform-origin: bottom center;
+  }
+  .pk__pop.is-closing { animation: dmSheetOut var(--dur-base) var(--ease-exit) both; }
+  .pk__pop::before { content: ''; display: block; width: 34px; height: 4px; margin: 5px auto 9px; border-radius: 2px; background: var(--outline); }
+  .pk__list { max-height: 52vh; }
+  .pk__row  { min-height: 44px; padding: 11px 10px; font-size: 14.5px; }
+  .pk__cal  { width: 100%; }
+  .pk__d    { height: 40px; font-size: 13.5px; }
+  .pk__q    { padding: 8px 13px; font-size: 13px; }
+}
+
+/* ── 4 · Selection controls — 26 §5 ───────────────────────────────────────
+   Every one carries the matching ARIA in its component: aria-pressed on the
+   switch, aria-checked (with "mixed") on checkbox and radio. A div with a class
+   is invisible to a screen reader. */
+.tgl {
+  position: relative; flex: none; width: 38px; height: 22px; padding: 0;
+  border: 0; border-radius: var(--r-pill); background: var(--outline); cursor: pointer;
+  transition: background var(--dur-base) var(--ease-standard);
+}
+.tgl::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff; box-shadow: var(--shadow-1);
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+.tgl.on { background: var(--primary); }
+/* Travel scales with --motion-scale so "reduced" moves less, not just faster. */
+.tgl.on::after { transform: translateX(calc(16px * var(--motion-scale, 1))); }
+.cbx {
+  flex: none; width: 17px; height: 17px; padding: 0; display: grid; place-items: center;
+  border: 1.5px solid var(--outline); border-radius: var(--r-xs);
+  background: var(--s-lowest); color: var(--on-primary); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+.cbx svg { opacity: 0; transform: scale(.6); transition: opacity var(--dur-fast) var(--ease-standard), transform var(--dur-base) var(--ease-spring); }
+.cbx.on { background: var(--primary); border-color: var(--primary-text); }
+.cbx.on svg { opacity: 1; transform: none; }
+.cbx.mixed { background: var(--primary); border-color: var(--primary-text); }
+.cbx.mixed::after { content: ''; width: 8px; height: 1.5px; border-radius: 1px; background: var(--on-primary); }
+.rdo {
+  flex: none; width: 17px; height: 17px; padding: 0; display: grid; place-items: center;
+  border: 1.5px solid var(--outline); border-radius: 50%; background: var(--s-lowest); cursor: pointer;
+}
+.rdo::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); transform: scale(0); transition: transform var(--dur-base) var(--ease-spring); }
+.rdo.on { border-color: var(--primary-text); }
+.rdo.on::after { transform: scale(1); }
+
+/* ── 5 · Chips, badges, avatars, progress — 26 §8 ─────────────────────────
+   A chip that is clickable and identical to one that is not is the most common
+   source of dead clicks in the current build. .chip is READ-ONLY by default;
+   the interactive one must announce itself with a cursor and a hover state. */
+.chip[role="button"], button.chip, a.chip { cursor: pointer; }
+.chip[role="button"]:hover, button.chip:hover, a.chip:hover { background: var(--s-container); color: var(--on-surface); }
+.chip[role="button"].on:hover, button.chip.on:hover { background: color-mix(in srgb, var(--secondary-container) 84%, var(--on-secondary-container)); color: var(--on-secondary-container); }
+.chip__x {
+  display: inline-grid; place-items: center; width: 15px; height: 15px; margin-right: -4px;
+  padding: 0; border: 0; border-radius: 50%; background: none; color: inherit; cursor: pointer;
+}
+.chip__x:hover { background: color-mix(in srgb, var(--on-surface) 12%, transparent); }
+
+/* Mono, so digits do not shift width as the number changes. */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px; height: 18px; padding: 0 6px;
+  border-radius: var(--r-pill); background: var(--danger); color: var(--on-danger);
+  font-family: var(--font-mono); font-size: 10.5px; font-weight: 600;
+}
+/* The neutral count reads on --s-highest, NOT --outline. A stroke token is not
+   a text ground — 00 §7. At --outline it measured 3.49:1 light and 3.28:1 dark
+   at 10.5px: it failed in BOTH themes, which is the signature of a token used
+   for something it was never meant to do. */
+.badge--n   { background: var(--s-highest); color: var(--on-surface-2); }
+.badge--dot { width: 7px; height: 7px; padding: 0; }
+
+/* Never the only carrier of meaning — always a text label beside it or an
+   aria-label on the parent. Roughly 1 in 12 men reads red and green as the same
+   value, and priority is precisely the field where that matters. */
+.pdot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; }
+
+/* Deterministic colour from a hash of the name, so the same person is the same
+   colour everywhere without a stored preference. */
+.av {
+  display: grid; place-items: center; flex: none; border-radius: 50%;
+  background: var(--av-bg, var(--s-high)); color: #fff;
+  font-weight: 600; letter-spacing: .01em; overflow: hidden; user-select: none;
+}
+.av img { width: 100%; height: 100%; object-fit: cover; }
+.avstack { display: inline-flex; flex: none; align-items: center; }
+/* -6px overlap, 1.5px ring in the parent's background colour. */
+.avstack > * + * { margin-left: -6px; }
+.avstack .av { box-shadow: 0 0 0 1.5px var(--ring, var(--surface)); }
+.avstack__n {
+  display: grid; place-items: center; flex: none; border-radius: 50%;
+  background: var(--s-high); color: var(--on-surface-2);
+  font-family: var(--font-mono); font-weight: 600;
+  box-shadow: 0 0 0 1.5px var(--ring, var(--surface));
+}
+
+/* ── Custom-field controls (components/fields/*) ──────────────────────────
+   These were seven components of inline styles on the legacy --ink-* vocabulary
+   with three hardcoded status hexes between them. Everything below is the
+   layout those inline styles were expressing; the colours come from tokens. */
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--t-body-sm); color: var(--on-surface-2); }
+.numfld { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.numfld__fix { flex: none; font-size: var(--t-label); color: var(--on-surface-3); }
+.numfld .fldx__in { text-align: right; font-family: var(--font-mono); }
+
+.txtfld { display: inline-block; min-width: 80px; font-size: var(--t-body-sm); color: var(--on-surface); }
+.txtfld--edit {
+  padding: 0; border: 0; border-bottom: 1px dashed var(--outline-variant);
+  background: none; font: inherit; font-size: var(--t-body-sm); text-align: left; cursor: text;
+}
+.txtfld--edit:hover { border-bottom-color: var(--outline); }
+.txtfld--edit.is-empty { color: var(--on-surface-3); }
+
+.filerow { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--t-body-sm); }
+.filerow__ic { flex: none; display: inline-flex; color: var(--on-surface-3); }
+.filerow__n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--primary-text); text-decoration: none; }
+.filerow__n:hover { text-decoration: underline; }
+
+/* Avatar beside a name — the read-only half of every person control. --sp-2 is
+   the ramp's "avatar to name" step (26 §2), which is why it is not a literal 8. */
+.avrow { display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--t-body-sm); color: var(--on-surface); }
+
+.prg { width: 100%; height: 5px; border-radius: var(--r-pill); background: var(--s-high); overflow: hidden; }
+.prg__f { height: 100%; border-radius: inherit; background: var(--primary); transition: width var(--dur-slow) var(--ease-standard); }
+.prg--ind .prg__f { width: 34%; animation: prgSlide 1.15s var(--ease-standard) infinite; }
+
+/* Chat scrollback skeleton. The outgoing rows are right-aligned and carry no
+   avatar, because a one-sided chat skeleton reads as an empty conversation
+   rather than a loading one. */
+.k-skeleton-chat { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4) 0; }
+.k-skeleton-chat__r { display: flex; align-items: flex-end; gap: var(--sp-2); }
+.k-skeleton-chat__r--out { justify-content: flex-end; }
+
+/* Stat tile — semantic variants. editorial.css declares .k-stat--blue/teal/
+   amber/red, four names that say what colour a number is rather than what it
+   means, and four call sites had already reached for `ok`, `warn`, `green` and
+   `orange`, none of which had a rule at all. These four are the vocabulary;
+   ui/StatTile.jsx maps the colour names onto them. */
+.k-stat--neutral .k-stat__val { color: var(--on-surface); }
+.k-stat--ok      .k-stat__val { color: var(--ok); }
+.k-stat--warn    .k-stat__val { color: var(--warn); }
+.k-stat--danger  .k-stat__val { color: var(--danger); }
+
+/* ── 6 · Tooltip ─────────────────────────────────────────────────────────
+   300ms delay in, instant unmount. A tooltip that fades out follows the cursor
+   to the next control and reads as lag.
+
+   Deviation from 00 §9, stated: that section assigns --ink-fixed to "tooltip
+   chrome", but --ink-fixed has no declared `on-` partner, and 00 §7's own rule
+   is that a token may sit behind text only if it has one. --on-surface / --bg
+   is a declared inverse pair measuring 14.7:1, so the tooltip uses it and
+   flips with the theme. */
+.tip {
+  position: absolute; z-index: 340; max-width: 260px; padding: 5px 9px;
+  border-radius: var(--r-sm); background: var(--on-surface); color: var(--bg);
+  font-size: 11.5px; line-height: 1.4; white-space: nowrap; pointer-events: none;
+  box-shadow: var(--shadow-2);
+  animation: dmTip var(--dur-fast) var(--ease-enter) both;
+}
+.tip--top    { bottom: 100%; left: 50%; transform: translate(-50%, -6px); }
+.tip--bottom { top: 100%;    left: 50%; transform: translate(-50%, 6px); }
+.tip--left   { right: 100%;  top: 50%;  transform: translate(-6px, -50%); }
+.tip--right  { left: 100%;   top: 50%;  transform: translate(6px, -50%); }
+.tipw { position: relative; display: inline-flex; }
+
+/* ── 7 · Toast — 26 §9 ────────────────────────────────────────────────────
+   Success and info dismiss at 4s, warning at 7s, ERROR NEVER AUTO-DISMISSES.
+   A four-second success message is a courtesy; a four-second failure message is
+   a bug report the user did not get to read. Hover pauses the timer on all. */
+.tst {
+  display: flex; align-items: flex-start; gap: 9px;
+  min-width: 252px; max-width: 330px; padding: 11px 12px;
+  border: 1px solid var(--outline-variant); border-left: 3px solid var(--tst-c, var(--outline));
+  border-radius: var(--r-md); background: var(--s-lowest); box-shadow: var(--shadow-3);
+  pointer-events: all;
+  animation: dmPop var(--dur-base) var(--ease-enter) both;
+}
+.tst__i { flex: none; margin-top: 1px; color: var(--tst-c, var(--on-surface-3)); font-size: 12px; font-weight: 700; }
+.tst__b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tst__t { font-size: 13px; font-weight: 600; color: var(--on-surface); }
+.tst__s { font-size: 11.5px; line-height: 1.45; color: var(--on-surface-3); }
+.tst__a { align-self: center; padding: 0; border: 0; background: none; color: var(--primary-text); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+.tst--ok   { --tst-c: var(--ok); }
+.tst--err  { --tst-c: var(--danger); }
+.tst--warn { --tst-c: var(--warn); }
+.tst--info { --tst-c: var(--primary); }
+
+/* ── 8 · Overlays — popover, sheet, menu float ────────────────────────────
+   Z-order ladder from 26 §4: 340 picker and menu, 420 modal, 620 mobile sheet.
+   The subtask picker at a hardcoded 300 over a drawer at 200 works today only
+   because nobody has opened a menu on top of a modal. */
+.pop {
+  position: fixed; z-index: 340; min-width: 200px; max-width: 340px; padding: var(--sp-3);
+  border: 1px solid var(--outline-variant); border-radius: var(--r-md);
+  background: var(--s-lowest); box-shadow: var(--shadow-3);
+  animation: dmPop var(--dur-base) var(--ease-enter) both;
+}
+.pop.is-closing { animation: dmPopOut var(--dur-fast) var(--ease-exit) both; }
+.menu--float { position: fixed; z-index: 340; top: auto; left: auto; right: auto; min-width: 180px; max-width: 320px; padding: 4px; }
+.menu--float .menu__item { border-bottom: 0; border-radius: var(--r-sm); padding: 7px 10px; }
+.menu__sep { height: 1px; margin: 4px 2px; background: var(--outline-variant); }
+.menu__item--danger { color: var(--danger); }
+
+.sheet__scrim {
+  position: fixed; inset: 0; z-index: 619; background: var(--scrim);
+  animation: dmFade var(--dur-base) var(--ease-enter) both;
+}
+.sheet__scrim.is-closing { animation: dmFadeOut var(--dur-fast) var(--ease-exit) both; }
+.sheet {
+  position: fixed; z-index: 620; inset: auto 0 0 0;
+  display: flex; flex-direction: column; max-height: 90vh;
+  padding-bottom: env(safe-area-inset-bottom);
+  border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--surface);
+  box-shadow: var(--shadow-4);
+  animation: dmSheetIn var(--dur-slow) var(--ease-emph-in) both;
+}
+.sheet.is-closing { animation: dmSheetOut var(--dur-base) var(--ease-exit) both; }
+.sheet__grab { flex: none; width: 100%; padding: 9px 0 5px; border: 0; background: none; cursor: grab; }
+.sheet__grab i { display: block; width: 36px; height: 4px; margin: 0 auto; border-radius: var(--r-pill); background: var(--outline); }
+.sheet__head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px var(--pad-card) 12px; }
+.sheet__title { margin: 0; font-family: var(--font-display); font-size: var(--t-title-lg); font-weight: var(--t-title-lg-w); letter-spacing: -.01em; color: var(--on-surface); }
+.sheet__body { padding: 0 var(--pad-card) var(--pad-card); overflow-y: auto; }
+
+/* ── 9 · Stepper ─────────────────────────────────────────────────────────
+   The number is not the only signal — a completed step also carries a tick, so
+   progress is legible without relying on the fill colour alone. */
+.step { display: flex; align-items: flex-start; gap: 0; width: 100%; }
+.step__i { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; position: relative; }
+.step__n {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  border: 1.5px solid var(--outline); background: var(--surface);
+  color: var(--on-surface-3); font-size: 12px; font-weight: 600;
+  transition: background var(--dur-base) var(--ease-standard), border-color var(--dur-base) var(--ease-standard), color var(--dur-base) var(--ease-standard);
+}
+.step__i.on .step__n   { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
+.step__i.is-done .step__n { border-color: var(--primary); background: var(--primary-container); color: var(--on-primary-container); }
+.step__l { font-size: 11.5px; text-align: center; color: var(--on-surface-3); max-width: 12ch; }
+.step__i.on .step__l { color: var(--on-surface); font-weight: 500; }
+.step__bar { position: absolute; top: 13px; left: calc(50% + 18px); right: calc(-50% + 18px); height: 1.5px; background: var(--outline-variant); }
+.step__i.is-done .step__bar { background: var(--primary); }
+
+/* ── 10 · Table — 02 §2 ──────────────────────────────────────────────────
+   Numbers are mono with tabular-nums so a column of money lines up on the
+   decimal. Three-state sort (asc → desc → none) belongs to the column header,
+   not to a separate control. */
+.tbl__wrap { width: 100%; overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; font-size: var(--t-body-sm); }
+.tbl th, .tbl td { padding: 0 12px; height: var(--row-h); text-align: left; border-bottom: 1px solid var(--outline-variant); }
+.tbl th {
+  position: sticky; top: 0; z-index: 1; background: var(--s-low);
+  font-size: var(--t-label); font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--on-surface-3); white-space: nowrap;
+}
+.tbl__sort { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; padding: 0; }
+.tbl__sort .ch { opacity: 0; transition: opacity var(--dur-fast) var(--ease-standard); }
+.tbl__sort:hover .ch, .tbl__sort[aria-sort="ascending"] .ch, .tbl__sort[aria-sort="descending"] .ch { opacity: .7; }
+.tbl__sort[aria-sort="descending"] .ch { transform: rotate(180deg); }
+.tbl tbody tr:hover { background: var(--s-low); }
+.tbl tbody tr.on { background: var(--primary-container); }
+.tbl__num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.tbl__bulk {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-2);
+  border: 1px solid var(--outline-variant); border-radius: var(--r-sm);
+  background: var(--s-container); font-size: var(--t-body-sm); color: var(--on-surface-2);
+}

@@ -1,6 +1,25 @@
-﻿import React, { useRef } from "react";
-import { api } from "../../lib/api";
+import React, { useRef } from 'react';
+import { api } from '../../lib/api';
 import { logger } from '../../lib/utils';
+
+/**
+ * FilesField.
+ *
+ * The paperclip was an emoji (📎) and the design system has no emoji — 07 §175.
+ * It is an SVG now, which also means it takes the surrounding text colour
+ * instead of rendering as a full-colour glyph that ignores the theme.
+ *
+ * The remove control was a ✕ in a `k-iconbtn` with no accessible name beyond
+ * "Remove file", identical on every row: a screen-reader user heard the same
+ * label five times with no way to tell which file each one removed. It now
+ * names the file.
+ */
+const CLIP = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M21 11.5l-8.8 8.8a5 5 0 0 1-7.1-7.1l8.9-8.8a3.3 3.3 0 0 1 4.7 4.7l-8.8 8.8a1.7 1.7 0 0 1-2.4-2.3l8.1-8.1" />
+  </svg>
+);
 
 export default function FilesField({ field, value, onChange, readOnly }) {
   const files = Array.isArray(value) ? value : [];
@@ -10,43 +29,44 @@ export default function FilesField({ field, value, onChange, readOnly }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const form = new FormData();
-    form.append("file", file);
+    form.append('file', file);
     try {
-      const res = await api.post("/upload", form);
+      const res = await api.post('/upload', form);
       onChange([...files, { name: res.data.name, url: res.data.url }]);
     } catch (err) {
-      logger.error("Upload failed", err);
+      logger.error('Upload failed', err);
     }
-    e.target.value = "";
+    e.target.value = '';
   };
 
   const removeFile = (idx) => onChange(files.filter((_, i) => i !== idx));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div className="stack--tight">
       {files.map((f, i) => (
-        <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-          <span style={{ fontSize: 16 }}>📎</span>
-          <a href={f.url} target="_blank" rel="noreferrer"
-            style={{ color: "var(--k-primary)", textDecoration: "none", flex: 1 }}
-          >{f.name}</a>
+        <div key={f.url || i} className="filerow">
+          <span className="filerow__ic" aria-hidden="true">{CLIP}</span>
+          <a className="filerow__n" href={f.url} target="_blank" rel="noreferrer">{f.name}</a>
           {!readOnly && (
-            <button onClick={() => removeFile(i)}
-              className="k-iconbtn"
-              aria-label="Remove file"
-              style={{ color: "var(--danger)", fontSize: 14 }}
-            >✕</button>
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              aria-label={`Remove ${f.name}`}
+              onClick={() => removeFile(i)}
+            >
+              Remove
+            </button>
           )}
         </div>
       ))}
       {!readOnly && (
         <>
-          <input ref={inputRef} type="file" style={{ display: "none" }} onChange={handleUpload} />
-          <button
-            onClick={() => inputRef.current?.click()}
-            className="k-btn k-btn--ghost k-btn--sm"
-            style={{ alignSelf: "flex-start", borderStyle: "dashed" }}
-          >+ Attach file</button>
+          {/* display:none, not .sr-only — a visually-hidden but focusable file
+              input is a phantom tab stop between the list and the button. */}
+          <input ref={inputRef} type="file" style={{ display: 'none' }} onChange={handleUpload} />
+          <button type="button" className="btn btn--out btn--sm" onClick={() => inputRef.current?.click()}>
+            Attach file
+          </button>
         </>
       )}
     </div>

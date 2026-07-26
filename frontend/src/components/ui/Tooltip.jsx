@@ -1,12 +1,25 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { cn } from '../../lib/utils';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
-export function Tooltip({ content, position = 'top', delay = 300, children, className }) {
+/**
+ * Tooltip — 300ms delay in, INSTANT out (26-component-inventory.md §6).
+ *
+ * Converted off Tailwind. It was `bg-gray-900 dark:bg-gray-100` with
+ * `text-[11px]` and `animate-in fade-in-0 zoom-in-95` — a palette outside the
+ * token system entirely, so it neither followed the theme nor the user's
+ * motion preference, and at 11px white-on-#111 it was the one piece of chrome
+ * nobody could restyle from `00-tokens.md`.
+ *
+ * The asymmetry is the point: `dmTip` has an entrance and no exit. A tooltip
+ * that fades out follows the cursor to the next control and reads as lag — so
+ * it is unmounted on the spot, and the timer is cleared rather than left to
+ * fire over a control the pointer has already left.
+ */
+export function Tooltip({ content, position = 'top', delay = 300, children, className = '' }) {
   const [visible, setVisible] = useState(false);
   const timeoutRef = useRef(null);
-  const triggerRef = useRef(null);
 
   const show = useCallback(() => {
+    clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => setVisible(true), delay);
   }, [delay]);
 
@@ -15,39 +28,32 @@ export function Tooltip({ content, position = 'top', delay = 300, children, clas
     setVisible(false);
   }, []);
 
-  const positions = {
-    top: 'bottom-full left-1/2 -translate-x-1/2 mb-2',
-    bottom: 'top-full left-1/2 -translate-x-1/2 mt-2',
-    left: 'right-full top-1/2 -translate-y-1/2 mr-2',
-    right: 'left-full top-1/2 -translate-y-1/2 ml-2',
-  };
+  // Escape dismisses a tooltip that was opened by keyboard focus, per WCAG
+  // 1.4.13 — content on hover or focus must be dismissable without moving the
+  // pointer, and a focused control cannot be blurred to get rid of its tooltip.
+  useEffect(() => {
+    if (!visible) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') hide(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [visible, hide]);
+
+  useEffect(() => () => clearTimeout(timeoutRef.current), []);
 
   if (!content) return children;
 
   return (
     <span
-      ref={triggerRef}
-      className={cn('relative inline-flex', className)}
+      className={`tipw ${className}`.trim()}
       onMouseEnter={show}
       onMouseLeave={hide}
       onFocus={show}
       onBlur={hide}
     >
       {children}
-      {visible && (
-        <span
-          role="tooltip"
-          className={cn(
-            'absolute z-50 whitespace-nowrap px-2.5 py-1.5 rounded-lg',
-            'text-[11px] font-medium text-white bg-gray-900 dark:bg-gray-100 dark:text-gray-900',
-            'shadow-lg pointer-events-none',
-            'animate-in fade-in-0 zoom-in-95 duration-150',
-            positions[position],
-          )}
-        >
-          {content}
-        </span>
-      )}
+      {visible && <span role="tooltip" className={`tip tip--${position}`}>{content}</span>}
     </span>
   );
 }
+
+export default Tooltip;

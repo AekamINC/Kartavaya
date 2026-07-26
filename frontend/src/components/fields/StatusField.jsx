@@ -1,65 +1,59 @@
-﻿import React, { useState, useRef, useCallback } from 'react';
-import { useDismiss } from '../../hooks/useDismiss';
+import React from 'react';
+import Picker from '../ui/Picker';
+import { STATUS_COLORS } from '../../lib/statusColors';
 
+/**
+ * StatusField — a custom field of type `status`.
+ *
+ * Two defects fixed here, both instances of patterns 02-common-components.md
+ * names elsewhere:
+ *
+ * 1 · **A fifth status-colour map.** The defaults were `#94a3b8` / `#3b82f6` /
+ *     `#ef4444` / `#22c55e` — hexes that flip with nothing, and a blue that is
+ *     neither `--st-in-progress` nor any other token in the system.
+ *     `lib/statusColors` is the single map (02 §"Status colours"); the four
+ *     defaults read from it now, so the 00 §7 contrast fix reaches this field
+ *     without this file changing again.
+ *
+ * 2 · **String-concatenated alpha.** The pill painted `opt.color + "22"` and
+ *     `${opt.color}55` — the same expression as the `Badge` defect, and it
+ *     produces an invalid colour the instant the value is a `var()` rather than
+ *     a hex. `.k-statuschip` does the tint in CSS with `color-mix`, so a token
+ *     and a user-stored hex both work.
+ *
+ * The bespoke dropdown is gone with it. It was one of the ad-hoc pickers 26 §4
+ * replaces: its own z-index, no arrow keys, no mobile treatment, and a hover
+ * state written in JavaScript as two inline handlers per row.
+ */
 const DEFAULT_OPTIONS = [
-  { label: "Not Started", color: "#94a3b8" },
-  { label: "In Progress", color: "#3b82f6" },
-  { label: "Blocked",     color: "#ef4444" },
-  { label: "Done",        color: "#22c55e" },
+  { label: 'Not Started', color: STATUS_COLORS.todo },
+  { label: 'In Progress', color: STATUS_COLORS.in_progress },
+  { label: 'Blocked',     color: STATUS_COLORS.rejected },
+  { label: 'Done',        color: STATUS_COLORS.done },
 ];
 
 export default function StatusField({ field, value, onChange, readOnly }) {
   const options = field.config?.options || DEFAULT_OPTIONS;
   const current = options.find(o => o.label === value) || options[0];
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
 
-  // Outside-click AND Escape — this used to be outside-click only.
-  useDismiss(open, ref, useCallback(() => setOpen(false), []));
-
-  const pill = (opt, onClick) => (
-    <span
-      key={opt.label}
-      onClick={onClick}
-      style={{
-        display: "inline-flex", alignItems: "center", gap: 5,
-        background: opt.color + "22", color: opt.color,
-        border: `1px solid ${opt.color}55`,
-        borderRadius: 99, padding: "2px 10px",
-        fontSize: 11, fontWeight: 600,
-        cursor: readOnly ? "default" : "pointer",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <span style={{ width: 6, height: 6, borderRadius: "50%", background: opt.color, display: "inline-block" }} />
-      {opt.label}
-    </span>
-  );
-
-  if (readOnly) return pill(current, undefined);
+  if (readOnly) {
+    if (!current) return <span className="fld__hint">—</span>;
+    return (
+      <span className="k-statuschip" style={{ '--c': current.color }}>
+        <span className="k-statuschip__dot" />
+        {current.label}
+      </span>
+    );
+  }
 
   return (
-    <div ref={ref} style={{ position: "relative", display: "inline-block" }}>
-      {pill(current, () => setOpen(o => !o))}
-      {open && (
-        <div style={{
-          position: "absolute", top: "100%", left: 0, zIndex: 100, marginTop: 4,
-          background: "var(--surface)", border: "1px solid var(--rule)",
-          borderRadius: "var(--r-md)", boxShadow: "var(--shadow-md)",
-          display: "flex", flexDirection: "column", gap: 2, padding: 6, minWidth: 160,
-        }}>
-          {options.map(opt => (
-            <div key={opt.label}
-              onClick={() => { onChange(opt.label); setOpen(false); }}
-              style={{ padding: "5px 8px", borderRadius: "var(--r-sm)", cursor: "pointer" }}
-              onMouseEnter={e => e.currentTarget.style.background = "var(--bg-soft)"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-            >
-              {pill(opt, undefined)}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <Picker
+      mode="option"
+      ariaLabel={field?.name || 'Status'}
+      items={options.map(o => ({ id: o.label, label: o.label, color: o.color }))}
+      value={current?.label}
+      placeholder="Set status"
+      onChange={onChange}
+    />
   );
 }
