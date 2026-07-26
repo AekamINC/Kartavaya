@@ -118,6 +118,72 @@ textarea.inp { resize: vertical; min-height: 76px; }
   color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent);
 }
 
+/* ── Status pipeline (.pipe) and tabs (.tabs) ─────────────────────────────
+   Both were Tailwind with ZERO `dark:` variants, and both render inside the
+   task drawer. tailwind.config.js bakes static hexes — bgMuted #f1f3f7,
+   borderDefault #e2e6ed, textMuted #6b7280 — so in dark mode a near-white
+   pipeline and a near-white tab rule painted on a near-black drawer panel.
+   On tokens they now flip with the theme like everything else.
+
+   --seg-bg is set per state so the chevron notch can match its own segment;
+   a triangle whose colour is restated per variant drifts the moment one
+   background changes. */
+.pipe { display: flex; align-items: center; width: 100%; }
+.pipe__seg {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  min-width: 80px; padding: 8px 16px;
+  font-family: inherit; font-size: var(--t-label); font-weight: 600;
+  border: none; user-select: none; outline: none;
+  background: var(--seg-bg); color: var(--seg-fg);
+  transition: background var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard);
+}
+.pipe__seg:first-child { border-radius: var(--r-pill) 0 0 var(--r-pill); }
+.pipe__seg:last-child  { border-radius: 0 var(--r-pill) var(--r-pill) 0; }
+.pipe__seg--on     { --seg-bg: var(--primary); --seg-fg: var(--on-primary); z-index: 1; box-shadow: var(--shadow-1); }
+.pipe__seg--past   { --seg-bg: color-mix(in srgb, var(--primary) 15%, transparent); --seg-fg: var(--primary); }
+.pipe__seg--past:hover { --seg-bg: color-mix(in srgb, var(--primary) 25%, transparent); }
+.pipe__seg--future { --seg-bg: var(--s-container); --seg-fg: var(--on-surface-3); }
+.pipe__seg--future:hover { --seg-bg: var(--s-high); }
+.pipe__seg--click  { cursor: pointer; }
+.pipe__seg:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.pipe__tick { margin-right: 6px; flex-shrink: 0; }
+/* Chevron notch, inheriting the segment's own background. */
+.pipe__seg:not(:last-child)::after {
+  content: ''; position: absolute; right: 0; top: 50%; z-index: 2;
+  transform: translate(50%, -50%); width: 0; height: 0;
+  border-top: 14px solid transparent; border-bottom: 14px solid transparent;
+  border-left: 8px solid var(--seg-bg);
+}
+
+.tabs__bar { position: relative; border-bottom: 1px solid var(--outline-variant); }
+.tabs__list { display: flex; gap: 0; overflow-x: auto; scrollbar-width: none; }
+.tabs__list::-webkit-scrollbar { display: none; }
+.tabs__b {
+  position: relative; padding: 10px 16px; white-space: nowrap;
+  font-family: inherit; font-size: var(--t-body-sm); font-weight: 500;
+  background: none; border: none; cursor: pointer; outline: none;
+  color: var(--on-surface-3);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.tabs__b:hover { color: var(--on-surface); }
+.tabs__b.on    { color: var(--primary); }
+.tabs__b:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--r-xs); }
+.tabs__label { display: flex; align-items: center; gap: 6px; }
+.tabs__n {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: var(--r-pill); font-size: var(--t-label-sm); font-weight: 700;
+  background: var(--s-container); color: var(--on-surface-3);
+}
+.tabs__b.on .tabs__n { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); }
+.tabs__ind {
+  position: absolute; bottom: 0; height: 2px; border-radius: var(--r-pill);
+  background: var(--primary);
+  transition: left var(--dur-base) var(--ease-standard), width var(--dur-base) var(--ease-standard);
+}
+.tabs__panel { padding-top: 16px; }
+
 /* ── Error states — four, not one "Something went wrong" ───────────────────
    A single generic error tells the user nothing and gives them nothing to do.
    Only `server` is red: a 404 on a deleted task is not an alarm, and colouring
