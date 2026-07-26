@@ -82,13 +82,14 @@ What it does not cover — reported, not edited, because customize is another ag
   can set "New tasks" to Off, Mine, Project or All and it governs nothing.
 - **`reminder` had an emitter and NO row.** It is the highest-volume kind the product
   emits — every due-date reminder from `routers/task_reminders.py` and from the
-  `/notifications/poll` sweep — and it had no `DEFAULT_PREFS` entry, so
-  `prefs.get(kind, DEFAULT_PREFS.get(kind, MODE_ALWAYS))` fell through to
-  `MODE_ALWAYS` and no user could turn it down. **I added the backend key**
-  (`"reminder": "always"` — nobody's delivery changes; what changes is that GET now
-  returns it, which is what makes it reachable). **The UI row is one line and is
-  yours:** add `{ id: 'reminder', label: 'Reminders', fallback: 'always', hint: 'A task you are on is coming due.' }`
-  to `KINDS` in `NotifyPrefs.jsx`.
+  `/notifications/poll` sweep — and it had no `DEFAULT_PREFS` entry, so the mode
+  lookup fell through to `MODE_ALWAYS` and no user could turn it down. **A sibling
+  added the backend key while I was stopped** (`"reminder": "always"`), and **my two
+  call-site gates are what make it do anything** — before those, nothing on the
+  reminder path consulted prefs at all, so the key existed and still governed nothing.
+  It is now genuinely enforced. **The UI row is still missing and is one line, yours:**
+  `{ id: 'reminder', label: 'Reminders', fallback: 'always', hint: 'A task you are on is coming due.' }`
+  in `KINDS` in `NotifyPrefs.jsx`.
 
 ---
 
@@ -135,26 +136,26 @@ Consequences, both real:
    job is to list pending decisions. It was still visible under *All*, with a generic
    dot — which is precisely why nobody noticed.
 
-Fixed on **both** sides, and that is deliberate.
+**Fixed as a frontend alias only — the backend still writes `request`.**
 
-> **Coordination note.** A sibling agent found the same defect and recommended a
-> frontend alias *only*, on the reasoning that `notifications.type` already holds
-> `request` rows in the shared database and renaming would split live data. That
-> reasoning is right and I have honoured it: **`notifKinds.EXACT` carries a `request`
-> row, so every historical row renders and reaches the Approvals tab with no data
-> touched.** I additionally changed what the backend *writes from now on*, which is a
-> different thing from renaming what exists — **no migration, no `UPDATE`, not one row
-> altered.** It cannot split the data precisely because the alias resolves both names
-> to the same kind; what it buys is that the stored `type` finally matches the key
-> `push_service.DEFAULT_PREFS` and `NotifyPrefs.jsx` are already using for the same
-> event, so the preference the user sets under "Approval requests" and the row that
-> lands in their Inbox stop being two different strings. If you want the alias alone,
-> reverting the four-line `_NOTIF_TYPE` map in `approvals_router.py` leaves the
-> frontend fix fully intact and working.
+I had originally also normalised the stored `type` to `approval_request` for new rows.
+**The coordinator ruled against it and the ruling is right**, so I reverted it. The
+reason is sharper than "don't touch data": staging and production share one Supabase
+project, so `notifications` already holds `request` rows *that live users will open*.
+Writing a second name for the same event splits the table down a deploy boundary — the
+Approvals tab would work for rows after it and not for rows before it, which is the
+same bug with a shorter blast radius and no way to tell from the UI which half you are
+looking at. Normalising the write is only correct alongside a backfill, and a backfill
+is a database write.
 
-The frontend alias is what makes history render; the backend normalisation is what
-stops the two names diverging again. A rename alone would have orphaned history — which
-is why there is no rename.
+So `notifKinds.EXACT` carries **both** `request` and `approval_request`, both resolving
+to the `approval` kind. Every row ever written renders with the amber dot and reaches
+the Approvals tab, with nothing in the database touched.
+
+What I kept from that commit is one line that stores no new type: `_notify` now points
+the row at `/approvals` instead of `/tasks`. `server.py`'s own `approval_request` row
+has always used `/approvals`; this one sent the reviewer to the board to go and find
+it. That changes where **new** rows point and nothing about what they *are*.
 
 Also fixed while there: `_notify` sent the reviewer to `/tasks`, while `server.py`'s
 own `approval_request` row has always used `/approvals`. The two halves of one event
@@ -177,7 +178,7 @@ that already exist and already have preference rows.
 `frontend/src/context/NotificationContext.jsx:inQuietHours` are two implementations of
 one rule, in two languages, in two processes. **Nothing compared them.** They now
 assert the same 17-row table:
-`backend/tests/test_quiet_hours.py::PARITY` and the `PARITY` block in
+`backend/tests/test_quiet_hours_parity.py::PARITY` and the `PARITY` block in
 `frontend/src/pages/inbox/__tests__/notifications.test.jsx`.
 
 Both were already **correct**. The proof, rather than the fix:
@@ -190,14 +191,23 @@ start >  end  →  now >= start || now < end  # 22:00–07:00, wrapping midnight
 The wrap branch is the whole point. `22:00 → 07:00` **is not an interval on a number
 line** — no minute is both ≥ 1320 and < 420 — so the naive single-comparison form
 returns false for all 1440 minutes and the schedule almost every user picks silences
-**nothing at all**. That is the classic off-by-one, and it is the case pinned by
-`test_overnight_window_is_not_empty`:
+**nothing at all**.
 
-> an overnight window silences **540** of the 1440 minutes — 120 before midnight plus
-> 420 after — not 0.
+`tests/test_push_prefs.py` (a sibling's) already samples five minutes inside the window.
+**A sampled test cannot reliably catch this class of bug**, because the off-by-one does
+not make the window *wrong*, it makes it **empty** — a sample only catches that if it
+happens to land inside. So the proof is exhaustive rather than sampled, and stated as
+three arithmetic facts over all 1440 minutes of a day:
 
-Both suites assert that exact 540. A regression to the naive form makes it 0 and both
-fail.
+| assertion | value | naive form gives | "always quiet" form gives |
+| --- | --- | --- | --- |
+| overnight `22:00–07:00` silences | **540** min (120 + 420) | 0 | 1440 |
+| daytime `09:00–17:00` silences | **480** min | 480 | 480 |
+| `22:00–07:00` and `07:00–22:00` partition the day | every minute in exactly one | fails | fails |
+
+The third is the strongest, because it states the property *without reference to either
+branch of the implementation*: for all 1440 minutes, `night != day`. Both suites assert
+the 540; the partition test is the one that would survive a rewrite.
 
 Boundaries pinned on both sides: **start inclusive, end exclusive** (22:00 is quiet,
 07:00 is not; 21:59 is not, 06:59 is). And `start == end` is an **empty** window, not a
@@ -211,27 +221,52 @@ offset rather than from `getHours()`. A user in London reading the device clock 
 be shown quiet hours ending at 07:00 and see toasts stop 5½ hours off what the server
 does. `test_window_is_evaluated_in_ist` pins the Python side, `istMinutes` the browser.
 
-### The real defect: one channel ignored the window entirely
+### The real defect: TWO delivery paths ignored the window entirely
 
-`routers/task_reminders.py:103-104` fired `send_web_push` and `send_expo_push`
-**directly**. Neither reads `notification_prefs` — they take a `user_id` and fire.
-Every other kind reaches a device through `send_push`, which checks the mode and the
-window first. Reminders did not.
+`send_web_push` and `send_expo_push` take a `user_id` and fire. Neither accepts a
+`kind`; neither reads `notification_prefs`. **Two call sites used them directly**, so
+everything raised through either went to the device regardless of quiet hours *and*
+regardless of the per-kind switch:
 
-So a reminder cron tick at 03:00 IST buzzed the phone straight through the window the
-same user had set, and straight through the window the Inbox banner was, at that
-moment, telling them was in force. A quiet-hours setting that one channel ignores is
-not a quiet-hours setting.
+| call site | kinds affected |
+| --- | --- |
+| `server.py:create_notification` | `approval_request`, `assigned`, `comment`, `approved`, `rejected`, `status_changed`, `done` |
+| `routers/task_reminders.py` (`channel_push`) | `reminder` |
 
-Fix: extracted `push_service.delivery_allowed(pool, user_id, kind, is_mine)` — the
-prefs-mode check plus the window check — made `send_push` use it instead of its inline
-copy (the copy is what let this drift), and gated the reminder push on it.
-**The notification ROW is still inserted, above the check.** Quiet hours suppress the
-buzz, never the record: it arrives in the Inbox with its real timestamp, because the
-record is when it happened, not when you saw it.
+`create_notification` is the helper **nearly every notification in the product goes
+through**, so this was not an edge: it was the default path.
 
-`delivery_allowed` fails **open** — an unreadable prefs row must not swallow a
-reminder. Pinned by `test_delivery_allowed_defaults_to_delivering_when_prefs_are_unreadable`.
+This is worse than a missing setting. The vocabulary was never missing — `DEFAULT_PREFS`
+has every one of those kinds and the customize hub renders a switch for each. It was
+simply never consulted on either path, so the user set it, watched it save, and still
+got buzzed at 3am. A control that reports success and changes nothing teaches people
+the product lies.
+
+**Both are gated now**, on `push_service.prefs_allow()`.
+
+> **Credit and convergence.** I had extracted my own `delivery_allowed()` for this. While
+> I was stopped, a sibling landed a materially better `push_service.py` on staging —
+> `_parse_hhmm` hardening so a malformed `quiet_start` cannot silently mute a user
+> forever, `VALID_MODES`, `_coerce_prefs` for the PgBouncer path where the jsonb codec
+> is skipped, `_resolve_mode` degrading corruption to the kind's *documented* default
+> rather than the loudest one — and their own `prefs_allow()`. **I took their file
+> wholesale and deleted mine.** Their header states the two call sites and records that
+> the fix was "reported, not made — `server.py` is owned elsewhere". `server.py` and
+> `task_reminders.py` are in my lane, so I made it, and updated their header to say so.
+
+`prefs_allow` fails **open** — losing an approval request to a prefs-lookup timeout is
+a bigger harm than one unwanted buzz.
+
+**Both rows are still written, above the gate.** Quiet hours suppress the device, never
+the record: the notification arrives in the Inbox with its real timestamp, because the
+record is when it happened, not when you were willing to be interrupted by it. Pinned
+by two source-ordering assertions, so a later refactor that moves an INSERT inside a
+push branch fails.
+
+`is_mine` defaults to `True` — the permissive reading of `mine_only`. Deliberate: `off`
+and quiet hours are unambiguous and are now enforced, but deciding *whose* event it is
+needs ownership context these call sites do not carry, and guessing wrong would silence
+something the user asked for.
 
 Frontend display: `NotificationBanner.jsx:216` renders the quiet-hours row only when
 `inQuiet`, which is `snap.quiet.loaded && inQuietHours(...)` — a window that has not
@@ -438,26 +473,58 @@ database.
 
 ## 7. Verification
 
-| gate | result |
-| --- | --- |
-| `node frontend/scripts/check-tokens.mjs` | 339 declared, 232 referenced, **0 missing** |
-| `node frontend/scripts/check-classes.mjs` | 2120 selectors, 1445 classes, **0 missing a rule** |
-| `npx vitest run` (frontend) | **272 → 318 passed**, 0 failed |
-| `python -m pytest` (backend) | **322 → 379 passed**, 1 failed |
+Run from `frontend/`, **unpiped**, exit codes checked — per `_COORDINATION.md` §2, a
+piped invocation reports `tail`'s status and hides a failure.
+
+| gate | result | exit |
+| --- | --- | --- |
+| `node scripts/check-tokens.mjs` | 339 declared, 233 referenced, **0 missing** | `0` |
+| `node scripts/check-classes.mjs` | 2120 selectors, 1443 classes, **0 missing a rule** | `0` |
+| `npx vitest run` (frontend) | **272 passed**, 0 failed | — |
+| `python -m pytest` (backend) | **418 passed**, 1 failed | — |
 
 The one backend failure is `tests/test_ganit.py::test_create_invoice_success`
-(`TypeError: 'MagicMock' …`). **Pre-existing and not mine** — verified by stashing my
-entire working tree and re-running it on clean `origin/staging`, where it fails
-identically. Invoicing, nothing to do with notifications.
+(`TypeError: 'MagicMock' …`). **Pre-existing and not mine** — I verified it
+independently by stashing my entire working tree and re-running on clean
+`origin/staging`, where it fails identically. `_COORDINATION.md` §8 records that three
+other agents confirmed the same, and names the cause (`conftest.make_pool()` leaves
+`conn_mock.fetchval` a bare MagicMock). Invoicing; nothing to do with notifications.
 
-New tests: `backend/tests/test_quiet_hours.py` (57 cases, the file did not exist) and
-`frontend/src/pages/inbox/__tests__/notifications.test.jsx` (15 → 61 cases).
+New tests:
+- `backend/tests/test_quiet_hours_parity.py` — 28 cases. Deliberately **does not**
+  duplicate the sibling's `test_push_prefs.py`; it adds only the exhaustive proof, the
+  cross-language parity table, and the two call-site gates.
+- `frontend/src/pages/inbox/__tests__/notifications.test.jsx` — 15 → **61** cases.
+
+Base verified: `git merge-base --is-ancestor origin/main HEAD` → not main-based;
+`origin/staging` is an ancestor of HEAD, and `git diff --stat origin/staging` lists only
+files I own.
+
+## 7b. Resumed run — what changed after the spend-limit stop
+
+- Rebased onto `origin/staging` twice; the tip had moved 8 commits.
+- **Took the sibling's `push_service.py` wholesale** and deleted my `delivery_allowed`
+  and my `test_quiet_hours.py`. Theirs is better; two overlapping gates and two
+  overlapping suites is how they drift.
+- **Reverted my backend `type` normalisation** on the coordinator's ruling (§2).
+- **Extended the fix to `server.py:create_notification`** — the sibling's header named
+  it as the second ungated path and deferred it as out of their ownership. It is in
+  mine, it is the path nearly every notification takes, and it is now gated.
+- Confirmed the `normalise_prefs` / quiet-hours-reset fix on the prefs PUT **has
+  landed** (`server.py:861-901`), so the write path can be trusted. I still wrote
+  nothing to the database.
 
 ## 8. Not finished / handed on
 
-- **`NotifyPrefs.jsx` needs one row** for `reminder` (backend key added; see §1 claim D)
-  and should drop or wire **`created`**, which has a preference row and no emitter.
-  Not edited — customize is another agent's surface.
+- **`NotifyPrefs.jsx` needs one row** for `reminder`. The backend key is now in
+  `DEFAULT_PREFS` (landed by a sibling while I was stopped) **and is now actually
+  enforced** by my two call-site gates — so the switch is real, enforced, and still
+  invisible in the UI. One line:
+  `{ id: 'reminder', label: 'Reminders', fallback: 'always', hint: 'A task you are on is coming due.' }`.
+  Customize is another agent's surface, so it is yours.
+- **`created` has a preference row and no emitter.** Nothing in the backend writes
+  `type='created'` — grepped every `INSERT INTO notifications`. The switch governs
+  nothing. Drop it, or wire an emitter.
 - **`send_comment_email` is never called** (§6). The email agent's call, not mine.
 - **`"The reviewer"` hardcode** at `email_service.py:1146` (§6) — needs a
   `reviewer_name` parameter threaded from the four `approvals_router` decision call
