@@ -329,6 +329,37 @@ async def _fetch_results_r2(org_id: str, r2_key: str) -> list:
 
 # ── Get run status / results ─────────────────────────────
 
+#: Everything a TENANT may see about their own run.
+#:
+#: `cost_usd` is absent by construction. It is what the run cost us upstream at
+#: Apify — our cost basis, written from `info["usage_usd"]` — and beside
+#: `billed_inr` on the same row it discloses our margin by subtraction, on every
+#: run. `SCRAPER_MARGIN` is the quantity that falls out of it.
+#:
+#: This is an allow-list rather than a `del out["cost_usd"]` deny-list, and it is
+#: applied in the handler rather than left to the SELECT list, because both of
+#: the alternatives fail open: a deny-list misses the next sensitive column
+#: someone adds, and a SELECT list is invisible from the return statement — the
+#: day anyone widens the query to `r.*` for an unrelated reason, the cost basis
+#: starts crossing again with nothing in the handler to stop it.
+#:
+#: The platform console (`/admin/usage`, `/admin/runs`) deliberately does NOT use
+#: this projection: those sit behind `require_platform_role(*OPERATIONS_CONSOLE_ROLES)`
+#: and showing cost is the entire point of them.
+_TENANT_RUN_FIELDS = (
+    "id", "org_id", "scraper_id", "user_id", "status", "result_count",
+    "billed_inr", "credits_charged", "error", "created_at", "finished_at",
+    "graha_imported_count", "graha_imported_at", "results",
+    "scraper_name", "result_columns", "icon",
+)
+
+
+def _tenant_run(row) -> dict:
+    """Project a run row down to the tenant-visible fields."""
+    d = dict(row)
+    return {k: d[k] for k in _TENANT_RUN_FIELDS if k in d}
+
+
 @router.get("/runs/{run_id}")
 async def get_run(
     run_id: UUID,
@@ -346,6 +377,10 @@ async def get_run(
     #
     # Paired with `billed_inr` it is also our exact per-run margin, which is the
     # standing "never publish OUR prices" rule and not only a tidiness question.
+    #
+    # Not selecting it is the first layer; `_tenant_run` above is the one that
+    # actually guarantees it, because a SELECT list is invisible from the return
+    # statement and widening this query later would silently reopen the leak.
     row = await pool.fetchrow(
         "SELECT r.id, r.org_id, r.scraper_id, r.user_id, r.status, r.result_count, "
         "r.billed_inr, r.credits_charged, r.error, r.created_at, r.finished_at, "
@@ -358,11 +393,12 @@ async def get_run(
     )
     if not row:
         raise HTTPException(404, "Run not found")
-    out = dict(row)
-    # Prefer R2, fall back to legacy JSONB column
-    if out.get("results_r2_key"):
-        out["results"] = await _fetch_results_r2(org_id, out["results_r2_key"])
-    del out["results_r2_key"]
+    src = dict(row)
+    out = _tenant_run(src)
+    # Prefer R2, fall back to legacy JSONB column. `results_r2_key` is storage
+    # internals and is not in the projection, so it never reaches the response.
+    if src.get("results_r2_key"):
+        out["results"] = await _fetch_results_r2(org_id, src["results_r2_key"])
     return out
 
 
@@ -516,8 +552,9 @@ async def list_runs(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    # No `r.cost_usd` — see `get_run` above. This is a tenant-scoped list, and a
-    # list is the easiest place of all to diff supplier cost against billed_inr.
+    # No `r.cost_usd` — see `get_run` and `_TENANT_RUN_FIELDS` above. This is a
+    # tenant-scoped list, and a list is the easiest place of all to diff supplier
+    # cost against billed_inr, so it goes out through the same projection.
     rows = await pool.fetch(
         "SELECT r.id, r.scraper_id, r.status, r.result_count, r.billed_inr, "
         "r.credits_charged, r.created_at, r.finished_at, c.name as scraper_name, c.icon "
@@ -526,7 +563,7 @@ async def list_runs(
         "WHERE r.org_id=$1::uuid ORDER BY r.created_at DESC LIMIT 50",
         org_id,
     )
-    return {"data": [dict(r) for r in rows]}
+    return {"data": [_tenant_run(r) for r in rows]}
 
 
 # ── Admin: billing overview ──────────────────────────────

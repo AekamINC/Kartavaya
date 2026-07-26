@@ -1,21 +1,20 @@
 """
 Private attachments, on every path that returns a task.
 
-`server.py` has three reads that return attachments and only two of them filter:
+`server.py` has three reads that return attachments and all three must filter:
 
-    /api/tasks/{task_id}   server.py:2276  _filter_private_attachments  ✅
-    /api/client/tasks      server.py:1007  _filter_private_attachments  ✅
-    /api/tasks             server.py:2045  — no filter —                ❌
+    /api/tasks/{task_id}   get_task       _filter_private_attachments
+    /api/client/tasks      client_tasks   _filter_private_attachments
+    /api/tasks             list_tasks     _filter_private_attachments
 
-`list_tasks` builds its rows with `row_to_task` and then hands each straight to
-`_refresh_task_attachments`, which RE-SIGNS the R2 URLs. So a teammate who can
-see the task at all receives a fresh, live, signed URL to a file the firm marked
-private — the same class of bug that was fixed on `/api/client/tasks`, on the
-route with by far the most traffic.
+`list_tasks` used to be the exception. It built its rows with `row_to_task` and
+handed each straight to `_refresh_task_attachments`, which RE-SIGNS the R2 URLs,
+so any teammate who could see the task received a fresh, live, signed URL to a
+file the firm had marked private — on the route with by far the most traffic.
+These tests were written against that bug, failed, and the fix landed with them.
 
-The `list_tasks` test is marked xfail because the fix has not landed. It is
-`strict=False`, so it reports XPASS rather than failing the moment it does —
-that is the signal the fix arrived, and the marker should be removed then.
+`list_tasks` and `client_tasks` filter BEFORE re-signing, so a file the caller
+may not see is never handed a fresh credential even transiently.
 """
 
 import pytest
@@ -100,17 +99,6 @@ async def test_single_task_read_strips_a_private_attachment(
 
 # ── GET /api/tasks — the path that does not ──────────────────────────────────
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "OPEN BUG — server.py:2045 `list_tasks` never calls "
-        "_filter_private_attachments, so a private attachment reaches any "
-        "teammate who can see the task, with a freshly signed R2 URL. "
-        "/api/tasks/{task_id} (server.py:2276) and /api/client/tasks "
-        "(server.py:1007) both filter; this route is the only one that does not. "
-        "Remove this marker when the fix lands."
-    ),
-)
 async def test_list_tasks_strips_a_private_attachment_from_a_non_creator(
     api_client, mock_pool, as_member,
 ):
@@ -136,14 +124,6 @@ async def test_list_tasks_strips_a_private_attachment_from_a_non_creator(
     assert names == ["agenda.pdf"]
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "OPEN BUG — same root cause as above (server.py:2045). The URL is the "
-        "part that matters: _refresh_task_attachments re-signs it, so the "
-        "recipient gets a live credential, not just a filename."
-    ),
-)
 async def test_list_tasks_hands_out_no_url_for_a_private_attachment(
     api_client, mock_pool, as_member,
 ):

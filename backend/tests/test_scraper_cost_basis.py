@@ -9,21 +9,21 @@ Aekam's cost basis must not cross to a tenant.
                  Aekam's own cost basis. Must never cross.
 
 Returning both on the same row hands the customer the markup by subtraction, on
-every run, for free. `SCRAPER_MARGIN` (routers/scrapers.py:23) is the number that
+every run, for free. `SCRAPER_MARGIN` in routers/scrapers.py is the quantity that
 falls out of it.
 
-Two routes select `r.cost_usd` and return `dict(r)` behind nothing but module
-membership:
+Two tenant routes used to select `r.cost_usd` and return `dict(r)` behind nothing
+but module membership:
 
-    GET /api/v1/scrapers/runs            scrapers.py:490-496   list_runs
-    GET /api/v1/scrapers/runs/{run_id}   scrapers.py:321-327   get_run
+    GET /api/v1/scrapers/runs            list_runs
+    GET /api/v1/scrapers/runs/{run_id}   get_run
 
-Both are marked xfail — the fix is to drop the column from those two SELECTs. The
-platform console keeps it: `/admin/usage` and `/admin/runs` sit behind
+The column is now dropped from both SELECTs. The platform console keeps it:
+`/admin/usage` and `/admin/runs` sit behind
 `require_platform_role(*OPERATIONS_CONSOLE_ROLES)` and are supposed to show it.
 
-The org-boundary tests in the same file are NOT xfail. Those already pass and
-this file is where they belong.
+The org-boundary tests in the same file already passed. This file is where they
+belong.
 """
 
 import pytest
@@ -75,15 +75,6 @@ def bypass_module_gate(app):
 
 # ── cost_usd must not cross ──────────────────────────────────────────────────
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "OPEN BUG — scrapers.py:490-496 `list_runs` selects r.cost_usd and "
-        "returns dict(r) to any tenant user with the srijan module. Alongside "
-        "billed_inr on the same row it discloses Aekam's markup. Fix: drop "
-        "cost_usd from the SELECT. Remove this marker then."
-    ),
-)
 async def test_list_runs_does_not_return_aekams_cost_basis(
     api_client, mock_pool, as_member, org_a, bypass_module_gate,
 ):
@@ -103,13 +94,6 @@ async def test_list_runs_does_not_return_aekams_cost_basis(
     assert rows[0]["billed_inr"] == 900
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "OPEN BUG — scrapers.py:321-327 `get_run` selects r.cost_usd and "
-        "returns dict(r) to the tenant. Same fix as list_runs."
-    ),
-)
 async def test_get_run_does_not_return_aekams_cost_basis(
     api_client, mock_pool, as_member, org_a, bypass_module_gate,
 ):
