@@ -184,13 +184,20 @@ export default function Register() {
   // stale by every handler in a burst.
   const curRef = useRef(0);
 
+  // Which KIND of failure, not just that there was one. A reviewer in a basement
+  // and a reviewer hitting a 500 need different words and different actions, and
+  // `errorKind` already draws that line — it treats a rejection with no response
+  // as offline rather than blaming us for the user's train tunnel.
+  const [errKind, setErrKind] = useState('server');
+
   const load = useCallback(async () => {
     setState('loading');
     try {
       const r = await api.get('/v1/pahchan/register');
       setRows(r.data.punches || []);
       setState('ready');
-    } catch {
+    } catch (err) {
+      setErrKind(errorKind(err));
       setState('error');
     }
   }, []);
