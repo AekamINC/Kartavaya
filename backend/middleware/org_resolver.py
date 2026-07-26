@@ -6,7 +6,37 @@ Orgs must be created by a platform admin — no auto-creation.
 from fastapi import Depends, HTTPException, Request
 from db import get_pool
 from auth_router import require_user
-from middleware.role_tiers import ALL_PLATFORM_ROLES
+from middleware.role_tiers import ALL_PLATFORM_ROLES, SUPPORT_ROLES
+
+#: Platform roles that may resolve an ARBITRARY org from the `X-Org-Id` header.
+#:
+#: Everything in `ALL_PLATFORM_ROLES` except support. `platform_support` is
+#: specified at "**Zero by default.** Needs org-admin approval granting: time
+#: limit, module scope, access level. Auto-expires." (`RBAC-SPEC.md` · Tier 1),
+#: and the table that would record such an approval —
+#: `staging.platform_support_sessions` — does not exist yet. `role_tiers.py:41`
+#: says the same thing from the other side: "a holder of this role currently gets
+#: nothing." A role that gets nothing must not be able to name any org in the
+#: system and have the resolver agree.
+#:
+#: The other three no-reach roles are deliberately still here, and removing them
+#: would BREAK the console rather than harden it:
+#:   · `account_finance` and `account_manager` — `routers/subscription.py`'s admin
+#:     endpoints (`:144` set-plan, `:208`, `:260`, `:302`) take
+#:     `require_platform_role(*BILLING_CONSOLE_ROLES)` AND `Depends(get_org_id)`,
+#:     and `AdminBillingPage` reaches them by sending this very header
+#:     (`pages/admin/orgScope.js`). Both roles are in BILLING_CONSOLE_ROLES.
+#:   · `srijan_admin` — `routers/hub.py` depends on `get_org_id` in 44 places.
+#: `modules_for()` returning `frozenset()` for all three is about MODULE reach in
+#: a customer org, which is a different question from whether they may resolve
+#: one. The real fix for those is to give the billing and hub endpoints an
+#: explicit `{org_id}` path parameter the way `admin_orgs.py` does, so the org is
+#: an argument the guard can see rather than a header the resolver trusts. That
+#: is an endpoint-shape change across two routers and is recorded, not smuggled
+#: in here.
+CROSS_ORG_HEADER_ROLES: tuple[str, ...] = tuple(
+    r for r in ALL_PLATFORM_ROLES if r not in SUPPORT_ROLES
+)
 
 
 async def get_org_id(request: Request, user=Depends(require_user)):
