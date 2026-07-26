@@ -153,8 +153,17 @@ export function setNotifSoundId(id) {
 let cachedAudio = null;
 let cachedUrl = null;
 
-export function playNotifSound() {
-  const id = getNotifSoundId();
+/**
+ * Play a notification sound. Defaults to the stored preference; pass an id to
+ * preview one directly.
+ *
+ * The explicit argument exists so a picker can play what was just clicked
+ * without depending on having persisted it first — previewing a sound and
+ * storing it are separate concerns, and coupling them made the preview play
+ * the PREVIOUS selection whenever the caller ordered the two the other way.
+ */
+export function playNotifSound(explicitId) {
+  const id = explicitId || getNotifSoundId();
   const sound = NOTIF_SOUNDS.find(s => s.id === id);
   if (!sound || !sound.url) return;
   try {

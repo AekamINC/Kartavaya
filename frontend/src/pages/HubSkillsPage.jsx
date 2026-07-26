@@ -247,7 +247,7 @@ export default function HubSkillsPage() {
       <div style={{ marginBottom: 8 }}>
         <button onClick={() => navigate(`/hub/clients/${clientId}`)} className="k-btn k-btn--ghost" style={{ fontSize: 12 }}>← Back to Client</button>
       </div>
-      <PageHeader title="Skill Packs" subtitle="Pre-built AI workflows — assigned per client, brand-isolated" />
+      <PageHeader title="Skill Packs" sanskrit="कौशल" lede="Pre-built AI workflows — assigned per client, brand-isolated" />
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)' }}>

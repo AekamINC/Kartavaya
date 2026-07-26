@@ -50,7 +50,7 @@ export default function HubClientsPage() {
 
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Hub Clients" subtitle="Manage your brand clients" />
+      <PageHeader title="Hub Clients" sanskrit="ग्राहक" lede="Manage your brand clients" />
 
       <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'flex-end' }}>
         <button className="k-btn k-btn--primary" onClick={() => setShowCreate(!showCreate)}>

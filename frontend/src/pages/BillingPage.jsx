@@ -111,7 +111,7 @@ export default function BillingPage() {
 
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Billing & Subscription" subtitle="Manage your plan, modules, and invoices" />
+      <PageHeader title="Billing & Subscription" sanskrit="शुल्क" lede="Manage your plan, modules, and invoices" />
 
       {/* Stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 32 }}>

@@ -22,7 +22,7 @@ export default function EsignPage() {
 
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Pramaan · प्रमाण" subtitle="E-Signatures — Send, Sign & Track Documents" />
+      <PageHeader title="Pramaan" sanskrit="प्रमाण" lede="E-Signatures — Send, Sign & Track Documents" />
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)', overflowX: 'auto' }}>
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)}

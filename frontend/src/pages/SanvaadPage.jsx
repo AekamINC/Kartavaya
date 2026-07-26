@@ -15,7 +15,7 @@ export default function SanvaadPage() {
 
   return (
     <div style={{ padding: '0 var(--page-x, 32px)' }}>
-      <PageHeader title="Messages" sans="संवाद" subtitle="Internal messaging & WhatsApp" />
+      <PageHeader title="Messages" sanskrit="संवाद" lede="Internal messaging & WhatsApp" />
 
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '1.5px solid var(--border)', marginBottom: 20 }}>

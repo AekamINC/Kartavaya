@@ -193,7 +193,7 @@ export default function AdminBillingPage() {
 
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Billing Administration" subtitle="Manage subscriptions, modules, invoices, and payments" />
+      <PageHeader kicker="ADMIN" title="Billing Administration" sanskrit="शुल्क प्रशासन" lede="Manage subscriptions, modules, invoices, and payments" />
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 28, borderBottom: '1px solid var(--rule-soft)', paddingBottom: 0 }}>

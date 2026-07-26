@@ -64,7 +64,6 @@ export const NAV_FULL = [
     section: 'settings', sans: 'व्यवस्था', gu: 'સેટિંગ્સ',
     items: [
       { to: '/settings/categories',    icon: 'categories',    en: 'Categories',    hi: 'वर्ग',   gu: 'વર્ગ' },
-      { to: '/settings/notifications', icon: 'notifications', en: 'Notifications', hi: 'सूचना',  gu: 'સૂચના' },
       { to: '/settings/customize',     icon: 'customize',     en: 'Customize',     hi: 'सजावट',  gu: 'સજાવટ' },
       { to: '/billing',                icon: 'billing',       en: 'Billing',       hi: 'बिलिंग', gu: 'બિલિંગ' },
     ],
@@ -80,7 +79,7 @@ export const NAV_CLIENT = [
       { to: '/tasks',                  icon: 'tasks',         en: 'My Tasks',      hi: 'कर्तव्य', gu: 'કાર્ય' },
       { to: '/approvals',              icon: 'approvals',     en: 'Approvals',     hi: 'सम्मति',  gu: 'મંજૂરી' },
       { to: '/inbox',                  icon: 'inbox',         en: 'Inbox',         hi: 'सन्देश',  gu: 'સંદેશ', badge: 'unread' },
-      { to: '/settings/notifications', icon: 'notifications', en: 'Notifications', hi: 'सूचना',   gu: 'સૂચના' },
+      { to: '/settings/customize?tab=notifications', icon: 'notifications', en: 'Notifications', hi: 'सूचना',   gu: 'સૂચના' },
     ],
   },
 ];
@@ -104,7 +103,12 @@ export const ROUTE_META = (() => {
   const map = {};
   for (const r of EXTRA_ROUTES) map[r.to] = { en: r.en, hi: r.hi };
   for (const group of [...NAV_CLIENT, ...NAV_FULL]) {
-    for (const it of group.items) map[it.to] = { en: it.en, hi: it.hi, gu: it.gu, module: it.module };
+    // Keyed by pathname — a nav entry may carry a query string to land on a
+    // specific tab, and resolveRouteMeta is only ever given a bare pathname,
+    // so an unstripped key would sit in the map and never match anything.
+    for (const it of group.items) {
+      map[it.to.split('?')[0]] = { en: it.en, hi: it.hi, gu: it.gu, module: it.module };
+    }
   }
   return map;
 })();

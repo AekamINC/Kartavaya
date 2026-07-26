@@ -34,7 +34,7 @@ const NAV_ITEMS = [
   // palette. Data Tools live as tabs inside Srijan, so it deep-links there.
   { id: 'scrapers', label: 'Data Tools', hi: 'डेटा टूल्स', section: 'Navigate', route: '/hub/org?tab=scrapers', keywords: 'scrapers data tools leads' },
   { id: 'categories', label: 'Categories', hi: 'वर्ग', section: 'Navigate', route: '/settings/categories', keywords: 'settings categories tags' },
-  { id: 'notifications', label: 'Notifications', hi: 'सूचना', section: 'Navigate', route: '/settings/notifications', keywords: 'settings notifications' },
+  { id: 'notifications', label: 'Notifications', hi: 'सूचना', section: 'Navigate', route: '/settings/customize?tab=notifications', keywords: 'settings notifications' },
   { id: 'customize', label: 'Customize', hi: 'सजावट', section: 'Navigate', route: '/settings/customize', keywords: 'settings customize theme' },
   { id: 'billing', label: 'Billing', hi: 'बिलिंग', section: 'Navigate', route: '/billing', keywords: 'billing subscription plan' },
 ];

@@ -61,7 +61,7 @@ export default function OrgSrijanPage() {
 
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Srijan · सृजन" subtitle="AI content, data tools, skills & credits" />
+      <PageHeader title="Srijan" sanskrit="सृजन" lede="AI content, data tools, skills & credits" />
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 24 }}>
         <StatTile label="Plan Credits" value={credits?.org_balance?.plan_credits ?? '–'} />

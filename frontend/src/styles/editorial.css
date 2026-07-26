@@ -109,7 +109,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   justify-content: center; padding: 12px 0; margin: 1px 8px;
   border-left: 0; position: relative;
 }
-[data-sidebar="rail"] .k-sidebar__item.is-active { background: rgba(5,183,170,.16); }
+[data-sidebar="rail"] .k-sidebar__item.is-active { background: var(--side-active); }
 [data-sidebar="rail"] .k-sidebar__en,
 [data-sidebar="rail"] .k-sidebar__hi-mute,
 [data-sidebar="rail"] .k-sidebar__badge,
@@ -197,7 +197,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   color: rgba(255,255,255,.92);
 }
 .k-sidebar__item.is-active {
-  background: rgba(5,183,170,.16);
+  background: var(--side-active);
   color: #fff;
   border-left-color: var(--k-primary);
 }
@@ -228,7 +228,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   position: relative;
 }
 .k-sidebar--rail .k-sidebar__item.is-active {
-  background: rgba(5,183,170,.16);
+  background: var(--side-active);
 }
 
 .k-sidebar__foot {

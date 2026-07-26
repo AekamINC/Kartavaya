@@ -62,6 +62,8 @@ export const DEFAULTS = {
   radius:       10,           // 4 | 10 | 20 — default IS one of the options
   anim:         'full',       // full | reduced | none
   language:     'en+sa',
+  sideBg:       'dark',       // dark | light | accent
+  toastPos:     'tr',         // tl | tr | bl | br
 };
 
 function hexToHsl(hex) {

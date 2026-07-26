@@ -19,6 +19,11 @@ import './App.css';
 import './styles/index.css';
 import './styles/kartavaya-design.css';
 import './styles/editorial.css';
+// Global, not imported from CustomizeSettingsPage: it carries the
+// [data-sidebar-bg] and [data-toast-pos] rules, which apply app-wide. Behind
+// the lazy-loaded page they would not exist until you first opened Customize,
+// so a saved sidebar preference would silently not apply on boot.
+import './styles/settings.css';
 
 import { ToastProvider }               from './components/ui/toast';
 import AppShell, { Protected }         from './components/layout/AppShell';
@@ -47,7 +52,6 @@ const ReportsPage           = lazy(() => import('./pages/ReportsPage'));
 const ApprovalsPage         = lazy(() => import('./pages/ApprovalsPage'));
 const TemplatesPage         = lazy(() => import('./pages/TemplatesPage'));
 const CategoriesPage        = lazy(() => import('./pages/CategoriesPage'));
-const NotificationsSettings = lazy(() => import('./pages/NotificationsSettingsPage'));
 const AdminPage             = lazy(() => import('./pages/AdminPage'));
 const ClientProjectsPage    = lazy(() => import('./pages/ClientProjectsPage'));
 const ClientBoardPage       = lazy(() => import('./pages/ClientBoardPage'));
@@ -129,7 +133,11 @@ function AppRouter() {
 
           {/* Settings */}
           <Route path="settings/categories"    element={<CategoriesPage />} />
-          <Route path="settings/notifications" element={<NotificationsSettings />} />
+          {/* Notification settings folded into the customize hub — they are
+              preferences, and having them on their own route meant "where do I
+              turn that off" had two answers. Redirect, so existing links and
+              bookmarks land on the right tab instead of 404ing. */}
+          <Route path="settings/notifications" element={<Navigate to="/settings/customize?tab=notifications" replace />} />
           <Route path="settings/customize"     element={<CustomizeSettingsPage />} />
           <Route path="settings/organisation" element={<OrgSettingsPage />} />
 

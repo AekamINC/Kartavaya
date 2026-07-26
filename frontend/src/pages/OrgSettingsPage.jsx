@@ -144,7 +144,7 @@ export default function OrgSettingsPage() {
   if (!orgRole) {
     return (
       <div className="k-screen">
-        <PageHeader title="Organisation" subtitle="संगठन" />
+        <PageHeader title="Organisation" sanskrit="संगठन" />
         <p style={{ padding: 24, color: 'var(--ink-3)' }}>You do not have permission to manage this organisation.</p>
       </div>
     );
@@ -154,7 +154,7 @@ export default function OrgSettingsPage() {
 
   return (
     <div className="k-screen">
-      <PageHeader title="Organisation" subtitle="संगठन" />
+      <PageHeader title="Organisation" sanskrit="संगठन" />
 
       <div style={{ padding: '0 24px', maxWidth: 720 }}>
         {orgRole.org_name && (

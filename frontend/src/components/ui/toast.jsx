@@ -55,16 +55,12 @@ export function ToastProvider({ children }) {
       {/* One live-region pair for the whole app, mounted unconditionally. */}
       <div className="sr-only" aria-live="polite"    aria-atomic="false">{polite}</div>
       <div className="sr-only" aria-live="assertive" aria-atomic="false">{assertive}</div>
-      <div
-        role="region"
-        aria-label="Notifications"
-        style={{
-          position: 'fixed', right: 20, top: 20, zIndex: 9999,
-          display: 'flex', flexDirection: 'column', gap: 8,
-          width: 320, maxWidth: 'calc(100vw - 40px)',
-          pointerEvents: 'none',
-        }}
-      >
+      {/* Position comes from the toastPos preference via [data-toast-pos] on
+          <html>, not from a fixed right/top here. Bottom positions also reverse
+          the stack direction, so the newest toast is always the one nearest the
+          screen edge rather than the one that jumps furthest as the stack
+          grows. */}
+      <div className="k-toasts" role="region" aria-label="Notifications">
         {toasts.map((t) => {
           const ts = TYPE_STYLES[t.type] || TYPE_STYLES.info;
           return (
