@@ -60,41 +60,65 @@ export default function NotifyPrefs() {
   const [to,    setTo]      = useState('07:00');
   const [state, setState]   = useState('loading'); // loading | ready | error | saving | saved
 
-  // What the server currently holds, so a blur that changed nothing writes
-  // nothing. Clicking "Save window" blurs the field first, so without this the
-  // one deliberate save is two PUTs.
-  const saved = useRef({ from: '22:00', to: '07:00' });
+  // What the server is KNOWN to hold. Two jobs:
+  //
+  //  · a blur that changed nothing writes nothing. Clicking "Save window" blurs
+  //    the field first, so without this the one deliberate save is two PUTs.
+  //  · it is the rollback target. `setMode` paints the new mode before the PUT
+  //    resolves, which is right — a segmented control that lags a round-trip
+  //    feels broken — but it means a REJECTED write used to leave the switch
+  //    showing a value the server never accepted. The only feedback was the
+  //    status span inside the quiet-hours block, several rows above the control
+  //    that was just clicked, so the realistic outcome was a user who believes
+  //    they turned "New tasks" off and keeps being notified. A control that
+  //    reports a setting the server does not have is worse than no control.
+  const saved = useRef({ from: '22:00', to: '07:00', prefs: {} });
 
   useEffect(() => {
     let live = true;
     api.get('/me/notification_prefs')
       .then(({ data }) => {
         if (!live) return;
-        setPrefs(data.prefs || {});
+        const loaded = data.prefs || {};
+        setPrefs(loaded);
         setFrom(data.quiet_start || '22:00');
         setTo(data.quiet_end || '07:00');
-        saved.current = { from: data.quiet_start || '22:00', to: data.quiet_end || '07:00' };
+        saved.current = {
+          from:  data.quiet_start || '22:00',
+          to:    data.quiet_end   || '07:00',
+          prefs: loaded,
+        };
         setState('ready');
       })
       .catch(() => { if (live) setState('error'); });
     return () => { live = false; };
   }, []);
 
+  // Resolves to whether the write landed, so the caller can roll its optimistic
+  // paint back. Only a SUCCESSFUL put updates `saved.current` — on failure it
+  // still describes the server, which is what makes it a safe rollback target.
   const save = async (nextPrefs, nextFrom, nextTo) => {
     setState('saving');
     try {
       await api.put('/me/notification_prefs', {
         prefs: nextPrefs, quiet_start: nextFrom, quiet_end: nextTo,
       });
-      saved.current = { from: nextFrom, to: nextTo };
+      saved.current = { from: nextFrom, to: nextTo, prefs: nextPrefs };
       setState('saved');
-    } catch { setState('error'); }
+      return true;
+    } catch {
+      setState('error');
+      return false;
+    }
   };
 
-  const setMode = (kind, mode) => {
+  const setMode = async (kind, mode) => {
     const next = { ...prefs, [kind]: mode };
     setPrefs(next);
-    save(next, from, to);
+    // The window is sent with it because PUT replaces the whole row, but the
+    // rollback is prefs-only: a failed mode change must not also discard a
+    // quiet-hours edit the user is part-way through typing.
+    if (!await save(next, from, to)) setPrefs(saved.current.prefs);
   };
 
   // The two time fields commit on blur, not on change: a partially-typed "0"
@@ -163,6 +187,18 @@ export default function NotifyPrefs() {
             These govern push to your devices — the in-app bell always records
             everything.
           </div>
+          {/* The failure has to be reported HERE, beside the switches, not only
+              in the quiet-hours status span. `role="alert"` because it appears
+              in response to the user's own click and they are looking at the
+              control, not at this line. The switch has already rolled back to
+              the server's value by the time this renders, so the sentence and
+              the control agree. */}
+          {state === 'error' && (
+            <div className="sr__d" role="alert" style={{ color: 'var(--danger)' }}>
+              That didn’t save — the setting has been put back to what the server
+              has. Check your connection and try again.
+            </div>
+          )}
         </div>
         <div className="nkind">
           {KINDS.map(k => (

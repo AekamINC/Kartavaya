@@ -180,9 +180,11 @@
    triangle. A member without a module grant seeing a red alert learns that
    something is broken; the correct message is neutral and names who can grant
    access. */
-.mempty     { padding: 44px 24px; text-align: center; max-width: 44ch; margin: 0 auto; }
-.mempty__t  { font-family: var(--font-display); font-size: 19px; font-weight: 400; margin: 0 0 7px; }
-.mempty__p  { font-size: 13.5px; line-height: 1.6; color: var(--on-surface-3); margin: 0 0 17px; text-wrap: pretty; }
+/* `.mempty` / `.mempty__t` / `.mempty__p` are deleted with the second
+   `EmptyState`, which lived in `components/module/Note.jsx` and was that
+   component's only user. `.empty` in components.css is the one empty state now
+   — see the note in Note.jsx. Two classes for one concept is how a module page
+   ends up with an empty state that looks nothing like the rest of the app. */
 .mrestrict  { display: flex; gap: 12px; padding: 16px 18px; border-radius: var(--r-md); background: var(--s-container); max-width: 64ch; }
 .mrestrict__ic { color: var(--on-surface-3); flex-shrink: 0; }
 .mrestrict__t  { font-weight: 600; margin: 0 0 4px; font-size: 13.5px; }
