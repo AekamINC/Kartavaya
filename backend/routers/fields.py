@@ -105,6 +105,47 @@ async def list_field_definitions(team_id: str, pool=Depends(get_pool), user=Depe
     return [_norm_field(r) for r in rows]
 
 
+@router.get("/team/{team_id}/values")
+async def list_team_field_values(team_id: str, pool=Depends(get_pool), user=Depends(require_user)):
+    """Every custom-field value for every task on a team, in ONE round trip.
+
+    The table view renders a cell per (task × visible custom field), so it needs
+    the whole matrix before it can paint. The only endpoint that existed was
+    `GET /task/{task_id}/values`, so the board fanned out one request per task:
+    a 200-task board opened 200 connections, each re-running the same
+    `_assert_team_member` lookup, and the map was only committed to state after
+    the slowest of them settled. `/boards` did not even do that — it never
+    fetched values at all, so every custom-field cell there rendered blank.
+
+    Shape is `{task_id: {field_id: value}}`, which is exactly what `TableView`
+    indexes, so the client does no regrouping.
+
+    Archived tasks are included deliberately: `ProjectBoardPage` can show them,
+    and filtering them here would blank their cells in that mode.
+    """
+    await _assert_team_member(pool, team_id, user)
+    rows = await pool.fetch(
+        "SELECT fv.task_id, fv.field_id, fv.value "
+        "FROM field_values fv "
+        "JOIN tasks t ON t.task_id = fv.task_id "
+        "WHERE t.team_id = $1",
+        team_id
+    )
+    out: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        val = r["value"]
+        # `db.py` registers a jsonb codec, but it logs "set_type_codec skipped
+        # (PgBouncer)" and carries on when the pooler refuses it — in that mode
+        # jsonb arrives as raw text. `_norm_field` already guards `config` the
+        # same way; without the same guard here a checkbox field would reach the
+        # renderer as the STRING "false", which is truthy.
+        if isinstance(val, str):
+            try: val = _json.loads(val)
+            except Exception: pass
+        out.setdefault(r["task_id"], {})[r["field_id"]] = val
+    return out
+
+
 @router.post("/")
 async def create_field_definition(body: FieldDefCreate, pool=Depends(get_pool), user=Depends(require_user)):
     import json

@@ -23,7 +23,7 @@
  * the `supabase_realtime` publication.
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 
 import { api }         from '../lib/api';
@@ -41,7 +41,7 @@ import ViewToolbar  from '../components/views/ViewToolbar';
 import { VIEWS, FIELD_TYPES, IcArchive, IcPlus } from '../components/views/viewDefs';
 import NewTaskModal from '../components/NewTaskModal';
 
-import { useFields }        from '../hooks/useFields';
+import { useFields, useFieldValueMap } from '../hooks/useFields';
 import { useViews }         from '../hooks/useViews';
 import { useRealtimeTasks } from '../hooks/useRealtimeTasks';
 import { usePresence }      from '../hooks/usePresence';
@@ -61,7 +61,6 @@ export default function ProjectBoardPage() {
   const [rawTasks,      setRawTasks]      = useState([]);   // seeds useRealtimeTasks
   const [teamMembers,   setTeamMembers]   = useState([]);
   const [view,          setView]          = useState('kanban');
-  const [fieldValueMap, setFieldValueMap] = useState({});
   const [loading,       setLoading]       = useState(true);
   const [showArchived,  setShowArchived]  = useState(false);
   const [showFieldMgr,  setShowFieldMgr]  = useState(false);
@@ -105,21 +104,14 @@ export default function ProjectBoardPage() {
 
   useEffect(() => { load(showArchived); }, [showArchived]); // eslint-disable-line
 
-  // ── Field-value fetch (stable dep — only when task IDs change) ───────────
-  const taskIds = useMemo(() => tasks.map(t => t.task_id).join(','), [tasks]);
-
-  useEffect(() => {
-    if (!tasks.length || !fieldDefs?.length) return;
-    const map = {};
-    Promise.all(
-      tasks.map(async t => {
-        try {
-          const r = await api.get(`/fields/task/${t.task_id}/values`);
-          map[t.task_id] = Object.fromEntries(r.data.map(v => [v.field_id, v.value]));
-        } catch { /* one task's custom fields failing must not blank the rest */ }
-      })
-    ).then(() => setFieldValueMap({ ...map }));
-  }, [taskIds, fieldDefs?.length]); // eslint-disable-line
+  // ── Field values ─────────────────────────────────────────────────────────
+  // One request for the whole board. This was a `Promise.all` over `tasks`
+  // calling `GET /fields/task/:id/values` once PER TASK — a 200-task board
+  // opened 200 connections, each re-running the same team-membership check, and
+  // the map was only committed once the slowest settled, so the table painted
+  // blank custom-field cells until then. `GET /fields/team/:id/values` returns
+  // the same matrix in a single query, already keyed by task.
+  const { map: fieldValueMap } = useFieldValueMap(projectId, (fieldDefs || []).length > 0);
 
   const handleColumnChange = (action, payload) => {
     if (action === 'new_task') setNewTaskEditor({ open: true, columnId: payload, dueAt: '' });

@@ -13,14 +13,16 @@ const TimelineView = lazy(() => import('../components/views/TimelineView'));
 const WorkloadView = lazy(() => import('../components/views/WorkloadView'));
 const PriorityView = lazy(() => import('../components/views/PriorityView'));
 const MyTasksView  = lazy(() => import('../components/views/MyTasksView'));
-import { useFields }    from '../hooks/useFields';
+import { useFields, useFieldValueMap } from '../hooks/useFields';
 import { useRealtimeTasks } from '../hooks/useRealtimeTasks';
 import { usePresence }  from '../hooks/usePresence';
 import { PageHeader } from '../components/editorial';
 import {
   AvatarStack, avatarBg, useToast,
   SkeletonBoard, SkeletonList, SkeletonRegion,
+  EmptyState, ErrorState, errorKind,
 } from '../components/ui';
+import { logger } from '../lib/utils';
 import ViewToolbar from '../components/views/ViewToolbar';
 import { VIEWS, FIELD_TYPES, IcPlus } from '../components/views/viewDefs';
 import AutomationsPage from './AutomationsPage';
@@ -38,10 +40,15 @@ export default function BoardsPage() {
   const [rawTasks,    setRawTasks]    = useState([]);
   const [teamMembers, setTeamMembers] = useState([]);
   const [loading,     setLoading]     = useState(true);
+  const [loadError,   setLoadError]   = useState(null);
   const [view,        setView]        = useState('kanban');
   const [newTaskEditor, setNewTaskEditor] = useState({ open: false, columnId: null, dueAt: '' });
 
   const { defs: fieldDefs, createField, deleteField } = useFields(activeId);
+  // The table renders a cell per (task × custom field). This page passed no
+  // `fieldValueMap` at all, so every custom-field cell on /boards rendered
+  // blank however many values the task actually had.
+  const { map: fieldValueMap } = useFieldValueMap(activeId, (fieldDefs || []).length > 0);
   const { pushToast } = useToast();
   const [showFieldMgr,    setShowFieldMgr]    = useState(false);
   const [showAutomations, setShowAutomations] = useState(false);
@@ -50,30 +57,56 @@ export default function BoardsPage() {
   const { tasks, setTasks } = useRealtimeTasks(activeId, rawTasks);
   const onlineUsers = usePresence(activeId, me);
 
-  useEffect(() => {
+  // A failed project list left `projects` empty, which renders exactly like an
+  // account with no projects — the one state where "you have none" and "we
+  // could not ask" need different answers, because only one of them is the
+  // user's to fix. `loading` is cleared either way so the skeleton cannot
+  // outlive the request.
+  const [projectsError, setProjectsError] = useState(null);
+  const loadProjects = useCallback(() => {
     const endpoint = isClient ? '/client/projects' : '/teams';
+    setProjectsError(null);
     api.get(endpoint).then(r => {
       const list = Array.isArray(r.data) ? r.data : [];
       setProjects(list);
-      if (list.length && !activeId) setActiveId(list[0].team_id);
-    }).catch(() => {});
-  }, []);
+      if (list.length) setActiveId(prev => prev || list[0].team_id);
+      else setLoading(false);
+    }).catch(e => {
+      logger.error('Project list load failed', e);
+      setProjectsError(e);
+      setLoading(false);
+    });
+  }, [isClient]);
+
+  useEffect(() => { loadProjects(); }, [loadProjects]);
 
   const loadBoard = useCallback(async () => {
     if (!activeId) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const [projR, colR, taskR, membR] = await Promise.all([
         api.get(`/teams/${activeId}`),
         api.get(`/projects/${activeId}/columns`),
         api.get('/tasks', { params: { team_id: activeId } }),
+        // Members are the one part that may fail on its own without the board
+        // being unusable — an avatar falls back to initials. The other three
+        // are the board.
         api.get(`/teams/${activeId}/members`).catch(() => ({ data: [] })),
       ]);
       setProject(projR.data);
       setColumns(colR.data || []);
       setRawTasks(taskR.data || []);
       setTeamMembers(membR.data || []);
-    } catch (_) {}
+    } catch (e) {
+      // This was `catch (_) {}`. A board that failed to load rendered as a
+      // board with no columns and no tasks — indistinguishable from an empty
+      // one, with no way to retry short of a full page reload.
+      logger.error('Board load failed', e);
+      setLoadError(e);
+      setColumns([]);
+      setRawTasks([]);
+    }
     finally { setLoading(false); }
   }, [activeId]);
 
@@ -264,6 +297,21 @@ export default function BoardsPage() {
         <SkeletonRegion label="Loading board…">
           {view === 'kanban' ? <SkeletonBoard columns={4} cards={3} /> : <SkeletonList rows={8} />}
         </SkeletonRegion>
+      ) : projectsError ? (
+        // `errorKind` distinguishes offline from 403 from 500 — 02 §Revision.
+        // A 403 here is a real answer ("access is granted by role"), and it is
+        // not the same instruction as "try again".
+        <ErrorState kind={errorKind(projectsError)} onRetry={loadProjects} />
+      ) : loadError ? (
+        <ErrorState kind={errorKind(loadError)} onRetry={loadBoard} />
+      ) : projects.length === 0 ? (
+        <EmptyState
+          illustration="tasks"
+          title="No projects yet"
+          description={isClient
+            ? 'Projects shared with you will appear here.'
+            : 'Create a project to start planning work on a board.'}
+        />
       ) : (
         <Suspense fallback={<SkeletonRegion label="Loading view…"><SkeletonList rows={6} /></SkeletonRegion>}>
           {view === 'kanban' && (
@@ -288,6 +336,7 @@ export default function BoardsPage() {
               columns={columns}
               teamMembers={teamMembers}
               fieldDefs={fieldDefs}
+              fieldValueMap={fieldValueMap}
               boardId={activeId}
               onTasksChange={handleTasksChange}
             />
