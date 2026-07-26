@@ -41,7 +41,7 @@ export default function InboxPage() {
   const markRead = async (id) => {
     if (notifications.find(n => n.notification_id === id && n.read_at)) return;
     try {
-      await api.post('/notifications/mark-read', { notification_ids: [id] });
+      await api.post('/notifications/mark-read', { mark_all: false, notification_ids: [id] });
       setNotifications(prev =>
         prev.map(n => n.notification_id === id ? { ...n, read_at: new Date().toISOString() } : n)
       );
@@ -50,7 +50,7 @@ export default function InboxPage() {
 
   const markAllRead = async () => {
     try {
-      await api.post('/notifications/mark-read', { mark_all: true });
+      await api.post('/notifications/mark-read', { mark_all: true, notification_ids: [] });
       setNotifications(prev => prev.map(n => ({ ...n, read_at: new Date().toISOString() })));
     } catch (_) { /* optimistic update already applied — ignore network errors */ }
   };

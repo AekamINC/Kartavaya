@@ -14,8 +14,13 @@ export default function NotificationsSettingsPage() {
   const [timeFmt,    setTimeFmt]    = useState(getTimeFormat());
 
   useEffect(() => {
-    setSupported('serviceWorker' in navigator && 'PushManager' in window);
-    setPermission(Notification.permission);
+    // Notification.permission was read WITHOUT a guard, so this page threw on
+    // mount — a blank screen — anywhere the API is absent: iOS Safari before
+    // 16.4, embedded webviews, and any page not in a secure context. AppShell
+    // guards this correctly in four places; this file did not.
+    const hasNotification = typeof window !== 'undefined' && 'Notification' in window;
+    setSupported('serviceWorker' in navigator && 'PushManager' in window && hasNotification);
+    setPermission(hasNotification ? Notification.permission : 'unsupported');
   }, []);
 
   const chooseSound = (id) => {
@@ -97,7 +102,7 @@ export default function NotificationsSettingsPage() {
         </div>
         <div className="k-card__body">
           <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 16 }}>
-            Supported: <strong>{supported ? 'Yes' : 'No'}</strong> · Permission: <strong>{permission}</strong>
+            Supported: <strong>{supported ? 'Yes' : 'No'}</strong> · Permission: <strong>{permission === 'unsupported' ? 'not available' : permission}</strong>
           </p>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="k-btn k-btn--primary" onClick={enablePush} disabled={loading || !supported || enabled}>
@@ -110,6 +115,14 @@ export default function NotificationsSettingsPage() {
           {permission === 'denied' && (
             <p style={{ marginTop: 14, fontSize: 12, color: 'var(--danger)' }}>
               Notifications are blocked in your browser settings. Allow this site in your browser notification preferences.
+            </p>
+          )}
+          {/* `unsupported` needs its own copy. Showing the `denied` message here
+              would tell the user to change a browser setting that does not
+              exist on their browser. */}
+          {permission === 'unsupported' && (
+            <p style={{ marginTop: 14, fontSize: 12, color: 'var(--ink-3)' }}>
+              This browser doesn’t support push notifications. You’ll still see in-app notifications from the bell.
             </p>
           )}
         </div>
