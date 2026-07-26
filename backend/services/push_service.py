@@ -16,22 +16,31 @@ normalise_prefs() / normalise_window()
     whatever JSON it is handed; these make that safe. See each docstring.
 
 
-The second path
-───────────────
-`send_push()` below is preference-aware. It is NOT the only way a push leaves
-this system. `server.py:create_notification()` writes the in-app row and then
-fires `send_web_push()` and `send_expo_push()` directly — neither of which takes
-a `kind` or reads `notification_prefs` at all. Everything raised that way
-(`status_changed`, `done`, `reminder`) ignores the user's settings completely.
+The other two paths — NOW GATED
+──────────────────────────────
+`send_push()` below is preference-aware, and it was never the only way a push
+left this system. Two other paths called `send_web_push()` / `send_expo_push()`
+directly — neither of which takes a `kind` or reads `notification_prefs` at all
+— so everything raised through them ignored the user's settings completely:
 
-The preference for those kinds is not missing from the vocabulary — it is right
-there in DEFAULT_PREFS and the UI renders a switch for it. It is simply never
-consulted on that path, which is worse than a missing switch: the user sets it,
-sees it save, and still gets the notification.
+  · `server.py:create_notification()` — the main helper. `approval_request`,
+    `assigned`, `comment`, `approved`, `rejected`, `status_changed`, `done`.
+  · `routers/task_reminders.py` — the due-date cron. `reminder`.
 
-`prefs_allow()` is the fix, and it lives here because this is where the gate
-belongs. The change needed at the call site is reported, not made — `server.py`
-is owned elsewhere.
+The preference for those kinds was never missing from the vocabulary: it is
+right there in DEFAULT_PREFS and the customize hub renders a switch for each.
+It was simply never consulted on either path, which is worse than a missing
+switch — the user sets it, watches it save, and still gets the notification.
+
+`prefs_allow()` is the gate, and it lives here because this is where the gate
+belongs. **Both call sites now consult it**: `server.py:_push_if_allowed` and
+the `channel_push` branch in `task_reminders.dispatch_reminders`. Pinned by
+`tests/test_quiet_hours_parity.py`, which also asserts that each writes its
+notification ROW above the gate — quiet hours suppress the device, never the
+record.
+
+If you add a third delivery path, gate it here too. That is the whole lesson of
+the first two.
 """
 import asyncio
 import json

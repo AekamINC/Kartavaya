@@ -188,3 +188,68 @@ async def test_the_reminder_row_is_written_regardless(monkeypatch):
     insert_at = src.index("INSERT INTO notifications")
     gate_at = src.index("prefs_allow")
     assert insert_at < gate_at, "the notification row must be written before the delivery gate"
+
+
+# ── The main helper, which had no gate at all ────────────────────────────────
+
+async def test_create_notification_consults_prefs_before_pushing(monkeypatch):
+    """`server.py:create_notification` is the helper nearly every notification
+    goes through. It fired `send_web_push` and `send_expo_push` directly, and
+    neither reads `notification_prefs` — so `approval_request`, `assigned`,
+    `comment`, `approved`, `rejected`, `status_changed` and `done` all reached
+    the device regardless of quiet hours AND regardless of the per-kind switch
+    the customize hub renders for each of them.
+    """
+    import server
+
+    calls = {"web": 0, "expo": 0}
+
+    async def _web(*a, **k):
+        calls["web"] += 1
+
+    async def _expo(*a, **k):
+        calls["expo"] += 1
+
+    monkeypatch.setattr(server, "send_web_push", _web)
+    monkeypatch.setattr(server, "send_expo_push", _expo)
+    monkeypatch.setattr("services.push_service.prefs_allow", AsyncMock(return_value=False))
+
+    await server._push_if_allowed(
+        MagicMock(), user_id="u1", kind="status_changed", title="t",
+        message="m", url="/tasks", task_id="task_1",
+    )
+    assert calls == {"web": 0, "expo": 0}
+
+
+async def test_create_notification_pushes_when_prefs_allow(monkeypatch):
+    import server
+
+    calls = {"web": 0, "expo": 0}
+
+    async def _web(*a, **k):
+        calls["web"] += 1
+
+    async def _expo(*a, **k):
+        calls["expo"] += 1
+
+    monkeypatch.setattr(server, "send_web_push", _web)
+    monkeypatch.setattr(server, "send_expo_push", _expo)
+    monkeypatch.setattr("services.push_service.prefs_allow", AsyncMock(return_value=True))
+
+    await server._push_if_allowed(
+        MagicMock(), user_id="u1", kind="assigned", title="t",
+        message="m", url="/tasks", task_id="task_1",
+    )
+    assert calls == {"web": 1, "expo": 1}
+
+
+async def test_create_notification_writes_the_row_above_the_gate():
+    """Same ordering guarantee as the reminder dispatcher: the INSERT is not
+    inside the push branch, so a notification suppressed at the device still
+    arrives in the Inbox with its real timestamp."""
+    import inspect
+
+    import server
+
+    src = inspect.getsource(server.create_notification)
+    assert src.index("INSERT INTO notifications") < src.index("if not push")

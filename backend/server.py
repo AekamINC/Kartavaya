@@ -391,20 +391,65 @@ async def normalize_orders(pool, scope_col, scope_val, column_id):
                 *params,
             )
 
-async def create_notification(pool, user_id, notif_type, title, message, task_id=None, team_id=None, url=None, push=True):
+async def _push_if_allowed(pool, *, user_id, kind, title, message, url, task_id, is_mine=True):
+    """Ask the user's preferences first, then fire both push channels.
+
+    THE GATE THAT WAS MISSING ENTIRELY. `send_web_push` and `send_expo_push`
+    take a `user_id` and fire — neither accepts a `kind`, and neither reads
+    `notification_prefs`. `create_notification` called them directly, so every
+    kind raised through it (`approval_request`, `assigned`, `comment`,
+    `status_changed`, `done`, `rejected`, `approved`, `reminder`) went to the
+    device regardless of quiet hours and regardless of the per-kind switch.
+
+    That is worse than a missing setting. The vocabulary was never missing —
+    `DEFAULT_PREFS` has every one of those kinds and the customize hub renders a
+    switch for each. It was simply never consulted on this path, so the user set
+    it, watched it save, and still got the notification at 3am. A control that
+    reports success and changes nothing teaches people the product lies.
+
+    `notif_type` is already the right vocabulary: the strings this helper is
+    called with are the same strings `DEFAULT_PREFS` is keyed on. No mapping
+    needed — only the question.
+
+    Runs in the background so the extra prefs round trip is off the request
+    path, and fails OPEN inside `prefs_allow`: losing an approval request to a
+    lookup timeout is a bigger harm than one unwanted buzz.
+
+    `is_mine=True` is the permissive reading of `mine_only`, and deliberately
+    so. This change's job is to stop delivering what the user switched OFF and
+    what quiet hours forbid; deciding whose event it is needs ownership context
+    these call sites do not carry, and guessing wrong would silence something
+    they asked for. Off and quiet hours are unambiguous — those are gated now.
+    """
+    from services.push_service import prefs_allow
+    if not await prefs_allow(pool, user_id, kind, is_mine=is_mine):
+        return
+    await send_web_push(pool, user_id=user_id, title=title, body=message, url=url or "/")
+    await send_expo_push(pool, user_id=user_id, title=title, body=message, url=url or "/", task_id=task_id)
+
+
+async def create_notification(pool, user_id, notif_type, title, message, task_id=None, team_id=None, url=None, push=True, is_mine=True):
     """Insert a notification row and fire a Web Push if the user has a subscription.
 
     Pass push=False to write the in-app row only (used for reminders whose
     push channel was switched off).
+
+    THE ROW IS WRITTEN UNCONDITIONALLY, above the push gate. Quiet hours and a
+    switched-off kind suppress the DEVICE, never the record: the notification
+    still lands in the Inbox with its real timestamp, because the record is when
+    it happened, not when you were willing to be interrupted by it.
     """
     await pool.execute(
         "INSERT INTO notifications (notification_id,user_id,team_id,type,title,message,task_id,url) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
         f"notif_{uuid.uuid4().hex[:12]}", user_id, team_id, notif_type, title, message, task_id, url,
     )
     if not push: return
-    # Fire Web Push (browser) + Expo Push (mobile) — both non-blocking
-    _bg(send_web_push(pool, user_id=user_id, title=title, body=message, url=url or "/"), label="web_push")
-    _bg(send_expo_push(pool, user_id=user_id, title=title, body=message, url=url or "/", task_id=task_id), label="expo_push")
+    # One background task, not two: the preference lookup is shared by both
+    # channels, and firing them separately would ask the same question twice.
+    _bg(_push_if_allowed(
+        pool, user_id=user_id, kind=notif_type, title=title, message=message,
+        url=url, task_id=task_id, is_mine=is_mine,
+    ), label="gated_push")
 
 async def _replace_task_reminders(pool, task_id: str, due_dt, reminders: List["ReminderIn"]) -> List["ReminderOut"]:
     """Delete unsent reminders for a task and insert the new set, computed off due_dt.
