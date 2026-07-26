@@ -33,14 +33,26 @@ const Ic = {
   next:  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>,
 };
 
-const EXIT_MS = 130;
+/**
+ * A CEILING, not the exit duration. The unmount is driven by `animationend`;
+ * this only covers the case where the event never arrives (panel hidden or the
+ * animation interrupted), so it must sit ABOVE the CSS duration.
+ *
+ * It used to be a flat 130ms against a CSS exit of `--dur-fast` —
+ * `calc(140ms * var(--ix))` — so it was wrong at every setting of the user's
+ * Animations preference: 10ms early at `full`, 60ms of dead panel at `reduced`,
+ * and a full 130ms wait at `none`, which is the setting that asks for none.
+ * `.pk__pop.is-closing` is `dmSheetOut var(--dur-base)` in the mobile sheet
+ * form as well, so one constant could never have matched both.
+ */
+const EXIT_FALLBACK_MS = 500;
 
 /**
  * Dismiss, roving focus and the exit animation, once instead of four times.
  *
- * The close path is `setClosing(true)` → unmount after 130ms, never a bare
- * `setOpen(false)`: the current pickers unmount instantly, so `dmPopOut` never
- * plays at all and the popover simply vanishes.
+ * The close path is `setClosing(true)` → unmount when the exit animation ends,
+ * never a bare `setOpen(false)`: the current pickers unmount instantly, so
+ * `dmPopOut` never plays at all and the popover simply vanishes.
  *
  * Escape comes from `useDismiss`, which stops propagation — dismissing a picker
  * inside the task drawer must not also close the drawer behind it.
@@ -49,12 +61,32 @@ export function usePicker(open, setOpen, rootRef, listRef) {
   const [closing, setClosing] = useState(false);
   const [cursor, setCursor] = useState(0);
   const timer = useRef(null);
+  // See Popover.jsx: the handler must distinguish the exit animation from the
+  // entrance, and a closure over `closing` would hold the value from the render
+  // that installed it. Without this the picker closes as soon as it opens.
+  const closingRef = useRef(false);
+
+  const finish = useCallback(() => {
+    clearTimeout(timer.current);
+    closingRef.current = false;
+    setClosing(false);
+    setOpen(false);
+  }, [setOpen]);
 
   const close = useCallback(() => {
+    closingRef.current = true;
     setClosing(true);
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => { setClosing(false); setOpen(false); }, EXIT_MS);
-  }, [setOpen]);
+    timer.current = setTimeout(finish, EXIT_FALLBACK_MS);
+  }, [finish]);
+
+  // Rows animate on hover and the list shimmers while loading, so the panel's
+  // own exit has to be told apart from anything bubbling out of its children.
+  const onExitEnd = useCallback((e) => {
+    if (e.target !== e.currentTarget) return;
+    if (!closingRef.current) return;
+    finish();
+  }, [finish]);
 
   useEffect(() => () => clearTimeout(timer.current), []);
   useDismiss(open, rootRef, close);
@@ -78,7 +110,7 @@ export function usePicker(open, setOpen, rootRef, listRef) {
 
   useEffect(() => { if (!open) setCursor(0); }, [open]);
 
-  return { closing, close, cursor, setCursor };
+  return { closing, close, cursor, setCursor, onExitEnd };
 }
 
 function PkPop({ closing, up, right, width, children, ...rest }) {
@@ -110,7 +142,7 @@ export function Picker({
   const [q, setQ] = useState('');
   const rootRef = useRef(null);
   const listRef = useRef(null);
-  const { closing, close, cursor, setCursor } = usePicker(open, setOpen, rootRef, listRef);
+  const { closing, close, cursor, setCursor, onExitEnd } = usePicker(open, setOpen, rootRef, listRef);
 
   useEffect(() => { if (!open) setQ(''); }, [open]);
 
@@ -167,7 +199,7 @@ export function Picker({
       </button>
 
       {open && (
-        <PkPop closing={closing} up={up} right={right} aria-label={ariaLabel || placeholder}>
+        <PkPop closing={closing} up={up} right={right} onAnimationEnd={onExitEnd} aria-label={ariaLabel || placeholder}>
           {search !== false && (search === true || items.length > 6) && (
             <div className="pk__srch">
               {Ic.srch}
@@ -229,7 +261,7 @@ export function PickerDate({ value, onChange, placeholder, field, up, right, dis
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const listRef = useRef(null);
-  const { closing, close } = usePicker(open, setOpen, rootRef, listRef);
+  const { closing, close, onExitEnd } = usePicker(open, setOpen, rootRef, listRef);
   const selected = value ? new Date(value) : null;
   const [view, setView] = useState(() => (selected || new Date()));
 
@@ -263,7 +295,7 @@ export function PickerDate({ value, onChange, placeholder, field, up, right, dis
       </button>
 
       {open && (
-        <PkPop closing={closing} up={up} right={right} width={256} aria-label={ariaLabel || 'Choose a date'}>
+        <PkPop closing={closing} up={up} right={right} width={256} onAnimationEnd={onExitEnd} aria-label={ariaLabel || 'Choose a date'}>
           {/* Quick row ABOVE the calendar. Today and Tomorrow are the answer
               most of the time and should not be scrolled past. */}
           <div className="pk__quick">
