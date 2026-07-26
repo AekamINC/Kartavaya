@@ -179,11 +179,20 @@ export function installMockApi(routes = {}) {
         ));
       }
       const params = matchPath(hit.path, path) || {};
-      const value = typeof hit.value === 'function'
+      const raw = typeof hit.value === 'function'
         ? hit.value({ url: String(url), path, query, body, params })
         : hit.value;
-      if (value && value.__reject) return Promise.reject(value.__reject);
-      return Promise.resolve({ data: value, status: 200, headers: {} });
+
+      // `Promise.resolve(raw)` rather than using `raw` directly, so a handler
+      // may return a PENDING promise to model a request that has not answered
+      // yet. Without this the pending promise was handed straight back as
+      // `res.data` and a component reading `res.data.title` got a thenable.
+      // Tests of in-flight state — the optimistic write, the disabled control —
+      // need that pending window to exist.
+      return Promise.resolve(raw).then((value) => {
+        if (value && value.__reject) return Promise.reject(value.__reject);
+        return { data: value, status: 200, headers: {} };
+      });
     });
   }
 
