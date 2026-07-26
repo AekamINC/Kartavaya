@@ -83,33 +83,30 @@ again" within what they already have — the tidy-up case the frontend describes
 and never "on for the first time".
 
 ═══════════════════════════════════════════════════════════════════════════════
-4 · THE TWO SPELLINGS
+4 · THE SPELLING — RESOLVED, NO TRANSLATION LEFT IN THIS FILE
 ═══════════════════════════════════════════════════════════════════════════════
 
-Verified against the live database:
+This file used to carry an `_ENTITLEMENT_SPELLING` map because the entitlement
+path spelled messaging `sanvaad` and the grant path spelled it `samvada`, so a
+string comparison between them silently found nothing.
 
-    staging.module_subscriptions  →  'sanvaad'   (1 row; 'samvada' never occurs)
-    staging.add_on_modules        →  'sanvaad'
-    role_tiers.ALL_MODULES        →  'samvada'
-    CHECK org_member_modules_level_is_meaningful
-                                  →  '…, samvada, esign' — names 'samvada'
+That is fixed at the source. `role_tiers.py` now says `sanvaad` in all four
+sets, `messaging.py` gates on `require_module("sanvaad")`, and the frontend
+catalogue's grant code is `sanvaad`. One spelling, so nothing to translate —
+the map, both helpers and the `entitlement_code` response field are gone rather
+than left as identity functions that imply a split still exists.
 
-So the entitlement path spells it `sanvaad` and the grant path spells it
-`samvada`, and a bare string comparison between them silently finds nothing.
+What did NOT change: `staging.samvada_*`, the six messaging TABLES. Those are
+applied, and the design reference names them. A table name is not a module code.
 
-**Standardised on `sanvaad`** — it matches the live data in both entitlement
-tables, `navConfig.js`, and `catalogue.js`'s `subCode`. `samvada` survives only
-as the grant spelling, in `role_tiers.ALL_MODULES` and in a CHECK constraint,
-and converging on it would mean rewriting rows in a shared production database
-to match a constant. Converging on `sanvaad` means rewriting the constant.
-
-This file cannot do that rename: `role_tiers.py` is owned elsewhere and the
-CHECK is a migration that must not be applied against a shared project. So it
-translates at the boundary instead, and the translation is EXPLICIT and
-one-line-visible rather than smeared through the queries. `PROPOSED_070`
-proposes the rename that deletes this map; until then it accepts BOTH spellings
-on input, which is the only behaviour that cannot reject a caller for being
-right.
+The CHECK `org_member_modules_level_is_meaningful` still lists `samvada` in the
+live database. That is `PROPOSED_070_sanvaad_spelling.sql`, unapplied. It is a
+PROHIBITION ("no approver level on these modules"), not a whitelist — verified
+by evaluating the live constraint expression against candidate rows — so the
+code-first order is safe: a `sanvaad` grant passes the old CHECK, it simply is
+not caught by it. Until 070 runs, the "no approver on Sanvaad" rule is enforced
+by `valid_levels_for` in the application layer alone, with no database backstop.
+`staging.org_member_modules` is empty, so nothing is mis-stored today.
 """
 import json
 import logging
@@ -127,27 +124,6 @@ from services.audit import emit as audit
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/org/modules", tags=["org-modules"])
-
-
-# ── Spelling ──────────────────────────────────────────────────────────────────
-
-#: canonical (role_tiers / grant) → entitlement (module_subscriptions) spelling.
-#: One entry. If it ever gains a second, the rename in PROPOSED_070 stopped
-#: being optional.
-_ENTITLEMENT_SPELLING: dict[str, str] = {"samvada": "sanvaad"}
-
-#: The inverse, built rather than retyped so the two cannot disagree.
-_CANONICAL_SPELLING: dict[str, str] = {v: k for k, v in _ENTITLEMENT_SPELLING.items()}
-
-
-def entitlement_code(code: str) -> str:
-    """The spelling `staging.module_subscriptions` uses."""
-    return _ENTITLEMENT_SPELLING.get(code, code)
-
-
-def canonical_code(code: str) -> str:
-    """The spelling `role_tiers.ALL_MODULES` and grants use."""
-    return _CANONICAL_SPELLING.get(code, code)
 
 
 # ── Bodies ────────────────────────────────────────────────────────────────────
@@ -248,25 +224,23 @@ async def get_modules(
         )
     }
 
-    # Grants are stored under the CANONICAL spelling; entitlements under the
-    # entitlement one. Normalise on the way in so the counts land on the right
-    # card instead of silently reading zero for messaging.
-    grants: dict[str, int] = {}
-    for r in await pool.fetch(
-        "SELECT module_code, COUNT(*) AS n FROM staging.org_member_modules "
-        "WHERE org_id=$1::uuid GROUP BY module_code",
-        org_id,
-    ):
-        grants[canonical_code(r["module_code"])] = r["n"]
+    # Grants and entitlements now use the same spelling for all twelve modules,
+    # so this is a straight read with nothing to normalise.
+    grants: dict[str, int] = {
+        r["module_code"]: r["n"]
+        for r in await pool.fetch(
+            "SELECT module_code, COUNT(*) AS n FROM staging.org_member_modules "
+            "WHERE org_id=$1::uuid GROUP BY module_code",
+            org_id,
+        )
+    }
 
     out = []
     for code in sorted(ALL_MODULES):
-        ent = entitlement_code(code)
-        row = subs.get(ent)
+        row = subs.get(code)
         bundled = code in BUNDLED_MODULES
         out.append({
             "code": code,
-            "entitlement_code": ent,
             # Bundled modules have no row here; they are gated on the plan's
             # `features` map by `require_module`, so reporting them as inactive
             # because this table is empty would be a lie on the card.
@@ -283,13 +257,11 @@ async def get_modules(
     # Anything the org is paying for that role_tiers does not list. A module a
     # customer has that renders as nothing is the worst way to be incomplete —
     # the same reasoning TabModules.jsx applies to its own catalogue.
-    known = {entitlement_code(c) for c in ALL_MODULES}
     for ent, row in subs.items():
-        if ent in known:
+        if ent in ALL_MODULES:
             continue
         out.append({
-            "code": canonical_code(ent),
-            "entitlement_code": ent,
+            "code": ent,
             "active": bool(row["is_active"]),
             "entitled": True,
             # Not toggleable: `role_tiers` does not know this code, so nothing
@@ -299,7 +271,7 @@ async def get_modules(
             "sensitive": False,
             "activated_at": row["activated_at"],
             "deactivated_at": row["deactivated_at"],
-            "grants_preserved": grants.get(canonical_code(ent), 0),
+            "grants_preserved": grants.get(ent, 0),
             "unrecognised": True,
         })
 
@@ -346,7 +318,7 @@ async def patch_modules(
         raw = (item.code or "").strip().lower()
         if not raw:
             raise HTTPException(400, "A module entry has no code")
-        code = canonical_code(raw)
+        code = raw
         if code not in ALL_MODULES:
             raise HTTPException(
                 400,
@@ -383,7 +355,7 @@ async def patch_modules(
 
     # Provisioning is Aekam's. This endpoint only ever UPDATEs.
     for code in sorted(seen):
-        if entitlement_code(code) not in rows:
+        if code not in rows:
             raise HTTPException(
                 403,
                 f"'{code}' is not part of this organisation's subscription. "
@@ -402,10 +374,9 @@ async def patch_modules(
     # and refusing it would force the admin to make two saves in a precise order
     # they have no way to know.
     for code in sorted(disabling):
-        ent = entitlement_code(code)
         blockers = [
-            d for d in await _dependants(pool, org_id, ent)
-            if canonical_code(d) not in disabling
+            d for d in await _dependants(pool, org_id, code)
+            if d not in disabling
         ]
         if blockers:
             raise HTTPException(
@@ -423,22 +394,21 @@ async def patch_modules(
         async with conn.transaction():
             for code in sorted(seen):
                 want = seen[code]
-                ent = entitlement_code(code)
-                if bool(rows[ent]["is_active"]) == want:
+                if bool(rows[code]["is_active"]) == want:
                     continue  # already there; not an error, not an event
                 if want:
                     await conn.execute(
                         "UPDATE staging.module_subscriptions "
                         "SET is_active=TRUE, activated_at=NOW(), deactivated_at=NULL "
                         "WHERE org_id=$1::uuid AND module_code=$2",
-                        org_id, ent,
+                        org_id, code,
                     )
                 else:
                     await conn.execute(
                         "UPDATE staging.module_subscriptions "
                         "SET is_active=FALSE, deactivated_at=NOW() "
                         "WHERE org_id=$1::uuid AND module_code=$2",
-                        org_id, ent,
+                        org_id, code,
                     )
                 changed.append({"code": code, "active": want})
 
@@ -454,7 +424,6 @@ async def patch_modules(
             "module_enabled_by_org" if c["active"] else "module_disabled_by_org",
             {
                 "module": c["code"],
-                "entitlement_code": entitlement_code(c["code"]),
                 "by": user["user_id"],
                 "via": "org_settings",
                 "grants_preserved": True,

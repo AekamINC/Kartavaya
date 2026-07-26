@@ -116,3 +116,106 @@ The failure is `tests/test_ganit.py::test_create_invoice_success — TypeError: 
 **Pre-existing, not mine.** Verified by `git stash`-ing my `server.py` change and
 re-running the single test: it fails identically without it. Belongs to whoever owns
 `routers/ganit.py` / the invoice fixtures.
+
+## 5. The `sanvaad` / `samvada` split — CLAIM HELD, and worse than described
+
+### What the brief said, and what is actually true
+
+Every part of the brief's description **held**, verified independently against the live DB:
+
+| Source | Spelling | Evidence |
+|---|---|---|
+| `staging.module_subscriptions` | `sanvaad` | `GROUP BY module_code` → 10 codes; `sanvaad` present, `samvada` absent |
+| `staging.org_member_modules` | — | **table is EMPTY, 0 rows** |
+| CHECK `org_member_modules_level_is_meaningful` | `samvada` | `pg_get_constraintdef` |
+| `role_tiers.py` | `samvada` x4 | lines 64, 71, 209, 228 |
+| `navConfig.js`, `moduleColors.js` | `sanvaad` | grep |
+| **design reference `SetOrg.jsx`:229** | **`sanvaad`** | keyed on `m.code` |
+
+**The design reference settles it.** In `design-reference/Kartavaya Redesign/`, every
+occurrence of `samvada` is a TABLE name (`samvada_channels`, `samvada_messages`, ...).
+The module CODE is `sanvaad` — `SetOrg.jsx:229` maps `m.code` through
+`{ ..., esign: 'sign', sanvaad: 'chat' }`. Spec, live data and nav all agree on `sanvaad`.
+
+### The brief UNDERSTATED the severity — this was a total outage of the module
+
+`middleware/subscription.require_module(code)` uses the **same single string** for both
+lookups:
+
+- grant: `SELECT 1 FROM staging.org_member_modules WHERE ... module_code=$3`
+- entitlement: `SELECT 1 FROM staging.module_subscriptions WHERE ... module_code=$2 AND is_active=TRUE`
+
+`messaging.py:21` called `require_module("samvada")`. The entitlement query therefore
+searched for a code that table has **never held**, and the org-role short-circuit
+(`org_owner`/`org_admin`) skips only the GRANT check — it falls through to the
+entitlement check regardless. `samvada` is not in `BUNDLED_MODULES` either, so nothing
+short-circuited it.
+
+**Net effect: every Sanvaad endpoint returned `403 "Module 'samvada' is not active"` to
+every user in every org, including org_owner, no matter what anyone was subscribed to.**
+The module could not be switched on, because the code being switched on was not the code
+being checked.
+
+Renaming only `role_tiers.py` — the literal instruction in the brief — would NOT have
+fixed this, and would have made it worse: `samvada` would have dropped out of
+`ALL_MODULES` while `messaging.py` still gated on it, so `can_reach_module()` would
+additionally return False for every platform role. The fix has to include the gate.
+
+### The disproved claim — a spec defect in the salvaged migration
+
+`PROPOSED_070` (as salvaged) asserted:
+
+> "Apply the code FIRST and the SQL second -> for the gap, a grant naming `sanvaad`
+> violates the OLD CHECK and returns 500. Worse."
+
+**That is false.** The constraint is a PROHIBITION, not a whitelist — it forbids
+`approver` on five named modules; it does not restrict `module_code` to a list. A row it
+does not name passes it. Verified by evaluating the live constraint expression against
+candidate rows rather than by reading it:
+
+| module_code | role | passes OLD | passes NEW |
+|---|---|---|---|
+| `sanvaad` | approver | **TRUE** | FALSE |
+| `samvada` | approver | FALSE | TRUE |
+| `sanvaad` | admin | TRUE | TRUE |
+| `kartavya` | viewer | FALSE | FALSE |
+
+Neither ordering can produce a violation or a 500. The orders differ only in which
+spelling temporarily loses its *database backstop* for the "no approver on messaging"
+rule — which `valid_levels_for` enforces in the application layer either way, over an
+empty table. Code-first is therefore safe, which is what let me ship the code half now.
+I rewrote that risk section in the file with the measurement.
+
+I also recorded a dependency the salvaged file missed: **`PROPOSED_066` section 1 is what
+created this CHECK, is already applied, and still spells it `samvada`.** Re-running 066
+after 070 silently reverts the constraint. Noted in 070.
+
+### What changed (code side — authorised by the brief, no schema touched)
+
+Backend: `role_tiers.py` (4 sets + comment), `messaging.py` (**the gate**, + OpenAPI tag),
+`search.py` (`_ENTITY_MODULE["messages"]`), `admin_orgs.py`, `org_modules.py`,
+`tests/test_messaging_security.py`.
+Frontend: `catalogue.js`, `levels.js`, `TabModules.jsx`, `AdminOrgsPage.jsx`.
+
+**NOT changed, deliberately:** `staging.samvada_*` — the six applied messaging tables,
+named as such in the design reference. A table name is not a module code.
+
+### The workarounds — FOUR, not three, and all four are gone
+
+The brief named three. There was a fourth.
+
+1. `catalogue.js` `subCode` — removed, with `colorKey` and `subscriptionCode`. Proved
+   unused: no entry carries `subCode`/`colorKey` after the rename; `subscriptionCode` had
+   exactly two callers (`isModuleActive`, `TabModules.jsx`), both simplified.
+2. `TabModules.jsx` — the `|| subscriptionCode(m.code) === code` half of the dedupe filter,
+   removed with its comment and its import.
+3. `org_modules.py` `_ENTITLEMENT_SPELLING` — removed with `_CANONICAL_SPELLING`,
+   `entitlement_code()`, `canonical_code()`, all 13 call sites, and the `entitlement_code`
+   response field. Proved unused: grep for `entitlement_code` across all `.jsx/.js/.md`
+   returns nothing, so no client consumed it.
+4. **`admin_orgs.py:832`** (not in the brief) — `ALL_MODULES = frozenset(ROLE_TIER_MODULES) | {"sanvaad"}`.
+   The union existed only to add the entitlement spelling on top of role_tiers'. Now that
+   role_tiers says `sanvaad`, it was adding a member already present. Reduced to a straight import.
+
+None were left as identity functions. An identity translator implies a split that no
+longer exists, and the next reader has to re-derive that it is a no-op.

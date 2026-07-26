@@ -135,7 +135,7 @@ router = APIRouter(prefix="/api", tags=["search"])
 _ENTITY_MODULE: dict[str, str] = {
     "clients": "graha",
     "invoices": "ganit",
-    "messages": "samvada",
+    "messages": "sanvaad",
 }
 
 #: Render order, and the set the caller may scope to. Matches `SCOPES` /

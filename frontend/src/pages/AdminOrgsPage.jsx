@@ -68,7 +68,7 @@ const ALL_MODULES = [
   { code: 'prachar', label: 'Prachar · Marketing' },
   { code: 'srijan', label: 'Srijan · AI' },
   { code: 'dristi', label: 'Dristi · Analytics' },
-  { code: 'samvada', label: 'Sanvaad · Messaging' },
+  { code: 'sanvaad', label: 'Sanvaad · Messaging' },
   { code: 'varta', label: 'Varta · WhatsApp' },
   { code: 'esign', label: 'eSign' },
   { code: 'pahchan', label: 'Pahchan · Attendance', sensitive: true },

@@ -14,7 +14,7 @@ MESSAGE_ID = "11111111-2222-3333-4444-555555555555"
 
 @pytest.fixture(autouse=True)
 def _bypass_module_gate(app):
-    """Skip the require_module('samvada') subscription check for all tests."""
+    """Skip the require_module('sanvaad') subscription check for all tests."""
     from routers.messaging import _gate
     app.dependency_overrides[_gate] = lambda: None
     yield

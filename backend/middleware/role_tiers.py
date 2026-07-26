@@ -59,16 +59,27 @@ ALL_PLATFORM_ROLES: tuple[str, ...] = (
 HR_MODULES: frozenset[str] = frozenset({"manav", "vetana"})
 
 #: Module codes as they appear in `require_module(...)`, verified against
-#: backend/routers/. Note `samvada` — the nav calls the same module `sanvaad`.
+#: backend/routers/.
+#:
+#: Messaging is `sanvaad`, ONE spelling, everywhere. It used to be `samvada`
+#: here and in the CHECK while `staging.module_subscriptions`, the nav and the
+#: design reference all said `sanvaad`, so `require_module("samvada")` looked
+#: the entitlement up under a code that table has never held and Sanvaad was
+#: unreachable for every user in every org. Three separate workarounds existed
+#: to paper over it; all three are gone.
+#:
+#: The TABLES keep the `samvada_` prefix — `staging.samvada_messages` and its
+#: five siblings are applied and are named in the design reference. A table name
+#: is not a module code, and renaming those is a data migration for no gain.
 ALL_MODULES: frozenset[str] = frozenset({
-    "graha", "vikray", "prachar", "srijan", "dristi", "samvada",
+    "graha", "vikray", "prachar", "srijan", "dristi", "sanvaad",
     "ganit", "esign", "varta", "pahchan", "manav", "vetana",
 })
 
 #: platform_staff's operating set. Excludes finance (ganit), signed agreements
 #: (esign), outbound WhatsApp (varta), attendance (pahchan) and all HR.
 STAFF_MODULES: frozenset[str] = frozenset({
-    "graha", "vikray", "prachar", "srijan", "dristi", "samvada",
+    "graha", "vikray", "prachar", "srijan", "dristi", "sanvaad",
 })
 
 #: platform_manager: everything except HR and Payroll.
@@ -206,7 +217,7 @@ LEVELS: tuple[str, ...] = (VIEWER, EDITOR, APPROVER, ADMIN)
 #: "Admin can do all" — the owner's words, and true everywhere it does not
 #: move money.
 HIERARCHICAL_MODULES: frozenset[str] = frozenset({
-    "kartavya", "graha", "vikray", "prachar", "dristi", "srijan", "samvada", "esign",
+    "kartavya", "graha", "vikray", "prachar", "dristi", "srijan", "sanvaad", "esign",
 })
 
 #: Modules where APPROVER AND ADMIN ARE NOT A HIERARCHY.
@@ -225,7 +236,7 @@ SEPARATED_DUTY_MODULES: frozenset[str] = frozenset({"vetana", "ganit"})
 
 #: Modules with no approver level at all — nothing in them to approve.
 NO_APPROVER_MODULES: frozenset[str] = frozenset({
-    "kartavya", "dristi", "srijan", "samvada", "esign",
+    "kartavya", "dristi", "srijan", "sanvaad", "esign",
 })
 
 #: Kartavya has no viewer: everyone in the org edits tasks. Client is the

@@ -39,18 +39,44 @@
 -- ═════════════════════════════════════════════════════════════════════════════
 -- RISK: MEDIUM — THIS ONE IS NOT SELF-CONTAINED
 -- ═════════════════════════════════════════════════════════════════════════════
---   THE SQL BELOW IS NOT SUFFICIENT ON ITS OWN. `middleware/role_tiers.py` must
---   change in the SAME deploy, and that file is owned by another agent — which
---   is why this is proposed and not applied, and why `org_modules.py` translates
---   at the boundary in the meantime rather than assuming this has run.
+--   CORRECTION, 2026-07-26. The paragraph that stood here claimed the ordering
+--   was dangerous in one direction:
 --
---   Order matters and is NOT symmetric:
---     · Apply the SQL FIRST and the code second → for the gap between them, a
---       grant naming `samvada` violates the new CHECK. But there are ZERO rows
---       in staging.org_member_modules, so the gap is harmless today.
---     · Apply the code FIRST and the SQL second → for the gap, a grant naming
---       `sanvaad` violates the OLD CHECK and returns 500. Worse.
---   So: SQL first, then the one-line constant change, then deploy.
+--     "Apply the code FIRST and the SQL second → for the gap, a grant naming
+--      `sanvaad` violates the OLD CHECK and returns 500. Worse."
+--
+--   THAT IS WRONG, and it was wrong when it was written. The constraint is a
+--   PROHIBITION, not a whitelist:
+--
+--     CHECK (NOT (module_code='kartavya' AND role='viewer')
+--        AND NOT (module_code = ANY(ARRAY[...,'samvada',...]) AND role='approver'))
+--
+--   A row it does not name passes it. Verified by evaluating the live
+--   expression against candidate rows rather than by reading it:
+--
+--     module_code  role      passes OLD   passes NEW
+--     sanvaad      approver  TRUE         FALSE
+--     samvada      approver  FALSE        TRUE
+--     sanvaad      admin     TRUE         TRUE
+--     kartavya     viewer    FALSE        FALSE
+--
+--   So neither order can produce a constraint violation or a 500. What the two
+--   orders actually differ in is which spelling loses its DATABASE BACKSTOP for
+--   the length of the gap — the "no approver level on messaging" rule. The
+--   application layer (`valid_levels_for` / `NO_APPROVER_MODULES`) enforces it
+--   either way, and `staging.org_member_modules` is EMPTY, so today the gap
+--   costs nothing in either direction.
+--
+--   THE CODE HALF HAS ALREADY SHIPPED — `role_tiers.py`, `messaging.py`,
+--   `search.py`, `admin_orgs.py`, `org_modules.py` and the frontend catalogue
+--   all say `sanvaad` as of this branch. So this file is now the REMAINING half,
+--   and applying it restores the database backstop under the spelling the code
+--   already uses. Until it runs, that one rule is application-enforced only.
+--
+--   DEPENDENCY: `PROPOSED_066_tier3_tier4_roles.sql` §1 is what CREATED this
+--   CHECK and still spells it `samvada`. It is already applied. If 066 is ever
+--   re-run AFTER this file, it will silently re-introduce the old spelling.
+--   Run 070 after 066, never before, and never re-run 066 alone.
 --
 --   Rows affected : 0 today. `staging.org_member_modules` is EMPTY — verified,
 --                   the GROUP BY over it returns no rows at all. That is what
@@ -94,29 +120,30 @@ ALTER TABLE staging.org_member_modules
     );
 
 -- ═════════════════════════════════════════════════════════════════════════════
--- APPLY  (step 2 of 2 — REQUIRED, in the same deploy)
+-- STEP 2 OF 2 — ALREADY DONE, recorded here so the pair stays legible
 -- ═════════════════════════════════════════════════════════════════════════════
 --
--- In `backend/middleware/role_tiers.py`, replace `samvada` with `sanvaad` in
--- all four places it appears:
+-- The code half shipped on `verify/org-endpoints`. Nothing to do; this is the
+-- checklist it was verified against, kept so anyone rolling back knows the full
+-- extent of the change.
 --
---     ALL_MODULES            (line 63-66)
---     STAFF_MODULES          (line 70-72)
---     HIERARCHICAL_MODULES   (line 208-210)
---     NO_APPROVER_MODULES    (line 227-229)
+--   backend/middleware/role_tiers.py   ALL_MODULES, STAFF_MODULES,
+--                                      HIERARCHICAL_MODULES, NO_APPROVER_MODULES
+--   backend/routers/messaging.py       require_module("sanvaad") — the gate that
+--                                      made Sanvaad unreachable for everyone
+--   backend/routers/search.py          _ENTITY_MODULE["messages"]
+--   backend/routers/admin_orgs.py      ALL_MODULES union dropped
+--   backend/routers/org_modules.py     _ENTITLEMENT_SPELLING + both helpers
+--                                      + the `entitlement_code` response field
+--   frontend/src/pages/org/catalogue.js  code, subCode, colorKey,
+--                                        subscriptionCode, isModuleActive
+--   frontend/src/pages/org/levels.js     NO_APPROVER_MODULES
+--   frontend/src/pages/org/TabModules.jsx  the subscriptionCode comparison
+--   frontend/src/pages/AdminOrgsPage.jsx   the console's module list
 --
--- and update the comment on line 62, which currently reads:
---     "Note `samvada` — the nav calls the same module `sanvaad`."
---
--- Then in `backend/routers/org_modules.py`, `_ENTITLEMENT_SPELLING` becomes an
--- empty dict and the two translation helpers become identity functions. Delete
--- them and the §4 section of that file's docstring.
---
--- And in `frontend/src/pages/org/catalogue.js`, the `samvada` entry becomes
--- `sanvaad` and `subCode` is deleted, along with `subscriptionCode` and the
--- `subscriptionCode` branch of `isModuleActive`.
---
--- Leaving any one of these undone re-creates the split in a new place.
+-- NOT changed, deliberately: `staging.samvada_*`, the six messaging tables.
+-- They are applied and the design reference names them. A table name is not a
+-- module code.
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- VERIFY

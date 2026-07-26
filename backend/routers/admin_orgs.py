@@ -823,14 +823,12 @@ async def revoke_role(
 # platform console — four modules unreachable through the only UI that reaches
 # them.
 #
-# `sanvaad` is added on top of role_tiers' twelve rather than replacing
-# `samvada`, because THESE endpoints write `staging.module_subscriptions`, and
-# that table spells the module `sanvaad` — verified live, it holds `sanvaad` and
-# never `samvada`. Importing role_tiers' spelling alone would swap one 400 for
-# another and reject the exact code the live data uses. Both spellings are
-# accepted until `PROPOSED_070_sanvaad_spelling.sql` converges them; that file
-# names this line as one of the places the workaround disappears from.
-ALL_MODULES = frozenset(ROLE_TIER_MODULES) | {"sanvaad"}
+# This line used to read `frozenset(ROLE_TIER_MODULES) | {"sanvaad"}`, adding the
+# entitlement spelling on top because role_tiers said `samvada` while these
+# endpoints write `staging.module_subscriptions`, which has only ever held
+# `sanvaad`. role_tiers now says `sanvaad` too, so the union was adding a code
+# that was already in the set. Straight import, one spelling.
+ALL_MODULES = frozenset(ROLE_TIER_MODULES)
 
 
 @router.post("/{org_id}/modules/{module_code}")

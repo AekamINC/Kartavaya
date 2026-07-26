@@ -22,18 +22,19 @@
  * `role_tiers.ALL_MODULES`, so a grant naming it is a 400. Core PM is reached by
  * org membership, not by a grant row.
  *
- * ── Two spellings of one module, and why `subCode` exists ───────────────────
- * The grant endpoint validates against `role_tiers.ALL_MODULES`, which spells
- * messaging `samvada`. `staging.module_subscriptions` — the table that says what
- * the org is actually paying for — spells the same module `sanvaad`, and so does
- * `navConfig.js`. Verified against the live database: module_subscriptions holds
- * `sanvaad`, never `samvada`.
+ * ── One spelling: `sanvaad` ─────────────────────────────────────────────────
+ * This file used to carry `subCode` on the messaging entry because the grant
+ * endpoint validated against `role_tiers.ALL_MODULES` (`samvada`) while
+ * `staging.module_subscriptions` and `navConfig.js` said `sanvaad`, so matching
+ * one against the other by string equality silently failed.
  *
- * So a grant must be written as `samvada` and a subscription must be read as
- * `sanvaad`, and matching one against the other by string equality silently
- * fails. `subCode` carries the entitlement spelling where it differs. This is a
- * workaround for a backend inconsistency, not a design — the real fix is one
- * spelling, server-side, and it is in the report.
+ * That is fixed server-side: `role_tiers.py` now says `sanvaad` in all four
+ * sets and `messaging.py` gates on it. So `subCode` and `colorKey` are gone
+ * from this file — `code` is the grant code, the entitlement code, the nav
+ * spelling and the `moduleColors.js` key, all at once.
+ *
+ * `subscriptionCode` went with them rather than being left as an identity
+ * function that implies a split still exists.
  *
  * Colours come from `lib/moduleColors.js` as token references, so a module keeps
  * its identity in both themes without this file knowing which theme is active.
@@ -62,7 +63,7 @@ export const ORG_MODULES = [
   { code: 'prachar', label: 'Prachar', hi: 'प्रचार', en: 'Marketing',  blurb: 'Campaigns, posts and channels.' },
   { code: 'dristi',  label: 'Dristi',  hi: 'दृष्टि', en: 'Analytics',  blurb: 'Dashboards and saved reports.' },
   { code: 'srijan',  label: 'Srijan',  hi: 'सृजन',  en: 'AI Hub',     blurb: 'Assistant, knowledge base and skills.' },
-  { code: 'samvada', label: 'Sanvaad', hi: 'संवाद',  en: 'Messaging',  blurb: 'Internal threads, mentions and files.', subCode: 'sanvaad', colorKey: 'sanvaad' },
+  { code: 'sanvaad', label: 'Sanvaad', hi: 'संवाद',  en: 'Messaging',  blurb: 'Internal threads, mentions and files.' },
   { code: 'esign',   label: 'E-Sign',  hi: 'प्रमाण', en: 'Signatures', blurb: 'Documents out for signature.' },
   { code: 'varta',   label: 'Varta',   hi: 'वार्ता', en: 'WhatsApp',   blurb: 'Templates and outbound conversations.' },
   { code: 'pahchan', label: 'Pahchan', hi: 'पहचान', en: 'Attendance', blurb: 'Punches, selfies and the review register.' },
@@ -77,35 +78,27 @@ export const moduleLabel = code => moduleByCode(code)?.label || titleCase(code);
 /**
  * Accent for a grant code.
  *
- * Two departures from calling `moduleColor` directly, both of which this file
- * has to make because it is the only caller that uses the result as TEXT:
+ * One departure from calling `moduleColor` directly, which this file has to
+ * make because it is the only caller that uses the result as TEXT:
+ * `moduleColor` falls back to `var(--primary)`, which is a FILL at 4.04:1 and
+ * is not a text colour (00 §12). `--m-varta` does not exist yet, so Varta would
+ * have taken that fallback and painted its initial and its chip label in it.
+ * `--on-surface-3` is a declared text step and is the honest "no identity
+ * colour yet".
  *
- *  1 · `colorKey`, because `lib/moduleColors.js` is keyed on the nav's spelling
- *      (`sanvaad`), not the grant's (`samvada`).
- *  2 · the fallback. `moduleColor` falls back to `var(--primary)`, which is a
- *      FILL at 4.04:1 and is not a text colour (00 §12). `--m-varta` does not
- *      exist yet, so Varta would have taken that fallback and painted its
- *      initial and its chip label in it. `--on-surface-3` is a declared text
- *      step and is the honest "no identity colour yet".
+ * The `colorKey` indirection that used to sit here is gone: `moduleColors.js`
+ * is keyed on `sanvaad` and so is `code`, so there is nothing left to remap.
  */
 export function orgModuleColor(code) {
-  const key = moduleByCode(code)?.colorKey || code;
-  const c = moduleColor(key);
+  const c = moduleColor(code);
   return c === 'var(--primary)' ? 'var(--on-surface-3)' : c;
 }
 
 /**
- * The code `staging.module_subscriptions` uses for this module. Same as the
- * grant code for eleven of the twelve; see the header for the twelfth.
+ * Is this module active on the org's subscription? One spelling now, so this is
+ * a plain membership test against the list the API returns.
  */
-export const subscriptionCode = code => moduleByCode(code)?.subCode || code;
-
-/**
- * Is this module active on the org's subscription? Accepts either spelling in
- * the list, because the list comes straight off the API.
- */
-export const isModuleActive = (code, activeCodes = []) =>
-  activeCodes.includes(code) || activeCodes.includes(subscriptionCode(code));
+export const isModuleActive = (code, activeCodes = []) => activeCodes.includes(code);
 
 /**
  * A card entry for any module code, including one this catalogue does not know.

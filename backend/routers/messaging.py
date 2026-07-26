@@ -16,9 +16,15 @@ from middleware.subscription import require_module
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/v1/messaging", tags=["samvada-messaging"])
+router = APIRouter(prefix="/api/v1/messaging", tags=["sanvaad-messaging"])
 
-_gate = require_module("samvada")
+# `sanvaad`, not `samvada`. `require_module` uses this ONE string for both the
+# grant lookup (`org_member_modules`) and the entitlement lookup
+# (`module_subscriptions`), and that second table has only ever held `sanvaad` —
+# so the old spelling matched no subscription row and this gate returned
+# "Module 'samvada' is not active" to everyone, org_owner included. The tables
+# below stay `samvada_*`; those are table names, not the module code.
+_gate = require_module("sanvaad")
 
 
 async def _assert_channel_access(pool, channel_id, org_id: str, user_id: str) -> None:
