@@ -322,16 +322,32 @@ export function makeHost() {
   return host;
 }
 
-/** A minimal route table: the destinations redirects land on, and nothing else. */
-export function landingRoutes(extra = []) {
-  const stub = (name) => <div data-landed={name}>{name}</div>;
-  return [
-    <Route key="login" path="/login" element={stub('login')} />,
-    <Route key="dash" path="/dashboard" element={stub('dashboard')} />,
-    <Route key="client" path="/client" element={stub('client-portal')} />,
-    <Route key="onboarding" path="/onboarding" element={stub('onboarding')} />,
-    ...extra,
-  ];
+/**
+ * A route table: the caller's real routes, plus stub landings for every
+ * redirect destination they did not claim.
+ *
+ * The stubs have to exist — a `<Navigate to="/login">` with no `/login` route
+ * lands on nothing and the assertion reads as "no redirect happened" rather
+ * than "redirected somewhere undeclared". And they must NOT shadow a real route
+ * the test supplied, so anything the caller declares wins and its stub is
+ * dropped. Getting that backwards renders the placeholder and the test silently
+ * measures the harness instead of the app.
+ */
+const LANDINGS = {
+  '/login': 'login',
+  '/dashboard': 'dashboard',
+  '/client': 'client-portal',
+  '/onboarding': 'onboarding',
+};
+
+export function routesWith(...extra) {
+  const claimed = new Set(extra.flat().map(r => r.props.path));
+  const stubs = Object.entries(LANDINGS)
+    .filter(([p]) => !claimed.has(p))
+    .map(([p, name]) => (
+      <Route key={`stub${p}`} path={p} element={<div data-landed={name}>{name}</div>} />
+    ));
+  return [...stubs, ...extra.flat()];
 }
 
 /* ════════════════════════════════════════════════════════════════════════
