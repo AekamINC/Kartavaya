@@ -893,8 +893,32 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   border: 1px solid var(--outline-variant); border-left: 3px solid var(--tst-c, var(--outline));
   border-radius: var(--r-md); background: var(--s-lowest); box-shadow: var(--shadow-3);
   pointer-events: all;
-  animation: dmPop var(--dur-base) var(--ease-enter) both;
+  /* Was `dmPop var(--dur-base) var(--ease-enter)` — the POPOVER keyframe, a
+     scale-from-97% with a 4px lift. A toast is not a popover: it has no anchor
+     to grow out of, so scaling reads as a dialog appearing rather than a
+     notice sliding in from the edge it lives on.
+     Reference motion.css:284-287 (`.ov-toast`) and MOTION-SPEC.md §3 both
+     specify a 16px slide plus fade on --dur-base --ease-emph. */
+  animation: tstIn var(--dur-base) var(--ease-emph) both;
 }
+/* Reference `@keyframes ovToast`. The reference assumes one fixed corner; this
+   build lets the user choose all four (settings.css `[data-toast-pos]`), so the
+   travel follows the edge the stack actually sits on — a left-positioned toast
+   sliding in from the right would cross the screen to get home. */
+@keyframes tstIn { from { opacity: 0; transform: translateX(16px) } }
+@keyframes tstInL { from { opacity: 0; transform: translateX(-16px) } }
+[data-toast-pos="tl"] .tst,
+[data-toast-pos="bl"] .tst { animation-name: tstInL; }
+
+/* Mobile: the stack goes full width, so there is no side to arrive from and
+   the reference switches to a vertical rise (`ovToastM`, MOTION-SPEC §3
+   "mobile: translateY(12px)"). */
+@media (max-width: 560px) {
+  .tst,
+  [data-toast-pos="tl"] .tst,
+  [data-toast-pos="bl"] .tst { animation-name: tstInM; }
+}
+@keyframes tstInM { from { opacity: 0; transform: translateY(12px) } }
 .tst__i { flex: none; margin-top: 1px; color: var(--tst-c, var(--on-surface-3)); font-size: 12px; font-weight: 700; }
 .tst__b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .tst__t { font-size: 13px; font-weight: 600; color: var(--on-surface); }

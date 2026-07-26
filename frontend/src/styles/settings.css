@@ -239,7 +239,12 @@
 
 /* ── Toast position ────────────────────────────────────────────────────── */
 .k-toasts {
-  position: fixed; z-index: 9999;
+  /* Was a literal 9999. animations.css §1 defines the z-order ladder and calls
+     this exact failure out: a corner element at ~9999 paints over the command
+     palette (620) and the dialog the user is reading (420/421). --z-toast is
+     520, which still sits above the modal — a toast must not be hidden behind
+     the thing that triggered it — but below the palette and the mobile sheet. */
+  position: fixed; z-index: var(--z-toast);
   display: flex; flex-direction: column; gap: 8px;
   width: 320px; max-width: calc(100vw - 40px);
   pointer-events: none;
