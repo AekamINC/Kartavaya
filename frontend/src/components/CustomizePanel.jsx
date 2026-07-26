@@ -252,7 +252,16 @@ export function applyPrefs(prefs) {
   // where the right duration is .001 rather than 0 (a zero-duration animation
   // never fires animationend, so any handler that unmounts on exit-complete
   // leaks its node).
-  root.style.setProperty('--motion-scale',
+  //
+  // --motion-scale-user, NOT --motion-scale — the same rule as --ix-user above,
+  // and it was broken here on this half of the pair. Writing --motion-scale
+  // directly put it in the root's inline style, which outranks a media query,
+  // so `--motion-scale: 0` in kartavaya-design.css's prefers-reduced-motion
+  // block had never once applied: an OS-level reduce-motion user still got full
+  // travel on every reveal, lift, stagger and slide. CSS now does
+  // --motion-scale: var(--motion-scale-user) and the media query owns
+  // --motion-scale, so the OS setting wins.
+  root.style.setProperty('--motion-scale-user',
     prefs.anim === 'none' ? '0' : prefs.anim === 'reduced' ? '.5' : '1');
 
   // NOTE: the block that set --bg / --surface / --ink / --rule per theme as

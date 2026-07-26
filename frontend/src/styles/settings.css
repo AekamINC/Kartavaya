@@ -176,12 +176,23 @@
 .snd__w i { width: 2.5px; border-radius: 1px; background: var(--primary); opacity: .5; height: 100%; }
 .snd__c.on .snd__w i {
   opacity: 1;
-  animation: sndW calc(.8s * var(--ix)) var(--ease-standard) infinite alternate;
+  /* FIXED duration. `calc(.8s * var(--ix))` on an `infinite` animation is the
+     defect corrected across all three sites in this pass: --ix collapsing to
+     .001 at Animations = None gave a 0.8ms period, i.e. these bars pumped at
+     ~1250Hz — clamped by the refresh rate into a hard strobe — for a user who
+     had just asked for no animation. */
+  animation: sndW .8s var(--ease-standard) infinite alternate;
 }
-@keyframes sndW { from { transform: scaleY(.45); } to { transform: scaleY(1); } }
-/* --ix already collapses to ~0 under prefers-reduced-motion and under the
-   user's own animation preference, so the bars hold static without a second
-   media query here. */
+/* The bars hold static at Animations = None because the AMPLITUDE, not the
+   tempo, is what collapses: at --motion-scale 0 the `from` scale is 1, so both
+   ends of the alternation are identical and nothing moves.
+   (The comment previously here asserted --ix alone made the bars "hold
+   static". Measured on the live document, that was false in exactly the
+   direction that matters — it made them strobe.) */
+@keyframes sndW {
+  from { transform: scaleY(calc(1 - .55 * var(--motion-scale, 1))); }
+  to   { transform: scaleY(1); }
+}
 
 /* ── Notification kinds and quiet hours ────────────────────────────────── */
 .nqh { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }

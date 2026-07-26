@@ -36,12 +36,25 @@
  *      naming it. A checker that fails on its own documentation teaches people
  *      to stop writing documentation.
  *
+ *   4. `src/lib` is scanned as well as `src/styles`. It was not, and
+ *      `src/lib/tokens.css` — the legacy compatibility layer, ~90 declarations
+ *      and ~40 references — was therefore invisible to this script in BOTH
+ *      directions. Its declarations did not count, so anything in src/styles
+ *      relying on a name it owns would have been reported undefined; and its
+ *      own `var()` references were never checked at all, so it could reference
+ *      a token that does not exist and the build would stay green. That is the
+ *      exact failure mode this script exists to catch, in the one file whose
+ *      entire job is aliasing one token layer onto another.
+ *
  * Usage: node scripts/check-tokens.mjs
  */
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join, extname } from 'path';
 
-const STYLE_DIR = 'src/styles';
+/** Every directory that may declare a token. Order is irrelevant: custom
+ *  properties resolve at computed-value time, not parse time. */
+const STYLE_DIRS = ['src/styles', 'src/lib'];
+const STYLE_DIR = STYLE_DIRS[0];
 const SRC_DIR = 'src';
 
 if (!existsSync(STYLE_DIR)) {
@@ -60,12 +73,14 @@ function stripComments(text) {
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 }
 
-const cssFiles = readdirSync(STYLE_DIR).filter((f) => f.endsWith('.css'));
+const cssFiles = STYLE_DIRS.filter((d) => existsSync(d)).flatMap((d) =>
+  readdirSync(d).filter((f) => f.endsWith('.css')).map((f) => join(d, f))
+);
 if (!cssFiles.length) {
-  console.error(`check-tokens: no .css files in ${STYLE_DIR}.`);
+  console.error(`check-tokens: no .css files in ${STYLE_DIRS.join(', ')}.`);
   process.exit(1);
 }
-const css = stripComments(cssFiles.map((f) => readFileSync(join(STYLE_DIR, f), 'utf8')).join('\n'));
+const css = stripComments(cssFiles.map((f) => readFileSync(f, 'utf8')).join('\n'));
 
 /** Every .jsx/.js under src/, so inline custom properties are visible. */
 function walk(dir, out = []) {

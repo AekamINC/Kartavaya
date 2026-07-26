@@ -13,38 +13,28 @@
 
 /* ═══════════════════════════════════════════════════════════════════════════
    1 · REDUCED MOTION — THE OS SETTING MUST WIN
+       (nothing to do here any more; kept as the record of why)
 
-   MEASURED DEFECT, not a precaution. 00 §5 establishes the rule: applyPrefs
-   writes `--ix-user` and never `--ix`, because an inline style on
-   documentElement outranks a media query and would let an app preference
-   silently defeat an accessibility setting.
+   This file used to carry `--motion-scale: 0 !important` / `--ix: .001
+   !important` in a reduce media query. That was containment for a real,
+   measured defect: `--motion-scale` had no `-user` twin and applyPrefs wrote it
+   INLINE on documentElement, so the `--motion-scale: 0` in
+   kartavaya-design.css's reduce query could never apply — an inline style
+   outranks a media query. An author `!important` does beat inline, which is why
+   it worked, but overriding an inline write from a different file is a
+   tripwire, not a design.
 
-   `--motion-scale` has no `-user` twin and IS written inline
-   (CustomizePanel.jsx `root.style.setProperty('--motion-scale', …)`), so the
-   `--motion-scale: 0` in kartavaya-design.css's reduce media query has never
-   been able to apply. Read off the live document: the root's inline style
-   carries `--motion-scale: 1` while `--ix` is absent from it — exactly the
-   asymmetry 00 §5 exists to prevent, on the other half of the pair.
+   The structural fix is now in place, in the two files that own the
+   declarations: kartavaya-design.css §1 declares `--motion-scale-user` and
+   derives `--motion-scale: var(--motion-scale-user)`, and CustomizePanel's
+   `applyPrefs` writes the `-user` twin — exactly the arrangement `--ix` /
+   `--ix-user` has had since 00 §5. The media query in §5 of that file now owns
+   both values outright and needs no help from here.
 
-   That matters because `--motion-scale` is DISTANCE. Every reveal, lift,
-   stagger and slide multiplies its travel by it, and several of those have no
-   JS guard — they rely on this variable alone. A user with reduce-motion set at
-   OS level was still getting the full travel on all of them.
-
-   An author `!important` beats an element's inline style, so this restores the
-   invariant from CSS without a second inline write racing the first. It is the
-   containment, not the cure: the structural fix is a `--motion-scale-user`
-   twin, and it belongs in the two files that own those declarations.
+   Do not reinstate the block. If it ever appears necessary again, the real
+   cause is something writing `--motion-scale` or `--ix` inline, and that is
+   what to fix.
    ═══════════════════════════════════════════════════════════════════════════ */
-@media (prefers-reduced-motion: reduce) {
-  :root {
-    /* Distance collapses to nothing; duration collapses to almost nothing.
-       Not zero: a zero-duration animation never fires `animationend`, and any
-       handler that unmounts on exit-complete would leak its node. */
-    --motion-scale: 0 !important;
-    --ix: .001 !important;
-  }
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    2 · FOCUS VISIBILITY UNDER FORCED COLOURS

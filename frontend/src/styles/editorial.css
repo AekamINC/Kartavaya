@@ -1643,7 +1643,19 @@ input, textarea, select { font-family: inherit; color: inherit; }
   );
   background-size: 200% 100%;
   background-position: -100% 0;
-  animation: k-shimmer calc(2s * var(--ix)) ease-in-out infinite;
+  /* ── FIXED duration. Do not reintroduce `calc(2s * var(--ix))`. ────────────
+     --ix scales PERIOD, which is correct for a finite transition (it ends
+     sooner) and an accessibility HARM on an `infinite` one (it never ends, it
+     accelerates). At Animations = None --ix-user is .001, so this ran a full
+     sweep every 2ms — a strobe at the display's frame rate on every loading
+     screen in the product, delivered to the one user who explicitly asked for
+     no animation. Measured on the live document before this change.
+
+     Reduced motion scales AMPLITUDE here, not tempo: the sweep always takes
+     2s, and its visibility rides on --motion-scale, so at None the highlight
+     fades out entirely and the skeleton is a flat static block. */
+  opacity: var(--motion-scale, 1);
+  animation: k-shimmer 2s ease-in-out infinite;
 }
 [data-theme="dark"] .k-skeleton {
   background: color-mix(in srgb, var(--surface) 60%, var(--bg));
@@ -1664,8 +1676,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
   100% { background-position: 100% 0; }
 }
 
+/* --motion-scale already collapses the highlight to opacity 0 under the OS
+   setting (kartavaya-design.css §5 media query). This additionally stops the
+   compositor work rather than painting an invisible layer forever. */
 @media (prefers-reduced-motion: reduce) {
-  .k-skeleton::after { animation: none; display: none; }
+  .k-skeleton::after { animation: none; }
   .k-skeleton { opacity: 0.7; }
 }
 
@@ -2612,11 +2627,26 @@ input, textarea, select { font-family: inherit; color: inherit; }
   height: 88px; border-radius: var(--r-md);
   background: linear-gradient(90deg, var(--rule-soft) 25%, color-mix(in srgb, var(--rule-soft) 60%, transparent) 50%, var(--rule-soft) 75%);
   background-size: 200% 100%;
-  animation: k-shimmer calc(1.5s * var(--ix)) ease-in-out infinite;
+  background-position: 0 0;
+  /* FIXED duration, for the reason spelled out at .k-skeleton::after: an
+     `infinite` animation multiplied by --ix does not stop under reduced
+     motion, it accelerates without end. This one ran at 1.5ms at
+     Animations = None. Amplitude lives in the keyframe instead. */
+  animation: k-shimmer-tile 1.5s ease-in-out infinite;
 }
-@keyframes k-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+/* Renamed from `k-shimmer`, which was DECLARED TWICE in this file — here and
+   at the skeleton block above — with opposite directions. Later wins, so this
+   one silently captured `.k-skeleton::after` too and swept it backwards across
+   double its authored range from a -100% base position. Two keyframes, two
+   names; neither element's motion is decided by source order any more.
+
+   Travel scales with --motion-scale so the tile fades to a STATIC gradient at
+   Animations = None rather than freezing mid-sweep or strobing. Opacity is not
+   used here (unlike the skeleton) because the gradient IS the tile, not an
+   overlay on it — fading it out would erase the placeholder. */
+@keyframes k-shimmer-tile {
+  0%   { background-position: calc(100%  * var(--motion-scale, 1)) 0; }
+  100% { background-position: calc(-100% * var(--motion-scale, 1)) 0; }
 }
 
 .k-formpanel {
