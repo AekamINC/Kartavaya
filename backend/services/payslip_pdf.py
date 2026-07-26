@@ -327,7 +327,9 @@ def generate_payslip_pdf(payslip: dict, employee: dict, org: dict) -> bytes:
 
     try:
         from weasyprint import HTML
-    except ImportError as e:
+    except (ImportError, OSError) as e:
+        # See invoice_pdf.generate_invoice_pdf — a missing native stack raises
+        # OSError from dlopen, not ImportError.
         raise RuntimeError("WeasyPrint is not available on this server") from e
     html_str = _build_html(payslip, employee, org, check)
     return HTML(string=html_str, base_url=None).write_pdf()

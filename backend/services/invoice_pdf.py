@@ -479,7 +479,11 @@ def generate_invoice_pdf(invoice: dict, org: dict, contact: dict = None) -> byte
 
     try:
         from weasyprint import HTML
-    except ImportError as e:
+    except (ImportError, OSError) as e:
+        # OSError, not just ImportError: WeasyPrint imports fine and then fails
+        # to dlopen libgobject/libpango, which is what a machine or image
+        # without the native stack actually does. Catching only ImportError let
+        # that surface as a raw OSError and a 500 with a stack trace.
         raise RuntimeError("WeasyPrint is not available on this server") from e
     html_str = _build_html(invoice, org, contact, check)
     return HTML(string=html_str, base_url=None).write_pdf()

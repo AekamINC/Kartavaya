@@ -110,3 +110,6 @@ android-sdk/ frontend/node_modules/.cache/default-development/0.pack
 
 # Rendered email previews — the harness is committed, its output is not.
 backend/scripts/_email_preview/
+
+# Document harness output — regenerate with backend/scripts/render_documents.py
+backend/.doc-harness/
