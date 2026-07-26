@@ -13,6 +13,7 @@ import TasksScreen       from '../screens/TasksScreen';
 import MessagesScreen    from '../screens/MessagesScreen';
 import MoreScreen        from '../screens/MoreScreen';
 import ClockScreen       from '../screens/pahchan/ClockScreen';
+import EnrollScreen      from '../screens/pahchan/EnrollScreen';
 import SettingsScreen    from '../screens/SettingsScreen';
 import InboxScreen       from '../screens/InboxScreen';
 import MeScreen          from '../screens/MeScreen';
@@ -35,6 +36,7 @@ export type RootStackParamList = {
   // Reachable from the full shell's More tab as well as being the whole app for
   // an attendance-only user, so it is a stack screen in both cases.
   Clock:        undefined;
+  Enroll:       undefined;
   Login:        undefined;
   Client:       undefined;
 };
@@ -189,6 +191,7 @@ export default function RootStack() {
                 a stack screen so its deep link and its badge still work. */}
             <Stack.Screen name="Inbox"     component={InboxScreen} />
             <Stack.Screen name="Clock"     component={ClockScreen} />
+            <Stack.Screen name="Enroll"    component={EnrollScreen} />
             <Stack.Screen name="Settings"  component={SettingsScreen} />
           </>
         )}

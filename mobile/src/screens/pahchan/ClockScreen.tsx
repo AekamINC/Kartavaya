@@ -3,6 +3,7 @@ import {
   View, Text, Pressable, StyleSheet, ActivityIndicator, StatusBar, Platform, Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -10,7 +11,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../theme/ThemeProvider';
-import { pahchanApi, type PunchDirection } from '../../api/pahchan';
+import { pahchanApi, enrollmentApi, type PunchDirection } from '../../api/pahchan';
 import { enqueuePunch, attachPhotoKey, flushPunches, getPunchCount } from '../../offline/punchQueue';
 
 /**
@@ -98,9 +99,20 @@ export default function ClockScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(getPunchCount());
 
+  const nav = useNavigation();
+
   const { data: mine } = useQuery({
     queryKey: ['pahchan', 'me'],
     queryFn: () => pahchanApi.me(7),
+  });
+
+  // Whether this employee has an approved reference pair. If not, every punch is
+  // flagged `noref` — so the prompt to enroll belongs here, on the screen they
+  // actually open, rather than waiting for someone to find it in Settings.
+  const { data: enrollment } = useQuery({
+    queryKey: ['pahchan', 'enrollment', mine?.employee?.id],
+    queryFn: () => enrollmentApi.get(mine!.employee!.id),
+    enabled: !!mine?.employee?.id,
   });
 
   // Direction is derived, not chosen. The employee should not have to remember
@@ -251,6 +263,25 @@ export default function ClockScreen() {
             {direction === 'in' ? 'Clock in' : 'Clock out'}
           </Text>
           <Text style={s.headHi}>{direction === 'in' ? 'उपस्थिति' : 'प्रस्थान'}</Text>
+          {enrollment && !enrollment.complete && (
+            <Pressable
+              onPress={() => nav.navigate('Enroll' as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Set up your reference photos"
+              style={s.enrollPrompt}
+            >
+              <Ionicons name="alert-circle-outline" size={13} color="#FFFFFF" />
+              <Text style={s.enrollText}>
+                {enrollment.pending_approval > 0
+                  ? 'Reference photos awaiting HR approval'
+                  : 'Add your two reference photos'}
+              </Text>
+              {enrollment.pending_approval === 0 && (
+                <Ionicons name="chevron-forward" size={13} color="#FFFFFF" />
+              )}
+            </Pressable>
+          )}
+
           {pending > 0 && (
             <View style={s.pendingPill}>
               <Ionicons name="cloud-upload-outline" size={12} color="#FFFFFF" />
@@ -320,6 +351,14 @@ const s = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 5,
   },
   pendingText: { fontSize: 11.5, fontWeight: '600', color: '#FFFFFF' },
+  enrollPrompt: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10,
+    // Amber rather than red: an unenrolled employee can still punch (§2), so this
+    // is a "do this soon", not a failure.
+    backgroundColor: 'rgba(149,88,6,0.9)', borderRadius: 99,
+    paddingHorizontal: 12, paddingVertical: 6,
+  },
+  enrollText: { fontSize: 11.5, fontWeight: '700', color: '#FFFFFF' },
   foot: { alignItems: 'center', gap: 14 },
   notice: {
     backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 12,

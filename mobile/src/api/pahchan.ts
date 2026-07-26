@@ -80,3 +80,33 @@ export const pahchanApi = {
       '/v1/pahchan/sites',
     ).then(r => r.data.data),
 };
+
+// ── Enrollment ────────────────────────────────────────────────────────────────
+
+export interface ReferencePhoto {
+  id:          string;
+  slot:        1 | 2;
+  object_key:  string;
+  source:      'hr_upload' | 'self_capture';
+  captured_at: string;
+  approved_at: string | null;
+  approved_by: string | null;
+}
+
+export interface Enrollment {
+  photos:           ReferencePhoto[];
+  /** True only when TWO photos are APPROVED. A pending self-capture is not yet
+   *  something a reviewer can compare against, so it does not count. */
+  complete:         boolean;
+  pending_approval: number;
+}
+
+export const enrollmentApi = {
+  get: (employeeId: string) =>
+    apiClient.get<Enrollment>(`/v1/pahchan/enrollment/${employeeId}`).then(r => r.data),
+
+  /** Self-capture. The server rejects any employee_id but the caller's own. */
+  submit: (body: { employee_id: string; slot: 1 | 2; object_key: string }) =>
+    apiClient.post('/v1/pahchan/enrollment', { ...body, source: 'self_capture' })
+      .then(r => r.data),
+};
