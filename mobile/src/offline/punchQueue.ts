@@ -29,6 +29,7 @@
  */
 
 import * as Crypto from 'expo-crypto';
+import * as FileSystem from 'expo-file-system';
 import { storage } from '../lib/storage';
 import { apiClient } from '../api/client';
 
@@ -83,6 +84,30 @@ function write(q: QueuedPunch[]): void {
 
 export function getPunchCount(): number {
   return read().length;
+}
+
+/**
+ * Delete a punch selfie from the device.
+ *
+ * The queue itself holds no image bytes — only `photo_uri`, a path to a JPEG in
+ * the app's own sandbox. So removing a queue entry frees the pointer and leaves
+ * the photograph, and a face on a phone is exactly the thing 07 §5's retention
+ * promise is about. Nothing else on the device would ever have deleted it: the
+ * app never lists that directory, so the file would sit there for the life of
+ * the install.
+ *
+ * Never throws. A punch must not fail to send, or fail to be retired, because
+ * the filesystem would not delete a JPEG — the queue entry is the durable record
+ * and the file is a leftover.
+ */
+async function discardPhoto(uri?: string | null): Promise<void> {
+  if (!uri) return;
+  try {
+    await FileSystem.deleteAsync(uri, { idempotent: true });
+  } catch {
+    // Already gone, or a path the OS will not let us touch. Either way there is
+    // nothing useful to do and nothing worth failing a punch over.
+  }
 }
 
 export function getQueuedPunches(): QueuedPunch[] {
@@ -228,6 +253,10 @@ export async function flushPunches(): Promise<PunchFlushResult> {
         client_punch_id: punch.client_punch_id,
       });
       sent += 1;
+      // Sent and acknowledged: the selfie is on the server, inside the 90-day
+      // window the org promised, and the local copy is now a second store of the
+      // same biometric with nobody's retention job pointed at it.
+      await discardPhoto(punch.photo_uri);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       errors.push({ client_punch_id: punch.client_punch_id, error: message });
@@ -236,5 +265,12 @@ export async function flushPunches(): Promise<PunchFlushResult> {
   }
 
   write(remaining);
+
+  // An expired punch is never going to be sent, so its photograph has no purpose
+  // left. Retiring the entry and keeping the face is the worst of both — the
+  // employee has lost the punch AND the image outlives it. After write(), because
+  // the queue mutation is the durable part and must not wait on a filesystem.
+  await Promise.all(expired.map(p => discardPhoto(p.photo_uri)));
+
   return { sent, pending: remaining.length, expired, errors };
 }

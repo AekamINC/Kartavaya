@@ -7,6 +7,7 @@ import { useNavigation } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -143,6 +144,16 @@ export default function ClockScreen() {
         [{ resize: { width: 720 } }],
         { compress: 0.75, format: ImageManipulator.SaveFormat.JPEG },
       );
+
+      // The full-resolution frame is a SECOND copy of the same face, and it is
+      // the larger one. Nothing reads it after this point — the queue holds
+      // `small.uri` — so leaving it behind means every punch permanently adds an
+      // unreferenced high-resolution photograph to the device that no retention
+      // job anywhere is pointed at. Deleted immediately rather than at flush,
+      // because it is already redundant the moment the resize returns.
+      if (small.uri !== shot.uri) {
+        await FileSystem.deleteAsync(shot.uri, { idempotent: true }).catch(() => {});
+      }
 
       const fix = await readFix();
       const capturedAt = new Date().toISOString();

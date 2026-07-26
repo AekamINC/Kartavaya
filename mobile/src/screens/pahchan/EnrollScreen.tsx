@@ -5,6 +5,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -80,9 +81,17 @@ export default function EnrollScreen() {
     if (!camera.current || !employeeId || !next || busy) return;
     setBusy(true);
     setError(null);
+    // Both local copies are deleted before this function returns, on every path.
+    // A reference photo is the identity baseline every future punch is judged
+    // against — the most sensitive image this product handles — and the server
+    // copy is the one under the org's retention policy. A duplicate sitting in the
+    // app sandbox is outside every retention promise Kartavaya makes.
+    let originalUri: string | null = null;
+    let resizedUri: string | null = null;
     try {
       const shot = await camera.current.takePictureAsync({ quality: 0.95, skipProcessing: false });
       if (!shot?.uri) { setError('The camera did not return a photo. Try again.'); return; }
+      originalUri = shot.uri;
 
       // 1080px at q0.85, larger than a punch selfie. These are the comparison
       // baseline and the future embedding source, so they get the bigger budget —
@@ -93,6 +102,7 @@ export default function EnrollScreen() {
         [{ resize: { width: 1080 } }],
         { compress: 0.85, format: ImageManipulator.SaveFormat.JPEG },
       );
+      resizedUri = image.uri;
 
       const { photo_key } = await pahchanApi.uploadPhoto(image.uri, 'reference');
       await enrollmentApi.submit({ employee_id: employeeId, slot: next.slot, object_key: photo_key });
@@ -104,6 +114,12 @@ export default function EnrollScreen() {
       // queueing it would leave the employee believing they were enrolled.
       setError('That could not be saved. Check your connection and try again.');
     } finally {
+      // Unconditional, including on failure: there is no retry that reuses these
+      // files — `capture()` always takes a fresh photograph — so on every path
+      // they are redundant by the time we get here.
+      for (const uri of [originalUri, resizedUri]) {
+        if (uri) await FileSystem.deleteAsync(uri, { idempotent: true }).catch(() => {});
+      }
       setBusy(false);
     }
   }, [busy, employeeId, next, qc]);
