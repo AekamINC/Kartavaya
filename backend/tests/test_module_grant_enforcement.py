@@ -47,10 +47,16 @@ def org_a(app):
 
 @pytest.fixture
 def bypass_module_gate(app):
-    """Holding the Manav module is a given in these tests — the question is
-    whether holding it is SUFFICIENT."""
+    """Holding the Manav module at `admin` is a given in these tests — the
+    question is whether holding it is SUFFICIENT to read an identity document.
+
+    `_gate` is now `require_module_or_self`, and its VALUE is the caller's
+    Tier-4 level set rather than None. Returning the strongest level is
+    deliberate: it removes the module ladder as an explanation for any refusal
+    below, so what these tests observe is `_pii_gate` and nothing else.
+    """
     from routers.manav import _gate
-    app.dependency_overrides[_gate] = lambda: None
+    app.dependency_overrides[_gate] = lambda: frozenset({"admin"})
     yield
     app.dependency_overrides.pop(_gate, None)
 
@@ -223,11 +229,20 @@ async def _true():
 async def test_a_module_member_gets_the_masked_row_not_a_refusal(
     api_client, mock_pool, as_member, org_a, bypass_module_gate,
 ):
-    """The detail endpoint is deliberately reachable on module membership — HR
-    staff need to see who is on file. What makes that safe is that it never
-    emits a full identifier, so the two endpoints are tested as a pair."""
+    """The detail endpoint is deliberately reachable on a module grant — HR staff
+    need to see who is on file. What makes that safe is that it never emits a
+    full identifier, so the two endpoints are tested as a pair.
+
+    `user_id` is a COLLEAGUE's, not the caller's: the endpoint now self-scopes,
+    so reading your own row proves nothing about what a grant buys. This is the
+    grant path, which is the one that matters here.
+    """
     mock_pool.fetchval.return_value = None
-    mock_pool.fetchrow.return_value = {**FULL_PII_ROW, "employment_type": "full_time"}
+    mock_pool.fetchrow.return_value = {
+        **FULL_PII_ROW,
+        "user_id": "user_a_colleague",
+        "employment_type": "full_time",
+    }
     mock_pool.fetch.return_value = []
 
     resp = await api_client.get(f"/api/v1/manav/employees/{EMPLOYEE_ID}")
@@ -239,23 +254,56 @@ async def test_a_module_member_gets_the_masked_row_not_a_refusal(
     assert resp.json()["employee"]["_pii_masked"] is True
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 3. Grant LEVELS are stored and surfaced, and enforced nowhere
-# ══════════════════════════════════════════════════════════════════════════════
-#
-# `test_role_tiers.py` pins `level_satisfies` thoroughly, including the invariant
-# that admin does not satisfy approver in Vetana and Ganit. That function is
-# correct. It is also, at the time of writing, called by NOTHING outside the
-# tests — `require_module` reads only whether a grant row exists.
-#
-# These are characterisation tests. They assert what is true today so that the
-# day someone wires levels in, they fail and force a deliberate update, rather
-# than the gap staying invisible. They are not an endorsement of the gap; it is
-# written up in swarm-reports/ as the largest open finding from this branch.
+async def test_no_grant_at_all_cannot_read_a_colleagues_row_even_masked(
+    app, api_client, mock_pool, as_member, org_a,
+):
+    """Self scope is "my own record", not "everyone's, masked". An employee with
+    no Manav grant reads their own row and nothing else.
 
-def test_level_satisfies_has_no_caller_in_the_request_path():
-    """If this fails, levels have started being enforced somewhere — go and
-    delete this test and the section comment above it, with thanks."""
+    404 rather than 403 is deliberate and worth pinning: a 403 would confirm
+    that an employee with that id exists in this org, which is itself a
+    disclosure.
+    """
+    from routers.manav import _gate
+    app.dependency_overrides[_gate] = lambda: frozenset()
+    try:
+        mock_pool.fetchval.return_value = None
+        mock_pool.fetchrow.return_value = {
+            **FULL_PII_ROW,
+            "user_id": "user_a_colleague",
+            "employment_type": "full_time",
+        }
+        mock_pool.fetch.return_value = []
+
+        resp = await api_client.get(f"/api/v1/manav/employees/{EMPLOYEE_ID}")
+
+        assert resp.status_code == 404
+        assert "123456789012" not in resp.text
+    finally:
+        app.dependency_overrides.pop(_gate, None)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 3. Grant LEVELS are now enforced — `middleware/module_levels.py`
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# This section used to hold characterisation tests asserting that
+# `level_satisfies` had ZERO call sites and that a viewer grant and an admin
+# grant reached the same endpoints. They were written to fail the day enforcement
+# landed, so that the gap could not close silently and unremarked.
+#
+# They fired. `middleware/module_levels.py` is the missing consumer, and the
+# routes read it. The characterisation tests have been replaced by tests of the
+# thing that now exists — which is what those tests instructed whoever saw them
+# fail to do.
+
+def test_level_satisfies_now_has_production_callers():
+    """The inverse of the test that used to live here.
+
+    It is kept, rather than simply deleted, because a guard that is deleted or
+    quietly unwired reverts the product to the state this file was written to
+    document, and nothing else would notice.
+    """
     import pathlib
     backend = pathlib.Path(__file__).resolve().parent.parent
     callers = []
@@ -265,32 +313,40 @@ def test_level_satisfies_has_no_caller_in_the_request_path():
         if path.name == "role_tiers.py":
             continue          # the definition itself
         if "level_satisfies" in path.read_text(encoding="utf-8", errors="ignore"):
-            callers.append(str(path.relative_to(backend)))
-    assert callers == [], (
-        "level_satisfies now has production callers: "
-        f"{callers}. The separation-of-duty model is being enforced — update "
-        "this file's section 3 and add request-level tests for it."
+            callers.append(path.name)
+    assert "module_levels.py" in callers, (
+        "the Tier-4 guard no longer consults level_satisfies — module grant "
+        "levels have stopped being enforced"
     )
 
 
-def test_the_module_gate_reads_existence_not_level():
-    """`SELECT 1 FROM staging.org_member_modules` — the `role` column that holds
-    the level is not in the projection, so a viewer grant and an admin grant are
-    the same grant at request time."""
+def test_the_module_level_gate_reads_the_level_not_just_existence():
+    """`held_level` selects `role` — the column carrying the level — rather than
+    `SELECT 1`. That single difference is what separates a viewer from an admin
+    at request time, and it was the whole defect."""
     import inspect
-    from middleware import subscription
-    src = inspect.getsource(subscription.require_module)
-    assert "org_member_modules" in src
-    assert "SELECT 1 FROM staging.org_member_modules" in src, (
-        "the module gate's grant query changed — if it now selects the level, "
-        "section 3 of this file is out of date"
-    )
+    from middleware import module_levels
+    src = inspect.getsource(module_levels.held_level)
+    assert "SELECT role FROM staging.org_member_modules" in src
+
+
+def test_an_unknown_or_legacy_grant_level_reads_as_the_weakest_not_the_strongest():
+    """Grant rows predate the level column. Failing UPWARD on an unrecognised
+    value would hand full control to every legacy row at once — the failure mode
+    is silent and total, so it is worth its own test."""
+    import inspect
+    from middleware import module_levels
+    src = inspect.getsource(module_levels.held_level)
+    assert "DEFAULT_GRANT_LEVEL" in src
+    assert "grant if grant in LEVELS else DEFAULT_GRANT_LEVEL" in src
+    from middleware.role_tiers import DEFAULT_GRANT_LEVEL, LEVELS
+    assert DEFAULT_GRANT_LEVEL == LEVELS[0] == "viewer"
 
 
 def test_the_separation_of_duty_model_itself_is_still_correct():
     """Not redundant with test_role_tiers.py — this is the one property that
-    matters most, restated where the enforcement gap is documented, so the two
-    are read together."""
+    matters most, restated where enforcement is documented, so the two are read
+    together."""
     for module_code in ("vetana", "ganit"):
         assert level_satisfies("admin", "approver", module_code) is False
     assert level_satisfies("admin", "approver", "graha") is True

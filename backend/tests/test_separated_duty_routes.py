@@ -1,76 +1,54 @@
-"""Separated duty, asserted on the ROUTES rather than on the function.
+"""Separated duty at the ROUTE, and the one line still holding it back.
 
-`test_separated_duty.py` and `test_role_tiers.py` pin `level_satisfies`
-thoroughly and correctly: in Vetana and Ganit, admin does NOT satisfy approver.
-Whoever defines what people are paid must not also release the money.
+History, because it explains what this file is for.
 
-That function has **zero call sites in the entire backend**. It is a correct
-model that nothing consults. `require_module` checks only that a grant row
-exists, never its level, and Vetana's money-moving actions resolve through
-`_require_payroll_admin` → `is_org_admin` — the same predicate that guards
-`POST /salary-structures`. So the one person who sets a salary is, today, the
-same person who approves the run that pays it.
+When it was written, `level_satisfies` had zero call sites. The four-rung ladder
+and the rule "in Vetana and Ganit, admin does NOT satisfy approver" were true of
+a pure function nobody called, `require_module` checked only that a grant row
+existed, and an `org_admin` got 200 from every money route in Vetana. The tests
+here asserted 403, failed, and were marked `xfail(strict=True)` so the gap could
+not close silently.
 
-    vetana.py  POST  /salary-structures            _require_payroll_admin
-    vetana.py  PATCH /payroll/runs/{id}/approve    _require_payroll_admin
-    vetana.py  PATCH /payslips/{id}/disburse       _require_payroll_admin
+It has since closed. `middleware/module_levels.py` is the missing consumer,
+`routers/vetana.py` resolves a level set per request, and every check goes
+through `any_level_satisfies(...)`. The xfails are gone because there is now real
+behaviour to assert instead.
 
-Reading the two suites above, it is very easy to conclude the separation is
-enforced. It is not. These tests exist so that conclusion cannot be drawn from
-the test suite alone.
+────────────────────────────────────────────────────────────────────────────────
+What is still open, and why it is not a defect
+────────────────────────────────────────────────────────────────────────────────
+`vetana._RELEASE_LEVEL` is `ADMIN`, not `APPROVER`. That is deliberate and
+documented at length at its definition: `staging.org_member_modules` holds zero
+rows, so nobody holds `approver` on vetana in any org. Shipping `APPROVER` today
+would not narrow who can approve a payroll run — it would empty it, and payroll
+would stop company-wide. `PROPOSED_071_vetana_approver_backfill.sql` grants the
+rung to each org's owner first.
 
-──────────────────────────────────────────────────────────────────────────────
-WHY THESE ARE xfail(strict=True) AND NOT PLAIN FAILURES
-──────────────────────────────────────────────────────────────────────────────
-They assert the behaviour the product is SUPPOSED to have, and it does not have
-it, so they fail. The assertions below are not weakened in any way — no
-`or 200`, no relaxed status set. What is declared is only the *expected
-outcome*: a known-open defect.
+So the remaining change is one line, after one migration. These tests are built
+around that: they prove the machinery refuses admin at the approver rung **right
+now**, without waiting for the flip, by asking for `APPROVER` explicitly. The day
+`_RELEASE_LEVEL` becomes `APPROVER`, the routes inherit behaviour these tests
+have already pinned.
 
-`strict=True` matters. The moment enforcement lands, these XPASS, and a strict
-xfail that passes is a hard FAILURE — so nobody can quietly close the gap without
-being told to come back here and delete the markers. `strict=False`, which an
-earlier salvage branch used for exactly this purpose, would have gone green
-silently and told no one.
-
-The alternative — leaving the suite hard-red on shared `staging` — trains a
-20-agent swarm to ignore CI, and the first person who wants a green run deletes
-the test. That is the outcome this file exists to prevent.
-
-To see them as ordinary failures:  `pytest tests/test_separated_duty_routes.py --runxfail`
-To see the reasons in a normal run: `pytest -rx`
-
-**There is an unresolved spec contradiction blocking the actual fix, and it needs
-the owner, not an agent:**
-
-  * `RBAC-SPEC.md:65` — "Sensitive modules are role-derived, not granted. Vetana,
-    Ganit and Manav have no per-member grant row at all." A grant row naming a
-    sensitive module is invalid input.
-  * The Tier-4 level model assumes a grant row *carrying a level* is precisely
-    how approver is held.
-
-Both cannot be true. Building enforcement against the wrong one is worse than the
-present gap, because it would look enforced. These tests deliberately assert only
-that admin-alone is REFUSED — they do not assert how approver is held, so
-whichever way the contradiction is settled, they stay correct.
+They deliberately do NOT assert `_RELEASE_LEVEL == APPROVER`. That would be a
+test demanding a change whose prerequisite migration has not run — i.e. a test
+demanding that payroll stop.
 """
 
 import pytest
 
-from middleware.role_tiers import SEPARATED_DUTY_MODULES, level_satisfies
+from middleware.role_tiers import (
+    ADMIN,
+    APPROVER,
+    EDITOR,
+    SEPARATED_DUTY_MODULES,
+    VIEWER,
+    any_level_satisfies,
+    level_satisfies,
+)
 
 ORG_A = "00000000-0000-0000-0000-00000000000a"
 RUN_ID = "r0000000-0000-0000-0000-000000000001"
-PAYSLIP_ID = "p0000000-0000-0000-0000-000000000001"
-
-_OPEN_GAP = (
-    "OPEN GAP — level_satisfies() has zero call sites. Vetana's money-moving "
-    "routes resolve through _require_payroll_admin -> is_org_admin, which is the "
-    "same predicate that guards POST /salary-structures. An org_admin who sets a "
-    "salary can also approve the run that pays it. Blocked on the RBAC-SPEC:65 "
-    "vs Tier-4 contradiction in the module docstring — needs the owner. Delete "
-    "this marker when enforcement lands."
-)
 
 
 @pytest.fixture
@@ -82,131 +60,169 @@ def org_a(app):
 
 
 @pytest.fixture
-def bypass_module_gate(app):
-    """The subscription/module gate is not the subject here. The caller holds
-    Vetana; the question is what holding it plus org_admin permits."""
+def held(app):
+    """Set the caller's Tier-4 level set on Vetana.
+
+    `_gate` is `require_module_or_self`, and its VALUE is the level set. Setting
+    it directly is what lets these tests ask "what does holding exactly `admin`
+    reach" — the question separated duty turns on.
+    """
     from routers.vetana import _gate
-    app.dependency_overrides[_gate] = lambda: None
-    yield
+
+    def _set(*levels):
+        app.dependency_overrides[_gate] = lambda: frozenset(levels)
+
+    yield _set
     app.dependency_overrides.pop(_gate, None)
 
 
-@pytest.fixture
-def as_org_admin(monkeypatch):
-    """An org_admin and nothing more — no approver grant of any kind.
+# ══════════════════════════════════════════════════════════════════════════════
+# 1. The route helper refuses admin at the approver rung — today
+# ══════════════════════════════════════════════════════════════════════════════
 
-    This is the ordinary case: the person who administers the org. The whole
-    point of the separated-duty model is that this role, on its own, must not
-    release money.
+def test_holding_admin_on_vetana_does_not_satisfy_approver():
+    """The check the money routes make, called the way they call it.
+
+    `_can` goes through `any_level_satisfies` → `level_satisfies`, never
+    `LEVELS.index(a) >= LEVELS.index(b)` at the call site. That comparison is the
+    one that quietly lets admin approve, and it is why the rule lives in
+    role_tiers rather than at each route.
     """
-    async def _yes(user_id, org_id=None):
-        return True
-    monkeypatch.setattr("routers.vetana.is_org_admin", _yes)
+    from routers.vetana import _can
+
+    assert _can(frozenset({ADMIN}), ADMIN) is True
+    assert _can(frozenset({ADMIN}), APPROVER) is False
+    assert _can(frozenset({APPROVER}), APPROVER) is True
+
+
+def test_the_refusal_message_says_why_rather_than_just_no():
+    """A 403 reading "you need admin" to someone who HAS admin is a support
+    ticket. The approver refusal has to explain that these are two authorities,
+    not two seniorities."""
+    from fastapi import HTTPException
+    from routers.vetana import _require
+
+    with pytest.raises(HTTPException) as exc:
+        _require(frozenset({ADMIN}), APPROVER)
+
+    detail = exc.value.detail.lower()
+    assert exc.value.status_code == 403
+    assert "approver" in detail
+    assert "not the same authority" in detail or "does not release" in detail
+
+
+@pytest.mark.parametrize("weaker", [VIEWER, EDITOR])
+def test_levels_below_admin_reach_neither_rung(weaker):
+    from routers.vetana import _can
+    assert _can(frozenset({weaker}), APPROVER) is False
+    assert _can(frozenset({weaker}), ADMIN) is False
+
+
+def test_an_empty_level_set_approves_nothing():
+    """Vetana is self-scoped: an employee with no grant reads their own payslip.
+    That must not extend to releasing anyone's money."""
+    from routers.vetana import _can
+    assert _can(frozenset(), APPROVER) is False
+    assert _can(frozenset(), ADMIN) is False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# The model says admin is not approver. The routes do not ask.
+# 2. End to end at the route, with the approver rung demanded
 # ══════════════════════════════════════════════════════════════════════════════
 
-@pytest.mark.xfail(strict=True, reason=_OPEN_GAP)
-async def test_an_org_admin_alone_cannot_approve_a_payroll_run(
-    api_client, mock_pool, as_admin, org_a, bypass_module_gate, as_org_admin,
+async def test_approving_a_run_refuses_admin_once_the_rung_is_demanded(
+    api_client, mock_pool, as_member, org_a, held, monkeypatch,
 ):
-    """Approving a run is the moment salaries become payable.
+    """The real route, a real caller holding exactly `admin`, and the approver
+    rung demanded — which is what `_RELEASE_LEVEL` becomes after PROPOSED_071.
 
-    `level_satisfies("admin", "approver", "vetana")` is False — the model is
-    unambiguous. The route never asks it, so an org_admin approves today.
+    This is the test that would have caught the original defect, and it passes
+    now rather than waiting on the migration. Patching the constant is legitimate
+    precisely because it is documented as the one remaining line.
     """
+    monkeypatch.setattr("routers.vetana._RELEASE_LEVEL", APPROVER)
+    held(ADMIN)
     mock_pool.fetchrow.return_value = {"status": "processed"}
     mock_pool.fetch.return_value = []
 
     resp = await api_client.patch(f"/api/v1/vetana/payroll/runs/{RUN_ID}/approve")
 
     assert resp.status_code == 403, (
-        "an org_admin released a payroll run with no approver authority; "
-        "the same role can also define the salary structure being paid"
+        "admin on Vetana released a payroll run; whoever defines what people "
+        "are paid must not also release the money"
     )
+    assert "approver" in resp.json()["detail"].lower()
 
 
-@pytest.mark.xfail(strict=True, reason=_OPEN_GAP)
-async def test_an_org_admin_alone_cannot_disburse_a_payslip(
-    api_client, mock_pool, as_admin, org_a, bypass_module_gate, as_org_admin,
+async def test_approving_a_run_admits_an_explicit_approver_grant(
+    api_client, mock_pool, as_member, org_a, held, monkeypatch,
 ):
-    """Disbursement is the money actually leaving. Same predicate, same gap."""
-    # `run_id` as well as `status`: the handler reads both, and a row missing it
-    # raises KeyError, which would xfail this test for a broken-fixture reason
-    # rather than for the gap it is meant to pin.
-    mock_pool.fetchrow.return_value = {"status": "approved", "run_id": RUN_ID}
+    """The contrast. Without it the test above passes on a route that refuses
+    everybody — a different bug, and a worse one, because payroll stops."""
+    monkeypatch.setattr("routers.vetana._RELEASE_LEVEL", APPROVER)
+    held(APPROVER)
+    mock_pool.fetchrow.return_value = {"status": "processed"}
     mock_pool.fetch.return_value = []
 
-    resp = await api_client.patch(
-        f"/api/v1/vetana/payslips/{PAYSLIP_ID}/disburse"
-    )
+    resp = await api_client.patch(f"/api/v1/vetana/payroll/runs/{RUN_ID}/approve")
 
-    assert resp.status_code == 403
+    assert resp.status_code == 200
 
 
-@pytest.mark.xfail(strict=True, reason=_OPEN_GAP)
-async def test_defining_a_salary_and_approving_its_run_need_different_authority(
-    api_client, mock_pool, as_admin, org_a, bypass_module_gate, as_org_admin,
+async def test_one_person_may_hold_both_but_it_takes_two_grants(
+    api_client, mock_pool, as_member, org_a, held, monkeypatch,
 ):
-    """The separation stated as one assertion, because this is the whole point.
-
-    A single caller reaches BOTH the route that decides what someone is paid and
-    the route that releases the payment. Whichever way the RBAC-SPEC
-    contradiction is settled, these two must not resolve through one predicate.
-    """
-    mock_pool.fetchrow.return_value = {"status": "processed", "id": RUN_ID}
+    """The rule is not "these must be two people" — small firms exist. It is that
+    the second authority is a second, separately-revocable grant rather than
+    something admin confers by itself."""
+    monkeypatch.setattr("routers.vetana._RELEASE_LEVEL", APPROVER)
+    held(ADMIN, APPROVER)
+    mock_pool.fetchrow.return_value = {"status": "processed"}
     mock_pool.fetch.return_value = []
 
-    define = await api_client.post(
-        "/api/v1/vetana/salary-structures",
-        json={"employee_id": "e0000000-0000-0000-0000-00000000005e",
-              "ctc_annual": 1},
-    )
-    approve = await api_client.patch(
-        f"/api/v1/vetana/payroll/runs/{RUN_ID}/approve"
-    )
+    resp = await api_client.patch(f"/api/v1/vetana/payroll/runs/{RUN_ID}/approve")
 
-    assert not (define.status_code < 400 and approve.status_code < 400), (
-        "one caller both defined a salary structure and approved the payroll "
-        "run that pays it"
-    )
+    assert resp.status_code == 200
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# What IS true today — so the gap above is unmistakable rather than inferred
+# 3. The hold itself, recorded so it cannot be forgotten
 # ══════════════════════════════════════════════════════════════════════════════
 
-def test_the_model_itself_is_correct_and_unambiguous():
-    """Restated here, where the enforcement gap is documented, so the two are
-    read together. If this ever fails, the gap is no longer the only problem."""
-    for module_code in sorted(SEPARATED_DUTY_MODULES):
-        assert level_satisfies("admin", "approver", module_code) is False
-        assert level_satisfies("approver", "approver", module_code) is True
-    # And the separation is specific, not a blanket refusal everywhere.
-    assert level_satisfies("admin", "approver", "graha") is True
-
-
-def test_the_money_routes_and_the_salary_route_share_one_predicate():
-    """The mechanical statement of the gap: the two authorities that must differ
-    are literally the same function call. Source-level, because that is the
-    level at which the defect exists — every route below reads correct in
-    isolation."""
+def test_the_release_rung_is_a_named_constant_not_three_literals():
+    """Three routes release money. Spelling the rung at each is how one of the
+    three gets missed, and a half-enforced separation is worse than none because
+    it reads as enforced."""
     import inspect
     from routers import vetana
 
     src = inspect.getsource(vetana)
-    for handler in ("approve_run", "disburse_payslip", "create_salary_structure"):
-        fn = getattr(vetana, handler, None)
-        if fn is None:
-            continue
-        body = inspect.getsource(fn)
-        assert "_require_payroll_admin" in body, (
-            f"{handler} no longer uses _require_payroll_admin — if it now takes "
-            "a level, this file's xfail markers are stale"
-        )
-    assert "level_satisfies" not in src, (
-        "vetana.py now consults level_satisfies — enforcement has landed, so "
-        "remove the xfail markers above"
+    assert src.count("_require(levels, _RELEASE_LEVEL)") >= 3, (
+        "a money route stopped using the shared release rung"
     )
+
+
+def test_the_remaining_change_is_documented_where_it_will_be_read():
+    """`_RELEASE_LEVEL` is ADMIN today because org_member_modules is empty, so
+    demanding APPROVER would empty the set of people who can approve rather than
+    narrow it. That reasoning has to live at the constant — a reader who finds
+    ADMIN and no explanation reasonably concludes the rule was abandoned."""
+    import inspect
+    from routers import vetana
+
+    src = inspect.getsource(vetana)
+    marker = src[:src.index("_RELEASE_LEVEL = ")]
+    assert "PROPOSED_071" in marker, (
+        "the migration that unblocks the approver rung is no longer named at "
+        "the constant it unblocks"
+    )
+
+
+def test_the_model_is_correct_for_every_separated_duty_module():
+    """Restated where enforcement lives, so the two are read together."""
+    for module_code in sorted(SEPARATED_DUTY_MODULES):
+        assert level_satisfies(ADMIN, APPROVER, module_code) is False
+        assert level_satisfies(APPROVER, APPROVER, module_code) is True
+        assert any_level_satisfies(frozenset({ADMIN}), APPROVER, module_code) is False
+    # Specific, not a blanket refusal: elsewhere the ladder is a plain hierarchy.
+    assert level_satisfies(ADMIN, APPROVER, "graha") is True

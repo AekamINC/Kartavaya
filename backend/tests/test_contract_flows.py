@@ -320,23 +320,20 @@ async def test_client_approvals_carry_no_staff_email_even_when_the_row_has_one(
 # 4. Payroll self-scoping, with the module gate genuinely on the path
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def test_payslips_are_self_scoped_without_an_org_role(
+async def test_payslips_are_self_scoped_without_a_grant(
     app, api_client, mock_pool, as_member,
 ):
-    """A Vetana grant is a tab, not the salary register. Someone with the module
-    and no org role sees their own payslips and nobody else's — the query must
-    carry their employee row, not just the org."""
+    """A Vetana tab is not the salary register.
+
+    Vetana is self-scoped: an employee with NO grant reads their own payslips and
+    nobody else's, so the query must be narrowed to their employee row rather
+    than merely to the org. Authority is now a Tier-4 level set resolved by
+    `_gate`, not an `is_org_admin` call, so an empty set is the no-grant case.
+    """
     from middleware.org_resolver import get_org_id
     from routers.vetana import _gate
-    app.dependency_overrides[_gate] = lambda: None
+    app.dependency_overrides[_gate] = lambda: frozenset()
     app.dependency_overrides[get_org_id] = lambda: "00000000-0000-0000-0000-00000000000a"
-
-    async def _not_admin(user_id, org_id=None):
-        return False
-
-    import routers.vetana as vetana
-    original = vetana.is_org_admin
-    vetana.is_org_admin = _not_admin
     try:
         seen = []
 
@@ -345,7 +342,7 @@ async def test_payslips_are_self_scoped_without_an_org_role(
             return []
 
         async def _fetchval(query, *args):
-            # The caller's own employee row.
+            # `_own_employee_id` — the caller's own employee row.
             return "e0000000-0000-0000-0000-00000000005e"
 
         mock_pool.fetch.side_effect = _fetch
@@ -354,14 +351,35 @@ async def test_payslips_are_self_scoped_without_an_org_role(
         resp = await api_client.get("/api/v1/vetana/payslips")
         assert resp.status_code == 200
 
-        payslip_queries = [q for q, _ in seen if "payslip" in q.lower()]
+        payslip_queries = [q for q, _ in seen if "vetana_payslips" in q]
         assert payslip_queries, "no payslip query ran"
         for query in payslip_queries:
             assert "employee_id" in query, (
-                "the payslip list is not narrowed to an employee row: "
-                + query
+                "the payslip list is not narrowed to an employee row: " + query
             )
     finally:
-        vetana.is_org_admin = original
+        app.dependency_overrides.pop(_gate, None)
+        app.dependency_overrides.pop(get_org_id, None)
+
+
+async def test_asking_for_a_colleagues_payslips_without_a_grant_is_refused(
+    app, api_client, mock_pool, as_member,
+):
+    """The narrowing above must not be silently overridable by a query param —
+    the employee id is caller-supplied and nothing has to be forged."""
+    from middleware.org_resolver import get_org_id
+    from routers.vetana import _gate
+    app.dependency_overrides[_gate] = lambda: frozenset()
+    app.dependency_overrides[get_org_id] = lambda: "00000000-0000-0000-0000-00000000000a"
+    try:
+        mock_pool.fetchval.return_value = "e0000000-0000-0000-0000-00000000005e"
+        mock_pool.fetch.return_value = []
+
+        resp = await api_client.get(
+            "/api/v1/vetana/payslips",
+            params={"employee_id": "e0000000-0000-0000-0000-0000000000ff"},
+        )
+        assert resp.status_code == 403
+    finally:
         app.dependency_overrides.pop(_gate, None)
         app.dependency_overrides.pop(get_org_id, None)
