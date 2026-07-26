@@ -99,11 +99,13 @@ Lesson for the rest of the implementation: **the handover's defect claims are li
 
 ## 4 · Open decisions
 
-1. **Landing page bilingual hierarchy.** `22` inverts it — Hindi leads in the module grid. The user ruled "English main, Hindi sub" globally. **User's call.**
-2. **Vikray (Sales · विक्रय) scope.** Page, route and palette entry; covered by no file. Plus nine more in `20` §Unreported.
-3. **`lib/labels.js` Sanskrit column.** `24`: do not machine-fill. Blocked on content from the user.
-4. **Face matching provider** — on-device vs cloud (`17`). Changes first-run consent copy.
-5. **GST split.** Single `gst` column cannot represent intra-state CGST+SGST (`11`, `18`). Schema change.
+1. ~~Landing page bilingual hierarchy~~ — **decided 2026-07-26**, see below.
+2. **Vikray (Sales · विक्रय) scope.** Page, route and palette entry; covered by no file. Plus nine more in `20` §Unreported. Requested from Claude Design 2026-07-26.
+3. ~~`lib/labels.js` Sanskrit column~~ — **decided 2026-07-26**, see below. Still blocked on a Sanskrit-literate reviewer, but the scope is now fixed.
+4. ~~Face matching provider~~ — **parked to v2 2026-07-26.** Pahchan v1 redefined; see below.
+5. ~~GST split~~ — **resolved 2026-07-26: no work needed.** The premise was wrong, see §10.
+
+**Still open, and mine to raise rather than decide:** the standalone Pahchan price and whether it is flat or per-head (§10). Not blocking design or implementation.
 
 ### Decided 2026-07-25
 
@@ -112,6 +114,16 @@ Lesson for the rest of the implementation: **the handover's defect claims are li
 **CTA → invite-only.** No signup route, no `POST /auth/signup`, no email verification, no trial limits. `22`'s CTA becomes Request a demo / Talk to us, needing a lead-capture endpoint landing in Graha. Onboarding wizard still required for invited users. SOC 2 badge must not ship.
 
 **Pricing → no free tier.** `free` becomes `basic`, charged manually per client by user count.
+
+### Decided 2026-07-26
+
+**Landing bilingual hierarchy → the inversion stands.** `22` keeps Devanagari leading in the landing module grid, against `24`'s global rule. The landing grid is brand introduction, not wayfinding. Claude Design asked to codify it as a stated exception in `24` so the next reader does not "fix" it back.
+
+**Sanskrit column → closed set only, `EN+SA` hidden until filled.** Roughly 50–60 terms: the 15 module names, statuses, priorities, core actions. Long tail stays English. A stored `sa` must fall through to `en`. Needs a Sanskrit-literate reviewer, not a designer. Note `फ़लक` (*falak*) is Persian/Urdu, not Sanskrit — acceptable for `EN+HI`, not for a column labelled Sanskrit.
+
+**Face matching → parked to v2. Pahchan v1 redefined; device enrollment dropped.** See §10.
+
+**GST split → no work needed.** See §10.
 
 ---
 
@@ -125,17 +137,17 @@ Read-only queries, 2026-07-25, project `toacecaewujfxjfrjwco` (`ap-southeast-1`)
 
 `staging.plans` holds **seven rows in two generations**:
 
-| Gen | Code | ₹/mo | `default_credits` | `is_active` |
-|---|---|---|---|---|
-| 1 (04 Jul) | `free` | 0 | 200 | **true** |
-| 1 | `professional` | 99 | 500 | false |
-| 1 | `business` | 149 | 1000 | false |
-| 1 | `enterprise` | 249 | 2000 | false |
-| 2 (08 Jul) | `starter` | 10,000 | 500 | true |
-| 2 | `growth` | 15,000 | 1000 | true |
-| 2 | `scale` | 20,000 | 2000 | true |
+| Gen | Code | `default_credits` | `is_active` |
+|---|---|---|---|
+| 1 (04 Jul) | `free` | 200 | **true** |
+| 1 | `professional` | 500 | false |
+| 1 | `business` | 1000 | false |
+| 1 | `enterprise` | 2000 | false |
+| 2 (08 Jul) | `starter` | 500 | true |
+| 2 | `growth` | 1000 | true |
+| 2 | `scale` | 2000 | true |
 
-`price_monthly` carries **two incompatible unit conventions in one column** — gen-1 is 99–249, gen-2 is 10,000–20,000. Anything reading the catalogue without filtering `is_active` mixes them.
+`price_monthly` carries **two incompatible unit conventions in one column** — gen-1 is two-digit, gen-2 is five-digit. Anything reading the catalogue without filtering `is_active` mixes them. Figures deliberately not recorded here; read the column if you need them.
 
 **Defect no handover file caught — three different credit numbers per tier:**
 
@@ -261,3 +273,56 @@ Forward changes taken in full:
 - `00` §7 also changes `--font-ui` default to `"Public Sans"` and retunes `[data-density="compact"]` (`--row-h` 38 → 34px).
 
 **`applyPrefs` must now derive `--primary-text` per accent preset**, not just `--primary`/`--primary-hover`. Twelve presets ship; without it each one is an unmeasured text-contrast risk. Not yet done.
+
+---
+
+## 10 · Pahchan v1 and the GST claim — 2026-07-26
+
+### 10.1 · The GST claim was wrong, and `11` was not
+
+**`11-platform-admin.md:47` is correct.** `staging.subscription_invoices` really does carry a flat `gst DECIMAL(12,2)`, and that table is Aekam billing its own customers. `11` describes its own surface accurately.
+
+**`18-documents.md:62` is wrong.** It cites `11` and applies the claim to the customer-facing tax invoice. That table is `staging.ganit_invoices`, which has carried `place_of_supply`, `is_igst`, `cgst`, `sgst`, `igst` and `cess` since `018_graha_ganit_manav.sql:125`, wired end to end: `_compute_invoice()` at `routers/ganit.py:207` does the split, `services/invoice_pdf.py:195` renders IGST or CGST+SGST, `pages/ganit/InvoicesTab.jsx:250` displays it, and the create form carries both the `place_of_supply` field and the inter-state toggle. Same columns on quotations (`019`), Vikray (`020`) and vendor bills (`035`).
+
+My §4.5 entry generalised `18`'s framing without checking either table. No `lib/gst.js` is needed. **This is the third handover defect claim that did not survive checking** — after `ConfirmDialog`'s missing `role` and the focus-trap grep. Consistent enough to treat as a rule now: verify against source before acting, every time.
+
+Two real items surfaced instead, both smaller than the claim they replace:
+
+1. **`is_igst` is a manual checkbox and `place_of_supply` is free text** (`InvoicesTab.jsx:351,357`, placeholder `"e.g. Maharashtra"`). Inter-state versus intra-state is derivable: supplier state from the org GSTIN against the buyer's place of supply. A wrongly ticked box produces an invoice that looks correct and breaks the customer's input tax credit — worse than a missing feature. Make it a state dropdown with GST state codes, derive `is_igst`, keep a manual override for SEZ and exports.
+2. **Aekam's own subscription invoices are not GST-split.** Real, belongs to `11`. §5 puts the blast radius at 2 orgs / 2 subscriptions.
+
+### 10.2 · Pahchan v1 — no face matching, no device enrollment
+
+Device enrollment was proposed and rejected for a good reason: it assumes you can pre-register a workforce, and a SaaS onboarding unknown SMEs cannot.
+
+**The v1 model.** Employee logs in with their own account → clock in/out screen → live selfie → punch syncs with GPS, accuracy, and both device and server timestamps → org reviews the selfie against two reference photos on a map view.
+
+**Verification is human.** The supervisor compares punch selfie to reference pair. This is a **detective** control, not preventive — a shared password lets a colleague punch, and the selfie catches it only if someone looks. Accepted, but it means the review surface must make a day scannable in seconds, which is why the register view is being promoted over the exceptions queue.
+
+**Two reference photos per employee at enrollment.** Slot 1 straight-on ID framing, slot 2 at 15–30° or different lighting. Face ≥40% of frame, no sunglasses, cap or mask. Two rather than one because a single unlucky reference makes every later punch look wrong and the reviewer stops trusting the comparison. HR uploads at employee creation, or the employee self-captures on first run into a `pending` state with an HR approval queue.
+
+**Never block clock-in on references existing.** Flag the punch as "no reference on file" instead. Hard-blocking breaks day one of every deployment.
+
+**These photos are what makes v2 a drop-in.** Two reference images per employee means two embeddings whenever matching is enabled — computed from photos already on file, with no re-enrollment campaign across every client's workforce. That is the argument for collecting them now while matching is parked.
+
+**Camera-only capture is load-bearing.** `mobile/package.json` currently has `expo-image-picker` and **no `expo-camera`**, while `07:138` correctly specifies `CameraView expo-camera, immersive`. With login-only auth the selfie is the only identity evidence there is; if it can come from the gallery, one saved selfie works forever and the feature is decorative. In-app camera, no gallery path, no gallery permission requested at all. `expo-location` and `expo-image-manipulator` are also missing.
+
+**Compression.** Punch selfie 720 px long edge, JPEG q75, ≤100 KB. Reference photo 1080 px, q85, ≤250 KB — the larger budget because references double as the future embedding source, and 1080 px with a face at 40% of frame yields ~430 px of face, well above what embedding models need. A 200-worker client generates ~8,800 punch photos a month, ~700 MB, ~2.1 GB steady state at 90-day retention; references ~100 MB, permanent.
+
+**Retention, two classes.** Reference photos: employment + **45-day grace** after exit. Punch selfies: **90 days**. Both policy fields. The punch record must survive its photo's deletion — hours worked is a payroll fact, the photo is only evidence. A face photo is not a statutory payroll record and must not inherit multi-year HR retention.
+
+**Visibility.** Photos to HR and the `reporting_to` chain only, never org-wide. Aekam's platform surface sees the **count** of Pahchan users per org and nothing else — no names, photos, locations or times. This is the mirror of the constraint in §8: margin and cost data never serialise outward, employee attendance data never serialises inward. Both directions, one rule.
+
+**Automatic reports.** Daily, weekly and monthly clock in/out reports to the HR-assigned user and the org admin. **Reports carry no photos** — times, hours, flags, exceptions, totals only. Email is not a controlled channel; it forwards and persists past any retention policy. Photos stay behind portal auth where 90 days can actually be enforced. Backend already has `routers/scheduler.py`, `services/report_generator.py`, `services/employee_email.py` and the `OUTBOUND_MODE` kill switch, so this is mostly wiring.
+
+**Packaging.** Growth tier and above, or standalone. **No pricing figures in any design artefact** — prototype, spec, landing page or placeholder copy. Tier names only.
+
+**Seats: set per org, manually, by Aekam at org creation.** `organisations.max_users` from `061` is the governing value; `plans.max_users` is only a fallback default. It is now *enforced*, not decorative (`ca896ec`). An earlier note here read the NULLs on the paid tiers as "unlimited, therefore not seat-blocked" — wrong, because the org-level figure is what applies and it is always entered by hand. A forty-worker client needs the allowance set to match, or worker forty-one cannot be created. Two implications: the org create/edit screen must make the figure deliberate rather than skippable and signal that attendance users count against it; and the seat-limit error must name both the limit and the remedy, or an HR admin hitting the ceiling reads it as a bug in attendance.
+
+**API contract changes** to `07:184`: `selfie_key` becomes required, `face_score` is dropped, `device_id` stays but is advisory only — still a useful anomaly signal, no longer an auth factor.
+
+**One thing flagged out of scope.** `staging.manav_employees` stores `aadhaar` and `pan` as plaintext (`routers/manav.py:249`), with no encryption anywhere in the migrations. Adding face photos keyed to the same row makes it a full identity kit — ID number, face, bank details. Raised as a separate task; not part of Pahchan.
+
+### 10.3 · New table
+
+`pahchan_enrollment_photos` — a sixth alongside the five in `07:196`. A dedicated table rather than columns on `manav_employees`, for three reasons: retention is a different class from punch selfies and needs its own deletion policy; an audit trail of who uploaded and who approved is required; and photo replacement must be visible, since swapping a reference to match a different face is the obvious attack. Reuse `services/storage.py` — it already has `upload_file`, `sign_key`, `refresh_signed_url`, `delete_file` and per-org R2 buckets, so client isolation comes for free.
