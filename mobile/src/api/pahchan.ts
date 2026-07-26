@@ -114,4 +114,15 @@ export const enrollmentApi = {
   submit: (body: { employee_id: string; slot: 1 | 2; object_key: string }) =>
     apiClient.post('/v1/pahchan/enrollment', { ...body, source: 'self_capture' })
       .then(r => r.data),
+
+  /**
+   * A short-lived signed URL for one reference photograph.
+   *
+   * By row id, never by object key — there is deliberately no endpoint anywhere
+   * that will sign an arbitrary key handed to it. Employees may always read
+   * their own (07 §9); anyone else's needs an org admin.
+   */
+  photoUrl: (photoId: string) =>
+    apiClient.get<{ url: string }>(`/v1/pahchan/enrollment/photos/${photoId}/url`)
+      .then(r => r.data.url),
 };

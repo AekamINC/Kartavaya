@@ -14,6 +14,7 @@ import { avatarColor, userInitials } from '../theme/tokens';
 import { notificationsApi } from '../api/notifications';
 import type { RootStackParamList } from '../nav/RootStack';
 import type { NotifKind, NotifPrefsResponse } from '../api/types';
+import MyBiometrics from './pahchan/MyBiometrics';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
@@ -260,6 +261,12 @@ export default function MeScreen() {
           })
         )}
       </Section>
+
+      {/* ── Your attendance photos (07 §9) ───────────────────────────
+          Renders nothing for anyone who is not a Pahchan employee. Someone
+          whose face is photographed twice a day should be able to see what is
+          held and for how long without having to ask. */}
+      <MyBiometrics t={t} />
 
       {/* ── Permissions ──────────────────────────────────────────── */}
       <Section label="Permissions" hi="अनुमतियाँ"
