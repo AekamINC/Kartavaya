@@ -17,21 +17,28 @@
  * is already on screen: a list that reflows under a moving selection causes
  * wrong activations.
  *
- * ── The endpoint does not exist yet, and this file does not pretend it does ──
+ * ── Search proves itself before it advertises itself ─────────────────────
  *
- * There is no `/api/search` in `backend/server.py`. Rather than ship a
- * placeholder that lies in the other direction, record search is PROVEN before
- * it is advertised:
+ * `GET /api/search` NOW EXISTS. `backend/routers/search.py` had been written
+ * and complete since 2a2a27b but was never imported or registered in
+ * `server.py`, so the endpoint 404'd and the tri-state below latched to
+ * `absent` on the first keystroke of every session — the palette silently
+ * degraded to a nav menu. The router is registered as of this branch.
+ *
+ * The tri-state is KEPT even so. It is not scaffolding for a missing
+ * endpoint: it is what stops the palette claiming "no results" for a request
+ * it never successfully made, and it is the reason the 404 above was
+ * survivable rather than a crash. States:
  *
  *   unknown → the placeholder reads "Type a command…" and no scope chips show.
  *   live    → one successful response, and the palette starts promising search.
  *   absent  → a 404/501 once per session, and it stops asking and says so.
  *
- * So the component is correct today (commands only, and it says so), correct
- * the day the endpoint lands (search appears with no frontend change), and it
- * never renders "no results" for a query it did not run. `20` calls that
- * distinction out twice and it is the whole reason the state is tri-valued
- * rather than a boolean.
+ * So the component was correct while the endpoint 404'd (commands only, and it
+ * said so), is correct now that it answers (search appeared with no frontend
+ * change at all), and never renders "no results" for a query it did not run.
+ * `20` calls that distinction out twice and it is the whole reason the state is
+ * tri-valued rather than a boolean.
  *
  * The mode is module-scoped, not component state, so a 404 costs one request
  * per page load rather than one per palette open.
