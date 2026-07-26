@@ -223,18 +223,40 @@ export default function OnboardingPage() {
     } finally { setBusy(false); }
   };
 
+  /**
+   * Every label states what the press actually does, and the two that reach the
+   * server say which one.
+   *
+   * `modules` used to read "Turn on N modules". Nothing is turned on — there is
+   * no endpoint for an org's module set, the list goes to `kv_onboarding` and
+   * stops there — so the button was promising a write that never happened, and
+   * it also read "Turn on 1 modules". It carries the selection forward and says
+   * so.
+   *
+   * `invite` and `project` are the only two presses in the whole wizard that
+   * touch the API. Both name their effect and their count, and both fall back to
+   * "Continue" when there is nothing to send or create, at which point their
+   * handlers return before any request is made.
+   */
+  const nInv = state.invites.length;
   const primary = {
     profile: { label: 'Continue', run: () => advance(state.name.trim() ? 'profile' : null) },
     org: { label: 'Continue', run: () => advance(state.org.trim() ? 'org' : null) },
-    modules: { label: `Turn on ${state.modules.length} modules`, run: () => advance('modules') },
-    invite: { label: state.invites.length ? `Send ${state.invites.length} invitation${state.invites.length === 1 ? '' : 's'}` : 'Continue', run: sendInvites },
+    modules: {
+      label: `Continue with ${state.modules.length} module${state.modules.length === 1 ? '' : 's'}`,
+      run: () => advance('modules'),
+    },
+    invite: {
+      label: nInv ? `Email ${nInv} invitation${nInv === 1 ? '' : 's'}` : 'Continue',
+      run: sendInvites,
+    },
     project: { label: state.project.trim() ? 'Create project' : 'Continue', run: createProject },
   }[step.id];
 
   if (done) {
     return (
       <div className="ob">
-        <span className="ob__wm" aria-hidden="true">कर्तव्य</span>
+        <span className="ob__wm" lang="hi" aria-hidden="true">कर्तव्य</span>
         <div className="ob__inner">
           <StepDone state={state} applied={applied} onFinish={finish} />
         </div>
@@ -244,7 +266,7 @@ export default function OnboardingPage() {
 
   return (
     <div className="ob">
-      <span className="ob__wm" aria-hidden="true">कर्तव्य</span>
+      <span className="ob__wm" lang="hi" aria-hidden="true">कर्तव्य</span>
       <div className="ob__inner">
         <ol className="ob__rail">
           {steps.map((s, n) => (

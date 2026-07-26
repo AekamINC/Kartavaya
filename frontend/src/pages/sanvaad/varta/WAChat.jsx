@@ -6,7 +6,7 @@ import { api } from '../../../lib/api';
 import { ErrorState, errorKind, SkeletonChat, useToast } from '../../../components/ui';
 import { formatTime } from '../../../lib/timeFormat';
 import Composer from '../Composer';
-import { SvIcons, WaTicks } from '../icons';
+import { SvIcons, WA_STATUS_LABEL, WaTicks } from '../icons';
 import useStickyScroll from '../useStickyScroll';
 import { mergeById } from '../messageUtils';
 import WindowBanner from './WindowBanner';
@@ -112,18 +112,33 @@ export default function WAChat({ conversation, onBack }) {
             )}
             {!loading && messages.map(m => {
               const out = m.direction === 'outbound';
+              const label = WA_STATUS_LABEL[m.status] || m.status;
               return (
-                <div key={m.id} className={`wa__b ${out ? 'wa__b--out' : 'wa__b--in'}`}>
-                  {m.content}
-                  <div className="wa__m">
-                    <time dateTime={m.created_at}>{formatTime(m.created_at)}</time>
-                    {out && WaTicks[m.status] && (
-                      // The glyph is identical for delivered and read; the colour
-                      // is the whole distinction (06 §3, 00 §9).
-                      <span title={m.status} aria-label={m.status}>{WaTicks[m.status]}</span>
-                    )}
+                <React.Fragment key={m.id}>
+                  <div className={`wa__b ${out ? 'wa__b--out' : 'wa__b--in'}`}>
+                    {m.content}
+                    <div className="wa__m">
+                      <time dateTime={m.created_at}>{formatTime(m.created_at)}</time>
+                      {out && WaTicks[m.status] && (
+                        /* The glyph is identical for delivered and read; the
+                           colour is the whole distinction (06 §3, 00 §9). The
+                           status is therefore also in the accessible name —
+                           a colour cannot be the only carrier of meaning. */
+                        <span title={label} aria-label={label}>{WaTicks[m.status]}</span>
+                      )}
+                    </div>
                   </div>
-                </div>
+                  {out && m.status === 'failed' && (
+                    /* `varta_messages.error_code` comes back on the row and was
+                       being dropped. 131047 (re-engagement) and 131026
+                       (undeliverable) are the two a sender acts on differently,
+                       and "Failed" alone does not distinguish them. */
+                    <p className="wa__err">
+                      {SvIcons.alert}
+                      {m.error_code ? `Not delivered · ${m.error_code}` : 'Not delivered'}
+                    </p>
+                  )}
+                </React.Fragment>
               );
             })}
           </div>

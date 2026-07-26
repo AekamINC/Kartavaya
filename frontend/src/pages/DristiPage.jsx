@@ -1,27 +1,52 @@
+// Dristi · दृष्टि — analytics — on the shared module chrome, 13-module-pages.md §1.
+//
+// Was `PageHeader` + `TabBar`. Three measured differences from the spec:
+//  · `.k-pageh__h1` is `clamp(32px, 4vw, 44px)`; 13 §1 specs `.mh__en` at 25px.
+//  · `.k-pageh__sans` puts the Devanagari at 0.7em of that h1 — 22-31px where
+//    the spec says 15px — in `--k-primary`, i.e. `--primary-vivid`, a FILL.
+//    `.mh__hi` uses `--primary-text`, the measured text pair.
+//  · `PageHeader` carries no module accent; `.mh__ic` is the 38px tinted icon.
+// `.k-tabbar` also has no role="tablist"/aria-selected/aria-controls.
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
-import { PageHeader, StatTile, TabBar, Section, Badge, Shimmer, Empty, DataTable, Td } from '../components/editorial';
+import { StatTile, Section, Badge, Shimmer, Empty, DataTable, Td } from '../components/editorial';
+import ModuleHeader from '../components/module/ModuleHeader';
+import ModuleTabs from '../components/module/ModuleTabs';
+import { ICONS } from '../components/layout/navIcons';
+import { moduleMeta } from '../lib/moduleColors';
+import { inr } from '../lib/inr';
 
-const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+// Was a local `₹${…toLocaleString('en-IN')}`. 13 §3 puts Indian digit grouping
+// in lib/inr.js precisely because it was reimplemented per page.
+const FMT = inr;
 const PCT = v => `${Number(v || 0).toFixed(1)}%`;
 
 const TABS = ['overview', 'revenue', 'pipeline', 'hr', 'sales', 'reports', 'dashboards', 'pivot'];
 
 export default function DristiPage() {
   const [tab, setTab] = useState('overview');
+  const meta = moduleMeta('dristi');
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Dristi" sanskrit="दृष्टि" lede="Analytics — Cross-module KPIs & Trends" />
-      <TabBar tabs={TABS} active={tab} onChange={setTab} />
-      {tab === 'overview' && <OverviewTab />}
-      {tab === 'revenue' && <RevenueTab />}
-      {tab === 'pipeline' && <PipelineTab />}
-      {tab === 'hr' && <HRTab />}
-      {tab === 'sales' && <SalesTab />}
-      {tab === 'reports' && <ReportsTab />}
-      {tab === 'dashboards' && <DashboardsTab />}
-      {tab === 'pivot' && <PivotTab />}
+      <ModuleHeader
+        module="dristi"
+        en={meta.en}
+        hi={meta.hi}
+        sub="Cross-module KPIs, trends and pivots"
+        icon={ICONS.dristi}
+      />
+      <ModuleTabs tabs={TABS.map(id => ({ id, label: id }))} value={tab} onChange={setTab} label="Dristi sections" />
+      <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
+        {tab === 'overview' && <OverviewTab />}
+        {tab === 'revenue' && <RevenueTab />}
+        {tab === 'pipeline' && <PipelineTab />}
+        {tab === 'hr' && <HRTab />}
+        {tab === 'sales' && <SalesTab />}
+        {tab === 'reports' && <ReportsTab />}
+        {tab === 'dashboards' && <DashboardsTab />}
+        {tab === 'pivot' && <PivotTab />}
+      </div>
     </div>
   );
 }
@@ -96,7 +121,7 @@ function RevenueTab() {
             <Td align="right" mono>{FMT(r.invoiced)}</Td>
             <Td align="right" mono>{FMT(r.collected)}</Td>
             <Td align="right" mono>{FMT(r.expenses)}</Td>
-            <Td align="right" mono bold color={r.profit >= 0 ? '#10b981' : '#ef4444'}>{FMT(r.profit)}</Td>
+            <Td align="right" mono bold color={r.profit >= 0 ? 'var(--ok)' : 'var(--danger)'}>{FMT(r.profit)}</Td>
           </tr>
         ))}
       </DataTable>
@@ -233,7 +258,7 @@ function SalesTab() {
                 <td>{r.name}</td>
                 <Td align="right" mono>{FMT(r.target_amount)}</Td>
                 <Td align="right" mono>{FMT(r.actual_amount)}</Td>
-                <Td align="right" bold color={r.pct >= 100 ? '#10b981' : undefined}>{r.pct}%</Td>
+                <Td align="right" bold color={r.pct >= 100 ? 'var(--ok)' : undefined}>{r.pct}%</Td>
               </tr>
             ))}
           </DataTable>
@@ -243,7 +268,7 @@ function SalesTab() {
   );
 }
 
-const FREQ_COLORS = { daily: '#6366f1', weekly: '#0082c6', monthly: '#10b981' };
+const FREQ_COLORS = { daily: 'var(--st-in-review)', weekly: 'var(--st-in-progress)', monthly: 'var(--ok)' };
 const REPORT_TYPES = ['overview', 'revenue', 'pipeline', 'hr', 'sales', 'custom'];
 const FREQUENCIES = ['daily', 'weekly', 'monthly'];
 const DAYS_OF_WEEK = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -368,7 +393,7 @@ function ReportsTab() {
         </div>
         <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
           <button className="k-btn k-btn--primary" onClick={() => runNow(selected.id)} style={{ fontSize: 13 }}>Run Now</button>
-          <button onClick={() => remove(selected.id)} style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Delete</button>
+          <button onClick={() => remove(selected.id)} style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Delete</button>
         </div>
       </Section>
       <Section title="Delivery Logs" hi="वितरण लॉग">
@@ -377,9 +402,9 @@ function ReportsTab() {
             {logs.map((l, i) => (
               <tr key={i}>
                 <td style={{ fontSize: 13 }}>{new Date(l.sent_at).toLocaleString()}</td>
-                <td><Badge color={l.status === 'sent' ? '#10b981' : '#ef4444'}>{l.status}</Badge></td>
+                <td><Badge color={l.status === 'sent' ? 'var(--ok)' : 'var(--danger)'}>{l.status}</Badge></td>
                 <Td align="right">{l.recipients_count}</Td>
-                <td style={{ fontSize: 12, color: '#ef4444' }}>{l.error || '—'}</td>
+                <td style={{ fontSize: 12, color: 'var(--danger)' }}>{l.error || '—'}</td>
               </tr>
             ))}
           </DataTable>
@@ -409,9 +434,9 @@ function ReportsTab() {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
-                <button onClick={() => toggleActive(r)} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--k-border)', background: r.is_active ? '#10b981' : 'var(--k-bg-2)', color: r.is_active ? '#fff' : 'var(--k-fg)', cursor: 'pointer' }}>{r.is_active ? 'Active' : 'Paused'}</button>
+                <button onClick={() => toggleActive(r)} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--k-border)', background: r.is_active ? 'var(--ok-container)' : 'var(--k-bg-2)', color: r.is_active ? 'var(--on-ok-container)' : 'var(--k-fg)', cursor: 'pointer' }}>{r.is_active ? 'Active' : 'Paused'}</button>
                 <button className="k-btn k-btn--ghost" onClick={() => runNow(r.id)} style={{ fontSize: 12 }}>Run Now</button>
-                <button onClick={() => remove(r.id)} style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Delete</button>
+                <button onClick={() => remove(r.id)} style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Delete</button>
               </div>
             </div>
           ))}
@@ -464,9 +489,9 @@ function DashboardsTab() {
             <div key={d.id} className="k-modcard" style={{ cursor: 'default' }}>
               <div>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{d.name}</div>
-                {d.is_default && <span style={{ fontSize: 10, color: 'var(--k-primary)', fontWeight: 700, letterSpacing: '.06em' }}>DEFAULT</span>}
+                {d.is_default && <span style={{ fontSize: 'var(--t-label-sm)', color: 'var(--k-primary)', fontWeight: 700, letterSpacing: '.06em' }}>DEFAULT</span>}
               </div>
-              <button onClick={() => remove(d.id)} style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Delete</button>
+              <button onClick={() => remove(d.id)} style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Delete</button>
             </div>
           ))}
         </div>

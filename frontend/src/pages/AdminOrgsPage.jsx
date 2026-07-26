@@ -52,7 +52,16 @@ import '../styles/admin.css';
 /* Module codes as `require_module(...)` spells them, with the sensitive set
    marked. START-HERE, decision 2: Vetana, Ganit and Manav default to no access
    BY ROLE — the marking here is so an operator switching a module on for a
-   whole org knows which ones carry employee and financial records. */
+   whole org knows which ones carry employee and financial records.
+
+   `wired: false` is the four codes `role_tiers.ALL_MODULES` knows about but
+   `routers/admin_orgs.py:812` does not. That endpoint validates against its own
+   eight-code list and 400s on anything else, so before this flag Sanvaad,
+   Varta, eSign and Pahchan were four toggles that failed with "Unknown module".
+   They are still listed — an operator has to be able to see that a module
+   exists and is not switchable here — and they are not clickable. */
+const ENDPOINT_MODULES = ['graha', 'ganit', 'manav', 'vikray', 'vetana', 'dristi', 'prachar', 'srijan'];
+
 const ALL_MODULES = [
   { code: 'graha', label: 'Graha · CRM' },
   { code: 'vikray', label: 'Vikray · Sales' },
@@ -66,20 +75,29 @@ const ALL_MODULES = [
   { code: 'ganit', label: 'Ganit · Invoicing', sensitive: true },
   { code: 'manav', label: 'Manav · HRMS', sensitive: true },
   { code: 'vetana', label: 'Vetana · Payroll', sensitive: true },
-];
+].map(m => ({ ...m, wired: ENDPOINT_MODULES.includes(m.code) }));
 
 const PLANS = [
-  { code: 'free', label: 'Free', credits: 0 },
-  { code: 'starter', label: 'Starter', credits: 500 },
-  { code: 'growth', label: 'Growth', credits: 1000 },
-  { code: 'scale', label: 'Scale', credits: 2000 },
+  { code: 'free', label: 'Free' },
+  { code: 'starter', label: 'Starter' },
+  { code: 'growth', label: 'Growth' },
+  { code: 'scale', label: 'Scale' },
 ];
 
+/* Price, credits and seats start EMPTY. They are negotiated per org and typed
+   by Aekam; a prefilled figure is a number nobody decided that ships on a real
+   contract the first time someone tabs past the field. Nothing in this console
+   may carry a tier price or a seat count as a default, a placeholder or an
+   example. */
 const EMPTY_ORG = {
-  name: '', owner_email: '', plan_code: 'starter',
-  markup_pct: 0.3, monthly_credits: 500, monthly_price: 10000, max_users: 5,
+  name: '', owner_email: '', plan_code: '',
+  markup_pct: 0.3, monthly_credits: '', monthly_price: '', max_users: '',
 };
 const EMPTY_R2 = { account_id: '', access_key_id: '', secret_access_key: '', bucket_name: 'kartavya-storage' };
+
+/* An empty box must reach the API as null, not as 0 — 0 is a real contracted
+   value and "not yet agreed" is not. */
+const numOrNull = v => (v === '' || v === null || v === undefined ? null : Number(v));
 
 /* ── Create ────────────────────────────────────────────────────────────────── */
 
@@ -127,7 +145,12 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
     }
     setBusy('create');
     try {
-      const payload = { ...form };
+      const payload = {
+        ...form,
+        monthly_credits: numOrNull(form.monthly_credits),
+        monthly_price: numOrNull(form.monthly_price),
+        max_users: numOrNull(form.max_users),
+      };
       if (withR2) payload.r2 = r2;
       const res = await api.post('/v1/admin/orgs', payload);
       pushToast({ type: 'success', title: `${res.data?.name || form.name} created`, message: `Plan: ${res.data?.plan}` });
@@ -162,14 +185,8 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
         </Field>
         <Field label="Plan" htmlFor="co-plan">
           {p => (
-            <Select
-              {...p}
-              value={form.plan_code}
-              onChange={e => {
-                const plan = PLANS.find(x => x.code === e.target.value);
-                setForm(f => ({ ...f, plan_code: e.target.value, monthly_credits: plan ? plan.credits : f.monthly_credits }));
-              }}
-            >
+            <Select {...p} value={form.plan_code} onChange={e => setForm(f => ({ ...f, plan_code: e.target.value }))}>
+              <option value="">— Select a plan —</option>
               {PLANS.map(p2 => <option key={p2.code} value={p2.code}>{p2.label}</option>)}
             </Select>
           )}
@@ -183,18 +200,21 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
             />
           )}
         </Field>
-        <Field label="Monthly credits" htmlFor="co-credits">
-          {p => <Input {...p} type="number" min="0" step="50" value={form.monthly_credits} onChange={e => setForm(f => ({ ...f, monthly_credits: Number(e.target.value) }))} />}
+        {/* `step` is 1 / any, never a sales increment. A step of 5 on seats with
+            a min of 1 makes a negotiated 12 fail HTML constraint validation —
+            the field would reject the exact case the console exists to allow. */}
+        <Field label="Monthly credits" htmlFor="co-credits" hint="Agreed with the customer. No default.">
+          {p => <Input {...p} type="number" min="0" step="1" value={form.monthly_credits} onChange={e => setForm(f => ({ ...f, monthly_credits: e.target.value }))} />}
         </Field>
-        <Field label="Monthly price ₹" htmlFor="co-price">
-          {p => <Input {...p} type="number" min="0" step="500" value={form.monthly_price} onChange={e => setForm(f => ({ ...f, monthly_price: Number(e.target.value) }))} />}
+        <Field label="Monthly price ₹" htmlFor="co-price" hint="Negotiated per organisation. No default.">
+          {p => <Input {...p} type="number" min="0" step="any" value={form.monthly_price} onChange={e => setForm(f => ({ ...f, monthly_price: e.target.value }))} />}
         </Field>
         <Field
           label="Seats"
           htmlFor="co-seats"
-          hint="Sold in fives from a floor of five, but a negotiated 12 must stay typable."
+          hint="Any negotiated number is typable — this field imposes no increment."
         >
-          {p => <Input {...p} type="number" min="1" step="5" value={form.max_users} onChange={e => setForm(f => ({ ...f, max_users: Number(e.target.value) }))} />}
+          {p => <Input {...p} type="number" min="1" step="1" value={form.max_users} onChange={e => setForm(f => ({ ...f, max_users: e.target.value }))} />}
         </Field>
       </div>
 
@@ -262,10 +282,12 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
     .then(r => {
       setData(r.data);
       const o = r.data?.org || {};
+      /* `?? ''` and not `?? 0`. A price nobody has agreed yet is blank; showing
+         it as ₹0 states a contracted figure that does not exist. */
       setBilling({
         markup: Math.round((o.markup_pct ?? 0.3) * 100),
-        credits: o.monthly_credits ?? 0,
-        price: o.monthly_price ?? 0,
+        credits: o.monthly_credits ?? '',
+        price: o.monthly_price ?? '',
       });
     })
     .catch(setErr), [orgId]);
@@ -299,8 +321,8 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
 
   const billingChanged = billing && (
     billing.markup !== Math.round((org.markup_pct ?? 0.3) * 100)
-    || billing.credits !== (org.monthly_credits ?? 0)
-    || billing.price !== (org.monthly_price ?? 0)
+    || numOrNull(billing.credits) !== (org.monthly_credits ?? null)
+    || numOrNull(billing.price) !== (org.monthly_price ?? null)
   );
 
   return (
@@ -339,10 +361,10 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
               {p => <Input {...p} type="number" min="0" max="100" step="1" value={billing.markup} onChange={e => setBilling(b => ({ ...b, markup: Number(e.target.value) }))} />}
             </Field>
             <Field label="Monthly credits" htmlFor="ob-credits">
-              {p => <Input {...p} type="number" min="0" step="50" value={billing.credits} onChange={e => setBilling(b => ({ ...b, credits: Number(e.target.value) }))} />}
+              {p => <Input {...p} type="number" min="0" step="1" value={billing.credits} onChange={e => setBilling(b => ({ ...b, credits: e.target.value }))} />}
             </Field>
             <Field label="Monthly price ₹" htmlFor="ob-price">
-              {p => <Input {...p} type="number" min="0" step="500" value={billing.price} onChange={e => setBilling(b => ({ ...b, price: Number(e.target.value) }))} />}
+              {p => <Input {...p} type="number" min="0" step="any" value={billing.price} onChange={e => setBilling(b => ({ ...b, price: e.target.value }))} />}
             </Field>
           </div>
           {billingChanged && (
@@ -351,8 +373,8 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
                 variant="fill" size="sm" disabled={busy === 'billing'}
                 onClick={() => act('billing', () => api.patch(`/v1/admin/orgs/${orgId}/settings`, {
                   markup_pct: billing.markup / 100,
-                  monthly_credits: billing.credits,
-                  monthly_price: billing.price,
+                  monthly_credits: numOrNull(billing.credits),
+                  monthly_price: numOrNull(billing.price),
                 }))}
               >
                 {busy === 'billing' ? 'Saving…' : 'Save billing'}
@@ -369,24 +391,38 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
           <div className="adm-mods">
             {ALL_MODULES.map(m => {
               const on = enabled.includes(m.code);
-              const cls = ['adm-mod', on ? 'on' : '', m.sensitive ? 'is-sensitive' : ''].filter(Boolean).join(' ');
+              const cls = [
+                'adm-mod',
+                on ? 'on' : '',
+                m.sensitive ? 'is-sensitive' : '',
+                m.wired ? '' : 'is-unwired',
+              ].filter(Boolean).join(' ');
               return (
                 <button
                   key={m.code}
                   type="button"
                   className={cls}
                   aria-pressed={on}
-                  disabled={busy === m.code}
+                  disabled={!m.wired || busy === m.code}
+                  title={m.wired ? undefined : 'This module is not in the activation endpoint’s list yet — switching it here would fail.'}
                   onClick={() => act(m.code, () => (on
                     ? api.delete(`/v1/admin/orgs/${orgId}/modules/${m.code}`)
                     : api.post(`/v1/admin/orgs/${orgId}/modules/${m.code}`)))}
                 >
                   {m.label}
                   {m.sensitive && <span className="adm-mod__s">Sensitive</span>}
+                  {!m.wired && <span className="adm-mod__s is-quiet">Not wired</span>}
                 </button>
               );
             })}
           </div>
+          {ALL_MODULES.some(m => !m.wired) && (
+            <p className="apg__secn">
+              Sanvaad, Varta, eSign and Pahchan are live modules but are not in the
+              activation endpoint’s accepted list, so they cannot be switched from here
+              yet. Use the Billing console, which activates against a different table.
+            </p>
+          )}
         </section>
 
         <section className="apg__sec">

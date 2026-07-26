@@ -1,27 +1,55 @@
+// Vetana · वेतन — payroll. On the shared module chrome, 13-module-pages.md §1.
+//
+// Was `PageHeader` + `TabBar`. Three measured differences from the spec, all
+// visible on the page:
+//  · `.k-pageh__h1` is `clamp(32px, 4vw, 44px)`; 13 §1 specs `.mh__en` at 25px.
+//  · `.k-pageh__sans` renders the Devanagari at 0.7em of that h1 — 22-31px where
+//    the spec says 15px — in `--k-primary`, which resolves to `--primary-vivid`,
+//    a FILL. `.mh__hi` uses `--primary-text`, the measured 5.2:1 text pair.
+//  · `PageHeader` carries no module accent; `.mh__ic` is the 38px tinted icon
+//    that says which module you are in.
+// `.k-tabbar` also has no role="tablist"/aria-selected/aria-controls, so the
+// strip was a row of unrelated buttons to a screen reader.
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
-import { PageHeader, StatTile, TabBar, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
+import { StatTile, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
+import ModuleHeader from '../components/module/ModuleHeader';
+import ModuleTabs from '../components/module/ModuleTabs';
+import { ICONS } from '../components/layout/navIcons';
+import { moduleMeta } from '../lib/moduleColors';
+import { inr } from '../lib/inr';
 
-const RUN_COLORS = { draft: '#6E7B91', processed: '#0082c6', approved: '#8b5cf6', disbursed: '#10b981' };
-const PS_COLORS = { generated: '#6E7B91', approved: '#8b5cf6', disbursed: '#10b981' };
-const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+const RUN_COLORS = { draft: 'var(--on-surface-3)', processed: 'var(--st-in-progress)', approved: 'var(--st-in-review)', disbursed: 'var(--ok)' };
+const PS_COLORS = { generated: 'var(--on-surface-3)', approved: 'var(--st-in-review)', disbursed: 'var(--ok)' };
+// Was a local `₹${…toLocaleString('en-IN')}` — the same rule reimplemented per
+// page, which lib/inr.js exists to end (13 §3).
+const FMT = inr;
 
-const LOAN_COLORS = { active: '#0082c6', closed: '#10b981', written_off: '#6E7B91' };
+const LOAN_COLORS = { active: 'var(--st-in-progress)', closed: 'var(--ok)', written_off: 'var(--on-surface-3)' };
 const TABS = ['dashboard', 'structures', 'payroll', 'payslips', 'loans', 'statutory'];
 
 export default function VetanaPage() {
   const [tab, setTab] = useState('dashboard');
+  const meta = moduleMeta('vetana');
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Vetana" sanskrit="वेतन" lede="Payroll — Salary Structures, Processing & Compliance" />
-      <TabBar tabs={TABS} active={tab} onChange={setTab} />
-      {tab === 'dashboard' && <DashboardTab />}
-      {tab === 'structures' && <StructuresTab />}
-      {tab === 'payroll' && <PayrollTab />}
-      {tab === 'payslips' && <PayslipsTab />}
-      {tab === 'loans' && <LoansTab />}
-      {tab === 'statutory' && <StatutoryTab />}
+      <ModuleHeader
+        module="vetana"
+        en={meta.en}
+        hi={meta.hi}
+        sub="Salary structures, processing and statutory compliance"
+        icon={ICONS.vetana}
+      />
+      <ModuleTabs tabs={TABS.map(id => ({ id, label: id }))} value={tab} onChange={setTab} label="Vetana sections" />
+      <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
+        {tab === 'dashboard' && <DashboardTab />}
+        {tab === 'structures' && <StructuresTab />}
+        {tab === 'payroll' && <PayrollTab />}
+        {tab === 'payslips' && <PayslipsTab />}
+        {tab === 'loans' && <LoansTab />}
+        {tab === 'statutory' && <StatutoryTab />}
+      </div>
     </div>
   );
 }
@@ -223,7 +251,7 @@ function StructuresTab() {
                     ['PF', s.pf_enabled], ['ESI', s.esi_enabled], ['PT', s.pt_applicable],
                   ].map(([label, on]) => (
                     <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: on ? '#10b981' : 'var(--rule-soft)' }} />
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: on ? 'var(--ok)' : 'var(--rule-soft)' }} />
                       {label}: {on ? 'Enabled' : 'Disabled'}
                     </span>
                   ))}
@@ -556,18 +584,18 @@ function PayslipsTab() {
                     ['Loan Repayment', p.loan_deduction]].filter(([, v]) => Number(v) > 0).map(([label, val]) => (
                     <tr key={label}>
                       <td>{label}</td>
-                      <Td align="right" mono color="#ef4444">{FMT(val)}</Td>
+                      <Td align="right" mono color="var(--danger)">{FMT(val)}</Td>
                     </tr>
                   ))}
-                  <tr style={{ background: 'color-mix(in srgb, #ef4444 4%, transparent)' }}>
+                  <tr className="mtbl__tot" style={{ background: 'color-mix(in srgb, var(--danger) 4%, transparent)' }}>
                     <td style={{ fontWeight: 700 }}>Total Deductions</td>
-                    <Td align="right" mono bold color="#ef4444">{FMT(p.total_deductions)}</Td>
+                    <Td align="right" mono bold color="var(--danger)">{FMT(p.total_deductions)}</Td>
                   </tr>
                 </DataTable>
               </Section>
 
               {Number(p.reimbursements) > 0 && (
-                <p style={{ margin: '8px 0', fontSize: 13, color: '#10b981' }}>+ Expense Reimbursement: <strong>{FMT(p.reimbursements)}</strong></p>
+                <p style={{ margin: '8px 0', fontSize: 13, color: 'var(--ok)' }}>+ Expense Reimbursement: <strong>{FMT(p.reimbursements)}</strong></p>
               )}
 
               <div className="k-netbox">

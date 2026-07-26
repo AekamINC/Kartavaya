@@ -57,14 +57,14 @@ export default function PerformanceTab() {
                 <tr key={e.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
                   <td style={{ padding: '10px', fontWeight: 600 }}>{e.name}</td>
                   <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{e.department || '—'}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#10b981' }}>{e.days_present}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#ef4444' }}>{e.days_absent}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#6366f1' }}>{e.days_late}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', color: '#0082c6' }}>{e.leaves_taken}</td>
-                  <td style={{ padding: '10px', textAlign: 'right' }}>{Number(e.total_work_hours || 0).toFixed(1)}</td>
-                  <td style={{ padding: '10px', textAlign: 'right' }}>{avg_hours}</td>
-                  <td style={{ padding: '10px', textAlign: 'right', fontWeight: 700 }}>
-                    <span style={{ color: Number(attendance_pct) >= 90 ? '#10b981' : Number(attendance_pct) >= 75 ? '#f59e0b' : '#ef4444' }}>
+                  <td className="mtbl__num" style={{ padding: '10px', color: 'var(--ok)' }}>{e.days_present}</td>
+                  <td className="mtbl__num" style={{ padding: '10px', color: 'var(--danger)' }}>{e.days_absent}</td>
+                  <td className="mtbl__num" style={{ padding: '10px', color: 'var(--st-in-review)' }}>{e.days_late}</td>
+                  <td className="mtbl__num" style={{ padding: '10px', color: 'var(--st-in-progress)' }}>{e.leaves_taken}</td>
+                  <td className="mtbl__num" style={{ padding: '10px' }}>{Number(e.total_work_hours || 0).toFixed(1)}</td>
+                  <td className="mtbl__num" style={{ padding: '10px' }}>{avg_hours}</td>
+                  <td className="mtbl__num" style={{ padding: '10px', fontWeight: 700 }}>
+                    <span style={{ color: Number(attendance_pct) >= 90 ? 'var(--ok)' : Number(attendance_pct) >= 75 ? 'var(--warn)' : 'var(--danger)' }}>
                       {attendance_pct}%
                     </span>
                   </td>

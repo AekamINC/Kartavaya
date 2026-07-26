@@ -24,12 +24,20 @@
  * §4 also asks to settle on `/v1`. `/api/tasks`, `/api/activity/feed` and
  * `/api/verse-of-the-day` have no `/v1` twin in `backend/server.py`, so moving
  * them is a backend change, not a string edit here.
+ *
+ * SCOPE OF THE FIGURES. The hero lede is the reader's own work; the four stat
+ * tiles, Project status and Team pulse are the org's. §4 names the tile source
+ * `GET /v1/me/stats`, which reads as reader-scoped and would make the lede and
+ * the tiles agree — but that endpoint does not exist and switching the tiles is
+ * a product decision, not a defect fix. Left as it renders today and raised in
+ * the report rather than changed silently.
  */
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import { Hero, Citation } from '../components/editorial';
+import { SkeletonText } from '../components/ui';
 import { logger } from '../lib/utils';
 import { DAYS_HI_SUN, mondayIndex, weekDates as weekDatesFor, dayWindow } from '../lib/dates';
 import { vikramLabel } from '../lib/vikram';
@@ -37,6 +45,7 @@ import {
   StatRow, QuickActions, ReceivablesKPI, TaskListCard,
   ProjectStatus, UpcomingWeek, TeamPulse, TodaySkeleton,
 } from './today';
+import '../styles/today.css';
 
 export default function TodayPage({ teams = [] }) {
   const navigate  = useNavigate();
@@ -48,6 +57,15 @@ export default function TodayPage({ teams = [] }) {
   const todayIdx  = mondayIndex(now);
   const weekDates = useMemo(() => weekDatesFor(), []);
   const { today, tomorrow, weekEnd, weekAgo } = useMemo(() => dayWindow(), []);
+  // The start of the week BEFORE weekAgo, so "done this week" has something
+  // honest to be compared against. `lib/dates.js` owns the four boundaries the
+  // due filters share; this fifth one is local to one tile, so it stays here
+  // rather than widening that contract.
+  const prevWeekAgo = useMemo(() => {
+    const d = new Date(weekAgo);
+    d.setDate(d.getDate() - 7);
+    return d;
+  }, [weekAgo]);
 
   const [loading,  setLoading]  = useState(true);
   const [tasks,    setTasks]    = useState([]);
@@ -70,31 +88,74 @@ export default function TodayPage({ teams = [] }) {
     }).catch(logger.error).finally(() => setLoading(false));
   }, []);
 
+  // Not gated on `teams.length` any more. The gate was the client guessing at a
+  // server rule and getting it wrong in one direction: `/activity/feed` derives
+  // visibility from team_members UNION project_assignments, and platform staff
+  // from the org's teams — a user with project assignments but no team row has
+  // a feed and was shown "No activity in the last few days" instead of it.
   useEffect(() => {
-    if (!teams?.length) return;
     api.get('/activity/feed', { params: { limit: 6 } })
-       .then(r => setActivity(r.data || []))
+       .then(r => setActivity(Array.isArray(r.data) ? r.data : []))
        .catch(() => {});
+  }, []);
+
+  // team_id → name. `/api/tasks` returns `team_id` and never `team_name`
+  // (`server.py` list_tasks selects column_name and assignee_names, not the
+  // team), so every `<ProjectTag name={t.team_name}>` on this page was reading
+  // undefined and rendering nothing — the project chip has been silently absent
+  // from both task lists. The name is already in the `teams` prop AppShell
+  // passes down; this joins them client-side until `/v1/tasks` returns it.
+  const teamNames = useMemo(() => {
+    const map = {};
+    for (const t of teams || []) if (t.team_id) map[t.team_id] = t.name;
+    return map;
   }, [teams]);
+  const withTeam = useCallback(
+    list => list.map(t => (t.team_name || !teamNames[t.team_id]
+      ? t
+      : { ...t, team_name: teamNames[t.team_id] })),
+    [teamNames],
+  );
 
   const derived = useMemo(() => {
     const safe = Array.isArray(tasks) ? tasks : [];
     const isOpen = t => t.status !== 'done';
     const dueOn  = (t, from, to) => t.due_at && new Date(t.due_at) >= from && new Date(t.due_at) < to;
 
+    const assignedToMe = t => !!t.assignee_user_ids?.includes(myId);
+    const unassigned   = t => !(t.assignee_user_ids?.length);
+    const ownedByMe    = t => t.user_id === myId || t.created_by_user_id === myId;
+
     // YOUR plate is what is ASSIGNED to you. Staging also matched
     // created_by_user_id and user_id, so work you created and handed to someone
     // else sat here too — for a manager the list became "everything I have ever
     // touched". Delegated work is its own section below, not this one.
-    const mine     = safe.filter(t => t.assignee_user_ids?.includes(myId));
+    //
+    // The one addition to §5's rule: a task you own with NO assignee at all is
+    // still yours. Under the bare rule it left your plate and landed under
+    // "Waiting on others", which named nobody to wait on — the strictly worse
+    // of the two places to lose it.
+    const mine     = safe.filter(t => assignedToMe(t) || (unassigned(t) && ownedByMe(t)));
     const myOpen   = mine.filter(isOpen);
-    // Created by me, open, and assigned to somebody else (or nobody).
+    // Created by me, open, and assigned to somebody ELSE. `!unassigned` is what
+    // keeps my own unassigned work out of a list about other people.
     const waiting  = safe.filter(t =>
       isOpen(t) &&
       t.created_by_user_id === myId &&
-      !t.assignee_user_ids?.includes(myId));
+      !assignedToMe(t) &&
+      !unassigned(t));
 
     const open = safe.filter(isOpen);
+    // Due today, still OPEN. The tile was counting every task dated today
+    // including the ones already ticked off, so "DUE TODAY 7" could mean four
+    // done and three left — and it disagreed with the lede one block above,
+    // which has always filtered to open.
+    const dueTodayList = open.filter(t => dueOn(t, today, tomorrow));
+
+    const doneSince = (from, to) => safe.filter(t =>
+      t.status === 'done' && t.completed_at &&
+      new Date(t.completed_at) >= from &&
+      (!to || new Date(t.completed_at) < to)).length;
 
     return {
       myOpen,
@@ -105,27 +166,33 @@ export default function TodayPage({ teams = [] }) {
       // No `|| 1`. It turned zero into one, so a brand-new org with nothing in
       // it was told its open tasks span one project.
       openProjectCount: new Set(open.map(t => t.team_id).filter(Boolean)).size,
-      dueToday:  safe.filter(t => dueOn(t, today, tomorrow)),
-      overdue:   safe.filter(t => t.due_at && new Date(t.due_at) < today && isOpen(t)),
+      dueToday: dueTodayList.length,
+      dueTodayHigh: dueTodayList.filter(t => t.priority === 'high' || t.priority === 'urgent').length,
+      overdue:   open.filter(t => t.due_at && new Date(t.due_at) < today).length,
       myDueToday: myOpen.filter(t => dueOn(t, today, tomorrow)).length,
       myOverdue:  myOpen.filter(t => t.due_at && new Date(t.due_at) < today).length,
       // completed_at, not updated_at. A task finished two months ago but edited
-      // yesterday counted as done this week, and the completion rate inherited
-      // the error. DueChip already reads completed_at.
-      completedWeek: safe.filter(t =>
-        t.status === 'done' && t.completed_at && new Date(t.completed_at) >= weekAgo).length,
+      // yesterday counted as done this week. DueChip already reads completed_at.
+      completedWeek: doneSince(weekAgo, null),
+      // The seven days before that, so the tile can compare like with like.
+      // What it used to show was completedWeek ÷ EVERY task the org has ever
+      // had, called a "completion rate" — a number that falls as the board
+      // grows however much work you close. See StatRow.
+      completedPrevWeek: doneSince(prevWeekAgo, weekAgo),
       upcoming: safe
         .filter(t => t.due_at && new Date(t.due_at) >= today && new Date(t.due_at) <= weekEnd && isOpen(t))
         .sort((a, b) => new Date(a.due_at) - new Date(b.due_at))
         .slice(0, 6),
       statusCounts: safe.reduce((a, t) => { a[t.status] = (a[t.status] || 0) + 1; return a; }, {}),
     };
-  }, [tasks, myId, today, tomorrow, weekEnd, weekAgo]);
+  }, [tasks, myId, today, tomorrow, weekEnd, weekAgo, prevWeekAgo]);
 
+  // OPEN tasks only. A finished task kept its dot, so the strip showed load on
+  // days whose work was already done — the one thing the strip exists to say.
   const dotsByDay = useMemo(() => {
     const map = {};
     for (const t of tasks) {
-      if (!t.due_at) continue;
+      if (!t.due_at || t.status === 'done') continue;
       const key = new Date(t.due_at).toDateString();
       map[key] = (map[key] || 0) + 1;
     }
@@ -144,7 +211,15 @@ export default function TodayPage({ teams = [] }) {
   // Scoped to the reader: "You have" was counting the whole org's due-today and
   // overdue tasks, and its open count read `myPlate.length` — the SLICED list —
   // so anyone with seven or more open tasks was told they had six.
-  const ledeCopy = loading ? null : derived.myOpen.length === 0 ? (
+  //
+  // While loading the lede is a placeholder, not nothing: `.k-hero__lede` is a
+  // 14.5px/1.65 line, so an absent lede made the hero ~24px shorter and the
+  // whole page stepped down when the counts arrived (26 §9). `inline-block`
+  // rather than the primitive's own `display: block`, so the paragraph keeps
+  // its real line box and the swap moves nothing at all.
+  const ledeCopy = loading ? (
+    <SkeletonText width="48%" height={14} style={{ display: 'inline-block' }} />
+  ) : derived.myOpen.length === 0 ? (
     <>
       <b>Nothing is assigned to you right now.</b>{' '}
       {derived.openTotal > 0
@@ -161,10 +236,14 @@ export default function TodayPage({ teams = [] }) {
     </>
   );
 
+  // Every row lands on the task list, not on the task. `TasksListPage` reads no
+  // query parameter and there is no route that opens the drawer, so there is
+  // nothing to deep-link to yet; the handler takes the task so the call sites
+  // are already correct when there is. See the report.
   const openTask = () => navigate('/tasks');
 
   return (
-    <div className="k-screen">
+    <div className="k-screen k-today">
       <Hero
         name={firstName}
         dateLine={dateLine}
@@ -191,11 +270,11 @@ export default function TodayPage({ teams = [] }) {
           <StatRow
             open={derived.openTotal}
             projectCount={derived.openProjectCount}
-            dueToday={derived.dueToday.length}
-            dueTodayHigh={derived.dueToday.filter(t => t.priority === 'high' || t.priority === 'urgent').length}
-            overdue={derived.overdue.length}
+            dueToday={derived.dueToday}
+            dueTodayHigh={derived.dueTodayHigh}
+            overdue={derived.overdue}
             completedWeek={derived.completedWeek}
-            completionRate={tasks.length ? Math.round((derived.completedWeek / tasks.length) * 100) : 0}
+            completedPrevWeek={derived.completedPrevWeek}
           />
 
           <QuickActions onNavigate={navigate} />
@@ -205,7 +284,7 @@ export default function TodayPage({ teams = [] }) {
               <TaskListCard
                 title="On your plate"
                 sanskrit="आपके हाथ में"
-                tasks={derived.myPlate}
+                tasks={withTeam(derived.myPlate)}
                 linkLabel="View all →"
                 onLink={openTask}
                 onOpenTask={openTask}
@@ -221,7 +300,7 @@ export default function TodayPage({ teams = [] }) {
                 <TaskListCard
                   title="Waiting on others"
                   sanskrit="अन्य पर निर्भर"
-                  tasks={derived.waiting}
+                  tasks={withTeam(derived.waiting)}
                   illustration="teams"
                   linkLabel={derived.waitingTotal > derived.waiting.length ? 'View all →' : undefined}
                   onLink={openTask}
@@ -239,7 +318,7 @@ export default function TodayPage({ teams = [] }) {
             </div>
 
             <div className="k-col k-col--side">
-              <UpcomingWeek tasks={derived.upcoming} onOpenTask={openTask} />
+              <UpcomingWeek tasks={withTeam(derived.upcoming)} onOpenTask={openTask} />
               <TeamPulse activity={activity} onOpenActivity={() => navigate('/activity')} />
               <Citation
                 sanskrit={verse?.sanskrit || 'कर्मण्येवाधिकारस्ते मा फलेषु कदाचन'}

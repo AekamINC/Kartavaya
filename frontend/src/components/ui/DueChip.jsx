@@ -76,8 +76,15 @@ export default function DueChip({ date, flush, status, completedAt }) {
     );
   }
 
-  // Done but no due date — hide badge
-  if (DONE_STATUSES.has(status) && tone === 'danger') return null;
+  // 02 §DueChip, last row: "done + no due date → renders nothing".
+  //
+  // The guard used to test `tone === 'danger'` alone, which is the OVERDUE tone,
+  // not the missing-date one — `relDue(null)` returns tone 'muted'. So a
+  // completed task with no due date rendered a `k-due--muted` chip containing a
+  // bare em-dash: the one case the spec asks to suppress was the one case that
+  // still painted. The danger arm is kept because an "8d overdue" chip on a
+  // finished task is the wrong framing whether or not we have a completion time.
+  if (DONE_STATUSES.has(status) && (!date || tone === 'danger')) return null;
 
   return (
     <span className={`k-due k-due--${tone}${flush ? ' k-due--flush' : ''}`}>

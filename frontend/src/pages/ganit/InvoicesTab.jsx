@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { safeArray, Badge, UpiPayBlock, INV_TYPE_LABELS, STATUS_COLORS, DOC_STATUS_COLORS, PAY_METHODS } from './_shared';
+import { inr } from '../../lib/inr';
 
 export default function InvoicesTab() {
   const { pushToast } = useToast();
@@ -176,7 +177,7 @@ export default function InvoicesTab() {
     return (
       <div>
         <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => setDetail(null)}>← Back to list</button>
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
             <div>
               <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{inv.invoice_number}</h3>
@@ -185,8 +186,8 @@ export default function InvoicesTab() {
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {inv.doc_status && <Badge text={inv.doc_status} color={DOC_STATUS_COLORS[inv.doc_status] || '#6E7B91'} />}
-              <Badge text={inv.payment_status} color={STATUS_COLORS[inv.payment_status] || '#6E7B91'} />
+              {inv.doc_status && <Badge text={inv.doc_status} color={DOC_STATUS_COLORS[inv.doc_status] || 'var(--on-surface-3)'} />}
+              <Badge text={inv.payment_status} color={STATUS_COLORS[inv.payment_status] || 'var(--on-surface-3)'} />
             </div>
           </div>
 
@@ -204,9 +205,9 @@ export default function InvoicesTab() {
               <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={acceptEstimate}>Accept Estimate</button>
             )}
             {inv.invoice_type === 'quotation' && inv.estimate_status === 'accepted' && (
-              <button className="k-btn k-btn--primary" style={{ fontSize: 12, background: '#10b981' }} onClick={convertToInvoice}>Convert to Invoice</button>
+              <button className="k-btn k-btn--primary" style={{ fontSize: 12, background: 'var(--ok)' }} onClick={convertToInvoice}>Convert to Invoice</button>
             )}
-            {inv.estimate_status && <Badge text={`Estimate: ${inv.estimate_status}`} color={inv.estimate_status === 'accepted' ? '#10b981' : inv.estimate_status === 'rejected' ? '#ef4444' : '#6E7B91'} />}
+            {inv.estimate_status && <Badge text={`Estimate: ${inv.estimate_status}`} color={inv.estimate_status === 'accepted' ? 'var(--ok)' : inv.estimate_status === 'rejected' ? 'var(--danger)' : 'var(--on-surface-3)'} />}
             {inv.converted_invoice_id && (
               <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }}
                 onClick={() => { setDetail(null); setTimeout(() => loadDetail(inv.converted_invoice_id), 100); }}>
@@ -235,10 +236,10 @@ export default function InvoicesTab() {
                 <tr key={i} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
                   <td style={{ padding: '8px 10px' }}>{li.description}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{li.hsn_code || li.sac_code || '—'}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>{li.quantity} {li.unit}</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>₹{Number(li.rate).toLocaleString('en-IN')}</td>
+                  <td className="mtbl__num" style={{ padding: '8px 10px' }}>{li.quantity} {li.unit}</td>
+                  <td className="mtbl__num" style={{ padding: '8px 10px' }}>{inr(Number(li.rate))}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'right' }}>{li.gst_rate}%</td>
-                  <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 600 }}>₹{Number(li.line_total).toLocaleString('en-IN')}</td>
+                  <td className="mtbl__num" style={{ padding: '8px 10px', fontWeight: 600 }}>{inr(Number(li.line_total))}</td>
                 </tr>
               ))}
             </tbody>
@@ -246,26 +247,26 @@ export default function InvoicesTab() {
 
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <div style={{ width: 280, fontSize: 13 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}><span>Subtotal</span><span>₹{Number(inv.subtotal).toLocaleString('en-IN')}</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0' }}><span>Subtotal</span><span>{inr(Number(inv.subtotal))}</span></div>
               {!inv.is_igst ? (
                 <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: 'var(--ink-3)' }}><span>CGST</span><span>₹{Number(inv.cgst).toLocaleString('en-IN')}</span></div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: 'var(--ink-3)' }}><span>SGST</span><span>₹{Number(inv.sgst).toLocaleString('en-IN')}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: 'var(--ink-3)' }}><span>CGST</span><span>{inr(Number(inv.cgst))}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: 'var(--ink-3)' }}><span>SGST</span><span>{inr(Number(inv.sgst))}</span></div>
                 </>
               ) : (
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: 'var(--ink-3)' }}><span>IGST</span><span>₹{Number(inv.igst).toLocaleString('en-IN')}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: 'var(--ink-3)' }}><span>IGST</span><span>{inr(Number(inv.igst))}</span></div>
               )}
-              {Number(inv.discount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: '#ef4444' }}><span>Discount</span><span>-₹{Number(inv.discount).toLocaleString('en-IN')}</span></div>}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontWeight: 700, borderTop: '2px solid var(--rule-soft)', marginTop: 4 }}><span>Total</span><span>₹{Number(inv.total).toLocaleString('en-IN')}</span></div>
-              {Number(inv.amount_paid) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: '#10b981' }}><span>Paid</span><span>₹{Number(inv.amount_paid).toLocaleString('en-IN')}</span></div>}
-              {Number(inv.balance_due) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontWeight: 600, color: '#ef4444' }}><span>Balance Due</span><span>₹{Number(inv.balance_due).toLocaleString('en-IN')}</span></div>}
+              {Number(inv.discount) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: 'var(--danger)' }}><span>Discount</span><span>-{inr(Number(inv.discount))}</span></div>}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontWeight: 700, borderTop: '2px solid var(--rule-soft)', marginTop: 4 }}><span>Total</span><span>{inr(Number(inv.total))}</span></div>
+              {Number(inv.amount_paid) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: 'var(--ok)' }}><span>Paid</span><span>{inr(Number(inv.amount_paid))}</span></div>}
+              {Number(inv.balance_due) > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontWeight: 600, color: 'var(--danger)' }}><span>Balance Due</span><span>{inr(Number(inv.balance_due))}</span></div>}
             </div>
           </div>
 
           <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 12, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
             {inv.sent_at && <span>Sent: {new Date(inv.sent_at).toLocaleString('en-IN')}</span>}
             {inv.viewed_at && <span>Viewed: {new Date(inv.viewed_at).toLocaleString('en-IN')}</span>}
-            {inv.recurring_id && <span>Recurring: <Badge text="Auto-generated" color="#0082c6" /></span>}
+            {inv.recurring_id && <span>Recurring: <Badge text="Auto-generated" color="var(--st-in-progress)" /></span>}
           </div>
 
           {inv.payment_status !== 'paid' && inv.payment_status !== 'cancelled' && (
@@ -278,7 +279,7 @@ export default function InvoicesTab() {
         </div>
 
         {showPay && (
-          <form onSubmit={recordPayment} style={{ background: 'var(--surface-1)', border: '1px solid var(--k-primary)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <form onSubmit={recordPayment} style={{ background: 'var(--surface-1)', border: '1px solid var(--k-primary)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
             <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Record Payment</h4>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Amount (₹) *</span>
@@ -300,12 +301,12 @@ export default function InvoicesTab() {
         )}
 
         {detail.payments?.length > 0 && (
-          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24 }}>
+          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24 }}>
             <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Payment History</h4>
             {detail.payments.map(p => (
               <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13 }}>
                 <div>
-                  <span style={{ fontWeight: 600 }}>₹{Number(p.amount).toLocaleString('en-IN')}</span>
+                  <span style={{ fontWeight: 600 }}>{inr(Number(p.amount))}</span>
                   <span style={{ marginLeft: 12, color: 'var(--ink-3)' }}>{p.payment_method?.replace('_', ' ')}</span>
                   {p.reference && <span style={{ marginLeft: 8, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>{p.reference}</span>}
                 </div>
@@ -335,7 +336,7 @@ export default function InvoicesTab() {
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Create Invoice</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Type</span>
@@ -399,7 +400,7 @@ export default function InvoicesTab() {
                 {i === 0 && <span style={{ fontSize: 11, color: 'var(--ink-3)', display: 'block', marginBottom: 2 }}>GST%</span>}
                 <input className="k-input" style={{ fontSize: 12 }} type="number" value={li.gst_rate} onChange={e => updateLine(i, 'gst_rate', parseFloat(e.target.value) || 0)} />
               </div>
-              <button type="button" onClick={() => removeLine(i)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16, paddingBottom: 6 }}>×</button>
+              <button type="button" onClick={() => removeLine(i)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16, paddingBottom: 6 }}>×</button>
             </div>
           ))}
           <button type="button" className="k-btn k-btn--ghost" style={{ fontSize: 12, marginTop: 4 }} onClick={addLine}>+ Add Line</button>
@@ -446,12 +447,12 @@ export default function InvoicesTab() {
               <tr key={inv.id} style={{ borderBottom: '1px solid var(--rule-soft)', cursor: 'pointer' }} onClick={() => loadDetail(inv.id)}>
                 <td style={{ padding: '10px', fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600 }}>{inv.invoice_number}</td>
                 <td style={{ padding: '10px' }}>{inv.contact_name || '—'}</td>
-                <td style={{ padding: '10px' }}><Badge text={INV_TYPE_LABELS[inv.invoice_type] || inv.invoice_type} color="#0082c6" /></td>
+                <td style={{ padding: '10px' }}><Badge text={INV_TYPE_LABELS[inv.invoice_type] || inv.invoice_type} color="var(--st-in-progress)" /></td>
                 <td style={{ padding: '10px', textAlign: 'right', fontSize: 12 }}>{inv.invoice_date}</td>
-                <td style={{ padding: '10px', textAlign: 'right', fontWeight: 600 }}>₹{Number(inv.total).toLocaleString('en-IN')}</td>
-                <td style={{ padding: '10px', textAlign: 'right', color: '#10b981' }}>₹{Number(inv.amount_paid).toLocaleString('en-IN')}</td>
-                <td style={{ padding: '10px', textAlign: 'right', color: Number(inv.balance_due) > 0 ? '#ef4444' : 'var(--ink-3)' }}>₹{Number(inv.balance_due).toLocaleString('en-IN')}</td>
-                <td style={{ padding: '10px', textAlign: 'right' }}><Badge text={inv.payment_status} color={STATUS_COLORS[inv.payment_status] || '#6E7B91'} /></td>
+                <td className="mtbl__num" style={{ padding: '10px', fontWeight: 600 }}>{inr(Number(inv.total))}</td>
+                <td className="mtbl__num" style={{ padding: '10px', color: 'var(--ok)' }}>{inr(Number(inv.amount_paid))}</td>
+                <td className="mtbl__num" style={{ padding: '10px', color: Number(inv.balance_due) > 0 ? 'var(--danger)' : 'var(--ink-3)' }}>{inr(Number(inv.balance_due))}</td>
+                <td style={{ padding: '10px', textAlign: 'right' }}><Badge text={inv.payment_status} color={STATUS_COLORS[inv.payment_status] || 'var(--on-surface-3)'} /></td>
               </tr>
             ))}
           </tbody>

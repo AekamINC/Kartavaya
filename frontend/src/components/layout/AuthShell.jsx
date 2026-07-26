@@ -30,27 +30,50 @@ import '../../styles/auth.css';
 
 /**
  * Three variants, 7s apart, with dots to jump — AUTH-SPEC "Shared auth shell".
- * The pricing figure and the quote are the two the spec flags as placeholder;
- * both say so rather than pretending to be reference customers.
+ *
+ * AUTH-SPEC's second panel is a commercial figure and its third is a customer
+ * quote; the spec flags both as placeholder, and the same file says the figures
+ * "contradict the real plan model". Neither ships. A number on the sign-in
+ * screen is a commitment the billing model has not made, and an invented quote
+ * is a fabricated reference. Both slots carry a claim that is true today
+ * instead: a second module, and the invite-only access rule.
+ *
+ * `hi` is fixed decorative Devanagari and renders in --font-hindi (24 §
+ * watermark exception); it is not a translated string and does not follow the
+ * language setting.
  */
 const ROTATE = [
   {
+    id: 'ganit',
     kind: 'Module', hi: 'गणित', en: 'Ganit · Finance',
     line: 'GST-ready invoices, e-way bills and TDS in the same ledger your CA already understands.',
     foot: 'One of 15 modules. Turn on only what you need.',
   },
   {
-    kind: 'Pricing', hi: '₹0', en: 'per extra seat',
-    line: 'Flat pricing for the whole organisation. Adding your ninth person costs the same as your first.',
-    foot: 'No per-seat maths at renewal.',
+    id: 'dristi',
+    kind: 'Module', hi: 'दृष्टि', en: 'Dristi · Reports',
+    line: 'Reports, dashboards and pivots built on the records the other modules already keep — nothing to export first.',
+    foot: 'Every module writes to the same ledger.',
   },
   {
+    id: 'access',
     kind: 'Access', hi: 'कर्तव्य', en: 'Invite only',
     line: 'There is no public sign-up. Every account is created by someone already inside your organisation.',
     foot: 'Need access? Ask your admin, or talk to us.',
   },
 ];
 
+/**
+ * The mark. `KLogo` painted `linear-gradient(135deg,#0082c6,#05b7aa)` — the
+ * retired brand blue (00 §9) — and could not follow the accent, so a user on
+ * Rose still got a blue logo on the sign-in page. Drawn from --primary /
+ * --primary-vivid instead, with the glyph on --on-primary, which is the ground's
+ * declared partner and therefore correct in both themes without a literal.
+ *
+ * The corner has NO `rx` attribute: 00 §3 forbids a literal radius outright, and
+ * a baked-in 9 would ignore the user's Border radius setting. `.au__mark` rounds
+ * it from --r-md in auth.css.
+ */
 function Mark({ size = 36 }) {
   return (
     <svg className="au__mark" width={size} height={size} viewBox="0 0 36 36" aria-hidden="true">
@@ -60,9 +83,9 @@ function Mark({ size = 36 }) {
           <stop offset="1" stopColor="var(--primary-vivid)" />
         </linearGradient>
       </defs>
-      <rect width="36" height="36" rx="9" fill="url(#au-mark-g)" />
-      <path d="M8 18L18 8L28 18L18 28L8 18Z" stroke="#fff" strokeWidth="1.8" fill="none" />
-      <path d="M13 18L18 13L23 18L18 23L13 18Z" fill="#fff" opacity=".85" />
+      <rect width="36" height="36" fill="url(#au-mark-g)" />
+      <path d="M8 18L18 8L28 18L18 28L8 18Z" stroke="var(--on-primary)" strokeWidth="1.8" fill="none" />
+      <path d="M13 18L18 13L23 18L18 23L13 18Z" fill="var(--on-primary)" opacity=".85" />
     </svg>
   );
 }
@@ -84,7 +107,12 @@ function BrandPanel() {
   return (
     <aside className="au__brand">
       <div className="au__mesh" aria-hidden="true" />
-      <span className="au__wm" aria-hidden="true">कर्तव्य</span>
+      {/* lang="hi" is not only for screen readers here (it is aria-hidden):
+          .au__wm sets letter-spacing:-.03em, which at this size is ~7.7px of
+          negative tracking pulling the र्त and व्य conjuncts of कर्तव्य apart.
+          The [lang="hi"] rule in editorial.css resets tracking to 0, which is
+          what 24-bilingual-devanagari.md requires for Devanagari. */}
+      <span className="au__wm" lang="hi" aria-hidden="true">कर्तव्य</span>
 
       <div className="au__top">
         <Mark size={36} />
@@ -115,11 +143,11 @@ function BrandPanel() {
       <div className="au__dots">
         {ROTATE.map((v, n) => (
           <button
-            key={v.kind}
+            key={v.id}
             type="button"
             className={'au__dotb' + (n === i ? ' on' : '')}
             onClick={() => setI(n)}
-            aria-label={`Show panel ${n + 1}: ${v.kind}`}
+            aria-label={`Show panel ${n + 1} of ${ROTATE.length}: ${v.kind} — ${v.en}`}
             aria-current={n === i ? 'true' : undefined}
           />
         ))}

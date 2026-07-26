@@ -1,113 +1,345 @@
-/**
- * Modern Animations & Micro-interactions
- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   animations.css — the app's motion layer.
 
-/* Fade in */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+   Implements design-handover/16-animations.md, reconciled against
+   `26-component-inventory.md` §4 (z-order ladder) and §6 (the concrete
+   keyframe table), and `00-tokens.md` §5 (the token declarations).
+
+   ── WHERE THE PIECES LIVE ────────────────────────────────────────────────
+   · `--dur-*` / `--ease-*` / `--ix` / `--ix-user` / `--motion-scale`
+       → declared ONCE in kartavaya-design.css §5, per 00 §5.
+   · The `dm*` keyframe registry (26 §6)
+       → declared ONCE in components.css.
+   · The `--z-*` ladder (26 §4)
+       → declared HERE, because scripts/check-tokens.mjs only reads
+         `src/styles/*.css`. A token declared in `src/lib/tokens.css` is
+         invisible to the checker, so referencing it from a stylesheet fails
+         the gate even though the browser resolves it fine.
+
+   NOTHING in this file re-declares a duration, an easing or a `dm*` keyframe.
+   This file loads AFTER components.css and drawer.css (see styles/index.css),
+   so a duplicate `@keyframes dmPop` here would silently replace theirs for the
+   whole application — the loudest possible version of the bug this file exists
+   to prevent. Keyframes owned here are all `ix`-prefixed.
+
+   16 §4 asks for a new `styles/motion.css` imported after `editorial.css`. Not
+   created, deliberately: that instruction exists only because motion.css was
+   specified to RE-DECLARE `--dur-*`, and document order decides which
+   re-declaration wins. With a single declaration site, a custom property
+   resolves at computed-value time and import order is irrelevant. Re-declaring
+   is the drift 16 §4 was trying to survive, not avoid.
+
+   ── THE RECONCILED SET (one table, applied everywhere) ───────────────────
+   Precedence: 26 §6 > 16 > the per-surface files (03, 04, …). 26 §6 is the
+   file that states concrete values; the others state intent.
+
+   | Surface              | Enter                                   | Exit                                    |
+   |----------------------|-----------------------------------------|-----------------------------------------|
+   | scrim / plain fade   | dmFade      --dur-base  --ease-enter    | dmFadeOut   --dur-fast --ease-exit      |
+   | drawer               | dmDrawerIn  --dur-slow  --ease-emph-in  | dmDrawerOut --dur-base --ease-exit      |
+   | sheet (mobile)       | dmSheetIn   --dur-slow  --ease-emph-in  | dmSheetOut  --dur-base --ease-exit      |
+   | popover/menu/picker  | dmPop       --dur-base  --ease-enter    | dmPopOut    --dur-fast --ease-exit      |
+   | modal panel          | dmPop       --dur-base  --ease-enter    | dmPopOut    --dur-fast --ease-exit      |
+   | toast                | dmPop       --dur-base  --ease-enter    | dmPopOut    --dur-fast --ease-exit      |
+   | tooltip              | dmTip       --dur-fast  --ease-enter    | none — instant unmount, 300ms delay in  |
+   | spinner              | dmSpin      640ms linear infinite       | —                                       |
+   | one-shot flash       | ixflash     calc(--dur-slow * 1.4) --ease-exit                                     |
+   | list stagger         | ixFadeUp    --dur-base, 38ms step, capped at 11 steps (418ms < --dur-xslow)       |
+
+   The exit is never the reverse of the entrance: every `out` is one duration
+   step faster and travels less than its `in`.
+
+   ── PERFORMANCE ──────────────────────────────────────────────────────────
+   Every keyframe here animates `transform` and `opacity` only. Nothing here
+   animates `width`, `height`, `top`, `left`, `background-position` or
+   `box-shadow` — `.ix-lift` deliberately transitions ONLY `transform` and lets
+   its shadow switch instantly, because a transitioned `box-shadow` on a card
+   grid repaints the blur on every frame. No `will-change`: a transform/opacity
+   animation is promoted automatically, and a standing `will-change` on every
+   row of a list is a per-element compositing layer that costs more than it saves.
+
+   ── REDUCED MOTION — BOTH PATHS ──────────────────────────────────────────
+   1. OS: `@media (prefers-reduced-motion: reduce)` sets `--ix: .001` and
+      `--motion-scale: 0` (kartavaya-design.css §5). `--motion-scale` is also
+      written INLINE by applyPrefs and an inline style outranks a media query,
+      so that half of the pair only lands because a11y.css §1 restates it with
+      `!important`. Every amplitude below rides on `--motion-scale`, so that
+      rule is load-bearing here: do not remove it before `--motion-scale` gets
+      the `--motion-scale-user` twin that `--ix` already has.
+   2. Runtime: `applyPrefs` writes `--ix-user` and `--motion-scale` on the root
+      when the user picks Animations = Reduced/None in Customization. There is
+      no attribute to select on, so CSS cannot branch on it — which is exactly
+      why every duration below is `var(--dur-*)` or `calc(… * var(--ix))` and
+      every travel distance is multiplied by `var(--motion-scale, 1)`. Both
+      paths then fall out of the arithmetic with no per-component code.
+
+   INFINITE animations are the one case where `calc(… * var(--ix))` is WRONG.
+   At `--ix: .001` a `calc(2s * var(--ix))` loop becomes a 2ms loop that never
+   ends — a strobe, delivered to the user who just asked for less motion. Every
+   infinite animation here therefore keeps a FIXED duration and has its
+   amplitude driven by `--motion-scale`, so it fades to a static difference
+   instead of speeding up. (See the report: three infinite loops elsewhere in
+   the build still have this defect.)
+
+   No animation here is the only signal for a state change. `.ix-press` pairs
+   its scale with an opacity step, `.ix-lift` pairs its rise with a shadow, and
+   `.ix-state` transitions colours that differ statically at either end.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1 · Z-order ladder — 26 §4 ────────────────────────────────────────────
+   `200` drawer · `340` picker and menu · `420` modal · `520` toast · `620`
+   mobile sheet. Every hardcoded z-index in the build is replaced by this.
+
+   The three companion rungs are the scrims already in the build: a scrim sits
+   one below the surface it dims so the surface paints over it without a second
+   stacking context, and `--z-modal-panel` matches admin.css's existing 421.
+
+   The failure this prevents is not subtle: a corner card at 9998 renders on
+   top of the command palette and the dialog the user is reading. */
+:root {
+  --z-drawer-scrim: 199;
+  --z-drawer:       200;
+  --z-picker:       340;   /* picker · menu · popover · tooltip */
+  --z-modal:        420;
+  --z-modal-panel:  421;
+  --z-toast:        520;
+  --z-sheet-scrim:  619;
+  --z-sheet:        620;   /* mobile sheet · command palette · lightbox */
 }
 
-.animate-fadeIn {
-  animation: fadeIn calc(0.3s * var(--ix)) ease-out;
+.ix-layer-drawer-scrim { z-index: var(--z-drawer-scrim); }
+.ix-layer-drawer       { z-index: var(--z-drawer); }
+.ix-layer-picker       { z-index: var(--z-picker); }
+.ix-layer-modal        { z-index: var(--z-modal); }
+.ix-layer-modal-panel  { z-index: var(--z-modal-panel); }
+.ix-layer-toast        { z-index: var(--z-toast); }
+.ix-layer-sheet-scrim  { z-index: var(--z-sheet-scrim); }
+.ix-layer-sheet        { z-index: var(--z-sheet); }
+
+/* ── 2 · Keyframes owned here ─────────────────────────────────────────────
+   `ix`-prefixed so they can never collide with the `dm*` registry in
+   components.css, with `fadeIn`/`pulse` in index.css, with `k-*` in
+   editorial.css, or with Tailwind's generated `pulse`/`spin`.
+
+   The previous version of this file declared `@keyframes fadeIn` and
+   `@keyframes pulse`. Both names are ALSO declared in index.css, and this file
+   loads later, so this file's definitions won the cascade for the whole app:
+   `.anim-fade` in index.css was silently animating a 10px rise it never asked
+   for, and `pulse` ran inverted (1 → .5 → 1 instead of .5 → 1 → .5). Renaming
+   hands both names back to index.css. */
+
+/* Travel scales with --motion-scale: at Animations = None the rise is 0 and
+   the reveal degrades to a pure fade, which is a state change, not motion. */
+@keyframes ixFadeUp {
+  from { opacity: 0; transform: translateY(calc(10px * var(--motion-scale, 1))); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes ixSlideInLeft {
+  from { transform: translateX(calc(-100% * var(--motion-scale, 1))); }
+  to   { transform: none; }
+}
+@keyframes ixScaleIn {
+  from { opacity: 0; transform: scale(calc(1 - .05 * var(--motion-scale, 1))); }
+  to   { opacity: 1; transform: none; }
+}
+/* Infinite: fixed duration, amplitude on --motion-scale. At scale 0 the 50%
+   step equals the 0%/100% step and the loop is visually inert. */
+@keyframes ixPulse {
+  50% { opacity: calc(1 - .5 * var(--motion-scale, 1)); }
+}
+/* Composite-only shimmer: a translated overlay, not an animated
+   `background-position`. background-position repaints the gradient across the
+   whole element every frame; a transform on an already-painted layer does not. */
+@keyframes ixShimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
 }
 
-/* Slide in from left */
-@keyframes slideInLeft {
-  from {
-    transform: translateX(-100%);
-  }
-  to {
-    transform: translateX(0);
-  }
-}
+/* ── 3 · List and stagger reveal ──────────────────────────────────────────
+   `--stagger-i` is the item's index. It is set by `:nth-child` below so the
+   pattern works with no JavaScript, and any component that renders more than
+   twelve rows can override it per item with `style={{ '--stagger-i': i }}`.
 
-.animate-slideInLeft {
-  animation: slideInLeft calc(0.3s * var(--ix)) ease-out;
-}
+   Capped at eleven steps: 11 × 38ms = 418ms, inside `--dur-xslow` (520ms), the
+   ladder's budget for a first-paint stagger. Measured on a 14-item list: the
+   twelfth row and everything after it share the eleventh row's delay. Uncapped,
+   row 40 of a task list waits a second and a half for content already loaded.
 
-/* Scale in */
-@keyframes scaleIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+   No layout thrash: the delay is a custom property read at style time, so
+   adding a row restyles but never re-measures, and the animation touches only
+   `transform` and `opacity`. */
+.ix-stagger { --stagger-step: calc(38ms * var(--ix)); }
+.ix-stagger > * {
+  --stagger-i: 0;
+  animation: ixFadeUp var(--dur-base) var(--ease-enter) backwards;
+  animation-delay: calc(var(--stagger-i) * var(--stagger-step));
 }
+.ix-stagger > *:nth-child(2)  { --stagger-i: 1; }
+.ix-stagger > *:nth-child(3)  { --stagger-i: 2; }
+.ix-stagger > *:nth-child(4)  { --stagger-i: 3; }
+.ix-stagger > *:nth-child(5)  { --stagger-i: 4; }
+.ix-stagger > *:nth-child(6)  { --stagger-i: 5; }
+.ix-stagger > *:nth-child(7)  { --stagger-i: 6; }
+.ix-stagger > *:nth-child(8)  { --stagger-i: 7; }
+.ix-stagger > *:nth-child(9)  { --stagger-i: 8; }
+.ix-stagger > *:nth-child(10) { --stagger-i: 9; }
+.ix-stagger > *:nth-child(11) { --stagger-i: 10; }
+.ix-stagger > *:nth-child(n+12) { --stagger-i: 11; }
 
-.animate-scaleIn {
-  animation: scaleIn calc(0.2s * var(--ix)) ease-out;
-}
+/* Single-element reveals, for surfaces that are not a list. */
+.ix-fade-up    { animation: ixFadeUp     var(--dur-base)  var(--ease-enter) backwards; }
+.ix-scale-in   { animation: ixScaleIn    var(--dur-base)  var(--ease-enter) backwards; }
+.ix-slide-left { animation: ixSlideInLeft var(--dur-slow) var(--ease-emph-in) backwards; }
 
-/* Pulse */
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
+/* Attention loop for a placeholder that is waiting on something. Fixed 2s for
+   the reason in the header: an infinite loop scaled by --ix strobes. */
+.ix-pulse      { animation: ixPulse 2s var(--ease-standard) infinite; }
 
-.animate-pulse {
-  animation: pulse calc(2s * var(--ix)) cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/* Skeleton loading */
-@keyframes skeleton {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--border) 25%,
-    var(--input-bg) 50%,
-    var(--border) 75%
-  );
-  background-size: 200% 100%;
-  animation: skeleton calc(1.5s * var(--ix)) ease-in-out infinite;
-  border-radius: 8px;
-}
-
-/* Hover lift effect */
-.hover-lift {
-  transition: transform calc(0.2s * var(--ix)) ease, box-shadow calc(0.2s * var(--ix)) ease;
-}
-
-.hover-lift:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
-}
-
-/* Ripple effect */
-.ripple {
+/* ── 4 · Skeleton shimmer ─────────────────────────────────────────────────
+   Fixed 1.6s — NOT scaled by --ix, because an infinite loop scaled to 1.6ms is
+   a strobe (see the header). The sweep's visibility rides on --motion-scale
+   instead, so Animations = None leaves a plain, still block: the skeleton's
+   SHAPE is what says "loading", and 26 §9 requires that shape to match the
+   content either way. */
+.ix-skeleton {
   position: relative;
   overflow: hidden;
+  display: block;
+  border-radius: var(--r-sm);
+  background: var(--surface-dim);
+}
+.ix-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: var(--motion-scale, 1);
+  background: linear-gradient(100deg,
+    transparent 12%,
+    var(--surface) 50%,
+    transparent 88%);
+  animation: ixShimmer 1.6s var(--ease-standard) infinite;
 }
 
-/* Stagger animation for lists */
-.stagger-item {
-  animation: fadeIn calc(0.3s * var(--ix)) ease-out backwards;
+/* ── 5 · Hover and press feedback ─────────────────────────────────────────
+   `.ix-lift` transitions ONLY transform. The shadow still changes on hover, but
+   it snaps rather than transitioning: a blurred shadow is repainted every frame
+   of a transition, and on a grid of project cards that is the single most
+   expensive thing on the page. The shadow is also what keeps the hover legible
+   when --motion-scale is 0 and the rise is gone. */
+.ix-lift {
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.ix-lift:hover {
+  transform: translateY(calc(-4px * var(--motion-scale, 1)));
+  box-shadow: var(--shadow-3);
 }
 
-.stagger-item:nth-child(1) { animation-delay: calc(0.05s * var(--ix)); }
-.stagger-item:nth-child(2) { animation-delay: calc(0.1s * var(--ix)); }
-.stagger-item:nth-child(3) { animation-delay: calc(0.15s * var(--ix)); }
-.stagger-item:nth-child(4) { animation-delay: calc(0.2s * var(--ix)); }
-.stagger-item:nth-child(5) { animation-delay: calc(0.25s * var(--ix)); }
-.stagger-item:nth-child(6) { animation-delay: calc(0.3s * var(--ix)); }
+/* Press pairs its scale with an opacity step so the feedback survives
+   --motion-scale: 0 as a static difference. */
+.ix-press {
+  transition: transform var(--dur-instant) var(--ease-standard),
+              opacity   var(--dur-instant) var(--ease-standard);
+}
+.ix-press:active {
+  transform: scale(calc(1 - .02 * var(--motion-scale, 1)));
+  opacity: .86;
+}
+
+/* ── 6 · State transitions — chips, pills, badges ─────────────────────────
+   26 §6's duration ladder puts a colour-only change and a chip fill on
+   `--dur-instant` (90ms). Colour properties only: transitioning `all` on a chip
+   catches `width` when the label changes and animates the row reflowing. */
+.ix-state {
+  transition: background-color var(--dur-instant) var(--ease-standard),
+              border-color     var(--dur-instant) var(--ease-standard),
+              color            var(--dur-instant) var(--ease-standard);
+}
+
+/* ── 7 · One-shot "this just changed" ─────────────────────────────────────
+   `ixflash` is declared in components.css as part of the 26 §6 registry and had
+   no user anywhere in the build, so the confirmation it exists for was never
+   visible. 26 §6: it fires on the ELEMENT, never a container — a whole flashing
+   card is an alarm, a flashing cell is information. */
+.ix-flash {
+  animation: ixflash calc(var(--dur-slow) * 1.4) var(--ease-exit);
+}
+
+/* ── 8 · Overlay entrance and exit ────────────────────────────────────────
+   The reconciled table as classes, referencing the `dm*` registry rather than
+   redeclaring it. `.dr`, `.sheet`, `.pop`, `.tip`, `.pk__pop` and `.modal__*`
+   already carry these values inline in components.css/drawer.css; these exist
+   for the surfaces that do NOT yet — the editorial.css modal, the customize
+   panel, the onboarding card, the admin drawers — so migrating one is a class
+   swap rather than another hand-written triple.
+
+   Pair every `.ix-enter-*` with its `.ix-exit-*` and unmount on `animationend`.
+   `--ix` bottoms out at .001 rather than 0 precisely so that event still fires:
+   a zero-duration animation never fires `animationend`, and the handler that
+   unmounts the node never runs. */
+.ix-enter-fade   { animation: dmFade      var(--dur-base) var(--ease-enter)   both; }
+.ix-exit-fade    { animation: dmFadeOut   var(--dur-fast) var(--ease-exit)    both; }
+.ix-enter-drawer { animation: dmDrawerIn  var(--dur-slow) var(--ease-emph-in) both; }
+.ix-exit-drawer  { animation: dmDrawerOut var(--dur-base) var(--ease-exit)    both; }
+.ix-enter-sheet  { animation: dmSheetIn   var(--dur-slow) var(--ease-emph-in) both; }
+.ix-exit-sheet   { animation: dmSheetOut  var(--dur-base) var(--ease-exit)    both; }
+.ix-enter-pop    { animation: dmPop       var(--dur-base) var(--ease-enter)   both; }
+.ix-exit-pop     { animation: dmPopOut    var(--dur-fast) var(--ease-exit)    both; }
+.ix-enter-tip    { animation: dmTip       var(--dur-fast) var(--ease-enter)   both; }
+
+/* dmPop needs transform-origin set per placement or the menu grows from the
+   wrong corner (26 §6). Name the corner the trigger is ON. */
+.ix-origin-tl { transform-origin: top left; }
+.ix-origin-tr { transform-origin: top right; }
+.ix-origin-bl { transform-origin: bottom left; }
+.ix-origin-br { transform-origin: bottom right; }
+
+/* ── 9 · Reduced motion — belt and braces ─────────────────────────────────
+   The token arithmetic above already collapses every duration and every travel
+   distance under both paths. This block is the second line of defence for the
+   two cases arithmetic cannot express: an infinite loop (which must STOP, not
+   accelerate) and a stagger cascade (which must arrive at once, not quickly).
+
+   Scoped to this file's own classes on purpose. A blanket
+   `*, *::before, *::after { animation-duration: 1ms !important }` reset was
+   considered and rejected: it would freeze `.spin`, `.prg--ind` and the report
+   spinner mid-cycle, removing the only feedback a slow request has. Loading
+   indicators are functional motion, and WCAG 2.3.3 governs non-essential
+   animation. The hardcoded timings that escape `--ix` elsewhere in the build
+   are listed in the handover report rather than papered over from here. */
+@media (prefers-reduced-motion: reduce) {
+  .ix-skeleton::after { animation: none; opacity: 0; }
+  .ix-stagger > *     { animation-delay: 0s; }
+  .ix-pulse           { animation: none; }
+}
+
+/* ── 10 · Legacy utility names ────────────────────────────────────────────
+   Kept, not deleted: nothing in the app references them today, but they are
+   public-looking names and an in-flight component may pick one up. Every one is
+   now on the token ladder and routed through the `ix*` keyframes above.
+
+   `.animate-*` shadows Tailwind's generated utilities of the same name. That is
+   survivable — the resulting motion is equivalent — but new work should use the
+   `ix-*` names, and these should go once the tree is confirmed clean. */
+.animate-fadeIn      { animation: ixFadeUp     var(--dur-base) var(--ease-enter) backwards; }
+.animate-slideInLeft { animation: ixSlideInLeft var(--dur-slow) var(--ease-emph-in) backwards; }
+.animate-scaleIn     { animation: ixScaleIn    var(--dur-base) var(--ease-enter) backwards; }
+.animate-pulse       { animation: ixPulse 2s var(--ease-standard) infinite; }
+
+.stagger-item        { animation: ixFadeUp var(--dur-base) var(--ease-enter) backwards; }
+
+.hover-lift          { transition: transform var(--dur-fast) var(--ease-standard); }
+.hover-lift:hover    { transform: translateY(calc(-4px * var(--motion-scale, 1))); box-shadow: var(--shadow-3); }
+
+/* Was a self-contained gradient block animating `background-position`, with a
+   hardcoded `rgba(0,0,0,.12)` shadow on `.hover-lift` beside it. Both are gone:
+   colours come from tokens and the sweep is a transform. */
+.skeleton            { position: relative; overflow: hidden; display: block; border-radius: var(--r-sm); background: var(--surface-dim); }
+.skeleton::after     { content: ''; position: absolute; inset: 0; opacity: var(--motion-scale, 1);
+                       background: linear-gradient(100deg, transparent 12%, var(--surface) 50%, transparent 88%);
+                       animation: ixShimmer 1.6s var(--ease-standard) infinite; }
+
+/* Containment only — there is no ripple implementation behind this name, and
+   there never was. Retained so an existing `className="ripple"` keeps its
+   overflow clipping; it should be deleted rather than filled in, because a
+   ripple is not in the motion spec. */
+.ripple              { position: relative; overflow: hidden; }

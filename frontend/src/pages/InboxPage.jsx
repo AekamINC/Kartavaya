@@ -23,10 +23,11 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '../components/editorial';
-import { EmptyState, ErrorState, errorKind, SkeletonList, Tabs } from '../components/ui';
+import { EmptyState, ErrorState, errorKind, Tabs } from '../components/ui';
 import TaskDrawer from '../components/TaskDrawer';
 import NotificationBanner from '../components/NotificationBanner';
 import NotifRow from './inbox/NotifRow';
+import InboxSkeleton from './inbox/InboxSkeleton';
 import { INBOX_TABS, countForTab, filterByTab, groupNotifications } from './inbox/notifKinds';
 import { useNotifications } from '../context/NotificationContext';
 import '../styles/inbox.css';
@@ -56,7 +57,20 @@ export default function InboxPage() {
   }, [markRead, navigate]);
 
   const list = (() => {
-    if (isLoading) return <SkeletonList rows={6} showAvatar={false} />;
+    if (isLoading) {
+      return (
+        <>
+          <p className="k-sr-only" role="status">Loading your notifications…</p>
+          <InboxSkeleton rows={6} />
+        </>
+      );
+    }
+
+    // An empty list because the fetch FAILED is not an empty inbox. The error
+    // sits above the tabs; rendering "You're all caught up" underneath it would
+    // have the page assert, in its most reassuring voice, something it has no
+    // idea about — and a user with an approval waiting would walk away.
+    if (error && !items.length) return null;
 
     // A list with nothing in it and a filter that reached zero are different
     // states. One is a finished queue and should read as an accomplishment; the
@@ -106,7 +120,17 @@ export default function InboxPage() {
 
   const tabs = INBOX_TABS.map((t) => ({
     value: t.value,
-    label: t.label,
+    // `INBOX_TABS` has carried a Devanagari label for each tab since it was
+    // written and nothing rendered it — five translated strings that shipped as
+    // dead data while every other heading on the page is bilingual. `.tabs__label`
+    // is already a flex row, so the sub-label sits between the word and the count
+    // exactly as it does in the group headers.
+    label: (
+      <>
+        {t.label}
+        <span className="k-inboxpg__tabhi" lang="hi">{t.hi}</span>
+      </>
+    ),
     count: countForTab(items, t.value),
     // Only the active tab's content is built. `Tabs` reads `content` off the
     // active entry alone, so the other four stay null rather than rendering

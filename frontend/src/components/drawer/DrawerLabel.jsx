@@ -18,7 +18,12 @@ export default function DrawerLabel({ children, hi, count, className = '', ...re
     <span className={`dr__lbl ${className}`.trim()} {...rest}>
       {children}
       {count !== undefined && count !== null && ` (${count})`}
-      {hi && <> <span className="dr__lbl-hi">{hi}</span></>}
+      {/* The Devanagari is the same label in a second script, not additional
+          information, so it is hidden from the accessibility tree (23
+          §Devanagari). Without this every drawer section announces twice —
+          "Priority प्राथमिकता Priority प्राथमिकता" as focus crosses it — and
+          the second half is read with the English voice. */}
+      {hi && <> <span className="dr__lbl-hi" aria-hidden="true">{hi}</span></>}
     </span>
   );
 }

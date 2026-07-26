@@ -140,7 +140,27 @@
   --on-surface:       #1B1D1A;
   --on-surface-2:     #4A4E48;
   --on-surface-3:     #666A61;   /* was #74786F — 3.9:1 on --bg, failed AA */
-  --on-surface-faint: #9DA096;   /* 2.3:1 — NON-TEXT ONLY */
+  /* 00 §11 resolves the contradiction between §7 (which declared the literal
+     #9DA096) and §12 (which marked that literal NON-TEXT ONLY): the ramp was
+     designed with four foreground steps and the background only supports
+     three. On --bg #F3EFE6 a colour needs relative luminance ≤ .153 to clear
+     4.5:1, and --on-surface-3 #666A61 already sits at .140 — a compliant
+     fourth step would live in that sliver and be indistinguishable from the
+     third. So --on-surface-faint ALIASES --on-surface-3 in both themes. The
+     name survives because every one of its call sites is content text
+     (IDs, separators, counts, "(edited)", deleted-message copy), and a
+     token that is declared non-text while carrying text in ~30 places is a
+     contrast bug, not a naming problem. Measured before this change:
+     #9DA096 = 2.32:1 light, #64645F = 3.25:1 dark — it failed in BOTH
+     themes, the signature of a wrong token rather than a wrong pairing. */
+  --on-surface-faint: var(--on-surface-3);
+  /* The old faint values, kept for INACTIVE CONTROLS ONLY — WCAG 1.4.3
+     exempts disabled UI from the contrast minimum. Nothing inherits this;
+     opt in explicitly. 00 §11 lists the legitimate users: .mocktab.off,
+     .lockbtn, .degul li::marker, .bar__crumb-sep, .msg--cont:hover .msg__gut.
+     Specified in 00 §11 and declared nowhere in src/styles until now; at
+     least four surfaces worked around the gap with --on-surface-3. */
+  --on-surface-disabled: #9DA096;
 
   --outline-variant: #D8D1BE;
   --outline:         #ADA692;
@@ -210,7 +230,11 @@
   --on-surface:       #E9E7E1;
   --on-surface-2:     #BFBDB6;
   --on-surface-3:     #8E8D87;
-  --on-surface-faint: #64645F;
+  /* Aliased in dark for the same reason as light — see the light block.
+     The literal #64645F measured 3.25:1 on --bg #0C0E11 and 3.08:1 on
+     --surface, so the "dark has generous margins" rule did not save it. */
+  --on-surface-faint: var(--on-surface-3);
+  --on-surface-disabled: #64645F;   /* inactive controls only (00 §11) */
 
   --outline-variant: #333A43;
   --outline:         #5B626C;
@@ -298,9 +322,63 @@
   --pf-keyline:      #7c5cbf;
   --ink-fixed:       #23262B;
   --ink-fixed-dark:  #E9E7E1;
-  --tick-read:       #4FC3F7;   /* WhatsApp read tick — their blue, not ours */
   --wa-green:        #1FA855;
 }
+
+/* ── --tick-read (00 §9, "### `--tick-read`") ───────────────────────────────
+   NOT a fixed literal, despite living beside them until now. It shipped as a
+   single #4FC3F7, which is 00's dark value; 00 §9 gives TWO.
+
+   The read tick paints on `.wab--out`, the outgoing bubble, which is
+   --primary-container — #B4F1E8 in light. A pale sky blue on pale mint is not
+   a legible "seen" marker, and 06/14 both quote #4FC3F7 because they were
+   describing the DARK bubble (#00514B). #1E88C7 is the same blue family, dark
+   enough to read on the light bubble, and #4FC3F7 stays in dark where it is
+   the value WhatsApp users recognise.
+
+   The retired brand blue #0082c6 does not come back for this either: it was
+   only ever here because two unrelated blues got conflated. */
+:root, [data-theme="light"] { --tick-read: #1E88C7 }
+[data-theme="dark"]         { --tick-read: #4FC3F7 }
+
+/* ── Tint scale — 14-dark-mode.md §5 ────────────────────────────────────────
+   "color-mix percentages are not theme-portable." 8% of a colour over cream
+   #F3EFE6 reads clearly; the same 8% over #0C0E11 is almost nothing, because
+   mixing toward `transparent` composites against a background whose luminance
+   moved by a factor of ~30. 14 §5 calls this "the most common dark-mode defect
+   in the codebase: a selected row that is obvious in light and invisible in
+   dark", and prescribes 1.5–2× in dark.
+
+   Declaring the percentages as tokens is what removes the per-component
+   [data-theme="dark"] override that 14 §1 calls a bug report. Use:
+     background: color-mix(in srgb, var(--primary) var(--tint-mid), transparent)
+   and it is correct in both themes with no second rule. */
+:root, [data-theme="light"] {
+  --tint-weak:   4%;    /* barely-there row wash */
+  --tint-soft:   8%;    /* hover, unread row */
+  --tint-mid:   14%;    /* chip and badge tint */
+  --tint-strong: 22%;   /* selected / active */
+  --focus-mix:  16%;    /* the 3px focus halo */
+}
+[data-theme="dark"] {
+  --tint-weak:   8%;
+  --tint-soft:  14%;
+  --tint-mid:   22%;
+  --tint-strong: 34%;
+  --focus-mix:  26%;    /* 14 §4: 16% needs ~24% in dark */
+}
+
+/* Ready-made focus halos, so the 16%→26% flip happens once rather than at
+   every :focus rule. 23-accessibility.md keeps the 2px outline as the visible
+   ring; this is the soft halo that sits under it on inputs. */
+:root {
+  --focus-ring:        0 0 0 3px color-mix(in srgb, var(--primary) var(--focus-mix), transparent);
+  --focus-ring-danger: 0 0 0 3px color-mix(in srgb, var(--danger)  var(--focus-mix), transparent);
+}
+
+/* 14 §6's image dimming rule is NOT repeated here. It already ships in
+   editorial.css ("[data-theme="dark"] img:not([data-no-dim])"), and two
+   identical rules in two files is two things to keep in step. */
 
 /* ── LEGACY ALIASES ─────────────────────────────────────────────────────────
    Not part of 00-tokens.md. ~2,957 references across the app still use these
@@ -442,7 +520,7 @@ body {
   width: 30px;
   height: 30px;
   background: var(--k-grad);
-  color: #fff;
+  color: var(--on-primary);
 }
 
 /* ── Topbar ────────────────────────────────────────────────────────────────
@@ -500,10 +578,14 @@ body {
 
 .k-btn--primary {
   background: var(--k-grad);
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(5,183,170,.28);
+  /* #fff is correct in light and 1.8:1 in dark, where --primary is the light
+     mint. --on-primary is the fill's declared partner and flips with it. */
+  color: var(--on-primary);
+  /* rgba(5,183,170,…) froze the default teal into the shadow, so an Emerald or
+     Rose accent still cast a teal glow — and it did not darken for dark mode. */
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--primary-vivid) 28%, transparent);
 }
-.k-btn--primary:hover { box-shadow: 0 4px 14px rgba(5,183,170,.38); }
+.k-btn--primary:hover { box-shadow: 0 4px 14px color-mix(in srgb, var(--primary-vivid) 38%, transparent); }
 
 .k-btn--ghost {
   background: transparent;
@@ -598,7 +680,7 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(ellipse 500px 300px at 100% 0%, rgba(5,183,170,.07) 0%, transparent 65%);
+  background: radial-gradient(ellipse 500px 300px at 100% 0%, color-mix(in srgb, var(--primary-vivid) 7%, transparent) 0%, transparent 65%);
   pointer-events: none;
 }
 .k-hero__wm {
@@ -607,7 +689,7 @@ body {
   right: 20px;
   font-family: var(--font-hindi);
   font-size: 120px;
-  color: rgba(5,183,170,.06);
+  color: color-mix(in srgb, var(--primary-vivid) 6%, transparent);
   line-height: 1;
   user-select: none;
   pointer-events: none;
@@ -666,7 +748,9 @@ body {
 }
 .k-wday:hover { background: var(--bg-soft); }
 .k-wday.is-today {
-  background: var(--k-primary);
+  /* --k-primary is the RAW accent (#05b7aa by default). White on it is 2.51:1;
+     --primary is the fill half of the measured fill/on pair. */
+  background: var(--primary);
 }
 .k-wday__en {
   font-size: 10px;
@@ -675,13 +759,13 @@ body {
   color: var(--ink-3);
   text-transform: uppercase;
 }
-.k-wday.is-today .k-wday__en { color: #fff; }
+.k-wday.is-today .k-wday__en { color: var(--on-primary); }
 .k-wday__hi {
   font-family: var(--font-hindi);
   font-size: 11px;
   color: var(--ink-faint);
 }
-.k-wday.is-today .k-wday__hi { color: rgba(255,255,255,.75); }
+.k-wday.is-today .k-wday__hi { color: color-mix(in srgb, var(--on-primary) 75%, transparent); }
 .k-wday__num {
   font-family: var(--font-display);
   font-size: 20px;
@@ -689,7 +773,7 @@ body {
   color: var(--ink);
   line-height: 1;
 }
-.k-wday.is-today .k-wday__num { color: #fff; }
+.k-wday.is-today .k-wday__num { color: var(--on-primary); }
 
 /* ── Stat tiles ─────────────────────────────────────────────────────────── */
 .k-stats {
@@ -782,10 +866,14 @@ body {
   padding: 2px 8px;
   border-radius: 99px;
 }
-.k-pri--urgent { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
-.k-pri--high   { background: color-mix(in srgb, #f59e0b 14%, transparent); color: #c2710a; }
-.k-pri--medium { background: color-mix(in srgb, var(--k-deep) 14%, transparent); color: var(--k-deep); }
-.k-pri--low    { background: color-mix(in srgb, var(--ink-3) 12%, transparent); color: var(--ink-3); }
+/* Duplicated from editorial.css, which loads later and therefore wins. Kept in
+   step rather than deleted, because a stale copy of a rule is worse than a
+   redundant one: #f59e0b / #c2710a were the retired amber pair, neither of
+   which flips, and the pair measured 3.4:1 in light. 00 §9 gives --pr-*. */
+.k-pri--urgent { background: color-mix(in srgb, var(--pr-urgent) var(--tint-mid), transparent); color: var(--pr-urgent); }
+.k-pri--high   { background: color-mix(in srgb, var(--pr-high)   var(--tint-mid), transparent); color: var(--pr-high); }
+.k-pri--medium { background: color-mix(in srgb, var(--pr-medium) var(--tint-mid), transparent); color: var(--pr-medium); }
+.k-pri--low    { background: color-mix(in srgb, var(--pr-low)    var(--tint-soft), transparent); color: var(--pr-low); }
 
 /* ── Kanban board ──────────────────────────────────────────────────────── */
 .k-board {

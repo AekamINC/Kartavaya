@@ -2,20 +2,23 @@
  * useChannelMessages.js — load, poll, send, react.
  *
  * `06-sanvaad-varta.md` §2b asks for Supabase Realtime on `messages`, with
- * cursor polling as the short-term fallback. Realtime is **not** wired here, and
- * the reason is not effort:
+ * cursor polling as the short-term fallback. Realtime is **not** wired here.
  *
- *   · The messages live in `staging.samvada_messages`, which is not in the
- *     `supabase_realtime` publication. Adding it is a migration, and migrations
- *     are out of scope for this change — staging and production share one
- *     database.
- *   · The browser client holds the anon key. Reading those rows through it needs
- *     RLS policies that do not exist; the API reaches them through a service
- *     pool with an explicit org gate.
+ * One of the three reasons previously given in this comment was WRONG and is
+ * corrected: `migrations/058_sanvaad_messaging.sql:83` ends with
+ * `ALTER PUBLICATION supabase_realtime ADD TABLE staging.samvada_messages`, so
+ * the table IS published. The two that survive are the decisive ones:
+ *
+ *   · The browser client holds the anon key (`lib/supabase.js`). RLS is never
+ *     enabled on any `staging.*` table — `migrations/007` turns it on for
+ *     `public.*` only — so `postgres_changes` has no policy to authorise the
+ *     subscription against, and the API reaches these rows through a service
+ *     pool with an explicit org gate instead. Publishing a table whose rows the
+ *     anon role cannot be scoped to would be a cross-tenant leak, not a feature.
  *   · A `postgres_changes` payload is the raw row. It has no `sender_name`,
  *     no `sender_avatar`, no `thread_count` and no `reactions` — all four are
- *     joins and sub-selects in `list_messages` — so every event would need a
- *     follow-up fetch anyway.
+ *     joins and sub-selects in `list_messages` (`routers/messaging.py:295-299`)
+ *     — so every event would need a follow-up fetch anyway.
  *
  * So polling stays, with the three things `06` actually objects to fixed:
  * `loading` is never touched after the first load, the page is **merged** rather
@@ -29,7 +32,7 @@ import { mergeById, parseReactions, toggleReactionLocal } from './messageUtils';
 
 const POLL_MS = 5000;
 
-export function useChannelMessages(channelId, meId) {
+export function useChannelMessages(channelId, meId, me = null) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -98,10 +101,20 @@ export function useChannelMessages(channelId, meId) {
           : m
       )));
     } else {
-      setMessages(prev => mergeById(prev, [r.data]));
+      // `send_message` ends `RETURNING *` on `samvada_messages` — no
+      // `sender_name`, no `sender_avatar`, because both are joins onto
+      // `staging.users` that only `list_messages` performs. Merging the response
+      // raw therefore rendered YOUR OWN message as "Unknown" behind a "?"
+      // avatar for up to five seconds, on every send. We know who we are;
+      // stamping the two fields costs nothing and the poll overwrites them with
+      // the server's values on the next tick.
+      const mine = me
+        ? { sender_name: me.full_name || me.name || undefined, sender_avatar: me.avatar_url || undefined }
+        : {};
+      setMessages(prev => mergeById(prev, [{ ...r.data, ...mine }]));
     }
     return r.data;
-  }, [channelId]);
+  }, [channelId, me]);
 
   /**
    * `06` §7: "One emoji reaction costs a full history refetch. react() ends with

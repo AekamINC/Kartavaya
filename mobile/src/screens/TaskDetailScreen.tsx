@@ -20,7 +20,9 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useAuth } from '../hooks/useAuth';
 import { tasksApi } from '../api/tasks';
 import { projectsApi } from '../api/projects';
-import { PRIORITY_COLOR, BRAND_GRADIENT_2 } from '../theme/tokens';
+import { timeApi } from '../api/time';
+import { getRunningTimer, setRunningTimer, clearRunningTimer } from '../lib/runningTimer';
+import { PRIORITY_COLORS, BRAND_GRADIENT_2, withAlpha } from '../theme/tokens';
 import type { Task, Comment, TeamMember, Priority, Subtask, Attachment } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
 
@@ -46,6 +48,16 @@ function userName(u: { name?: string; full_name?: string; email?: string }): str
   return u.name ?? u.full_name ?? u.email ?? '?';
 }
 
+/** Clients cannot log time — `/time/start` 403s for them, so the section is hidden. */
+function isClientRole(role?: string | null): boolean { return role === 'client'; }
+
+/** "2h 14m". Never a bare minute count, which reads as an id. */
+function fmtMinutes(mins: number): string {
+  const m = Math.max(0, Math.round(mins));
+  const h = Math.floor(m / 60);
+  return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
+}
+
 const PRI_ICONS: Record<Priority, string> = {
   urgent: 'flame',
   high:   'arrow-up-circle',
@@ -55,7 +67,7 @@ const PRI_ICONS: Record<Priority, string> = {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function TaskDetailScreen() {
-  const { t }    = useTheme();
+  const { t, scheme } = useTheme();
   const { user } = useAuth();
   const route    = useRoute<Route>();
   const nav      = useNavigation<Nav>();
@@ -102,6 +114,59 @@ export default function TaskDetailScreen() {
   const [mentionQuery,   setMentionQuery]   = useState<string | null>(null);
   const composerRef = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
+
+  // ── Time ─────────────────────────────────────────────────────────────────────
+  // 17-mobile-app.md lists time among the things the drawer has to carry at
+  // 393px. It was the one item missing, which also left TimeScreen reading a
+  // running-timer record that nothing ever wrote.
+  const [runningTimer, setRunningTimerState] = useState(() => getRunningTimer());
+  const [timerBusy, setTimerBusy] = useState(false);
+
+  const { data: taskTime } = useQuery({
+    queryKey: ['time', 'task', taskId],
+    queryFn:  () => timeApi.forTask(taskId),
+    enabled:  !isClientRole(user?.role),
+  });
+
+  const timerRunsThisTask = runningTimer?.task_id === taskId;
+
+  const toggleTimer = async () => {
+    if (timerBusy) return;
+    setTimerBusy(true);
+    try {
+      if (timerRunsThisTask) {
+        await timeApi.stop();
+        clearRunningTimer();
+        setRunningTimerState(null);
+      } else {
+        // `/start` auto-stops any other running timer server-side, so the local
+        // record is replaced rather than merged — two running timers cannot
+        // exist and the app must not imply otherwise.
+        const res = await timeApi.start(taskId);
+        const next = {
+          entry_id:   res.entry_id,
+          task_id:    taskId,
+          task_title: task?.title ?? 'Task',
+          started_at: res.started_at,
+        };
+        setRunningTimer(next);
+        setRunningTimerState(next);
+      }
+      qc.invalidateQueries({ queryKey: ['time'] });
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      if (status === 404 && timerRunsThisTask) {
+        // Already stopped elsewhere. Clear the stale note instead of stranding a
+        // stop button that can never succeed.
+        clearRunningTimer();
+        setRunningTimerState(null);
+      } else {
+        Alert.alert('Timer', e instanceof Error ? e.message : 'Could not update the timer.');
+      }
+    } finally {
+      setTimerBusy(false);
+    }
+  };
 
   // ── Mutations ────────────────────────────────────────────────────────────────
   const invalidate = () => {
@@ -213,7 +278,11 @@ export default function TaskDetailScreen() {
       } else if (approvalAction === 'reject') {
         await tasksApi.reviewApproval(taskId, 'rejected', { notes });
       } else if (approvalAction === 'client') {
-        await tasksApi.reviewApproval(taskId, 'pending_client', {
+        // Sending to the client is an APPROVAL with send_to_client set, not a
+        // status of its own — the server rejects any status that is not
+        // "approved" or "rejected" (server.py:1188). Mirrors the web's
+        // confirmApproveWithClient.
+        await tasksApi.reviewApproval(taskId, 'approved', {
           notes, send_to_client: true, client_email: extra?.client_email,
         });
       } else if (approvalAction === 'client_approve') {
@@ -305,7 +374,9 @@ export default function TaskDetailScreen() {
 
   const isClient        = user?.role === 'client';
   const canEdit         = !isClient && (user?.role === 'admin' || user?.role === 'owner' || task.created_by_user_id === user?.user_id);
-  const priColor        = PRIORITY_COLOR[task.priority] ?? '#636366';
+  // Scheme-aware. PRIORITY_COLOR (no S) is the deprecated light-only map: in dark
+  // mode it returned a red mixed for the cream canvas. 00 §9 flips these.
+  const priColor        = PRIORITY_COLORS[scheme][task.priority] ?? t.ink3;
   const assignedMembers = members.filter((m: TeamMember) => (task.assignee_user_ids ?? []).includes(memberId(m)));
 
   return (
@@ -362,7 +433,7 @@ export default function TaskDetailScreen() {
                 const idx = next.indexOf(task.priority);
                 updateTask.mutate({ priority: next[(idx + 1) % 4] });
               }}
-              style={[s.metaChip, { backgroundColor: priColor + '22', borderColor: priColor }]}
+              style={[s.metaChip, { backgroundColor: withAlpha(priColor, 0.13), borderColor: priColor }]}
             >
               <Ionicons name={PRI_ICONS[task.priority as Priority] as any} size={12} color={priColor} />
               <Text style={[s.metaChipText, { color: priColor }]}>{task.priority}</Text>
@@ -377,14 +448,14 @@ export default function TaskDetailScreen() {
               }}
               style={[s.metaChip, { backgroundColor: t.surfaceLow, borderColor: t.outline }]}
             >
-              <Ionicons name="ellipse" size={8} color={task.status === 'done' ? '#22c55e' : t.ink3} />
+              <Ionicons name="ellipse" size={8} color={task.status === 'done' ? t.success : t.ink3} />
               <Text style={[s.metaChipText, { color: t.ink2 }]}>{task.status.replace('_', ' ')}</Text>
             </TouchableOpacity>
 
             {dueDisplay && (
-              <View style={[s.metaChip, { backgroundColor: dueDisplay.isLate ? '#ef444418' : t.surfaceLow, borderColor: dueDisplay.isLate ? '#ef4444' : t.outline }]}>
-                <Ionicons name="calendar-outline" size={12} color={dueDisplay.isLate ? '#ef4444' : t.ink3} />
-                <Text style={[s.metaChipText, { color: dueDisplay.isLate ? '#ef4444' : t.ink2 }]}>{dueDisplay.label}</Text>
+              <View style={[s.metaChip, { backgroundColor: dueDisplay.isLate ? t.errorBg : t.surfaceLow, borderColor: dueDisplay.isLate ? t.error : t.outline }]}>
+                <Ionicons name="calendar-outline" size={12} color={dueDisplay.isLate ? t.error : t.ink3} />
+                <Text style={[s.metaChipText, { color: dueDisplay.isLate ? t.error : t.ink2 }]}>{dueDisplay.label}</Text>
               </View>
             )}
           </ScrollView>
@@ -461,7 +532,7 @@ export default function TaskDetailScreen() {
               <View style={[s.subtaskProgress, { backgroundColor: t.outline }]}>
                 <View style={[s.subtaskProgressFill, {
                   width: `${(task.subtasks.filter((s: Subtask) => s.is_done).length / task.subtasks.length) * 100}%`,
-                  backgroundColor: task.subtasks.every((s: Subtask) => s.is_done) ? '#22c55e' : t.primary,
+                  backgroundColor: task.subtasks.every((s: Subtask) => s.is_done) ? t.success : t.primary,
                 }]} />
               </View>
             )}
@@ -563,6 +634,68 @@ export default function TaskDetailScreen() {
           </Section>
 
           <Divider t={t} />
+
+          {/* ══ TIME ══ */}
+          {!isClient && (
+            <>
+              <Section label={`TIME  ${taskTime?.total_minutes ? fmtMinutes(taskTime.total_minutes) : ''}`} t={t}>
+                <TouchableOpacity
+                  onPress={toggleTimer}
+                  disabled={timerBusy}
+                  accessibilityRole="button"
+                  accessibilityLabel={timerRunsThisTask ? 'Stop timer' : 'Start timer on this task'}
+                  accessibilityState={{ disabled: timerBusy }}
+                  style={[
+                    s.metaChip,
+                    {
+                      alignSelf: 'flex-start',
+                      backgroundColor: timerRunsThisTask ? t.errorBg : t.primaryContainer,
+                      borderColor: timerRunsThisTask ? t.error : t.primary,
+                      paddingVertical: 8,
+                      paddingHorizontal: 14,
+                    },
+                  ]}
+                >
+                  {timerBusy ? (
+                    <ActivityIndicator size="small" color={timerRunsThisTask ? t.error : t.onPrimaryContainer} />
+                  ) : (
+                    <Ionicons
+                      name={timerRunsThisTask ? 'stop-circle' : 'play-circle'}
+                      size={16}
+                      color={timerRunsThisTask ? t.error : t.onPrimaryContainer}
+                    />
+                  )}
+                  <Text style={[s.metaChipText, {
+                    color: timerRunsThisTask ? t.error : t.onPrimaryContainer,
+                    fontWeight: '700',
+                  }]}>
+                    {timerRunsThisTask ? 'Stop timer' : 'Start timer'}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* A timer on ANOTHER task is worth saying out loud: /start would
+                    silently close it, and someone would lose the minutes they
+                    thought they were still logging. */}
+                {runningTimer && !timerRunsThisTask && (
+                  <Text style={[s.emptyHint, { color: t.ink3, marginTop: 8 }]}>
+                    A timer is running on “{runningTimer.task_title}”. Starting one here stops that one.
+                  </Text>
+                )}
+
+                {taskTime?.entries?.length
+                  ? (
+                    <Text style={[s.emptyHint, { color: t.ink4, marginTop: 8 }]}>
+                      {taskTime.entries.length} {taskTime.entries.length === 1 ? 'entry' : 'entries'} · {fmtMinutes(taskTime.total_minutes)} total
+                    </Text>
+                  )
+                  : (
+                    <Text style={[s.emptyHint, { color: t.ink4, marginTop: 8 }]}>No time logged yet.</Text>
+                  )}
+              </Section>
+
+              <Divider t={t} />
+            </>
+          )}
 
           {/* ══ COMMENTS ══ */}
           <Section label={`COMMENTS  ${comments.length > 0 ? comments.length : ''}`} t={t}>

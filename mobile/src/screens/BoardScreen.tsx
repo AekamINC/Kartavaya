@@ -14,7 +14,7 @@ import { format, isToday, isPast } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
 import { tasksApi } from '../api/tasks';
 import { projectsApi } from '../api/projects';
-import { PRIORITY_COLOR, projectColor, AVATAR_COLORS, BRAND_GRADIENT_2 } from '../theme/tokens';
+import { PRIORITY_COLORS, projectColor, AVATAR_COLORS, BRAND_GRADIENT_2, withAlpha } from '../theme/tokens';
 import type { Task, ProjectColumn, TeamMember, Project } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
 
@@ -74,8 +74,10 @@ const BC_AVATAR_COLORS = AVATAR_COLORS;
 const IS_ANDROID = Platform.OS === 'android';
 
 function BoardCard({ task, col, onPress }: { task: Task; col?: ProjectColumn; onPress: () => void }) {
-  const { t } = useTheme();
-  const priColor = PRIORITY_COLOR[task.priority] ?? '#636366';
+  const { t, scheme } = useTheme();
+  // Scheme-aware: PRIORITY_COLOR (no S) is the light-only map, so a dark-mode
+  // card drew a red mixed for the cream canvas. 00 §9 flips these.
+  const priColor = PRIORITY_COLORS[scheme][task.priority] ?? t.ink3;
   const isLate   = task.due_at ? isPast(new Date(task.due_at)) && !isToday(new Date(task.due_at)) : false;
 
   // Approval chip
@@ -167,6 +169,9 @@ function NewTaskModal({ visible, columns, projectId, onClose, onCreated, t }: {
   visible: boolean; columns: ProjectColumn[]; projectId: string;
   onClose: () => void; onCreated: () => void; t: any;
 }) {
+  // `t` arrives as a prop, but the priority chips need the active scheme too —
+  // 00 §9's --pr-* tokens flip, so a light-mode red on a dark sheet is wrong.
+  const { scheme } = useTheme();
   const [title, setTitle]   = useState('');
   const [colId, setColId]   = useState(columns[0]?.column_id ?? '');
   const [priority, setPriority] = useState<typeof PRIORITIES[number]>('medium');
@@ -220,10 +225,10 @@ function NewTaskModal({ visible, columns, projectId, onClose, onCreated, t }: {
           <Text style={[s.sheetLabel, { color: t.ink3 }]}>PRIORITY</Text>
           <View style={{ flexDirection: 'row', gap: 8, marginBottom: 16 }}>
             {PRIORITIES.map(p => {
-              const pc = PRIORITY_COLOR[p]; const active = priority === p;
+              const pc = PRIORITY_COLORS[scheme][p] ?? t.ink3; const active = priority === p;
               return (
                 <TouchableOpacity key={p} onPress={() => setPriority(p)}
-                  style={[s.priChip, { backgroundColor: active ? pc : pc + '22', borderColor: pc }]}>
+                  style={[s.priChip, { backgroundColor: active ? pc : withAlpha(pc, 0.13), borderColor: pc }]}>
                   <Text style={{ color: active ? '#fff' : pc, fontSize: 11, fontWeight: '800', textTransform: 'capitalize' }}>{p}</Text>
                 </TouchableOpacity>
               );
@@ -248,7 +253,7 @@ function NewTaskModal({ visible, columns, projectId, onClose, onCreated, t }: {
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function BoardScreen() {
-  const { t }   = useTheme();
+  const { t, scheme } = useTheme();
   const nav     = useNavigation<Nav>();
   const insets  = useSafeAreaInsets();
   const qc      = useQueryClient();
@@ -387,11 +392,11 @@ export default function BoardScreen() {
       refreshControl={<RefreshControl refreshing={isFetching && !isLoading} onRefresh={refetch} tintColor={t.primary} />}
       renderItem={({ item }) => {
         const col = columns.find((c: ProjectColumn) => c.column_id === item.column_id);
-        const pri = PRIORITY_COLOR[item.priority] ?? '#636366';
+        const pri = PRIORITY_COLORS[scheme][item.priority] ?? t.ink3;
         return (
           <TouchableOpacity style={[s.listRow, { backgroundColor: t.surface, borderColor: t.outline }]}
             onPress={() => openTask(item.task_id)} activeOpacity={0.75}>
-            <View style={[s.listStatus, { backgroundColor: (col?.color ?? t.ink4) + '22' }]}>
+            <View style={[s.listStatus, { backgroundColor: withAlpha(col?.color ?? t.ink4, 0.13) }]}>
               <Text style={{ color: col?.color ?? t.ink3, fontSize: 9, fontWeight: '800' }} numberOfLines={1}>{col?.name ?? '—'}</Text>
             </View>
             <View style={{ flex: 1, gap: 2 }}>

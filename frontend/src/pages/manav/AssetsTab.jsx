@@ -113,7 +113,7 @@ export default function AssetsTab() {
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Asset</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Asset Tag *</span>
@@ -166,8 +166,8 @@ export default function AssetsTab() {
                 <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
                   <td style={{ padding: '10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{a.asset_tag || '—'}</td>
                   <td style={{ padding: '10px', fontWeight: 600 }}>{a.name}</td>
-                  <td style={{ padding: '10px' }}><Badge text={a.category} color={CATEGORY_COLORS[a.category] || '#6b7280'} /></td>
-                  <td style={{ padding: '10px' }}><Badge text={a.condition} color={CONDITION_COLORS[a.condition] || '#6b7280'} /></td>
+                  <td style={{ padding: '10px' }}><Badge text={a.category} color={CATEGORY_COLORS[a.category] || 'var(--on-surface-3)'} /></td>
+                  <td style={{ padding: '10px' }}><Badge text={a.condition} color={CONDITION_COLORS[a.condition] || 'var(--on-surface-3)'} /></td>
                   <td style={{ padding: '10px', color: a.employee_name ? 'var(--ink-1)' : 'var(--ink-3)' }}>{a.employee_name || '—'}</td>
                   <td style={{ padding: '10px' }}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -189,13 +189,13 @@ export default function AssetsTab() {
                           <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => setAssigningId(a.id)}>Assign</button>
                         )
                       )}
-                      <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px', color: '#ef4444' }} onClick={() => remove(a.id)}>Delete</button>
+                      <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px', color: 'var(--danger)' }} onClick={() => remove(a.id)}>Delete</button>
                     </div>
                   </td>
                 </tr>
                 {editingAsset === a.id && (
                   <tr><td colSpan={6} style={{ padding: '0 10px 10px' }}>
-                    <form onSubmit={saveEditAsset} style={{ background: 'var(--surface-0)', border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16 }}>
+                    <form onSubmit={saveEditAsset} style={{ background: 'var(--surface-0)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16 }}>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                         <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name</span>
                           <input className="k-input" value={editAssetForm.name} onChange={e => setEditAssetForm({ ...editAssetForm, name: e.target.value })} /></label>

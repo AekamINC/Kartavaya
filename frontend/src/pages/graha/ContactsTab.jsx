@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { Badge, CONTACT_TYPES, TYPE_COLORS, STAGE_COLORS, SOURCE_COLORS } from './_shared';
+import { Badge, CONTACT_TYPES, TYPE_COLORS, stageColor, SOURCE_COLORS } from './_shared';
+import { mixAlpha } from '../../lib/statusColors';
 import ContactTimeline from './ContactTimeline';
+import { inr } from '../../lib/inr';
 
 export default function ContactsTab() {
   const { pushToast } = useToast();
@@ -112,7 +114,7 @@ export default function ContactsTab() {
         <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => { setDetail(null); setEditContact(null); }}>← Back to list</button>
 
         {editContact ? (
-          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
             <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700 }}>Edit Contact</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
@@ -150,7 +152,7 @@ export default function ContactsTab() {
             </div>
           </div>
         ) : (
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div>
               <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{c.name}</h3>
@@ -161,7 +163,7 @@ export default function ContactsTab() {
               {c.contact_type === 'lead' && (
                 <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => convertLead(c.id)}>Convert to Customer</button>
               )}
-              <Badge text={c.contact_type} color={TYPE_COLORS[c.contact_type] || '#6E7B91'} />
+              <Badge text={c.contact_type} color={TYPE_COLORS[c.contact_type] || 'var(--on-surface-3)'} />
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, fontSize: 13 }}>
@@ -185,12 +187,15 @@ export default function ContactsTab() {
         )}
 
         {detail.labels?.length > 0 && (
-          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
             <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Labels</h4>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {detail.labels.map(l => (
+                // A label colour is user data and may be any hex, so this tint
+                // is computed with color-mix rather than a hex-alpha suffix — the
+                // suffix broke the moment the fallback became a token reference.
                 <span key={l.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '4px 12px',
-                  borderRadius: 99, background: `${l.color || '#6366f1'}18`, color: l.color || '#6366f1', fontWeight: 600 }}>
+                  borderRadius: 'var(--r-pill)', background: mixAlpha(l.color || 'var(--on-surface-3)', 9), color: l.color || 'var(--on-surface-3)', fontWeight: 600 }}>
                   {l.name}
                   <button onClick={() => removeLabel(c.id, l.id)}
                     style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
@@ -201,14 +206,14 @@ export default function ContactsTab() {
         )}
 
         {detail.deals?.length > 0 && (
-          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
             <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Deals ({detail.deals.length})</h4>
             {detail.deals.map(d => (
               <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13 }}>
                 <span>{d.title}</span>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                  <span style={{ fontWeight: 600 }}>₹{Number(d.value).toLocaleString('en-IN')}</span>
-                  <Badge text={d.stage} color={STAGE_COLORS[d.stage] || '#6E7B91'} />
+                  <span style={{ fontWeight: 600 }}>{inr(Number(d.value))}</span>
+                  <Badge text={d.stage} color={stageColor(d.stage)} />
                 </div>
               </div>
             ))}
@@ -216,7 +221,7 @@ export default function ContactsTab() {
         )}
 
         {detail.follow_ups?.length > 0 && (
-          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
             <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Follow-ups ({detail.follow_ups.length})</h4>
             {detail.follow_ups.map(f => (
               <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13, alignItems: 'center' }}>
@@ -226,7 +231,7 @@ export default function ContactsTab() {
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{new Date(f.due_at).toLocaleDateString('en-IN')}</span>
-                  <Badge text={f.is_completed ? 'Done' : 'Pending'} color={f.is_completed ? '#10b981' : '#f59e0b'} />
+                  <Badge text={f.is_completed ? 'Done' : 'Pending'} color={f.is_completed ? 'var(--ok)' : 'var(--warn)'} />
                 </div>
               </div>
             ))}
@@ -234,11 +239,11 @@ export default function ContactsTab() {
         )}
 
         {detail.activities?.length > 0 && (
-          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
             <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Activities</h4>
             {detail.activities.map(a => (
               <div key={a.id} style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13, alignItems: 'center' }}>
-                <Badge text={a.activity_type} color="#6E7B91" />
+                <Badge text={a.activity_type} color="var(--on-surface-3)" />
                 <span>{a.title}</span>
                 <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--ink-3)' }}>{new Date(a.created_at).toLocaleDateString('en-IN')}</span>
               </div>
@@ -246,7 +251,7 @@ export default function ContactsTab() {
           </div>
         )}
 
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24 }}>
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24 }}>
           <ContactTimeline contactId={c.id} />
         </div>
       </div>
@@ -267,7 +272,7 @@ export default function ContactsTab() {
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Contact</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
@@ -326,12 +331,12 @@ export default function ContactsTab() {
                 <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{c.company || '—'}</td>
                 <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{c.email || '—'}</td>
                 <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{c.phone || '—'}</td>
-                <td style={{ padding: '10px' }}><Badge text={c.contact_type} color={TYPE_COLORS[c.contact_type] || '#6E7B91'} /></td>
-                <td style={{ padding: '10px' }}>{c.source ? <Badge text={c.source} color={SOURCE_COLORS[c.source] || '#6b7280'} /> : '—'}</td>
+                <td style={{ padding: '10px' }}><Badge text={c.contact_type} color={TYPE_COLORS[c.contact_type] || 'var(--on-surface-3)'} /></td>
+                <td style={{ padding: '10px' }}>{c.source ? <Badge text={c.source} color={SOURCE_COLORS[c.source] || 'var(--on-surface-3)'} /> : '—'}</td>
                 <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{c.lead_score ?? '—'}</td>
                 <td style={{ padding: '10px' }}>
                   <button onClick={e => { e.stopPropagation(); deleteContact(c.id); }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11 }}>Delete</button>
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 11 }}>Delete</button>
                 </td>
               </tr>
             ))}

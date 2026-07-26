@@ -11,27 +11,41 @@
  * feature, and `client` never deletes — that prohibition survived the role's
  * promotion from reader to collaborator.
  *
- * 19 asks each row to show "name, size, who shared it, when". Two of those four
- * do not exist in the data. `backend/server.py:464`:
+ * 19 asks each row to show "name, size, who shared it, when". Two of the four
+ * used not to exist: `Attachment` was `name / url / key / is_private /
+ * visible_to`, with no byte count and no uploader — `TaskDrawer.jsx` had been
+ * sending `size` at upload all along and the model discarded it. It now carries
+ * `size`, `uploaded_by_name` and `uploaded_at` (server.py:498-510) and
+ * `_client_files` maps them to `size` / `sharedBy` / `sharedAt`.
  *
- *     class Attachment(BaseModel):
- *         name:str; url:str; key:Optional[str]=None
- *         is_private:bool=False; visible_to:List[str]=[]
- *
- * There is no byte count and no uploader. `TaskDrawer.jsx:343` collects a
- * `size` at upload time and it is dropped by the model on the way in. Rather
- * than print the task creator's name beside a file they may not have uploaded —
- * a plausible-looking attribution that is sometimes wrong is worse than none —
- * each row names the work it arrived with and when that work last moved. The
- * two missing fields are in the report.
+ * All four are OPTIONAL here regardless, and each is printed only when it is
+ * really there. Those fields live in the `tasks.attachments` JSONB blob, so
+ * every file uploaded before that change has none of them — and a row that
+ * invented "shared by <the task's creator>" would be a plausible-looking
+ * attribution that is sometimes simply wrong. When a file has no `sharedAt` the
+ * row falls back to when its work last moved, which is a statement about the
+ * task and is labelled as one.
  */
 import React from 'react';
 import { EmptyState } from '../../components/ui';
 import { relTime } from '../../lib/utils';
+import { sizeLabel } from './clientShape';
 
 export default function ClientFiles({ tasks }) {
   const files = tasks.flatMap(t =>
-    t.files.map(f => ({ ...f, taskTitle: t.title, taskRef: t.ref, at: t.updatedAt })),
+    // Built key by key, not spread: `f` crossed the boundary in
+    // `clientShape.js` and this is the second place that decides what a row
+    // renders. A spread here would quietly re-open it.
+    t.files.map(f => ({
+      name: f.name,
+      url: f.url,
+      size: f.size ?? null,
+      sharedBy: f.sharedBy || null,
+      sharedAt: f.sharedAt || null,
+      taskTitle: t.title,
+      taskRef: t.ref,
+      at: t.updatedAt,
+    })),
   );
 
   if (files.length === 0) {
@@ -59,13 +73,26 @@ export default function ClientFiles({ tasks }) {
       </header>
 
       <ul className="cl-list" aria-label="Shared files">
-        {files.map(f => (
+        {files.map(f => {
+          // Name · size · who shared it · when — each part dropped rather than
+          // faked when the data for it is not there.
+          const parts = [f.taskTitle];
+          const size = sizeLabel(f.size);
+          if (size) parts.push(size);
+          if (f.sharedBy) parts.push(`Shared by ${f.sharedBy}`);
+          if (f.sharedAt) parts.push(`Shared ${relTime(f.sharedAt)}`);
+          else if (f.at) parts.push(`Updated ${relTime(f.at)}`);
+          return (
           <li key={`${f.taskRef}-${f.url}`} className="cl-file">
             <div className="cl-file__b">
               <div className="cl-file__n">{f.name}</div>
               <div className="cl-file__m">
-                {f.taskTitle}
-                {f.at && ` · ${relTime(f.at)}`}
+                {parts.map((p, i) => (
+                  <React.Fragment key={p + i}>
+                    {i > 0 && <span className="cl-item__sep" aria-hidden="true"> · </span>}
+                    <span>{p}</span>
+                  </React.Fragment>
+                ))}
               </div>
             </div>
             {/* `download` asks the browser to save rather than navigate; the R2
@@ -81,7 +108,8 @@ export default function ClientFiles({ tasks }) {
               Download
             </a>
           </li>
-        ))}
+          );
+        })}
       </ul>
     </section>
   );

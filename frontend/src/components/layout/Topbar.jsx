@@ -11,6 +11,7 @@ import React from 'react';
 import { useLocation } from 'react-router-dom';
 import { resolveRouteMeta } from './navConfig';
 import { ICONS } from './navIcons';
+import { NotificationsModal } from '../NotificationsModal';
 
 // PAGE_META removed — the breadcrumb now derives from navConfig.js.
 // It had 21 entries against far more live routes, so /sanvaad, /graha,
@@ -18,7 +19,7 @@ import { ICONS } from './navIcons';
 // /admin/orgs and /admin/costs all fell through and rendered the app name.
 // It also disagreed with the sidebar on two labels (see navConfig.js).
 
-export default function Topbar({ unread = 0, onOpenNotifications, onNewTask, onOpenCmdk }) {
+export default function Topbar({ unread = 0, notifOpen = false, onNotifOpenChange, onNewTask, onOpenCmdk }) {
   const location = useLocation();
   const meta = resolveRouteMeta(location.pathname);
 
@@ -46,10 +47,28 @@ export default function Topbar({ unread = 0, onOpenNotifications, onNewTask, onO
       </button>
 
       <div className="top__right">
-        <button type="button" className="k-iconbtn" title="Notifications" aria-label="Notifications" onClick={onOpenNotifications}>
-          {ICONS.bell}
-          {unread > 0 && <span className="k-iconbtn__dot" />}
-        </button>
+        {/* The panel is anchored HERE, not rendered as a centred overlay from
+            the shell — 21 asks for a popover under the bell. The wrapper is the
+            positioning context; without it the panel would hang off the page. */}
+        <div className="k-notif-anchor">
+          <button
+            type="button"
+            className="k-iconbtn"
+            data-notif-trigger=""
+            title="Notifications"
+            // The count, not just the word. A dot is invisible to anyone not
+            // looking at it, so the badge has to be in the accessible name —
+            // 21 · Accessibility.
+            aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
+            aria-expanded={notifOpen}
+            aria-haspopup="dialog"
+            onClick={() => onNotifOpenChange?.(!notifOpen)}
+          >
+            {ICONS.bell}
+            {unread > 0 && <span className="k-iconbtn__dot" />}
+          </button>
+          <NotificationsModal open={notifOpen} onOpenChange={onNotifOpenChange} />
+        </div>
         <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={onNewTask}>
           {ICONS.plus}
           New task

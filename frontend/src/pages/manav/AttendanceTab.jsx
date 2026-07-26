@@ -63,7 +63,7 @@ export default function AttendanceTab() {
       </div>
 
       {showMark && (
-        <form onSubmit={markAttendance} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={markAttendance} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Mark Attendance</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee *</span>
@@ -107,11 +107,11 @@ export default function AttendanceTab() {
                 <tr key={r.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
                   <td style={{ padding: '8px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{r.employee_code || '—'}</td>
                   <td style={{ padding: '8px', fontWeight: 600 }}>{r.name}</td>
-                  <td style={{ padding: '8px', color: '#10b981' }}>{r.present_days}</td>
-                  <td style={{ padding: '8px', color: '#ef4444' }}>{r.absent_days}</td>
+                  <td style={{ padding: '8px', color: 'var(--ok)' }}>{r.present_days}</td>
+                  <td style={{ padding: '8px', color: 'var(--danger)' }}>{r.absent_days}</td>
                   <td style={{ padding: '8px' }}>{r.half_days}</td>
-                  <td style={{ padding: '8px', color: '#6366f1' }}>{r.late_days}</td>
-                  <td style={{ padding: '8px', color: '#0082c6' }}>{r.leave_days}</td>
+                  <td style={{ padding: '8px', color: 'var(--st-in-review)' }}>{r.late_days}</td>
+                  <td style={{ padding: '8px', color: 'var(--st-in-progress)' }}>{r.leave_days}</td>
                   <td style={{ padding: '8px' }}>{Number(r.total_hours).toFixed(1)}</td>
                   <td style={{ padding: '8px' }}>{Number(r.overtime_hours).toFixed(1)}</td>
                 </tr>
@@ -143,7 +143,7 @@ export default function AttendanceTab() {
                   <tr key={r.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
                     <td style={{ padding: '8px' }}>{r.date}</td>
                     <td style={{ padding: '8px', fontWeight: 600 }}>{r.employee_name} <span style={{ fontWeight: 400, color: 'var(--ink-3)', fontSize: 11 }}>({r.employee_code || '—'})</span></td>
-                    <td style={{ padding: '8px' }}><Badge text={r.status} color={ATT_COLORS[r.status] || '#6E7B91'} /></td>
+                    <td style={{ padding: '8px' }}><Badge text={r.status} color={ATT_COLORS[r.status] || 'var(--on-surface-3)'} /></td>
                     <td style={{ padding: '8px', fontSize: 12 }}>{r.check_in ? new Date(r.check_in).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                     <td style={{ padding: '8px', fontSize: 12 }}>{r.check_out ? new Date(r.check_out).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
                     <td style={{ padding: '8px' }}>{r.work_hours ? `${Number(r.work_hours).toFixed(1)}h` : '—'}</td>

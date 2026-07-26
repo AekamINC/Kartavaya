@@ -121,9 +121,13 @@ export default function InvoiceBuilder({ org, busy, onCreate }) {
             type="number" min="1" step="1" value={r.qty}
             onChange={e => setRow(i, { qty: e.target.value })}
           />
+          {/* `step="any"`, not a sales increment. `step="100"` with `min="0"`
+              makes any amount that is not a multiple of 100 fail HTML
+              constraint validation — a ₹4,999 line would have been rejected by
+              the field, and no invoice amount is owed in round hundreds. */}
           <Input
             aria-label={`Line ${i + 1} amount`}
-            type="number" min="0" step="100" value={r.amount}
+            type="number" min="0" step="any" value={r.amount}
             onChange={e => setRow(i, { amount: e.target.value })}
           />
           <button

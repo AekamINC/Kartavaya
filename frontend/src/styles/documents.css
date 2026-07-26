@@ -1,0 +1,279 @@
+/**
+ * documents.css — file, document and e-sign surfaces.
+ *
+ * Imported from `pages/EsignPage.jsx`, not from `styles/index.css`, because
+ * index.css belongs to another surface owner. Every rule here is scoped to a
+ * `doc*` or `fti` prefix so it cannot reach anything it does not own.
+ *
+ * Nothing below declares a colour. Every value is a token from `00-tokens.md`,
+ * so all of it follows the theme, the density setting and the radius setting
+ * without a second definition. Two rules the file holds to:
+ *
+ *  · `--primary` is a FILL at 4.04:1. Primary-coloured TEXT uses
+ *    `--primary-text`. The page this replaces used `var(--k-primary)` —
+ *    which resolves to `--primary-vivid` `#05b7aa`, about 2:1 on the canvas —
+ *    for tab labels, links and buttons.
+ *  · `--on-surface-faint` is non-text (2.3:1). It appears here only as a
+ *    border and a dot, never as a colour on a glyph carrying meaning.
+ */
+
+/* ── File type icon ────────────────────────────────────────────────────── */
+
+/* --fk is set per instance from FileTypeIcon.jsx, always a token reference. */
+.fti {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: 4px; flex: none;
+  color: var(--fk);
+}
+.fti__ext {
+  font-family: var(--font-mono);
+  font-size: var(--t-label-sm);
+  font-weight: 600;
+  letter-spacing: .04em;
+  color: var(--on-surface-3);
+}
+
+/* ── Drop zone ─────────────────────────────────────────────────────────── */
+
+/* Geometry is deliberately identical to `.dr__dz` in drawer.css — same 1.5px
+   dashed stroke, same --r-md, same 28px/20px padding. Two drop zones in one
+   product that look different teach a user that they behave differently. */
+.docdz__wrap { position: relative; display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.docdz {
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-1);
+  width: 100%;
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  border: 1.5px dashed var(--outline);
+  border-radius: var(--r-md);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.docdz:hover { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 4%, transparent); }
+.docdz:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* Active — a pointer is over the zone carrying a file. Stronger than hover on
+   purpose: this is the only state where releasing does something. */
+.docdz--drag {
+  border-style: dashed;
+  border-width: 2px;
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+}
+.docdz--drag .docdz__t { color: var(--primary-text); }
+
+.docdz--err { border-color: var(--danger); }
+.docdz--off { cursor: not-allowed; opacity: .55; }
+.docdz--off:hover { border-color: var(--outline); background: transparent; }
+
+.docdz__ic { color: var(--on-surface-3); }
+.docdz__t  { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface-2); margin-top: var(--sp-2); }
+.docdz__d  { font-size: var(--t-label); line-height: 1.6; color: var(--on-surface-3); }
+
+/* The chosen file, in the zone's place. */
+.docdz__picked {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: 10px 12px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  background: var(--s-lowest);
+  font-size: var(--t-body-sm);
+}
+.docdz__nm {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--on-surface);
+}
+.docdz__sz {
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+}
+.docdz__x {
+  flex: none; display: grid; place-items: center;
+  width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: var(--r-xs);
+  background: none; color: var(--on-surface-3); cursor: pointer;
+}
+.docdz__x:hover { background: var(--danger-container); color: var(--danger); }
+
+.docdz__up  { display: flex; flex-direction: column; gap: var(--sp-1); }
+.docdz__pct { font-size: var(--t-label); color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+
+.docdz__err {
+  display: flex; align-items: flex-start; gap: 6px;
+  margin: 0;
+  font-size: var(--t-label);
+  line-height: 1.5;
+  color: var(--danger);
+}
+.docdz__err svg { flex: none; margin-top: 1px; }
+
+/* ── Document list ─────────────────────────────────────────────────────── */
+
+.doclist { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.docrow {
+  display: flex; align-items: center; gap: var(--sp-3);
+  width: 100%;
+  padding: 12px 14px;
+  min-height: var(--row-h);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+.docrow:hover { background: var(--s-low); border-color: var(--outline); }
+.docrow:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.docrow__main { flex: 1; min-width: 0; }
+.docrow__top  { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.docrow__t {
+  font-size: var(--t-body); font-weight: 600; color: var(--on-surface);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.docrow__d {
+  margin: 3px 0 0;
+  font-size: var(--t-body-sm); color: var(--on-surface-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.docrow__meta {
+  display: flex; flex-wrap: wrap; gap: var(--sp-4);
+  margin-top: 6px;
+  font-size: var(--t-label); color: var(--on-surface-3);
+}
+.docrow__meta b { font-weight: 600; color: var(--on-surface-2); font-variant-numeric: tabular-nums; }
+.docrow__ch { flex: none; color: var(--on-surface-3); }
+
+/* Signer progress — a bar beside the count rather than a number alone. "2/5"
+   and a bar say the same thing, but only the bar is readable at a glance down
+   a column of twenty documents.
+
+   `.prg` and `.prg__f` in components.css are authored for divs and set no
+   `display`. A `.docrow` is a <button>, so its descendants must be phrasing
+   content — spans — and an inline span drops the height and the fill entirely.
+   These two rules restore the box without touching the shared class. */
+.docrow__prg { width: 64px; flex: none; }
+.docrow__prg .prg,
+.docrow__prg .prg__f { display: block; }
+
+/* ── Filter row ────────────────────────────────────────────────────────── */
+
+.docfilt { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-4); }
+
+/* ── Detail ────────────────────────────────────────────────────────────── */
+
+.docdet__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--sp-3);
+  font-size: var(--t-body-sm);
+}
+.docdet__k {
+  display: block;
+  font-size: var(--t-label-sm);
+  letter-spacing: .12em; text-transform: uppercase;
+  font-weight: 700; color: var(--on-surface-3);
+  margin-bottom: 3px;
+}
+.docdet__v { color: var(--on-surface); font-variant-numeric: tabular-nums; }
+
+.docdet__acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-4); }
+
+/* ── Signers ───────────────────────────────────────────────────────────── */
+
+.docsg { display: flex; flex-direction: column; }
+.docsg__r {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--outline-variant);
+}
+.docsg__r:last-child { border-bottom: 0; }
+.docsg__n {
+  display: grid; place-items: center;
+  width: 22px; height: 22px; flex: none;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--outline-variant);
+  background: var(--s-container);
+  font-family: var(--font-mono);
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-2);
+}
+.docsg__who { flex: 1; min-width: 0; }
+.docsg__nm  { display: block; font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); }
+.docsg__ct  {
+  display: block; font-size: var(--t-label); color: var(--on-surface-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.docsg__side { display: flex; align-items: center; gap: var(--sp-2); flex: none; }
+.docsg__at   { font-size: var(--t-label-sm); color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+
+/* ── Audit trail ───────────────────────────────────────────────────────── */
+
+.docaud { list-style: none; margin: 0; padding: 0; }
+.docaud__r {
+  display: flex; align-items: baseline; gap: var(--sp-2);
+  padding: 7px 0;
+  border-bottom: 1px solid var(--outline-variant);
+  font-size: var(--t-body-sm);
+}
+.docaud__r:last-child { border-bottom: 0; }
+/* Non-text use of the faint token, which is what it is for. */
+.docaud__dot {
+  width: 5px; height: 5px; flex: none;
+  border-radius: 50%;
+  background: var(--on-surface-faint);
+  transform: translateY(-2px);
+}
+.docaud__body { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: baseline; }
+.docaud__act  { font-weight: 600; color: var(--on-surface-2); text-transform: capitalize; }
+.docaud__who  { font-size: var(--t-label); color: var(--on-surface-3); }
+.docaud__at   {
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+}
+.docaud__none { font-size: var(--t-body-sm); color: var(--on-surface-3); margin: 0; }
+
+/* ── Layout ────────────────────────────────────────────────────────────── */
+
+/* Fluid and left-aligned. No max-width centring: every page in this product
+   fills the width it is given. */
+.docpane { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+.docform { display: flex; flex-direction: column; gap: var(--sp-4); }
+.docform__sg {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 1fr) 32px;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.docform__hd {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+@media (max-width: 719px) {
+  /* The four-column signer row cannot hold three inputs at phone width without
+     each becoming an unreadable sliver, so it stacks. */
+  .docform__sg { grid-template-columns: 22px minmax(0, 1fr) 32px; }
+  .docform__sg > :nth-child(3),
+  .docform__sg > :nth-child(4) { grid-column: 2 / 3; }
+  .docrow__meta { gap: var(--sp-3); }
+  .docrow__prg { display: none; }
+}

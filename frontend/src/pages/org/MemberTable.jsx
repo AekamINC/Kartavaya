@@ -17,6 +17,11 @@ import GrantChips from './GrantChips';
  * is Aekam's to make (see TabDanger). What an OWNER decides alone is which
  * modules an org_admin may reach, which is why `canEditGrants` is a function of
  * `isOwner` for admin rows and true for member rows.
+ *
+ * That last sentence is the model, not yet the enforcement. `require_module`
+ * admits any org_admin regardless of grant rows, so an admin's grants are
+ * currently a statement of intent rather than a limit — the grant sheet says so
+ * on the admin rows it applies to, and the gap is in the report.
  */
 
 const ROLE_META = {
@@ -75,7 +80,11 @@ export default function MemberTable({ members, isOwner, selfUserId, onEditGrants
               <tr key={m.user_id}>
                 <td>
                   <span className="omt__who">
-                    <span className="omt__av" style={{ '--av-bg': m.avatar_url ? 'transparent' : avatarBg(m.full_name || m.email) }}>
+                    {/* `av` then `omt__av`: the shared avatar (02 §2) supplies the
+                        circle, the --av-bg ground, the overflow clip and the
+                        image rule; omt__av restates only the size and the
+                        initial's weight, which is all 10 §1 actually pins. */}
+                    <span className="av omt__av" style={{ '--av-bg': m.avatar_url ? 'transparent' : avatarBg(m.full_name || m.email) }}>
                       {m.avatar_url
                         ? <img src={m.avatar_url} alt="" />
                         : userInitials(m.full_name || m.email || '?')}
@@ -97,10 +106,15 @@ export default function MemberTable({ members, isOwner, selfUserId, onEditGrants
                 </td>
                 <td>
                   {owner || admin
-                    // Not "No modules": an admin with no grant row still manages
-                    // the org, and rendering an empty cell would read as no
-                    // access at all.
-                    ? <GrantChips grants={m.grants} empty={owner ? 'Every module, by role' : 'Org management only'} />
+                    // Not "No modules", and no longer "Org management only" for
+                    // an admin. `middleware/subscription.py` gate 2 short-circuits
+                    // for BOTH org roles —
+                    //     org_role = ... IN ('org_owner','org_admin')
+                    //     if not org_role:   # org_member needs explicit grant
+                    // — so an admin with no grant row reaches every active module,
+                    // exactly as the owner does. "Org management only" understated
+                    // it, which is the wrong direction for a cell an auditor reads.
+                    ? <GrantChips grants={m.grants} empty="Every active module, by role" />
                     : <GrantChips grants={m.grants} />}
                 </td>
                 <td>

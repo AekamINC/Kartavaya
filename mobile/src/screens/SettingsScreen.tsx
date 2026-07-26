@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDeviceId } from '../hooks/usePushNotifications';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme/ThemeProvider';
+import { hindi } from '../theme/fonts';
 import { useAuth } from '../hooks/useAuth';
 import { notificationsApi } from '../api/notifications';
 import { avatarColor, userInitials } from '../theme/tokens';
@@ -303,9 +304,9 @@ export default function SettingsScreen() {
       <SectionHeader label="ACCOUNT" t={t} />
       <View style={[s.card, { backgroundColor: t.surface, borderColor: t.outline }]}>
         <Row t={t} first last onPress={confirmLogout}>
-          <Ionicons name="log-out-outline" size={17} color="#ef4444" style={{ width: 24 }} />
-          <Text style={[s.rowLabel, { color: '#ef4444', flex: 1 }]}>Sign out</Text>
-          <Ionicons name="chevron-forward" size={14} color="#ef4444" />
+          <Ionicons name="log-out-outline" size={17} color={t.error} style={{ width: 24 }} />
+          <Text style={[s.rowLabel, { color: t.error, flex: 1 }]}>Sign out</Text>
+          <Ionicons name="chevron-forward" size={14} color={t.error} />
         </Row>
       </View>
 
@@ -315,10 +316,32 @@ export default function SettingsScreen() {
 }
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
+/**
+ * Two of these labels are bilingual in a single string — "SYNC · सिंक" and
+ * "PERMISSIONS · अनुमतियाँ" — and the style applied to them was
+ * `{ fontWeight: '800', letterSpacing: 1.5 }` with no family.
+ *
+ * That is wrong for Devanagari twice over. `letterSpacing` forces tracking
+ * between glyphs that are supposed to JOIN: Devanagari conjuncts and the
+ * connecting shirorekha come apart, which is the script equivalent of spacing
+ * out the letters inside an English word. And a weight of 800 has no Tiro to
+ * apply to, so the Hindi half renders in a different face and weight from
+ * nothing the designer chose.
+ *
+ * Splitting on the separator lets each script keep its own typography: the Latin
+ * run stays an uppercase tracked label, the Devanagari run gets the face that
+ * has the glyphs, no tracking and no synthetic weight.
+ */
 function SectionHeader({ label, t, desc }: { label: string; t: any; desc?: string }) {
+  const [latin, indic] = label.split('·').map(part => part.trim());
   return (
     <View style={s.sectionHead}>
-      <Text style={[s.sectionLabel, { color: t.ink3 }]}>{label}</Text>
+      <View style={s.sectionLabelRow}>
+        <Text style={[s.sectionLabel, { color: t.ink3 }]}>{latin}</Text>
+        {indic ? (
+          <Text style={[s.sectionLabelHi, { color: t.ink4 }]}>{indic}</Text>
+        ) : null}
+      </View>
       {desc && <Text style={[s.sectionDesc, { color: t.ink4 }]}>{desc}</Text>}
     </View>
   );
@@ -390,12 +413,15 @@ const s = StyleSheet.create({
   roleBadge:    { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   roleText:     { fontSize: 10, fontWeight: '800', textTransform: 'capitalize' },
   sectionHead:  { paddingHorizontal: 20, paddingTop: 22, paddingBottom: 6, gap: 2 },
+  sectionLabelRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
   sectionLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5 },
+  // No letterSpacing and no fontWeight — see SectionHeader.
+  sectionLabelHi: { fontSize: 11, ...hindi() },
   sectionDesc:  { fontSize: 11 },
   card:         { marginHorizontal: 16, borderRadius: 14, borderWidth: 1, overflow: 'hidden' },
   row:          { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13 },
   rowLabel:     { fontSize: 14, fontWeight: '600' },
-  rowHindi:     { fontSize: 11, fontWeight: '400' },
+  rowHindi:     { fontSize: 11, ...hindi() },
   rowSub:       { fontSize: 11 },
   timeChip:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99, borderWidth: 1 },
   timeChipText: { fontSize: 13, fontWeight: '700' },

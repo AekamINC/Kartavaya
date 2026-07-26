@@ -3,7 +3,10 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native
 import { Ionicons } from '@expo/vector-icons';
 import { format, isToday, isPast, isTomorrow } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
-import { PRIORITY_COLOR, projectColor, AVATAR_COLORS } from '../theme/tokens';
+// PRIORITY_COLOR was imported here but never indexed — TaskCard derives its due
+// chip from the theme directly. Dropping it leaves the deprecated light-only map
+// with no consumers at all.
+import { projectColor, AVATAR_COLORS } from '../theme/tokens';
 import { a11yButton } from './a11y';
 import type { Task } from '../api/types';
 

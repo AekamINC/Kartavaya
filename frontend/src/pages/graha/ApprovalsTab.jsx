@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Badge } from './_shared';
+import { inr } from '../../lib/inr';
 
 export default function ApprovalsTab() {
   const { pushToast } = useToast();
@@ -13,9 +14,9 @@ export default function ApprovalsTab() {
   const [showRuleForm, setShowRuleForm] = useState(false);
   const [ruleForm, setRuleForm] = useState({ entity_type: 'deal', threshold_amount: '', approver_role: '' });
 
-  const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+  const FMT = v => inr(Number(v || 0));
   const ENTITY_TYPES = ['deal', 'vendor_bill', 'expense_claim'];
-  const STATUS_COLORS = { pending: '#f59e0b', approved: '#10b981', rejected: '#ef4444' };
+  const STATUS_COLORS = { pending: 'var(--warn)', approved: 'var(--ok)', rejected: 'var(--danger)' };
 
   useEffect(() => { load(); }, []);
 
@@ -86,7 +87,7 @@ export default function ApprovalsTab() {
       </div>
 
       {showRuleForm && (
-        <form onSubmit={createRule} style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <form onSubmit={createRule} style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16, marginBottom: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Entity Type</span>
               <select className="k-input" value={ruleForm.entity_type} onChange={e => setRuleForm({ ...ruleForm, entity_type: e.target.value })}>
@@ -118,9 +119,9 @@ export default function ApprovalsTab() {
               <td style={{ padding: '10px', textTransform: 'capitalize' }}>{r.entity_type.replace(/_/g, ' ')}</td>
               <td style={{ padding: '10px', fontWeight: 600 }}>{FMT(r.threshold_amount)}</td>
               <td style={{ padding: '10px' }}>{r.approver_role}</td>
-              <td style={{ padding: '10px' }}><Badge text={r.is_active ? 'Active' : 'Inactive'} color={r.is_active ? '#10b981' : '#6b7280'} /></td>
+              <td style={{ padding: '10px' }}><Badge text={r.is_active ? 'Active' : 'Inactive'} color={r.is_active ? 'var(--ok)' : 'var(--on-surface-3)'} /></td>
               <td style={{ padding: '10px' }}>
-                <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => deleteRule(r.id)}>Delete</button>
+                <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--danger)' }} onClick={() => deleteRule(r.id)}>Delete</button>
               </td>
             </tr>
           ))}
@@ -156,7 +157,7 @@ export default function ApprovalsTab() {
             <tr key={r.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
               <td style={{ padding: '10px', textTransform: 'capitalize' }}>{r.entity_type.replace(/_/g, ' ')}</td>
               <td style={{ padding: '10px', fontWeight: 600 }}>{FMT(r.amount)}</td>
-              <td style={{ padding: '10px' }}><Badge text={r.status} color={STATUS_COLORS[r.status] || '#6b7280'} /></td>
+              <td style={{ padding: '10px' }}><Badge text={r.status} color={STATUS_COLORS[r.status] || 'var(--on-surface-3)'} /></td>
               <td style={{ padding: '10px', fontSize: 11, fontFamily: 'var(--mono)' }}>{r.requested_by?.slice(0, 12) || '—'}</td>
               <td style={{ padding: '10px' }}>{r.approver_role || '—'}</td>
               <td style={{ padding: '10px', fontSize: 11, color: 'var(--ink-3)' }}>{r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '—'}</td>
@@ -164,7 +165,7 @@ export default function ApprovalsTab() {
                 {r.status === 'pending' && (
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 10px' }} onClick={() => approveRequest(r.id)}>Approve</button>
-                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 10px', color: '#ef4444' }} onClick={() => rejectRequest(r.id)}>Reject</button>
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 10px', color: 'var(--danger)' }} onClick={() => rejectRequest(r.id)}>Reject</button>
                   </div>
                 )}
               </td>

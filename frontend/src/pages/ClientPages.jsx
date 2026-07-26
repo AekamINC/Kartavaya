@@ -26,16 +26,24 @@
  *     both, at `/tasks/{id}/client-approve` and `/tasks/{id}/client-reject`,
  *     with the required-note rule enforced server-side.
  *
- * ── Why the three views share one route
+ * ── How the three views are routed
  *
  * 19 asks for `/client/approvals` and `/client/files` under a `ClientShell`
- * route outside `AppShell`. Adding routes means editing `App.jsx`, which is
- * outside this change's ownership, so the view is carried in the query string —
- * `/client?view=approvals` — which is bookmarkable, back-button-correct, and
- * needs no route table change. The proper route move is in the report.
+ * route outside `AppShell`. Those two routes do not exist on this branch —
+ * `App.jsx:188-190` declares `client`, `client/projects` and
+ * `client/project/:projectId` and nothing else, all three INSIDE `AppShell`, so
+ * two of the three built views were unreachable and a client saw the staff
+ * sidebar around the third. `App.jsx` is owned elsewhere and the routes are
+ * being added there; this file is built for that target.
+ *
+ * `viewFromLocation` resolves the view from the PATHNAME, and falls back to
+ * `?view=` when the path carries none. Both forms work, which is what lets the
+ * route move land in either order: before it, `/client?view=files` still
+ * renders Files; after it, `/client/files` does, and every link already sent to
+ * a client in an email keeps resolving.
  */
 import React from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ErrorState } from '../components/ui';
 import ClientShell from './client/ClientShell';
 import ClientHome from './client/ClientHome';
@@ -46,14 +54,27 @@ import useClientPortal from './client/useClientPortal';
 
 const VIEWS = ['overview', 'approvals', 'files'];
 
+/**
+ * Path first, query second, `overview` last.
+ *
+ * The trailing segment is read rather than the whole path so the resolution is
+ * the same whether `App.jsx` mounts these absolutely (`/client/approvals`) or
+ * as children of a `/client` parent (`approvals`).
+ */
+export function viewFromLocation(pathname = '', search = '') {
+  const last = String(pathname).replace(/\/+$/, '').split('/').pop();
+  if (VIEWS.includes(last)) return last;
+  const q = new URLSearchParams(search).get('view');
+  return VIEWS.includes(q) ? q : 'overview';
+}
+
 function Loading() {
   return <p className="cl-load">Loading…</p>;
 }
 
 export function ClientProjectsPage() {
-  const [params] = useSearchParams();
-  const raw = params.get('view');
-  const view = VIEWS.includes(raw) ? raw : 'overview';
+  const { pathname, search } = useLocation();
+  const view = viewFromLocation(pathname, search);
 
   const { me, firm, tasks, approvals, projects, loading, failure, reload } = useClientPortal();
 
@@ -118,7 +139,7 @@ export function ClientProjectBoardPage() {
       {!loading && !failure && !project && (
         <ErrorState
           kind="missing"
-          backTo={() => navigate('/client?view=overview')}
+          backTo={() => navigate('/client')}
           backLabel="Back to your work"
         />
       )}

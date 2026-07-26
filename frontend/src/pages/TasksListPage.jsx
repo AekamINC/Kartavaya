@@ -240,12 +240,19 @@ export default function TasksListPage() {
         <div className="k-filterbar__right">
           {/* Columns toggle */}
           <div style={{ position: 'relative' }}>
+            {/* `is-active` styled nothing: there is no `.k-btn.is-active` rule
+                in the build, only `.k-segctrl__btn.is-active` and `.k-tab
+                .is-active`. The open state was invisible. `aria-expanded`
+                carries it to assistive tech and `.pb__toggle` draws it, so the
+                two cannot drift. */}
             <button
-              className={'k-btn k-btn--ghost k-btn--sm' + (colsOpen ? ' is-active' : '')}
+              type="button"
+              className="k-btn k-btn--ghost k-btn--sm vtb__ico pb__toggle"
+              aria-expanded={colsOpen}
+              aria-haspopup="dialog"
               onClick={() => setColsOpen(v => !v)}
-              style={{ gap: 6 }}
             >
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
                 <rect x="1" y="3" width="4" height="10" rx="1"/><rect x="6" y="3" width="4" height="10" rx="1"/><rect x="11" y="3" width="4" height="10" rx="1"/>
               </svg>
               Columns
@@ -302,7 +309,7 @@ export default function TasksListPage() {
           </div>
 
           {groups.length === 0 && (
-            <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontStyle: 'italic' }}>
+            <div className="pb__loading">
               No tasks match this filter.
             </div>
           )}

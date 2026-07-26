@@ -1,10 +1,30 @@
 /* sanvaad.css — Sanvaad (channels) and Varta (WhatsApp).
  *
- * From `design-handover/06-sanvaad-varta.md` §1. Every value is a token from
- * `00-tokens.md`; the only literals are the two WhatsApp conventions (§9
- * "genuinely fixed literals"), and even those are read through `--tick-read`
- * and `--wa-green` rather than restated — with one exception noted at
- * `.wa__tick--read`.
+ * From `design-handover/06-sanvaad-varta.md` §1, reconciled against
+ * `00-tokens.md` where the two disagree. There are no colour literals: the two
+ * WhatsApp conventions (00 §9, "genuinely fixed literals") are read through
+ * `--tick-read` and `--wa-green`, both of which are declared in
+ * `kartavaya-design.css` and neither of which is restated here.
+ *
+ * THREE PLACES 06 §1's literal CSS IS NOT COPIED, and why:
+ *
+ *   1. `height: calc(100vh - var(--topbar-h) - 46px)` on `.sv`. `--topbar-h` is
+ *      declared nowhere in the tree; an unresolved `var()` drops the whole
+ *      declaration, which is the exact failure `check-tokens.mjs` exists to
+ *      catch. A clamp expresses the same intent without claiming a global token
+ *      this module does not own.
+ *   2. Every `font-size` literal below 11px. 06 §1 specifies 10px (`.ch__badge`),
+ *      10.5px (`.msg__when`, `.rx__c b`) and 9.5px (`.wa__m`). 00 §12 closes with
+ *      "Minimum type sizes: 11px for metadata", and 00 §2 enforces it
+ *      mechanically — `--t-label-sm` is `max(11px, calc(var(--font-size-base) *
+ *      .79))`, and the floor exists precisely "so the slider can shrink body copy
+ *      without taking metadata below 11px". Hard px also makes the shipped Text
+ *      size preference (12→20px) a no-op on this surface, which 00 §2 names as
+ *      the reason every size derives. So sizes come from the scale, not from
+ *      literals; the hierarchy 06 draws is preserved exactly, one step apart.
+ *   3. `border-radius: 12px` on `.wa__b`. 00 §3: "Never hard-code a radius. A
+ *      literal `border-radius: 8px` breaks the Sharp and Pill settings in
+ *      exactly that one place." See `.wa__b`.
  *
  * The old page was a fourth token vocabulary: `--border`, `--err`, `--ink-2/3/4`,
  * `--bg-soft`, `--k-deep`, `--k-deep-bg`. The map 06 gives is applied throughout:
@@ -24,16 +44,12 @@
   font-weight: 400;
   color: var(--on-surface-3);
 }
-.tabs__b.on .sv__hi, .sv__lt .sv__hi { color: inherit; }
+.tabs__b.on .sv__hi, .sv__lt .sv__hi, .sv__sep .sv__hi, .sv__newline .sv__hi { color: inherit; }
 
 /* ── Three-pane shell ────────────────────────────────────────────────────── */
 
-/* 06 §1 gives `height: calc(100vh - var(--topbar-h) - 46px)`. `--topbar-h` is
-   declared nowhere in this tree, and an unresolved var() drops the whole
-   declaration — the exact failure `check-tokens.mjs` exists to catch. The
-   clamp is the same intent without claiming a global token this module does
-   not own: never shorter than a usable conversation, never taller than the
-   viewport minus the page header and tab bar. */
+/* See note 1 in the file header: never shorter than a usable conversation,
+   never taller than the viewport minus the page header and tab bar. */
 .sv {
   display: grid;
   grid-template-columns: 264px minmax(0, 1fr);
@@ -124,10 +140,18 @@
 .ch.on .ch__n, .ch.on .ch__last { color: var(--on-primary-container); }
 .ch:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .ch__ic { width: 17px; flex-shrink: 0; color: var(--on-surface-faint); margin-top: 1px; }
-.ch__txt { min-width: 0; flex: 1; }
+.ch__txt { display: block; min-width: 0; flex: 1; }
 /* `white-space: nowrap` matters more than it looks: a slug like `#gst-filing-q2`
-   breaks at the hyphens and wraps to two lines otherwise. */
+   breaks at the hyphens and wraps to two lines otherwise.
+
+   `display: block` is not cosmetic. `.ch__n` and `.ch__last` are both `<span>`s
+   inside `.ch__txt`, which is blockified as a flex item — so the two rendered on
+   ONE line, and `text-overflow: ellipsis` and `margin-top` were both inert,
+   because neither applies to an inline box. The name and its subtitle are two
+   lines in `06` §1 (that is what the `margin-top: 1px` is for) and in
+   `ScreensSanvaad.jsx`'s `chat__ch-lbl`. */
 .ch__n {
+  display: block;
   font-size: var(--t-body-sm);
   font-weight: 500;
   white-space: nowrap;
@@ -136,13 +160,18 @@
 }
 .ch.unread .ch__n { font-weight: 700; }
 .ch__last {
-  font-size: 11.5px;
+  display: block;
+  font-size: var(--t-label);
   color: var(--on-surface-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   margin-top: 1px;
 }
+/* `margin-left: auto` is a property of the SLOT, not of the chip — `.k-statuschip`
+   is shared and must not learn about this rail. Varta's rows end in a status
+   chip where Sanvaad's end in an unread count; both sit hard right. */
+.ch > .k-statuschip { margin-left: auto; flex-shrink: 0; align-self: center; }
 .ch__badge {
   margin-left: auto;
   flex-shrink: 0;
@@ -217,21 +246,35 @@
   height: 1px;
   background: color-mix(in srgb, var(--danger) 45%, transparent);
 }
+/* One flex item for the label, so the row's `gap` separates the two hairline
+   rules from the label — not the English word from its Devanagari partner. */
+.sv__sep-t { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
 
 .msg { display: flex; gap: 10px; padding: 3px 18px; position: relative; }
 .msg:hover { background: var(--s-lowest); }
 /* Consecutive-message grouping, which the old page did not have: a burst of
-   five messages from one person cost five avatars and five names. Keep the
-   avatar slot for alignment, hide it with `visibility` so nothing shifts. */
+   five messages from one person cost five avatars and five names.
+
+   06 §1 keeps the avatar in the tree and hides it with `visibility` "so nothing
+   shifts". `.msg__gut` below is the same 32px wide and the same `flex-shrink: 0`,
+   so nothing shifts either — and the slot now carries the timestamp the grouping
+   took away, which is what `ScreensSanvaad.jsx` does and what 00 §11's
+   `.msg--cont:hover .msg__gut` was written against. An invisible avatar also
+   forced every grouped row to 32px; a grouped row is one line tall now. */
 .msg--cont { padding-top: 1px; }
-.msg--cont .msg__av { visibility: hidden; }
-.msg__av { flex-shrink: 0; }
+/* `.av` sets `font-weight: 600`; 06 §1 gives `.msg__av{…font-weight:700}`. The
+   32px box and the 13px initials already come from `<Avatar size={32}>`. */
+.msg__av { flex-shrink: 0; font-weight: 700; }
 .msg__c { min-width: 0; flex: 1; }
 .msg__hd { display: flex; align-items: baseline; gap: 8px; }
 .msg__who { font-size: var(--t-body-sm); font-weight: 700; color: var(--on-surface); }
+/* `--on-surface-3`, not `--on-surface-faint`: 00 §12 marks faint "non-text
+   only" and 00 §"--on-surface-faint is not a text colour" aliases it to
+   `--on-surface-3` anyway, so this is the same paint under the name that is
+   allowed to carry a glyph. Faint stays on `.ch__ic`, which is an icon. */
 .msg__when {
-  font-size: 10.5px;
-  color: var(--on-surface-faint);
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
   font-variant-numeric: tabular-nums;
 }
 .msg__b {
@@ -242,7 +285,40 @@
   color: var(--on-surface);
   overflow-wrap: anywhere;
 }
-.msg__gone { color: var(--on-surface-faint); font-style: italic; }
+.msg__gone { color: var(--on-surface-3); font-style: italic; }
+
+/* The gutter timestamp. Grouping hides the avatar, the name AND the time, so a
+   burst of five messages carried one timestamp between them and there was no
+   way to ask when the fourth one landed. `00-tokens.md` §11 already names
+   `.msg--cont:hover .msg__gut` as one of five legitimate `--on-surface-disabled`
+   call sites — the token block was written expecting this element to exist, and
+   `ScreensSanvaad.jsx` renders it: `m.cont ? <span className="msg__gut">{m.t}</span>
+   : <Av s={30} />`. It occupies the hidden avatar's slot, so nothing shifts. */
+.msg__gut {
+  width: 32px;
+  flex-shrink: 0;
+  text-align: right;
+  padding-top: 2px;
+  font-size: var(--t-label-sm);
+  font-variant-numeric: tabular-nums;
+  color: transparent;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.msg--cont:hover .msg__gut, .msg--cont:focus-within .msg__gut { color: var(--on-surface-disabled); }
+
+/* A mention is the one span of a message body that has to be findable by eye —
+   `ScreensSanvaad.jsx` renders it through `MTxt` as `.mnt`. `--primary-text`,
+   not `--primary`: 00 §12, "`--primary` … is not a text colour. It is a fill." */
+.msg__mn {
+  padding: 0 3px;
+  margin: 0 -1px;
+  border-radius: var(--r-xs);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-weight: 600;
+}
+/* The mention that names YOU is the reason the divider and the badge exist. */
+.msg__mn--me { background: var(--primary); color: var(--on-primary); }
 
 /* Hover actions float in a raised tray rather than reserving a row per message.
    The old page rendered six always-present buttons at `opacity: .4` under every
@@ -309,7 +385,7 @@
   border: 1px solid transparent;
   color: var(--on-surface-2);
   font: inherit;
-  font-size: 11.5px;
+  font-size: var(--t-label);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease-standard),
               border-color var(--dur-fast) var(--ease-standard);
@@ -321,7 +397,7 @@
   border-color: var(--primary);
   color: var(--on-primary-container);
 }
-.rx__c b { font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rx__c b { font-size: var(--t-label-sm); font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* ── Jump to latest ──────────────────────────────────────────────────────── */
 
@@ -377,7 +453,7 @@
   font-size: var(--t-body-sm);
   line-height: 1.5;
 }
-.cmp__ta::placeholder { color: var(--on-surface-faint); }
+.cmp__ta::placeholder { color: var(--on-surface-3); }
 .cmp__ta:focus {
   outline: none;
   border-color: var(--primary);
@@ -400,7 +476,12 @@
   transition: background var(--dur-fast) var(--ease-standard);
 }
 .cmp__send:hover:not(:disabled) { background: var(--primary-hover); }
-.cmp__send:disabled { background: var(--s-high); color: var(--on-surface-faint); cursor: default; }
+/* `--on-surface-disabled`, not `--on-surface-faint`. 00 §11: faint now aliases
+   `--on-surface-3`, so a disabled send arrow painted with it came out at full
+   metadata weight and did not read as disabled at all; `--on-surface-disabled`
+   carries the old faint values and exists for exactly this — "inactive controls
+   only, which WCAG 1.4.3 exempts". */
+.cmp__send:disabled { background: var(--s-high); color: var(--on-surface-disabled); cursor: default; }
 
 .cmp__reply {
   display: flex;
@@ -488,13 +569,52 @@
 
 /* ── Varta · WhatsApp ────────────────────────────────────────────────────── */
 
+/* 06's opening line: "the WhatsApp surface is labelled **WhatsApp** with
+   **वार्ता / Varta** as subtext, EVERYWHERE IT APPEARS — tab, sidebar, page
+   header, mobile More grid." The tab carried it; the pane itself opened
+   straight onto four unlabelled sub-tab chips, so the one screen the module is
+   actually named after never said its own name. This is `ScreensVarta.jsx`'s
+   `wahdr`, and it is the declared call site for `--wa-green` (00 §9), which
+   until now was a token with no user anywhere in the tree. */
+.wahdr {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 0 var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--outline-variant);
+}
+.wahdr__ic {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: var(--r-sm);
+  /* The brand mark, on its own tint rather than on the page — 00 §9 keeps
+     `--wa-green` fixed because it "encodes something external to our palette". */
+  background: color-mix(in srgb, var(--wa-green) 14%, transparent);
+  color: var(--wa-green);
+}
+.wahdr__t { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; min-width: 0; }
+.wahdr__n { font-size: var(--t-title); font-weight: 700; color: var(--on-surface); }
+.wahdr__d { font-size: var(--t-label); color: var(--on-surface-3); }
+
 .wa { display: flex; flex-direction: column; min-height: 0; min-width: 0; height: 100%; }
 .sv__chat > .wa { flex: 1; }
 .wa__log { flex: 1; overflow-y: auto; min-height: 0; padding: 14px 18px; display: flex; flex-direction: column; }
+/* 06 §1 writes `border-radius:12px` and `border-bottom-*-radius:3px`. 00 §3
+   forbids both: "Never hard-code a radius. A literal `border-radius: 8px` breaks
+   the Sharp and Pill settings in exactly that one place" — and a bubble is the
+   one element on this surface a user would look at to judge whether Sharp took.
+   `--r-lg` is 14.5px at the default `--radius-base: 10px` against 06's 12, and
+   is the right step: `--r-md` is already the panel and input radius (`.sv`,
+   `.cmp__ta`), so a bubble on `--r-md` would flatten the hierarchy the 12 was
+   drawing. The tail corner is `--r-xs`, 3.4px against 06's 3. */
 .wa__b {
   max-width: 70%;
   padding: 8px 13px;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   font-size: var(--t-body-sm);
   line-height: 1.5;
   white-space: pre-wrap;
@@ -504,7 +624,7 @@
 .wa__b--in {
   background: var(--s-container);
   color: var(--on-surface);
-  border-bottom-left-radius: 3px;
+  border-bottom-left-radius: var(--r-xs);
   align-self: flex-start;
 }
 /* 06 §1 wrote `background: var(--primary); color: var(--on-primary)`, but
@@ -515,29 +635,59 @@
 .wa__b--out {
   background: var(--primary-container);
   color: var(--on-primary-container);
-  border-bottom-right-radius: 3px;
+  border-bottom-right-radius: var(--r-xs);
   align-self: flex-end;
 }
+
+/* THE OPACITY IS NOT ON THIS ROW, and that is the whole point.
+ *
+ * 06 §1 puts `opacity: .72` on `.wa__m`, which is the shared ancestor of the
+ * timestamp AND the tick. `opacity` composites the element as a group, so a
+ * child cannot opt out of it — `.wa__tick--read { opacity: 1 }` does nothing.
+ * The measured cost: `--tick-read` #1E88C7 on the light outgoing bubble
+ * #B4F1E8 is 3.09:1, which is the number 00 §9 chose the value for. Faded to
+ * 72% against that same bubble it composites to rgb(72,165,208) and measures
+ * 2.20:1 — under the 3:1 floor for a non-text glyph. The read receipt is the
+ * one mark on this surface whose entire meaning is its colour, and the row it
+ * sits in was dimming it below legibility.
+ *
+ * So the mute goes on the two children that are decoration, and the two that
+ * carry meaning by colour keep full strength.
+ */
 .wa__m {
   display: flex;
   align-items: center;
   gap: 4px;
   justify-content: flex-end;
-  font-size: 9.5px;
+  font-size: var(--t-label-sm);
   margin-top: 4px;
-  opacity: .72;
   font-variant-numeric: tabular-nums;
 }
-.wa__tick { width: 14px; height: 10px; flex-shrink: 0; }
+.wa__m time { opacity: .72; }
+.wa__tick { width: 14px; height: 10px; flex-shrink: 0; opacity: .72; }
 /* `delivered` and `read` were both '✓✓' — the read receipt, the entire point of
-   the second tick, carried no information. The distinction is COLOUR. */
-.wa__tick--read { color: var(--tick-read); }
-/* `00-tokens.md` §9 gives --tick-read two values — #1E88C7 light, #4FC3F7 dark —
-   because a pale blue on the pale mint light bubble measures 1.59:1. The landed
-   token block in kartavaya-design.css declares only the dark one. Corrected here
-   until that file carries both; that file is not this module's to edit. */
-[data-theme="light"] .wa__tick--read { color: #1E88C7; }
-.wa__fail { color: var(--danger); }
+   the second tick, carried no information. The distinction is COLOUR, so these
+   two are the exceptions to the mute above. Source order matters: same
+   specificity as `.wa__tick`, so they must follow it. */
+.wa__tick--read { color: var(--tick-read); opacity: 1; }
+.wa__fail { color: var(--danger); opacity: 1; }
+
+/* `varta_messages.error_code` is returned by the conversation endpoint and was
+   being dropped. A failed WhatsApp send is almost always 131047
+   (re-engagement required) or 131026 (undeliverable), and the code is the only
+   thing that tells the sender whether to re-send or to send a template —
+   `ScreensVarta.jsx` puts it in `wab__err` under the bubble. */
+.wa__err {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-end;
+  max-width: 70%;
+  margin: -2px 0 6px;
+  font-size: var(--t-label-sm);
+  color: var(--danger);
+}
+.wa__err svg, .wa__win svg { flex-shrink: 0; }
 
 /* Meta rejects free-form text outside a 24-hour window from the customer's last
    inbound message — only approved templates go through. The old composer offered
@@ -548,7 +698,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 18px;
-  font-size: 11.5px;
+  font-size: var(--t-label);
   background: var(--warn-container);
   color: var(--on-warn-container);
   border-top: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
@@ -560,6 +710,29 @@
   border-top-color: var(--outline-variant);
 }
 .wa__win-t { min-width: 0; }
+
+/* The conversation rail's status filter. `GET /whatsapp/conversations` already
+   takes `?status=`, and `varta_conversations.status` is a three-value CHECK
+   (`open`, `pending`, `resolved`) — `ScreensVarta.jsx` filters on exactly those
+   three. `.seg` is the shared segmented control from `settings.css`; this only
+   makes it fill the rail's width. */
+.wa__filter { padding: 9px 11px; border-bottom: 1px solid var(--outline-variant); flex-shrink: 0; }
+.wa__filter .seg { display: flex; width: 100%; }
+.wa__filter .seg__b { flex: 1; justify-content: center; padding: 6px 4px; }
+
+/* Who is on the conversation. `list_conversations` returns `assigned_to`, and
+   the shared inbox is the whole reason Varta exists — a row that does not say
+   whose it is makes two people answer the same customer. */
+.wa__asg {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wa__asg--none { font-style: italic; }
 
 .wa__tpl { display: flex; flex-direction: column; gap: 6px; padding: 10px 18px; border-top: 1px solid var(--outline-variant); background: var(--s-low); flex-shrink: 0; }
 .wa__tpl-l { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3); }

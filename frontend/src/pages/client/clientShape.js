@@ -1,6 +1,5 @@
 /**
- * clientShape.js — the client shape, built on the frontend because the endpoint
- * does not build it yet.
+ * clientShape.js — the boundary every client payload crosses.
  *
  * `19-client-portal.md`: "The failure mode is a well-meaning
  * `GET /api/client/tasks` that returns the full task object and lets the
@@ -8,30 +7,37 @@
  * or one new field rendered by a shared component, leaks it. **The endpoint
  * returns a client shape, or this will leak eventually.**"
  *
- * That is exactly what ships today. Verified against `backend/server.py`:
+ * ── The API now builds that shape. This module reads BOTH.
  *
- *   · `GET /api/client/tasks` is `response_model=List[TaskOut]` (server.py:754).
- *     `TaskOut` (server.py:492-504) carries `assignee_emails`, `assignee_names`,
- *     `estimated_minutes`, `custom_fields`, `subtasks`, `assignee_user_ids` and
- *     `approved_by`. Four of those are on 19's never-see list; two are
- *     time-derived.
- *   · That handler calls `_refresh_task_attachments` but NOT
- *     `_filter_private_attachments` (server.py:774-776), which every other task
- *     read does (server.py:1934). Attachments a firm marked private, with live
- *     signed R2 URLs, are returned to the client verbatim.
- *   · `GET /api/client/approvals` (server.py:797) returns rows from the
- *     `approvals` table whose status is `pending` — the firm's own internal
- *     queue, not the client's — each carrying `requested_by_email`.
+ * Three leaks were live when this module was written, and all three are fixed
+ * server-side now — `backend/server.py`, verified by reading it:
  *
- * None of that is fixable from `frontend/src/pages/client/**`. So this module is
- * the boundary instead: every payload crosses it before a component sees it,
- * and a component that renders `task.assignee_names` cannot compile against the
- * result because the key is gone. It is defence in depth, not the fix. The fix
- * is a client serializer in the API, and it is in the report.
+ *   · `GET /api/client/tasks` is `response_model=List[ClientTaskOut]`
+ *     (server.py:968), an allow-list. It was `List[TaskOut]`, which carried
+ *     `assignee_names`, `assignee_emails`, `estimated_minutes`, `subtasks` and
+ *     `custom_fields` to an external party.
+ *   · That handler now calls `_filter_private_attachments` BEFORE
+ *     `_refresh_task_attachments` (server.py:1006-1009), so a private file is
+ *     not even handed a fresh signed R2 URL on the way out. It called neither
+ *     before, uniquely among the task reads.
+ *   · `GET /api/client/approvals` is `response_model=List[ClientApprovalOut]`
+ *     (server.py:1031) and both of its queries are scoped to approvals the
+ *     caller raised or that sit on a task shared with them. It used to hand a
+ *     client the FIRM's own pending queue, with `requested_by_email` on every
+ *     row.
+ *
+ * So the reduction below is no longer the only thing standing between a client
+ * and the firm's internals — but it is still the only thing standing between
+ * them and a MID-DEPLOY frontend, and this repo ships the two halves
+ * separately. Both wire shapes are handled: a `taskId` key means the server
+ * shaped it, anything else is a raw `TaskOut` and gets reduced here as before.
+ * When the two halves have been deployed together for a release, the legacy arm
+ * can go; until then removing it turns a rollback into an empty portal.
  *
  * Everything below returns a NEW object built key by key. Nothing spreads the
- * raw row — a spread is how a field added upstream next month arrives here
- * without anyone deciding it should.
+ * incoming row — not even the already-shaped one. A spread is how a field added
+ * upstream next month arrives here without anyone deciding it should, and that
+ * is as true of `ClientTaskOut` as it was of `TaskOut`.
  */
 
 /* ── The three states ──────────────────────────────────────────────────────
@@ -56,15 +62,38 @@ export const STATE_CLASS = {
   [DONE]: 'cl-state cl-state--done',
 };
 
+const STATES = [WITH_US, WITH_YOU, DONE];
+
 /**
  * `pending_client` outranks status: a task can be `in_review` and waiting on the
  * client at the same time, and the waiting is the part they need to act on.
  * `rejected` is With us — the client asked for changes and the firm has them.
+ *
+ * The same three strings as `_client_state` (server.py:916). When the payload is
+ * already shaped, its `state` is taken as given — re-deriving it here from a
+ * `status` the client shape deliberately does not carry would be a second
+ * mapping, which is the drift 19 asks the serializer to prevent.
  */
 export function clientState(raw) {
+  if (STATES.includes(raw?.state)) return raw.state;
   if (raw?.approval_status === 'pending_client') return WITH_YOU;
   if (raw?.status === 'done') return DONE;
   return WITH_US;
+}
+
+/**
+ * Did the server shape this row?
+ *
+ * `ClientTaskOut` serialises `task_id` under the alias `taskId`; a raw `TaskOut`
+ * has `task_id` and no camel key. One discriminator, checked in one place.
+ */
+export function isShapedTask(raw) {
+  return !!raw && typeof raw.taskId === 'string';
+}
+
+/** The same question for `/client/approvals`. `ClientApprovalOut` → `approvalId`. */
+export function isShapedApproval(raw) {
+  return !!raw && typeof raw.approvalId === 'string';
 }
 
 /** `#a1b2c3` — never a sequential integer, which counts the firm's customers. */
@@ -101,15 +130,39 @@ export function isMine(raw, meId) {
  * `is_private: false` is "public to project" — the drawer's own wording — and a
  * client on the project is inside that boundary. A private file is visible only
  * when the firm named this client in `visible_to`. This mirrors
- * `_filter_private_attachments` (server.py:1934), which `/client/tasks` skips.
+ * `_filter_private_attachments` (server.py:2148), which `/client/tasks` now
+ * applies before it re-signs the URLs. The filter survives here for the
+ * mid-deploy case, and because a filter that runs twice costs nothing while a
+ * filter that runs zero times cost a firm its private files.
+ *
+ * `size` / `sharedBy` / `sharedAt` land only on the shaped payload —
+ * `Attachment` gained `size`, `uploaded_by_name` and `uploaded_at`
+ * (server.py:498-510) and `_client_files` maps them. On a legacy row they are
+ * simply absent, and `ClientFiles` prints what is there rather than inventing
+ * an attribution.
  */
 export function visibleAttachments(raw, meId) {
+  if (isShapedTask(raw)) {
+    const shaped = Array.isArray(raw.files) ? raw.files : [];
+    return shaped
+      .filter(a => a && a.url)
+      .map(a => ({
+        name: a.name || 'Attachment',
+        url: a.url,
+        size: Number.isFinite(a.size) ? a.size : null,
+        sharedBy: a.sharedBy || null,
+        sharedAt: a.sharedAt || null,
+      }));
+  }
   const list = Array.isArray(raw?.attachments) ? raw.attachments : [];
   return list
     .filter(a => a && a.url && (!a.is_private || (Array.isArray(a.visible_to) && a.visible_to.includes(meId))))
     .map(a => ({
       name: a.name || 'Attachment',
       url: a.url,
+      size: Number.isFinite(a.size) ? a.size : null,
+      sharedBy: a.uploaded_by_name || null,
+      sharedAt: a.uploaded_at || null,
       // `key` and `visible_to` are deliberately not carried: one is storage
       // internals, the other is a list of user ids belonging to other people.
     }));
@@ -140,6 +193,31 @@ export function previewKind(name = '', url = '') {
  */
 export function toClientTask(raw, meId) {
   if (!raw) return null;
+
+  // Already shaped by the API. Still copied key by key rather than spread:
+  // `ClientTaskOut` is an allow-list today, and this stays the place that says
+  // which of its keys the portal actually renders.
+  if (isShapedTask(raw)) {
+    const d = raw.decision;
+    return {
+      taskId: raw.taskId,
+      ref: raw.ref || shortId(raw.taskId),
+      title: raw.title || 'Untitled',
+      note: raw.note || '',
+      state: clientState(raw),
+      expectedAt: raw.expectedAt || null,
+      updatedAt: raw.updatedAt || raw.createdAt || null,
+      createdAt: raw.createdAt || null,
+      requestedBy: raw.requestedBy || null,
+      projectId: raw.projectId || null,
+      files: visibleAttachments(raw, meId),
+      decision: d && d.outcome
+        ? { outcome: d.outcome, note: d.note || '', at: d.at || null }
+        : null,
+      awaitingMe: raw.awaitingMe === true,
+    };
+  }
+
   return {
     taskId: raw.task_id,
     ref: shortId(raw.task_id),
@@ -163,36 +241,65 @@ export function toClientTask(raw, meId) {
   };
 }
 
-/** The client's task list: theirs only, reduced, newest first. */
+/**
+ * The client's task list: theirs only, reduced, newest first.
+ *
+ * `isMine` runs on legacy rows ONLY. A shaped row has no `created_by_user_id`,
+ * no `assignee_user_ids` and no `approved_by` to test — running the same filter
+ * over it would reject every row and paint an empty portal for a client who has
+ * work. The server does that narrowing itself now (server.py:987-999): its
+ * WHERE clause is the same five cases, applied where it can actually be
+ * enforced.
+ */
 export function toClientTasks(rows, meId) {
   return (Array.isArray(rows) ? rows : [])
-    .filter(r => isMine(r, meId))
+    .filter(r => (isShapedTask(r) ? true : isMine(r, meId)))
     .map(r => toClientTask(r, meId))
     .filter(Boolean)
     .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
 }
 
 /**
- * The approval queue.
+ * The approval queue — the rows waiting on THE READER.
  *
- * `/client/approvals` concatenates two result sets. The first is the `approvals`
- * table filtered to `status='pending'` — the FIRM's queue, which a client is
- * handed purely because they share a project — and it carries
- * `requested_by_email`. Only the second set, synthesised with an
- * `approval_id` of `task_approval--<task_id>` and an `approval_status` of
- * `pending_client`, is waiting on the reader.
+ * `/client/approvals` still concatenates two result sets, in both wire shapes.
+ * Only the second is waiting on the client: it is synthesised from tasks whose
+ * `approval_status = 'pending_client'` and its `approval_id` is
+ * `task_approval--<task_id>` (server.py:1073). The first set is now scoped to
+ * approvals the client RAISED — their own Request work rows — which are pending
+ * on the firm, and putting those under "Needs your approval" would ask a client
+ * to approve their own request.
  *
- * Filtering on both markers rather than one is deliberate: the prefix alone
- * would survive a status change upstream, and the status alone appears on rows
- * of the first shape too.
+ * The `task_approval--` prefix is the discriminator in both shapes. The old code
+ * also required `approval_status === 'pending_client'`; `ClientApprovalOut` has
+ * no status field at all — deliberately, it is internal vocabulary — so that
+ * second check is applied only where it exists, on a legacy row.
  */
+const TASK_APPROVAL = 'task_approval--';
+
 export function toClientApprovals(rows, tasksById = {}) {
   return (Array.isArray(rows) ? rows : [])
-    .filter(r => typeof r?.approval_id === 'string'
-      && r.approval_id.startsWith('task_approval--')
-      && r.approval_status === 'pending_client'
-      && r.task_id)
     .map(r => {
+      if (isShapedApproval(r)) {
+        if (!r.approvalId.startsWith(TASK_APPROVAL) || !r.taskId) return null;
+        const task = tasksById[r.taskId] || null;
+        return {
+          taskId: r.taskId,
+          ref: r.ref || shortId(r.taskId),
+          title: r.title || task?.title || 'Untitled',
+          ask: r.ask || task?.note || '',
+          requestedBy: r.requestedBy || null,
+          requestedAt: r.requestedAt || null,
+          // The approval carries no files of its own on purpose: the portal
+          // joins to the task by id and reads them there, so attachment
+          // filtering has one home rather than two.
+          files: task?.files || [],
+        };
+      }
+      if (typeof r?.approval_id !== 'string'
+        || !r.approval_id.startsWith(TASK_APPROVAL)
+        || r.approval_status !== 'pending_client'
+        || !r.task_id) return null;
       const task = tasksById[r.task_id] || null;
       return {
         taskId: r.task_id,
@@ -206,6 +313,7 @@ export function toClientApprovals(rows, tasksById = {}) {
         files: task?.files || [],
       };
     })
+    .filter(Boolean)
     .sort((a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0));
 }
 
@@ -226,6 +334,25 @@ export function expectedLabel(iso) {
   return d.toLocaleDateString(undefined, {
     day: '2-digit', month: 'short', ...(sameYear ? {} : { year: 'numeric' }),
   });
+}
+
+/**
+ * "412 KB". Returns '' when the byte count is unknown, and the row then simply
+ * does not print a size — 19 asks a file to read "name, size, who shared it,
+ * when", and the honest answer for a file uploaded before `Attachment` gained
+ * those fields is silence, not a guess.
+ *
+ * 1000, not 1024: this is a size shown to an accountant, not to an engineer,
+ * and it is the unit every OS file browser has used for over a decade.
+ */
+export function sizeLabel(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return '';
+  if (bytes < 1000) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let n = bytes / 1000;
+  let i = 0;
+  while (n >= 1000 && i < units.length - 1) { n /= 1000; i += 1; }
+  return `${n < 10 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
 }
 
 /** "26 Jul 2026, 3:12 pm" — the written record, which has to be unambiguous. */

@@ -107,7 +107,7 @@ function Triple({ punchKey, referenceKeys, punchId, name }) {
       {src
         ? <img src={src} alt={label} width={PHOTO_W} height={PHOTO_H}
                style={{ objectFit: 'cover', width: '100%', height: '100%' }} />
-        : <span style={{ fontSize: 10, color: 'var(--on-surface-3)', textAlign: 'center', padding: 2 }}>
+        : <span style={{ fontSize: 'var(--t-label-sm)', color: 'var(--on-surface-3)', textAlign: 'center', padding: 2 }}>
             {muted ? 'none' : '…'}
           </span>}
     </div>
@@ -314,7 +314,13 @@ export default function Register() {
                   key={p.id}
                   className={`rv__r${i === cursor ? ' is-cursor' : ''}`}
                   onClick={() => seek(i)}
-                  aria-selected={i === cursor}
+                  /* aria-current, not aria-selected. `aria-selected` on a row
+                     is only supported inside a grid or treegrid; DataTable
+                     renders a plain <table>, where `row` does not support it
+                     and the state is dropped silently. J/K move a review
+                     cursor rather than building a selection, which is what
+                     aria-current means and where it is valid. */
+                  aria-current={i === cursor ? 'true' : undefined}
                   style={i === cursor ? { outline: '2px solid var(--primary)', outlineOffset: -2 } : undefined}
                 >
                   <Td className="rv__n">{i + 1}</Td>

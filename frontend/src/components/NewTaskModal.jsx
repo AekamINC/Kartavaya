@@ -13,6 +13,12 @@ import { api } from '../lib/api';
 
 import { AVATAR_COLORS, PRIORITY_COLOR, userInitials, logger } from '../lib/utils';
 
+// `PRIORITY_COLOR` holds `var(--pr-*)` REFERENCES, not hexes. The old tint here
+// was `${color}18` — a hex-alpha suffix, which on a var() reference evaluates to
+// the string "var(--pr-high)18". That is not a colour, so CSS dropped the whole
+// declaration and the selected priority pill rendered with no background at all.
+import { mixAlpha } from '../lib/statusColors';
+
 import { currentUser } from '../lib/auth';
 
 import ReminderPicker, { DEFAULT_REMINDERS } from './ReminderPicker';
@@ -114,13 +120,26 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
     if (!projectId) { setMembers([]); setTemplates([]); setAssignees([]); return; }
     setAssignees([]);
 
-    api.get(`/teams/${projectId}`)
-      .then(r => setMembers(Array.isArray(r.data?.members) ? r.data.members : []))
-      .catch(() => setMembers([]));
+    // A client must never see the firm's staff list. `GET /teams/{id}` returns
+    // every member of the team — names, job titles, companies and who holds
+    // approver rights — and the only consumer of it in this modal is the
+    // assignee picker, which a client does not get (see the render). Not
+    // fetching it at all is the fix: hiding the control while still pulling the
+    // roster into React state leaves the whole list one devtools panel away.
+    // The STATUS select was already gated on `isClient`; the assignee control
+    // was not, so a client could also hand work to a named member of staff.
+    // The server must gate this too — see the report.
+    if (isClient) setMembers([]);
+    else {
+      api.get(`/teams/${projectId}`)
+        .then(r => setMembers(Array.isArray(r.data?.members) ? r.data.members : []))
+        .catch(() => setMembers([]));
+    }
+
     api.get('/templates/tasks', { params: { team_id: projectId } })
       .then(r => setTemplates(Array.isArray(r.data) ? r.data : []))
       .catch(() => setTemplates([]));
-  }, [projectId]);
+  }, [projectId, isClient]);
 
   const applyTemplate = (tmpl) => {
     let cfg;
@@ -268,7 +287,11 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
         }
       }
 
-      if (assignees.length) payload.assignee_user_ids  = assignees;
+      // `!isClient` as well as `assignees.length`: the control is not rendered
+      // for a client, so this can only ever be non-empty through a stale state
+      // read — and a request that names an assignee is one the server should
+      // reject rather than one we should send.
+      if (!isClient && assignees.length) payload.assignee_user_ids = assignees;
 
       if (files.length)     payload.attachments        = files.map(f => ({ name: f.name, url: f.url, key: f.key || null }));
       if (subtasks.length)  payload.subtasks           = subtasks;
@@ -323,7 +346,17 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
     >
 
-      <div className="k-modal">
+      {/* role/aria-modal/aria-labelledby: this is the product's primary create
+          surface — AppShell's `n`, the mobile FAB, the command palette and
+          three board pages all open it — and it was rendering as an anonymous
+          <div>, so a screen reader kept announcing the page behind it and never
+          said a dialog had opened.
+
+          STILL MISSING, and outside an ARIA-only change: no <FocusTrap>. Tab
+          walks out of this panel into the board underneath. Wrap the
+          `.k-modal` div in <FocusTrap active> the way modal.jsx, Sheet.jsx and
+          ConfirmDialog.jsx already do. */}
+      <div className="k-modal" role="dialog" aria-modal="true" aria-labelledby="ntm-title">
 
 
 
@@ -335,13 +368,13 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
             <div>
 
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--k-primary)', marginBottom: 2 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: 2 }}>
 
-                {isClient ? 'REQUEST TASK' : 'NEW TASK'} · <span style={{ fontFamily: 'var(--font-hindi)', textTransform: 'none', letterSpacing: 0 }}>{isClient ? 'अनुरोध' : 'नया कार्य'}</span>
+                {isClient ? 'REQUEST TASK' : 'NEW TASK'} · <span style={{ fontFamily: 'var(--font-indic)', textTransform: 'none', letterSpacing: 0 }}>{isClient ? 'अनुरोध' : 'नया कार्य'}</span>
 
               </div>
 
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 400, color: 'var(--ink)' }}>
+              <div id="ntm-title" style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 400, color: 'var(--on-surface)' }}>
 
                 What needs doing?
 
@@ -349,11 +382,13 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
             </div>
 
-            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: 'var(--ink-3)', lineHeight: 1, padding: 4, marginTop: -2 }}>×</button>
+            {/* The glyph is a multiplication sign, which a screen reader reads
+                as "times". aria-label names the action instead. */}
+            <button onClick={onClose} aria-label="Close" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: 'var(--on-surface-3)', lineHeight: 1, padding: 4, marginTop: -2 }}>×</button>
 
           </div>
 
-          <div style={{ height: 1, background: 'var(--rule-soft)', margin: '16px 0 0' }} />
+          <div style={{ height: 1, background: 'color-mix(in srgb, var(--outline-variant) 60%, transparent)', margin: '16px 0 0' }} />
 
         </div>
 
@@ -370,29 +405,30 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
           {projectId && templates.length > 0 && (
             <div style={{ marginBottom: 16 }}>
               {showTemplatePicker ? (
-                <div style={{ background: 'var(--bg-soft)', borderRadius: 'var(--r-md)', border: '1px solid var(--rule)', padding: 12 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--ink-3)', marginBottom: 8 }}>
-                    PICK A TEMPLATE · साँचा
+                <div style={{ background: 'var(--s-low)', borderRadius: 'var(--r-md)', border: '1px solid var(--outline-variant)', padding: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--on-surface-3)', marginBottom: 8 }}>
+                    PICK A TEMPLATE ·{" "}
+                    <span style={{ fontFamily: "var(--font-indic)", fontSize: 12, fontWeight: 400, letterSpacing: 0, textTransform: "none" }}>साँचा</span>
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {templates.map(t => (
                       <button key={t.template_id} onClick={() => applyTemplate(t)}
                         style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
-                          borderRadius: 99, border: '1.5px solid var(--rule)',
+                          borderRadius: "var(--r-pill)", border: '1.5px solid var(--outline-variant)',
                           background: 'var(--surface)', cursor: 'pointer', fontSize: 13,
-                          fontWeight: 500, color: 'var(--ink-2)' }}>
+                          fontWeight: 500, color: 'var(--on-surface-2)' }}>
                         <span>{t.icon || '📋'}</span>
                         {t.name}
                         {t.is_default && (
-                          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--k-primary)',
-                            background: 'color-mix(in srgb, var(--k-primary) 12%, transparent)',
-                            padding: '1px 5px', borderRadius: 99 }}>DEFAULT</span>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--primary)',
+                            background: 'color-mix(in srgb, var(--primary) 12%, transparent)',
+                            padding: '1px 5px', borderRadius: "var(--r-pill)" }}>DEFAULT</span>
                         )}
                       </button>
                     ))}
                     <button onClick={() => setShowTemplatePicker(false)}
-                      style={{ padding: '6px 10px', borderRadius: 99, border: '1px solid var(--rule)',
-                        background: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--ink-3)' }}>
+                      style={{ padding: '6px 10px', borderRadius: "var(--r-pill)", border: '1px solid var(--outline-variant)',
+                        background: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--on-surface-3)' }}>
                       ✕ Cancel
                     </button>
                   </div>
@@ -400,8 +436,8 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
               ) : (
                 <button onClick={() => setShowTemplatePicker(true)}
                   style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600,
-                    color: 'var(--k-primary)', background: 'color-mix(in srgb, var(--k-primary) 8%, transparent)',
-                    border: '1px dashed var(--k-primary)', borderRadius: 'var(--r-md)',
+                    color: 'var(--primary)', background: 'color-mix(in srgb, var(--primary) 8%, transparent)',
+                    border: '1px dashed var(--primary)', borderRadius: 'var(--r-md)',
                     padding: '5px 12px', cursor: 'pointer' }}>
                   📋 Use a template
                 </button>
@@ -413,9 +449,19 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
           <div style={{ marginBottom: 20 }}>
 
+            {/* A placeholder is not a label: it disappears the moment the field
+                has content, so it names the control only while the control is
+                empty. The field carries no visible label at all here, so the
+                name has to come from aria-label. */}
             <input
 
               ref={titleRef}
+
+              aria-label="Task title"
+
+              aria-invalid={titleError ? 'true' : undefined}
+
+              aria-describedby={titleError ? 'ntm-title-err' : undefined}
 
               value={title}
 
@@ -423,11 +469,15 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
               placeholder="Write a clear, action-first title…"
 
-              style={{ width: '100%', border: 'none', borderBottom: `2px solid ${titleError ? '#dc2626' : 'var(--rule)'}`, outline: 'none', fontSize: 20, fontFamily: 'var(--font-display)', color: 'var(--ink)', background: 'transparent', paddingBottom: 10, fontWeight: 400 }}
+              style={{ width: '100%', border: 'none', borderBottom: `2px solid ${titleError ? 'var(--danger)' : 'var(--outline-variant)'}`, outline: 'none', fontSize: 20, fontFamily: 'var(--font-display)', color: 'var(--on-surface)', background: 'transparent', paddingBottom: 10, fontWeight: 400 }}
 
             />
 
-            {titleError && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 5 }}>Title is required.</div>}
+            {/* role="alert" so the failure is spoken. Submit was rejecting the
+                form with a red hairline and a line of 11px text that a screen
+                reader had no reason to revisit — the user pressed Create and
+                nothing appeared to happen. */}
+            {titleError && <div id="ntm-title-err" role="alert" style={{ fontSize: 11, color: 'var(--danger)', marginTop: 5 }}>Title is required.</div>}
 
           </div>
 
@@ -439,9 +489,9 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
             <div>
 
-              <FieldLabel>PROJECT · परियोजना</FieldLabel>
+              <FieldLabel id="ntm-lbl-project" hi="परियोजना">PROJECT</FieldLabel>
 
-              <select className="k-select" style={{ width: '100%' }} value={projectId} onChange={e => setProjectId(e.target.value)}>
+              <select aria-labelledby="ntm-lbl-project" className="k-select" style={{ width: '100%' }} value={projectId} onChange={e => setProjectId(e.target.value)}>
 
                 <option value="">Personal task</option>
 
@@ -455,9 +505,9 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
             <div>
 
-              <FieldLabel>STATUS · स्थिति</FieldLabel>
+              <FieldLabel id="ntm-lbl-status" hi="स्थिति">STATUS</FieldLabel>
 
-              <select className="k-select" style={{ width: '100%' }} value={status} onChange={e => setStatus(e.target.value)}>
+              <select aria-labelledby="ntm-lbl-status" className="k-select" style={{ width: '100%' }} value={status} onChange={e => setStatus(e.target.value)}>
 
                 <option value="todo">To do</option>
 
@@ -481,15 +531,21 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
           <div style={{ marginBottom: 16 }}>
 
-            <FieldLabel>PRIORITY · प्राथमिकता</FieldLabel>
+            <FieldLabel id="ntm-lbl-priority" hi="प्राथमिकता">PRIORITY</FieldLabel>
 
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {/* Which priority is chosen was carried by border colour, fill and
+                font weight and by nothing else — invisible to a screen reader
+                and, per 00 §12's own note about 1-in-12 users, unreliable for
+                colour-blind users too. aria-pressed states it. Toggle buttons
+                do not take a roving tabindex; that belongs to radio groups,
+                and these are already individually reachable. */}
+            <div role="group" aria-labelledby="ntm-lbl-priority" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
 
               {Object.entries(PRIORITY_DOTS).map(([key, { color, label }]) => (
 
-                <button key={key} onClick={() => setPriority(key)}
+                <button key={key} type="button" aria-pressed={priority === key} onClick={() => setPriority(key)}
 
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 99, border: `1.5px solid ${priority === key ? color : 'var(--rule)'}`, background: priority === key ? `${color}18` : 'transparent', color: priority === key ? color : 'var(--ink-3)', cursor: 'pointer', fontSize: 13, fontWeight: priority === key ? 700 : 400, transition: 'all 0.15s' }}>
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 'var(--r-pill)', border: `1.5px solid ${priority === key ? color : 'var(--outline-variant)'}`, background: priority === key ? mixAlpha(color, 12) : 'transparent', color: priority === key ? color : 'var(--on-surface-3)', cursor: 'pointer', fontSize: 13, fontWeight: priority === key ? 700 : 400, transition: `background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard)` }}>
 
                   <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0, display: 'inline-block' }} />
 
@@ -509,19 +565,20 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
           {/* Subtasks from template */}
           {subtasks.length > 0 && (
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 6 }}>
-                SUBTASKS · उप-कार्य
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--on-surface-3)', marginBottom: 6 }}>
+                SUBTASKS ·{" "}
+                <span style={{ fontFamily: "var(--font-indic)", fontSize: 12, fontWeight: 400, letterSpacing: 0, textTransform: "none" }}>उप-कार्य</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {subtasks.map((s, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-                    background: 'var(--bg-soft)', borderRadius: 'var(--r-md)', border: '1px solid var(--rule-soft)' }}>
-                    <input type="checkbox" checked={s.is_done} onChange={e => setSubtasks(prev => prev.map((x, j) => j === i ? { ...x, is_done: e.target.checked } : x))} />
-                    <span style={{ fontSize: 13, color: s.is_done ? 'var(--ink-faint)' : 'var(--ink)', textDecoration: s.is_done ? 'line-through' : 'none', flex: 1 }}>
+                    background: 'var(--s-low)', borderRadius: 'var(--r-md)', border: '1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent)' }}>
+                    <input type="checkbox" aria-label={s.title} checked={s.is_done} onChange={e => setSubtasks(prev => prev.map((x, j) => j === i ? { ...x, is_done: e.target.checked } : x))} />
+                    <span style={{ fontSize: 13, color: s.is_done ? 'var(--on-surface-3)' : 'var(--on-surface)', textDecoration: s.is_done ? 'line-through' : 'none', flex: 1 }}>
                       {s.title}
                     </span>
                     <button onClick={() => setSubtasks(prev => prev.filter((_, j) => j !== i))}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-faint)', fontSize: 14 }}>×</button>
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--on-surface-3)', fontSize: 14 }}>×</button>
                   </div>
                 ))}
               </div>
@@ -530,13 +587,14 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
           {/* DUE + ASSIGNEES */}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isClient ? '1fr' : '1fr 1fr', gap: 16, marginBottom: 16 }}>
 
             <div>
 
-              <FieldLabel>DUE · नियत तिथि</FieldLabel>
+              <FieldLabel id="ntm-lbl-due" hi="नियत तिथि">DUE</FieldLabel>
 
               <input
+                aria-labelledby="ntm-lbl-due"
                 type="date"
                 className="k-input"
                 style={{ width: '100%' }}
@@ -558,15 +616,27 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
 
 
-            {/* Assignee dropdown */}
+            {/* Assignee dropdown — internal users only.
+                A client requesting work names WHAT, never WHO: the roster this
+                control is fed from is the firm's own staff list, and letting a
+                client assign work would also let them route it around whoever
+                owns the engagement. The STATUS select above carries the same
+                guard and always did; this one did not. */}
 
+            {!isClient && (
             <div ref={assigneeRef} style={{ position: 'relative' }}>
 
-              <FieldLabel>ASSIGNEES · नियुक्त</FieldLabel>
+              <FieldLabel id="ntm-lbl-assignees" hi="नियुक्त">ASSIGNEES</FieldLabel>
 
               <button
 
                 type="button"
+
+                aria-labelledby="ntm-lbl-assignees"
+
+                aria-expanded={assigneeOpen}
+
+                aria-haspopup="listbox"
 
                 onClick={() => setAssigneeOpen(v => !v)}
 
@@ -574,13 +644,13 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
                   width: '100%', display: 'flex', alignItems: 'center', gap: 8,
 
-                  background: 'var(--bg-soft)', border: '1px solid var(--rule)',
+                  background: 'var(--s-low)', border: '1px solid var(--outline-variant)',
 
                   borderRadius: 'var(--r-md)', padding: '7px 10px', cursor: 'pointer',
 
                   fontFamily: 'var(--font-ui)', fontSize: 13,
 
-                  color: selectedMembers.length ? 'var(--ink)' : 'var(--ink-faint)',
+                  color: selectedMembers.length ? 'var(--on-surface)' : 'var(--on-surface-3)',
 
                   minHeight: 36,
 
@@ -602,7 +672,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
                       return (
 
-                        <span key={m.user_id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--side-active)', borderRadius: 20, padding: '2px 8px 2px 4px', fontSize: 12, fontWeight: 500 }}>
+                        <span key={m.user_id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--primary-container)', borderRadius: "var(--r-pill)", padding: '2px 8px 2px 4px', fontSize: 12, fontWeight: 500 }}>
 
                           <span style={{ width: 18, height: 18, borderRadius: '50%', fontSize: 9, fontWeight: 700, background: AVATAR_COLORS[i % AVATAR_COLORS.length], color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
 
@@ -618,13 +688,13 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
                     })}
 
-                    {selectedMembers.length > 3 && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>+{selectedMembers.length - 3}</span>}
+                    {selectedMembers.length > 3 && <span style={{ fontSize: 12, color: 'var(--on-surface-3)' }}>+{selectedMembers.length - 3}</span>}
 
                   </div>
 
                 )}
 
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ flexShrink: 0, color: 'var(--ink-3)' }}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ flexShrink: 0, color: 'var(--on-surface-3)' }}>
 
                   <path d="M2 4l4 4 4-4"/>
 
@@ -636,11 +706,11 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
               {assigneeOpen && (
 
-                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100, background: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: 'var(--r-md)', boxShadow: '0 8px 24px rgba(0,0,0,0.18)', maxHeight: 220, overflowY: 'auto' }}>
+                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 100, background: 'var(--surface)', border: '1px solid var(--outline-variant)', borderRadius: 'var(--r-md)', boxShadow: "var(--shadow-3)", maxHeight: 220, overflowY: 'auto' }}>
 
                   {members.length === 0 ? (
 
-                    <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--ink-3)', fontStyle: 'italic' }}>
+                    <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--on-surface-3)', fontStyle: 'italic' }}>
 
                       {projectId ? 'No members found' : 'Select a project first'}
 
@@ -670,7 +740,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
                           onClick={() => toggleAssignee(uid)}
 
-                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: checked ? 'var(--side-active)' : 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: i < members.length - 1 ? '1px solid var(--rule-soft)' : 'none' }}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: checked ? 'var(--primary-container)' : 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: i < members.length - 1 ? '1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent)' : 'none' }}
 
                         >
 
@@ -682,21 +752,21 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
                           <div style={{ flex: 1, minWidth: 0 }}>
 
-                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', fontFamily: 'var(--font-ui)' }}>{name}</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--on-surface)', fontFamily: 'var(--font-ui)' }}>{name}</div>
 
                             <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '2px 6px', marginTop: 2 }}>
 
-                              {jobTitle && <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{jobTitle}</span>}
+                              {jobTitle && <span style={{ fontSize: 11, color: 'var(--on-surface-3)' }}>{jobTitle}</span>}
 
-                              {jobTitle && m.company_name && <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>·</span>}
+                              {jobTitle && m.company_name && <span style={{ fontSize: 11, color: 'var(--on-surface-3)' }}>·</span>}
 
-                              {m.company_name && <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{m.company_name}</span>}
+                              {m.company_name && <span style={{ fontSize: 11, color: 'var(--on-surface-3)' }}>{m.company_name}</span>}
 
                               {m.receives_approval_emails && (
 
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, color: '#05b7aa', background: '#05b7aa18', borderRadius: 4, padding: '1px 5px', marginTop: 1 }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 10, fontWeight: 700, color: "var(--primary-text)", background: mixAlpha("var(--primary)", 12), borderRadius: "var(--r-xs)", padding: '1px 5px', marginTop: 1 }}>
 
-                                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="#05b7aa" strokeWidth="2"><path d="M1.5 5l3 3 4-4"/></svg>
+                                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--primary-text)" strokeWidth="2"><path d="M1.5 5l3 3 4-4"/></svg>
 
                                   {m.role === 'client' ? 'Client Approver' : 'Internal Approver'}
 
@@ -710,7 +780,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
                           {checked && (
 
-                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--k-primary)" strokeWidth="2" style={{ flexShrink: 0 }}>
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--primary)" strokeWidth="2" style={{ flexShrink: 0 }}>
 
                               <path d="M2 7l4 4 6-6"/>
 
@@ -731,6 +801,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
               )}
 
             </div>
+            )}
 
           </div>
 
@@ -740,9 +811,11 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
           <div style={{ marginBottom: 16 }}>
 
-            <FieldLabel>DESCRIPTION · विवरण</FieldLabel>
+            <FieldLabel id="ntm-lbl-desc" hi="विवरण">DESCRIPTION</FieldLabel>
 
             <textarea
+
+              aria-labelledby="ntm-lbl-desc"
 
               className="k-input"
 
@@ -776,40 +849,40 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
             }}
             style={{ position: 'relative' }}
           >
-            <FieldLabel>ATTACHMENTS · संलग्नक</FieldLabel>
-            <input ref={fileRef} type="file" multiple accept=".jpg,.jpeg,.png,.gif,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt" style={{ display: 'none' }} onChange={handleFileChange} />
+            <FieldLabel id="ntm-lbl-attachments" hi="संलग्नक">ATTACHMENTS</FieldLabel>
+            <input ref={fileRef} aria-labelledby="ntm-lbl-attachments" type="file" multiple accept=".jpg,.jpeg,.png,.gif,.heic,.heif,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt" style={{ display: 'none' }} onChange={handleFileChange} />
             <input ref={videoRef} type="file" multiple accept="video/*,.mov,.mp4,.webm,.avi,.mkv,.m4v,.3gp,.flv,.wmv,.ogv,.ts" style={{ display: 'none' }} onChange={handleFileChange} />
 
             {/* Drop overlay */}
             {dragOver && files.length < 10 && (
               <div style={{
                 position: 'absolute', inset: 0, zIndex: 50,
-                background: 'var(--k-primary-dim, rgba(0,130,198,0.08))',
-                border: '2px dashed var(--k-primary)',
-                borderRadius: 10,
+                background: 'color-mix(in srgb, var(--primary) 8%, transparent)',
+                border: '2px dashed var(--primary)',
+                borderRadius: "var(--r-md)",
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 pointerEvents: 'none',
               }}>
                 <div style={{ textAlign: 'center' }}>
-                  <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="var(--k-primary)" strokeWidth="1.5" style={{ marginBottom: 4 }}><path d="M8 12V4M4 8l4-4 4 4"/><path d="M2 14h12"/></svg>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--k-primary)' }}>Drop files here</div>
+                  <svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="var(--primary)" strokeWidth="1.5" style={{ marginBottom: 4 }}><path d="M8 12V4M4 8l4-4 4 4"/><path d="M2 14h12"/></svg>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary)' }}>Drop files here</div>
                 </div>
               </div>
             )}
 
             {uploading && (
               <div style={{ marginBottom: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--ink-3)', fontSize: 13, marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--on-surface-3)', fontSize: 13, marginBottom: 6 }}>
                   <div className="k-spinner" style={{ width: 14, height: 14, flexShrink: 0 }} />
                   <span>Uploading{uploadProgress > 0 ? ` ${uploadProgress}%` : '…'}</span>
                 </div>
-                <div style={{ height: 4, background: 'var(--rule)', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${uploadProgress || 0}%`, background: 'var(--k-primary)', borderRadius: 2, transition: 'width 0.25s ease', minWidth: uploadProgress > 0 ? undefined : '15%' }} />
+                <div style={{ height: 4, background: 'var(--outline-variant)', borderRadius: "var(--r-xs)", overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${uploadProgress || 0}%`, background: 'var(--primary)', borderRadius: "var(--r-xs)", transition: 'width 0.25s ease', minWidth: uploadProgress > 0 ? undefined : '15%' }} />
                 </div>
               </div>
             )}
             {uploadError && (
-              <div style={{ fontSize: 12, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: 'var(--danger)', background: "var(--danger-container)", border: '1px solid color-mix(in srgb, var(--danger) 40%, transparent)', borderRadius: "var(--r-sm)", padding: '8px 12px', marginBottom: 8 }}>
                 {uploadError}
               </div>
             )}
@@ -823,53 +896,53 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
                   const isDoc = /\.(doc|docx|xls|xlsx|ppt|pptx)$/i.test(n);
                   const canPreview = isImg || isVid || isPdf || isDoc;
                   return (
-                    <div key={i} style={{ borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--rule)', fontSize: 13, overflow: 'hidden' }}>
+                    <div key={i} style={{ borderRadius: "var(--r-sm)", background: "var(--s-lowest)", border: '1px solid var(--outline-variant)', fontSize: 13, overflow: 'hidden' }}>
                       {/* Image thumbnail */}
                       {isImg && f.url && (
-                        <div onClick={() => setPreviewFile(f)} style={{ cursor: 'pointer', background: 'var(--rule-soft)', borderBottom: '1px solid var(--rule)' }}>
+                        <div onClick={() => setPreviewFile(f)} style={{ cursor: 'pointer', background: 'color-mix(in srgb, var(--outline-variant) 60%, transparent)', borderBottom: '1px solid var(--outline-variant)' }}>
                           <img src={f.url} alt={n} style={{ display: 'block', width: '100%', maxHeight: 140, objectFit: 'cover' }} loading="lazy" />
                         </div>
                       )}
                       {/* Video thumbnail */}
                       {isVid && f.url && (
-                        <div onClick={() => setPreviewFile(f)} style={{ cursor: 'pointer', background: '#000', borderBottom: '1px solid var(--rule)', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 80 }}>
+                        <div onClick={() => setPreviewFile(f)} style={{ cursor: 'pointer', background: "var(--ink-fixed)", borderBottom: '1px solid var(--outline-variant)', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 80 }}>
                           <video src={f.url} preload="metadata" muted style={{ display: 'block', width: '100%', maxHeight: 140, objectFit: 'cover' }} />
-                          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
-                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(255,255,255,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="#8b5cf6" strokeWidth="1.8"><polygon points="5,3 13,8 5,13"/></svg>
+                          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: "color-mix(in srgb, var(--ink-fixed) 34%, transparent)" }}>
+                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: "var(--s-lowest)", display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--tertiary)" strokeWidth="1.8"><polygon points="5,3 13,8 5,13"/></svg>
                             </div>
                           </div>
                         </div>
                       )}
                       {/* Doc preview banner */}
                       {(isPdf || isDoc) && f.url && (
-                        <div onClick={() => setPreviewFile(f)} style={{ cursor: 'pointer', padding: '12px 16px', background: 'var(--bg-soft)', borderBottom: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--k-primary)" strokeWidth="1.5"><path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1z"/><path d="M9 1v4h4"/></svg>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--k-primary)' }}>Click to preview</span>
+                        <div onClick={() => setPreviewFile(f)} style={{ cursor: 'pointer', padding: '12px 16px', background: 'var(--s-low)', borderBottom: '1px solid var(--outline-variant)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--primary)" strokeWidth="1.5"><path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1z"/><path d="M9 1v4h4"/></svg>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>Click to preview</span>
                         </div>
                       )}
                       {/* File info row */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px' }}>
-                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="var(--k-primary)" strokeWidth="1.5"><path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1z"/><path d="M9 1v4h4"/></svg>
-                        <a href={f.url} target="_blank" rel="noreferrer" style={{ flex: 1, color: 'var(--ink-2)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</a>
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="var(--primary)" strokeWidth="1.5"><path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1z"/><path d="M9 1v4h4"/></svg>
+                        <a href={f.url} target="_blank" rel="noreferrer" style={{ flex: 1, color: 'var(--on-surface-2)', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n}</a>
                         {canPreview && (
-                          <button onClick={() => setPreviewFile(f)} title="Preview" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', padding: 0, display: 'flex', flexShrink: 0 }}>
+                          <button onClick={() => setPreviewFile(f)} title="Preview" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--on-surface-3)', padding: 0, display: 'flex', flexShrink: 0 }}>
                             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="8" r="3"/><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/></svg>
                           </button>
                         )}
-                        <button onClick={() => setFiles(p => p.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+                        <button onClick={() => setFiles(p => p.filter((_, j) => j !== i))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--on-surface-3)', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
                       </div>
                     </div>
                   );
                 })}
                 {files.length < 10 && !uploading && (
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button type="button" onClick={() => fileRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, border: '1.5px dashed var(--rule-strong)', background: 'transparent', color: 'var(--ink-3)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-ui)' }}>
+                    <button type="button" onClick={() => fileRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: "var(--r-sm)", border: '1.5px dashed var(--outline)', background: 'transparent', color: 'var(--on-surface-3)', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-ui)' }}>
                       <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M8 3v10M3 8h10"/></svg>
                       Add files
                     </button>
-                    <button type="button" onClick={() => videoRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, border: '1.5px dashed var(--rule-strong)', background: 'transparent', color: '#8b5cf6', cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-ui)' }}>
-                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#8b5cf6" strokeWidth="1.8"><polygon points="5,3 13,8 5,13"/></svg>
+                    <button type="button" onClick={() => videoRef.current?.click()} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: "var(--r-sm)", border: '1.5px dashed var(--outline)', background: 'transparent', color: "var(--tertiary)", cursor: 'pointer', fontSize: 12, fontFamily: 'var(--font-ui)' }}>
+                      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="var(--tertiary)" strokeWidth="1.8"><polygon points="5,3 13,8 5,13"/></svg>
                       Add video
                     </button>
                   </div>
@@ -882,19 +955,19 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
                   type="button"
                   onClick={() => fileRef.current?.click()}
                   disabled={uploading}
-                  style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '18px 10px', borderRadius: 10, border: `1.5px dashed ${dragOver ? 'var(--k-primary)' : 'var(--rule-strong)'}`, background: dragOver ? 'var(--k-primary-dim, rgba(0,130,198,0.06))' : 'transparent', color: 'var(--ink-3)', cursor: 'pointer', fontFamily: 'var(--font-ui)', transition: 'border-color 0.15s, background 0.15s' }}
+                  style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '18px 10px', borderRadius: "var(--r-md)", border: `1.5px dashed ${dragOver ? 'var(--primary)' : 'var(--outline)'}`, background: dragOver ? 'color-mix(in srgb, var(--primary) 6%, transparent)' : 'transparent', color: 'var(--on-surface-3)', cursor: 'pointer', fontFamily: 'var(--font-ui)', transition: 'border-color 0.15s, background 0.15s' }}
                 >
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 12V4M4 8l4-4 4 4"/><path d="M2 14h12"/></svg>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }}>Files & Images</span>
-                  <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center', color: 'var(--ink-3)' }}>PDF, Word, Excel<br/>max 25 MB</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--on-surface-2)' }}>Files & Images</span>
+                  <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center', color: 'var(--on-surface-3)' }}>PDF, Word, Excel<br/>max 25 MB</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => videoRef.current?.click()}
                   disabled={uploading}
-                  style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '18px 10px', borderRadius: 10, border: `1.5px dashed ${dragOver ? 'var(--k-primary)' : '#c4b5fd'}`, background: dragOver ? 'var(--k-primary-dim, rgba(0,130,198,0.06))' : 'transparent', color: '#8b5cf6', cursor: 'pointer', fontFamily: 'var(--font-ui)', transition: 'border-color 0.15s, background 0.15s' }}
+                  style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '18px 10px', borderRadius: "var(--r-md)", border: `1.5px dashed ${dragOver ? 'var(--primary)' : "color-mix(in srgb, var(--tertiary) 45%, transparent)"}`, background: dragOver ? 'color-mix(in srgb, var(--primary) 6%, transparent)' : 'transparent', color: "var(--tertiary)", cursor: 'pointer', fontFamily: 'var(--font-ui)', transition: 'border-color 0.15s, background 0.15s' }}
                 >
-                  <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="#8b5cf6" strokeWidth="1.5"><polygon points="4,2 14,8 4,14" fill="none"/></svg>
+                  <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--tertiary)" strokeWidth="1.5"><polygon points="4,2 14,8 4,14" fill="none"/></svg>
                   <span style={{ fontSize: 12, fontWeight: 600 }}>Video</span>
                   <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center' }}>Any format<br/>max 50 MB</span>
                 </button>
@@ -907,9 +980,9 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
         {/* Footer */}
 
-        <div style={{ padding: '14px 24px', borderTop: '1px solid var(--rule-soft)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <div style={{ padding: '14px 24px', borderTop: '1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
 
-          <span style={{ fontSize: 11, color: 'var(--ink-faint)', flex: 1 }}>↵ to create · Esc to close</span>
+          <span style={{ fontSize: 11, color: 'var(--on-surface-3)', flex: 1 }}>↵ to create · Esc to close</span>
 
           <button className="k-btn k-btn--ghost k-btn--sm" onClick={onClose}>Cancel</button>
 
@@ -947,33 +1020,39 @@ function PreviewOverlay({ file, onClose }) {
   const canPreviewDoc = isPdf || (isDoc && isHttp);
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+    // z-index 620 is the mobile-sheet/lightbox rung of the 26 §4 ladder — 200
+    // drawer · 340 picker · 420 modal · 520 toast · 620 sheet. The old 9999 sat
+    // above the toast layer, so an upload error raised behind the lightbox was
+    // invisible until it was dismissed.
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 620, background: 'color-mix(in srgb, var(--ink-fixed) 88%, transparent)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div onClick={e => e.stopPropagation()} style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh', width: canPreviewDoc ? '90vw' : undefined, height: canPreviewDoc ? '90vh' : undefined }}>
-        <button onClick={onClose} style={{ position: 'absolute', top: -14, right: -14, zIndex: 10, width: 32, height: 32, borderRadius: '50%', background: '#fff', border: 'none', cursor: 'pointer', fontSize: 18, fontWeight: 700, color: '#333', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+        <button onClick={onClose} aria-label="Close preview" style={{ position: 'absolute', top: -14, right: -14, zIndex: 10, width: 32, height: 32, borderRadius: '50%', background: 'var(--s-lowest)', border: 'none', cursor: 'pointer', fontSize: 18, fontWeight: 700, color: 'var(--on-surface)', boxShadow: 'var(--shadow-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
 
-        {isImg && !imgError && <img src={file.url} alt={n} onError={() => setImgError(true)} style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, display: 'block', objectFit: 'contain' }} />}
+        {isImg && !imgError && <img src={file.url} alt={n} onError={() => setImgError(true)} style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 'var(--r-md)', display: 'block', objectFit: 'contain' }} />}
 
-        {isVid && <video src={file.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 8, display: 'block' }} />}
+        {isVid && <video src={file.url} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '85vh', borderRadius: 'var(--r-md)', display: 'block' }} />}
 
         {isPdf && (
-          <object data={file.url} type="application/pdf" style={{ width: '100%', height: '100%', borderRadius: 8, border: 'none' }}>
-            <iframe src={file.url} style={{ width: '100%', height: '100%', border: 'none', borderRadius: 8 }} title={n} />
+          <object data={file.url} type="application/pdf" style={{ width: '100%', height: '100%', borderRadius: 'var(--r-md)', border: 'none' }}>
+            <iframe src={file.url} style={{ width: '100%', height: '100%', border: 'none', borderRadius: 'var(--r-md)' }} title={n} />
           </object>
         )}
 
         {isDoc && officeUrl && (
           <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <iframe src={officeUrl} style={{ flex: 1, width: '100%', border: 'none', borderRadius: 8 }} title={n} />
+            <iframe src={officeUrl} style={{ flex: 1, width: '100%', border: 'none', borderRadius: 'var(--r-md)' }} title={n} />
             <div style={{ textAlign: 'center', marginTop: 10 }}>
-              <a href={file.url} target="_blank" rel="noreferrer" style={{ color: '#fff', fontSize: 13, textDecoration: 'underline', opacity: 0.8 }}>Open in new tab</a>
+              {/* On the lightbox scrim, which is --ink-fixed in BOTH themes, so
+                  the label is --ink-fixed-dark rather than --on-surface. */}
+              <a href={file.url} target="_blank" rel="noreferrer" style={{ color: 'var(--ink-fixed-dark)', fontSize: 13, textDecoration: 'underline' }}>Open in new tab</a>
             </div>
           </div>
         )}
 
         {((isImg && imgError) || (!isImg && !isVid && !canPreviewDoc)) && (
-          <div style={{ background: '#fff', borderRadius: 12, padding: 32, textAlign: 'center' }}>
-            <div style={{ fontSize: 14, color: '#333', marginBottom: 16 }}>{imgError ? 'Image could not be loaded' : 'Preview not available for this file type'}</div>
-            <a href={file.url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#fff', fontSize: 13, fontWeight: 600, background: 'var(--k-primary, #0082c6)', borderRadius: 8, padding: '10px 20px', textDecoration: 'none' }}>Open in new tab</a>
+          <div style={{ background: 'var(--surface)', borderRadius: 'var(--r-lg)', padding: 32, textAlign: 'center' }}>
+            <div style={{ fontSize: 14, color: 'var(--on-surface)', marginBottom: 16 }}>{imgError ? 'Image could not be loaded' : 'Preview not available for this file type'}</div>
+            <a href={file.url} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--on-primary)', fontSize: 13, fontWeight: 600, background: 'var(--primary)', borderRadius: 'var(--r-sm)', padding: '10px 20px', textDecoration: 'none' }}>Open in new tab</a>
           </div>
         )}
       </div>
@@ -981,13 +1060,44 @@ function PreviewOverlay({ file, onClose }) {
   );
 }
 
-function FieldLabel({ children }) {
+/**
+ * The English label with its Devanagari apposition — the same pair the drawer
+ * draws through `.dr__lbl` / `.dr__lbl-hi`, so the two surfaces read alike.
+ *
+ * The Devanagari was previously part of the label STRING ("PROJECT · परियोजना")
+ * inside a `--font-ui` block that was also uppercased and tracked at .12em.
+ * Devanagari has no case, so `text-transform: uppercase` is a no-op on it, but
+ * the Latin letterforms of the fallback font are what actually rendered: the
+ * sub-label never reached `--font-indic` at all. Splitting it into its own span
+ * is what puts it in the Indic face and drops the tracking, which on Devanagari
+ * breaks the conjuncts apart.
+ */
+/**
+ * `id` is not cosmetic. This renders a <div>, not a <label>, so nothing here
+ * associates it with the control it sits above — every select, date field and
+ * textarea in this modal was reaching the accessibility tree unnamed. The
+ * controls now point at it with `aria-labelledby={id}`, which keeps the
+ * accessible name identical to the visible one (WCAG 2.5.3) instead of
+ * inventing a second string in an aria-label.
+ *
+ * A <label htmlFor> would be better still and is the fix to make when this file
+ * is next open for layout: <label> is display:inline, so the swap needs a
+ * `display:block` beside it and that is a style change, not an ARIA one.
+ *
+ * The separator moved inside the aria-hidden span deliberately — left outside,
+ * the accessible name ended on a stray "·".
+ */
+function FieldLabel({ children, hi, id }) {
 
   return (
 
-    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 6, fontFamily: 'var(--font-ui)' }}>
+    <div id={id} style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--on-surface-3)', marginBottom: 6, fontFamily: 'var(--font-ui)' }}>
 
       {children}
+
+      {hi && (
+        <span aria-hidden="true" style={{ fontFamily: 'var(--font-indic)', fontSize: 12, fontWeight: 400, letterSpacing: 0, textTransform: 'none' }}>{' · '}{hi}</span>
+      )}
 
     </div>
 

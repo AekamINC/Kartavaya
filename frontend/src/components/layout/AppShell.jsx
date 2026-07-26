@@ -1,19 +1,56 @@
-﻿/**
- * AppShell.jsx — main layout shell.
- * Week 3: Templates added to sidebar nav.
+/**
+ * AppShell.jsx — the staff layout shell. `01-navigation.md` §2.
  *
- * Bug fix (2026-05-14):
- * FIX #3: teamId is now null (not "") until the /teams fetch completes.
- *   Previously it resolved to "" immediately, and that empty string was
- *   passed to ActivityFeedPage / AutomationsPage / TimeReportPage via
- *   outlet context, causing those pages to fire requests with no team_id.
- *   Child pages should render a loading state while teamId === null.
+ *   AppShell
+ *   ├── Sidebar        rail | wide            layout/Sidebar.jsx
+ *   ├── MobileDrawer   ≤1023px overlay        layout/MobileDrawer.jsx
+ *   ├── main
+ *   │   ├── mobbar     ≤1023px  burger · brand · bell
+ *   │   ├── Topbar     crumb · palette · bell · new task
+ *   │   ├── <Outlet/>
+ *   │   └── MobileNav  ≤767px 5-slot bottom bar
+ *   └── overlays       palette · shortcuts · toasts · permission ask
+ *
+ * A CLIENT NEVER REACHES THIS FILE. `App.jsx` routes `/client/*` through
+ * `pages/client/ClientShell.jsx` outside this shell and `Protected` bounces a
+ * client off every staff path, because `19-client-portal.md`'s never-see list
+ * opens with "The module sidebar. A client has no modules."
+ *
+ * ── Notifications (21-notifications-inbox.md defects 1 and 4)
+ *
+ * This file used to be one of three components that independently owned the
+ * notification list: it polled `/notifications/poll` into its own `unread`
+ * integer and its own toast array, while `NotificationsModal` fetched
+ * `/notifications` into a second array and `InboxPage` fetched it into a third.
+ * Marking something read in the bell and then opening the Inbox showed it
+ * unread again, and the bell badge kept a stale count until the next tick.
+ *
+ * The poll now lives in `NotificationProvider` and the count comes from
+ * `useNotifications()`, which is the same store the Inbox and the bell panel
+ * read. There is one array and one definition of unread.
+ *
+ * What is still owned here is the TOAST QUEUE, and deliberately: the store
+ * holds notifications, not the transient stack of cards showing them, and the
+ * provider hands this shell exactly the fresh rows to toast through `onFresh`.
+ *
+ * ── The permission prompt no longer runs on a stopwatch
+ *
+ * It used to be a `setTimeout(…, 4000)` on the first authenticated load — four
+ * seconds into a user's first ever session, before they had created anything,
+ * about notifications they had not yet been given a reason to want. Deny once
+ * and the browser records it permanently; no code can ask again. The ask is now
+ * gated on `askAfterAction()`, fired after an action that actually produces a
+ * notification, so the prompt explains itself.
+ *
+ * FIX #3 (2026-05-14) is unchanged: teamId is null (not "") until the /teams
+ * fetch resolves, so child pages can guard on null instead of firing requests
+ * with an empty team_id.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { NotificationsModal } from '../NotificationsModal';
-import TaskEditor from '../TaskEditor';
+import NewTaskModal from '../NewTaskModal';
 import Sidebar from './Sidebar';
 import Topbar  from './Topbar';
 import { NotifToastContainer, NotifPermissionPrompt } from './NotifToast';
@@ -26,6 +63,10 @@ import MobileNav from './MobileNav';
 import { ICONS } from './navIcons';
 import { urlBase64ToUint8Array } from '../../lib/push';
 import { playNotifSound } from '../../lib/notifSound';
+import {
+  NotificationProvider, askAfterAction, clearAskReason,
+  notifPermission, readNotifPrefs, shouldDeliver, useNotifications,
+} from '../../context/NotificationContext';
 
 // `data-platform` is written by the blocking script in index.html, beside
 // data-theme and for the same reason: both must be on <html> before the
@@ -50,17 +91,22 @@ async function subscribeToPush() {
   } catch (_) {}
 }
 
+// Every read of `Notification` goes through `notifPermission()`, which returns
+// the string 'unsupported' rather than throwing. The API is absent in iOS
+// Safari before 16.4, in embedded webviews, and outside a secure context, and
+// an unguarded read at any of those is a blank screen rather than a missing
+// bell.
 function requestBrowserPermission() {
-  if (!('Notification' in window)) return;
-  if (Notification.permission === 'default') {
-    Notification.requestPermission().then(perm => { if (perm === 'granted') subscribeToPush(); });
-  } else if (Notification.permission === 'granted') {
+  const perm = notifPermission();
+  if (perm === 'default') {
+    Notification.requestPermission().then(p => { if (p === 'granted') subscribeToPush(); });
+  } else if (perm === 'granted') {
     subscribeToPush();
   }
 }
 
 function fireBrowserNotif(title, body) {
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  if (notifPermission() !== 'granted') return;
   try {
     if (navigator.serviceWorker?.controller) {
       navigator.serviceWorker.ready.then(reg =>
@@ -73,45 +119,98 @@ function fireBrowserNotif(title, body) {
 }
 
 export default function AppShell() {
-  const [notifOpen,    setNotifOpen]    = useState(false);
-  const [newTaskOpen,  setNewTaskOpen]  = useState(false);
-  const [cmdkOpen,     setCmdkOpen]     = useState(false);
+  const [notifOpen,     setNotifOpen]     = useState(false);
+  const [newTaskOpen,   setNewTaskOpen]   = useState(false);
+  const [cmdkOpen,      setCmdkOpen]      = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [unread,       setUnread]       = useState(0);
-  const [approvals,    setApprovals]    = useState(0);
-  const [sidebarOpen,  setSidebarOpen]  = useState(false);
-  const [teams,        setTeams]        = useState([]);
-  const [teamsLoaded,  setTeamsLoaded]  = useState(false);
-  const [notifPrompt,  setNotifPrompt]  = useState(false);
-  const [toasts,       setToasts]       = useState([]);
-  const prevUnread = useRef(null);
+  const [approvals,     setApprovals]     = useState(0);
+  const [sidebarOpen,   setSidebarOpen]   = useState(false);
+  const [teams,         setTeams]         = useState([]);
+  const [teamsLoaded,   setTeamsLoaded]   = useState(false);
+  const [toasts,        setToasts]        = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
+
+  // One array, one definition of unread — the same store the bell panel and
+  // the Inbox read. This replaces the local `unread` integer that a second
+  // poll used to maintain.
+  const { unread, askReason } = useNotifications({ autoLoad: false });
+
   useEffect(() => { window.__kartavya_navigate = navigate; return () => { delete window.__kartavya_navigate; }; }, [navigate]);
 
-
-  // Register SW and ask for browser notification permission after 4 s
-  useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
-
-      // When a new service worker takes control after a deploy, notify user
-      // instead of force-reloading — auto-reload resets all React state
-      // (open forms, active tabs) causing data loss mid-workflow.
-      let notifiedForNewSW = false;
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (notifiedForNewSW) return;
-        notifiedForNewSW = true;
-        setToasts(prev => [...prev, { notification_id: `sw-${Date.now()}`, title: 'App updated — refresh when ready', message: 'A new version is available.', url: null }]);
-      });
-    }
-    const t = setTimeout(() => {
-      if (!('Notification' in window)) return;
-      if (Notification.permission === 'default') setNotifPrompt(true);
-      else if (Notification.permission === 'granted') requestBrowserPermission();
-    }, 4000);
-    return () => clearTimeout(t);
+  const dropToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.notification_id !== id));
   }, []);
+
+  /**
+   * What the provider's poll hands us. STABLE identity is not cosmetic here:
+   * `NotificationProvider` lists `onFresh` in its effect dependencies, so an
+   * inline arrow would tear down and rebuild the 60-second interval on every
+   * render of this shell — which is every navigation.
+   *
+   * The delivery gate is `shouldDeliver`, not a bare `if`. Quiet hours mute the
+   * toast, the sound and the push; they never mute the notification, which has
+   * already been ingested into the store above and arrives in the Inbox with
+   * its real timestamp.
+   *
+   * Gated PER ROW, not on `fresh[0]`. A poll can return a mixed batch, and
+   * `support` is the one kind that ignores DND outright — a customer asked to
+   * grant access to their own data is told immediately, at 3am, whatever their
+   * settings say (11-platform-admin.md: support access is never silent).
+   * Deciding the whole batch from its first row silences that.
+   *
+   * The row field is `type`; the backend writes `assigned`, `mention`,
+   * `approval_request`, `reminder` and so on (`server.py` · create_notification).
+   */
+  const onFresh = useCallback((fresh) => {
+    if (!fresh?.length) return;
+    const prefs = readNotifPrefs();
+    const gates = fresh.map(n => shouldDeliver(n?.type, prefs));
+
+    if (document.visibilityState === 'visible') {
+      const showable = fresh.filter((_, i) => gates[i].toast);
+      if (!showable.length) return;
+      setToasts(prev => [
+        ...prev,
+        ...showable.filter(n => !prev.some(p => p.notification_id === n.notification_id)),
+      ]);
+      if (gates.some(g => g.sound)) playNotifSound();
+      return;
+    }
+    // Hidden tab. A synthetic "New notification / Open notifications to view"
+    // fallback used to fire here with no url and nothing to say; a notification
+    // that interrupts and then declines to explain itself costs a decision and
+    // returns nothing. With no content, the badge moves silently.
+    const pushable = fresh.find((n, i) => gates[i].push && n?.title);
+    if (pushable) fireBrowserNotif(pushable.title, pushable.message ?? '');
+  }, []);
+
+  // Service worker only. The 4-second permission timer that used to live in
+  // this effect is gone — see the file header.
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+
+    // When a new service worker takes control after a deploy, notify instead of
+    // force-reloading — auto-reload resets all React state (open forms, active
+    // tabs), losing work mid-flow.
+    let notified = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (notified) return;
+      notified = true;
+      setToasts(prev => [...prev, {
+        notification_id: `sw-${Date.now()}`,
+        title: 'App updated — refresh when ready',
+        message: 'A new version is available.',
+        url: null,
+      }]);
+    });
+  }, []);
+
+  // Already granted from a previous session — re-subscribe silently. This asks
+  // nothing and shows nothing; it only reconnects a push subscription the
+  // browser dropped.
+  useEffect(() => { if (notifPermission() === 'granted') subscribeToPush(); }, []);
 
   useEffect(() => {
     // Stale-while-revalidate: show cached teams instantly, then refresh in background.
@@ -128,61 +227,35 @@ export default function AppShell() {
       .finally(() => setTeamsLoaded(true));
   }, []);
 
+  /**
+   * The approvals badge — the ONE integer the provider does not carry.
+   *
+   * `/notifications/poll` returns `{ unread, fresh, approvals }` and
+   * `NotificationProvider` reads only `fresh`, so adopting it would have
+   * silently reverted the approvals badge to the hardcoded 0 it sat at before
+   * anyone wired it. The one-line fix belongs in the provider (pass the whole
+   * payload alongside `fresh`) and is in the handover report rather than here,
+   * because `context/` is outside this change's file ownership.
+   *
+   * Until then: five minutes, not sixty seconds, and no second timer on the
+   * hot path. A pending-approval count that is a few minutes stale is a badge;
+   * a second 60s poll for one integer is the waste 01 §4 names by name.
+   */
   useEffect(() => {
     let live = true;
-    const tick = async () => {
-      try {
-        const r = await api.get('/notifications/poll');
-        const count = r.data.unread ?? 0;
-        const fresh = r.data.fresh ?? [];
-        if (live) {
-          if (prevUnread.current !== null && count > prevUnread.current) {
-            if (document.visibilityState === 'visible') {
-              // Show a toast per fresh notification.
-              //
-              // The `else` branch here used to manufacture a synthetic toast
-              // reading "New notification / Open notifications to view", with
-              // url: null so it was not even clickable. A notification that
-              // interrupts and then declines to say what happened is worse than
-              // none — it costs a decision and returns nothing. When the poll
-              // knows the count but not the content, update the badge silently
-              // and let the user open the bell when they choose.
-              if (fresh.length > 0) {
-                setToasts(prev => [...prev, ...fresh.filter(n => !prev.find(p => p.notification_id === n.notification_id))]);
-                playNotifSound();
-              }
-            } else if (Notification.permission === 'granted') {
-              fireBrowserNotif(
-                fresh[0]?.title ?? 'New notification',
-                fresh[0]?.message ?? 'Open Kartavaya to view'
-              );
-            }
-          }
-          prevUnread.current = count;
-          setUnread(count);
-          // Both badges arrive on the same call. 01 §4 asks for one endpoint
-          // returning { inbox, approvals } rather than two polls for two
-          // integers on every page; /notifications/poll was already that call
-          // for one of them, so `approvals` was added to its payload instead
-          // of standing up a second poll beside it.
-          setApprovals(r.data.approvals ?? 0);
-        }
-      } catch (_) {}
+    const tick = () => {
+      api.get('/notifications/poll')
+        .then(r => { if (live) setApprovals(r.data?.approvals ?? 0); })
+        .catch(() => {});
     };
     tick();
-    let id = setInterval(tick, 60_000);
-    const onVis = () => {
-      clearInterval(id);
-      id = setInterval(tick, document.hidden ? 300_000 : 60_000);
-      if (!document.hidden) tick();
-    };
-    document.addEventListener('visibilitychange', onVis);
-    return () => { live = false; clearInterval(id); document.removeEventListener('visibilitychange', onVis); };
+    const id = setInterval(tick, 300_000);
+    return () => { live = false; clearInterval(id); };
   }, []);
 
-  useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
+  useEffect(() => { setSidebarOpen(false); setNotifOpen(false); }, [location.pathname]);
 
-  const gPending = useRef(false);
+  const gPending = React.useRef(false);
   useEffect(() => {
     const isInput = () => {
       const tag = document.activeElement?.tagName;
@@ -213,95 +286,148 @@ export default function AppShell() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  /**
+   * The ask, attached to an action rather than a clock.
+   *
+   * Creating a task from the shell is the first thing most users do that
+   * produces a notification for somebody — an assignee is told, and if it is
+   * routed for approval an approver is too. `askAfterAction` records the reason
+   * and the prompt below renders it as "You just created a task", so the
+   * request arrives with its own justification instead of four seconds after a
+   * cold start.
+   */
+  const onTaskCreated = useCallback(() => {
+    setNewTaskOpen(false);
+    askAfterAction('created a task');
+  }, []);
+
   // FIX #3: null until loaded — child pages guard on null to avoid empty requests.
   const teamIdFromPath = location.pathname.match(/\/projects\/([^/]+)/)?.[1];
   const teamId = teamIdFromPath || (teamsLoaded ? (teams[0]?.team_id || '') : null);
 
+  // The Inbox renders `NotificationBanner`, which carries the same ask in the
+  // page body. Showing the corner card there too would ask the same question
+  // twice on one screen.
+  const showAsk = Boolean(askReason) && notifPermission() === 'default' && location.pathname !== '/inbox';
+
   return (
-    <div data-testid="app-shell" className="kv">
-      {/* First tab stop. Must stay first in DOM order — the sidebar below is
-          15 module links plus a settings group. */}
-      <SkipLink />
+    <NotificationProvider onFresh={onFresh}>
+      <div data-testid="app-shell" className="kv">
+        {/* First tab stop. Must stay first in DOM order — the sidebar below is
+            15 module links plus a settings group. */}
+        <SkipLink />
 
-      {/* Sidebar slot. The ≤1023px media query hides THIS, not `.side`, so the
-          second copy rendered inside MobileDrawer survives — hiding `.side`
-          directly is what makes a burger open an empty scrim. */}
-      <div className="kv__side">
-        <Sidebar inboxCount={unread} approvalsCount={approvals} />
-      </div>
-
-      {/* The replacement that ships with that media query, in the same change. */}
-      <MobileDrawer
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        inboxCount={unread}
-        approvalsCount={approvals}
-      />
-
-      {/* Main column */}
-      <div className="kv__main">
-        {/* Compact bar — burger, brand, actions. Shown ≤1023px. */}
-        <div className="kv__mobbar">
-          <button type="button" className="k-iconbtn" onClick={() => setSidebarOpen(true)} aria-label="Open menu" aria-expanded={sidebarOpen}>
-            {ICONS.burger}
-          </button>
-          <span className="kv__mobbar-brand">Kartavaya</span>
-          <div className="kv__mobbar-actions">
-            <button type="button" className="k-iconbtn" onClick={() => setNotifOpen(true)} aria-label="Notifications">
-              {ICONS.bell}
-              {unread > 0 && <span className="k-iconbtn__dot" />}
-            </button>
-          </div>
+        {/* Sidebar slot. The ≤1023px media query hides THIS, not `.side`, so the
+            second copy rendered inside MobileDrawer survives — hiding `.side`
+            directly is what makes a burger open an empty scrim. */}
+        <div className="kv__side">
+          <Sidebar inboxCount={unread} approvalsCount={approvals} />
         </div>
 
-        {/* Desktop topbar */}
-        <div className="kv__top">
-          <Topbar unread={unread} onOpenNotifications={() => setNotifOpen(true)} onNewTask={() => setNewTaskOpen(true)} onOpenCmdk={() => setCmdkOpen(true)} />
-        </div>
-
-
-        {/* Page content. tabIndex={-1} is required by the skip link — without
-            it the jump moves the scroll position but not focus, so the next Tab
-            continues from the sidebar. */}
-        <main className="kv__content" id="main" tabIndex={-1}>
-          <Outlet context={{ teamId, teams }} />
-        </main>
-
-        {/* Bottom bar, ≤767px. The compact bar above carries no "New task"
-            because the FAB here is that action, at 44px, within thumb reach. */}
-        <MobileNav
-          unread={unread}
-          onNewTask={() => setNewTaskOpen(true)}
-          onOpenMore={() => setSidebarOpen(true)}
+        {/* The replacement that ships with that media query, in the same change. */}
+        <MobileDrawer
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          inboxCount={unread}
+          approvalsCount={approvals}
         />
-      </div>
 
-      <NotificationsModal open={notifOpen} onOpenChange={setNotifOpen} />
-      <TaskEditor open={newTaskOpen} onOpenChange={setNewTaskOpen} teams={teams} defaultTeamId={teamId ?? undefined} onSaved={() => setNewTaskOpen(false)} />
-      <CommandPalette open={cmdkOpen} onClose={() => setCmdkOpen(false)} onNewTask={() => { setCmdkOpen(false); setNewTaskOpen(true); }} />
-      <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+        {/* Main column */}
+        <div className="kv__main">
+          {/* Compact bar — burger, brand, actions. Shown ≤1023px. */}
+          <div className="kv__mobbar">
+            <button type="button" className="k-iconbtn" onClick={() => setSidebarOpen(true)} aria-label="Open menu" aria-expanded={sidebarOpen}>
+              {ICONS.burger}
+            </button>
+            <span className="kv__mobbar-brand">Kartavaya</span>
+            <div className="kv__mobbar-actions">
+              {/* Its own anchor. The panel hangs off whichever bell was
+                  pressed; anchoring both to the desktop topbar would open it
+                  off-screen on a phone, where that bar is display:none. */}
+              <div className="k-notif-anchor">
+                <button
+                  type="button"
+                  className="k-iconbtn"
+                  data-notif-trigger=""
+                  aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
+                  aria-expanded={notifOpen}
+                  aria-haspopup="dialog"
+                  onClick={() => setNotifOpen(o => !o)}
+                >
+                  {ICONS.bell}
+                  {unread > 0 && <span className="k-iconbtn__dot" />}
+                </button>
+                <NotificationsModal open={notifOpen} onOpenChange={setNotifOpen} />
+              </div>
+            </div>
+          </div>
 
-      {/* Corner notification permission prompt */}
-      {notifPrompt && (
-        <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9998, pointerEvents: 'all' }}>
-          <NotifPermissionPrompt
-            onAllow={() => { setNotifPrompt(false); requestBrowserPermission(); }}
-            onDismiss={() => setNotifPrompt(false)}
+          {/* Desktop topbar */}
+          <div className="kv__top">
+            <Topbar
+              unread={unread}
+              notifOpen={notifOpen}
+              onNotifOpenChange={setNotifOpen}
+              onNewTask={() => setNewTaskOpen(true)}
+              onOpenCmdk={() => setCmdkOpen(true)}
+            />
+          </div>
+
+          {/* Page content. tabIndex={-1} is required by the skip link — without
+              it the jump moves the scroll position but not focus, so the next Tab
+              continues from the sidebar. */}
+          <main className="kv__content" id="main" tabIndex={-1}>
+            <Outlet context={{ teamId, teams }} />
+          </main>
+
+          {/* Bottom bar, ≤767px. The compact bar above carries no "New task"
+              because the FAB here is that action, at 44px, within thumb reach. */}
+          <MobileNav
+            unread={unread}
+            onNewTask={() => setNewTaskOpen(true)}
+            onOpenMore={() => setSidebarOpen(true)}
           />
         </div>
-      )}
 
-      {/* First-run setup checklist — floating, bottom-right, always skippable */}
-      <OnboardingChecklist onNewTask={() => setNewTaskOpen(true)} />
+        {/* The global "New task" surface. This slot rendered `TaskEditor`, a
+            595-line second editor for the same entity that `TaskDrawer` and
+            this modal already cover — `03-task-drawer.md` marks it "Audit for
+            deletion … two 32 KB components editing the same entity is how the
+            status-colour drift happened". `NewTaskModal`'s own header names
+            this exact call site as its purpose, and it was already the surface
+            `BoardsPage` used, so the two create paths now agree. */}
+        <NewTaskModal
+          open={newTaskOpen}
+          onClose={() => setNewTaskOpen(false)}
+          onCreated={onTaskCreated}
+          defaultProjectId={teamId ?? ''}
+        />
 
-      {/* In-app toast stack */}
-      <NotifToastContainer
-        toasts={toasts}
-        onDismiss={(id) => setToasts(prev => prev.filter(t => t.notification_id !== id))}
-      />
-    </div>
+        <CommandPalette open={cmdkOpen} onClose={() => setCmdkOpen(false)} onNewTask={() => { setCmdkOpen(false); setNewTaskOpen(true); }} />
+        <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+
+        {/* Corner permission prompt. Was an inline zIndex: 9998, which sat above
+            the command palette's ladder-correct 620 and above every modal — a
+            corner card rendered on top of the dialog the user was reading.
+            `.kv__ask` puts it on 26 §4's toast rung. */}
+        {showAsk && (
+          <div className="kv__ask">
+            <NotifPermissionPrompt
+              onAllow={() => { clearAskReason(); requestBrowserPermission(); }}
+              onDismiss={clearAskReason}
+            />
+          </div>
+        )}
+
+        {/* First-run setup checklist — floating, bottom-right, always skippable */}
+        <OnboardingChecklist onNewTask={() => setNewTaskOpen(true)} />
+
+        {/* In-app toast stack */}
+        <NotifToastContainer toasts={toasts} onDismiss={dropToast} />
+      </div>
+    </NotificationProvider>
   );
 }
 
-// re-export Protected so App.js can import from one place
+// re-export Protected so App.jsx can import from one place
 export { default as Protected } from './Protected';

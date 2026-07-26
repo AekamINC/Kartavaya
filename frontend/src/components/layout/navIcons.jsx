@@ -4,6 +4,16 @@
 import React from 'react';
 
 export const ICONS = {
+  // `settings`, `documents` and `pahchan` were REFERENCED before they were
+  // drawn. `navConfig.js` asks for `icon: 'settings'` on Srijan Admin, so
+  // `ICONS[icon]` resolved to undefined and React rendered nothing — one nav
+  // row in the settings group sat with an empty 16px gap where every sibling
+  // has a glyph, which reads as a rendering failure rather than a style. The
+  // other two are new destinations added in this change.
+  settings:    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="2.2"/><path d="M12.9 9.8a1.2 1.2 0 00.24 1.32l.04.05a1.45 1.45 0 11-2.06 2.05l-.04-.04a1.2 1.2 0 00-1.32-.24 1.2 1.2 0 00-.73 1.1v.12a1.45 1.45 0 11-2.9 0v-.06a1.2 1.2 0 00-.79-1.1 1.2 1.2 0 00-1.32.24l-.04.04a1.45 1.45 0 11-2.06-2.05l.04-.05a1.2 1.2 0 00.24-1.32 1.2 1.2 0 00-1.1-.73H1a1.45 1.45 0 110-2.9h.06a1.2 1.2 0 001.1-.79 1.2 1.2 0 00-.24-1.32l-.04-.04A1.45 1.45 0 114.94 1.9l.04.04a1.2 1.2 0 001.32.24h.06a1.2 1.2 0 00.73-1.1V1a1.45 1.45 0 112.9 0v.06a1.2 1.2 0 00.73 1.1 1.2 1.2 0 001.32-.24l.04-.04a1.45 1.45 0 112.06 2.05l-.04.04a1.2 1.2 0 00-.24 1.32v.06a1.2 1.2 0 001.1.73H15a1.45 1.45 0 110 2.9h-.06a1.2 1.2 0 00-1.1.73z"/></svg>,
+  documents:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3.5 2h5l3.5 3.5V14h-8.5z"/><path d="M8.5 2v3.5H12"/><path d="M5.5 8.5h5M5.5 11h3.5"/></svg>,
+  pahchan:     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 5.5V3a1 1 0 011-1h2.5M14 5.5V3a1 1 0 00-1-1h-2.5M2 10.5V13a1 1 0 001 1h2.5M14 10.5V13a1 1 0 01-1 1h-2.5"/><circle cx="8" cy="7" r="1.8"/><path d="M5.2 11.5c0-1.5 1.3-2.4 2.8-2.4s2.8.9 2.8 2.4"/></svg>,
+
   dashboard:   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5"/></svg>,
   projects:    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M2 5l1.5-2H7l1.5 2H14v8H2V5z"/></svg>,
   tasks:       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 4h10M3 8h7M3 12h9"/><circle cx="13" cy="8" r="1.4" fill="currentColor" stroke="none"/></svg>,

@@ -117,10 +117,14 @@ const ILLUSTRATIONS = {
 export function EmptyState({
   illustration = 'generic', icon, title, description, action, onAction, className, tone,
 }) {
-  let titleEn = title, titleSecondary = null;
+  let titleEn = title, titleSecondary = null, titleSecondaryLang = 'hi';
   if (title && typeof title === 'object') {
     titleEn = title.en;
     titleSecondary = title.hi || title.gu || null;
+    // Track WHICH key supplied it: the secondary carried no lang at all, so a
+    // screen reader read the Devanagari with English rules. It cannot be a
+    // constant "hi" either, because a `gu` title is Gujarati.
+    titleSecondaryLang = title.hi ? 'hi' : 'gu';
   }
 
   const accent = tone === 'ok' ? 'var(--ok)' : 'var(--on-surface-faint)';
@@ -138,7 +142,7 @@ export function EmptyState({
       {titleEn && (
         <h3 className="empty__title">
           {titleEn}
-          {titleSecondary && <span className="empty__title-hi">{titleSecondary}</span>}
+          {titleSecondary && <span className="empty__title-hi" lang={titleSecondaryLang}>{titleSecondary}</span>}
         </h3>
       )}
       {description && <p className="empty__body">{description}</p>}

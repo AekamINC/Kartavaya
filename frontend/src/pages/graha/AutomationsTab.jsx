@@ -60,7 +60,7 @@ export default function AutomationsTab() {
       </div>
 
       {showForm && (
-        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16, marginBottom: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name</span>
               <input className="k-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /></label>
@@ -80,16 +80,16 @@ export default function AutomationsTab() {
 
       {automations.map(a => (
         <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--rule-soft)' }}>
-          <span style={{ width: 8, height: 8, borderRadius: 99, background: a.is_active ? '#10b981' : '#6b7280', flexShrink: 0 }} />
+          <span style={{ width: 8, height: 8, borderRadius: 'var(--r-pill)', background: a.is_active ? 'var(--ok)' : 'var(--on-surface-3)', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 500 }}>{a.name}</div>
             <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-              When: <Badge text={a.trigger_type.replace(/_/g, ' ')} color="#6366f1" /> → <Badge text={a.action_type.replace(/_/g, ' ')} color="#0082c6" />
+              When: <Badge text={a.trigger_type.replace(/_/g, ' ')} color="var(--st-in-review)" /> → <Badge text={a.action_type.replace(/_/g, ' ')} color="var(--st-in-progress)" />
               {a.run_count > 0 && <span style={{ marginLeft: 8 }}>· Ran {a.run_count}×</span>}
             </div>
           </div>
           <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => toggle(a.id)}>{a.is_active ? 'Disable' : 'Enable'}</button>
-          <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => remove(a.id)}>Delete</button>
+          <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--danger)' }} onClick={() => remove(a.id)}>Delete</button>
         </div>
       ))}
 
@@ -98,7 +98,7 @@ export default function AutomationsTab() {
           <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Recent Logs</h4>
           {logs.slice(0, 20).map(l => (
             <div key={l.id} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid var(--rule-soft)', display: 'flex', gap: 8 }}>
-              <Badge text={l.result} color={l.result === 'success' ? '#10b981' : l.result === 'error' ? '#ef4444' : '#6b7280'} />
+              <Badge text={l.result} color={l.result === 'success' ? 'var(--ok)' : l.result === 'error' ? 'var(--danger)' : 'var(--on-surface-3)'} />
               <span style={{ color: 'var(--ink-2)' }}>{l.automation_name}</span>
               <span style={{ flex: 1 }} />
               <span style={{ color: 'var(--ink-3)', fontSize: 11 }}>{new Date(l.created_at).toLocaleString('en-IN')}</span>

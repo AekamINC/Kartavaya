@@ -48,7 +48,7 @@ export default function CustomFieldsTab() {
       </div>
 
       {showForm && (
-        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16, marginBottom: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Entity</span>
               <select className="k-input" value={form.entity_type} onChange={e => setForm({ ...form, entity_type: e.target.value })}>
@@ -87,9 +87,9 @@ export default function CustomFieldsTab() {
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: 13, fontWeight: 500 }}>{f.field_name}</span>
                   <span style={{ fontSize: 11, color: 'var(--ink-3)', marginLeft: 8 }}>{f.field_type}</span>
-                  {f.is_required && <Badge text="required" color="#ef4444" />}
+                  {f.is_required && <Badge text="required" color="var(--danger)" />}
                 </div>
-                <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => remove(f.id)}>Delete</button>
+                <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--danger)' }} onClick={() => remove(f.id)}>Delete</button>
               </div>
             ))}
           </div>

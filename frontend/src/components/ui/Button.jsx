@@ -12,7 +12,15 @@ import React from 'react';
  * exception is a confirmed delete inside a dialog the user opened on purpose,
  * and that lives in ConfirmDialog rather than being a variant here.
  */
-const VARIANTS = ['fill', 'tonal', 'out', 'text', 'ghost', 'danger'];
+/**
+ * `dangerfill` is the seventh: `.btn--dangerfill` has always existed in
+ * components.css but was NOT in this list, so `variant="dangerfill"` fell
+ * through to `ghost` — a delete button rendered as a quiet grey one, with no
+ * error. ConfirmDialog reached the rule by writing the raw className instead,
+ * which is why nobody noticed. Naming it here closes the gap without changing
+ * what ConfirmDialog renders.
+ */
+const VARIANTS = ['fill', 'tonal', 'out', 'text', 'ghost', 'danger', 'dangerfill'];
 const SIZES = { sm: 'btn--sm', md: '', lg: 'btn--lg' };
 
 export default function Button({

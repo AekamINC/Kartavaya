@@ -1,7 +1,7 @@
 /**
  * ChannelsTab.jsx — the three-pane shell: list · chat · thread.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { currentUser } from '../../lib/auth';
 import { EmptyState, useToast } from '../../components/ui';
@@ -12,7 +12,11 @@ import { ChatArt } from './icons';
 
 export default function ChannelsTab() {
   const { pushToast } = useToast();
-  const meId = currentUser()?.user_id;
+  // `currentUser()` parses localStorage and returns a fresh object every call,
+  // so it is read once — otherwise every render hands the tree a new identity.
+  const me = useMemo(() => currentUser(), []);
+  const meId = me?.user_id;
+  const meName = me?.full_name || me?.name || null;
 
   const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +84,9 @@ export default function ChannelsTab() {
         <ChatPane
           key={selected.id}
           channel={selected}
+          me={me}
           meId={meId}
+          meName={meName}
           threadOpen={!!thread}
           onOpenThread={setThread}
           onSent={loadChannels}
@@ -101,7 +107,9 @@ export default function ChannelsTab() {
           key={thread.id}
           channelId={selected.id}
           root={thread}
+          me={me}
           meId={meId}
+          meName={meName}
           onClose={() => setThread(null)}
         />
       )}

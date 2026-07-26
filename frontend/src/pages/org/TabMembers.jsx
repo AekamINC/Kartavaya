@@ -4,6 +4,8 @@ import {
   Button, Checkbox, ConfirmDialog, ErrorState, Sheet, SkeletonTable, useToast,
 } from '../../components/ui';
 import MemberTable from './MemberTable';
+import AccessMatrix from './AccessMatrix';
+import { Lock } from './ModuleCard';
 import { ORG_MODULES, orgModuleColor } from './catalogue';
 import {
   DEFAULT_GRANT_LEVEL, isSeparatedDuty, levelLabel, validLevels,
@@ -29,6 +31,21 @@ import {
  * response, so if this page is ever served by an older backend the control
  * disables itself instead of writing a level that will be discarded — the same
  * reason it was written that way when the gap was the other way round.
+ *
+ * Verified end to end against the live schema, 2026-07-26:
+ * `staging.org_member_modules.role` is `TEXT NOT NULL DEFAULT 'viewer'` with
+ * `org_member_modules_role_check` and `org_member_modules_level_is_meaningful`
+ * both present, and the second is character-for-character what `validLevels()`
+ * computes — so the picker and the CHECK constraint cannot disagree.
+ *
+ * ── Two things this screen must keep saying out loud ────────────────────────
+ * · `UNIQUE (user_id, org_id, module_code)` means a member holds exactly ONE
+ *   level per module. The role model allows holding admin AND approver on
+ *   Vetana; the table cannot store it, and sending both in one save would
+ *   violate the unique index rather than fail cleanly. The grant row says so.
+ * · `require_module` admits any org_admin without consulting a grant row, so an
+ *   admin's grants are intent and not yet a limit. The sheet says so on admin
+ *   rows.
  */
 
 const ROLE_OPTIONS = [
@@ -73,7 +90,7 @@ function GrantRow({ mod, grant, levelsEditable, onToggle, onLevel }) {
         <span className="of__h"> {mod.en}</span>
       </span>
 
-      {mod.sensitive && <span className="omod__lock">SENSITIVE</span>}
+      {mod.sensitive && <span className="omod__lock">{Lock} SENSITIVE</span>}
 
       <span className="ogr__lv" role="group" aria-label={`${mod.label} level`}>
         {levels.map(l => (
@@ -90,13 +107,27 @@ function GrantRow({ mod, grant, levelsEditable, onToggle, onLevel }) {
         ))}
       </span>
 
-      {/* Stated on the row it applies to, not in a footnote. On Vetana and Ganit
-          admin is breadth and approver is depth — admin alone cannot release a
-          payment or close a period, and a person who needs both holds both. */}
-      {on && isSeparatedDuty(mod.code) && (
-        <span className="of__h" style={{ flexBasis: '100%' }}>
-          Admin does not include Approver here — whoever sets what people are paid
-          must not also release the money. Grant both if one person does both.
+      {/* Stated on the row it applies to, not in a footnote — and stated whether
+          or not the module is currently on, because the moment it matters is
+          while you are deciding to grant it, not after.
+
+          The sentence deliberately no longer ends "grant both if one person does
+          both". `staging.org_member_modules` is UNIQUE (user_id, org_id,
+          module_code), so a second grant row on the same module CANNOT EXIST —
+          sending admin and approver for one module in the same save violates the
+          unique index. The role model allows holding both; the schema does not
+          yet represent it. Promising it here would be a promise this screen
+          cannot keep. See the report. */}
+      {isSeparatedDuty(mod.code) && (
+        <span className="ogr__note">
+          <strong>Admin does not include Approver here.</strong>
+          {on && (
+            <> Admin is breadth — salary structures, chart of accounts. Approver is
+              depth — releasing payments, closing periods. Whoever sets what people
+              are paid must not also be the one who releases the money, so pick the
+              one this person actually does. One grant per module is all this
+              stores today.</>
+          )}
         </span>
       )}
     </div>
@@ -118,6 +149,14 @@ export default function TabMembers({ isOwner, selfUserId }) {
   const [addRole, setAddRole] = useState('org_member');
   const [adding, setAdding] = useState(false);
 
+  // `null` means "not looked up", which is what the matrix needs to tell apart
+  // from "nothing is subscribed". Fetched on the first switch to the matrix
+  // rather than on mount: the list view does not use it, and a parallel request
+  // whose result is never rendered is the exact defect 10 §"What's wrong today"
+  // opens with.
+  const [view, setView] = useState('list');
+  const [activeModules, setActiveModules] = useState(null);
+
   const load = useCallback(() => {
     setFailed(null);
     return api.get('/v1/org/members')
@@ -131,6 +170,17 @@ export default function TabMembers({ isOwner, selfUserId }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const showMatrix = () => {
+    setView('matrix');
+    if (activeModules != null) return;
+    // A failure leaves it null, so the matrix draws every column at full
+    // strength rather than dimming all twelve. Nothing here is worth a toast:
+    // the dimming is a hint about the subscription, not about access.
+    api.get('/v1/subscription/current')
+      .then(r => setActiveModules(r.data.active_modules || []))
+      .catch(() => {});
+  };
 
   /**
    * True once the API round-trips levels. See the header comment.
@@ -235,15 +285,43 @@ export default function TabMembers({ isOwner, selfUserId }) {
   return (
     <div>
       <section className="st__group">
-        <h2 className="st__gt">Members · {members.length}</h2>
-        <MemberTable
-          members={members}
-          isOwner={isOwner}
-          selfUserId={selfUserId}
-          onEditGrants={openGrants}
-          onChangeRole={changeRole}
-          onRemove={removeMember}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+          <h2 className="st__gt" style={{ marginBottom: 0 }}>Members · {members.length}</h2>
+          {/* The list answers "what can this person reach". The matrix answers
+              the transpose — "who can reach payroll" — which is the question an
+              audit actually asks and which three chips and a +n cannot answer. */}
+          <div className="seg" role="group" aria-label="Member view">
+            <button
+              type="button"
+              className={`seg__b${view === 'list' ? ' on' : ''}`}
+              aria-pressed={view === 'list'}
+              onClick={() => setView('list')}
+            >
+              List
+            </button>
+            <button
+              type="button"
+              className={`seg__b${view === 'matrix' ? ' on' : ''}`}
+              aria-pressed={view === 'matrix'}
+              onClick={showMatrix}
+            >
+              Access matrix
+            </button>
+          </div>
+        </div>
+
+        {view === 'list' ? (
+          <MemberTable
+            members={members}
+            isOwner={isOwner}
+            selfUserId={selfUserId}
+            onEditGrants={openGrants}
+            onChangeRole={changeRole}
+            onRemove={removeMember}
+          />
+        ) : (
+          <AccessMatrix members={members} activeCodes={activeModules} />
+        )}
       </section>
 
       <section className="st__group">
@@ -285,6 +363,25 @@ export default function TabMembers({ isOwner, selfUserId }) {
       >
         {editing && (
           <>
+            {/* The role model says the owner decides which modules an org_admin
+                may reach. The server does not implement that yet: gate 2 of
+                `middleware/subscription.py` returns early for org_admin as well
+                as org_owner, so these rows are stored and audited but restrict
+                nothing until it reads them. Saying so is the only honest option
+                — the alternative is an owner tightening an admin's access and
+                believing it took effect. */}
+            {editing.member.role_code === 'org_admin' && (
+              <p className="opend" style={{ marginBottom: 12 }}>
+                {Info}
+                <span>
+                  An org admin reaches <strong>every active module by role</strong> today.
+                  What you set here is stored and audited, and it is what the owner
+                  intends this admin to have — but <code>require_module</code> still
+                  admits any org_admin, so it does not restrict them yet.
+                </span>
+              </p>
+            )}
+
             {!grantsCarryLevels && (
               <p className="opend" style={{ marginBottom: 12 }}>
                 {Info}

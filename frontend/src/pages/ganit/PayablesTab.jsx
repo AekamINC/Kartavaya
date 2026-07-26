@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { StatTile } from '../../components/editorial';
 import { safeArray, Badge, BILL_STATUS_COLORS } from './_shared';
+import { inr } from '../../lib/inr';
 
 export default function PayablesTab() {
   const { pushToast } = useToast();
@@ -93,13 +94,13 @@ export default function PayablesTab() {
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
-  const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+  const FMT = v => inr(Number(v || 0));
 
   if (detail) {
     return (
       <div>
         <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => setDetail(null)}>← Back to list</button>
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <div>
               <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{detail.internal_ref}</h3>
@@ -172,7 +173,7 @@ export default function PayablesTab() {
       </div>
 
       {showVendorForm && (
-        <form onSubmit={saveVendor} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={saveVendor} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>New Vendor</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
@@ -192,7 +193,7 @@ export default function PayablesTab() {
       )}
 
       {showForm && (
-        <form onSubmit={saveBill} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={saveBill} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>New Vendor Bill</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Vendor *</span>
@@ -242,7 +243,7 @@ export default function PayablesTab() {
         ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {bills.map(b => (
-            <div key={b.id} onClick={() => loadDetail(b.id)} style={{ cursor: 'pointer', background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div key={b.id} onClick={() => loadDetail(b.id)} style={{ cursor: 'pointer', background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <span style={{ fontWeight: 700, fontSize: 14 }}>{b.vendor_name}</span>
                 <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ink-3)' }}>{b.internal_ref}</span>

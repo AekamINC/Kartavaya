@@ -106,7 +106,7 @@ export default function EmployeesTab({ onUpdate }) {
     return (
       <div>
         <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => setDetail(null)}>← Back to list</button>
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div>
               <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{emp.name}</h3>
@@ -115,13 +115,13 @@ export default function EmployeesTab({ onUpdate }) {
               </p>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <Badge text={emp.status} color={STATUS_COLORS[emp.status] || '#6E7B91'} />
+              <Badge text={emp.status} color={STATUS_COLORS[emp.status] || 'var(--on-surface-3)'} />
               <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => startEditEmp(emp)}>Edit</button>
             </div>
           </div>
 
           {editEmp === emp.id && (
-            <form onSubmit={saveEditEmp} style={{ background: 'var(--surface-0)', border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 12 }}>
+            <form onSubmit={saveEditEmp} style={{ background: 'var(--surface-0)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16, marginBottom: 12 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                 <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name</span>
                   <input className="k-input" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></label>
@@ -188,7 +188,7 @@ export default function EmployeesTab({ onUpdate }) {
         </div>
 
         {detail.leave_balances?.length > 0 && (
-          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24 }}>
+          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24 }}>
             <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Leave Balances (Current Year)</h4>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
@@ -203,9 +203,9 @@ export default function EmployeesTab({ onUpdate }) {
                   <tr key={lb.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
                     <td style={{ padding: '8px 10px', fontWeight: 600 }}>{lb.leave_name} ({lb.leave_code})</td>
                     <td style={{ padding: '8px 10px' }}>{lb.allocated}</td>
-                    <td style={{ padding: '8px 10px', color: '#ef4444' }}>{lb.used}</td>
+                    <td style={{ padding: '8px 10px', color: 'var(--danger)' }}>{lb.used}</td>
                     <td style={{ padding: '8px 10px' }}>{lb.carried_forward}</td>
-                    <td style={{ padding: '8px 10px', fontWeight: 600, color: '#10b981' }}>{(lb.allocated + lb.carried_forward) - lb.used}</td>
+                    <td style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--ok)' }}>{(lb.allocated + lb.carried_forward) - lb.used}</td>
                   </tr>
                 ))}
               </tbody>
@@ -228,7 +228,7 @@ export default function EmployeesTab({ onUpdate }) {
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Employee</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
@@ -291,7 +291,7 @@ export default function EmployeesTab({ onUpdate }) {
                 <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{e.department || '—'}</td>
                 <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{e.designation || '—'}</td>
                 <td style={{ padding: '10px' }}>{e.employment_type?.replace('_', ' ')}</td>
-                <td style={{ padding: '10px' }}><Badge text={e.status} color={STATUS_COLORS[e.status] || '#6E7B91'} /></td>
+                <td style={{ padding: '10px' }}><Badge text={e.status} color={STATUS_COLORS[e.status] || 'var(--on-surface-3)'} /></td>
               </tr>
             ))}
           </tbody>

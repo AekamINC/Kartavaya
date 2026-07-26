@@ -3,6 +3,198 @@
  * Professional grid-based design with proper spacing
  */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Bell panel — the anchored notification popover
+   `21-notifications-inbox.md` · Bell panel.
+
+   The `.k-notif__*` ROW vocabulary lives in `styles/inbox.css`, deliberately
+   shared between the Inbox page and this panel. Its header records that the
+   panel shell was left out because it "belongs with the component that renders
+   it" — this is that shell. Rows there, frame here, one class prefix, so the
+   bell and the Inbox cannot drift into two looks for one list.
+
+   Z-INDEX 340 — `26 §4`'s ladder: 200 drawer · 340 picker and menu · 420 modal
+   · 520 toast · 620 mobile sheet. This is a menu hanging off a toolbar button,
+   so it sits with the menus. It was previously a fixed, scrimmed overlay at
+   400, which put a full-viewport backdrop over the app for a glance at a list.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The bell and its panel share a positioning context. Both the desktop topbar
+   and the ≤1023px compact bar wrap their bell in one of these, so the panel
+   hangs off whichever bell the user actually pressed rather than off a fixed
+   viewport corner that is nowhere near it on a phone. */
+.k-notif-anchor { position: relative; display: inline-flex; }
+
+.k-notif {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 340;
+
+  width: 382px;
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-direction: column;
+
+  border-radius: var(--r-lg);
+  border: 1px solid var(--outline-variant);
+  background: rgba(var(--glass-tint), var(--glass-alpha));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+
+/* Same reasoning as `.side` and `.kv__mobbar`: backdrop-filter on Windows
+   renders inconsistently across GPU and driver combinations, so that platform
+   gets the flat surface instead of a wrong guess at an OS effect. */
+[data-platform="win"] .k-notif { background: var(--surface); }
+
+.k-notif__hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+
+.k-notif__hd-t {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+/* Devanagari in --font-hindi. A display face carries no Devanagari coverage at
+   all, so the browser falls back glyph by glyph and the word arrives in a
+   different typeface from the one beside it. */
+.k-notif__hd-hi {
+  font-family: var(--font-hindi);
+  font-size: var(--t-label);
+  font-weight: 400;
+  color: var(--on-surface-3);
+}
+
+/* --primary-text, not --primary. --primary is a FILL, and at 4.04:1 on the
+   canvas it is below the 4.5:1 that body-sized text has to clear. */
+.k-notif__hd-act {
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: var(--t-label);
+  font-weight: 500;
+  color: var(--primary-text);
+  cursor: pointer;
+}
+.k-notif__hd-act:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
+.k-notif__hd-act:disabled { color: var(--on-surface-3); cursor: default; }
+
+.k-notif__list {
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.k-notif__load {
+  margin: 0;
+  padding: var(--sp-5) var(--sp-4);
+  text-align: center;
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+}
+
+.k-notif__ft {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--outline-variant);
+  background: var(--s-low);
+  flex-shrink: 0;
+}
+
+.k-notif__ft-link {
+  border: 0;
+  background: none;
+  padding: 4px 0;
+  font: inherit;
+  font-size: var(--t-label);
+  font-weight: 500;
+  color: var(--primary-text);
+  cursor: pointer;
+}
+.k-notif__ft-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Below the tablet breakpoint the panel would otherwise hang off a bell that
+   sits within 40px of the right edge, so it clamps to the viewport instead of
+   to the trigger. */
+@media (max-width: 640px) {
+  .k-notif {
+    position: fixed;
+    top: 60px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Shell-level overlays that were carrying hand-picked z-indexes
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The browser-permission prompt. It was an inline `zIndex: 9998`, which put it
+   ABOVE the command palette, every modal and every picker — a corner card
+   asking a question rendered on top of the dialog the user was reading. It is
+   a toast-shaped, corner-anchored, dismissible card, so it sits at the toast
+   rung: 520 on 26 §4's ladder. */
+.kv__ask {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 520;
+  pointer-events: all;
+}
+
+/* Boot screen — the frame between "we have a token" and "/auth/me answered".
+   Was an inline #050e1a slab with #5a7087 text: the retired cold-blue pair,
+   theme-blind, so a light-mode user got one dark frame on every load. */
+.k-boot {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+.k-boot__in { text-align: center; }
+.k-boot__t {
+  margin: var(--sp-4) 0 0;
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+}
+
+/* Environment marker. Colours were a hardcoded #f59e0b on #000; both are now
+   the warning pair, so the banner follows the theme like everything else.
+   620 is the top rung — an environment warning that a mobile sheet can cover
+   is a warning that is not doing its job. */
+.kv__staging {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 620;
+  padding: 4px 0;
+  text-align: center;
+  font-size: var(--t-label-sm);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  background: var(--warn-container);
+  color: var(--warn);
+}
+
 /* Root layout container */
 .app-container {
   min-height: 100vh;

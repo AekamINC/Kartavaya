@@ -11,6 +11,9 @@ import BottomBar from './BottomBar';
 import TodayScreen       from '../screens/TodayScreen';
 import TasksScreen       from '../screens/TasksScreen';
 import MessagesScreen    from '../screens/MessagesScreen';
+import ChatScreen        from '../screens/ChatScreen';
+import ApprovalsScreen   from '../screens/ApprovalsScreen';
+import TimeScreen        from '../screens/TimeScreen';
 import MoreScreen        from '../screens/MoreScreen';
 import ClockScreen       from '../screens/pahchan/ClockScreen';
 import EnrollScreen      from '../screens/pahchan/EnrollScreen';
@@ -31,6 +34,11 @@ export type RootStackParamList = {
   Main:         undefined;
   TaskDetail:   { taskId: string };
   Board:        { projectId?: string; projectName?: string } | undefined;
+  /** One channel. `channelName` is passed so the header renders before the
+   *  first fetch resolves rather than flashing an empty title. */
+  Chat:         { channelId: string; channelName: string };
+  Approvals:    undefined;
+  Time:         undefined;
   Inbox:        undefined;
   Settings:     undefined;
   // Reachable from the full shell's More tab as well as being the whole app for
@@ -187,6 +195,11 @@ export default function RootStack() {
             <Stack.Screen name="TaskDetail" component={TaskDetailScreen}
               options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="Board"     component={BoardScreen} />
+            <Stack.Screen name="Chat"      component={ChatScreen} />
+            {/* Both reached from More. Approvals and Time were tiles that showed
+                a "next release" note; they are real destinations now. */}
+            <Stack.Screen name="Approvals" component={ApprovalsScreen} />
+            <Stack.Screen name="Time"      component={TimeScreen} />
             {/* Inbox lost its tab to Messages and is reached from More. It stays
                 a stack screen so its deep link and its badge still work. */}
             <Stack.Screen name="Inbox"     component={InboxScreen} />

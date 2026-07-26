@@ -67,7 +67,7 @@ export default function ScheduleGrid({ pushToast }) {
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Assign Shift</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee *</span>
@@ -91,7 +91,7 @@ export default function ScheduleGrid({ pushToast }) {
       )}
 
       {showCoverage && coverage.length > 0 && (
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
             <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Coverage</h4>
             <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => setShowCoverage(false)}>Close</button>
@@ -132,7 +132,7 @@ export default function ScheduleGrid({ pushToast }) {
               <tr key={s.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
                 <td style={{ padding: '8px 10px' }}>{s.date}</td>
                 <td style={{ padding: '8px 10px' }}>{s.employee_name}</td>
-                <td style={{ padding: '8px 10px' }}><Badge text={s.shift_name} color={s.color || '#3B82F6'} /></td>
+                <td style={{ padding: '8px 10px' }}><Badge text={s.shift_name} color={s.color || 'var(--st-in-progress)'} /></td>
                 <td style={{ padding: '8px 10px' }}>{s.start_time}</td>
                 <td style={{ padding: '8px 10px' }}>{s.end_time}</td>
               </tr>

@@ -61,7 +61,7 @@ export default function DepartmentsTab() {
       <button className="k-btn k-btn--primary" style={{ fontSize: 13, marginBottom: 16 }} onClick={() => setShowForm(true)}>+ Add Department</button>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Department Name *</span>
             <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} style={{ maxWidth: 300 }} /></label>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -81,7 +81,7 @@ export default function DepartmentsTab() {
         ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
           {departments.map(d => (
-            <div key={d.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 20 }}>
+            <div key={d.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 20 }}>
               {editingId === d.id ? (
                 <form onSubmit={saveEdit}>
                   <input className="k-input" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} style={{ marginBottom: 8, width: '100%' }} />
@@ -99,7 +99,7 @@ export default function DepartmentsTab() {
                   </div>
                   <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
                     <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => { setEditingId(d.id); setEditForm({ name: d.name }); }}>Edit</button>
-                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px', color: '#ef4444' }} onClick={() => remove(d.id)}>Delete</button>
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px', color: 'var(--danger)' }} onClick={() => remove(d.id)}>Delete</button>
                   </div>
                 </>
               )}

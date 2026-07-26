@@ -212,7 +212,7 @@ function PlatformView({ period, currency }) {
                     <Cell num>{inr(r.charged_inr, { decimals: 2 })}</Cell>
                     <Cell num>
                       <MarginCell
-                        row
+                        compact
                         marginInr={r.margin_inr}
                         costUsd={r.total_cost_usd}
                         fxRate={fx}
@@ -289,7 +289,7 @@ function OrgsView({ period, currency, fx, onSelect }) {
                 <Cell num>{inr(r.charged_inr, { decimals: 2 })}</Cell>
                 <Cell num>
                   <MarginCell
-                    row
+                    compact
                     marginInr={r.margin_inr}
                     costUsd={r.total_cost_usd}
                     fxRate={fx}

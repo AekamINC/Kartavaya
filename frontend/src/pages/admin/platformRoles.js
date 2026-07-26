@@ -130,3 +130,44 @@ export const canSeeCost = roles =>
 /** Suspending, deleting and transferring an org moved OFF org_owner onto Aekam
  *  platform staff. The server guards /deactivate on god mode alone. */
 export const canSuspendOrg = isGodMode;
+
+/* ── Console reach ───────────────────────────────────────────────────────────
+ *
+ * The three sets below mirror the guards the server actually applies, so a
+ * console page can refuse in words rather than in four spinners resolving into
+ * four 403 toasts. "A control that 403s is worse than an absent one" — and the
+ * sidebar offers all four console entries to anyone holding any platform role,
+ * so the refusal has to happen on the page.
+ *
+ * They are NOT the enforcement. `require_platform_role` is, and it fails closed
+ * for a code this file has never heard of.
+ */
+
+const has = (roles, set) => Array.isArray(roles) && roles.some(r => set.includes(r));
+
+/**
+ * Who may open the console at all — `/admin` (accounts, invites, R2 folder map)
+ * and the write half of `/admin/orgs`.
+ *
+ * Mirrors `CONSOLE_ROLES` in `routers/admin_orgs.py` and `invite_router.py`:
+ * god mode + manager + staff + the legacy `account_manager`. `account_finance`
+ * is deliberately NOT in it — finance reads the org LIST
+ * (`CONSOLE_ROLES_WITH_FINANCE` on `GET /v1/admin/orgs`) and the billing and
+ * cost consoles, but not the account and invite surfaces.
+ */
+const CONSOLE = [...GOD_MODE, 'platform_manager', 'platform_staff', 'account_manager'];
+export const canOpenConsole = roles => has(roles, CONSOLE);
+
+/**
+ * Who may act on a customer's subscription, plans, invoices and payments.
+ *
+ * Mirrors `BILLING_CONSOLE_ROLES` in `middleware/role_tiers.py`. `platform_staff`
+ * is deliberately absent — its operating set excludes finance — so without this
+ * gate a staff operator reaches `/admin/billing` from the sidebar, sees a fully
+ * populated page, and every button on it 403s.
+ */
+const BILLING = [...GOD_MODE, 'platform_manager', 'account_manager', 'account_finance'];
+export const canManageBilling = roles => has(roles, BILLING);
+
+/** The org LIST is `CONSOLE_ROLES_WITH_FINANCE`; only that endpoint is wider. */
+export const canListOrgs = roles => canOpenConsole(roles) || has(roles, ['account_finance']);

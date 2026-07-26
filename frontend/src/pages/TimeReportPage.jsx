@@ -319,7 +319,7 @@ export default function TimeReportPage({ teamId }) {
           {/* Sanskrit quote */}
           {data.entries.length > 0 && (
             <div className="k-citation">
-              <div className="k-citation__sans">कालः सृजति भूतानि</div>
+              <div className="k-citation__sans" lang="sa">कालः सृजति भूतानि</div>
               <div className="k-citation__src">— "Time creates all things." Account for it carefully.</div>
             </div>
           )}

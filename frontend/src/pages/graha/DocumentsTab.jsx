@@ -82,7 +82,7 @@ export default function DocumentsTab() {
       </div>
 
       {showForm && (
-        <form onSubmit={createDocument} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={createDocument} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Add Document</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
@@ -119,7 +119,7 @@ export default function DocumentsTab() {
                 {d.description && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{d.description}</div>}
                 {d.tags?.length > 0 && (
                   <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                    {(d.tags || []).map(t => <Badge key={t} text={t} color="#6366f1" />)}
+                    {(d.tags || []).map(t => <Badge key={t} text={t} color="var(--st-in-review)" />)}
                   </div>
                 )}
               </td>
@@ -133,7 +133,7 @@ export default function DocumentsTab() {
                     <a href={d.file_url} target="_blank" rel="noopener noreferrer"
                       style={{ fontSize: 11, color: 'var(--k-primary)', textDecoration: 'none' }}>Open</a>
                   )}
-                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => deleteDoc(d.id)}>Delete</button>
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--danger)' }} onClick={() => deleteDoc(d.id)}>Delete</button>
                 </div>
               </td>
             </tr>

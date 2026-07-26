@@ -115,13 +115,18 @@ function ApprovalCard({ item, outcome, onDecide }) {
         {item.requestedAt && ` · ${relTime(item.requestedAt)}`}
       </p>
 
-      {item.ask && <blockquote className="cl-appr__ask">{item.ask}</blockquote>}
-
+      {/* 19's card order is title · who asked · WHAT TO LOOK AT · THE ASK ·
+          actions. The ask sat above the previews here, which put the question
+          at the top of the card and the thing it is about below it; the specced
+          order ends the card with the ask sitting directly on the two buttons
+          that answer it. */}
       {item.files.length > 0 && (
         <div className="cl-prev">
           {item.files.map(f => <Preview key={f.url} file={f} />)}
         </div>
       )}
+
+      {item.ask && <blockquote className="cl-appr__ask">{item.ask}</blockquote>}
 
       {/* The written record. Rendered in place of the actions once a decision
           exists, because the decision is the answer to the only question the

@@ -13,7 +13,7 @@
  * `GET /messaging/messages/:id/thread` returns the replies oldest-first.
  * `06` §4 lists it as new; it is not.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { ErrorState, errorKind, SkeletonChat, useToast } from '../../components/ui';
 import Message from './Message';
@@ -21,7 +21,7 @@ import Composer from './Composer';
 import { SvIcons } from './icons';
 import { isContinuation, parseReactions, toggleReactionLocal } from './messageUtils';
 
-export default function ThreadPanel({ channelId, root, meId, onClose, onReplied }) {
+export default function ThreadPanel({ channelId, root, me, meId, meName, onClose, onReplied }) {
   const { pushToast } = useToast();
   const [replies, setReplies] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,12 +46,27 @@ export default function ThreadPanel({ channelId, root, meId, onClose, onReplied 
 
   useEffect(() => { load(); }, [load]);
 
+  const names = useMemo(
+    () => [...new Set([rootMsg?.sender_name, ...replies.map(r => r.sender_name)].filter(Boolean))],
+    [rootMsg, replies]
+  );
+
   const send = async (content) => {
     try {
-      await api.post(`/messaging/channels/${channelId}/messages`, {
+      const r = await api.post(`/messaging/channels/${channelId}/messages`, {
         content,
         parent_message_id: root.id,
       });
+      // `get_thread` DOES join `sender_name`/`sender_avatar`, so the reload is
+      // authoritative. The optimistic row exists only so the reply appears in
+      // the same frame the composer clears in; the reload replaces it by id.
+      if (r?.data?.id) {
+        setReplies(prev => (prev.some(x => String(x.id) === String(r.data.id)) ? prev : [...prev, {
+          ...r.data,
+          sender_name: me?.full_name || me?.name || undefined,
+          sender_avatar: me?.avatar_url || undefined,
+        }]));
+      }
       await load({ quiet: true });
       onReplied?.(root.id);
     } catch (e) {
@@ -96,7 +111,7 @@ export default function ThreadPanel({ channelId, root, meId, onClose, onReplied 
       </div>
 
       <div className="sv__thread-root">
-        <Message msg={rootMsg} meId={meId} onReact={react} />
+        <Message msg={rootMsg} meId={meId} meName={meName} names={names} onReact={react} />
       </div>
 
       <div className="sv__log">
@@ -113,6 +128,8 @@ export default function ThreadPanel({ channelId, root, meId, onClose, onReplied 
             msg={m}
             continuation={isContinuation(m, replies[i - 1])}
             meId={meId}
+            meName={meName}
+            names={names}
             onReact={react}
           />
         ))}

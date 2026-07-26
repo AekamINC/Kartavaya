@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Card } from '../../components/editorial';
+import { mixAlpha } from '../../lib/statusColors';
+import { inr } from '../../lib/inr';
 
 export default function ClientsTab() {
   const { pushToast } = useToast();
@@ -70,12 +72,12 @@ export default function ClientsTab() {
       <div>
         <button onClick={() => setDetail(null)} style={{ fontSize: 12, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 12 }}>← Back to clients</button>
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 340px', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 20 }}>
+          <div style={{ flex: '1 1 340px', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{detail.name}</h3>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => openEdit(detail)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', cursor: 'pointer' }}>Edit</button>
-                <button onClick={() => remove(detail.id)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, background: '#ef444418', color: '#ef4444', border: 'none', cursor: 'pointer' }}>Delete</button>
+                <button onClick={() => openEdit(detail)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 'var(--r-sm)', background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', cursor: 'pointer' }}>Edit</button>
+                <button onClick={() => remove(detail.id)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 'var(--r-sm)', background: mixAlpha('var(--danger)', 9), color: 'var(--danger)', border: 'none', cursor: 'pointer' }}>Delete</button>
               </div>
             </div>
             {detail.ref_no && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>Ref: {detail.ref_no}</div>}
@@ -99,7 +101,7 @@ export default function ClientsTab() {
             {(detail.deals || []).map(d => (
               <div key={d.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13, display: 'flex', justifyContent: 'space-between' }}>
                 <span>{d.title}</span>
-                <span style={{ fontWeight: 600 }}>₹{Number(d.value || 0).toLocaleString('en-IN')}</span>
+                <span style={{ fontWeight: 600 }}>{inr(Number(d.value || 0))}</span>
               </div>
             ))}
             {(!detail.deals || detail.deals.length === 0) && <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>No deals linked</p>}
@@ -109,7 +111,7 @@ export default function ClientsTab() {
     );
   }
 
-  const inputStyle = { width: '100%', padding: '6px 10px', fontSize: 13, border: '1px solid var(--rule-soft)', borderRadius: 6, background: 'var(--bg)', color: 'var(--ink-1)' };
+  const inputStyle = { width: '100%', padding: '6px 10px', fontSize: 13, border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', background: 'var(--bg)', color: 'var(--ink-1)' };
 
   return (
     <div>
@@ -117,7 +119,7 @@ export default function ClientsTab() {
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients..."
           style={{ ...inputStyle, maxWidth: 260 }} />
         <button onClick={() => { setShowForm(true); setEditId(null); setForm({ name: '', ref_no: '', gstin: '', website: '', notes: '', address: {} }); }}
-          style={{ padding: '6px 16px', fontSize: 13, fontWeight: 600, borderRadius: 6, background: 'var(--k-primary)', color: '#fff', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          className="k-btn k-btn--primary" style={{ whiteSpace: 'nowrap' }}>
           + Add Client
         </button>
       </div>
@@ -141,15 +143,15 @@ export default function ClientsTab() {
           <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes" rows={2}
             style={{ ...inputStyle, marginTop: 10, resize: 'vertical' }} />
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button onClick={save} style={{ padding: '6px 20px', fontSize: 13, fontWeight: 600, borderRadius: 6, background: 'var(--k-primary)', color: '#fff', border: 'none', cursor: 'pointer' }}>
+            <button onClick={save} className="k-btn k-btn--primary">
               {editId ? 'Update' : 'Create'}
             </button>
-            <button onClick={() => { setShowForm(false); setEditId(null); }} style={{ padding: '6px 16px', fontSize: 13, borderRadius: 6, background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', cursor: 'pointer' }}>Cancel</button>
+            <button onClick={() => { setShowForm(false); setEditId(null); }} style={{ padding: '6px 16px', fontSize: 13, borderRadius: 'var(--r-sm)', background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', cursor: 'pointer' }}>Cancel</button>
           </div>
         </Card>
       )}
 
-      <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, overflow: 'hidden' }}>
+      <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: 'var(--bg-raised)', textAlign: 'left' }}>

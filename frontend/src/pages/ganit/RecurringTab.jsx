@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Badge } from './_shared';
+import { inr } from '../../lib/inr';
 
 export default function RecurringTab() {
   const { pushToast } = useToast();
@@ -66,7 +67,7 @@ export default function RecurringTab() {
       </button>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Recurring Invoice</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Contact</span>
@@ -101,7 +102,7 @@ export default function RecurringTab() {
               <input className="k-input" style={{ fontSize: 12 }} type="number" placeholder="GST%" value={li.gst_rate}
                 onChange={e => { const items = [...form.template_items]; items[i] = { ...items[i], gst_rate: parseFloat(e.target.value) || 18 }; setForm({ ...form, template_items: items }); }} />
               <button type="button" onClick={() => setForm({ ...form, template_items: form.template_items.filter((_, j) => j !== i) })}
-                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16 }}>×</button>
+                style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }}>×</button>
             </div>
           ))}
           <button type="button" className="k-btn k-btn--ghost" style={{ fontSize: 12 }}
@@ -123,15 +124,15 @@ export default function RecurringTab() {
         ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {items.map(r => (
-            <div key={r.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px' }}>
+            <div key={r.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: '12px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <div>
-                  <Badge text={r.frequency} color="#0082c6" />
+                  <Badge text={r.frequency} color="var(--st-in-progress)" />
                   {r.contact_name && <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 600 }}>{r.contact_name}</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>₹{Number(r.subtotal || 0).toLocaleString('en-IN')}</span>
-                  <Badge text={r.is_active ? 'Active' : 'Inactive'} color={r.is_active ? '#10b981' : '#9ca3af'} />
+                  <span style={{ fontWeight: 700, fontSize: 14 }}>{inr(Number(r.subtotal || 0))}</span>
+                  <Badge text={r.is_active ? 'Active' : 'Inactive'} color={r.is_active ? 'var(--ok)' : 'var(--on-surface-3)'} />
                 </div>
               </div>
               <div style={{ fontSize: 12, color: 'var(--ink-3)', display: 'flex', justifyContent: 'space-between' }}>
@@ -139,7 +140,7 @@ export default function RecurringTab() {
                 {r.is_active && (
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 10px' }} onClick={() => generateNow(r.id)}>Generate Now</button>
-                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444', padding: '2px 8px' }} onClick={() => deactivate(r.id)}>Deactivate</button>
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--danger)', padding: '2px 8px' }} onClick={() => deactivate(r.id)}>Deactivate</button>
                   </div>
                 )}
               </div>

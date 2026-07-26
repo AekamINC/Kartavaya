@@ -38,8 +38,20 @@
 /* Everything in the panel sits above the mesh and the watermark. */
 .au__top, .au__mid, .au__rot, .au__dots { position: relative; z-index: 2; }
 
+/* The design source sizes this panel at 44% of a max-width card. Here it is
+   1.06fr of the VIEWPORT (12 §1's grid), so on a 2560px monitor its content
+   would stretch past 1200px and the "column" would stop reading as one. Every
+   content block caps at the same measure; the mesh and the watermark are
+   absolutely positioned siblings and are deliberately NOT in this list, because
+   a max-width on them would clamp a full-bleed gradient and a 300px glyph. */
+.au__top, .au__mid, .au__rot, .au__dots { max-width: 460px; }
+
 .au__top { display: flex; align-items: center; gap: 12px; }
-.au__mark { flex-shrink: 0; border-radius: var(--r-sm); display: block; }
+/* --r-md, not a baked `rx` on the rect: 00 §3 forbids a literal radius, and the
+   mark has to follow the user's Border radius setting like every other corner.
+   Both properties are set so the shape survives either one being unsupported. */
+.au__mark { flex-shrink: 0; border-radius: var(--r-md); overflow: hidden; display: block; }
+.au__mark rect { rx: var(--r-md); }
 .au__wordmark {
   font-family: var(--font-display); font-size: 20px; font-weight: 500;
   color: #fff; letter-spacing: .004em; line-height: 1.1;
@@ -106,6 +118,17 @@
    — it is measured against --bg in 00 §12, not against the sidebar ink. The
    vivid accent is the one that reads on that panel. */
 .au__brand .au__em { color: var(--primary-vivid); }
+/* The brand-panel subline opens in Devanagari ("आपका व्यापार, एक ही जगह — …")
+   and then continues in English inside the SAME text node. It had no rule at
+   all, so it inherited body's --font-ui (Inter) — measured in the browser at
+   13px/Inter, and Inter carries ZERO Devanagari, so the Hindi clause was
+   arriving from the OS fallback (Nirmala UI, ~7.5% wider than Tiro) while the
+   Devanagari two lines below it in .au__rot-hi came from Tiro. Two faces, one
+   panel, on the first screen of the product.
+   Appending --font-hindi after the whole --font-ui stack fixes only the
+   Devanagari: a generic mid-list does not capture the script, so Latin stays
+   in the user's chosen UI face. */
+.au__sub { font-family: var(--font-ui), var(--font-hindi); }
 .au__hi {
   font-family: var(--font-indic); font-size: .62em;
   color: var(--on-surface-3); margin-left: 11px; font-style: normal;
@@ -154,12 +177,29 @@
   outline: none; border-bottom: 2px solid var(--primary);
   padding-bottom: 6px; background: var(--s-high);
 }
+/* Disabled is the one state 12 §1 does not spell out. --on-surface-disabled is
+   the only token 00 §11 permits below the 4.5:1 floor, and only for inactive
+   controls, which is exactly this; nothing inherits it, so it is opted into
+   here explicitly. The hover lift is withdrawn — a control that responds to the
+   pointer reads as usable. */
+.aufld__i:disabled {
+  background: var(--s-low); color: var(--on-surface-disabled);
+  border-bottom-style: dashed; cursor: not-allowed;
+}
+.aufld__i:disabled:hover { background: var(--s-low); }
+.aufld__i:disabled ~ .aufld__l { color: var(--on-surface-disabled); }
 .aufld__l {
   position: absolute; left: 14px; top: 17px;
   font-size: 14.5px; color: var(--on-surface-3);
   pointer-events: none; transform-origin: left top;
   transition: transform var(--dur-fast) var(--ease-standard), color var(--dur-fast);
 }
+/* DELIBERATE DEVIATION from 12 §1, which floats the label to `var(--primary)`.
+   The floated label is text — a persistent one, since it is the only thing
+   naming a filled field — and --primary is a FILL at 4.04:1 (00 §12). Primary
+   TEXT is --primary-text at 5.2:1. The rest of the declaration is 12 §1
+   verbatim: translateY(-11px) scale(.74), transform not font-size, so the
+   transition stays on the compositor. */
 .aufld__i:focus ~ .aufld__l,
 .aufld__i:not(:placeholder-shown) ~ .aufld__l {
   transform: translateY(-11px) scale(.74); color: var(--primary-text);
@@ -187,10 +227,23 @@
 .aufld__eye:hover { background: var(--s-highest); color: var(--on-surface); }
 .aufld--eye .aufld__i { padding-right: 46px; }
 
-/* Live confirm match — AUTH-SPEC "green tick / red cross". */
-.aufld__mark { position: absolute; right: 44px; top: 18px; display: inline-flex; }
+/* Live confirm match — AUTH-SPEC "green tick / red cross".
+   Boxed to 28px and topped at 14px so its optical centre lands on the eye's,
+   rather than 3px above it: the eye is a 28px grid box at top 14, so its glyph
+   centres at 28px from the top of a 54px field, and a bare 14px inline-flex at
+   top 18 centred at 25. Two adjacent right-hand controls off by three pixels is
+   the kind of thing that reads as sloppy without being nameable. */
+.aufld__mark {
+  position: absolute; right: 42px; top: 14px;
+  width: 20px; height: 28px; display: grid; place-items: center;
+  pointer-events: none;
+}
 .aufld__mark--ok { color: var(--ok); }
 .aufld__mark--no { color: var(--danger); }
+/* The mark sits INSIDE the box, so the text has to stop before it. Without
+   this the confirm field's dots run under the tick at about 22 characters —
+   46px of padding clears the eye alone, and the mark is 20px further left. */
+.aufld--mark .aufld__i { padding-right: 70px; }
 
 /* ── Strength meter (12 §1) ───────────────────────────────────────────────
    Four segments, and the label states what is MISSING rather than scoring the
@@ -261,8 +314,13 @@
   color: transparent; flex-shrink: 0;
   transition: background var(--dur-fast), border-color var(--dur-fast);
 }
+/* --primary-text on the EDGE, --primary in the fill: the design source
+   (`design-reference/Kartavaya Redesign/auth.css`, `.au-check__b`) draws the
+   checked box with a deeper keyline than its own fill so a 17px control still
+   has a defined boundary on --bg. Dark aliases --primary-text to --primary, so
+   the two are identical there and the edge only appears in light. */
 .au__check input:checked + .au__checkb {
-  background: var(--primary); border-color: var(--primary); color: var(--on-primary);
+  background: var(--primary); border-color: var(--primary-text); color: var(--on-primary);
 }
 .au__check input:focus-visible + .au__checkb {
   outline: 2px solid var(--primary); outline-offset: 2px;
@@ -313,14 +371,37 @@
   transition: background var(--dur-base), color var(--dur-base);
 }
 .ob__st.on .ob__n { background: var(--primary); color: var(--on-primary); }
-.ob__st.done .ob__n { background: var(--ok); color: #fff; }
+/* 12 §1 writes this rung `background:var(--ok);color:#fff`, and #fff is wrong in
+   dark. --ok INVERTS: #14743A light, #5BD98A dark. White on #14743A is 5.3:1;
+   white on #5BD98A is 1.79:1, i.e. the completed-step tick disappears entirely
+   for every dark-mode user.
+   --danger has --on-danger declared for exactly this reason (00 §7: "--danger
+   itself is a fill … and inverts hard between themes"). --ok has no such
+   partner — see the report; it needs one in kartavaya-design.css. Until it does,
+   --ok-container is the token that already flips the right way against --ok, and
+   it measures 4.65:1 light / 6.29:1 dark, better in the worse theme than the
+   spec's literal is in its better one. */
+.ob__st.done .ob__n { background: var(--ok); color: var(--ok-container); }
 .ob__lb { font-size: 12px; color: var(--on-surface-3); }
 .ob__st.on .ob__lb { color: var(--on-surface); font-weight: 600; }
 .ob__line { flex: 1; height: 1px; background: var(--outline-variant); margin: 0 11px; min-width: 14px; }
 .ob__st.done + .ob__line { background: var(--ok); }
+/* 12 §1 collapses the rail to numbered dots and keeps only the current label,
+   because "five labels on a 393px rail truncate to nonsense". Two further
+   clamps, because the dots alone still did not fit: with 26px numbers and
+   `margin: 0 11px` the rail measured ~358px against the 350px a 390px phone
+   actually offers after .ob's padding, and .ob is `overflow: hidden`, so the
+   fifth step was silently clipped off the right edge rather than wrapping.
+   Tighter connectors and a hard ceiling on the one surviving label bring it to
+   ~294px. The label ellipsises rather than pushing, so a longer step name in
+   another language cannot reintroduce the clip. */
 @media (max-width: 720px) {
   .ob__lb { display: none; }
-  .ob__st.on .ob__lb { display: block; }
+  .ob__st.on .ob__lb {
+    display: block; max-width: 12ch;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ob__line { margin: 0 6px; min-width: 8px; }
 }
 
 /* Direction-aware step transition — 12 §1. transform/opacity only: a pane
@@ -450,7 +531,13 @@
   font-size: 10px; letter-spacing: .04em; padding: 2px 6px;
   border-radius: var(--r-xs); background: var(--s-container); color: var(--on-surface-2);
 }
-.ob__tpl.on .ob__tpl-col { background: rgba(255, 255, 255, .28); color: inherit; }
+/* The column chips keep --s-container / --on-surface-2 on a SELECTED card too.
+   They used to switch to `rgba(255,255,255,.28)` with `color: inherit`, which is
+   a ground with no declared on- partner — the third instance of the rule 00 §11
+   states. Composited over --primary-container it left the 10px column names at
+   3.23:1 in dark. --s-container is a legal text ground in both themes and is
+   visibly distinct from --primary-container in both, so the chips still read as
+   chips on the tinted card. */
 
 /* Footer */
 .ob__foot {
@@ -458,7 +545,12 @@
   margin-top: 28px; padding-top: 18px;
   border-top: 1px solid var(--outline-variant);
 }
-.ob__save { flex: 1; min-width: 0; font-size: 11.5px; color: var(--on-surface-3); display: inline-flex; align-items: center; gap: 6px; }
+/* `flex: 1 1 220px`, not `flex: 1; min-width: 0`. The footer wraps, and with a
+   zero basis this line was the item that lost — it compressed to a 40px column
+   and broke "Saved on this device — you can close this and come back" one or two
+   words per line beside three full-height controls. A 220px basis makes it drop
+   to its own row instead, which is what wrap is for. */
+.ob__save { flex: 1 1 220px; font-size: 11.5px; color: var(--on-surface-3); display: inline-flex; align-items: center; gap: 6px; }
 .ob__save svg { flex-shrink: 0; color: var(--ok); }
 /* The wizard's primary action is a button in a row, not a full-width block. */
 .ob__next { width: auto; min-width: 156px; }

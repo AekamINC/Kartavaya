@@ -13,9 +13,26 @@
  * `--primary-text` (5.2:1). The one exception is `.cl-nav a[aria-current]`,
  * where --primary paints a 2px rule and carries no text.
  *
+ * `--on-surface-faint` is NON-TEXT ONLY and is not used in this file at all.
+ * It resolved to `--on-surface-3` in `kartavaya-design.css:156` so the two
+ * separators and the placeholder that reached for it were legible by accident,
+ * not by rule — and the day that alias is unwound they would have failed
+ * silently. They name `--on-surface-3` directly now.
+ *
  * The legacy dark portal that used to sit behind /client/legacy — a fourth
  * token vocabulary of hardcoded K.dark surfaces — is gone; nothing here
  * restates a colour.
+ *
+ * ── Layout
+ *
+ * FLUID AND LEFT-ALIGNED, at every width. 19's shell block specced
+ * `.cl-main{max-width:1040px;margin:0 auto}`; the owner's standing layout rule
+ * overrides the handover — every page in the product is fluid and left-aligned
+ * with no fixed-width centring, adapting to all device sizes. A centred 1040px
+ * column was also the one thing in the portal that did not match the surface
+ * the firm's own staff see, on the one surface where a mismatch reads as two
+ * different products. Reversed below; nothing else in `pages/client/**` had a
+ * second copy of it.
  */
 
 /* ── Shell ────────────────────────────────────────────────────────────────── */
@@ -28,7 +45,7 @@
   border-bottom: 1px solid var(--outline-variant);
   background: var(--surface);
 }
-.cl-head__logo { height: 30px; width: auto; }
+.cl-head__logo { height: 30px; width: auto; flex: 0 0 auto; }
 /* The firm's name, never a Kartavaya mark. When /v1/org/profile carries no
    logo_url this is the whole brand — 18-documents.md uses the same rule for the
    same reason: the client's relationship is with their accountant. */
@@ -38,14 +55,21 @@
   font-weight: var(--t-title-lg-w);
   letter-spacing: -.02em;
   color: var(--on-surface);
-  margin: 0;
+  margin: 0; flex: 0 0 auto;
 }
+/* `min-width:0` is what makes the ellipsis work: a flex item's default
+   `min-width:auto` refuses to shrink below its content, so a long project name
+   pushed Sign out off a 390px screen instead of truncating. */
 .cl-head__proj {
+  min-width: 0; flex: 0 1 auto;
   font-size: var(--t-body-sm); color: var(--on-surface-3);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.cl-head__side { margin-left: auto; display: flex; align-items: center; gap: var(--sp-3); }
-.cl-head__who  { font-size: var(--t-body-sm); color: var(--on-surface-2); }
+.cl-head__side { margin-left: auto; display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.cl-head__who  {
+  min-width: 0; font-size: var(--t-body-sm); color: var(--on-surface-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .cl-nav {
   display: flex; gap: var(--sp-1);
@@ -56,7 +80,10 @@
 }
 .cl-nav a {
   display: inline-flex; align-items: center; gap: var(--sp-2);
-  min-height: 44px; padding: 12px 16px;
+  /* 19 specs `padding:12px 16px`; --sp-3 and --sp-4 ARE 12 and 16 and are not
+     density-scaled, so this is the specced value expressed as tokens. The 44px
+     floor is the WCAG target size, not a scale step. */
+  min-height: 44px; padding: var(--sp-3) var(--sp-4);
   font-family: var(--font-ui); font-size: var(--t-body);
   color: var(--on-surface-3);
   border-bottom: 2px solid transparent;
@@ -66,6 +93,10 @@
 }
 .cl-nav a:hover { color: var(--on-surface-2); }
 .cl-nav a[aria-current="page"] { color: var(--on-surface); border-bottom-color: var(--primary); }
+/* The global ring is `outline-offset:2px`; inside a strip that scrolls
+   horizontally that lands the ring under the neighbouring tab and clipped by
+   `overflow-x:auto`. Inset it so the focused tab is fully visible. */
+.cl-nav a:focus-visible { outline-offset: -2px; border-radius: var(--r-xs); }
 
 /* The count on Approvals. --ap-pending-client is "waiting on someone outside
    the org", which from inside the portal is the reader. It is a container
@@ -78,17 +109,24 @@
   font-size: var(--t-label-sm); font-weight: 700; font-variant-numeric: tabular-nums;
 }
 
+/* Fluid and left-aligned — no `max-width`, no `margin:0 auto`. See the layout
+   note in the file header: the owner's standing rule overrides 19's shell CSS,
+   and `.cl-head` / `.cl-nav` share the same `--pad-page` rail so all three
+   left-align to one line at every width. */
 .cl-main {
   flex: 1;
   padding: var(--pad-page);
-  max-width: 1040px; width: 100%; margin: 0 auto;
+  width: 100%; min-width: 0;
 }
 
 /* ── Sections ─────────────────────────────────────────────────────────────── */
 
 .cl-sec { margin-bottom: var(--gap-section); }
+/* `flex-wrap` matters at 390px: the heading, its Devanagari sub-label, a count
+   and a Request work button do not fit one line on a phone, and without it the
+   button was compressed to a two-line 40px stub. */
 .cl-sec__h {
-  display: flex; align-items: baseline; gap: var(--sp-3);
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3);
   margin: 0 0 var(--sp-3);
 }
 .cl-sec__t {
@@ -96,8 +134,17 @@
   font-weight: var(--t-title-lg-w); letter-spacing: -.02em;
   color: var(--on-surface); margin: 0;
 }
-.cl-sec__hi { font-family: var(--font-indic); font-size: var(--t-body-sm); color: var(--on-surface-3); }
+/* --font-hindi, not --font-indic. These sub-labels are FIXED Devanagari, not a
+   label that follows the user's language: `--font-indic` becomes
+   "Noto Sans Gujarati" when language is gu | en+gu (00 §2), which carries no
+   Devanagari glyphs, so `प्रगति में` would have dropped to the generic serif
+   fallback for every Gujarati-speaking client. `editorial.css:338` and
+   `landing.css:85` draw the same line for the same reason. */
+.cl-sec__hi { font-family: var(--font-hindi); font-size: var(--t-body-sm); color: var(--on-surface-3); }
 .cl-sec__n  { font-size: var(--t-body-sm); color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+/* The section's action, pushed to the end of the row. Was an inline
+   `style={{marginLeft:'auto'}}` at three call sites. */
+.cl-sec__act { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 
 /* The banner at the top of Overview: what needs you, and a way to it. It is a
    link, not a card with a button — one target, the whole strip. */
@@ -144,7 +191,21 @@
 /* `#a1b2c3` — the last six of the task id. A sequential integer would tell a
    client how many customers the firm has (19 · What a client must never see). */
 .cl-item__id { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); }
-.cl-item__sep { color: var(--on-surface-faint); }
+/* --on-surface-3, not --on-surface-faint: a `·` is a glyph in the accessibility
+   tree, and faint is non-text only (00 §"--on-surface-faint is not a text
+   colour"). It happens to alias --on-surface-3 today; naming the alias is not
+   the same as naming the token. */
+.cl-item__sep { color: var(--on-surface-3); }
+/* The one row a client has to act on. "With you" without a way to act on it is
+   a status a stranger cannot resolve; this is the way. */
+.cl-item__go {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 var(--sp-3); flex: 0 0 auto;
+  font-size: var(--t-body-sm); font-weight: 500;
+  color: var(--primary-text); text-decoration: none;
+  border-radius: var(--r-sm);
+}
+.cl-item__go:hover { background: var(--s-container); }
 
 /* Three states, not six. `in_review` means nothing to a client; the mapping to
    With us / With you / Done lives in `clientShape.js` beside the field filter,
@@ -175,6 +236,8 @@
   transition: transform var(--dur-fast) var(--ease-standard);
 }
 .cl-done[open] > summary::before { transform: rotate(90deg); }
+/* Was an inline `style={{marginTop:'var(--sp-3)'}}` in two files. */
+.cl-done__b { margin-top: var(--sp-3); }
 
 /* ── Approvals ────────────────────────────────────────────────────────────── */
 
@@ -204,8 +267,16 @@
 }
 .cl-appr__act { display: flex; gap: var(--sp-3); margin-top: var(--sp-5); flex-wrap: wrap; }
 
-/* What to look at. Images and PDFs preview inline; everything else is a link. */
-.cl-prev { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-4); }
+/* What to look at. Images and PDFs preview inline; everything else is a link.
+   A single-column grid rather than a wrapping flex row: the PDF branch renders
+   a 100%-wide frame AND its fallback link as two siblings, and as flex items
+   those two shared a line — the frame taking whatever was left of it. Single
+   column is also what 19 · Mobile asks for, and this surface is opened on a
+   phone more than any other in the product. */
+.cl-prev {
+  display: grid; grid-template-columns: minmax(0, 1fr);
+  justify-items: start; gap: var(--sp-3); margin-top: var(--sp-4);
+}
 .cl-prev__img {
   max-width: 100%; max-height: 260px; width: auto; height: auto;
   border: 1px solid var(--outline-variant); border-radius: var(--r-sm);
@@ -236,7 +307,8 @@
   border-color: var(--primary); background: var(--s-lowest);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
 }
-.cl-note::placeholder { color: var(--on-surface-faint); }
+/* Placeholder text is text. --on-surface-faint is non-text only (00). */
+.cl-note::placeholder { color: var(--on-surface-3); }
 /* No margin: every parent of this is a flex column with its own gap. */
 .cl-why { margin: 0; font-size: var(--t-label); color: var(--on-surface-3); }
 .cl-ask { margin-top: var(--sp-5); }
@@ -252,7 +324,10 @@
 }
 .cl-out--ok  { background: var(--ok-container);   color: var(--on-ok-container); }
 .cl-out--chg { background: var(--warn-container); color: var(--on-warn-container); }
-.cl-out__w   { font-size: var(--t-label); opacity: .82; font-variant-numeric: tabular-nums; }
+/* No `opacity`. The timestamp IS the record — it is the part that answers the
+   six-weeks-later question, and knocking a measured on-container pairing down
+   to .82 is an unmeasured ratio on the one string that has to be readable. */
+.cl-out__w   { font-size: var(--t-label); font-variant-numeric: tabular-nums; }
 
 /* ── Files ────────────────────────────────────────────────────────────────── */
 
@@ -279,6 +354,12 @@
 
 .cl-form { display: flex; flex-direction: column; gap: var(--sp-4); }
 .cl-form__act { display: flex; gap: var(--sp-3); justify-content: flex-end; flex-wrap: wrap; }
+/* Every input in the portal, not just the approval note. `.inp` is
+   `--t-body-sm` (13px) and iOS Safari zooms the viewport on focus for anything
+   under 16px — which on the request form means the page jumps on the FIRST
+   field a client ever types into. `components/ui/Field.jsx` is outside this
+   change's ownership, so the floor is set here, scoped to the portal. */
+.cl-form .inp { font-size: 16px; }
 
 /* ── Loading ──────────────────────────────────────────────────────────────── */
 
@@ -293,13 +374,33 @@
    a client taps a link in an email. Single column, actions full-width and
    stacked, 44px floors already set above. */
 @media (max-width: 767px) {
-  .cl-head   { flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); }
-  .cl-head__side { margin-left: auto; }
+  /* One rail. `.cl-main` dropped to --sp-4 while the header and the tab strip
+     stayed on --pad-page (28px), so at 390px the firm's name and the tabs sat
+     12px to the right of every heading under them — a visible stagger on the
+     first screen a stranger sees. All three are --sp-4 now. */
+  .cl-head   { flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); padding: var(--sp-3) var(--sp-4); }
+  .cl-nav    { padding: 0 var(--sp-4); }
   .cl-main   { padding: var(--sp-4); }
+  /* Once the header wraps, the side group is alone on its row and
+     `margin-left:auto` shoved it right, leaving 64px of nothing beside a
+     truncated email. Give it the row and put Sign out at the far end of it. */
+  .cl-head__side { flex: 1 1 100%; justify-content: space-between; }
   .cl-appr__act { flex-direction: column; align-items: stretch; }
   .cl-appr__act > .btn { width: 100%; min-height: 44px; }
   .cl-form__act { flex-direction: column-reverse; align-items: stretch; }
   .cl-form__act > .btn { width: 100%; min-height: 44px; }
-  .cl-item   { flex-wrap: wrap; }
+  /* `flex-wrap` alone was not enough. `.cl-item__b` is `flex:1; min-width:0`,
+     so rather than claiming the row and pushing the state chip below it, it
+     SHRANK to 129px and set a 60-character task title in a column narrower
+     than the chip beside it — five lines of ragged text and a 180px row, at
+     390px. `flex-basis:100%` makes the wrap happen where it was meant to: the
+     work on one line, the state and the way to act on it on the next. */
+  .cl-item   { flex-wrap: wrap; align-items: flex-start; row-gap: var(--sp-2); }
+  .cl-item__b { flex: 1 1 100%; }
   .cl-prev__pdf { height: 300px; }
+  /* 19 · Mobile: 44px minimum targets. `.btn--sm` is 6px/11px padding at
+     12.5px — roughly 30px tall — and the portal uses it for Sign out, Request
+     work and All work, which are three of the five things a client can press.
+     Scoped to the shell so nothing outside the portal moves. */
+  .cl-shell .btn { min-height: 44px; }
 }

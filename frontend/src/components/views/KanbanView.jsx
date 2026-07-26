@@ -86,6 +86,12 @@ export default function KanbanView({
   // ── Add column ────────────────────────────────────────────────────────────
   const [addingCol, setAddingCol] = useState(false);
   const [newColName, setNewColName] = useState('');
+  // A literal, and it has to be: this is the seed value of an
+  // `<input type="color">`, which only accepts a 7-character hex — a var()
+  // reference is rejected by the control and it falls back to black. It is
+  // also PERSISTED as the column's colour, so it must be a value and not a
+  // reference to one that changes with the theme. `#6366f1` is the Indigo
+  // preset from 00 §10, so a default column still lands inside the palette.
   const [newColColor, setNewColColor] = useState('#6366f1');
   const [newColDone, setNewColDone] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
@@ -250,7 +256,7 @@ export default function KanbanView({
                       {renamingColId === col.column_id ? (
                         <input
                           ref={renameRef}
-                          className="k-input bd__cname"
+                          className="inp bd__cname"
                           value={renameVal}
                           onChange={e => setRenameVal(e.target.value)}
                           onBlur={() => commitRename(col)}
@@ -341,7 +347,7 @@ export default function KanbanView({
               {addingCol ? (
                 <div className="bd__form">
                   <input
-                    className="k-input"
+                    className="inp"
                     value={newColName}
                     onChange={e => setNewColName(e.target.value)}
                     placeholder="Column name…"

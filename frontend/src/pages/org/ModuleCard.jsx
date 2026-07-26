@@ -14,7 +14,11 @@ import { orgModuleColor } from './catalogue';
  * pair. A self-tint of `--danger` with `--danger` text can never reach 4.5:1,
  * because deepening the tint moves the background toward the text (00 §11).
  */
-const Lock = (
+/* Exported so the grant sheet's SENSITIVE tag is the same chip as the card's,
+   down to the glyph. `.omod__lock` specifies `gap: 4px`, which is a gap between
+   an icon and a word — a text-only copy of the tag in one of the two places it
+   appears is the kind of half-match the inventory in 26 exists to stop. */
+export const Lock = (
   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
     <rect x="4" y="10.5" width="16" height="10" rx="2" /><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" />

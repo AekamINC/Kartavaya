@@ -1,5 +1,6 @@
 import { lightPalette, darkPalette } from './palette.generated';
 import type { GeneratedTokenName } from './palette.generated';
+import { FAMILY } from './fonts';
 
 export type ColorScheme = 'light' | 'dark';
 
@@ -94,6 +95,19 @@ const mapPalette = (p: Record<GeneratedTokenName, string>) => ({
   errorBg:    p.dangerContainer,
   success:    p.ok,
   successBg:  p.okContainer,
+  // Foregrounds for the three accent fills. These arrived with the token layer's
+  // dark-mode pass — before it there was no --on-danger at all, so text on a
+  // danger fill had to be hardcoded white, which fails against dark mode's
+  // lighter salmon danger. Pair each `*Bg` with its `on*Container`, and a solid
+  // `error` fill with `onError`.
+  onError:            p.onDanger,
+  onErrorContainer:   p.onDangerContainer,
+  onSuccessContainer: p.onOkContainer,
+  onApprovalContainer: p.onWarnContainer,
+  // Text that is present but not actionable. Distinct from `ink4`: onSurfaceFaint
+  // was DARKENED for contrast in this pass (#9DA096 → #666A61) and its old value
+  // became onSurfaceDisabled, so the two are no longer interchangeable.
+  inkDisabled: p.onSurfaceDisabled,
   // `purple` was a local invention for the waiting-on-client approval state.
   // --ap-pending-client is the token that actually means that, and 00 §9 keeps
   // it a different hue from --ap-pending on purpose: "waiting on us" versus
@@ -189,6 +203,43 @@ export const PRIORITY_COLOR: Record<string, string> = PRIORITY_COLORS.light;
 export const APPROVAL_COLOR: Record<string, string> = APPROVAL_COLORS.light;
 
 /**
+ * Translucent tint of a token colour.
+ *
+ * Replaces the `color + '18'` string concatenation that call sites were using to
+ * fake a wash. That works only for a 6-digit hex: the generated palette also
+ * carries rgb() and rgba() values (20 of them), and `'rgb(12,14,17)' + '18'` is
+ * not a colour at all — RN drops the style and the element renders transparent.
+ *
+ * `alpha` is 0–1, matching CSS rather than the raw hex byte the concat produced.
+ */
+export function withAlpha(color: string, alpha: number): string {
+  const a = Math.max(0, Math.min(1, alpha));
+
+  const hex = color.trim();
+  const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(hex);
+  if (short) {
+    const [, r, g, b] = short;
+    return `rgba(${parseInt(r + r, 16)},${parseInt(g + g, 16)},${parseInt(b + b, 16)},${a})`;
+  }
+  const long = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})(?:[0-9a-f]{2})?$/i.exec(hex);
+  if (long) {
+    const [, r, g, b] = long;
+    return `rgba(${parseInt(r, 16)},${parseInt(g, 16)},${parseInt(b, 16)},${a})`;
+  }
+  // rgb() / rgba() — take the three channels and restate the alpha, so an
+  // already-translucent token does not compound its own transparency.
+  const rgb = /^rgba?\(\s*([\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(hex);
+  if (rgb) {
+    const [, r, g, b] = rgb;
+    return `rgba(${r},${g},${b},${a})`;
+  }
+  // Unrecognised (a named colour, or something new in the palette). Returning it
+  // unchanged renders the solid colour, which is wrong but visible — better than
+  // an invalid string that renders nothing.
+  return color;
+}
+
+/**
  * Deterministic project colour from team_id.
  *
  * These are identity colours, not semantic ones — they exist to tell two
@@ -235,12 +286,20 @@ export function avatarColor(userId: string, index?: number): string {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
-// Typography scale
+// Typography scale.
+//
+// Families come from FAMILY rather than being spelled again here. They were
+// duplicated as string literals in both files, which is one rename away from a
+// silent fallback to the system face.
+//
+// `labelHindi` carries no fontWeight: Tiro Devanagari Hindi ships only a 400, so
+// a weight above that is synthesised and a Hindi phrase renders in two weights.
+// See theme/fonts.ts.
 export const type = {
-  displaySerif: { fontFamily: 'Newsreader', fontWeight: '400' as const },
-  titleSerif:   { fontFamily: 'Newsreader', fontWeight: '400' as const },
-  labelHindi:   { fontFamily: 'TiroDevanagariHindi', fontWeight: '400' as const },
-  mono:         { fontFamily: 'SpaceMono', fontWeight: '400' as const },
+  displaySerif: { fontFamily: FAMILY.display, fontWeight: '400' as const },
+  titleSerif:   { fontFamily: FAMILY.display, fontWeight: '400' as const },
+  labelHindi:   { fontFamily: FAMILY.devanagari },
+  mono:         { fontFamily: FAMILY.mono, fontWeight: '400' as const },
   // UI sizes
   xs:   { fontSize: 11, lineHeight: 15 },
   sm:   { fontSize: 13, lineHeight: 18 },

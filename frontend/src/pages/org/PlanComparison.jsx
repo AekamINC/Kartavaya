@@ -12,9 +12,14 @@ import { inr, grouped } from '../../lib/inr';
  *
  * **Credits are the headline, not a price.** Pricing is per-org negotiated and
  * `list_plans` strips `price_monthly` for anyone who is not platform staff, so
- * a rupee figure here would be either absent or invented. The four plans carry
- * 200 / 500 / 1,000 / 2,000 credits a month, which is the number that actually
- * differs between them and the one a customer is deciding on.
+ * a rupee figure here would be either absent or invented.
+ *
+ * Every number on these cards comes from the API row and none is written down
+ * here — not in the JSX and not in this comment. The earlier version of this
+ * header listed each plan's monthly credit allowance, which is a tier figure
+ * Aekam sets per organisation by hand; a copy of it in the frontend is wrong the
+ * first time someone changes a plan, and wrong silently, because nothing reads
+ * it. `default_credits` and `max_users` are read, never asserted.
  */
 export default function PlanComparison({ plans = [], currentPlanName, currentPlanCode }) {
   if (!plans.length) return null;

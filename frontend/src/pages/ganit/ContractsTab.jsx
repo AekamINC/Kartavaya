@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Badge, CONTRACT_COLORS } from './_shared';
+import { inr } from '../../lib/inr';
 
 export default function ContractsTab() {
   const { pushToast } = useToast();
@@ -90,16 +91,16 @@ export default function ContractsTab() {
     return (
       <div>
         <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => setDetail(null)}>← Back to list</button>
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <div>
               <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{c.title}</h3>
               {c.contact_name && <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--ink-2)' }}>{c.contact_name}</p>}
             </div>
-            <Badge text={c.status} color={CONTRACT_COLORS[c.status] || '#6E7B91'} />
+            <Badge text={c.status} color={CONTRACT_COLORS[c.status] || 'var(--on-surface-3)'} />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, fontSize: 13 }}>
-            <div><strong>Value:</strong> ₹{Number(c.contract_value || 0).toLocaleString('en-IN')}</div>
+            <div><strong>Value:</strong> {inr(Number(c.contract_value || 0))}</div>
             <div><strong>Start:</strong> {c.start_date || '—'}</div>
             <div><strong>End:</strong> {c.end_date || '—'}</div>
             <div><strong>Reminder:</strong> {c.renewal_reminder_days} days before</div>
@@ -114,7 +115,7 @@ export default function ContractsTab() {
         </div>
 
         {editMode && (
-          <form onSubmit={saveEditContract} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+          <form onSubmit={saveEditContract} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
             <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Edit Contract</h4>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
@@ -145,12 +146,12 @@ export default function ContractsTab() {
         )}
 
         {detail.invoices?.length > 0 && (
-          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24 }}>
+          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24 }}>
             <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Related Invoices ({detail.invoices.length})</h4>
             {detail.invoices.map(inv => (
               <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13 }}>
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{inv.invoice_number}</span>
-                <span style={{ fontWeight: 600 }}>₹{Number(inv.total).toLocaleString('en-IN')}</span>
+                <span style={{ fontWeight: 600 }}>{inr(Number(inv.total))}</span>
               </div>
             ))}
           </div>
@@ -172,7 +173,7 @@ export default function ContractsTab() {
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Contract</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
@@ -210,13 +211,13 @@ export default function ContractsTab() {
         ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {contracts.map(c => (
-            <div key={c.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px', cursor: 'pointer' }}
+            <div key={c.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: '12px 16px', cursor: 'pointer' }}
               onClick={() => loadDetail(c.id)}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontWeight: 700, fontSize: 14 }}>{c.title}</span>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ fontWeight: 700 }}>₹{Number(c.contract_value || 0).toLocaleString('en-IN')}</span>
-                  <Badge text={c.status} color={CONTRACT_COLORS[c.status] || '#6E7B91'} />
+                  <span style={{ fontWeight: 700 }}>{inr(Number(c.contract_value || 0))}</span>
+                  <Badge text={c.status} color={CONTRACT_COLORS[c.status] || 'var(--on-surface-3)'} />
                 </div>
               </div>
               <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>

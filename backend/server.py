@@ -498,6 +498,23 @@ class TeamMemberOut(BaseModel):
 class Attachment(BaseModel):
     name:str; url:str; key:Optional[str]=None
     is_private:bool=False; visible_to:List[str]=[]
+    # `18-documents.md` and `19-client-portal.md` both require a file row to read
+    # "name, size, who shared it, when". Only `name` was expressible before these
+    # four fields — and TaskDrawer.jsx has been sending `size` at upload all
+    # along, where the model silently discarded it.
+    #
+    # All four are Optional and default to None because attachments live in the
+    # `tasks.attachments` JSONB blob, not in their own table: every row written
+    # before this change has none of these keys, and must still validate. That is
+    # also why adding them needs NO migration.
+    #
+    # `uploaded_by` is a user_id and is INTERNAL — it must never reach a client.
+    # `uploaded_by_name` is the snapshot that answers "who shared it" for the
+    # portal without exposing an identifier or an email.
+    size:Optional[int]=None
+    uploaded_by:Optional[str]=None
+    uploaded_by_name:Optional[str]=None
+    uploaded_at:Optional[datetime]=None
 class Subtask(BaseModel):
     subtask_id:str=Field(default_factory=lambda:f"sub_{uuid.uuid4().hex[:12]}"); title:str; is_done:bool=False; order:int=0; assignee_user_id:Optional[str]=None
 class Recurrence(BaseModel):
@@ -540,8 +557,106 @@ class TaskMoveIn(BaseModel):
     column_id:str; order:int
 class CommentCreate(BaseModel):
     body:str=Field(...,min_length=1,max_length=4000)
+    # Fail closed. A comment is internal unless the author deliberately says
+    # otherwise, so an internal thread cannot become client-visible by omission,
+    # by a client-side default, or by a caller that predates this field.
+    is_client_visible:bool=False
 class CommentOut(BaseModel):
     comment_id:str; task_id:str; user_id:str; user_name:str; body:str; created_at:datetime
+    # Backed by `task_comments.is_client_visible`, which DOES NOT EXIST YET —
+    # see backend/migrations/PROPOSED_056_task_comment_client_visibility.sql.
+    # Until that migration is applied the column probe below reports False for
+    # every row, so `list_comments` serves a client NOTHING rather than guessing
+    # which internal comments are safe. That is the intended pre-migration state.
+    is_client_visible:bool=False
+
+
+# ── Client shape ──────────────────────────────────────────────────────────────
+#
+# `19-client-portal.md`: "The failure mode is a well-meaning
+# `GET /api/client/tasks` that returns the full task object and lets the
+# component pick fields. [...] The endpoint returns a client shape, or this will
+# leak eventually."
+#
+# These models are that shape. They are allow-lists: a field reaches a client
+# because it is written out below, never because it was added to `TaskOut`. A
+# new internal field on the task therefore cannot reach the portal by default,
+# which is the whole point — the previous arrangement inverted that.
+#
+# Wire names are camelCase via alias so the payload matches what the portal's
+# components already consume, while the Python side keeps backend snake_case.
+class ClientAttachmentOut(BaseModel):
+    """A file row: name, size, who shared it, when — and nothing else.
+
+    Deliberately absent: `key` (R2 storage internals), `visible_to` (a list of
+    OTHER people's user ids), `is_private` (the firm's classification of its own
+    documents), and `uploaded_by` (an internal user id — the NAME crosses, the
+    identifier does not).
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    name:str
+    url:str
+    size:Optional[int]=None
+    shared_by:Optional[str]=Field(default=None,alias="sharedBy")
+    shared_at:Optional[datetime]=Field(default=None,alias="sharedAt")
+
+class ClientDecisionOut(BaseModel):
+    """A decision this client made, shown back to them as the written record."""
+    outcome:str
+    note:str=""
+    at:Optional[datetime]=None
+
+class ClientTaskOut(BaseModel):
+    """One task as its client sees it.
+
+    Excluded on purpose, each because `19` names it or because it derives from
+    something `19` names: `assignee_user_ids`, `assignee_emails`,
+    `assignee_names` (other members' data, and the assignee-picker leak);
+    `estimated_minutes` (time, and everything derived from it); `custom_fields`
+    and `subtasks` (the firm's internal decomposition of the work);
+    `approved_by`, `column_id`, `sort_order`, `user_id`, `category_id`,
+    `priority`, `tags` (the firm's triage); `created_by_user_id`,
+    `assigned_by_user_id`, `completed_by_user_id` (internal identifiers);
+    `reminders`, `reminder_at`, `reminder_sent_at` (the firm's follow-up
+    machinery); and the raw six-value `status`.
+
+    `requested_by` is a NAME and is kept — `19`'s ApprovalCard is explicitly
+    "who asked and when". An email is not a name and does not cross.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    task_id:str=Field(alias="taskId")
+    ref:str
+    title:str
+    note:str=""
+    state:str
+    expected_at:Optional[datetime]=Field(default=None,alias="expectedAt")
+    updated_at:Optional[datetime]=Field(default=None,alias="updatedAt")
+    created_at:Optional[datetime]=Field(default=None,alias="createdAt")
+    requested_by:Optional[str]=Field(default=None,alias="requestedBy")
+    project_id:Optional[str]=Field(default=None,alias="projectId")
+    files:List[ClientAttachmentOut]=[]
+    decision:Optional[ClientDecisionOut]=None
+    awaiting_me:bool=Field(default=False,alias="awaitingMe")
+
+class ClientApprovalOut(BaseModel):
+    """An approval waiting on this client.
+
+    Excluded on purpose: `requested_by_email` (a staff email address — `19`'s
+    never-see list names "team member emails and phone numbers beyond the single
+    named contact"), `reviewed_by` and `review_notes` (the firm's internal
+    review trail), and `request_type` (internal vocabulary).
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    approval_id:str=Field(alias="approvalId")
+    task_id:Optional[str]=Field(default=None,alias="taskId")
+    ref:str=""
+    title:str="Untitled"
+    ask:str=""
+    requested_by:Optional[str]=Field(default=None,alias="requestedBy")
+    requested_at:Optional[datetime]=Field(default=None,alias="requestedAt")
+    # No `files` here on purpose: the portal already joins an approval to its
+    # task by `taskId` and reads the files off that, so duplicating them would
+    # mean two places to get attachment filtering right instead of one.
 class DashboardSummaryOut(BaseModel):
     todo:int; in_progress:int; done:int; overdue:int; due_24h:int
 class PushSubscriptionIn(BaseModel):
@@ -578,7 +693,12 @@ async def _refresh_task_attachments(pool, task: "TaskOut") -> "TaskOut":
     for a in task.attachments:
         if a.key:
             fresh_url = await sign_key(org_id, a.key)
-            refreshed.append(Attachment(name=a.name, url=fresh_url or a.url, key=a.key, is_private=a.is_private, visible_to=a.visible_to))
+            # model_copy, not a field-by-field rebuild: the old form listed five
+            # fields explicitly, so `size`/`uploaded_by`/`uploaded_by_name`/
+            # `uploaded_at` would have been dropped here on every read — the
+            # exact bug that lost `size` on the way in. A copy carries whatever
+            # the model gains next without anyone having to remember this line.
+            refreshed.append(a.model_copy(update={"url": fresh_url or a.url}))
         else:
             refreshed.append(a)
     task.attachments = refreshed
@@ -785,29 +905,109 @@ async def reorder_columns(team_id:str,body:dict,pool=Depends(get_db),user=Depend
 
 # ── Client-scoped endpoints ──────────────────────────────────────────
 
-@api_router.get("/client/tasks",response_model=List[TaskOut])
+#: Six internal statuses collapse to three. `in_review` means nothing to a
+#: client; "With us" and "With you" answer the only question they have, which is
+#: whether the ball is in their court. `19-client-portal.md` requires that this
+#: mapping live in the serializer "so the portal cannot drift from it".
+CLIENT_STATE_WITH_US  = "with_us"
+CLIENT_STATE_WITH_YOU = "with_you"
+CLIENT_STATE_DONE     = "done"
+
+def _client_state(task: "TaskOut") -> str:
+    """`pending_client` outranks status: a task can be `in_review` AND waiting on
+    the client at once, and the waiting is the part they act on. `rejected` is
+    With us — the client asked for changes and the firm has them."""
+    if task.approval_status == "pending_client": return CLIENT_STATE_WITH_YOU
+    if task.status == "done":                    return CLIENT_STATE_DONE
+    return CLIENT_STATE_WITH_US
+
+def _client_ref(task_id: Optional[str]) -> str:
+    """`#a1b2c3`. Never a sequential integer — that counts the firm's customers."""
+    return f"#{str(task_id)[-6:]}" if task_id else ""
+
+def _client_files(task: "TaskOut") -> List[ClientAttachmentOut]:
+    """Attachments reduced to the four fields a client may see."""
+    return [
+        ClientAttachmentOut(
+            name=a.name or "Attachment", url=a.url, size=a.size,
+            shared_by=a.uploaded_by_name, shared_at=a.uploaded_at,
+        )
+        for a in (task.attachments or []) if a.url
+    ]
+
+def _to_client_task(task: "TaskOut", uid: str) -> ClientTaskOut:
+    """Build the client shape from an already-attachment-filtered TaskOut.
+
+    Every field is written out by hand. Nothing spreads the source model — a
+    spread is how a field added upstream next month arrives here without anyone
+    deciding that it should.
+    """
+    decided = task.approved_by == uid and task.approval_status in ("approved", "rejected")
+    return ClientTaskOut(
+        task_id=task.task_id,
+        ref=_client_ref(task.task_id),
+        title=task.title or "Untitled",
+        # The description is what the firm wrote for the client to read. It is
+        # the only prose that crosses; comments never do — they are gated
+        # separately on `task_comments.is_client_visible`.
+        note=task.description or "",
+        state=_client_state(task),
+        expected_at=task.due_at,
+        updated_at=task.updated_at or task.created_at,
+        created_at=task.created_at,
+        requested_by=task.created_by_name,
+        project_id=task.team_id,
+        files=_client_files(task),
+        decision=ClientDecisionOut(
+            outcome=task.approval_status, note=task.approval_notes or "",
+            at=task.approval_decided_at,
+        ) if decided else None,
+        awaiting_me=task.approval_status == "pending_client",
+    )
+
+@api_router.get("/client/tasks",response_model=List[ClientTaskOut])
 async def client_tasks(pool=Depends(get_db),user=Depends(require_user)):
-    """Return all tasks visible to the authenticated client user."""
+    """Return the caller's own tasks, in the client shape.
+
+    Three things were wrong here and all three are fixed below.
+
+    1. The response model was `TaskOut`, so `assignee_names`, `assignee_emails`,
+       `estimated_minutes`, `custom_fields` and `subtasks` all crossed to an
+       external party. It is now `ClientTaskOut`, an allow-list.
+    2. `_filter_private_attachments` was never applied — uniquely among the task
+       reads — so files a firm had marked private went to the client WITH LIVE
+       SIGNED R2 URLS. It is applied now, and before the URLs are re-signed, so
+       a private file is not even handed a fresh URL on the way out.
+    3. The `project_assignments` clause returned every task in a project the
+       client was assigned to, including work assigned to firm members they have
+       never met. It is now narrowed to tasks that are genuinely theirs: they
+       raised it, they are on it, it was explicitly shared with them via
+       `task_clients`, their sign-off is the gate, or they already decided it.
+    """
+    uid = user["user_id"]
     rows=await pool.fetch("""
         SELECT t.*,
-               COALESCE(cu.full_name,cu.name,cu.email) AS created_by_name,
-               ARRAY(
-                 SELECT COALESCE(au.full_name,au.name,au.email)
-                 FROM unnest(t.assignee_user_ids) AS uid
-                 LEFT JOIN users au ON au.user_id=uid
-               ) AS assignee_names
+               COALESCE(cu.full_name,cu.name,cu.email) AS created_by_name
         FROM tasks t
         LEFT JOIN users cu ON cu.user_id=t.created_by_user_id
         WHERE t.archived_at IS NULL
           AND (t.created_by_user_id=$1
            OR $1=ANY(t.assignee_user_ids)
-           OR EXISTS(SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1)
-           OR EXISTS(SELECT 1 FROM task_clients tc WHERE tc.task_id=t.task_id AND tc.user_id=$1))
+           OR t.approved_by=$1
+           OR EXISTS(SELECT 1 FROM task_clients tc WHERE tc.task_id=t.task_id AND tc.user_id=$1)
+           OR (t.approval_status='pending_client'
+               AND EXISTS(SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1)))
         ORDER BY t.updated_at DESC
-    """, user["user_id"])
-    tasks = [row_to_task(r) for r in rows]
-    tasks = [await _refresh_task_attachments(pool, t) for t in tasks]
-    return tasks
+    """, uid)
+    out: List[ClientTaskOut] = []
+    for r in rows:
+        task = row_to_task(r)
+        # Filter BEFORE re-signing: a private attachment the caller may not see
+        # should never be handed a fresh signed URL, even transiently.
+        task = _filter_private_attachments(task, uid, r["created_by_user_id"] == uid)
+        task = await _refresh_task_attachments(pool, task)
+        out.append(_to_client_task(task, uid))
+    return out
 
 @api_router.get("/client/projects")
 async def client_projects(pool=Depends(get_db),user=Depends(require_user)):
@@ -828,38 +1028,56 @@ async def client_projects(pool=Depends(get_db),user=Depends(require_user)):
     """,user["user_id"])
     return [dict(r) for r in rows]
 
-@api_router.get("/client/approvals")
+@api_router.get("/client/approvals", response_model=List[ClientApprovalOut])
 async def client_approvals(pool=Depends(get_db), user=Depends(require_user)):
-    """Return all pending approvals and client task approvals visible to the user."""
+    """Return the approvals that are genuinely this client's, in the client shape.
+
+    The first result set used to be scoped only by `project_assignments` on
+    `a.team_id`, so a client assigned to a project was handed THE FIRM'S OWN
+    pending approval queue for that project — internal staff requests they have
+    no part in — and every row carried `requested_by_email`, a staff email
+    address. `19-client-portal.md`'s never-see list names exactly that: "team
+    member emails and phone numbers beyond the single named contact".
+
+    Now both sets are scoped to approvals the client raised themselves or that
+    sit on a task explicitly shared with them, and the response model is an
+    allow-list that has no email field to populate. `reviewed_by`,
+    `review_notes`, `request_type` and the raw `status` stopped crossing with it
+    — the old `SELECT a.*` shipped all four.
+    """
     uid = user["user_id"]
     approval_rows, task_rows = await asyncio.gather(
       pool.fetch("""
-        SELECT a.*,
-               COALESCE(u.full_name, u.name, u.email) AS requested_by_name,
-               u.email                                AS requested_by_email
+        SELECT a.approval_id,
+               a.task_id,
+               t.title                                AS task_title,
+               a.request_data,
+               a.created_at,
+               COALESCE(u.full_name, u.name, u.email) AS requested_by_name
         FROM   approvals a
         JOIN   users u ON u.user_id = a.requested_by
+        LEFT   JOIN tasks t ON t.task_id = a.task_id
         WHERE  a.status = 'pending'
-          AND  EXISTS (
-                 SELECT 1 FROM project_assignments
-                 WHERE  team_id = a.team_id AND user_id = $1
+          AND  (
+                 a.requested_by = $1
+              OR EXISTS (
+                   SELECT 1 FROM task_clients tc
+                   WHERE  tc.task_id = a.task_id AND tc.user_id = $1
+                 )
                )
         ORDER BY a.created_at DESC
     """, uid),
       pool.fetch("""
         SELECT
-            CONCAT('task_approval--', t.task_id)              AS approval_id,
+            CONCAT('task_approval--', t.task_id)   AS approval_id,
             t.task_id,
-            t.title                                            AS task_title,
-            t.approval_status,
-            t.team_id,
-            COALESCE(u.full_name, u.name, u.email)            AS requested_by_name,
-            u.email                                           AS requested_by_email,
-            t.approval_requested_at                           AS created_at,
+            t.title                                AS task_title,
             jsonb_build_object(
                 'title',       t.title,
                 'description', t.description
-            )                                                  AS request_data
+            )                                      AS request_data,
+            t.approval_requested_at                AS created_at,
+            COALESCE(u.full_name, u.name, u.email) AS requested_by_name
         FROM   tasks t
         JOIN   users u ON u.user_id = t.created_by_user_id
         WHERE  t.approval_status = 'pending_client'
@@ -870,7 +1088,21 @@ async def client_approvals(pool=Depends(get_db), user=Depends(require_user)):
         ORDER BY t.approval_requested_at DESC NULLS LAST
     """, uid),
     )
-    return [dict(r) for r in approval_rows] + [dict(r) for r in task_rows]
+
+    def _shape(r) -> ClientApprovalOut:
+        rd = _pj(r["request_data"], {}) or {}
+        return ClientApprovalOut(
+            approval_id=r["approval_id"],
+            task_id=r["task_id"],
+            ref=_client_ref(r["task_id"]),
+            title=r["task_title"] or "Untitled",
+            # The ask, verbatim, as the firm submitted it.
+            ask=(rd.get("description") if isinstance(rd, dict) else None) or "",
+            requested_by=r["requested_by_name"],
+            requested_at=r["created_at"],
+        )
+
+    return [_shape(r) for r in approval_rows] + [_shape(r) for r in task_rows]
 
 @api_router.post("/tasks/{task_id}/clients/{target_user_id}")
 async def add_client_to_task(task_id:str,target_user_id:str,pool=Depends(get_db),user=Depends(_require_admin)):
@@ -934,14 +1166,16 @@ async def client_request_task(payload:TaskCreate,pool=Depends(get_db),user=Depen
     # Create approval record first
     approval_id=f"approval_{uuid.uuid4().hex[:12]}"
     await pool.execute("INSERT INTO approvals (approval_id,team_id,requested_by,status,request_type,request_data) VALUES ($1,$2,$3,'pending','create',$4)",
-        approval_id,payload.team_id,user["user_id"],json.dumps(payload.model_dump()))
+        approval_id,payload.team_id,user["user_id"],json.dumps(payload.model_dump(mode="json")))
     # Create actual task with status='requested' so it appears on the board
     first_col=await pool.fetchrow("SELECT column_id FROM project_columns WHERE team_id=$1 ORDER BY sort_order ASC LIMIT 1",payload.team_id)
     column_id=first_col["column_id"] if first_col else None
     max_row=await pool.fetchrow("SELECT MAX(sort_order) AS mo FROM tasks WHERE team_id=$1 AND column_id=$2",payload.team_id,column_id)
     next_order=(max_row["mo"] or -1)+1; task_id=f"task_{uuid.uuid4().hex[:12]}"
     actor_name=actor_display(user)
-    atts_json=json.dumps([a.model_dump() for a in (payload.attachments or [])])
+    # mode="json" throughout: Attachment.uploaded_at is a datetime, and a bare
+    # model_dump() hands json.dumps a datetime object, which raises.
+    atts_json=json.dumps([a.model_dump(mode="json") for a in (payload.attachments or [])])
     row=await pool.fetchrow("""
         INSERT INTO tasks (task_id,team_id,column_id,created_by_user_id,created_by_name,
             title,description,status,priority,approval_id,attachments,custom_fields,subtasks,sort_order)
@@ -951,7 +1185,7 @@ async def client_request_task(payload:TaskCreate,pool=Depends(get_db),user=Depen
         payload.title,payload.description,payload.priority or "medium",approval_id,atts_json,next_order)
     # Link approval to task
     await pool.execute("UPDATE approvals SET request_data=$1 WHERE approval_id=$2",
-        json.dumps({**payload.model_dump(),"task_id":task_id}),approval_id)
+        json.dumps({**payload.model_dump(mode="json"),"task_id":task_id}),approval_id)
     # Notify project owners/admins — in-app + email
     try:
         reviewers = await pool.fetch("""
@@ -1263,13 +1497,52 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user):
 
 # ── Comments ────────────────────────────────────────────────────
 
+#: Cached once per process. `task_comments.is_client_visible` does not exist
+#: until PROPOSED_056 is applied, and staging shares a database with production,
+#: so this file must run correctly on BOTH schemas. Probing rather than
+#: hardcoding means the migration takes effect with no code change and no
+#: redeploy — and, critically, that the pre-migration answer is False for every
+#: row, which is the fail-closed direction.
+_comment_visibility_column: Optional[bool] = None
+
+async def _has_client_visible_column(pool) -> bool:
+    global _comment_visibility_column
+    if _comment_visibility_column is None:
+        _comment_visibility_column = bool(await pool.fetchval(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name='task_comments' "
+            "AND column_name='is_client_visible'"
+        ))
+    return _comment_visibility_column
+
 @api_router.get("/tasks/{task_id}/comments",response_model=List[CommentOut])
 async def list_comments(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
-    """Return all comments on a task in chronological order."""
-    if user.get("role")=="client":
+    """Return comments on a task in chronological order.
+
+    A client sees ONLY comments explicitly marked client-visible.
+    `19-client-portal.md`'s never-see list opens with "Internal comments. Only
+    comments explicitly marked client-visible", and before this the endpoint
+    served a client every comment on any task they could reach — the firm's
+    internal discussion of their own file, verbatim.
+
+    Until PROPOSED_056 lands there is no flag to be true, so a client gets an
+    empty list. That is deliberate: no comments is correct, and guessing which
+    internal comments are safe is not.
+    """
+    is_client = user.get("role")=="client"
+    if is_client:
         if not await client_can_access_task(pool, task_id, user["user_id"]):
             raise HTTPException(403, "Not authorised to view comments on this task")
-    rows=await pool.fetch("SELECT c.comment_id,c.task_id,c.user_id,COALESCE(u.full_name,u.name) AS user_name,c.body,c.created_at FROM task_comments c JOIN users u ON u.user_id=c.user_id WHERE c.task_id=$1 ORDER BY c.created_at ASC",task_id)
+    has_flag = await _has_client_visible_column(pool)
+    if not has_flag and is_client:
+        return []
+    flag_col = "c.is_client_visible" if has_flag else "false AS is_client_visible"
+    where = "c.task_id=$1" + (" AND c.is_client_visible IS TRUE" if is_client else "")
+    rows=await pool.fetch(
+        f"SELECT c.comment_id,c.task_id,c.user_id,COALESCE(u.full_name,u.name) AS user_name,"
+        f"c.body,c.created_at,{flag_col} "
+        f"FROM task_comments c JOIN users u ON u.user_id=c.user_id "
+        f"WHERE {where} ORDER BY c.created_at ASC", task_id)
     return [CommentOut(**dict(r)) for r in rows]
 
 @api_router.post("/tasks/{task_id}/comments",response_model=CommentOut)
@@ -1279,7 +1552,18 @@ async def add_comment(task_id:str,body:CommentCreate,pool=Depends(get_db),user=D
         if not await client_can_access_task(pool, task_id, user["user_id"]):
             raise HTTPException(403, "Not authorised to comment on this task")
     comment_id=f"cmt_{uuid.uuid4().hex[:12]}"
-    row=await pool.fetchrow("INSERT INTO task_comments (comment_id,task_id,user_id,body) VALUES ($1,$2,$3,$4) RETURNING *",comment_id,task_id,user["user_id"],body.body)
+    # A client's own words are not internal firm data, so a comment authored BY
+    # a client is client-visible by definition — otherwise they would post into
+    # a thread they cannot read back. Everything an internal user writes stays
+    # internal unless they explicitly said otherwise.
+    client_visible = True if user.get("role")=="client" else bool(body.is_client_visible)
+    if await _has_client_visible_column(pool):
+        row=await pool.fetchrow(
+            "INSERT INTO task_comments (comment_id,task_id,user_id,body,is_client_visible) "
+            "VALUES ($1,$2,$3,$4,$5) RETURNING *",
+            comment_id,task_id,user["user_id"],body.body,client_visible)
+    else:
+        row=await pool.fetchrow("INSERT INTO task_comments (comment_id,task_id,user_id,body) VALUES ($1,$2,$3,$4) RETURNING *",comment_id,task_id,user["user_id"],body.body)
     try:
         task=await pool.fetchrow("SELECT title,team_id,created_by_user_id,assignee_user_ids FROM tasks WHERE task_id=$1",task_id)
         if task:
@@ -1316,7 +1600,7 @@ async def add_comment(task_id:str,body:CommentCreate,pool=Depends(get_db),user=D
     except Exception as e:
         logger.warning("comment fan-out failed: %s", e)
     actor_name=actor_display(user)
-    return CommentOut(comment_id=row["comment_id"],task_id=row["task_id"],user_id=row["user_id"],user_name=actor_name,body=row["body"],created_at=row["created_at"])
+    return CommentOut(comment_id=row["comment_id"],task_id=row["task_id"],user_id=row["user_id"],user_name=actor_name,body=row["body"],created_at=row["created_at"],is_client_visible=client_visible)
 
 @api_router.put("/tasks/{task_id}/comments/{comment_id}",response_model=CommentOut)
 async def edit_comment(task_id:str,comment_id:str,body:CommentCreate,pool=Depends(get_db),user=Depends(require_user)):
@@ -1331,7 +1615,10 @@ async def edit_comment(task_id:str,comment_id:str,body:CommentCreate,pool=Depend
         await log_event(pool,task_id=task_id,actor_id=user["user_id"],event_type="comment_edited",data={"preview":body.body[:80]})
     except Exception as _e: logger.debug("activity log failed (comment_edited): %s", _e)
     actor_name=actor_display(user)
-    return CommentOut(comment_id=updated["comment_id"],task_id=updated["task_id"],user_id=updated["user_id"],user_name=actor_name,body=updated["body"],created_at=updated["created_at"])
+    # An edit changes the text, never the audience. Re-deciding who may read a
+    # comment is a separate, deliberate act; folding it into a body edit would
+    # let a typo fix silently publish an internal note to the client.
+    return CommentOut(comment_id=updated["comment_id"],task_id=updated["task_id"],user_id=updated["user_id"],user_name=actor_name,body=updated["body"],created_at=updated["created_at"],is_client_visible=bool(updated.get("is_client_visible") or False))
 
 @api_router.delete("/tasks/{task_id}/comments/{comment_id}")
 async def delete_comment(task_id:str,comment_id:str,pool=Depends(get_db),user=Depends(require_user)):
@@ -1845,7 +2132,7 @@ async def create_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(requi
         payload.tags or [],payload.assignee_user_ids or [],
         [e.strip().lower() for e in payload.assignee_emails if e.strip()],
         due_dt,reminder_dt,payload.recurrence.rule,payload.recurrence.interval,payload.estimated_minutes,
-        json.dumps([a.model_dump() for a in payload.attachments or []]),
+        json.dumps([a.model_dump(mode="json") for a in payload.attachments or []]),
         json.dumps(payload.custom_fields or {}),json.dumps([s.model_dump() for s in payload.subtasks or []]),next_order)
     team_name=None
     if payload.team_id:
@@ -2045,10 +2332,31 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
         updates.append(f"approval_decided_at=${len(vals)+1}"); vals.append(now_utc())
     for k in ["tags","assignee_user_ids","assignee_emails"]:
         if k in data: updates.append(f"{k}=${len(vals)+1}::text[]"); vals.append(data[k])
+    # Attachment metadata must survive a caller that does not echo it back.
+    # TaskDrawer.jsx re-sends its attachment list as {name,url,key,is_private,
+    # visible_to} on every save (frontend/src/components/TaskDrawer.jsx:412),
+    # so `size` and the three uploader fields would be wiped from every file on
+    # the next edit of any task. Merge them back by `key` — the attachment's
+    # stable identity. A caller may still CHANGE these fields by sending new
+    # values; omitting them no longer DESTROYS them.
+    if data.get("attachments") is not None:
+        prior = {
+            a.get("key"): a
+            for a in (_pj(existing["attachments"], []) or []) if isinstance(a, dict) and a.get("key")
+        }
+        merged = []
+        for item in data["attachments"]:
+            d = item.model_dump(mode="json") if hasattr(item, "model_dump") else dict(item)
+            old = prior.get(d.get("key")) or {}
+            for f in ("size", "uploaded_by", "uploaded_by_name", "uploaded_at"):
+                if d.get(f) is None and old.get(f) is not None:
+                    d[f] = old[f]
+            merged.append(d)
+        data["attachments"] = merged
     for k in ["attachments","custom_fields","subtasks"]:
         if k in data and data[k] is not None:
             updates.append(f"{k}=${len(vals)+1}::jsonb")
-            v=data[k]; vals.append(json.dumps([i.model_dump() if hasattr(i,'model_dump') else i for i in v] if isinstance(v,list) else v))
+            v=data[k]; vals.append(json.dumps([i.model_dump(mode="json") if hasattr(i,'model_dump') else i for i in v] if isinstance(v,list) else v))
     if "due_at" in data:      updates.append(f"due_at=${len(vals)+1}");      vals.append(parse_dt(data["due_at"]))
     if "reminder_at" in data: updates.append(f"reminder_at=${len(vals)+1}"); vals.append(parse_dt(data["reminder_at"]))
     if "recurrence" in data and data["recurrence"]:
@@ -2154,7 +2462,24 @@ async def add_task_attachment(
     if len(current) >= 5:
         raise HTTPException(400, "Maximum 5 attachments per task")
 
-    current.append({"name": file.filename or "upload", "url": result["url"], "key": result.get("key")})
+    # Size, uploader and time are all already known right here — `len(content)`
+    # was measured against the limit ten lines up, and the caller is the
+    # uploader. They were simply never written down. `uploaded_by_name` is
+    # snapshotted rather than joined on read so a file row stays truthful after
+    # the uploader leaves the firm, and so the client portal never needs a join
+    # against `users` to render "who shared it".
+    uploader_name = await pool.fetchval(
+        "SELECT COALESCE(full_name, name, email) FROM users WHERE user_id=$1", user["user_id"]
+    )
+    current.append({
+        "name": file.filename or "upload",
+        "url": result["url"],
+        "key": result.get("key"),
+        "size": len(content),
+        "uploaded_by": user["user_id"],
+        "uploaded_by_name": uploader_name,
+        "uploaded_at": now_utc().isoformat(),
+    })
     updated = await pool.fetchrow(
         "UPDATE tasks SET attachments=$1::jsonb, updated_at=$2 WHERE task_id=$3 RETURNING *",
         json.dumps(current), now_utc(), task_id,

@@ -133,7 +133,10 @@ function AuPassword({ id, label, value, onChange, error, hint, strength, match, 
     <div>
       <AuField
         id={id}
-        className="aufld--eye"
+        // `aufld--mark` widens the right padding for the confirm tick. It is on
+        // the wrapper rather than the input because the rule has to reach a
+        // sibling the input cannot select.
+        className={match === undefined ? 'aufld--eye' : 'aufld--eye aufld--mark'}
         label={label}
         type={show ? 'text' : 'password'}
         value={value}
@@ -145,12 +148,17 @@ function AuPassword({ id, label, value, onChange, error, hint, strength, match, 
       >
         {match === true && <span className="aufld__mark aufld__mark--ok"><IconCheck /></span>}
         {match === false && <span className="aufld__mark aufld__mark--no"><IconX /></span>}
+        {/* No tabIndex={-1}. It was the only way to check a mistyped password
+            without a mouse, and taking it out of the tab order made it
+            keyboard-unreachable (WCAG 2.1.1). aria-pressed carries the state,
+            so the control reports itself without renaming itself — a name that
+            changes under the user is the thing 4.1.2 asks you not to do. */}
         <button
           type="button"
           className="aufld__eye"
           onClick={() => setShow((s) => !s)}
-          tabIndex={-1}
-          aria-label={show ? 'Hide password' : 'Show password'}
+          aria-pressed={show}
+          aria-label="Show password"
         >
           <IconEye open={show} />
         </button>
@@ -238,6 +246,14 @@ export function LoginPage() {
   }));
   const [remember, setRemember] = useState(() =>
     typeof localStorage !== 'undefined' && !!localStorage.getItem(REMEMBER_KEY));
+  /**
+   * Where the caret starts. React applies `autoFocus` once, on mount, so this is
+   * read once and never re-evaluated — which is correct: focus should not jump
+   * because the user cleared the email field. With a remembered address the
+   * email field is already right, and landing there makes the first keystroke
+   * corrupt it.
+   */
+  const [emailPrefilled] = useState(() => !!form.email);
   const [loading, setLoading] = useState(false);
   const [banner, setBanner] = useState(null);
   const [fieldErr, setFieldErr, clearErr] = useFieldErrors();
@@ -254,8 +270,11 @@ export function LoginPage() {
     // Inline first. A toast in the corner reports the problem somewhere other
     // than where the problem is, and then disappears on a timer.
     const errs = {};
-    if (!form.email.trim()) errs.email = 'Enter your email address.';
-    else if (!EMAIL_RE.test(form.email.trim())) errs.email = 'That does not look like an email address.';
+    const email = form.email.trim();
+    if (!email) errs.email = 'Enter your email address.';
+    else if (!EMAIL_RE.test(email)) errs.email = 'That does not look like an email address.';
+    // The password is never trimmed. Leading and trailing spaces are legal
+    // characters in a password and stripping them silently changes the secret.
     if (!form.password) errs.password = 'Enter your password.';
     if (Object.keys(errs).length) { setFieldErr(errs); setBanner(null); return; }
 
@@ -263,9 +282,15 @@ export function LoginPage() {
     setBanner(null);
     setLoading(true);
     try {
-      const data = await apiLogin(form.email, form.password);
+      // Trimmed, because validation already trimmed. `login` in
+      // backend/auth_router.py matches on `WHERE email=$1` with `.lower()` and
+      // no trim, so sending the raw value meant a pasted or autofilled address
+      // with one leading space passed the inline check and then came back 401
+      // "Invalid email or password" — an unfixable error, because the field
+      // looks correct.
+      const data = await apiLogin(email, form.password);
       try {
-        if (remember) localStorage.setItem(REMEMBER_KEY, form.email);
+        if (remember) localStorage.setItem(REMEMBER_KEY, email);
         else localStorage.removeItem(REMEMBER_KEY);
       } catch { /* private mode — not worth failing a sign-in over */ }
       navigate(data.user?.role === 'client' ? '/client' : '/dashboard', { replace: true });
@@ -304,7 +329,7 @@ export function LoginPage() {
             onChange={set}
             error={fieldErr.email}
             autoComplete="username"
-            autoFocus
+            autoFocus={!emailPrefilled}
             required
           />
           <AuPassword
@@ -315,6 +340,7 @@ export function LoginPage() {
             onChange={set}
             error={fieldErr.password}
             autoComplete="current-password"
+            autoFocus={emailPrefilled}
             required
           />
         </div>
@@ -387,7 +413,9 @@ export function AcceptInvitePage() {
     setBanner(null);
     setLoading(true);
     try {
-      const data = await apiAcceptInvite(token, form.name, form.password);
+      // Name trimmed for the same reason the login email is; the password is
+      // not, because whitespace inside a secret is part of the secret.
+      const data = await apiAcceptInvite(token, form.name.trim(), form.password);
       pushToast({ type: 'success', title: 'Welcome to Kartavaya!' });
       navigate(data.user?.role === 'client' ? '/client' : '/dashboard', { replace: true });
     } catch (err) {

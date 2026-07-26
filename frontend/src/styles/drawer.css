@@ -243,6 +243,23 @@
    avatar against the text. There is no avatar in this pill any more — see the
    note in DrawerSubtasks.jsx — so the padding is symmetric; reproducing the
    asymmetry without the thing it compensated for would push the label right. */
+/* ── MITIGATION, not a fix. `ui/Picker.jsx` does not portal. ───────────────
+   `.pk__pop` is `position: absolute` inside `.pk`, which is `position:
+   relative` — so its containing block is inside `.dr__body`, and `.dr__body`
+   is `overflow-y: auto`. An absolutely-positioned box is clipped by any
+   scrolling ancestor in its containing-block chain, and `z-index: 340` does
+   nothing about it: stacking order and overflow clipping are unrelated. The
+   subtask assignee panel is therefore cut off at the drawer body's edge.
+   `Menu` and `Popover` both portal to `document.body` and are unaffected.
+
+   The fix belongs in `components/ui/Picker.jsx`, which this file does not own
+   — see the report. What is available here is damage limitation: a panel short
+   enough to fit inside the body's visible height more often. 258px of list
+   plus the search box and padding is taller than the gap above a subtask row
+   in most drawers; 168px is six rows, which covers a normal firm's team, and
+   the search box handles the rest. */
+.dr__st-as .pk__list { max-height: 168px; }
+
 .dr__st-as { flex: none; }
 .dr__st-as .pk__tr {
   height: 22px; gap: 4px; padding: 2px 8px;

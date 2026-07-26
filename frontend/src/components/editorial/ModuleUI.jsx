@@ -20,7 +20,11 @@ export function Section({ title, hi, right, children }) {
       <div className="k-section__head">
         <h3 className="k-section__title">
           {title}
-          {hi && <span className="k-section__title-hi">{hi}</span>}
+          {/* lang="hi": .k-section__title-hi already carries --font-hindi, but
+              without a lang the [lang="hi"] leading and zero-tracking rules
+              never fired, and the parent .k-section__title tracks at .08em —
+              which pulls Devanagari conjuncts apart. */}
+          {hi && <span className="k-section__title-hi" lang="hi">{hi}</span>}
         </h3>
         {right && <div>{right}</div>}
       </div>

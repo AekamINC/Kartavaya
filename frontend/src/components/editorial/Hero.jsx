@@ -18,7 +18,7 @@ export default function Hero({ name, dateLine, lede, weekDates, dotsByDay, today
       {/* opacity .03 — §1: above about .05 the watermark competes with the lede
           sitting on top of it. Fixed decorative Devanagari, so --font-hindi
           rather than --font-indic: it does not follow the user's language. */}
-      <div className="k-hero__watermark" aria-hidden="true">कर्तव्य</div>
+      <div className="k-hero__watermark" lang="hi" aria-hidden="true">कर्तव्य</div>
       <div className="k-hero__inner">
         {dateLine && (
           <div className="k-hero__meta">
@@ -33,7 +33,7 @@ export default function Hero({ name, dateLine, lede, weekDates, dotsByDay, today
           </div>
         )}
         <h1 className="k-hero__h1">
-          <span className="k-hero__greet">नमस्ते,</span>
+          <span className="k-hero__greet" lang="hi">नमस्ते,</span>
           <span className="k-hero__name"> {name}.</span>
         </h1>
         {lede && <p className="k-hero__lede">{lede}</p>}

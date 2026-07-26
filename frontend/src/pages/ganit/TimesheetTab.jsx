@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import { inr } from '../../lib/inr';
 
 export default function TimesheetTab() {
   const { pushToast } = useToast();
@@ -8,7 +9,7 @@ export default function TimesheetTab() {
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState(null);
 
-  const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+  const FMT = v => inr(Number(v || 0));
 
   async function generate(e) {
     e.preventDefault();
@@ -32,7 +33,7 @@ export default function TimesheetTab() {
 
   return (
     <div>
-      <form onSubmit={generate} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+      <form onSubmit={generate} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
         <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Generate Invoice from Timesheets</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
           <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>From Date *</span>
@@ -51,8 +52,8 @@ export default function TimesheetTab() {
       </form>
 
       {result && (
-        <div style={{ background: 'var(--surface-1)', border: '1px solid #10b981', borderRadius: 12, padding: 24 }}>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#10b981' }}>Invoice Created</h4>
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--ok)', borderRadius: 'var(--r-md)', padding: 24 }}>
+          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: 'var(--ok)' }}>Invoice Created</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, fontSize: 13 }}>
             <div><strong>Invoice #:</strong> <span style={{ fontFamily: 'var(--font-mono)' }}>{result.invoice_number}</span></div>
             <div><strong>Total:</strong> <span style={{ fontWeight: 700 }}>{FMT(result.total)}</span></div>

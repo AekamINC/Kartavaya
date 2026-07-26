@@ -22,25 +22,9 @@ import {
   SkeletonBoard, SkeletonList, SkeletonRegion,
 } from '../components/ui';
 import ViewToolbar from '../components/views/ViewToolbar';
+import { VIEWS, FIELD_TYPES, IcPlus } from '../components/views/viewDefs';
 import AutomationsPage from './AutomationsPage';
 import NewTaskModal from '../components/NewTaskModal';
-
-const VIEWS = [
-  { id: 'kanban',   label: 'Board',
-    icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="1" y="3" width="4" height="10" rx="1"/><rect x="6" y="3" width="4" height="10" rx="1"/><rect x="11" y="3" width="4" height="10" rx="1"/></svg> },
-  { id: 'table',    label: 'List',
-    icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 4h12M2 8h12M2 12h12"/></svg> },
-  { id: 'calendar', label: 'Calendar',
-    icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 2v2M11 2v2M2 7h12"/></svg> },
-  { id: 'timeline', label: 'Timeline',
-    icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 5h5M2 8h9M2 11h6"/><circle cx="9" cy="5" r="1.5" fill="currentColor" stroke="none"/><circle cx="13" cy="8" r="1.5" fill="currentColor" stroke="none"/><circle cx="10" cy="11" r="1.5" fill="currentColor" stroke="none"/></svg> },
-  { id: 'workload', label: 'Workload',
-    icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="6" cy="5" r="2.5"/><circle cx="11" cy="5" r="2"/><path d="M1 13c0-2.2 2-4 5-4s5 1.8 5 4"/><path d="M11 9c2 .5 3 1.8 3 3"/></svg> },
-  { id: 'priority', label: 'Priority',
-    icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M2 3l12 0M2 7l8 0M2 11l5 0"/></svg> },
-  { id: 'mytasks',  label: 'My Tasks',
-    icon: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="8" cy="5" r="3"/><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5"/><path d="M6 10.5l1.5 1.5 3-3" strokeWidth="1.8"/></svg> },
-];
 
 export default function BoardsPage() {
   const navigate  = useNavigate();
@@ -153,21 +137,28 @@ export default function BoardsPage() {
                 </button>
               ))}
             </div>
+            {/* `aria-pressed` drives the pressed treatment through
+                `.pb__toggle[aria-pressed="true"]`. It was an inline
+                `style={{ background }}` ternary, which is a state a screen
+                reader could not perceive at all — and an inline declaration
+                that would have outranked any later focus ring. */}
             <button
-              className="k-btn k-btn--ghost k-btn--sm"
+              type="button"
+              className="k-btn k-btn--ghost k-btn--sm pb__toggle"
+              aria-pressed={showFieldMgr}
               onClick={() => { setShowFieldMgr(v => !v); setShowAutomations(false); }}
-              style={showFieldMgr ? { background: 'var(--bg-soft)' } : {}}
             >
-              ⚙ Fields
+              Fields
             </button>
             <button
-              className="k-btn k-btn--ghost k-btn--sm"
+              type="button"
+              className="k-btn k-btn--ghost k-btn--sm pb__toggle"
+              aria-pressed={showAutomations}
               onClick={() => { setShowAutomations(v => !v); setShowFieldMgr(false); }}
-              style={showAutomations ? { background: 'var(--bg-soft)' } : {}}
             >
-              ⚡ Automations
+              Automations
             </button>
-            <button className="k-link" onClick={() => activeId && navigate(`/projects/${activeId}`)}>
+            <button type="button" className="k-link" onClick={() => activeId && navigate(`/projects/${activeId}`)}>
               Open project →
             </button>
           </div>
@@ -177,7 +168,21 @@ export default function BoardsPage() {
       {/* One toolbar, shared with every other view — 04 §2. The switcher was a
           hand-rolled `.k-segctrl` in an inline-styled flex row here, and again
           in ProjectBoardPage, which is why the two drifted. */}
-      <ViewToolbar views={VIEWS} view={view} onView={setView} />
+      <ViewToolbar
+        views={VIEWS}
+        view={view}
+        onView={setView}
+        end={!loading && view !== 'kanban' && activeId && (
+          <button
+            type="button"
+            className="btn btn--fill btn--sm vtb__ico"
+            onClick={() => setNewTaskEditor({ open: true, columnId: null })}
+          >
+            {IcPlus}
+            New task
+          </button>
+        )}
+      />
 
       {/* Field manager panel */}
       {showFieldMgr && (
@@ -186,43 +191,46 @@ export default function BoardsPage() {
             <div className="k-card__titles">
               <h3 className="k-card__title">Custom Fields</h3>
             </div>
-            <button className="k-iconbtn" style={{ marginLeft: 'auto', opacity: 0.5 }} onClick={() => setShowFieldMgr(false)} title="Close" aria-label="Close custom fields panel">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l10 10M13 3L3 13"/></svg>
+            <button type="button" className="k-iconbtn pb__panelx" onClick={() => setShowFieldMgr(false)} title="Close" aria-label="Close custom fields panel">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"/></svg>
             </button>
           </header>
+          {/* The same panel, the same classes, as ProjectBoardPage. It was
+              written twice as inline style objects on `--ink-3` / `--bg-soft`
+              and the two copies had already drifted — this one keyed Enter to
+              submit, the other did not. `.pb__*` in boards.css is the object. */}
           <div className="k-card__body">
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'flex-end' }}>
+            <div className="pb__fieldadd">
               <input
-                className="k-input"
+                className="inp"
                 value={newFieldName}
-                onChange={e => setNewFieldName(e.target.value)}
+                aria-label="Field name"
                 placeholder="Field name"
-                style={{ flex: 1 }}
+                onChange={e => setNewFieldName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && addField()}
               />
-              <select className="k-select" value={newFieldType} onChange={e => setNewFieldType(e.target.value)}>
-                {[
-                  { v: 'text',     l: 'Text' },
-                  { v: 'number',   l: 'Number' },
-                  { v: 'date',     l: 'Date' },
-                  { v: 'select',   l: 'Select / Dropdown' },
-                  { v: 'checkbox', l: 'Checkbox' },
-                  { v: 'url',      l: 'URL' },
-                  { v: 'person',   l: 'Person' },
-                ].map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
+              <select className="inp pb__fieldtype" aria-label="Field type" value={newFieldType} onChange={e => setNewFieldType(e.target.value)}>
+                {FIELD_TYPES.map(t => <option key={t.v} value={t.v}>{t.l}</option>)}
               </select>
-              <button className="k-btn k-btn--primary k-btn--sm" onClick={addField}>Add</button>
+              <button type="button" className="btn btn--fill btn--sm" onClick={addField}>Add</button>
             </div>
             {(fieldDefs || []).length === 0 ? (
-              <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>No custom fields yet.</p>
+              <p className="pb__none">No custom fields yet.</p>
             ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <div className="pb__fields">
                 {(fieldDefs || []).map(f => (
-                  <div key={f.field_id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-soft)', borderRadius: 'var(--r-sm)', padding: '4px 10px', fontSize: 13 }}>
-                    <span style={{ fontWeight: 500 }}>{f.name}</span>
-                    <span style={{ color: 'var(--ink-3)', fontSize: 11 }}>{f.type}</span>
-                    <button onClick={() => deleteField(f.field_id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 14, lineHeight: 1 }}>×</button>
-                  </div>
+                  <span key={f.field_id} className="pb__field">
+                    <span className="pb__fieldn">{f.name}</span>
+                    <span className="pb__fieldt">{f.type}</span>
+                    <button
+                      type="button"
+                      className="pb__fieldx"
+                      aria-label={`Delete field ${f.name}`}
+                      onClick={() => deleteField(f.field_id)}
+                    >
+                      <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"/></svg>
+                    </button>
+                  </span>
                 ))}
               </div>
             )}
@@ -238,28 +246,14 @@ export default function BoardsPage() {
               <h3 className="k-card__title">Automations</h3>
               <span className="k-card__sans">स्वचालन</span>
             </div>
-            <button className="k-iconbtn" style={{ marginLeft: 'auto', opacity: 0.5 }} onClick={() => setShowAutomations(false)} title="Close" aria-label="Close automations panel">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l10 10M13 3L3 13"/></svg>
+            <button type="button" className="k-iconbtn pb__panelx" onClick={() => setShowAutomations(false)} title="Close" aria-label="Close automations panel">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"/></svg>
             </button>
           </header>
-          <div className="k-card__body" style={{ paddingTop: 0 }}>
+          <div className="k-card__body pb__autobody">
             <AutomationsPage teamId={activeId} embedded />
           </div>
         </section>
-      )}
-
-      {/* New task bar — shown on non-kanban views (kanban has per-column + Add task buttons) */}
-      {!loading && view !== 'kanban' && activeId && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-          <button
-            className="k-btn k-btn--primary k-btn--sm"
-            onClick={() => setNewTaskEditor({ open: true, columnId: null })}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3v10M3 8h10"/></svg>
-            New task
-          </button>
-        </div>
       )}
 
       {/* Content. A skeleton is shaped like the content it replaces — 26 §9 —

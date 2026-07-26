@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Badge, CLAIM_COLORS, CLAIM_CATEGORIES } from './_shared';
+import { inr } from '../../lib/inr';
 
 export default function ExpensesTab() {
   const { pushToast } = useToast();
@@ -70,7 +71,7 @@ export default function ExpensesTab() {
       </div>
 
       {showForm && (
-        <form onSubmit={submit} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={submit} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Submit Expense Claim</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee *</span>
@@ -115,26 +116,26 @@ export default function ExpensesTab() {
         ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {claims.map(c => (
-            <div key={c.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px' }}>
+            <div key={c.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: '12px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <div>
                   <span style={{ fontWeight: 700, fontSize: 14 }}>{c.employee_name}</span>
                   <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ink-3)' }}>{c.employee_code}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>₹{Number(c.amount).toLocaleString('en-IN')}</span>
-                  <Badge text={c.status} color={CLAIM_COLORS[c.status] || '#6E7B91'} />
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{inr(Number(c.amount))}</span>
+                  <Badge text={c.status} color={CLAIM_COLORS[c.status] || 'var(--on-surface-3)'} />
                 </div>
               </div>
               <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>
                 <strong style={{ textTransform: 'capitalize' }}>{c.category}</strong> · {c.expense_date}
                 {c.description && <span> · {c.description}</span>}
-                {c.rejection_reason && <span style={{ color: '#ef4444' }}> · Rejected: {c.rejection_reason}</span>}
+                {c.rejection_reason && <span style={{ color: 'var(--danger)' }}> · Rejected: {c.rejection_reason}</span>}
               </div>
               {c.status === 'pending' && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <button className="k-btn k-btn--primary" style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => action(c.id, 'approve')}>Approve</button>
-                  <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px', color: '#ef4444' }} onClick={() => action(c.id, 'reject')}>Reject</button>
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px', color: 'var(--danger)' }} onClick={() => action(c.id, 'reject')}>Reject</button>
                 </div>
               )}
             </div>

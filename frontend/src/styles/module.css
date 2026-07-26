@@ -78,12 +78,57 @@
 .mh__sub { font-size: 12.5px; color: var(--on-surface-3); margin-top: 3px; }
 .mh__act { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
-/* ── Tabs ──────────────────────────────────────────────────────────────── */
+/* ── Tabs ──────────────────────────────────────────────────────────────────
+   flex-shrink:0 on the tab and overflow-x:auto on the strip — a module with
+   seventeen tabs (Graha has seventeen) must scroll, never compress to
+   unreadable slivers.
+
+   The edge fade is required, not decorative. 13 §1: "a scrolling tab strip
+   needs a visible edge fade so it is discoverable, because a hidden scrollbar
+   plus no fade is a nav that looks complete but isn't." The scrollbar IS hidden
+   here, so without this the seventh tab of seventeen is the last one a user
+   believes exists.
+
+   The four layers are the standard scroll-shadow construction: two --bg-coloured
+   covers attached `local` (they travel with the content, so they sit over the
+   shadow only when that end is reached) and two shadows attached `scroll` (they
+   stay pinned to the box). No JS, no resize observer, and it re-evaluates on
+   every scroll for free. */
 .mt {
   display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none;
   border-bottom: 1px solid var(--outline-variant); margin-bottom: 18px;
+
+  background:
+    linear-gradient(to right,  var(--bg) 40%, transparent) left  / 30px 100% no-repeat,
+    linear-gradient(to left,   var(--bg) 40%, transparent) right / 30px 100% no-repeat,
+    radial-gradient(farthest-side at 0    50%, color-mix(in srgb, var(--on-surface) 14%, transparent), transparent) left  / 13px 100% no-repeat,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb, var(--on-surface) 14%, transparent), transparent) right / 13px 100% no-repeat;
+  background-attachment: local, local, scroll, scroll;
 }
 .mt::-webkit-scrollbar { display: none; }
+
+/* ── `.mt` IS TAKEN. Read this before adding another rule above. ───────────
+   `styles/boards.css` §6 uses `.mt`, `.mt__n` and six more `.mt__*` for an
+   unrelated object — the MyTasks summary strip — and boards.css is imported
+   AFTER module.css in index.css. Two components, one name.
+
+   Measured live at http://localhost:5173, on a `<div class="mt">` with no other
+   classes: `display: flex` (this file) but `flex-direction: column`
+   (boards.css:254). The module tab strip was rendering as a VERTICAL STACK on
+   all eleven module pages. `.mt__n` resolved to boards.css:266 — 22px
+   display-serif, `display:block`, `--on-surface` — where 13 §1 wants an inline
+   monospace count.
+
+   Adding `flex-direction: row` to the `.mt` rule above would not fix it: at
+   equal specificity the later import still wins, and it would break the boards
+   strip as collateral. These two rules are scoped to markup only the module
+   tabs have — `role="tablist"` on the strip, `.mt__b` on the tab — so they
+   outrank boards.css without matching any of it.
+
+   This is a workaround for a name collision, not the fix. The fix is to rename
+   one of the two; boards.css is the newer and the more local, and it is not
+   this agent's file. See the report. */
+.mt[role="tablist"] { flex-direction: row; gap: 2px; }
 .mt__b {
   position: relative; padding: 9px 15px;
   font-size: 13px; font-weight: 500; color: var(--on-surface-3);
@@ -97,11 +142,23 @@
   content: ''; position: absolute; left: 12px; right: 12px; bottom: -1px;
   height: 2px; border-radius: 1px 1px 0 0; background: var(--primary);
 }
-/* Count beside a tab. --on-surface-faint is 2.3:1 and non-text only (00 §12),
-   so this reads at --on-surface-3, and uses the floored token rather than the
-   10.5px literal the handover's own CSS carries — that literal would not track
-   the Text size slider. */
-.mt__n { font-size: var(--t-label-sm); color: var(--on-surface-3); margin-left: 6px; }
+/* Count beside a tab. Two deliberate departures from 13 §1's own CSS, and one
+   restoration:
+   · --on-surface-faint is 2.3:1 and NON-TEXT ONLY (00 §12); a count is content,
+     so it reads at --on-surface-3.
+   · The floored token replaces the 10.5px literal, which would not track the
+     Text size slider and sits under the 11px metadata minimum.
+   · --font-mono is kept as 13 §1 writes it. It is a numeral, and 00 §2 puts
+     numbers in mono with tabular figures so a two-digit count does not shift
+     the tab label beside it. Dropping it was the regression. */
+/* Scoped to `.mt__b` — see the collision note above. Unscoped, boards.css:266
+   wins and the count renders as a 22px serif block. */
+.mt__b .mt__n {
+  display: inline;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--t-label-sm); font-weight: 400; line-height: inherit;
+  color: var(--on-surface-3); margin-left: 6px;
+}
 
 /* ── KPI strip ─────────────────────────────────────────────────────────── */
 .mk    { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 10px; margin-bottom: 18px; }

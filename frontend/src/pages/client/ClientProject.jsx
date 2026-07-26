@@ -38,9 +38,9 @@ export default function ClientProject({ projectId, projectName, tasks, projects,
         <header className="cl-sec__h">
           <h2 className="cl-sec__t">{projectName || 'Project'}</h2>
           {open.length > 0 && <span className="cl-sec__n">{open.length} open</span>}
-          <span style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--sp-2)' }}>
+          <span className="cl-sec__act">
             <Button variant="out" size="sm" onClick={() => setAsking(true)}>Request work</Button>
-            <Link className="cl-file__dl" to="/client?view=overview">All work</Link>
+            <Link className="cl-file__dl" to="/client">All work</Link>
           </span>
         </header>
 
@@ -60,7 +60,7 @@ export default function ClientProject({ projectId, projectName, tasks, projects,
       {done.length > 0 && (
         <details className="cl-done">
           <summary>{done.length === 1 ? '1 finished item' : `${done.length} finished items`}</summary>
-          <div style={{ marginTop: 'var(--sp-3)' }}>
+          <div className="cl-done__b">
             <WorkList tasks={done} label="Finished work" />
           </div>
         </details>

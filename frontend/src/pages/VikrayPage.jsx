@@ -1,7 +1,20 @@
+// Vikray · विक्रय — sales — on the shared module chrome, 13-module-pages.md §1.
+//
+// Was `PageHeader` + `TabBar`. Three measured differences from the spec:
+//  · `.k-pageh__h1` is `clamp(32px, 4vw, 44px)`; 13 §1 specs `.mh__en` at 25px.
+//  · `.k-pageh__sans` puts the Devanagari at 0.7em of that h1 — 22-31px where
+//    the spec says 15px — in `--k-primary`, i.e. `--primary-vivid`, a FILL.
+//    `.mh__hi` uses `--primary-text`, the measured text pair.
+//  · `PageHeader` carries no module accent; `.mh__ic` is the 38px tinted icon.
+// `.k-tabbar` also has no role="tablist"/aria-selected/aria-controls.
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
-import { PageHeader, StatTile, TabBar, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
+import { StatTile, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
+import ModuleHeader from '../components/module/ModuleHeader';
+import ModuleTabs from '../components/module/ModuleTabs';
+import { ICONS } from '../components/layout/navIcons';
+import { moduleMeta } from '../lib/moduleColors';
 import { ORDER_COLORS } from '../lib/statusColors';
 import { inr } from '../lib/inr';
 
@@ -16,14 +29,23 @@ const TABS = ['dashboard', 'orders', 'stock', 'targets'];
 
 export default function VikrayPage() {
   const [tab, setTab] = useState('dashboard');
+  const meta = moduleMeta('vikray');
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Vikray" sanskrit="विक्रय" lede="Sales — Orders, Stock & Targets. Customers and pipeline live in Graha (CRM)." />
-      <TabBar tabs={TABS} active={tab} onChange={setTab} />
-      {tab === 'dashboard' && <DashboardTab />}
-      {tab === 'orders' && <OrdersTab />}
-      {tab === 'stock' && <StockTab />}
-      {tab === 'targets' && <TargetsTab />}
+      <ModuleHeader
+        module="vikray"
+        en={meta.en}
+        hi={meta.hi}
+        sub="Orders, stock and targets. Customers and pipeline live in Graha (CRM)."
+        icon={ICONS.vikray}
+      />
+      <ModuleTabs tabs={TABS.map(id => ({ id, label: id }))} value={tab} onChange={setTab} label="Vikray sections" />
+      <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
+        {tab === 'dashboard' && <DashboardTab />}
+        {tab === 'orders' && <OrdersTab />}
+        {tab === 'stock' && <StockTab />}
+        {tab === 'targets' && <TargetsTab />}
+      </div>
     </div>
   );
 }
@@ -626,8 +648,8 @@ function TargetsTab() {
                 <Td align="right" mono>{FMT(t.actual_amount)}</Td>
                 <td>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 80, height: 6, background: 'var(--rule-soft)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pct >= 100 ? 'var(--ok)' : 'var(--primary)', borderRadius: 3, transition: 'width .4s' }} />
+                    <div style={{ width: 80, height: 6, background: 'var(--rule-soft)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pct >= 100 ? 'var(--ok)' : 'var(--primary)', borderRadius: 'var(--r-xs)', transition: 'width .4s' }} />
                     </div>
                     <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)', color: pct >= 100 ? 'var(--ok)' : 'var(--ink-2)' }}>{pct}%</span>
                   </div>

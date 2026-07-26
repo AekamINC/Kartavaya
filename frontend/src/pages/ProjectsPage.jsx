@@ -39,7 +39,7 @@ function DeleteProjectModal({ project, onConfirm, onCancel }) {
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth="2"><path d="M8 1v6M8 11v2"/><circle cx="8" cy="8" r="7"/></svg>
             </span>
             <div>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)', marginBottom: 2, fontFamily: 'var(--font-ui), var(--font-hindi)' }}>
                 DELETE PROJECT · परियोजना हटाएँ
               </div>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 400, color: '#fff', lineHeight: 1.2 }}>

@@ -5,6 +5,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
+import { hindi } from '../theme/fonts';
 import { useNotifications } from '../context/NotificationContext';
 import type { RootStackParamList } from '../nav/RootStack';
 
@@ -39,8 +40,8 @@ interface Dest {
 const WORK: Dest[] = [
   { key: 'boards',    en: 'Boards',    hi: 'फ़लक',      icon: 'grid-outline',            route: 'Board' },
   { key: 'inbox',     en: 'Inbox',     hi: 'संदेश-पेटी', icon: 'notifications-outline',   route: 'Inbox', badge: 'unread' },
-  { key: 'approvals', en: 'Approvals', hi: 'सम्मति',     icon: 'checkmark-circle-outline', note: 'Approvals arrive with the next release.' },
-  { key: 'time',      en: 'Time',      hi: 'काल',        icon: 'time-outline',            note: 'Time tracking is on the web for now.' },
+  { key: 'approvals', en: 'Approvals', hi: 'सम्मति',     icon: 'checkmark-circle-outline', route: 'Approvals' },
+  { key: 'time',      en: 'Time',      hi: 'काल',        icon: 'time-outline',            route: 'Time' },
 ];
 
 const MODULES: Dest[] = [
@@ -152,11 +153,11 @@ export default function MoreScreen() {
 const s = StyleSheet.create({
   pad: { paddingHorizontal: 20, paddingBottom: 40 },
   title: { fontSize: 26, fontWeight: '700', letterSpacing: -0.4 },
-  titleHi: { fontSize: 14, marginTop: 2 },
+  titleHi: { fontSize: 14, marginTop: 2, ...hindi() },
   section: { marginTop: 24 },
   sectionHead: { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 10 },
   sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase' },
-  sectionHi: { fontSize: 11.5 },
+  sectionHi: { fontSize: 11.5, ...hindi() },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   tile: {
     width: '31%', minWidth: 96, flexGrow: 1,
@@ -164,7 +165,7 @@ const s = StyleSheet.create({
   },
   tileTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
   tileEn: { fontSize: 13.5, fontWeight: '600' },
-  tileHi: { fontSize: 11.5 },
+  tileHi: { fontSize: 11.5, ...hindi() },
   badge: { minWidth: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
   badgeText: { fontSize: 10, fontWeight: '800', color: '#FFFFFF' },
   settingsRow: {

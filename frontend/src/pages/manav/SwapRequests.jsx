@@ -55,7 +55,7 @@ export default function SwapRequests({ pushToast }) {
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Swap Request</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Schedule ID *</span>
@@ -85,7 +85,7 @@ export default function SwapRequests({ pushToast }) {
         ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
           {swaps.map(s => (
-            <div key={s.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 16 }}>
+            <div key={s.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 16 }}>
               <div style={{ fontSize: 13, marginBottom: 8 }}>
                 <div><strong>{s.requester_name}</strong> wants to swap with <strong>{s.target_name}</strong></div>
                 <div style={{ color: 'var(--ink-2)', marginTop: 4 }}>{s.schedule_date} · {s.shift_name}</div>
@@ -93,7 +93,7 @@ export default function SwapRequests({ pushToast }) {
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button className="k-btn k-btn--primary" style={{ fontSize: 12, flex: 1 }} onClick={() => handleAction(s.id, 'approved')}>Approve</button>
-                <button className="k-btn k-btn--ghost" style={{ fontSize: 12, flex: 1, color: '#ef4444' }} onClick={() => handleAction(s.id, 'rejected')}>Reject</button>
+                <button className="k-btn k-btn--ghost" style={{ fontSize: 12, flex: 1, color: 'var(--danger)' }} onClick={() => handleAction(s.id, 'rejected')}>Reject</button>
               </div>
             </div>
           ))}

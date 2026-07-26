@@ -22,8 +22,12 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-mute    { color: var(--ink-3); }
 .hi-mute   { color: var(--ink-3); font-family: var(--font-hindi); font-size: 0.92em; }
 .k-mono    { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.k-link    { color: var(--k-deep); font-weight: 500; cursor: pointer; }
-.k-link:hover { color: var(--k-mid); text-decoration: underline; text-underline-offset: 3px; }
+/* --k-deep is written by applyPrefs as acc.deep in BOTH themes — it is the only
+   accent value that never flips. As a link colour on #12151A it is 1.9:1.
+   --primary-text is the token 00 §12 created for primary-coloured TEXT and is
+   the accent's light value in dark mode. */
+.k-link    { color: var(--primary-text); font-weight: 500; cursor: pointer; }
+.k-link:hover { color: var(--primary-text); text-decoration: underline; text-underline-offset: 3px; }
 
 /* ── App shell (01-navigation.md §1 · Shell) ─────────────────────────────
    `grid-template-columns: auto 1fr` — the sidebar sizes itself, the main
@@ -612,7 +616,9 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-btn--sm { padding: 7px 12px; font-size: 12.5px; }
 .k-btn--primary {
   background: var(--k-grad);
-  color: #fff;
+  /* Was #fff. --on-primary is white in light and #00332F in dark, and the
+     accent gradient is the light mint there — white on it is 1.8:1. */
+  color: var(--on-primary);
   box-shadow: 0 1px 0 rgba(255,255,255,.15) inset, 0 4px 14px -4px color-mix(in srgb, var(--k-deep) 60%, transparent);
 }
 .k-btn--primary:hover { transform: translateY(-1px); }
@@ -766,7 +772,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
   display: flex; align-items: baseline; gap: .3em;
   flex-wrap: wrap;
 }
-.k-hero__greet { color: var(--on-surface-3); font-style: italic; font-weight: 300; }
+/* नमस्ते, is the only content here, and the greeting never changes with the
+   language setting — so --font-hindi (fixed glyph), not --font-indic.
+   Without it this inherited .k-hero__title's --font-display, which has zero
+   Devanagari coverage, and the word arrived per-glyph from the OS fallback. */
+.k-hero__greet { font-family: var(--font-hindi); color: var(--on-surface-3); font-style: italic; font-weight: 300; }
 .k-hero__name  { color: var(--on-surface); }
 
 .k-hero__lede {
@@ -1065,9 +1075,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-bottom: 1px solid var(--rule);
 }
 .k-pageh__txt { min-width: 0; }
+/* BoardsPage passes kicker="AEKAM INC · फ़लक" — two scripts, one node. */
 .k-pageh__kicker {
+  font-family: var(--font-ui), var(--font-hindi);
   font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
-  color: var(--k-mid); font-weight: 700;
+  color: var(--primary-text); font-weight: 700;
   margin-bottom: 6px;
 }
 .k-pageh__h1 {
@@ -1092,7 +1104,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-pageh__sans {
   font-family: var(--font-hindi);
   font-size: 0.7em;
-  color: var(--k-primary);
+  color: var(--primary-text);
   font-weight: 400;
 }
 .k-pageh__lede {
@@ -1142,14 +1154,18 @@ input, textarea, select { font-family: inherit; color: inherit; }
   color: var(--ink);
 }
 .k-segctrl__count {
-  font-family: var(--font-mono); font-size: 10.5px;
-  color: var(--ink-3);
-  background: var(--rule-soft);
+  font-family: var(--font-mono); font-size: var(--t-label-sm);
+  /* 00 §7: only containers may sit behind text, and every container has an
+     `on-` half. --rule-soft is --outline-variant, a stroke with no partner
+     by design — this pair measured 3.63:1 light and 3.45:1 dark, which is the
+     same defect 00 documents for the sidebar count badge. */
+  color: var(--on-surface-2);
+  background: var(--s-container);
   padding: 1px 6px; border-radius: 99px;
 }
 .k-segctrl__btn.is-active .k-segctrl__count {
   background: color-mix(in srgb, var(--k-primary) 18%, transparent);
-  color: var(--k-mid);
+  color: var(--primary-text);
 }
 
 .k-fld { display: inline-flex; align-items: center; gap: 8px; }
@@ -1301,8 +1317,12 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-badge {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 1px 6px; border-radius: 99px;
-  font-size: 10px; font-weight: 700;
-  background: var(--k-primary); color: #fff;
+  font-size: var(--t-label-sm); font-weight: 700;
+  /* --k-primary is the RAW accent (#05b7aa at the default teal): as a fill
+     under --on-primary it measures 2.51:1. --primary is the fill half of the
+     system's only measured fill/on pair (4.63:1 light, 7.93:1 dark). 10px was
+     also under 00 §12's 11px metadata floor. */
+  background: var(--primary); color: var(--on-primary);
 }
 
 /* Columns popover */
@@ -1345,7 +1365,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-col-popover__check input:checked ~ .k-col-popover__box::after {
   content: ''; display: block;
   width: 4px; height: 7px;
-  border: 2px solid #fff; border-top: 0; border-left: 0;
+  border: 2px solid var(--on-primary); border-top: 0; border-left: 0;
   transform: rotate(45deg) translate(2px, -1px);
 }
 .k-col-popover__name { font-size: 13px; font-weight: 500; color: var(--ink-2); }
@@ -1458,14 +1478,23 @@ input, textarea, select { font-family: inherit; color: inherit; }
   flex-shrink: 0;
 }
 
-/* Requested column — synthetic, dashed border, slate accent */
+/* Requested column — synthetic, dashed border.
+   Was #94a3b8 in three places: the retired slate. It does not flip, so the 6%
+   wash was mixed into --bg-soft (a token that DOES flip) and the count text
+   measured 2.55:1 on the light canvas — below the 4.5:1 floor for the one
+   number in the column that carries information.
+   00 §9 gives this status a token: --st-requested, which aliases --warn and is
+   measured 4.9:1 light / 10.3:1 dark. The hue moves from slate to amber; the
+   meaning ("waiting to be picked up") is what the token encodes, and amber is
+   already what every other pending/requested surface in the product uses.
+   Tint percentage comes from --tint-* so the wash survives the theme flip. */
 .k-bcol--requested {
   border-style: dashed;
-  border-color: #94a3b8;
-  background: color-mix(in srgb, #94a3b8 6%, var(--bg-soft));
+  border-color: color-mix(in srgb, var(--st-requested) 55%, var(--outline-variant));
+  background: color-mix(in srgb, var(--st-requested) var(--tint-weak), var(--bg-soft));
 }
 .k-bcol--requested .k-bcol__title { color: var(--ink-2); }
-.k-bcol--requested .k-bcol__count { color: #94a3b8; }
+.k-bcol--requested .k-bcol__count { color: var(--st-requested); }
 
 .k-bcard {
   display: flex; flex-direction: column; gap: 10px;
@@ -1517,7 +1546,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-pcard__head .k-pcard__bar { flex-shrink: 0; width: 4px; align-self: stretch; min-height: 48px; border-radius: 2px; }
 .k-pcard__bar { width: 4px; border-radius: 2px; }
 .k-pcard__titles { min-width: 0; }
-.k-pcard__sans { font-family: var(--font-hindi); font-size: 14px; color: var(--k-primary); }
+.k-pcard__sans { font-family: var(--font-hindi); font-size: 14px; color: var(--primary-text); }
 .k-pcard__name { font-family: var(--font-display); font-size: 20px; font-weight: 500; color: var(--ink); margin-top: 2px; line-height: 1.2; }
 .k-pcard__client { font-size: 11.5px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.14em; font-weight: 600; margin-top: 6px; }
 .k-pcard__body { display: flex; gap: var(--sp-5); padding-top: var(--sp-3); border-top: 1px dashed var(--rule-soft); }
@@ -1564,17 +1593,24 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-mcard__row { display: grid; grid-template-columns: 8px 1fr auto; gap: 8px; align-items: center; font-size: 12.5px; color: var(--ink-2); }
 .k-mcard__tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k-mcard__id { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint); }
-.k-mcard__empty { font-family: var(--font-display); font-style: italic; font-size: 13px; color: var(--ink-3); }
+/* Holds `No open work <span lang="sa">रिक्त</span>` — --font-display alone has
+   no Devanagari, so the span fell back to the OS face. */
+.k-mcard__empty { font-family: var(--font-display), var(--font-hindi); font-style: italic; font-size: 13px; color: var(--ink-3); }
 
 .k-rolebadge {
   font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
   font-weight: 700;
   padding: 2px 7px; border-radius: 4px;
 }
-.k-rolebadge--admin  { background: color-mix(in srgb, var(--k-deep) 14%, transparent); color: var(--k-deep); }
-.k-rolebadge--owner  { background: color-mix(in srgb, #f59e0b 14%, transparent); color: #b45309; }
-.k-rolebadge--member { background: color-mix(in srgb, var(--k-primary) 14%, transparent); color: var(--k-primary); }
-.k-rolebadge--client { background: color-mix(in srgb, #8b5cf6 14%, transparent); color: #8b5cf6; }
+/* 00 §11: a token may sit behind text only if it has a declared `on-` partner.
+   These four were self-tinted chips — owner mixed #f59e0b and wrote #b45309 on
+   it, client wrote #8b5cf6 on its own 14% tint — and neither literal flips, so
+   in dark the ground went to near-black while the text stayed put. Container
+   pairs are the legal grounds and exist in both themes. */
+.k-rolebadge--admin  { background: var(--primary-container);   color: var(--on-primary-container); }
+.k-rolebadge--owner  { background: var(--warn-container);      color: var(--on-warn-container); }
+.k-rolebadge--member { background: var(--secondary-container); color: var(--on-secondary-container); }
+.k-rolebadge--client { background: var(--tertiary-container);  color: var(--on-tertiary-container); }
 
 /* Legacy member cards */
 .k-memcard { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg); padding: 22px 18px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
@@ -1593,7 +1629,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   display: inline-block;
   position: relative;
   border-radius: var(--r-sm, 6px);
-  background: var(--surface-dim, #eae8e3);
+  background: var(--surface-dim);
   overflow: hidden;
 }
 .k-skeleton::after {
@@ -1602,7 +1638,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   background: linear-gradient(
     100deg,
     transparent 20%,
-    var(--surface, #fff) 50%,
+    var(--surface) 50%,
     transparent 80%
   );
   background-size: 200% 100%;
@@ -1695,10 +1731,17 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase;
   font-weight: 700; padding: 1px 6px; border-radius: 4px;
 }
-.k-inboxkind--mention  { background: color-mix(in srgb, var(--k-mid) 14%, transparent); color: var(--k-deep); }
-.k-inboxkind--assign   { background: color-mix(in srgb, var(--ok) 14%, transparent);     color: var(--ok); }
-.k-inboxkind--approval { background: color-mix(in srgb, var(--warn) 14%, transparent);   color: var(--warn); }
-.k-inboxkind--comment  { background: color-mix(in srgb, #8b5cf6 14%, transparent);       color: #8b5cf6; }
+/* 14 §5 — the literal 14% was a light-mode number: 14% of a colour over cream
+   is a visible tint, 14% over #0C0E11 is nearly nothing. --tint-mid is 14% in
+   light (so nothing moves) and 22% in dark. `comment` was #8b5cf6 on its own
+   tint, a retired literal that flips with nothing; --st-in-review is the
+   system's purple and carries light and dark values (00 §9). */
+/* Measured 1.68:1 in dark before this: --k-deep text on a --k-mid tint, and
+   neither of those two flips. --primary / --primary-text both do. */
+.k-inboxkind--mention  { background: color-mix(in srgb, var(--primary) var(--tint-mid), transparent);       color: var(--primary-text); }
+.k-inboxkind--assign   { background: color-mix(in srgb, var(--ok) var(--tint-mid), transparent);            color: var(--ok); }
+.k-inboxkind--approval { background: color-mix(in srgb, var(--warn) var(--tint-mid), transparent);          color: var(--warn); }
+.k-inboxkind--comment  { background: color-mix(in srgb, var(--st-in-review) var(--tint-mid), transparent);  color: var(--st-in-review); }
 
 /* Legacy notification items */
 .k-nitem { display: grid; grid-template-columns: 36px 1fr auto; gap: 12px; align-items: center; padding: 14px 0; border-bottom: 1px dashed var(--rule-soft); }
@@ -1716,10 +1759,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
   padding: 2px 8px;
   border-radius: 99px;
 }
-.k-pri--urgent { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
-.k-pri--high   { background: color-mix(in srgb, #f59e0b 14%, transparent); color: #c2710a; }
-.k-pri--medium { background: color-mix(in srgb, var(--k-deep) 14%, transparent); color: var(--k-deep); }
-.k-pri--low    { background: color-mix(in srgb, var(--ink-3) 12%, transparent); color: var(--ink-3); }
+/* 00 §9 declares --pr-urgent/high/medium/low precisely so priority does not get
+   a private colour map. `high` was #f59e0b tint under #c2710a text — two
+   literals, neither of which flips, and the pair measured 3.4:1 in light.
+   --pr-high aliases --warn (4.9:1 light, 10.3:1 dark); --pr-medium is the
+   status blue, which has both values; --pr-low follows --on-surface-3. */
+.k-pri--urgent { background: color-mix(in srgb, var(--pr-urgent) var(--tint-mid), transparent); color: var(--pr-urgent); }
+.k-pri--high   { background: color-mix(in srgb, var(--pr-high)   var(--tint-mid), transparent); color: var(--pr-high); }
+.k-pri--medium { background: color-mix(in srgb, var(--pr-medium) var(--tint-mid), transparent); color: var(--pr-medium); }
+.k-pri--low    { background: color-mix(in srgb, var(--pr-low)    var(--tint-soft), transparent); color: var(--pr-low); }
 
 /* ── Approvals ─────────────────────────────────────────────────────────── */
 .k-approvals__counter {
@@ -1768,7 +1816,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-weight: 700; padding: 2px 7px; border-radius: 4px;
 }
 .k-apcard__kind--invoice   { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
-.k-apcard__kind--contract  { background: color-mix(in srgb, var(--k-deep) 14%, transparent); color: var(--k-deep); }
+.k-apcard__kind--contract  { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary-text); }
 .k-apcard__kind--creative  { background: color-mix(in srgb, var(--warn) 14%, transparent);  color: var(--warn); }
 .k-apcard__urgent {
   font-size: 9.5px; letter-spacing: 0.16em; font-weight: 700;
@@ -1848,12 +1896,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-size: 11px; letter-spacing: 0.06em; font-weight: 700;
   padding: 1px 7px; border-radius: 4px; text-transform: uppercase;
 }
-.k-actitem__verb--created   { background: color-mix(in srgb, var(--k-primary) 14%, transparent); color: var(--k-primary); }
-.k-actitem__verb--moved     { background: color-mix(in srgb, var(--k-deep) 14%, transparent);    color: var(--k-deep); }
+.k-actitem__verb--created   { background: color-mix(in srgb, var(--k-primary) 14%, transparent); color: var(--primary-text); }
+/* 1.99:1 in dark before this — see .k-inboxkind--mention. */
+.k-actitem__verb--moved     { background: color-mix(in srgb, var(--primary) 14%, transparent);   color: var(--primary-text); }
 .k-actitem__verb--commented { background: color-mix(in srgb, var(--ink-2) 12%, transparent);     color: var(--ink-2); }
 .k-actitem__verb--approved  { background: color-mix(in srgb, var(--ok) 14%, transparent);        color: var(--ok); }
 .k-actitem__verb--attached  { background: color-mix(in srgb, var(--warn) 14%, transparent);      color: var(--warn); }
-.k-actitem__verb--assigned  { background: color-mix(in srgb, #8b5cf6 14%, transparent);          color: #8b5cf6; }
+/* #8b5cf6 was the last retired violet in this file — see .k-inboxkind--comment. */
+.k-actitem__verb--assigned  { background: color-mix(in srgb, var(--st-in-review) 14%, transparent); color: var(--st-in-review); }
 .k-actitem__verb--changed   { background: color-mix(in srgb, var(--ink-3) 12%, transparent);     color: var(--ink-2); }
 .k-actitem__subj { color: var(--ink); font-weight: 500; }
 
@@ -1894,7 +1944,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-rule__step--when { background: color-mix(in srgb, var(--k-deep) 8%, var(--bg-soft)); }
 .k-rule__step--cond { background: var(--bg-soft); }
 .k-rule__step--then { background: color-mix(in srgb, var(--k-primary) 10%, var(--bg-soft)); }
-.k-rule__step-lbl { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; color: var(--ink-3); }
+/* "WHEN · प्रसंग" is one element carrying two scripts. Appending --font-hindi
+   AFTER the full --font-ui stack keeps Latin in the user's UI face and sends
+   only the Devanagari on to Tiro: a generic in the middle of the list does not
+   swallow the script, the browser keeps walking (measured, not assumed). */
+.k-rule__step-lbl { font-family: var(--font-ui), var(--font-hindi); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; color: var(--ink-3); }
 .k-rule__step-body { font-size: 13.5px; color: var(--ink); font-weight: 500; line-height: 1.4; }
 .k-rule__step-sans { font-family: var(--font-hindi); font-size: 11.5px; color: var(--ink-3); }
 .k-rule__arrow { display: flex; align-items: center; justify-content: center; color: var(--ink-faint); padding: 0 8px; }
@@ -1950,7 +2004,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-tab:hover { color: var(--ink); }
 .k-tab.is-active { color: var(--ink); border-bottom-color: var(--k-primary); }
 .k-tab__sans { font-family: var(--font-hindi); font-size: 13px; color: var(--ink-faint); }
-.k-tab.is-active .k-tab__sans { color: var(--k-mid); }
+.k-tab.is-active .k-tab__sans { color: var(--primary-text); }
 .k-tab__count { background: var(--bg-soft); color: var(--ink-3); font-family: var(--font-mono); font-size: 10.5px; padding: 1px 6px; border-radius: 99px; }
 
 .k-tmplgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--sp-4); }
@@ -2081,8 +2135,9 @@ input, textarea, select { font-family: inherit; color: inherit; }
   color: var(--ink-faint); font-weight: 400;
 }
 .k-dr__sec-count {
-  background: var(--rule-soft); color: var(--ink-3);
-  font-family: var(--font-mono); font-size: 10px;
+  /* Stroke-as-ground, same as .k-segctrl__count above. */
+  background: var(--s-container); color: var(--on-surface-2);
+  font-family: var(--font-mono); font-size: var(--t-label-sm);
   padding: 1px 6px; border-radius: 99px;
   letter-spacing: 0; text-transform: none;
 }
@@ -2128,7 +2183,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-cm-compose textarea:focus { border-color: color-mix(in srgb, var(--k-primary) 50%, var(--rule)); background: var(--surface); }
 .k-cm-compose__actions { display: flex; align-items: center; gap: 10px; padding: 4px 8px 8px 8px; }
 .k-cm-attach { background: transparent; border: 0; width: 28px; height: 28px; border-radius: 6px; color: var(--ink-3); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
-.k-cm-attach:hover { background: var(--rule-soft); color: var(--k-mid); }
+.k-cm-attach:hover { background: var(--s-container); color: var(--primary-text); }
 .k-cm-compose__hint { margin-left: auto; font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.02em; }
 
 /* Files */
@@ -2139,7 +2194,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   background: var(--bg-soft); border: 1px solid var(--rule); border-radius: var(--r-md);
 }
 .k-file__icon {
-  width: 40px; height: 40px; background: var(--k-gradD); color: #fff;
+  width: 40px; height: 40px; background: var(--k-gradD); color: var(--on-primary);
   display: flex; align-items: center; justify-content: center;
   border-radius: 6px; font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
 }
@@ -2156,7 +2211,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 .k-file-attach:hover { border-color: var(--k-primary); color: var(--ink); background: color-mix(in srgb, var(--k-primary) 6%, var(--surface)); }
 .k-file-attach svg { color: var(--ink-3); }
-.k-file-attach:hover svg { color: var(--k-mid); }
+.k-file-attach:hover svg { color: var(--primary-text); }
 .k-file-attach__sans { font-family: var(--font-hindi); font-size: 13px; color: var(--ink-3); font-weight: 400; }
 .k-file-attach__hint { margin-left: auto; padding-left: 12px; border-left: 1px solid var(--rule); font-size: 11.5px; color: var(--ink-3); font-weight: 400; }
 
@@ -2194,7 +2249,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-bottom: 1px solid var(--rule);
   background: radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--k-primary) 8%, transparent), transparent 50%), var(--surface);
 }
-.k-modal__kicker { font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--k-mid); font-weight: 700; margin-bottom: 6px; }
+.k-modal__kicker { font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--primary-text); font-weight: 700; margin-bottom: 6px; }
 .k-modal__head h2 { font-family: var(--font-display); font-size: 26px; font-weight: 500; margin: 0; letter-spacing: -0.01em; color: var(--ink); }
 .k-modal__body { flex: 1; overflow-y: auto; padding: 20px 28px; display: flex; flex-direction: column; gap: var(--sp-4); }
 .k-modal__title {
@@ -2225,7 +2280,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 .k-modal__person:hover { border-color: var(--rule-strong); color: var(--ink); }
 .k-modal__person.is-active { background: color-mix(in srgb, var(--k-primary) 12%, var(--surface)); border-color: var(--k-primary); color: var(--ink); }
-.k-modal__person svg { color: var(--k-primary); }
+.k-modal__person svg { color: var(--primary-text); }
 .k-modal__desc { min-height: 80px; resize: vertical; font-family: inherit; line-height: 1.5; }
 .k-modal__attach {
   display: inline-flex; align-items: center; gap: 10px; padding: 12px 16px;
@@ -2235,7 +2290,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 .k-modal__attach:hover { border-color: var(--k-primary); color: var(--ink); background: color-mix(in srgb, var(--k-primary) 6%, var(--surface)); }
 .k-modal__attach svg { color: var(--ink-3); }
-.k-modal__attach:hover svg { color: var(--k-mid); }
+.k-modal__attach:hover svg { color: var(--primary-text); }
 .k-modal__attach-hint { margin-left: auto; padding-left: 14px; border-left: 1px solid var(--rule); font-size: 11.5px; color: var(--ink-3); font-weight: 400; }
 .k-modal__foot {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
@@ -2264,7 +2319,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   z-index: 90; cursor: pointer; transition: transform calc(.15s * var(--ix)), box-shadow calc(.15s * var(--ix));
 }
 .k-cust-launch:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -10px rgba(8,14,26,.25); }
-.k-cust-launch svg { color: var(--k-primary); }
+.k-cust-launch svg { color: var(--primary-text); }
 .k-cust-launch__hi { font-family: var(--font-hindi); color: var(--ink-3); font-weight: 400; font-size: 13px; border-left: 1px solid var(--rule); padding-left: 8px; margin-left: 2px; }
 .k-cust-launch.is-open { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 
@@ -2283,7 +2338,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   padding: 16px 18px 12px; border-bottom: 1px solid var(--rule-soft);
   background: radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--k-primary) 10%, transparent), transparent 70%), var(--surface);
 }
-.k-cust__kicker { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--k-mid); font-weight: 700; margin-bottom: 4px; }
+.k-cust__kicker { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--primary-text); font-weight: 700; margin-bottom: 4px; }
 .k-cust__head h3 { font-family: var(--font-display); font-size: 18px; font-weight: 500; margin: 0; color: var(--ink); }
 .k-cust__body { flex: 1; overflow-y: auto; padding: 14px 18px 18px; display: flex; flex-direction: column; gap: var(--sp-4); }
 .k-cust-section { display: flex; flex-direction: column; gap: 8px; }
@@ -2433,7 +2488,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-tload__h { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); text-align: right; }
 
 /* k-tlog extras */
-.k-tlog__h { font-family: var(--font-mono); font-size: 12px; color: var(--k-primary); font-weight: 700; }
+.k-tlog__h { font-family: var(--font-mono); font-size: 12px; color: var(--primary-text); font-weight: 700; }
 .k-tlog__empty { padding: 24px; text-align: center; color: var(--ink-3); font-style: italic; font-size: 13px; }
 
 /* ── Admin / plan / integrations / danger zone ──────────────────────────── */
@@ -2471,7 +2526,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 .k-tabbar__btn:hover { color: var(--ink-2); }
 .k-tabbar__btn--active {
-  color: var(--k-primary); font-weight: 700;
+  color: var(--primary-text); font-weight: 700;
   border-bottom-color: var(--k-primary);
 }
 
@@ -2542,7 +2597,8 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-empty__cta {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 8px 18px; font-size: 13px; font-weight: 600;
-  background: var(--k-primary); color: #fff;
+  /* Was --k-primary, the raw accent: 2.51:1 under --on-primary. See .k-badge. */
+  background: var(--primary); color: var(--on-primary);
   border: none; border-radius: 6px; cursor: pointer;
   transition: opacity calc(.15s * var(--ix));
 }
@@ -2594,8 +2650,13 @@ select.k-formpanel__input { appearance: none;
   display: flex; gap: 8px; align-items: center; margin-top: 8px;
 }
 
+/* NOTE: this is the SECOND `.k-badge` rule in this file (the first is the
+   hidden-column count pill above). Two different components share one class
+   name, and this one wins on source order — so the count pill silently takes
+   this font-size. Both are now on the 11px floor 00 §12 sets for metadata;
+   the name collision itself belongs to whoever owns these two components. */
 .k-badge {
-  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  font-size: var(--t-label-sm); font-weight: 700; text-transform: uppercase;
   letter-spacing: .08em; padding: 3px 10px; border-radius: 99px;
   display: inline-flex; align-items: center;
 }
@@ -2621,7 +2682,7 @@ select.k-formpanel__input { appearance: none;
 
 .k-backbtn {
   display: inline-flex; align-items: center; gap: 4px;
-  font-size: 13px; color: var(--k-primary); font-weight: 500;
+  font-size: 13px; color: var(--primary-text); font-weight: 500;
   background: none; border: none; cursor: pointer;
   padding: 0; margin-bottom: 16px;
   transition: opacity calc(.15s * var(--ix));
@@ -2772,7 +2833,7 @@ select.k-formpanel__input { appearance: none;
 }
 .k-drawer__kicker {
   font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--k-primary); font-weight: 700; margin-bottom: 4px;
+  color: var(--primary-text); font-weight: 700; margin-bottom: 4px;
 }
 .k-drawer__title {
   font-family: var(--font-display); font-size: 20px; font-weight: 400;
@@ -2791,8 +2852,11 @@ select.k-formpanel__input { appearance: none;
 }
 
 /* ── Form label ─────────────────────────────────────────────────────────── */
+/* Call sites pair both scripts in one node ("Brand colors · ब्रांड रंग"), so the
+   stack has to cover both — Latin from --font-ui, Devanagari from --font-hindi. */
 .k-label {
   display: block;
+  font-family: var(--font-ui), var(--font-hindi);
   font-size: 10.5px; font-weight: 700;
   letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--ink-3);
@@ -2810,7 +2874,7 @@ select.k-formpanel__input { appearance: none;
 .k-boards-head__left { display: flex; flex-direction: column; gap: 4px; }
 .k-boards-head__kicker {
   font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
-  color: var(--k-primary); font-weight: 700;
+  color: var(--primary-text); font-weight: 700;
 }
 .k-boards-head__title {
   font-family: var(--font-display); font-size: 22px; font-weight: 400;
@@ -2944,7 +3008,7 @@ select.k-formpanel__input { appearance: none;
 .k-onboard-pill:hover { border-color: var(--rule-strong); }
 .k-onboard-pill__count {
   font-family: var(--font-mono); font-size: 10.5px;
-  color: var(--k-mid);
+  color: var(--primary-text);
   background: color-mix(in srgb, var(--k-primary) 14%, transparent);
   padding: 1px 6px; border-radius: 99px;
 }
@@ -2965,7 +3029,7 @@ select.k-formpanel__input { appearance: none;
   transition: background calc(.12s * var(--ix)), color calc(.12s * var(--ix));
 }
 .k-proj-switcher__item:hover { background: var(--bg-soft); color: var(--ink); }
-.k-proj-switcher__item.is-active { color: var(--k-primary); font-weight: 600; }
+.k-proj-switcher__item.is-active { color: var(--primary-text); font-weight: 600; }
 .k-proj-switcher__sep { height: 1px; background: var(--rule-soft); margin: 4px 0; }
 
 /* ── Boards full-height override ────────────────────────────────────────── */
@@ -2983,7 +3047,9 @@ select.k-formpanel__input { appearance: none;
   color: var(--ink); line-height: 1; letter-spacing: -0.03em;
 }
 .k-time-total__unit { font-size: 24px; margin-left: 2px; color: var(--ink-3); }
+/* "TOTAL · कुल" — both scripts in one node. */
 .k-time-total__lbl {
+  font-family: var(--font-ui), var(--font-hindi);
   font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
   color: var(--ink-3); font-weight: 700; margin-top: 2px;
 }
@@ -2991,7 +3057,9 @@ select.k-formpanel__input { appearance: none;
   display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
   padding: 16px 24px;
 }
+/* "PROJECT · योजना", "FREQUENCY · आवृत्ति" — both scripts in one node. */
 .k-fld-label {
+  font-family: var(--font-ui), var(--font-hindi);
   font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
   font-weight: 700; color: var(--ink-3); margin-bottom: 6px;
 }
@@ -3008,12 +3076,12 @@ select.k-formpanel__input { appearance: none;
   margin-bottom: -1px;
 }
 .k-tmpl-tab:hover { color: var(--ink); }
-.k-tmpl-tab.is-active { color: var(--k-primary); border-bottom-color: var(--k-primary); }
+.k-tmpl-tab.is-active { color: var(--primary-text); border-bottom-color: var(--k-primary); }
 .k-tmpl-tab__sans {
   font-family: var(--font-hindi); font-weight: 400; font-size: 13px;
   color: var(--ink-faint);
 }
-.k-tmpl-tab.is-active .k-tmpl-tab__sans { color: var(--k-primary); opacity: .7; }
+.k-tmpl-tab.is-active .k-tmpl-tab__sans { color: var(--primary-text); opacity: .7; }
 .k-tmpl-tab__count {
   background: var(--bg-soft); border: 1px solid var(--rule-soft);
   color: var(--ink-3); font-size: 11px; font-weight: 700;
@@ -3021,7 +3089,7 @@ select.k-formpanel__input { appearance: none;
 }
 .k-tmpl-tab.is-active .k-tmpl-tab__count {
   background: color-mix(in srgb, var(--k-primary) 12%, transparent);
-  color: var(--k-primary); border-color: color-mix(in srgb, var(--k-primary) 25%, transparent);
+  color: var(--primary-text); border-color: color-mix(in srgb, var(--k-primary) 25%, transparent);
 }
 
 .k-tmpl-grid {

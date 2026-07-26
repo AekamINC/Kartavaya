@@ -44,7 +44,7 @@ function FontChip({ name, use }) {
 function SectionLabel({ children }) {
   return (
     <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase',
-      color: 'var(--ink-3)', marginBottom: 8, fontFamily: 'var(--font-ui)' }}>
+      color: 'var(--ink-3)', marginBottom: 8, fontFamily: 'var(--font-ui), var(--font-hindi)' }}>
       {children}
     </div>
   );

@@ -75,8 +75,11 @@ describe('PageHeader', () => {
   });
 
   it('marks the Devanagari with lang so it is not read with English rules', () => {
+    // `hi`, not `sa`: none of the values passed to the `sanskrit` prop across
+    // the app is a Sanskrit-only form — several (फ़ोल्डर, डेटा, खाते, संस्थाएँ)
+    // are impossible in Sanskrit. See the note in PageHeader.jsx.
     render(<PageHeader title="Customize" sanskrit="सजावट" />);
-    expect(container.querySelector('.k-pageh__sans').getAttribute('lang')).toBe('sa');
+    expect(container.querySelector('.k-pageh__sans').getAttribute('lang')).toBe('hi');
   });
 
   it('omits the optional slots entirely when absent', () => {

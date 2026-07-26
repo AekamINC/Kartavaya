@@ -198,7 +198,7 @@ export default function TaskEditor({
         <div style={{ padding: '20px 24px 0', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4 }}>
             <div>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--k-primary)', marginBottom: 2 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--k-primary)', marginBottom: 2, fontFamily: 'var(--font-ui), var(--font-hindi)' }}>
                 {editing ? 'EDIT TASK · संपादन' : clientMode ? 'REQUEST TASK · अनुरोध' : 'NEW TASK · नया कार्य'}
               </div>
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 400, color: 'var(--ink)' }}>
@@ -584,8 +584,13 @@ function PreviewOverlay({ file, onClose }) {
   );
 }
 
+/* Every call site pairs both scripts in one node ("PROJECT · परियोजना"), so the
+   stack must cover both. --font-ui first keeps the Latin in the user's UI face;
+   --font-hindi appended after it catches only the Devanagari, which otherwise
+   fell through to the OS fallback in a different face and width. */
 const lbl = {
   display: 'block',
+  fontFamily: 'var(--font-ui), var(--font-hindi)',
   fontSize: 10,
   fontWeight: 800,
   letterSpacing: '0.12em',

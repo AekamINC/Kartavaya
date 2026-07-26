@@ -2,20 +2,44 @@
  * MessageLog.jsx — date separators, the unread divider, consecutive grouping,
  * and the jump-to-latest pill.
  */
-import React from 'react';
+import React, { useMemo } from 'react';
 import { EmptyState, SkeletonChat } from '../../components/ui';
 import Message from './Message';
 import { ChatArt, SvIcons } from './icons';
 import { dayKey, dayLabel, isContinuation } from './messageUtils';
 import useStickyScroll from './useStickyScroll';
 
+/**
+ * "Today · आज" — the Devanagari half needs `--font-indic`, so it is its own
+ * node. One wrapper, because `.sv__sep` is a flex row whose `gap` separates the
+ * two hairline rules: leaving the label as two loose flex items would put that
+ * same 12px between the word and its own translation.
+ */
+export function DayLabel({ iso }) {
+  const { en, hi } = dayLabel(iso);
+  return (
+    <span className="sv__sep-t">
+      {en}{hi && <span className="sv__hi" lang="hi">{hi}</span>}
+    </span>
+  );
+}
+
 export default function MessageLog({
-  messages, loading, meId, lastReadAt, onReact, onOpenThread, onReply, emptyTitle, emptyBody,
+  messages, loading, meId, meName, lastReadAt, onReact, onOpenThread, onReply, emptyTitle, emptyBody,
 }) {
   // A cheap signature, so a re-render that changes nothing about the messages
   // does not re-run the scroll decision.
   const sig = `${messages.length}:${messages[messages.length - 1]?.id || ''}`;
   const { logRef, pinned, jump } = useStickyScroll(sig);
+
+  // Everyone who has spoken here, which is the mention vocabulary this surface
+  // can build without a second request. `list_members` would be more complete
+  // and is noted rather than fetched — a mention of somebody who has not posted
+  // still matches through the bare-handle fallback in `splitMentions`.
+  const names = useMemo(
+    () => [...new Set(messages.map(m => m.sender_name).filter(Boolean))],
+    [messages]
+  );
 
   const readMs = lastReadAt ? new Date(lastReadAt).getTime() : 0;
   let dividerShown = false;
@@ -47,12 +71,23 @@ export default function MessageLog({
 
           return (
             <React.Fragment key={m.id}>
-              {newDay && <div className="sv__sep">{dayLabel(m.created_at)}</div>}
-              {unread && <div className="sv__newline">New</div>}
+              {newDay && <div className="sv__sep"><DayLabel iso={m.created_at} /></div>}
+              {/* "New messages · नए संदेश" — `ScreensSanvaad.jsx`'s `mdiv--new`.
+                  A bare "New" reads as a label on the message under it rather
+                  than as a rule across the log. */}
+              {unread && (
+                <div className="sv__newline">
+                  <span className="sv__sep-t">
+                    New messages<span className="sv__hi" lang="hi">नए संदेश</span>
+                  </span>
+                </div>
+              )}
               <Message
                 msg={m}
                 continuation={!newDay && !unread && isContinuation(m, prev)}
                 meId={meId}
+                meName={meName}
+                names={names}
                 onReact={onReact}
                 onOpenThread={onOpenThread}
                 onReply={onReply}

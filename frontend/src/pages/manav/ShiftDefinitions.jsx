@@ -9,7 +9,7 @@ export default function ShiftDefinitions({ pushToast }) {
   const [editingShift, setEditingShift] = useState(null);
   const [editShiftForm, setEditShiftForm] = useState({});
   const [editShiftSaving, setEditShiftSaving] = useState(false);
-  const [form, setForm] = useState({ name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, color: '#3B82F6' });
+  const [form, setForm] = useState({ name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, color: 'var(--st-in-progress)' });
 
   useEffect(() => { load(); }, []);
 
@@ -28,7 +28,7 @@ export default function ShiftDefinitions({ pushToast }) {
       await api.post('/v1/manav/shifts', { ...form, break_minutes: Number(form.break_minutes) });
       pushToast({ title: 'Shift created', type: 'success' });
       setShowForm(false);
-      setForm({ name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, color: '#3B82F6' });
+      setForm({ name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, color: 'var(--st-in-progress)' });
       load();
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
@@ -36,7 +36,7 @@ export default function ShiftDefinitions({ pushToast }) {
 
   function startEditShift(s) {
     setEditingShift(s.id);
-    setEditShiftForm({ name: s.name || '', start_time: s.start_time || '09:00', end_time: s.end_time || '17:00', break_minutes: s.break_minutes ?? 30, color: s.color || '#3B82F6' });
+    setEditShiftForm({ name: s.name || '', start_time: s.start_time || '09:00', end_time: s.end_time || '17:00', break_minutes: s.break_minutes ?? 30, color: s.color || 'var(--st-in-progress)' });
   }
 
   async function saveEditShift(e) {
@@ -59,7 +59,7 @@ export default function ShiftDefinitions({ pushToast }) {
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Shift</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
@@ -90,7 +90,7 @@ export default function ShiftDefinitions({ pushToast }) {
         ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
           {shifts.map(s => (
-            <div key={s.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 16 }}>
+            <div key={s.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 16 }}>
               {editingShift === s.id ? (
                 <form onSubmit={saveEditShift}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -113,7 +113,7 @@ export default function ShiftDefinitions({ pushToast }) {
               ) : (
                 <>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: s.color || '#3B82F6', flexShrink: 0 }} />
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: s.color || 'var(--st-in-progress)', flexShrink: 0 }} />
                     <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{s.name}</span>
                     <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => startEditShift(s)}>Edit</button>
                   </div>

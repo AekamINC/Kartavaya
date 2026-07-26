@@ -1,8 +1,20 @@
 ﻿import axios from 'axios';
 
+/**
+ * Fallback is STAGING, matching src/config.js.
+ *
+ * This is only reached when EXPO_PUBLIC_API_URL is unset, which always means an
+ * unverified configuration. Staging and production share a Supabase database, so
+ * a client that silently defaults to production writes real rows against real
+ * customer data. Production is reached only by being named — the eas.json
+ * `production` profile sets it explicitly.
+ *
+ * The previous value also had a capitalised host (`Kartavaya-production`), which
+ * only worked because DNS is case-insensitive.
+ */
 const BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ??
-  'https://Kartavaya-production.up.railway.app';
+  'https://kartavya-staging.up.railway.app';
 
 export const apiClient = axios.create({
   baseURL:         `${BASE_URL}/api`,

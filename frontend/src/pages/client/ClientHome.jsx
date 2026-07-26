@@ -33,7 +33,7 @@ export default function ClientHome({ tasks, projects, approvalCount, onChanged }
   return (
     <>
       {approvalCount > 0 && (
-        <Link className="cl-lead" to="/client?view=approvals">
+        <Link className="cl-lead" to="/client/approvals">
           <span className="cl-lead__n">{approvalCount}</span>
           <span>
             <span className="cl-lead__t">
@@ -50,7 +50,7 @@ export default function ClientHome({ tasks, projects, approvalCount, onChanged }
           <h2 className="cl-sec__t">In progress</h2>
           <span className="cl-sec__hi" lang="hi">प्रगति में</span>
           {open.length > 0 && <span className="cl-sec__n">{open.length}</span>}
-          <span style={{ marginLeft: 'auto' }}>
+          <span className="cl-sec__act">
             <Button variant="out" size="sm" onClick={() => setAsking(true)}>Request work</Button>
           </span>
         </header>
@@ -71,7 +71,7 @@ export default function ClientHome({ tasks, projects, approvalCount, onChanged }
       {done.length > 0 && (
         <details className="cl-done">
           <summary>{done.length === 1 ? '1 finished item' : `${done.length} finished items`}</summary>
-          <div style={{ marginTop: 'var(--sp-3)' }}>
+          <div className="cl-done__b">
             <WorkList tasks={done} label="Finished work" />
           </div>
         </details>

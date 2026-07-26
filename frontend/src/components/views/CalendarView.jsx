@@ -154,8 +154,8 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
 
   // ── Shared styles ─────────────────────────────────────────────────────────
   const navBtn = {
-    background: "var(--bg-soft)", border: "1px solid var(--rule)", borderRadius: "var(--r-sm)",
-    padding: "6px 14px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, color: "var(--ink)",
+    background: "var(--s-low)", border: "1px solid var(--outline-variant)", borderRadius: "var(--r-sm)",
+    padding: "6px 14px", cursor: "pointer", fontFamily: "inherit", fontSize: 13, color: "var(--on-surface)",
   };
 
   const pill = (priority) => ({
@@ -180,11 +180,11 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
 
   // ── Time grid (shared by week + day) ──────────────────────────────────────
   const renderTimeGrid = (days) => (
-    <div style={{ display: 'flex', flexDirection: 'column', border: '1px solid var(--rule)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', border: '1px solid var(--outline-variant)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
 
       {/* Day header row */}
-      <div style={{ display: 'flex', background: 'var(--bg-soft)', borderBottom: '1px solid var(--rule)', flexShrink: 0 }}>
-        <div style={{ width: 58, flexShrink: 0, borderRight: '1px solid var(--rule)' }} />
+      <div style={{ display: 'flex', background: 'var(--s-low)', borderBottom: '1px solid var(--outline-variant)', flexShrink: 0 }}>
+        <div style={{ width: 58, flexShrink: 0, borderRight: '1px solid var(--outline-variant)' }} />
         {days.map((day, i) => {
           const isToday = day.toDateString() === today;
           return (
@@ -192,20 +192,20 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
               key={i}
               style={{
                 flex: 1, textAlign: 'center', padding: '8px 4px',
-                borderLeft: i > 0 ? '1px solid var(--rule-soft)' : 'none',
-                background: isToday ? 'color-mix(in srgb, var(--k-primary) 10%, var(--surface))' : 'transparent',
+                borderLeft: i > 0 ? '1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent)' : 'none',
+                background: isToday ? 'color-mix(in srgb, var(--primary) 10%, var(--surface))' : 'transparent',
                 cursor: days.length > 1 ? 'pointer' : 'default',
               }}
               onClick={() => days.length > 1 && goToDay(day)}
               title={days.length > 1 ? 'Switch to day view' : undefined}
             >
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase' }}>{DAYS[day.getDay()]}</div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--on-surface-3)', textTransform: 'uppercase' }}>{DAYS[day.getDay()]}</div>
               <div style={{
                 width: 28, height: 28, borderRadius: '50%', margin: '4px auto 0',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 16, fontWeight: isToday ? 700 : 400,
-                color: isToday ? '#fff' : 'var(--ink)',
-                background: isToday ? 'var(--k-primary)' : 'transparent',
+                color: isToday ? 'var(--on-primary)' : 'var(--on-surface)',
+                background: isToday ? 'var(--primary)' : 'transparent',
               }}>{day.getDate()}</div>
             </div>
           );
@@ -217,11 +217,11 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
         {HOURS.map(hour => {
           const isCurrentHour = now.getHours() === hour;
           return (
-            <div key={hour} style={{ display: 'flex', height: ROW_H, borderBottom: '1px solid var(--rule-soft)', flexShrink: 0, position: 'relative' }}>
+            <div key={hour} style={{ display: 'flex', height: ROW_H, borderBottom: '1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent)', flexShrink: 0, position: 'relative' }}>
               <div style={{
                 width: 58, flexShrink: 0, paddingRight: 8, paddingTop: 4,
-                fontSize: 10, color: 'var(--ink-faint)', textAlign: 'right',
-                borderRight: '1px solid var(--rule)', background: 'var(--bg-soft)',
+                fontSize: 10, color: 'var(--on-surface-3)', textAlign: 'right',
+                borderRight: '1px solid var(--outline-variant)', background: 'var(--s-low)',
               }}>
                 {fmtHour(hour)}
               </div>
@@ -241,12 +241,12 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
                     onMouseLeave={() => setHoveredSlot(null)}
                     style={{
                       flex: 1,
-                      borderLeft: i > 0 ? '1px solid var(--rule-soft)' : 'none',
+                      borderLeft: i > 0 ? '1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent)' : 'none',
                       // Hover color controlled via React state — survives re-renders
                       background: isHovered && onDayClick
-                        ? 'color-mix(in srgb, var(--k-primary) 9%, var(--surface))'
+                        ? 'color-mix(in srgb, var(--primary) 9%, var(--surface))'
                         : isToday
-                        ? 'color-mix(in srgb, var(--k-primary) 3%, var(--surface))'
+                        ? 'color-mix(in srgb, var(--primary) 3%, var(--surface))'
                         : 'var(--surface)',
                       padding: '3px 4px',
                       cursor: onDayClick ? 'pointer' : 'default',
@@ -258,7 +258,7 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
                       <div style={{
                         position: 'absolute', left: 0, right: 0,
                         top: `${(now.getMinutes() / 60) * 100}%`,
-                        height: 2, background: 'var(--k-primary)', zIndex: 3, pointerEvents: 'none',
+                        height: 2, background: 'var(--primary)', zIndex: 3, pointerEvents: 'none',
                       }} />
                     )}
                     {/* No `draggable` here — drop target not yet implemented for time grid */}
@@ -289,24 +289,24 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
       {/* Nav bar */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <button style={navBtn} onClick={prevNav}>‹ Prev</button>
-        <span style={{ fontSize: 18, fontWeight: 700, color: "var(--ink)", fontFamily: "var(--font-display)" }}>{navTitle()}</span>
+        <span style={{ fontSize: 18, fontWeight: 700, color: "var(--on-surface)", fontFamily: "var(--font-display)" }}>{navTitle()}</span>
         <button style={navBtn} onClick={nextNav}>Next ›</button>
       </div>
 
       {/* View switcher */}
-      <div style={{ display: 'flex', gap: 4, alignSelf: 'center', background: 'var(--bg-soft)', borderRadius: 'var(--r-md)', padding: 3, border: '1px solid var(--rule)' }}>
+      <div style={{ display: 'flex', gap: 4, alignSelf: 'center', background: 'var(--s-low)', borderRadius: 'var(--r-md)', padding: 3, border: '1px solid var(--outline-variant)' }}>
         {['month', 'week', 'day'].map(mode => (
           <button
             key={mode}
             onClick={() => setViewMode(mode)}
             style={{
               background: viewMode === mode ? 'var(--surface)' : 'transparent',
-              border: viewMode === mode ? '1px solid var(--rule)' : '1px solid transparent',
+              border: viewMode === mode ? '1px solid var(--outline-variant)' : '1px solid transparent',
               borderRadius: 'var(--r-sm)', padding: '4px 14px', cursor: 'pointer',
               fontFamily: 'inherit', fontSize: 12, fontWeight: viewMode === mode ? 600 : 400,
-              color: viewMode === mode ? 'var(--ink)' : 'var(--ink-3)',
-              boxShadow: viewMode === mode ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              transition: 'all 0.1s',
+              color: viewMode === mode ? 'var(--on-surface)' : 'var(--on-surface-3)',
+              boxShadow: viewMode === mode ? 'var(--shadow-1)' : 'none',
+              transition: 'background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard)',
             }}
           >
             {mode.charAt(0).toUpperCase() + mode.slice(1)}
@@ -317,13 +317,13 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
       {/* ── Month view ── */}
       {viewMode === 'month' && (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 1, background: "var(--rule)", borderRadius: "var(--r-md)", overflow: "hidden", border: "1px solid var(--rule)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 1, background: "var(--outline-variant)", borderRadius: "var(--r-md)", overflow: "hidden", border: "1px solid var(--outline-variant)" }}>
             {DAYS.map(d => (
-              <div key={d} style={{ background: "var(--bg-soft)", padding: "8px 0", textAlign: "center", fontSize: 10.5, fontWeight: 700, color: "var(--ink-3)", textTransform: "uppercase" }}>{d}</div>
+              <div key={d} style={{ background: "var(--s-low)", padding: "8px 0", textAlign: "center", fontSize: 10.5, fontWeight: 700, color: "var(--on-surface-3)", textTransform: "uppercase" }}>{d}</div>
             ))}
             {cells.map((cell, idx) => {
               if (cell.blank) return (
-                <div key={`b${idx}`} style={{ background: "var(--bg-soft)", minHeight: 90 }} onDragOver={e => e.preventDefault()} />
+                <div key={`b${idx}`} style={{ background: "var(--s-low)", minHeight: 90 }} onDragOver={e => e.preventDefault()} />
               );
               const isToday  = new Date(year, month, cell.day).toDateString() === today;
               const isOver   = dragOver === cell.day;
@@ -333,9 +333,9 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
               return (
                 <div key={cell.day}
                   style={{
-                    background: isOver || isToday ? "color-mix(in srgb, var(--k-primary) 8%, var(--surface))" : "var(--surface)",
+                    background: isOver || isToday ? "color-mix(in srgb, var(--primary) 8%, var(--surface))" : "var(--surface)",
                     minHeight: 90, padding: "6px 8px", cursor: "default", position: "relative",
-                    outline: isOver ? `2px solid var(--k-primary)` : "none", transition: "background 0.1s",
+                    outline: isOver ? `2px solid var(--primary)` : "none", transition: "background 0.1s",
                   }}
                   onDoubleClick={() => onDayClick?.(new Date(year, month, cell.day, 12, 0))}
                   onMouseEnter={() => setHoveredDay(cell.day)}
@@ -346,7 +346,7 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
                 >
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                     <div
-                      style={{ fontSize: 11, fontWeight: isToday ? 700 : 500, color: isToday ? "var(--k-primary)" : "var(--ink-3)", cursor: 'pointer' }}
+                      style={{ fontSize: 11, fontWeight: isToday ? 700 : 500, color: isToday ? "var(--primary)" : "var(--on-surface-3)", cursor: 'pointer' }}
                       onClick={() => goToDay(new Date(year, month, cell.day))}
                       title="Switch to day view"
                     >
@@ -357,7 +357,7 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
                         onClick={e => { e.stopPropagation(); onDayClick(new Date(year, month, cell.day, 12, 0)); }}
                         title="Add task"
                         style={{
-                          background: "var(--k-primary)", color: "#fff", border: "none", borderRadius: "50%",
+                          background: "var(--primary)", color: "var(--on-primary)", border: "none", borderRadius: "50%",
                           width: 16, height: 16, fontSize: 14, lineHeight: 1, cursor: "pointer",
                           display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                           padding: 0, fontFamily: "inherit",
@@ -378,19 +378,19 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
                   ))}
                   {overflow > 0 && (
                     <div
-                      style={{ fontSize: 11, color: "var(--ink-3)", marginTop: 2, cursor: 'pointer' }}
+                      style={{ fontSize: 11, color: "var(--on-surface-3)", marginTop: 2, cursor: 'pointer' }}
                       onClick={() => goToDay(new Date(year, month, cell.day))}
                     >
                       +{overflow} more
                     </div>
                   )}
-                  {isOver && <div style={{ position: "absolute", inset: 0, border: "2px dashed var(--k-primary)", borderRadius: 4, pointerEvents: "none" }} />}
+                  {isOver && <div style={{ position: "absolute", inset: 0, border: "2px dashed var(--primary)", borderRadius: "var(--r-xs)", pointerEvents: "none" }} />}
                 </div>
               );
             })}
           </div>
 
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, color: "var(--ink-3)" }}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, color: "var(--on-surface-3)" }}>
             {Object.entries(PCOLOR).map(([p, c]) => (
               <span key={p} style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: c }} />{p}

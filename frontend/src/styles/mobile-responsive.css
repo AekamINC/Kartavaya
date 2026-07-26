@@ -1,26 +1,37 @@
 /* mobile-responsive.css — phone and tablet adaptations for the web app.
  * (The React Native app is a separate target — see 17-mobile-app.md.)
  *
- * REWRITTEN, because the previous version was almost entirely dead. It was
- * authored against a class vocabulary this app does not use — .layout-sidebar,
- * .layout-main, .layout-header, .table-container, .kanban-container,
- * .stat-card, .input-modern — while the app renders .side, .kv__main,
- * .k-card, .k-input, .k-board. 26 of its 31 class selectors matched nothing in
- * any rendered markup, and the handful that did matched by coincidence.
+ * ── WHERE THIS FILE SITS IN THE CASCADE. Read this before adding a rule.
  *
- * So none of it applied: hit targets were never enlarged, tables never gained
- * horizontal scroll, and inputs never got the 16px that stops iOS zooming the
- * viewport on focus. The one rule that did fire was a bare
- * `button, a { min-width: 44px }`, which is worse than nothing — it puts a
- * 44px floor under every inline text link, so a link inside a sentence
- * stretches the line it sits in.
+ * `styles/index.css` imports this file EIGHTH of thirteen, and `App.jsx`
+ * imports the barrel BEFORE kartavaya-design.css, editorial.css and
+ * settings.css. Measured load order in the running app:
+ *
+ *   tokens · layout · modern-components · dark-theme · components · module ·
+ *   drawer · animations · [THIS FILE] · generate-report · sanvaad · palette ·
+ *   boards · kartavaya-design · editorial · settings · (lazy page CSS)
+ *
+ * So a bare `.k-stats { … }` here LOSES to the same selector in editorial.css.
+ * The previous revision of this file did not know that, and four of its rules
+ * were dead on arrival — verified in the browser, not read off the source:
+ *
+ *   `.k-stats { grid-template-columns: 1fr }`  → editorial.css:2410 wins;
+ *       measured 153px + 153px at 360px, not one column.
+ *   `.kv__content { padding: 16px }`           → editorial.css:2407 wins;
+ *       measured 20px 16px.
+ *   `.k-card { padding: 16px }`                → measured 20px 22px.
+ *   `.k-bcol { flex: 0 0 85vw }`               → `.k-bcol` is not rendered
+ *       anywhere. The board column is `.bd__col` (boards.css).
+ *
+ * Those four are gone. Anything here that has to beat a later file now carries
+ * a deliberate extra class, and says so on the line.
  *
  * Navigation is deliberately NOT here. The sidebar overlay, its scrim, the
  * burger and the bottom bar live in editorial.css and the layout/ components,
  * and they are already correct: the media query hides the sidebar SLOT
  * (.kv__side), not .side itself, so the second copy rendered inside
- * MobileDrawer survives. Hiding .side directly is exactly what makes a burger
- * open an empty scrim.
+ * MobileDrawer survives. `.mnav` is in normal flow inside `.kv__main` and
+ * already carries `--m-safe-b`, so nothing here needs to reserve space for it.
  *
  * Breakpoints, three only — each extra one is another combination nobody
  * tests:
@@ -31,26 +42,121 @@
  */
 
 /* ── Touch targets ────────────────────────────────────────────────────────
-   44px minimum on things that are actually buttons. Keyed on pointer type as
-   well as width, because a touch laptop has the same thumb at 1400px. */
-@media (max-width: 767px), (hover: none) and (pointer: coarse) {
+   44px minimum, no exceptions (15 §Hit targets). Keyed on pointer type as well
+   as width, because a touch laptop has the same thumb at 1400px — and because
+   the 768–1023 band is where the burger lives, which is a tablet in someone's
+   hands far more often than a narrow desktop window.
+
+   Measured before/after at 360px: `.k-btn--sm` 40px → 44 · `.btn--sm` 26–32px
+   → 44 · `.bd__cx` 20×20 → 44 · `.bd__add` 36px → 44 · `.seg__b` 26–32px → 44
+   · `.k-fld__sel` 35px → 44 · `.aufld__eye` 28×28 → 44 · `.lfoot__a` 19.5px
+   → 44. */
+@media (max-width: 1023px), (hover: none) and (pointer: coarse) {
   .k-iconbtn {
     min-width: 44px;
     min-height: 44px;
   }
+
   .k-btn,
-  .k-btn--sm {
-    min-height: 40px;
+  .k-btn--sm,
+  .btn,
+  .btn--sm {
+    min-height: 44px;
+  }
+
+  /* Boards: `.bd .x` because boards.css loads AFTER this file. */
+  .bd .bd__cx {
+    width: 44px;
+    height: 44px;
+  }
+  .bd .bd__add {
+    min-height: 44px;
+  }
+  .bd .bd__swatch {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Segmented control: `.seg .seg__b` because settings.css loads after. */
+  .seg .seg__b {
+    min-height: 44px;
+  }
+
+  /* Field select — `.k-fld` scope for the same reason (editorial.css). */
+  .k-fld .k-fld__sel {
+    min-height: 44px;
+  }
+
+  /* Login/reset password reveal. auth.css is lazy, so it loads after: the
+     `.aufld` ancestor is what makes this win. It is absolutely positioned
+     inside the field, so growing it does not move the field. */
+  .aufld .aufld__eye {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Marketing footer links were 19.5px tall stacked one under the next —
+     five separate misses in the one place a stranger taps first. */
+  .lfoot .lfoot__a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
   }
 }
 
-@media (max-width: 767px) {
-  /* ── Forms ──────────────────────────────────────────────────────────────
-     16px is not a taste decision. Safari on iOS zooms the viewport when a
-     focused field's font-size is under 16px and does not zoom back out, so
-     the user is left on a page scrolled sideways with no obvious way back. */
+/* ── Hover has no mobile equivalent (15 §Hover) ───────────────────────────
+   Gate on `hover: none`, not on width. Every one of these is a control whose
+   ONLY affordance is a hover reveal, so on a phone it does not exist. Each
+   selector here carries one extra class so it beats the `opacity: 0` base in
+   a file that loads later (sanvaad.css, editorial.css) without having to
+   out-specify that file's own `:hover` rule, which cannot match anyway.
+
+   Long-press alternatives (15 asks for one on the message tray) need JS and
+   are reported rather than faked here. Persistent is the honest fallback. */
+@media (hover: none) {
+  /* Message action tray — 06-sanvaad-varta.md. */
+  .msg .msg__act { opacity: 1; }
+
+  /* Task list row action — editorial.css:1241. */
+  .k-trow .k-row-action { opacity: 1; }
+
+  /* Comment edit/delete inside the task drawer — drawer.css:297. These were
+     focusable and clickable at `opacity: 0`, which is worse than hidden. */
+  .dr__cm .dr__cm-act { opacity: 1; }
+
+  /* Sort direction chevron. Not an action, but it is the only thing that says
+     a column header is sortable. Below the .7 the hover state uses, so a
+     sorted column still reads as the loud one. */
+  .tbl__sort .ch { opacity: .4; }
+}
+
+/* ── Tablet band, 768–1023 ────────────────────────────────────────────────
+   boards.css sets `.bd__col { width: 82vw }` at max-width 768 — which at 768
+   is a 630px column, so a tablet shows ONE column of a board and half of the
+   gap. 82vw is right for a phone and wrong the moment two columns fit.
+   `.bd > .bd__col` outranks the bare class in boards.css. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .bd > .bd__col { width: 288px; }
+}
+
+/* ── Forms ────────────────────────────────────────────────────────────────
+   16px is not a taste decision. Safari on iOS zooms the viewport when a
+   focused field's font-size is under 16px and does not zoom back out, so the
+   user is left on a page scrolled sideways with no obvious way back.
+
+   `.k-input` already resolved to 16px here. `.k-select` (measured 13px) and
+   `.k-fld__sel` (measured 13px) did NOT — both are declared in a file that
+   loads after this one, so they need the doubled class and the `.k-fld` scope.
+
+   The pointer clause is not belt-and-braces. An iPhone 15 Pro Max in
+   landscape is 932 CSS px wide and still zooms on a 13px field; a width-only
+   query lets the whole phone landscape range through. `(hover: none) and
+   (pointer: coarse)` matches only devices whose PRIMARY pointer is a finger,
+   so a Windows touch laptop with a mouse keeps its desktop density. */
+@media (max-width: 767px), (hover: none) and (pointer: coarse) {
   .k-input,
-  .k-select,
+  .k-select.k-select,
+  .k-fld .k-fld__sel,
   textarea.k-input,
   input[type="text"],
   input[type="email"],
@@ -64,29 +170,15 @@
   textarea {
     font-size: 16px;
   }
+}
 
-  /* ── Layout ───────────────────────────────────────────────────────────── */
-  .kv__content { padding: 16px; }
-  .k-card      { padding: 16px; }
-
-  /* Two 160px tiles on a 360px screen leaves neither wide enough for its own
-     number, so stat rows go to one column. */
-  .k-stats {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-
+@media (max-width: 767px) {
+  /* ── Layout ─────────────────────────────────────────────────────────────
+     `.kv__content` padding, `.k-card` padding and `.k-stats` columns are NOT
+     here: editorial.css owns all three at this width and wins. See the header.
+     Measured at 360px they are fine — 20px 16px page padding, 153px stat
+     tiles, no clipping — so there is nothing to fight it for. */
   .k-twocol { grid-template-columns: 1fr; }
-
-  /* ── Tables scroll; they do not reflow ──────────────────────────────────
-     A table restacked as cards loses column alignment, which is the only
-     reason it was a table. Horizontal scroll keeps the comparison intact. */
-  .k-tablewrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-  }
-  .k-tablewrap > table { min-width: 640px; }
 
   /* ── Page header ──────────────────────────────────────────────────────── */
   .k-pageh {
@@ -97,18 +189,214 @@
   .k-pageh__h1    { font-size: 26px; }
   .k-pageh__right { width: 100%; }
 
-  /* ── Board ────────────────────────────────────────────────────────────
-     The ≤1280 rule in editorial.css already switches .k-board to a scrolling
-     flex row with snap. On a phone the column widens to nearly full bleed:
-     280px on a 360px screen shows a column and a stripe, which reads as a
-     layout error rather than an affordance. 85vw leaves a deliberate sliver
-     of the next column, which is what says "this scrolls". */
-  .k-bcol { flex: 0 0 85vw; }
+  /* ── Settings rows ────────────────────────────────────────────────────
+     Keeping label and control on one line at 360px squeezes the control to
+     nothing, which hits the segmented controls hardest. `.acc` and `.sbg`
+     are not here: settings.css already gives them auto-fit tracks that
+     measure correctly at 360 (three ~103px cells), and it loads after. */
+  .sr {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  .sr__c { width: 100%; }
+  .seg   { width: 100%; }
+  .seg .seg__b { flex: 1; text-align: center; }
+}
 
-  /* ── Dialogs become sheets ────────────────────────────────────────────
-     A 620px dialog centred on a 393px screen is a full-screen modal with a
-     sliver of scrim down each side. It looks dismissible by tapping beside
-     it, and there is nowhere to tap. */
+/* ── Tables scroll; they do not reflow (15 §Tables) ───────────────────────
+   Two different table populations, two different failures, both measured.
+
+   1 · `ui/Table.jsx` renders `.tbl__wrap > table.tbl`. The wrapper already
+       scrolls, so nothing was clipped — but `min-width` was never set, the
+       first column was not frozen, and the scroll region had no visible edge,
+       so at 360px an eight-column table sat at 701px with every cell wrapped
+       to 8–9 characters and no way to tell which row you had scrolled into.
+
+   2 · Roughly thirty pages (graha/*, ganit/*, manav/*, Hub, Reports,
+       Scrapers, TimeReport, Billing) render a bare `<table style="width:100%">`
+       inside a `<div style="…overflow:hidden">`. Measured at 360px: wrapper
+       326px, table 613px — 287px of GSTIN and Website columns CLIPPED, with
+       no scrollbar and no way to reach them. That is data loss, not a layout
+       nit. `:has(> table)` reaches the one element that can be made to
+       scroll without a JSX change; `!important` is what beats the inline
+       `overflow: hidden`. Only overflow-X is touched, so the border-radius
+       clip those wrappers were after still holds on the other axis.
+
+   Applied to ≤1023 rather than ≤767 because a ten-column table clips on a
+   tablet too — measured 710px of content in a 710px wrapper at 768 with six
+   columns, and every real table has more. */
+@media (max-width: 1023px) {
+  .tbl__wrap,
+  .k-tablewrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  /* Not `.kv__content` or `main` themselves — a page that scrolls sideways is
+     the defect, not the fix. Only the wrapper immediately around the table. */
+  .kv__content :is(div, section, article, aside, figure, form, li):has(> table) {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  /* A visible track is the edge affordance 15 asks for. Declaring
+     ::-webkit-scrollbar at all opts Chrome out of overlay scrollbars, so this
+     is a bar the user can see on Android without touching the surface first —
+     which a fade painted in `background` could not be, because the table's own
+     rows and sticky header paint over it. */
+  .tbl__wrap::-webkit-scrollbar,
+  .k-tablewrap::-webkit-scrollbar,
+  .kv__content :is(div, section, article, aside, figure, form, li):has(> table)::-webkit-scrollbar {
+    height: 6px;
+  }
+  .tbl__wrap::-webkit-scrollbar-thumb,
+  .k-tablewrap::-webkit-scrollbar-thumb,
+  .kv__content :is(div, section, article, aside, figure, form, li):has(> table)::-webkit-scrollbar-thumb {
+    border-radius: var(--r-pill);
+    background: color-mix(in srgb, var(--on-surface-3) 42%, transparent);
+  }
+  .tbl__wrap,
+  .k-tablewrap,
+  .kv__content :is(div, section, article, aside, figure, form, li):has(> table) {
+    scrollbar-width: thin;
+  }
+}
+
+@media (max-width: 767px) {
+  /* 640px is 15's floor. Most of these tables exceed it on content alone; the
+     floor is for the three- and four-column ones, which would otherwise still
+     squeeze rather than scroll. */
+  .tbl__wrap > .tbl { min-width: 640px; }
+
+  /* Freeze the first column. Without it, scrolling right leaves a grid of
+     numbers with nothing to say which client they belong to — which is the
+     only reason the thing is a table.
+
+     The wrapper takes --surface so the frozen cell and the ground behind it
+     cannot disagree; `.tbl th` keeps its own --s-low, as on desktop.
+     `:not([colspan])` skips the group rows in the table view, which span the
+     whole width and must not be pinned. */
+  .tbl__wrap { background: var(--surface); }
+  .tbl > thead > tr > th:first-child:not([colspan]) {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+  }
+  .tbl > tbody > tr > td:first-child:not([colspan]) {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface);
+  }
+  /* Selection has to survive the freeze, or the pinned cell is the one part
+     of a selected row that does not look selected. */
+  .tbl > tbody > tr.on > td:first-child:not([colspan]) {
+    background: var(--primary-container);
+  }
+}
+
+/* ── Board (15 §Kanban pages columns) ─────────────────────────────────────
+   One column at a time, scroll-snapped. `.kv__content .bd` outranks the bare
+   `.bd` in boards.css, which loads after this file.
+
+   PROXIMITY, not the `mandatory` 15 writes. @hello-pangea/dnd auto-scrolls
+   this same container while a card is held near its edge, and a mandatory
+   snap fights that scroll frame by frame — the card lands back on the column
+   you dragged it out of. Proximity gives the same paging on a flick and stays
+   out of the way of a drag. Reverting to `mandatory` needs the JSX change
+   noted in the report (clear the snap while `isDragging`). */
+@media (max-width: 767px) {
+  .kv__content .bd {
+    scroll-snap-type: x proximity;
+    scroll-padding-left: 0;
+  }
+  .kv__content .bd > .bd__col { scroll-snap-align: start; }
+
+  /* ── Touch drag affordance ──────────────────────────────────────────────
+     The library's TouchSensor waits ~120ms before a drag starts, which is
+     deliberate — it is how a drag is told apart from a scroll on a board that
+     scrolls sideways — but nothing on screen says so, so a user who swipes a
+     card just scrolls the board and concludes drag is broken. See the header
+     of components/views/KanbanView.jsx.
+
+     Two cues, both honest, both CSS-only:
+
+       · A grip, drawn as two rows of three dots in the card's own ink. The
+         whole card is the drag handle (dragHandleProps sits on the wrapper),
+         so a grip that reads "this object can be picked up" is accurate
+         wherever the finger lands.
+       · A press indicator that starts the instant the finger touches down and
+         completes over 140ms — just past the sensor's threshold. Holding
+         until the bar completes is exactly the gesture that starts a drag, so
+         the cue teaches the timing rather than describing it.
+
+     Gated on `hover: none` so a mouse board is untouched. */
+  /* `.bc` is `display: flex`, so both pseudo-elements must be positioned or
+     they become flex items and push the card's own rows around. */
+  .bd .bc {
+    position: relative;
+    padding-right: 26px;
+  }
+  .bd .bc::before {
+    content: '';
+    position: absolute;
+    top: 12px;
+    right: 8px;
+    width: 9px;
+    height: 9px;
+    background-image: radial-gradient(
+      circle at 1.5px 1.5px,
+      color-mix(in srgb, var(--on-surface-3) 62%, transparent) 1.1px,
+      transparent 1.2px
+    );
+    background-size: 3px 3px;
+    pointer-events: none;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .bd .bc::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 2px;
+    border-radius: 0 0 var(--r-sm) var(--r-sm);
+    background: var(--primary);
+    transform: scaleX(0);
+    transform-origin: left center;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .bd .bc:active::after {
+    animation: kv-press-hold 140ms var(--ease-standard, linear) forwards;
+  }
+  /* Once the library has taken over, its own `.drag` treatment is the signal
+     and the press cue has done its job. */
+  .bd .bc.drag::after { animation: none; opacity: 0; }
+}
+
+@keyframes kv-press-hold {
+  from { transform: scaleX(0); opacity: 1; }
+  to   { transform: scaleX(1); opacity: 1; }
+}
+
+/* ── Dialogs become sheets (15 §Drawer becomes a sheet) ───────────────────
+   A 620px dialog centred on a 393px screen is a full-screen modal with a
+   sliver of scrim down each side. It looks dismissible by tapping beside it,
+   and there is nowhere to tap.
+
+   Measured after: 360×376 panel sitting on the bottom edge with 404px of
+   tappable scrim above it, top corners rounded, bottom square.
+
+   `ui/Sheet.jsx` and the date picker already do this properly, grab handle
+   and safe area included; this is the same treatment for the dialogs that
+   were built on `ui/modal.jsx` before that primitive existed. The handle here
+   is a pseudo-element — decorative, not a drag target — because a real one is
+   a JSX change. Swipe-down to dismiss is reported, not faked. */
+@media (max-width: 767px) {
   .modal__scrim {
     padding: 0;
     align-items: flex-end;
@@ -117,21 +405,36 @@
     max-width: none;
     max-height: 92vh;
     border-radius: var(--r-lg) var(--r-lg) 0 0;
+    padding-top: 12px;
+  }
+  .modal__panel::before {
+    content: '';
+    display: block;
+    flex: none;
+    width: 36px;
+    height: 4px;
+    margin: 0 auto 4px;
+    border-radius: var(--r-pill);
+    background: var(--outline);
+  }
+  /* The footer is the last thing on the screen and the sheet is flush with
+     the bottom edge, so on a notched phone its buttons land under the home
+     indicator without this. */
+  .modal__foot {
+    padding-bottom: calc(14px + var(--m-safe-b, env(safe-area-inset-bottom, 0px)));
+  }
+  .modal__panel:not(:has(.modal__foot)) .modal__body {
+    padding-bottom: calc(18px + var(--m-safe-b, env(safe-area-inset-bottom, 0px)));
   }
 
-  /* ── Settings rows ────────────────────────────────────────────────────
-     Keeping label and control on one line at 360px squeezes the control to
-     nothing, which hits the segmented controls hardest. */
-  .sr {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
+  /* ── Task drawer ──────────────────────────────────────────────────────
+     drawer.css already takes `.dr` to the full width of the viewport here,
+     which is the right call — it leaves no misleading strip of scrim to tap
+     at. What it does not do is reserve the home indicator, and `.dr` is
+     `bottom: 0`, so the last row of a long drawer sits under it. */
+  .dr__body {
+    padding-bottom: calc(24px + var(--m-safe-b, env(safe-area-inset-bottom, 0px)));
   }
-  .sr__c { width: 100%; }
-  .seg   { width: 100%; }
-  .seg__b { flex: 1; text-align: center; }
-  .sbg   { grid-template-columns: 1fr; }
-  .acc   { grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); }
 }
 
 /* ── Landscape phones ─────────────────────────────────────────────────────

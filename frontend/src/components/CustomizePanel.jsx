@@ -267,9 +267,31 @@ export function applyPrefs(prefs) {
   if (prefs.toastPos) root.setAttribute('data-toast-pos', prefs.toastPos);
 
   const lang = normalizeLanguage(prefs.language);
+  // The Devanagari faces are appended AFTER the Gujarati ones, and that tail is
+  // load-bearing rather than defensive.
+  //
+  // 24-bilingual-devanagari.md assigns --font-indic to every label that
+  // "follows the user's language" — stat labels, drawer labels, the weekday
+  // strip, palette rows, module headers — and ~25 rules follow it. But there is
+  // no translation layer: navConfig.js (the sidebar and the two bottom navs) is
+  // the ONLY source of `gu` strings in the codebase. Every other --font-indic
+  // consumer renders a HARDCODED Devanagari literal that does not change with
+  // the setting.
+  //
+  // Measured in the browser: Noto Sans Gujarati has ZERO Devanagari coverage.
+  // So under EN+GU those ~25 surfaces were handing Devanagari to a font that
+  // cannot draw it, and every one of them fell through to the OS face — a
+  // different family, ~7.5% wider than Tiro, mixed per glyph.
+  //
+  // Appending the Devanagari stack fixes all of them at one point instead of
+  // rewriting 25 rules: Gujarati still resolves to Noto Sans Gujarati first
+  // (24's intent, and correct for the sidebar, which genuinely switches
+  // script), while Devanagari that never switched now lands on Tiro. A generic
+  // must NOT appear before the Devanagari entries or it would capture the
+  // script first, which is why 'sans-serif' moved to the end.
   root.style.setProperty('--font-indic',
     lang === 'en+gu'
-      ? "'Noto Sans Gujarati', 'Shruti', sans-serif"
+      ? "'Noto Sans Gujarati', 'Shruti', 'Tiro Devanagari Hindi', 'Nirmala UI', 'Kohinoor Devanagari', sans-serif"
       : 'var(--font-hindi)');
 }
 

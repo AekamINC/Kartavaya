@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { StatTile } from '../../components/editorial';
 import { Badge } from './_shared';
+import { inr } from '../../lib/inr';
 
 export default function ExpensesTab() {
   const { pushToast } = useToast();
@@ -105,9 +106,9 @@ export default function ExpensesTab() {
     <div>
       {expStats && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 20 }}>
-          <StatTile label="Total Expenses" value={`₹${Number(expStats.total_amount || 0).toLocaleString('en-IN')}`} />
-          <StatTile label="This Month" value={`₹${Number(expStats.this_month || 0).toLocaleString('en-IN')}`} />
-          <StatTile label="Billable" value={`₹${Number(expStats.billable_amount || 0).toLocaleString('en-IN')}`} />
+          <StatTile label="Total Expenses" value={inr(Number(expStats.total_amount || 0))} />
+          <StatTile label="This Month" value={inr(Number(expStats.this_month || 0))} />
+          <StatTile label="Billable" value={inr(Number(expStats.billable_amount || 0))} />
         </div>
       )}
 
@@ -123,7 +124,7 @@ export default function ExpensesTab() {
       </div>
 
       {showCatForm && (
-        <form onSubmit={saveCat} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={saveCat} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>New Category</h4>
           <div style={{ display: 'flex', gap: 12 }}>
             <label style={{ fontSize: 13, flex: 1 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
@@ -139,7 +140,7 @@ export default function ExpensesTab() {
       )}
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Record Expense</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
@@ -194,20 +195,20 @@ export default function ExpensesTab() {
                 <td style={{ padding: '10px', fontWeight: 600 }}>
                   <span style={{ cursor: 'pointer', color: 'var(--k-primary)', textDecoration: 'underline', textDecorationStyle: 'dotted' }} onClick={() => startEditExpense(ex)}>{ex.title}</span>
                 </td>
-                <td style={{ padding: '10px' }}><Badge text={ex.category} color="#6366f1" /></td>
+                <td style={{ padding: '10px' }}><Badge text={ex.category} color="var(--st-in-review)" /></td>
                 <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{ex.vendor || '—'}</td>
-                <td style={{ padding: '10px', textAlign: 'right' }}>₹{Number(ex.amount).toLocaleString('en-IN')}</td>
-                <td style={{ padding: '10px', textAlign: 'right', color: 'var(--ink-3)' }}>₹{Number(ex.tax_amount || 0).toLocaleString('en-IN')}</td>
-                <td style={{ padding: '10px', textAlign: 'right', fontWeight: 600 }}>₹{Number(ex.total).toLocaleString('en-IN')}</td>
-                <td style={{ padding: '10px' }}>{ex.is_billable ? <Badge text="Yes" color="#10b981" /> : '—'}</td>
+                <td className="mtbl__num" style={{ padding: '10px' }}>{inr(Number(ex.amount))}</td>
+                <td className="mtbl__num" style={{ padding: '10px', color: 'var(--ink-3)' }}>{inr(Number(ex.tax_amount || 0))}</td>
+                <td className="mtbl__num" style={{ padding: '10px', fontWeight: 600 }}>{inr(Number(ex.total))}</td>
+                <td style={{ padding: '10px' }}>{ex.is_billable ? <Badge text="Yes" color="var(--ok)" /> : '—'}</td>
                 <td style={{ padding: '10px', display: 'flex', gap: 8 }}>
                   <button onClick={() => startEditExpense(ex)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--k-primary)', fontSize: 11 }}>Edit</button>
-                  <button onClick={() => deleteExpense(ex.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11 }}>Delete</button>
+                  <button onClick={() => deleteExpense(ex.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 11 }}>Delete</button>
                 </td>
               </tr>
               {editExpense === ex.id && (
                 <tr><td colSpan={9} style={{ padding: 0 }}>
-                  <form onSubmit={saveEditExpense} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, margin: '4px 0 8px' }}>
+                  <form onSubmit={saveEditExpense} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16, margin: '4px 0 8px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                       <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
                         <input className="k-input" required value={editForm.title} onChange={e => setEditForm({ ...editForm, title: e.target.value })} /></label>

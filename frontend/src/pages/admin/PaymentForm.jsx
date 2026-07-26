@@ -17,10 +17,11 @@ import { inr } from '../../lib/inr';
  *
  *  · **AMOUNT — holds, and it is a backend gap, not a frontend one.**
  *    `RecordPayment` has exactly three fields: payment_method,
- *    payment_reference, paid_at. `record_payment` then writes
- *    `payment_status='paid'` unconditionally and logs `float(inv["total"])` as
- *    the amount. There is no column and no field to put a part-payment in, so
- *    the invoice flips fully paid or stays pending.
+ *    payment_reference, paid_at. `record_payment` (subscription.py:339-348)
+ *    then writes `payment_status='paid'` unconditionally and logs
+ *    `float(inv["total"])` as the amount. There is no column and no field to
+ *    put a part-payment in, so the invoice flips fully paid or stays pending.
+ *    Re-verified on the pixel pass; still true.
  *
  * The amount is therefore shown and NOT editable, with the reason stated on the
  * form. An editable box whose value is discarded by the server is worse than no

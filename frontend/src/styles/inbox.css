@@ -41,6 +41,15 @@
 .k-notif__row:last-child { border-bottom: 0; }
 .k-notif__row:hover { background: var(--s-low); }
 
+/* The global ring is `outline: 2px solid var(--primary)` at `outline-offset: 2px`.
+   A row is full-bleed inside a container that clips — `.k-inboxpg__list` is
+   `overflow: hidden` for its corners, the bell's `.k-notif__list` is
+   `overflow-y: auto` for its scroll — so an outline drawn 2px OUTSIDE the row
+   is cut off on both sides and, on the first and last row, along the top or
+   bottom too. Keyboard focus on the Inbox showed as two short vertical ticks.
+   Inset instead: the same ring, entirely inside the clip. */
+.k-notif__row:focus-visible { outline-offset: -2px; }
+
 /* Unread is an inset left bar, NOT a background tint. A tinted row plus a hover
    tint gives four visual states for two booleans, and the two in the middle are
    indistinguishable — a read row under the pointer looked exactly like an unread
@@ -77,13 +86,32 @@
      surface as text. 26 §8: a colour dot is never the only carrier. */
   color: var(--on-surface-2);
   white-space: nowrap;
-  /* The label truncates before the timestamp does. A row that pushes "2h ago"
-     off the edge loses the one field that tells you whether it still matters. */
+}
+
+/* The ellipsis lives on the English word, NOT on `.k-notif__kind`.
+   `.k-notif__head` aligns its children on the baseline, and an inline-level
+   flex box whose `overflow` is not `visible` reports its bottom margin edge as
+   its baseline rather than its first line's. With `overflow: hidden` on the
+   container the whole label therefore rode ~3px high of the timestamp it is
+   meant to sit level with — visible at every row, on every screen. Moving the
+   clip one level in restores a real text baseline and truncates the same
+   string.
+
+   The label truncates before the timestamp does. A row that pushes "2h ago" off
+   the edge loses the one field that tells you whether it still matters. */
+.k-notif__kind-en {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
 .k-notif__kind-hi {
-  font-family: var(--font-indic);
+  /* --font-hindi, not --font-indic. These strings are Devanagari literals;
+     --font-indic re-points to a Gujarati face when the language is `gu`, which
+     carries no Devanagari and would drop every one of them into an OS fallback.
+     The bell panel's `.k-notif__hd-hi` in layout.css already resolves it this
+     way — one vocabulary, one font. */
+  font-family: var(--font-hindi);
   font-size: var(--t-label);
   font-weight: 400;
   letter-spacing: 0;
@@ -130,8 +158,25 @@
   margin-left: 6px;
   font-family: var(--font-mono);
   font-size: var(--t-label-sm);
+  /* Tabular, like every other count in the system. 9 and 10 unread must not
+     move the button's edge by a digit width. */
+  font-variant-numeric: tabular-nums;
   color: var(--on-surface-3);
 }
+
+/* The tab's Devanagari sub-label. `.tabs__label` is a flex row of
+   [icon] [label] [count], so this sits inside the label slot between the word
+   and its count. Muted and one step down in weight — it is the same word, not a
+   second one. It follows the tab's own colour when active, because a fixed
+   `--on-surface-3` beside `--primary-text` reads as a disabled twin. */
+.k-inboxpg__tabhi {
+  margin-left: 5px;
+  font-family: var(--font-hindi);
+  font-size: var(--t-label);
+  font-weight: 400;
+  color: var(--on-surface-3);
+}
+.tabs__b.on .k-inboxpg__tabhi { color: inherit; opacity: .8; }
 
 .k-inboxpg__groups {
   display: flex;
@@ -153,7 +198,8 @@
   color: var(--on-surface);
 }
 .k-inboxpg__grouphi {
-  font-family: var(--font-indic);
+  /* Devanagari literal — `--font-hindi`. See `.k-notif__kind-hi`. */
+  font-family: var(--font-hindi);
   font-size: var(--t-label);
   font-weight: 400;
   /* Primary-coloured TEXT is `--primary-text` (5.2:1); `--primary` is a fill. */
@@ -173,6 +219,22 @@
   border-radius: var(--r-md);
   box-shadow: var(--shadow-1);
   overflow: hidden;
+}
+
+/* ── Loading ───────────────────────────────────────────────────────────────
+   The skeleton reuses `.k-notif__row` and `.k-inboxpg__list`, so its geometry
+   is the real geometry and nothing shifts when the fetch lands. Only the two
+   affordances the row has and the placeholder must not need overriding. */
+
+.k-notif__row--skel { cursor: default; }
+.k-notif__row--skel:hover { background: transparent; }
+
+/* Reserves exactly the line box the real `<h2>` occupies: `--t-title` at the
+   inherited leading. Without it the group heading collapsed to the height of
+   the 15px bar inside it and the whole list stepped up ~9px on load. */
+.k-inboxpg__grouph--skel {
+  min-height: calc(var(--t-title) * var(--line-height-base));
+  align-items: center;
 }
 
 /* ── Delivery banner ───────────────────────────────────────────────────────*/
@@ -216,7 +278,8 @@
   color: inherit;
 }
 .k-notifbanner__hi {
-  font-family: var(--font-indic);
+  /* Devanagari literal — `--font-hindi`. See `.k-notif__kind-hi`. */
+  font-family: var(--font-hindi);
   font-size: var(--t-label);
   font-weight: 400;
   color: var(--on-surface-3);
@@ -284,6 +347,10 @@
   .k-notifbanner { flex-wrap: wrap; }
   .k-notifbanner__act { width: 100%; justify-content: flex-end; }
   .k-notif__row { padding: var(--sp-3); }
-  .k-notif__head { flex-wrap: wrap; }
+  /* `.k-notif__head` used to wrap here. Wrapping dropped the timestamp onto a
+     line of its own, where `margin-left: auto` parked it alone against the right
+     edge under an unfinished label — and it defeated the ellipsis, which exists
+     precisely so the label yields and the timestamp never has to move. The
+     label truncates on a narrow screen; "2h ago" stays where it is. */
   .k-inboxpg__grouph { font-size: var(--t-body); }
 }

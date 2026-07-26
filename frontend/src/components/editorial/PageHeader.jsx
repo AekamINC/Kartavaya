@@ -43,8 +43,22 @@ export default function PageHeader({ kicker, title, sanskrit, lede, right, ...re
         <h1 className="k-pageh__h1">
           {title}
           {/* lang marks the script change for screen readers and font matching;
-              without it a reader pronounces Devanagari with English rules. */}
-          {sa && <span className="k-pageh__sans" lang="sa">{sa}</span>}
+              without it a reader pronounces Devanagari with English rules.
+
+              `hi`, not `sa`. The prop is named `sanskrit` but not one of the 53
+              values actually passed to it across the app is a Sanskrit-only
+              form. Several are impossible in Sanskrit: फ़ोल्डर and डेटा are
+              English loanwords carrying a nuqta, खाते is the Hindi oblique of an
+              Arabic loan, संस्थाएँ / परियोजनाएँ / भूमिकाएँ take the Hindi
+              feminine plural -एँ (Sanskrit is -आः), and दल की गतिविधि,
+              आपके हाथ में, अन्य पर निर्भर and योजना बदलें use Hindi
+              postpositions and imperatives. Genuine Sanskrit in this product is
+              the Gītā citations and the यथारुचि epigraph, which are separate
+              components and keep lang="sa".
+              No visual change: [lang="hi"] and [lang="sa"] carry the same
+              leading and tracking rules. This only fixes the voice a screen
+              reader uses. */}
+          {sa && <span className="k-pageh__sans" lang="hi">{sa}</span>}
         </h1>
         {text && <p className="k-pageh__lede">{text}</p>}
       </div>

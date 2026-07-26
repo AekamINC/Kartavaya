@@ -8,8 +8,20 @@
 // whether this works" — human comparison is the only verification, so if the
 // reviewer cannot keep up the feature is theatre. Policy and enrollment support
 // it; they are not the point of the page.
+//
+// On the shared module chrome from 13-module-pages.md §1, like every other
+// module page. It was on `PageHeader` + `TabBar`, which differ from the spec in
+// three measurable ways: `.k-pageh__h1` is `clamp(32px, 4vw, 44px)` against
+// `.mh__en` at 25px; `.k-pageh__sans` sets the Devanagari at 0.7em of that h1
+// (22-31px, spec says 15px) in `--k-primary`, i.e. `--primary-vivid`, a fill
+// rather than the measured `--primary-text`; and `PageHeader` has no module
+// accent, where `.mh__ic` is the 38px tinted icon that identifies the module.
+// `.k-tabbar` also carries no tablist roles.
 import React, { useState } from 'react';
-import { PageHeader, TabBar } from '../components/editorial';
+import ModuleHeader from '../components/module/ModuleHeader';
+import ModuleTabs from '../components/module/ModuleTabs';
+import { ICONS } from '../components/layout/navIcons';
+import { moduleMeta } from '../lib/moduleColors';
 import Register from './pahchan/Register';
 import EnrollQueue from './pahchan/EnrollQueue';
 import PahchanPolicy from './pahchan/PahchanPolicy';
@@ -18,17 +30,22 @@ const TABS = ['register', 'enrollment', 'policy'];
 
 export default function PahchanPage() {
   const [tab, setTab] = useState('register');
+  const meta = moduleMeta('pahchan');
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader
-        title="Pahchan"
-        sanskrit="पहचान"
-        lede="Attendance — clock-ins are recorded on the phone and confirmed here by comparing the selfie against two reference photos."
+      <ModuleHeader
+        module="pahchan"
+        en={meta.en}
+        hi={meta.hi}
+        sub="Clock-ins are recorded on the phone and confirmed here by comparing the selfie against two reference photos."
+        icon={ICONS.pahchan}
       />
-      <TabBar tabs={TABS} active={tab} onChange={setTab} />
-      {tab === 'register' && <Register />}
-      {tab === 'enrollment' && <EnrollQueue />}
-      {tab === 'policy' && <PahchanPolicy />}
+      <ModuleTabs tabs={TABS.map(id => ({ id, label: id }))} value={tab} onChange={setTab} label="Pahchan sections" />
+      <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
+        {tab === 'register' && <Register />}
+        {tab === 'enrollment' && <EnrollQueue />}
+        {tab === 'policy' && <PahchanPolicy />}
+      </div>
     </div>
   );
 }

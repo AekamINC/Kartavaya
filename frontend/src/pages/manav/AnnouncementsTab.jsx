@@ -62,7 +62,7 @@ export default function AnnouncementsTab() {
       </button>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>{editing ? 'Edit' : 'New'} Announcement</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
@@ -97,13 +97,13 @@ export default function AnnouncementsTab() {
         ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {announcements.map(a => (
-            <div key={a.id} style={{ background: 'var(--surface-1)', border: `1px solid ${a.pinned ? 'var(--k-primary)' : 'var(--rule-soft)'}`, borderRadius: 12, padding: '16px 20px' }}>
+            <div key={a.id} style={{ background: 'var(--surface-1)', border: `1px solid ${a.pinned ? 'var(--k-primary)' : 'var(--rule-soft)'}`, borderRadius: 'var(--r-md)', padding: '16px 20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   {a.pinned && <span style={{ fontSize: 14 }}>📌</span>}
                   <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{a.title}</h4>
                 </div>
-                <Badge text={a.priority} color={PRIORITY_COLORS[a.priority] || '#6E7B91'} />
+                <Badge text={a.priority} color={PRIORITY_COLORS[a.priority] || 'var(--on-surface-3)'} />
               </div>
               <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--ink-2)', whiteSpace: 'pre-wrap' }}>{a.body}</p>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -113,7 +113,7 @@ export default function AnnouncementsTab() {
                 </span>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => startEdit(a)}>Edit</button>
-                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => remove(a.id)}>Delete</button>
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--danger)' }} onClick={() => remove(a.id)}>Delete</button>
                 </div>
               </div>
             </div>

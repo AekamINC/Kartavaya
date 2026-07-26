@@ -37,6 +37,9 @@
    subtitle. Stacking it says something different about the relationship. */
 .apg__hi { margin-left: 10px; font-family: var(--font-indic); font-size: var(--t-title); color: var(--primary-text); }
 .apg__lede { margin: 6px 0 0; font-size: var(--t-body-sm); color: var(--on-surface-3); max-width: 68ch; text-wrap: pretty; }
+/* A lede that sits inside a `CardBody flush` and so has to pay its own gutter.
+   It was an inline `style={{padding:'0 var(--pad-card)'}}` at one call site. */
+.apg__lede--inset { padding: 0 var(--pad-card) var(--sp-2); }
 .apg__acts { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 
 .apg__tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
@@ -61,7 +64,7 @@
 /* A suspended org still appears in the list, because hiding it is how an
    operator concludes the record was deleted. It reads as withdrawn: dimmed,
    with a danger keyline on the leading cell. */
-.adm-sus { opacity: .62; }
+.adm-sus { opacity: .6; }
 .adm-sus td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 .adm-name { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
@@ -98,7 +101,14 @@
  * amount, remove.
  */
 .inb { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
-.inb__hd, .inb__r { display: grid; grid-template-columns: minmax(0, 1fr) 76px 110px 34px; gap: var(--sp-2); align-items: center; }
+/* 11 §1 verbatim: minmax(0,1fr) 68px 92px 34px, gap 8px. */
+.inb__hd, .inb__r { display: grid; grid-template-columns: minmax(0, 1fr) 68px 92px 34px; gap: var(--sp-2); align-items: center; }
+/* DEVIATION, stated: 11 gives this row `font-size:9.5px`. 00 §12 sets the floor
+   at 11px for metadata and `--t-label-sm` carries a `max(11px, …)` clamp that
+   enforces it mechanically. The token wins — a 9.5px column header is unreadable
+   at the small end of the text-size slider and would be the only literal px
+   font-size in this file. Same trade for `.aot th` at 10px, which is why the
+   console uses `.tbl`. */
 .inb__hd {
   font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .1em;
   text-transform: uppercase; color: var(--on-surface-3); padding-bottom: 2px;
@@ -133,12 +143,20 @@
  * number the business runs on." `.mgn__d` shows the working: metered USD, the
  * FX rate used, the org's markup, the INR charged.
  */
-.mgn { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
-.mgn__v { font-family: var(--font-display); font-size: var(--t-title-lg); letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--on-surface); }
+.mgn { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; }
+.mgn__v {
+  font-family: var(--font-display); font-size: var(--t-title-lg);
+  font-weight: var(--t-headline-w); letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; color: var(--on-surface);
+}
 .mgn__v.is-loss { color: var(--danger); }
 .mgn__d { font-size: var(--t-label-sm); color: var(--on-surface-3); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.mgn--row { flex-direction: row; align-items: baseline; gap: var(--sp-2); }
-.mgn--row .mgn__v { font-size: var(--t-body); }
+/* The compact form for a table cell: the derivation drops under the figure
+   rather than pushing the column to the width of the whole working. `.mgn`
+   itself stays the baseline row 11 §1 specifies, which is the form the Margin
+   card uses — the headline figure and its arithmetic on one line. */
+.mgn--compact { flex-direction: column; align-items: flex-end; gap: 2px; }
+.mgn--compact .mgn__v { font-size: var(--t-body); }
 
 /* ── Right-side detail panel ───────────────────────────────────────────────
  * Neither Modal (centred) nor Sheet (bottom, mobile) is a right-side panel, and
@@ -171,6 +189,14 @@
 /* ── Key/value grid ───────────────────────────────────────────────────────── */
 .adm-kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-3) var(--sp-4); }
 .adm-kv__k { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--on-surface-3); margin-bottom: 2px; }
+/* The Devanagari apposition sized for a KEY, not for a page title. `.apg__hi` is
+   --t-title with a 10px gutter; dropped into an 11px uppercase key it set the
+   line height of the whole row from a glyph twice the size of its label. */
+.adm-kv__hi {
+  margin-left: 6px; font-family: var(--font-indic);
+  font-size: var(--t-label-sm); font-weight: 400; letter-spacing: 0;
+  text-transform: none; color: var(--primary-text);
+}
 .adm-kv__v { font-size: var(--t-body-sm); color: var(--on-surface-2); overflow-wrap: anywhere; }
 .adm-kv__v.is-mono { font-family: var(--font-mono); font-size: var(--t-label); }
 
@@ -189,6 +215,20 @@
    the affordance has to say which ones those are before it is clicked. */
 .adm-mod.is-sensitive.on { background: var(--warn-container); color: var(--on-warn-container); }
 .adm-mod__s { margin-left: auto; font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .06em; color: var(--warn); }
+
+/* A module that exists but that this endpoint refuses. It is shown, not hidden —
+   an operator has to be able to see the module is real — and it is not
+   clickable, because `POST /v1/admin/orgs/:id/modules/:code` validates against
+   its own eight-code list and 400s on the other four. `--on-surface-disabled`
+   is the token WCAG 1.4.3 exempts, and an inactive control is exactly its one
+   legitimate use (00 §`--on-surface-faint`). */
+.adm-mod.is-unwired { border-style: dashed; cursor: not-allowed; }
+/* Only the OFF state dims. A module that is genuinely active but not switchable
+   here keeps its container colour, or the console would report it as off. */
+.adm-mod.is-unwired:not(.on) { color: var(--on-surface-disabled); }
+.adm-mod.is-unwired:not(.on):hover { background: transparent; }
+.adm-mod__s.is-quiet { color: var(--on-surface-disabled); font-weight: 500; letter-spacing: .04em; }
+.adm-mod.on .adm-mod__s.is-quiet { color: inherit; opacity: .72; }
 
 /* ── Trend bars ───────────────────────────────────────────────────────────── */
 .adm-trend { display: flex; align-items: flex-end; gap: 2px; min-height: 110px; overflow-x: auto; padding-bottom: var(--sp-1); }

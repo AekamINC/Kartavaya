@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Badge, TYPE_COLORS, SOURCE_COLORS } from './_shared';
+import { mixAlpha } from '../../lib/statusColors';
 
 export default function DedupeTab() {
   const { pushToast } = useToast();
@@ -81,7 +82,7 @@ export default function DedupeTab() {
 
   return (
     <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Dedupe Review (द्वैतनिवारण)</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, fontFamily: 'var(--font-ui), var(--font-hindi)' }}>Dedupe Review (द्वैतनिवारण)</h3>
       <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 16 }}>
         Contacts sharing the same email or phone are grouped below. Select the record to keep and merge the rest.
       </p>
@@ -102,16 +103,16 @@ export default function DedupeTab() {
             const survivorId = survivors[gi];
             return (
               <div key={`${g.match_type}-${g.match_key}`}
-                style={{ border: '1px solid var(--rule-soft)', borderRadius: 10, overflow: 'hidden' }}>
+                style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
                 {/* Group header */}
                 <div onClick={() => setExpandedIdx(expanded ? null : gi)}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
                     background: 'var(--bg-raised)', cursor: 'pointer', userSelect: 'none' }}>
                   <span style={{ fontSize: 14 }}>{expanded ? '▾' : '▸'}</span>
-                  <Badge text={g.match_type} color={g.match_type === 'email' ? '#2563eb' : '#10b981'} />
+                  <Badge text={g.match_type} color={g.match_type === 'email' ? 'var(--st-in-progress)' : 'var(--ok)'} />
                   <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{g.match_key}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 99,
-                    background: '#f59e0b18', color: '#f59e0b' }}>{g.count} contacts</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 'var(--r-pill)',
+                    background: mixAlpha('var(--warn)', 9), color: 'var(--warn)' }}>{g.count} contacts</span>
                 </div>
 
                 {/* Side-by-side comparison */}
@@ -137,15 +138,15 @@ export default function DedupeTab() {
                             return (
                               <tr key={c.id} onClick={() => selectSurvivor(gi, c.id)}
                                 style={{ borderBottom: '1px solid var(--rule-soft)', cursor: 'pointer',
-                                  background: selected ? 'var(--k-primary-bg, #0082c60a)' : 'transparent' }}>
+                                  background: selected ? 'var(--k-primary-bg)' : 'transparent' }}>
                                 <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                                   <input type="radio" name={`survivor-${gi}`} checked={selected}
                                     onChange={() => selectSurvivor(gi, c.id)} />
                                 </td>
                                 {FIELDS.map(f => (
                                   <td key={f.key} style={{ padding: '8px 10px', color: 'var(--ink-2)' }}>
-                                    {f.key === 'contact_type' && c[f.key] ? <Badge text={c[f.key]} color={TYPE_COLORS[c[f.key]] || '#6E7B91'} /> :
-                                     f.key === 'source' && c[f.key] ? <Badge text={c[f.key]} color={SOURCE_COLORS[c[f.key]] || '#6b7280'} /> :
+                                    {f.key === 'contact_type' && c[f.key] ? <Badge text={c[f.key]} color={TYPE_COLORS[c[f.key]] || 'var(--on-surface-3)'} /> :
+                                     f.key === 'source' && c[f.key] ? <Badge text={c[f.key]} color={SOURCE_COLORS[c[f.key]] || 'var(--on-surface-3)'} /> :
                                      (c[f.key] ?? '—')}
                                   </td>
                                 ))}
@@ -174,7 +175,7 @@ export default function DedupeTab() {
       )}
 
       {/* Recent Merges */}
-      <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, marginTop: 16 }}>Recent Merges (विलय इतिहास)</h3>
+      <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, marginTop: 16, fontFamily: 'var(--font-ui), var(--font-hindi)' }}>Recent Merges (विलय इतिहास)</h3>
       <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12 }}>
         Previously merged contacts. Undo is available for recent merges.
       </p>
@@ -183,7 +184,7 @@ export default function DedupeTab() {
       ) : merges.length === 0 ? (
         <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>No merges yet.</p>
       ) : (
-        <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: 'var(--bg-raised)', textAlign: 'left' }}>
@@ -205,11 +206,11 @@ export default function DedupeTab() {
                     {m.created_at ? new Date(m.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
                   </td>
                   <td style={{ padding: '8px 12px' }}>
-                    {m.undone_at ? <Badge text="Undone" color="#6E7B91" /> : <Badge text="Merged" color="#10b981" />}
+                    {m.undone_at ? <Badge text="Undone" color="var(--on-surface-3)" /> : <Badge text="Merged" color="var(--ok)" />}
                   </td>
                   <td style={{ padding: '8px 12px' }}>
                     {!m.undone_at && (
-                      <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#f59e0b' }}
+                      <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--warn)' }}
                         disabled={undoing === m.id} onClick={() => undoMerge(m.id)}>
                         {undoing === m.id ? 'Undoing...' : 'Undo'}
                       </button>

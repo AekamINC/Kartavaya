@@ -1,142 +1,137 @@
-﻿/*
- * tokens.css — Kartavaya v2 Design System
- * Inter font (body), semantic color tokens, spacing scale
- * Import this FIRST in globals.css
+/*
+ * tokens.css — LEGACY COMPATIBILITY LAYER
+ *
+ * This file used to be a complete second design system: its own colour ramp,
+ * its own type scale, its own radii, and — the part that mattered — its own
+ * DARK MODE, keyed on a `.dark` class.
+ *
+ * `14-dark-mode.md` §"The mechanism": one attribute, `data-theme="dark"` on
+ * <html>, one block of overrides, no second mechanism. Nothing in src/ ever
+ * set the `.dark` class (applyPrefs and lib/auth.js both write
+ * `data-theme`), so every value in that block was dead — but it was dead
+ * *plausibly*, and the next person to add `classList.add('dark')` would have
+ * got a third dark mode silently layered under the real one.
+ *
+ * The colour literals it carried are the retired set that 14 "What breaks
+ * today" hunts: #16a34a, #d97706, #dc2626, #f59e0b, #22c55e, #f87171,
+ * #2563eb, #60a5fa, plus a hardcoded #1AB8B0 accent that drove the GLOBAL
+ * :focus-visible ring in src/index.css — so the focus ring was a fixed teal
+ * that neither followed the user's accent nor flipped with the theme.
+ *
+ * Every NAME survives, because ~48 references to these names are still live
+ * and `check-tokens.mjs` fails the build for any var() without a declaration.
+ * Every VALUE is now a reference into the one system in
+ * styles/kartavaya-design.css. Custom properties resolve at computed-value
+ * time, not parse time, so it does not matter that this file loads first.
+ *
+ * Delete a line when its last reference is gone. Add nothing here.
  */
 
 /* ── Fonts ─────────────────────────────────────────────────────────────────── */
 @import url('https://rsms.me/inter/inter.css');
 @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,300;1,6..72,400&family=Inter:wght@400;500;600;700&family=Tiro+Devanagari+Hindi:ital@0;1&family=JetBrains+Mono:wght@400;500&family=Spectral:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&display=swap');
 
-/* Wordmark uses Inter Bold — no custom font file needed */
+/* --font-display, --font-ui, --font-hindi, --font-mono and --font-devanagari
+   are NOT redeclared here. kartavaya-design.css §2 owns them, applyPrefs
+   overwrites two of them at runtime, and a second declaration of a
+   user-swappable font is a value that drifts. */
 :root {
-  --font-body:     'Inter', system-ui, -apple-system, sans-serif;
-  --font-wordmark: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-display:  'Newsreader', serif;
-  --font-devanagari: 'Tiro Devanagari Hindi', serif;
-  --font-hindi:      'Tiro Devanagari Hindi', serif;
-  --font-ui:         'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono:       'JetBrains Mono', monospace;
-  --font-code:     'JetBrains Mono', monospace;
+  --font-body:        var(--font-ui);
+  --font-wordmark:    var(--font-ui);
+  --font-code:        var(--font-mono);
   --font-alt-display: 'Spectral', serif;
-  --font-alt-serif:  'Instrument Serif', serif;
-  --font-sans-alt:   'Geist', sans-serif;
+  --font-alt-serif:   'Instrument Serif', serif;
+  --font-sans-alt:    'Geist', sans-serif;
   font-feature-settings: 'cv02','cv03','cv04','cv11';
 }
 
-/* ── Spacing scale (4-base) ───────────────────────────────────────────────── */
+/* ── Spacing scale → 00 §4 ────────────────────────────────────────────────── */
 :root {
-  --space-1:  4px;
-  --space-2:  8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-8: 32px;
-  --space-12: 48px;
-  --space-16: 64px;
+  --space-1:  var(--sp-1);
+  --space-2:  var(--sp-2);
+  --space-3:  var(--sp-3);
+  --space-4:  var(--sp-4);
+  --space-5:  var(--sp-5);
+  --space-6:  var(--sp-6);
+  --space-8:  var(--sp-7);
+  --space-12: calc(var(--sp-8) + var(--sp-1));
+  --space-16: calc(var(--sp-8) + var(--sp-5));
 }
 
-/* ── Typography scale ─────────────────────────────────────────────────────── */
+/* ── Typography scale → 00 §2 ─────────────────────────────────────────────────
+   Absolute px made the Text size slider a no-op on everything that used these
+   names. Derived, so they track --font-size-base like the --t-* scale does. */
 :root {
-  --text-xs:   12px;
-  --text-sm:   13px;
-  --text-base: 14px;
-  --text-md:   16px;
-  --text-lg:   18px;
-  --text-xl:   20px;
-  --text-2xl:  24px;
-  --text-3xl:  32px;
-  --text-4xl:  40px;
+  --text-xs:   var(--t-label);
+  --text-sm:   var(--t-body-sm);
+  --text-base: var(--t-body);
+  --text-md:   var(--t-title);
+  --text-lg:   calc(var(--font-size-base) * 1.29);
+  --text-xl:   var(--t-title-lg);
+  --text-2xl:  calc(var(--font-size-base) * 1.71);
+  --text-3xl:  calc(var(--font-size-base) * 2.29);
+  --text-4xl:  var(--t-display);
 
-  --weight-normal:   400;
-  --weight-medium:   500;
+  --weight-normal:   var(--t-body-w);
+  --weight-medium:   var(--t-title-w);
   --weight-semibold: 600;
   --weight-bold:     700;
 
   --leading-tight:   1.2;
-  --leading-body:    1.4;
+  --leading-body:    var(--line-height-base);
   --leading-button:  1.0;
 }
 
-/* ── Color tokens — LIGHT mode (default) ─────────────────────────────────── */
+/* ── Colour → 00 §7/§8 ───────────────────────────────────────────────────────
+   No `.dark` counterpart block. Every one of these resolves through a token
+   that already flips on [data-theme="dark"], which is the whole point of
+   14 §1: a second set of dark values is a second thing to keep in step. */
 :root {
-  --bg-default:   #F6F3EC; /* warm paper/cream */
-  --bg-subtle:    #f8f9fb;
-  --bg-muted:     #f1f3f7;
-  --bg-elevated:  #FCFAF5; /* slightly elevated cards */
-  --bg-overlay:   rgba(0, 0, 0, 0.04);
+  --bg-default:   var(--bg);
+  --bg-subtle:    var(--s-low);
+  --bg-muted:     var(--s-container);
+  --bg-elevated:  var(--surface);
+  --bg-overlay:   color-mix(in srgb, var(--on-surface) 4%, transparent);
 
-  --border-default: #e2e6ed;
-  --border-subtle:  #eef0f4;
-  --border-strong:  #bcc4d0;
+  --border-default: var(--outline-variant);
+  --border-subtle:  var(--outline-variant);
+  --border-strong:  var(--outline);
 
-  --text-default:   #111827;
-  --text-muted:     #6b7280;
-  --text-subtle:    #9ca3af;
-  --text-disabled:  #d1d5db;
-  --text-on-accent: #ffffff;
+  --text-default:   var(--on-surface);
+  --text-muted:     var(--on-surface-3);
+  --text-subtle:    var(--on-surface-3);
+  /* Was #d1d5db — a disabled colour so pale it read as absent. 00 §11's
+     --on-surface-disabled is the token for inactive controls, and it flips. */
+  --text-disabled:  var(--on-surface-disabled);
+  --text-on-accent: var(--on-primary);
 
-  --accent-default: #1AB8B0;
-  --accent-hover:   #17a39c;
-  --accent-pressed: #148f88;
-  --accent-subtle:  #e8faf9;
+  /* --accent-default is the global :focus-visible ring (src/index.css:34).
+     As #1AB8B0 it ignored both the accent preset and the theme. */
+  --accent-default: var(--primary);
+  --accent-hover:   var(--primary-hover);
+  --accent-pressed: var(--primary-hover);
+  --accent-subtle:  color-mix(in srgb, var(--primary) var(--tint-soft), transparent);
 
-  --success:    #16a34a;
-  --success-bg: #f0fdf4;
-  --warning:    #d97706;
-  --warning-bg: #fffbeb;
-  --danger:     #dc2626;
-  --danger-bg:  #fef2f2;
-  --info:       #2563eb;
-  --info-bg:    #eff6ff;
+  --success:    var(--ok);
+  --success-bg: var(--ok-container);
+  --warning:    var(--warn);
+  --warning-bg: var(--warn-container);
+  --danger-bg:  var(--danger-container);
+  /* `--info` has no partner in 00's palette by design — components/ui/Tag.jsx
+     documents that referencing it was a bug. It resolves to the status blue,
+     which does flip, rather than to nothing. */
+  --info:       var(--st-in-progress);
+  --info-bg:    color-mix(in srgb, var(--st-in-progress) var(--tint-mid), transparent);
 
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.10);
+  --shadow-sm: var(--shadow-1);
+  --shadow-md: var(--shadow-2);
+  --shadow-lg: var(--shadow-3);
 
-  --radius-sm:  4px;
-  --radius-md:  8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-full: 9999px;
-}
-
-/* ── Color tokens — DARK mode ─────────────────────────────────────────────── */
-.dark {
-  --bg-default:   #050e1a; /* brand dark */
-  --bg-subtle:    #181c23;
-  --bg-muted:     #1e232d;
-  --bg-elevated:  #0B1828; /* slightly elevated cards */
-  --bg-overlay:   rgba(255,255,255,0.04);
-
-  --border-default: #2d3340;
-  --border-subtle:  #242936;
-  --border-strong:  #3d4558;
-
-  --text-default:   #f1f3f7;
-  --text-muted:     #8b95a6;
-  --text-subtle:    #5c6575;
-  --text-disabled:  #3a404e;
-  --text-on-accent: #ffffff;
-
-  --accent-default: #1AB8B0;
-  --accent-hover:   #1fd4cc;
-  --accent-pressed: #17a39c;
-  --accent-subtle:  #0d2e2d;
-
-  --success:    #22c55e;
-  --success-bg: #052e16;
-  --warning:    #f59e0b;
-  --warning-bg: #1c1400;
-  --danger:     #f87171;
-  --danger-bg:  #2d0a0a;
-  --info:       #60a5fa;
-  --info-bg:    #0c1a3a;
-
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.5);
+  --radius-sm:   var(--r-xs);
+  --radius-md:   var(--r-sm);
+  --radius-lg:   var(--r-md);
+  --radius-xl:   var(--r-lg);
+  --radius-full: var(--r-pill);
 }
 
 /* ── Base resets ──────────────────────────────────────────────────────────── */
@@ -144,14 +139,9 @@
 
 html { font-size: 14px; -webkit-font-smoothing: antialiased; }
 
-body {
-  font-family: var(--font-body);
-  font-size: var(--text-base);
-  font-weight: var(--weight-normal);
-  line-height: var(--leading-body);
-  color: var(--text-default);
-  background: var(--bg-default);
-}
+/* No `body` rule here. kartavaya-design.css sets background, colour and family
+   with !important; a second body rule in an earlier file was two definitions
+   of the same thing, and the loser was invisible. */
 
 /* ── Wordmark class ───────────────────────────────────────────────────────── */
 .Kartavaya-wordmark {
@@ -161,8 +151,5 @@ body {
   text-transform: uppercase;
 }
 
-/* ── Scrollbar ────────────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-full); }
-::-webkit-scrollbar-thumb:hover { background: var(--accent-default); }
+/* Scrollbar and ::selection live in styles/dark-theme.css, which loads after
+   this file and defined both again at a different width. One definition. */

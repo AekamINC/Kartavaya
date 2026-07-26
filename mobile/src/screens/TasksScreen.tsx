@@ -8,6 +8,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
+import { hindi } from '../theme/fonts';
 import { tasksApi } from '../api/tasks';
 import { TaskCard } from '../components/TaskCard';
 import SwipeRow from '../components/SwipeRow';
@@ -209,7 +210,7 @@ const s = StyleSheet.create({
   centre: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 10 },
   title: { fontSize: 26, fontWeight: '700', letterSpacing: -0.4 },
-  titleHi: { fontSize: 14, marginTop: 2 },
+  titleHi: { fontSize: 14, marginTop: 2, ...hindi() },
   segs: {
     flexDirection: 'row', marginHorizontal: 16, marginBottom: 12,
     borderRadius: 10, padding: 3, gap: 3,

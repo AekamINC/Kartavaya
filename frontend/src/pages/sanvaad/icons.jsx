@@ -7,11 +7,16 @@
  * navIcons.jsx. The five quick reactions (👍 ✅ 👀 ❤️ 😂) are content, not
  * chrome — those stay."
  *
- * `components/layout/navIcons.jsx` carries `close`, `search`, `plus` and `users`,
- * which are reused below. It has no channel hash, no lock, no chat bubble, no
- * reply arrow, no delivery ticks and no send arrow — and that file belongs to
- * `01-navigation.md`, not to this module. These live here until its owner folds
- * them in; when that happens, delete this file and import the same names.
+ * `components/layout/navIcons.jsx` carries `close`, `search`, `plus`, `users`
+ * and `chevL`, which are reused below. It has none of the eight declared
+ * locally — `hash`, `wa`, `lock`, `chat`, `reply`, `smile`, `send`, `down` —
+ * and that file belongs to `01-navigation.md`, not to this module. They live
+ * here until its owner folds them in; when that happens, delete the eight and
+ * import the same names.
+ *
+ * `WaTicks`, `WA_STATUS_LABEL` and `ChatArt` stay here either way: a delivery
+ * receipt and a conversation illustration are this surface's vocabulary, not
+ * the navigation's.
  */
 import React from 'react';
 import { ICONS } from '../../components/layout/navIcons';
@@ -21,6 +26,17 @@ const s = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.4, strokeLineca
 export const SvIcons = {
   /** Public channel — the # that every chat product uses for a room. */
   hash: <svg width="15" height="15" viewBox="0 0 16 16" {...s}><path d="M6 2L4.5 14M11.5 2L10 14M2.5 5.5h11M2 10.5h11" /></svg>,
+  /**
+   * WhatsApp. `00-tokens.md` §9 declares `--wa-green` as a genuinely fixed
+   * literal — "WhatsApp brand" — and nothing in this module was using it, so
+   * the token had no call site at all. The glyph is `ScreensVarta.jsx`'s `SI.wa`
+   * and is filled, not stroked, because a brand mark is a shape.
+   */
+  wa: (
+    <svg width="17" height="17" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+      <path d="M10 2a8 8 0 00-6.9 12L2 18l4.1-1.1A8 8 0 1010 2zm0 1.6a6.4 6.4 0 013.1 12 6.4 6.4 0 01-3.1.8 6.4 6.4 0 01-3.3-.9l-.3-.2-2.4.6.6-2.3-.2-.4A6.4 6.4 0 0110 3.6zm-2.9 3c-.2 0-.4.1-.6.3-.2.2-.6.6-.6 1.4s.6 1.7.7 1.8c.1.1 1.2 1.9 3 2.6 1.5.6 1.8.5 2.2.4.4 0 1.1-.4 1.3-.9.2-.5.2-.9.1-1l-.6-.3-1-.5c-.2 0-.3 0-.4.1l-.6.7c-.1.1-.2.2-.4.1a4.5 4.5 0 01-1.4-.9 5 5 0 01-.9-1.2c-.1-.2 0-.3.1-.4l.4-.5.2-.4-.1-.3-.5-1.2c-.1-.3-.3-.3-.4-.3h-.5z" />
+    </svg>
+  ),
   /** Private channel. */
   lock: <svg width="15" height="15" viewBox="0 0 16 16" {...s}><rect x="3" y="7" width="10" height="7" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 015 0v2" /></svg>,
   /** Direct message. */
@@ -33,6 +49,10 @@ export const SvIcons = {
   send: <svg width="16" height="16" viewBox="0 0 16 16" {...s} strokeWidth="1.6"><path d="M14 8L2.5 2.5l2 5.5-2 5.5L14 8z" /></svg>,
   /** Jump to latest. */
   down: <svg width="12" height="12" viewBox="0 0 16 16" {...s} strokeWidth="1.8"><path d="M8 3v9M4 8.5l4 4 4-4" /></svg>,
+  /** A send that did not arrive — `ScreensVarta.jsx`'s `SI.alert`. */
+  alert: <svg width="13" height="13" viewBox="0 0 20 20" {...s} strokeWidth="1.7"><path d="M10 3.4l7 12.2H3l7-12.2z" /><path d="M10 8v3.2M10 13.6v.1" /></svg>,
+  /** The 24-hour window — `ScreensVarta.jsx`'s `SI.clock2`. */
+  clock: <svg width="13" height="13" viewBox="0 0 20 20" {...s} strokeWidth="1.7"><circle cx="10" cy="10" r="7.2" /><path d="M10 6.2V10l2.6 1.8" /></svg>,
   /** Back, on the mobile two-pane swap. */
   back: ICONS.chevL,
   close: ICONS.close,
@@ -46,13 +66,40 @@ export const SvIcons = {
  * `06` §3: "the distinction in every messaging product is colour ... and it is
  * not implemented. A user cannot tell whether a customer has seen their
  * message." The colour lives in `.wa__tick--read`.
+ *
+ * All five are drawn in a `0 0 14 10` viewBox because `06` §1 sizes the box
+ * `width:14px;height:10px`. The previous set used `0 0 20 12` — aspect 1.667
+ * into a 1.4 box — so `xMidYMid meet` scaled everything to 0.7 and letterboxed
+ * it, and the five glyphs did not share a centre inside that viewBox: the
+ * single tick sat at x-centre 8.5, the double at 8.25, the clock and the cross
+ * at 10. The marker therefore JUMPED sideways as a message advanced
+ * pending → sent → delivered → read, and every stroke rendered at 0.98px while
+ * the rest of the module's icons are 1.31px.
+ *
+ * At 1:1 the strokes are the authored 1.6px and all five are centred on (7, 5),
+ * so only the shape and the colour change. Geometry is `ScreensVarta.jsx`'s
+ * `SI.tick1` / `tick2` / `clock2` / `alert`, scaled uniformly.
  */
+const t = { ...s, strokeWidth: 1.6 };
+
 export const WaTicks = {
-  pending: <svg className="wa__tick" viewBox="0 0 20 12" {...s} aria-hidden="true"><circle cx="10" cy="6" r="4" /><path d="M10 4v2l1.4 1" /></svg>,
-  sent: <svg className="wa__tick" viewBox="0 0 20 12" {...s} aria-hidden="true"><path d="M4 6.5l3 3 6-6.5" /></svg>,
-  delivered: <svg className="wa__tick" viewBox="0 0 20 12" {...s} aria-hidden="true"><path d="M2 6.5l3 3 6-6.5M8.5 9.5l6-6.5" /></svg>,
-  read: <svg className="wa__tick wa__tick--read" viewBox="0 0 20 12" {...s} aria-hidden="true"><path d="M2 6.5l3 3 6-6.5M8.5 9.5l6-6.5" /></svg>,
-  failed: <svg className="wa__tick wa__fail" viewBox="0 0 20 12" {...s} aria-hidden="true"><path d="M6.5 2.5l7 7M13.5 2.5l-7 7" /></svg>,
+  pending: <svg className="wa__tick" viewBox="0 0 14 10" {...t} aria-hidden="true"><circle cx="7" cy="5" r="3.6" /><path d="M7 3.1V5l1.3.9" /></svg>,
+  sent: <svg className="wa__tick" viewBox="0 0 14 10" {...t} aria-hidden="true"><path d="M3 5.4l2.5 2.5L11 2.1" /></svg>,
+  delivered: <svg className="wa__tick" viewBox="0 0 14 10" {...t} aria-hidden="true"><path d="M1.7 5.4l2.5 2.5L9.8 2.1M5.9 7.4l.5.5L12.3 2.1" /></svg>,
+  read: <svg className="wa__tick wa__tick--read" viewBox="0 0 14 10" {...t} aria-hidden="true"><path d="M1.7 5.4l2.5 2.5L9.8 2.1M5.9 7.4l.5.5L12.3 2.1" /></svg>,
+  /* An ✕ was the old glyph. `ScreensVarta.jsx` uses `SI.alert` for `failed` —
+     a cross reads as "cancelled by you", a warning triangle as "this did not
+     arrive", and only one of those is what a Meta rejection means. */
+  failed: <svg className="wa__tick wa__fail" viewBox="0 0 14 10" {...t} aria-hidden="true"><path d="M7 1.9l3.5 6.1H3.5z" /><path d="M7 4.3v1.6M7 7v.05" /></svg>,
+};
+
+/** Human labels for the five, used for the tick's accessible name. */
+export const WA_STATUS_LABEL = {
+  pending: 'Pending',
+  sent: 'Sent',
+  delivered: 'Delivered',
+  read: 'Read',
+  failed: 'Failed',
 };
 
 /**

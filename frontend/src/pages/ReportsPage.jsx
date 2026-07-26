@@ -755,7 +755,7 @@ export default function ReportsPage({ teams: propTeams }) {
       )}
 
       <div className="k-citation">
-        <div className="k-citation__sans">कालः सृजति भूतानि कालः संहरते प्रजाः</div>
+        <div className="k-citation__sans" lang="sa">कालः सृजति भूतानि कालः संहरते प्रजाः</div>
         <div className="k-citation__src">— "Time creates beings, time dissolves them." Track it carefully.</div>
       </div>
     </div>

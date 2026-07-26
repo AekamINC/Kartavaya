@@ -1,0 +1,113 @@
+/* today.css — Today (dashboard). 05-today-dashboard.md.
+ *
+ * Imported from `pages/DashboardPage.jsx`, not from `styles/index.css`. The
+ * page is a lazy route, so this sheet is appended after the static bundle and
+ * wins a tie on order as well as on specificity.
+ *
+ * EVERY RULE IS SCOPED UNDER `.k-today`. Half the classes corrected below are
+ * shared: `.k-card__sans` and `.hi-mute` by most of the product, `.k-twocol` by
+ * `pages/TimeReportPage.jsx` and `ui/Skeleton.jsx`, `.k-activity` by
+ * `pages/ActivityFeedPage.jsx`. An unscoped override here would repaint pages
+ * this change has neither read nor tested — and several of the corrections are
+ * only correct in this context (see the `.hi-mute` note: the same class carries
+ * a translated label in one place on this page and a fixed Sanskrit phrase in
+ * another).
+ *
+ * The bulk of 05 §1 is already in `editorial.css` under the `k-` names 26 §7
+ * keeps for page-local layout, and it matches the spec value for value. What
+ * follows is only the residue — the places the built page and the specs still
+ * disagree, plus the two skeleton shapes 26 §9 requires to match what loads.
+ */
+
+/* `.k-today` is a scope, not a box. It gets no rule of its own: `.k-screen`
+   already supplies the section rhythm and a second block rule on the same
+   element is how two files end up owning one layout. */
+
+/* ── Devanagari must render in a Devanagari face ──────────────────────────
+   `.k-hero__h1` is `--font-display` (Newsreader). `.k-hero__greet` sets
+   colour, style and weight but never the family, so "नमस्ते" was being drawn
+   in a Latin serif with zero Devanagari coverage — the browser then assembles
+   the word from per-glyph fallbacks and the conjuncts break. 24 §189 lists the
+   greeting on Today as Devanagari and §129 puts everything that is not a fixed
+   decorative glyph on `--font-indic`, which is what the samvat line and the
+   week strip in this same hero already use.
+
+   Weight 400, not 300: "Tiro Devanagari Hindi" is loaded at a single weight
+   (`index.html` requests `Tiro+Devanagari+Hindi:ital@0;1`), so 300 asks the
+   browser to synthesise a light face and it fakes one by thinning strokes that
+   carry the शिरोरेखा. */
+.k-today .k-hero__greet {
+  font-family: var(--font-indic);
+  font-weight: 400;
+}
+
+/* Card sub-titles — "आपके हाथ में", "स्थिति विवरण", "दल की गतिविधि". `.k-card__sans`
+   hardcodes `--font-hindi`; 24 §127 reserves that for fixed decorative glyphs
+   and §129 names card titles among the labels that follow the user's language,
+   which is `--font-indic`. The difference is invisible until someone sets the
+   language to Gujarati, at which point every one of these keeps rendering
+   Devanagari while the sidebar beside it switches script. */
+.k-today .k-card__sans { font-family: var(--font-indic); }
+
+/* Same rule, applied to `.hi-mute`. It is `--font-hindi` at `.92em`, which is
+   right for the two places on this page carrying a fixed Sanskrit phrase — the
+   lede's करणीयं कुरु and the Gītā citation, which the language setting must
+   never restyle — and wrong for the five carrying a translated label. */
+.k-today .k-hero-kpi__label .hi-mute,
+.k-today .k-hero-kpi__card-lbl .hi-mute,
+.k-today .k-meter__lbl .hi-mute { font-family: var(--font-indic); }
+
+/* And `.92em` puts two of those five under the 11px floor 00 §12 sets for
+   metadata: of the KPI's 10.5px eyebrow it is 9.7px, of its 11px card labels
+   10.1px. Devanagari is the script that can least afford it — the conjuncts and
+   the mātrās go first, so the sub-label stops being the recognition cue 24 says
+   it exists to be. 11px is what `.k-stat__hi` uses for the same object one
+   section up: an uppercase Latin eyebrow with its Devanagari twin beside it. */
+.k-today .k-hero-kpi__label .hi-mute,
+.k-today .k-hero-kpi__card-lbl .hi-mute { font-size: 11px; }
+
+/* English-only mode hides every secondary Devanagari label. The rule in
+   `editorial.css` names `.k-wday__hi`, which `editorial/WeekStrip.jsx` does not
+   render — it emits `.k-week__hi` — so the strip was the one place the setting
+   did nothing. Scoped here rather than fixed at source because WeekStrip and
+   that rule are both outside this change; see the report. */
+[data-language="en"] .k-today .k-week__hi { display: none; }
+
+/* ── Stacked bar → legend gap ─────────────────────────────────────────────
+   05 §1 puts exactly one gap between them: `.slegend{margin-top:13px}`. The
+   bar also carried `margin-bottom: var(--sp-4)`, so the real distance was 29px
+   and the legend read as a separate block from the bar it labels. */
+.k-today .k-stackbar { margin-bottom: 0; }
+
+/* ── Hard-coded radii ─────────────────────────────────────────────────────
+   00 §3: never hard-code a radius — a literal breaks the Sharp and Pill
+   settings in exactly that one place. The upcoming row was `10px` and the two
+   meter tracks `99px`.
+
+   `--r-md` and `--r-pill`, not the nearest nice value: both resolve to exactly
+   what was there at the default `--radius-base: 10px`, so nothing moves today
+   and the three rules start following the control tomorrow. That is the whole
+   defect — a literal that happens to match the default is invisible until a
+   user picks Sharp, and then one element in the card keeps its corners. */
+.k-today .k-upcoming__row { border-radius: var(--r-md); }
+.k-today .k-meter__bar,
+.k-today .k-meter__fill { border-radius: var(--r-pill); }
+
+/* ── Skeleton geometry — 26 §9 ────────────────────────────────────────────
+   "A skeleton whose shape does not match the content produces a visible jump,
+   which is worse than a spinner."
+
+   The body block sat at `--gap-section` (22px) while `.k-screen` separates the
+   real sections at `--sp-6` (24px), so arrival nudged the whole page up 2px. */
+.k-today .k-today__skelbody { margin-top: var(--sp-6); }
+
+/* The quick-actions row had no placeholder at all, so the two columns jumped
+   down by a full button row when the data landed. Same flex and `--sp-2` gap as
+   `.k-quickacts`; the block height in TodaySkeleton.jsx is `.btn--sm`'s
+   (12.5px in 6px/11px padding with a 1px border). */
+.k-today .k-today__skelacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-6);
+}

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { ErrorState, SkeletonCardGrid } from '../../components/ui';
 import ModuleCard from './ModuleCard';
-import { ORG_MODULES, moduleEntry } from './catalogue';
+import { ORG_MODULES, isModuleActive, moduleEntry, subscriptionCode } from './catalogue';
 
 /**
  * TabModules — which modules this organisation has.
@@ -49,12 +49,19 @@ export default function TabModules() {
 
   useEffect(() => { load(); }, [load]);
 
-  // The eight grantable modules, plus anything the subscription carries that
+  // The twelve grantable modules, plus anything the subscription carries that
   // this catalogue does not list. A module the customer is paying for that
   // renders as nothing is the worst way to be incomplete.
+  //
+  // The `subscriptionCode` comparison is what stops Sanvaad appearing twice —
+  // the catalogue knows it as `samvada` (the grant spelling) and the
+  // subscription returns `sanvaad`, so a bare `m.code === code` test finds no
+  // match and adds a second, blurb-less card for the same module.
   const cards = useMemo(() => ([
     ...ORG_MODULES,
-    ...active.filter(code => !ORG_MODULES.some(m => m.code === code)).map(moduleEntry),
+    ...active
+      .filter(code => !ORG_MODULES.some(m => m.code === code || subscriptionCode(m.code) === code))
+      .map(moduleEntry),
   ]), [active]);
 
   if (loading) return <SkeletonCardGrid count={8} columns={4} />;
@@ -79,7 +86,7 @@ export default function TabModules() {
       <section className="st__group">
         <div className="omod">
           {cards.map(mod => (
-            <ModuleCard key={mod.code} mod={mod} active={active.includes(mod.code)} disabled />
+            <ModuleCard key={mod.code} mod={mod} active={isModuleActive(mod.code, active)} disabled />
           ))}
         </div>
       </section>

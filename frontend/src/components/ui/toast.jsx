@@ -102,9 +102,13 @@ export function ToastProvider({ children }) {
   return (
     <ToastCtx.Provider value={value}>
       {children}
-      {/* One live-region pair for the whole app, mounted unconditionally. */}
-      <div className="sr-only" aria-live="polite"    aria-atomic="false">{polite}</div>
-      <div className="sr-only" aria-live="assertive" aria-atomic="false">{assertive}</div>
+      {/* One live-region pair for the whole app, mounted unconditionally.
+          `k-sr-only`, not Tailwind's `sr-only`: this was the last Tailwind
+          utility left in ui/, and 02 §5 retires Tailwind once the migration
+          finishes. If it went first these two divs would print their
+          announcement text visibly at the foot of every page. */}
+      <div className="k-sr-only" aria-live="polite"    aria-atomic="false">{polite}</div>
+      <div className="k-sr-only" aria-live="assertive" aria-atomic="false">{assertive}</div>
       {/* Position comes from the toastPos preference via [data-toast-pos] on
           <html>, not from a fixed right/top here. Bottom positions also reverse
           the stack direction, so the newest toast is always the one nearest the

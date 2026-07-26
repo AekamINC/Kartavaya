@@ -38,6 +38,21 @@
  *  · "--surface-1, --ink-1, --k-primary-ghost are defined NOWHERE" — STALE.
  *    All three are declared in `styles/kartavaya-design.css`, and the file
  *    carried a comment saying they had already been remapped.
+ *
+ * ── Two defects this page was still producing, found on the pixel pass ───────
+ *
+ *  · **Every control here 403s for `platform_staff`.** The whole page is
+ *    guarded server-side by `BILLING_CONSOLE_ROLES`, which deliberately omits
+ *    `platform_staff` — its operating set stops short of finance. But
+ *    `components/admin/adminNav.js` offers all four console entries to anyone
+ *    holding any platform role, so a staff operator arrived here, saw a
+ *    populated page (the org list is `CONSOLE_ROLES_WITH_FINANCE` and does
+ *    return), and every button failed. Now refused up front, in words.
+ *  · **"Record payment" on the overdue table did nothing.** `Tabs` renders only
+ *    the active tab's content; the overdue list is in Overview and the payment
+ *    form was a card in Invoices. The form is now a page-level `SlideOver`, so
+ *    it opens from wherever the payment starts and restates the scope it is
+ *    about to write into.
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
@@ -47,20 +62,26 @@ import {
   Table, TableHead, TableBody, Row, Cell, HeadCell,
   StatTile, useToast,
 } from '../components/ui';
-import { BILLING_COLORS, BILLING_LABELS } from '../lib/statusColors';
+import { billingColor, billingLabel } from '../lib/statusColors';
+import { currentUser } from '../lib/auth';
 import { inr } from '../lib/inr';
 import { scoped, readScope, writeScope } from './admin/orgScope';
+import { canManageBilling } from './admin/platformRoles';
 import InvoiceBuilder from './admin/InvoiceBuilder';
 import PaymentForm from './admin/PaymentForm';
+import SlideOver from './admin/SlideOver';
 import '../styles/admin.css';
 
-const billingTone = s => BILLING_COLORS[s] || 'var(--on-surface-3)';
-const billingLabel = s => BILLING_LABELS[s] || s || '—';
+/* `billingLabel` title-cases anything the map does not carry, so a status the
+   server adds later reaches the operator as "Partially Paid" rather than as
+   `partially_paid`. The local copies this file used to hold returned the raw
+   enum. */
 
 const fmtDate = d => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
 export default function AdminBillingPage() {
   const { pushToast } = useToast();
+  const mayBill = canManageBilling(currentUser()?.platform_roles);
 
   const [orgs, setOrgs] = useState([]);
   const [orgId, setOrgId] = useState(() => readScope());
@@ -83,6 +104,7 @@ export default function AdminBillingPage() {
   /* Cross-org, and deliberately unscoped: the overdue list is the one endpoint
      that is genuinely platform-wide. */
   const loadPlatform = useCallback(async () => {
+    if (!mayBill) return;
     const [orgRes, catalog, od] = await Promise.all([
       api.get('/v1/admin/orgs'),
       api.get('/v1/subscription/plans').catch(() => ({ data: {} })),
@@ -92,12 +114,12 @@ export default function AdminBillingPage() {
     setPlans(catalog.data?.plans || []);
     setCatalogModules(catalog.data?.modules || []);
     setOverdue(od.data?.data || []);
-  }, []);
+  }, [mayBill]);
 
   /* Everything below carries the org. Without the header these five calls
      resolve to the OPERATOR's org, which is the whole finding. */
   const loadOrg = useCallback(async (id) => {
-    if (!id) {
+    if (!id || !mayBill) {
       setSub(null); setActiveModules([]); setInvoices([]); setUsage(null);
       return;
     }
@@ -111,7 +133,7 @@ export default function AdminBillingPage() {
     setInvoices(inv.data?.data || []);
     setUsage(usg.data || null);
     setPlanForm(f => ({ ...f, plan_code: cur.data?.subscription?.plan_code || '' }));
-  }, []);
+  }, [mayBill]);
 
   useEffect(() => {
     let live = true;
@@ -171,6 +193,11 @@ export default function AdminBillingPage() {
     } finally { setBusy(''); }
   });
 
+  /* The only write on this page whose scope is NOT the header. `record_payment`
+     resolves the invoice by id and updates that row, so the invoice id is the
+     scope and the payment cannot land on the wrong org. The header goes anyway,
+     because a call site that sometimes carries the scope and sometimes does not
+     is how the next person gets it wrong. */
   const recordPayment = async (body) => {
     if (!payTarget) return;
     setBusy('payment');
@@ -192,9 +219,41 @@ export default function AdminBillingPage() {
     setPayTarget(invoice);
   };
 
+  const pageHead = (
+    <header className="apg__head">
+      <div className="apg__titles">
+        <h1 className="apg__t">
+          Billing
+          <span className="apg__hi" lang="hi" aria-hidden="true">शुल्क</span>
+        </h1>
+        <p className="apg__lede">
+          Plans, modules, invoices and payments — for the organisation named below, not for yours.
+        </p>
+      </div>
+    </header>
+  );
+
+  /* Every write on this page is guarded by BILLING_CONSOLE_ROLES, which
+     excludes `platform_staff` by design — its operating set stops short of
+     finance. Without this the sidebar hands a staff operator a fully populated
+     console whose every button 403s. Refusing in words is the whole point. */
+  if (!mayBill) {
+    return (
+      <div className="apg">
+        {pageHead}
+        <ErrorState kind="denied" grant="platform owner, platform manager or account/finance access" />
+      </div>
+    );
+  }
+
   if (loading) return <SkeletonPage withStats withTable />;
   if (err) return <ErrorState kind={errorKind(err)} grant="finance access to the platform console" onRetry={refresh} />;
 
+  /* One visible, sticky tenant scope. `aria-live` because `payOverdue` MOVES the
+     scope on the operator's behalf when they act on another org's overdue
+     invoice — a scope that changes silently is the failure this bar exists to
+     prevent, and a sighted operator sees the select change while a screen
+     reader user would not. */
   const scopeBar = (
     <div className="osc">
       <span className="osc__l">Acting on</span>
@@ -208,9 +267,11 @@ export default function AdminBillingPage() {
           <option key={o.id} value={o.id}>{o.name}{o.is_active ? '' : ' (suspended)'}</option>
         ))}
       </Select>
-      {org
-        ? <span className="osc__v">{org.plan_name || org.plan_code || 'No plan'} · {org.owner_email || 'no owner'}</span>
-        : <span className="osc__none">Nothing is scoped — reads and writes below are disabled.</span>}
+      <span className="osc__v" aria-live="polite">
+        {org
+          ? <>{org.name} — {org.plan_name || org.plan_code || 'no plan'} · {org.owner_email || 'no owner'}</>
+          : <span className="osc__none">Nothing is scoped — reads and writes below are disabled.</span>}
+      </span>
     </div>
   );
 
@@ -311,20 +372,6 @@ export default function AdminBillingPage() {
         <CardBody><InvoiceBuilder org={org} busy={busy === 'invoice'} onCreate={createInvoice} /></CardBody>
       </Card>
 
-      {payTarget && (
-        <Card>
-          <CardHead title={`Record payment · ${payTarget.invoice_number}`} />
-          <CardBody>
-            <PaymentForm
-              invoice={payTarget}
-              busy={busy === 'payment'}
-              onConfirm={recordPayment}
-              onCancel={() => setPayTarget(null)}
-            />
-          </CardBody>
-        </Card>
-      )}
-
       <Card>
         <CardHead
           title="Invoices"
@@ -361,7 +408,7 @@ export default function AdminBillingPage() {
                     <Cell num>{inr(iv.subtotal || 0)}</Cell>
                     <Cell num>{inr(iv.gst || 0)}</Cell>
                     <Cell num>{inr(iv.total || 0)}</Cell>
-                    <Cell><Tag color={billingTone(iv.payment_status)}>{billingLabel(iv.payment_status)}</Tag></Cell>
+                    <Cell><Tag color={billingColor(iv.payment_status)}>{billingLabel(iv.payment_status)}</Tag></Cell>
                     <Cell>{fmtDate(iv.due_date)}</Cell>
                     <Cell>
                       {iv.payment_status === 'pending' && (
@@ -418,19 +465,31 @@ export default function AdminBillingPage() {
     </Card>
   );
 
+  /* The payment form is a page-level panel, NOT a card inside the Invoices tab.
+     `Tabs` renders only the active tab's content, and the overdue table that
+     starts a payment lives in Overview — so a card in Invoices meant clicking
+     "Record payment" on another org's overdue invoice did nothing visible at
+     all. The panel also restates the scope in its own subtitle, because moving
+     the scope silently is the failure 11 opens with. */
+  const payPanel = payTarget && (
+    <SlideOver
+      open
+      onClose={() => setPayTarget(null)}
+      title={`Record payment · ${payTarget.invoice_number}`}
+      subtitle={`Posting to ${org?.name || 'the scoped organisation'} — ${payTarget.org_name || org?.name || 'this org'} raised it.`}
+    >
+      <PaymentForm
+        invoice={payTarget}
+        busy={busy === 'payment'}
+        onConfirm={recordPayment}
+        onCancel={() => setPayTarget(null)}
+      />
+    </SlideOver>
+  );
+
   return (
     <div className="apg">
-      <header className="apg__head">
-        <div className="apg__titles">
-          <h1 className="apg__t">
-            Billing
-            <span className="apg__hi" lang="hi" aria-hidden="true">शुल्क</span>
-          </h1>
-          <p className="apg__lede">
-            Plans, modules, invoices and payments — for the organisation named below, not for yours.
-          </p>
-        </div>
-      </header>
+      {pageHead}
 
       {scopeBar}
 
@@ -442,6 +501,8 @@ export default function AdminBillingPage() {
           { value: 'plan', label: 'Plan', content: planTab },
         ]}
       />
+
+      {payPanel}
     </div>
   );
 }

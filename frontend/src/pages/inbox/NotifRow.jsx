@@ -38,7 +38,13 @@ export default function NotifRow({ notif, onOpen }) {
       <span className="k-notif__body">
         <span className="k-notif__head">
           <span className="k-notif__kind">
-            {kind.en}
+            {/* The English label carries the truncation, not its container.
+                `.k-notif__head` aligns on the baseline, and an inline-flex box
+                with `overflow: hidden` reports its BOTTOM MARGIN EDGE as its
+                baseline instead of its first line's — so putting the ellipsis
+                on `.k-notif__kind` lifted the whole label a few pixels clear of
+                the timestamp it is supposed to sit level with. */}
+            <span className="k-notif__kind-en">{kind.en}</span>
             <span className="k-notif__kind-hi" lang="hi">{kind.hi}</span>
           </span>
           {/* The bar and the dot are colour; a screen reader gets the word. */}

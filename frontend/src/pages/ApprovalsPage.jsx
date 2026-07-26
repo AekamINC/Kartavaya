@@ -347,7 +347,7 @@ export default function ApprovalsPage() {
         onOpenChange={o => { if (!o) setClientModal(null); }}
         dataTestId="approve-modal"
         size="sm"
-        title={<>Approve task <span lang="sa" style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, color: 'var(--on-surface-3)', marginLeft: 6 }}>स्वीकृत करें</span></>}
+        title={<>Approve task <span lang="hi" style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, color: 'var(--on-surface-3)', marginLeft: 6 }}>स्वीकृत करें</span></>}
         footer={
           <>
             <button className="k-btn k-btn--ghost" onClick={() => setClientModal(null)}>Cancel</button>
@@ -417,7 +417,7 @@ export default function ApprovalsPage() {
         onOpenChange={o => { if (!o) setClientApproveModal(null); }}
         dataTestId="client-approve-modal"
         size="sm"
-        title={<>Approve <span lang="sa" style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, color: 'var(--on-surface-3)', marginLeft: 6 }}>स्वीकृत</span></>}
+        title={<>Approve <span lang="hi" style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, color: 'var(--on-surface-3)', marginLeft: 6 }}>स्वीकृत</span></>}
         footer={
           <>
             <button className="k-btn k-btn--ghost" onClick={() => setClientApproveModal(null)}>Cancel</button>
@@ -445,7 +445,7 @@ export default function ApprovalsPage() {
         onOpenChange={o => { if (!o) setRejectModal(null); }}
         dataTestId="reject-modal"
         size="sm"
-        title={<>Reject task <span lang="sa" style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, color: 'var(--on-surface-3)', marginLeft: 6 }}>अस्वीकृत करें</span></>}
+        title={<>Reject task <span lang="hi" style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, color: 'var(--on-surface-3)', marginLeft: 6 }}>अस्वीकृत करें</span></>}
         footer={
           <>
             <button className="k-btn k-btn--ghost" onClick={() => setRejectModal(null)}>Cancel</button>

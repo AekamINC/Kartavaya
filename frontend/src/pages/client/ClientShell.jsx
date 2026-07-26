@@ -12,10 +12,11 @@
  * describing to them on the phone.
  *
  * 19 asks for this at `components/layout/ClientShell.jsx` with a route of its
- * own outside `AppShell`. It lives here instead, and `App.jsx` still nests
- * `/client/*` inside `AppShell` — so the app sidebar is still painted around
- * this. Both are outside this change's file ownership; the route move is in the
- * report. Nothing in this file depends on where it is mounted.
+ * own outside `AppShell`. It lives here instead, and it is NOT a layout route —
+ * it takes `children`, not an `<Outlet />`, and every portal page renders it
+ * itself. `App.jsx` must therefore mount the portal pages directly and must NOT
+ * wrap them in a second shell, or a client gets two headers. The exact route
+ * block is in the report.
  *
  * The stylesheet is imported here rather than from `styles/index.css`: the
  * portal ships its own CSS with itself.
@@ -26,10 +27,20 @@ import { apiLogout } from '../../lib/auth';
 import { Button } from '../../components/ui';
 import '../../styles/client.css';
 
-const NAV = [
-  { view: 'overview', label: 'Overview' },
-  { view: 'approvals', label: 'Approvals' },
-  { view: 'files', label: 'Files' },
+/**
+ * Three destinations, three paths.
+ *
+ * These are the routes `App.jsx` is adding — `/client/approvals` and
+ * `/client/files` do not exist yet, and until they land the app's catch-all
+ * (`App.jsx:218`, `<Route path="*" element={<Navigate to="/dashboard" />}`)
+ * swallows them. `ClientPages.jsx` resolves the view from the PATHNAME first
+ * and falls back to `?view=`, so the old query links in already-sent emails
+ * keep working after the routes land.
+ */
+export const NAV = [
+  { view: 'overview', label: 'Overview', to: '/client' },
+  { view: 'approvals', label: 'Approvals', to: '/client/approvals' },
+  { view: 'files', label: 'Files', to: '/client/files' },
 ];
 
 export default function ClientShell({ firm, view, approvalCount = 0, projectName, clientName, children }) {
@@ -58,19 +69,28 @@ export default function ClientShell({ firm, view, approvalCount = 0, projectName
         </div>
       </header>
 
-      {/* aria-current is set by hand rather than by NavLink: all three
-          destinations share the `/client` path and differ only in the query, so
-          NavLink's own matching would mark every one of them current. */}
+      {/* aria-current is set by hand rather than by NavLink: `/client` is a
+          prefix of both other paths, so NavLink's own matching would mark
+          Overview current on all three screens. */}
       <nav className="cl-nav" aria-label="Portal">
         {NAV.map(item => (
           <Link
             key={item.view}
-            to={`/client?view=${item.view}`}
+            to={item.to}
             aria-current={view === item.view ? 'page' : undefined}
           >
             {item.label}
             {item.view === 'approvals' && approvalCount > 0 && (
-              <span className="cl-nav__n" aria-label={`${approvalCount} waiting`}>{approvalCount}</span>
+              <>
+                {/* The badge itself is decoration around a number. `aria-label`
+                    on a bare <span> is not reliably announced — it needs a role
+                    to hang off — so the count reaches a screen reader as real
+                    text inside the link instead. */}
+                <span className="cl-nav__n" aria-hidden="true">{approvalCount}</span>
+                <span className="k-sr-only">
+                  {approvalCount === 1 ? ', 1 waiting for you' : `, ${approvalCount} waiting for you`}
+                </span>
+              </>
             )}
           </Link>
         ))}

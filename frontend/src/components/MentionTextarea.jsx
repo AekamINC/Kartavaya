@@ -1,4 +1,35 @@
-﻿import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
+
+/**
+ * MentionTextarea — the comment composer, with an `@` autocomplete.
+ *
+ * Three things changed here, and each was a real defect rather than a rename:
+ *
+ *  · **The third token vocabulary.** 03 §"The finding that governs this file"
+ *    names this file as one of the last holdouts on `--ink` / `--rule` /
+ *    `--k-primary`. Those are legacy aliases in `kartavaya-design.css` that map
+ *    onto the real tokens, so nothing was *broken* — but the alias block is
+ *    explicitly a migration scaffold ("Add nothing here. Delete a line when its
+ *    last reference is gone"), and a file that keeps referencing it is a file
+ *    that keeps the scaffold alive. The names are the redesign's now.
+ *  · **`--k-primary` was used as a TEXT colour.** It resolves to
+ *    `--primary-vivid`, which is a fill. Primary-coloured text is
+ *    `--primary-text` (5.2:1) — 00 §12. The mention avatar's initial was the
+ *    accent on a 15% tint of itself, which is the self-tinted-chip failure 00
+ *    §11 calls out by name: deepening the tint moves the ground *toward* the
+ *    text, so it can never reach 4.5:1. It is `--primary-container` with
+ *    `--on-primary-container` now, a declared pair.
+ *  · **A hardcoded `z-index: 999`.** The ladder in 26 §4 is 200 drawer · 340
+ *    picker and menu · 420 modal · 520 toast · 620 sheet. 999 sat above every
+ *    one of them, so a mention list opened inside the drawer covered any toast
+ *    raised while it was open. This popup is a picker: 340.
+ *
+ * The popup is `position: fixed` at coordinates measured from the caret, not
+ * `position: absolute` inside the composer. That is what keeps it out of the
+ * `overflow-y: auto` on `.dr__body` — an absolutely-positioned panel in a
+ * scrolling drawer is clipped by the drawer, which is the open bug in
+ * `ui/Picker.jsx`. Keep it fixed.
+ */
 
 const TRIGGER = "@";
 
@@ -73,7 +104,10 @@ export default function MentionTextarea({ value, onChange, onSubmit, members = [
     if (e.key === "ArrowDown") { e.preventDefault(); setCursor(c => Math.min(c + 1, filtered.length - 1)); }
     if (e.key === "ArrowUp")   { e.preventDefault(); setCursor(c => Math.max(c - 1, 0)); }
     if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); insertMention(filtered[cursor]); }
-    if (e.key === "Escape") setPopup(null);
+    // stopPropagation, not just setPopup(null): Escape inside the drawer is also
+    // the drawer's own close key, so dismissing the mention list would close the
+    // whole panel and lose the half-written comment behind it.
+    if (e.key === "Escape") { e.stopPropagation(); setPopup(null); }
   }
 
   useEffect(() => {
@@ -90,35 +124,44 @@ export default function MentionTextarea({ value, onChange, onSubmit, members = [
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         rows={rows}
-        className="k-input"
-        style={{ width: "100%", resize: "none", lineHeight: 1.5, boxSizing: "border-box" }}
+        className="inp"
+        style={{ resize: "none", lineHeight: "var(--line-height-base)", boxSizing: "border-box" }}
+        aria-label={placeholder}
+        aria-autocomplete="list"
+        aria-expanded={!!(popup && filtered.length > 0)}
       />
       {popup && filtered.length > 0 && (
-        <div style={{
-          position: "fixed", top: popup.anchorTop, left: popup.anchorLeft,
-          background: "var(--surface)", border: "1px solid var(--rule)",
-          borderRadius: "var(--r-md)", boxShadow: "var(--shadow-md)",
-          zIndex: 999, minWidth: 220, maxWidth: 320, overflow: "hidden",
-        }}>
+        <div
+          role="listbox"
+          aria-label="Mention a team member"
+          style={{
+            position: "fixed", top: popup.anchorTop, left: popup.anchorLeft,
+            background: "var(--s-lowest)", border: "1px solid var(--outline-variant)",
+            borderRadius: "var(--r-md)", boxShadow: "var(--shadow-3)",
+            zIndex: 340, minWidth: 220, maxWidth: 320, overflow: "hidden",
+          }}
+        >
           {filtered.map((m, i) => (
             <div
               key={m.user_id || m.display_name}
+              role="option"
+              aria-selected={i === cursor}
               onMouseDown={e => { e.preventDefault(); insertMention(m); }}
               style={{
                 display: "flex", alignItems: "center", gap: 8,
                 padding: "8px 12px", cursor: "pointer", fontSize: 13,
-                background: i === cursor ? "var(--bg-soft)" : "transparent",
+                background: i === cursor ? "var(--s-container)" : "transparent",
               }}
             >
               <div style={{
                 width: 24, height: 24, borderRadius: "50%",
-                background: "color-mix(in srgb, var(--k-primary) 15%, transparent)",
+                background: "var(--primary-container)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 11, fontWeight: 700, color: "var(--k-primary)", flexShrink: 0,
+                fontSize: 11, fontWeight: 700, color: "var(--on-primary-container)", flexShrink: 0,
               }}>
                 {m.display_name[0].toUpperCase()}
               </div>
-              <span style={{ fontWeight: 500, color: "var(--ink)" }}>{m.display_name}</span>
+              <span style={{ fontWeight: 500, color: "var(--on-surface)" }}>{m.display_name}</span>
             </div>
           ))}
         </div>

@@ -3,9 +3,12 @@ import {
   View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
+import { hindi } from '../theme/fonts';
 import { messagesApi, type Channel } from '../api/messages';
 
 /**
@@ -16,6 +19,9 @@ import { messagesApi, type Channel } from '../api/messages';
  * whether to open a channel now or later, and a dot throws that away.
  */
 
+import type { RootStackParamList } from '../nav/RootStack';
+
+type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 type Glyph = keyof typeof Ionicons.glyphMap;
 
 const CHANNEL_ICON: Record<Channel['type'], Glyph> = {
@@ -43,6 +49,7 @@ function relTime(iso: string): string {
 export default function MessagesScreen() {
   const { t } = useTheme();
   const insets = useSafeAreaInsets();
+  const nav = useNavigation<Nav>();
 
   const { data: channels, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['messaging', 'channels'],
@@ -98,6 +105,7 @@ export default function MessagesScreen() {
           const unread = item.unread_count > 0;
           return (
             <Pressable
+              onPress={() => nav.navigate('Chat', { channelId: item.id, channelName: item.name })}
               accessibilityRole="button"
               accessibilityLabel={
                 unread
@@ -153,7 +161,7 @@ const s = StyleSheet.create({
   centre: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 },
   header: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 12 },
   title: { fontSize: 26, fontWeight: '700', letterSpacing: -0.4 },
-  titleHi: { fontSize: 14, marginTop: 2 },
+  titleHi: { fontSize: 14, marginTop: 2, ...hindi() },
   listPad: { paddingHorizontal: 16, paddingBottom: 24, gap: 8 },
   listGrow: { flexGrow: 1 },
   row: {

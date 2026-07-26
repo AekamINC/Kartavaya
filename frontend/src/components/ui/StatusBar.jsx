@@ -32,10 +32,19 @@ export function StatusBar({ stages, current, onStageClick, className = '' }) {
             className={`pipe__seg pipe__seg--${state}${onStageClick ? ' pipe__seg--click' : ''}`}
             aria-current={isActive ? 'step' : undefined}
           >
+            {/* The canonical tick: same viewBox, same path and the same optical
+                stroke weight as Stepper, Checkbox and Picker, which all draw
+                `M20 6L9 17l-5-5` on a 24 grid. This one drew a different mark
+                (`M3 8l4 4 6-7` on a 16 grid) at strokeWidth 2.5, which at 12px
+                renders a 1.88px stroke against their 1.50px — so the "done" tick
+                in the status pipeline was both a different shape and visibly
+                heavier than the "done" tick two components away. 03 §120 is the
+                principle: stroke weight is tuned so the mark reads the same at
+                every size, which only works if it is the same mark. */}
             {isPast && (
-              <svg className="pipe__tick" width="12" height="12" viewBox="0 0 16 16" fill="none"
-                stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
-                <path d="M3 8l4 4 6-7" />
+              <svg className="pipe__tick" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M20 6L9 17l-5-5" />
               </svg>
             )}
             {stage.label}

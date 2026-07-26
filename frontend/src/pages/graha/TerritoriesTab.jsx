@@ -56,7 +56,7 @@ export default function TerritoriesTab() {
       </div>
 
       {showForm && (
-        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16, marginBottom: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name</span>
               <input className="k-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /></label>
@@ -67,9 +67,9 @@ export default function TerritoriesTab() {
             <span style={{ fontWeight: 600, display: 'block', marginBottom: 4, fontSize: 13 }}>Assigned Users</span>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
               {form.assigned_users.map(u => (
-                <span key={u} style={{ fontSize: 11, background: 'var(--bg-raised)', padding: '2px 8px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span key={u} style={{ fontSize: 11, background: 'var(--bg-raised)', padding: '2px 8px', borderRadius: 'var(--r-xs)', display: 'flex', alignItems: 'center', gap: 4 }}>
                   {u.slice(0, 12)}
-                  <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#ef4444' }}
+                  <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--danger)' }}
                     onClick={() => setForm({ ...form, assigned_users: form.assigned_users.filter(x => x !== u) })}>×</button>
                 </span>
               ))}
@@ -94,11 +94,11 @@ export default function TerritoriesTab() {
               {t.description && <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{t.description}</div>}
             </div>
             <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{t.assigned_users?.length || 0} users</span>
-            <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => remove(t.id)}>Delete</button>
+            <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--danger)' }} onClick={() => remove(t.id)}>Delete</button>
           </div>
           {t.assigned_users?.length > 0 && (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-              {t.assigned_users.map(u => <Badge key={u} text={u.slice(0, 12)} color="#6366f1" />)}
+              {t.assigned_users.map(u => <Badge key={u} text={u.slice(0, 12)} color="var(--st-in-review)" />)}
             </div>
           )}
         </div>

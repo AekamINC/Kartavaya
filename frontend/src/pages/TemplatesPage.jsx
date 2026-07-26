@@ -568,7 +568,7 @@ export default function TemplatesPage() {
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
               <div>
-                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--k-primary)', marginBottom: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.18em', textTransform: 'uppercase', color: 'var(--k-primary)', marginBottom: 4, fontFamily: 'var(--font-ui), var(--font-hindi)' }}>
                   USE TEMPLATE · साँचा
                 </div>
                 <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 400, fontSize: 22, color: 'var(--ink)', lineHeight: 1.2 }}>

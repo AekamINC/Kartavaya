@@ -9,10 +9,25 @@
  *   backend/routers/subscription.py:129   set_plan(…, org_id = Depends(get_org_id))
  *   backend/routers/subscription.py:287   create_invoice(…, org_id = Depends(get_org_id))
  *
- * and `/admin/invoices/overdue` (line 359) takes no org at all while returning
+ * and `/admin/invoices/overdue` (line 360) takes no org at all while returning
  * `inv.org_name` across every org. So the overdue list was cross-org and every
- * action beside it was single-tenant — an operator could read another org's
- * overdue invoice and then record its payment against their own.
+ * action beside it was single-tenant.
+ *
+ * ── One part of 11's finding does NOT hold, checked line by line ─────────────
+ *
+ * 11: "the 'Record Payment' button next to another org's overdue invoice posts
+ * to an endpoint with no org context."  True of the signature, wrong about the
+ * consequence. `record_payment` (subscription.py:325) takes no `get_org_id`
+ * because it does not need one — it loads
+ * `staging.subscription_invoices WHERE id = :invoice_id` and updates that row.
+ * The invoice id IS the scope, so the payment cannot land on the operator's own
+ * org no matter what header is sent.
+ *
+ * What was genuinely wrong is narrower and still worth fixing: the operator
+ * could not SEE whose invoice they were marking paid, because the surrounding
+ * page named a different org. `set-plan`, `create-invoice` and the module
+ * toggles are the calls that really did resolve from the caller, and those are
+ * the ones the header fixes.
  *
  * ── What 11 did not know ─────────────────────────────────────────────────────
  *

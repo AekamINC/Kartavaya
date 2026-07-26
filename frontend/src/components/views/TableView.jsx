@@ -345,8 +345,16 @@ export default function TableView({
 
                         <td>
                           <span className="tb__ttl">
-                            {task.approval_status === 'pending' && (
-                              <span className="bc__appr">Needs approval</span>
+                            {/* Both pending states, and the same two labels the
+                                board card uses. The table tested `pending`
+                                only, so a task waiting on the CLIENT carried a
+                                chip on the board and nothing in the table —
+                                the one state where "who are we waiting on"
+                                is the whole question. */}
+                            {(task.approval_status === 'pending' || task.approval_status === 'pending_client') && (
+                              <span className="bc__appr">
+                                {task.approval_status === 'pending_client' ? 'Client review' : 'Needs approval'}
+                              </span>
                             )}
                             <span>{task.title}</span>
                             {task.attachments?.length > 0 && (

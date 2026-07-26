@@ -77,9 +77,16 @@ select.inp {
   background-repeat: no-repeat; background-position: right 11px center;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23666A61' d='M0 0h10L5 6z'/></svg>");
 }
-/* The chevron fill is baked into the data URI, so dark mode must restate it. */
+/* The chevron fill is baked into the data URI, so dark mode must restate it.
+   Both fills track --on-surface-3, the same ink as `.fld__l` above: light
+   #666A61 (02 prints #74786F, the pre-contrast-pass value 00 §7 retired) and
+   dark #8E8D87 (02 prints #A9AEA3, which matches no token in 00 §8 — the light
+   half was already re-pinned to the token and leaving the dark half on a
+   free-floating hex is the same defect in the other theme). A data URI cannot
+   take a var(), so these two literals are the only hardcoded colours in this
+   file and each is a copy of a declared token, not a new value. */
 [data-theme="dark"] select.inp {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23A9AEA3' d='M0 0h10L5 6z'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%238E8D87' d='M0 0h10L5 6z'/></svg>");
 }
 textarea.inp { resize: vertical; min-height: 76px; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -87,7 +94,26 @@ textarea.inp { resize: vertical; min-height: 76px; }
 /* ── Card ──────────────────────────────────────────────────────────────── */
 .card         { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: var(--r-md); box-shadow: var(--shadow-1); }
 .card--flat   { background: var(--s-low); border-color: transparent; box-shadow: none; }
-.card--glass  { background: rgba(var(--glass-tint), var(--glass-alpha)); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur)); border-color: color-mix(in srgb, var(--outline-variant) 60%, transparent); }
+/* 00 §6: glass is `blur(var(--glass-blur)) saturate(var(--glass-sat))`, and the
+   -webkit- prefix always ships. The saturate half was missing here and only
+   here — every other glass surface in the build (editorial.css .side/.top/.mnav,
+   boards.css .tbv, palette.css .k-cmdk) carries both — so a glass card
+   desaturated the page behind it instead of enriching it, and the Translucency
+   slider moved its blur but not its saturation. */
+.card--glass  {
+  background: rgba(var(--glass-tint), var(--glass-alpha));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border-color: color-mix(in srgb, var(--outline-variant) 60%, transparent);
+}
+/* 00 §6: "Windows gets no glass." Every other glass surface already has this
+   opt-out; .card--glass did not, so a Windows user got the one backdrop-filter
+   the platform renders worst. */
+[data-platform="win"] .card--glass {
+  background: var(--s-low);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
 .card__head   { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: var(--pad-card) var(--pad-card) calc(var(--pad-card) * .7); }
 /* Title and Hindi are both display:inline inside a block wrapper, so the Hindi
    sits on the SAME baseline and wraps with the English rather than forming a
@@ -306,7 +332,11 @@ textarea.inp { resize: vertical; min-height: 76px; }
 .menu__item:last-child { border-bottom: 0; }
 .menu__item:hover  { background: var(--s-container); }
 .menu__item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
-.menu__t { font-size: var(--t-body-sm); font-weight: 500; color: var(--on-surface); }
+/* Menu.jsx renders `{it.icon}{it.label}` inside this one span, so without a
+   flex box and a gap an item with an icon painted the glyph flush against the
+   first letter. `.menu__item` is display:block, so the gap has to live here. */
+.menu__t { display: flex; align-items: center; gap: 8px; font-size: var(--t-body-sm); font-weight: 500; color: var(--on-surface); }
+.menu__t > svg { flex: none; }
 .menu__d { font-size: var(--t-label); color: var(--on-surface-3); margin-top: 1px; }
 .menu__empty { padding: 10px 14px; font-size: var(--t-body-sm); color: var(--on-surface-3); }
 
@@ -799,15 +829,21 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .k-skeleton-chat__r { display: flex; align-items: flex-end; gap: var(--sp-2); }
 .k-skeleton-chat__r--out { justify-content: flex-end; }
 
-/* Stat tile — semantic variants. editorial.css declares .k-stat--blue/teal/
-   amber/red, four names that say what colour a number is rather than what it
-   means, and four call sites had already reached for `ok`, `warn`, `green` and
-   `orange`, none of which had a rule at all. These four are the vocabulary;
-   ui/StatTile.jsx maps the colour names onto them. */
-.k-stat--neutral .k-stat__val { color: var(--on-surface); }
-.k-stat--ok      .k-stat__val { color: var(--ok); }
-.k-stat--warn    .k-stat__val { color: var(--warn); }
-.k-stat--danger  .k-stat__val { color: var(--danger); }
+/* Stat tile — the variant vocabulary now lives ENTIRELY in editorial.css, which
+   declares all nine names (neutral/info/ok/warn/danger plus the legacy
+   blue/slate/teal/green/amber/orange/red aliases) as `--c` / `--c-text`: `--c`
+   paints the 2px cap on `.k-stat::before`, `--c-text` the Devanagari sub-label,
+   and the VALUE stays `--on-surface` in every tone.
+   The four rules that used to sit here — `.k-stat--ok .k-stat__val { color:
+   var(--ok) }` and friends — were written when editorial.css had only the four
+   colour-NAMED rules. That is no longer true, and because a descendant selector
+   (0,2,0) outranks editorial's `.k-stat__val` (0,1,0) they were silently winning
+   the cascade across a file boundary: an `ok` tile painted its number green and
+   a `danger` tile painted it red, while `info`, `blue` and `teal` — which never
+   had a matching override here — painted theirs ink. Same component, two
+   rendering rules, decided by which name the caller happened to pass.
+   Deleted rather than extended: one file owns the tone, and it is the one that
+   owns `.k-stat`. */
 
 /* ── 6 · Tooltip ─────────────────────────────────────────────────────────
    300ms delay in, instant unmount. A tooltip that fades out follows the cursor

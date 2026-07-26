@@ -34,6 +34,26 @@ export async function apiLogout() {
   localStorage.removeItem('auth_token');
   localStorage.removeItem('Kartavaya_user');
   localStorage.removeItem('kv_teams_cache');
+
+  // The notification cache is MODULE-LEVEL, not per-Provider — that is what
+  // lets the bell, the Inbox and the badge share one array. It also means it
+  // survives a logout, because nothing unmounted it. On a shared machine the
+  // next person to sign in on the same tab saw the previous user's
+  // notifications, with their titles and their message bodies, until the first
+  // poll replaced them.
+  //
+  // Imported lazily so `lib/auth.js` — which `Sidebar`, `ClientShell` and every
+  // page reach for `currentUser()` — does not pull the notification store, and
+  // React with it, into modules that never render a notification.
+  try {
+    const { resetNotifications } = await import('../context/NotificationContext');
+    resetNotifications();
+  } catch (_) { /* the sign-out must complete even if the chunk fails to load */ }
+
+  // Same reasoning, same tab: the onboarding wizard's resume state and the
+  // "why are we asking" reason both belong to the person who just left.
+  localStorage.removeItem('kv_onboarding');
+  localStorage.removeItem('kv_notif_ask_reason');
 }
 
 export function currentUser() {

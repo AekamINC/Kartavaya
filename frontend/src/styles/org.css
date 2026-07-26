@@ -90,12 +90,12 @@
 .omt tr:last-child td { border-bottom: 0; }
 .omt__wrap { overflow-x: auto; }
 .omt__who { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.omt__av {
-  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
-  display: grid; place-items: center; font-size: 12px; font-weight: 700;
-  color: #fff; background: var(--av-bg, var(--s-high)); overflow: hidden;
-}
-.omt__av img { width: 100%; height: 100%; object-fit: cover; }
+/* Composes `.av` (02 §2) rather than restating it. The spec's own block carried
+   `color:#fff`, a radius, the `--av-bg` ground and an `img` rule — all four of
+   which `.av` already owns, and one of which was the only hardcoded colour left
+   in this file. What is left here is the two values 10 §1 actually pins that
+   `.av` does not: 32px, and a 12px/700 initial. */
+.omt__av { width: 32px; height: 32px; font-size: 12px; font-weight: 700; }
 /* display:block, not the inline default — text-overflow does nothing on an
    inline box, so a long name would have overflowed the cell rather than
    ellipsing. */
@@ -107,29 +107,120 @@
 .omt__more { font-size: 10.5px; color: var(--on-surface-3); padding: 2px 6px; }
 .omt__act { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
 
-/* ── Grant chip and role badge ─────────────────────────────────────────────
-   Both are specified in 08-rbac-screens.md §1, which had not landed when this
-   file was written. Declared here verbatim so the member table is not styled
-   from a rule that does not exist; when 08 lands, delete these two blocks and
-   keep its copy — do not keep both. */
+/* ══ 08-rbac-screens.md §1 — the RBAC vocabulary ═══════════════════════════
+   `.gc`, `.rb` and `.amx` below ARE the canonical definitions of 08 §1.
+   They were first written here provisionally, under a note saying to delete
+   them when 08 landed and keep 08's copy instead. 08 has now landed and this
+   is where it landed: `styles/rbac.css` was never created, and the only three
+   consumers in the build — GrantChips, MemberTable and AccessMatrix — are all
+   in `pages/org/`, which imports this file and nothing else.
+
+   So there is one definition, not two. If a second RBAC surface ever needs
+   these outside `pages/org/` (ApprovalsPage is the candidate — see the report),
+   MOVE this block to `styles/rbac.css` and import it from both. Do not copy it. */
+
+/* ── Grant chip ────────────────────────────────────────────────────────────
+   Reads "Ganit · admin" — module then level, one chip. The LEVEL carries the
+   colour, not the module: the level is what you are scanning for when you are
+   working out who can do what.
+
+   `--c` carries a default for the same reason `.tag` does: color-mix() against
+   an undefined custom property voids the whole declaration silently, so a chip
+   rendered without one would lose its background AND its text colour with no
+   error anywhere. Every call site sets `--c`; this is the floor, not a style. */
 .gc {
+  --c: var(--on-surface-3);
   display: inline-flex; align-items: baseline; gap: 5px;
   padding: 2px 8px; border-radius: var(--r-sm); font-size: 11px;
   background: color-mix(in srgb, var(--c) 12%, transparent);
   color: var(--c); white-space: nowrap;
 }
 .gc__m { font-weight: 600; }
-/* Reads "Ganit · admin" — module then level, one chip. The LEVEL carries the
-   colour, not the module: the level is what you are scanning for when you are
-   working out who can do what. */
 .gc__l { font-size: 10px; opacity: .8; text-transform: lowercase; }
+
+/* ── Role badge ────────────────────────────────────────────────────────────
+   Owner and admin have to be distinguishable at a glance in a member list —
+   those are the two rows an auditor looks for, so the dot is a second channel
+   and not only a tint. */
 .rb {
+  --c: var(--on-surface-3);
   display: inline-flex; align-items: center; gap: 5px;
   padding: 2px 9px; border-radius: var(--r-pill);
   font-size: 11px; font-weight: 600; white-space: nowrap;
   background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c);
 }
 .rb__dot { width: 5px; height: 5px; border-radius: 50%; background: var(--c); flex-shrink: 0; }
+
+/* ── Access matrix ─────────────────────────────────────────────────────────
+   Members down, modules across. Both axes sticky, with z-index 3 on the corner
+   so it stays above both — a grant matrix is twelve modules by N members, and
+   without a frozen first column you lose track of whose row you are in after
+   the third scroll.
+
+   `max-height` is the one addition to 08 §1's block. `position:sticky;top:0`
+   resolves against the nearest scroll container, so without a height bound the
+   header row has nothing to stick inside and the rule is a silent no-op — the
+   horizontal freeze would work and the vertical one would not, which is half of
+   what the spec asks for. */
+.amx {
+  border: 1px solid var(--outline-variant); border-radius: var(--r-md);
+  overflow: auto; max-height: min(62vh, 560px);
+}
+.amx table { border-collapse: separate; border-spacing: 0; min-width: 720px; font-size: 12.5px; }
+/* `thead th`, not `th`. 08 §1 writes this as a bare `.amx th`, which is correct
+   for its own markup — it labels body rows with a `td`. A row labelled by a
+   `td` has no header/cell association for a screen reader, so the member name is
+   a `th[scope=row]` here, and the column-header rule has to be narrowed or every
+   member's name would also try to stick to the top of the scroll box and pile up
+   under the header when the grid scrolls. */
+.amx thead th {
+  position: sticky; top: 0; z-index: 2; background: var(--s-low);
+  padding: 9px 11px; text-align: left; font-size: 10px; font-weight: 700;
+  letter-spacing: .09em; text-transform: uppercase; color: var(--on-surface-3);
+  border-bottom: 1px solid var(--outline-variant);
+}
+.amx th:first-child, .amx td:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--surface);
+  border-right: 1px solid var(--outline-variant); min-width: 168px;
+}
+.amx thead th:first-child { z-index: 3; }
+.amx td, .amx tbody th {
+  padding: 7px 11px;
+  border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 55%, transparent);
+}
+/* The row label reads as a name, not as a second header band. */
+.amx tbody th {
+  font-size: 12.5px; font-weight: 500; text-align: left; text-transform: none;
+  letter-spacing: 0; color: var(--on-surface);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px;
+}
+.amx tbody tr:last-child td, .amx tbody tr:last-child th { border-bottom: 0; }
+/* The scroll container is focusable so the grid can be panned from the keyboard;
+   the default focus ring on a 100%-wide box is noisy, so it is drawn inside. */
+.amx:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+/* display:block — `width:100%` does nothing on the inline box a <span> is by
+   default, so without it every cell shrink-wraps its label and the column of
+   grants stops reading as a column. */
+.amx__cell {
+  --c: var(--on-surface-3);
+  display: block; width: 100%; padding: 4px 7px; border-radius: var(--r-sm);
+  font-size: 11px; text-align: center;
+  background: var(--s-container); color: var(--on-surface-3);
+}
+.amx__cell.set {
+  background: color-mix(in srgb, var(--c) 14%, transparent);
+  color: var(--c); font-weight: 600;
+}
+/* The head cell for a module the org is not subscribed to. The column still
+   paints, because a grant that outlives its subscription is exactly the row an
+   admin needs to find.
+
+   Marked by its ground rather than by opacity. This is 10px text at
+   `--on-surface-3`, which clears AA at 4.8:1 with nothing to spare — fading it
+   to .55 would put it near 2:1, and the label would become the least readable
+   thing on a screen whose whole job is to be read. The word "off" beside the
+   name carries the state; the tint only groups the column. */
+.amx__off { background: var(--s-container); }
 
 /* ── Grant editor (inside the member sheet) ────────────────────────────── */
 .ogr { display: flex; flex-direction: column; gap: 7px; }
@@ -151,6 +242,12 @@
 .ogr__b.on { background: var(--surface); color: var(--on-surface); font-weight: 600; box-shadow: var(--shadow-1); }
 .ogr__b:disabled { opacity: .42; cursor: not-allowed; }
 .ogr__b:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* The separated-duty statement, on the row it governs rather than in a footnote
+   at the bottom of the sheet. `flex-basis:100%` breaks it onto its own line
+   inside the wrapping row, so it sits under the control it qualifies instead of
+   competing with the level buttons for the same line. */
+.ogr__note { flex-basis: 100%; font-size: 11px; color: var(--on-surface-2); line-height: 1.45; text-wrap: pretty; }
+.ogr__note strong { font-weight: 600; color: var(--on-surface); }
 
 /* ── Module cards ──────────────────────────────────────────────────────────
    opacity .68 for inactive rather than a grey palette swap: the module keeps

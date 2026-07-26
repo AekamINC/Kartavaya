@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Badge } from './_shared';
+import { inr } from '../../lib/inr';
 
 export default function ProductsTab() {
   const { pushToast } = useToast();
@@ -67,7 +68,7 @@ export default function ProductsTab() {
       <button className="k-btn k-btn--primary" style={{ fontSize: 13, marginBottom: 16 }} onClick={() => setShowForm(true)}>+ Add Product / Service</button>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Product / Service</h3>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
@@ -122,17 +123,17 @@ export default function ProductsTab() {
                 </td>
                 <td style={{ padding: '10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{p.hsn_code || p.sac_code || '—'}</td>
                 <td style={{ padding: '10px' }}>{p.unit}</td>
-                <td style={{ padding: '10px' }}>₹{Number(p.price).toLocaleString('en-IN')}</td>
+                <td style={{ padding: '10px' }}>{inr(Number(p.price))}</td>
                 <td style={{ padding: '10px' }}>{Number(p.gst_rate)}%</td>
-                <td style={{ padding: '10px' }}><Badge text={p.is_service ? 'Service' : 'Goods'} color={p.is_service ? '#6366f1' : '#0082c6'} /></td>
+                <td style={{ padding: '10px' }}><Badge text={p.is_service ? 'Service' : 'Goods'} color={p.is_service ? 'var(--st-in-review)' : 'var(--st-in-progress)'} /></td>
                 <td style={{ padding: '10px', display: 'flex', gap: 8 }}>
                   <button onClick={() => startEdit(p)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--k-primary)', fontSize: 11 }}>Edit</button>
-                  <button onClick={() => deleteProduct(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11 }}>Delete</button>
+                  <button onClick={() => deleteProduct(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 11 }}>Delete</button>
                 </td>
               </tr>
               {editProduct === p.id && (
                 <tr><td colSpan={7} style={{ padding: 0 }}>
-                  <form onSubmit={saveEdit} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, margin: '4px 0 8px' }}>
+                  <form onSubmit={saveEdit} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16, margin: '4px 0 8px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                       <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
                         <input className="k-input" required value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></label>

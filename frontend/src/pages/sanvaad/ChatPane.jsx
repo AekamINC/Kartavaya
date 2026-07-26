@@ -9,10 +9,10 @@ import { channelIcon, SvIcons } from './icons';
 import useChannelMessages from './useChannelMessages';
 
 export default function ChatPane({
-  channel, meId, onOpenThread, onSent, onBack, threadOpen,
+  channel, me, meId, meName, onOpenThread, onSent, onBack, threadOpen,
 }) {
   const { pushToast } = useToast();
-  const { messages, loading, error, send, react } = useChannelMessages(channel.id, meId);
+  const { messages, loading, error, send, react } = useChannelMessages(channel.id, meId, me);
   const [replyTo, setReplyTo] = useState(null);
 
   // Captured once per channel: the divider must mark where the reader was when
@@ -61,6 +61,7 @@ export default function ChatPane({
           messages={messages}
           loading={loading}
           meId={meId}
+          meName={meName}
           lastReadAt={lastReadAt}
           onReact={react}
           onOpenThread={onOpenThread}

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { StatTile } from '../../components/editorial';
-import { Badge, STAGE_COLORS } from './_shared';
+import { Badge, stageColor } from './_shared';
+import { inr } from '../../lib/inr';
 
 export default function PipelineTab() {
   const { pushToast } = useToast();
@@ -26,17 +27,17 @@ export default function PipelineTab() {
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
-        <StatTile label="Total Pipeline" value={`₹${total.toLocaleString('en-IN')}`} />
+        <StatTile label="Total Pipeline" value={inr(total)} />
         <StatTile label="Active Deals" value={summary.reduce((s, r) => s + Number(r.count), 0)} />
       </div>
 
       {summary.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No deals yet. Create deals to see your pipeline.</p> : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
           {summary.map(s => (
-            <div key={s.stage} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 20, textAlign: 'center' }}>
-              <Badge text={s.stage} color={STAGE_COLORS[s.stage] || '#6E7B91'} />
+            <div key={s.stage} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 20, textAlign: 'center' }}>
+              <Badge text={s.stage} color={stageColor(s.stage)} />
               <div style={{ fontSize: 28, fontWeight: 800, margin: '12px 0 4px', color: 'var(--ink-1)' }}>{Number(s.count)}</div>
-              <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>₹{Number(s.total_value).toLocaleString('en-IN')}</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>{inr(Number(s.total_value))}</div>
             </div>
           ))}
         </div>

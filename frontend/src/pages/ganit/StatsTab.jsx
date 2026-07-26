@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { StatTile } from '../../components/editorial';
+import { inr } from '../../lib/inr';
 
 export default function StatsTab() {
   const { pushToast } = useToast();
@@ -24,8 +25,8 @@ export default function StatsTab() {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16 }}>
       <StatTile label="Total Invoices" value={stats.total_invoices} />
-      <StatTile label="Outstanding" value={`₹${Number(stats.total_outstanding).toLocaleString('en-IN')}`} />
-      <StatTile label="Collected" value={`₹${Number(stats.total_collected).toLocaleString('en-IN')}`} />
+      <StatTile label="Outstanding" value={inr(Number(stats.total_outstanding))} />
+      <StatTile label="Collected" value={inr(Number(stats.total_collected))} />
       <StatTile label="Unpaid" value={stats.unpaid_count} />
       <StatTile label="Overdue" value={stats.overdue_count} />
     </div>

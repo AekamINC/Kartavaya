@@ -28,7 +28,7 @@ function insidePlatformSurface(node) {
   return Boolean(node.closest('[data-surface="platform"]'));
 }
 
-export default function MarginCell({ marginInr, costUsd, fxRate, markupPct, chargedInr, row }) {
+export default function MarginCell({ marginInr, costUsd, fxRate, markupPct, chargedInr, compact }) {
   const ref = React.useRef(null);
   const [blocked, setBlocked] = React.useState(false);
 
@@ -56,7 +56,7 @@ export default function MarginCell({ marginInr, costUsd, fxRate, markupPct, char
   if (chargedInr != null) parts.push(`= ${inr(chargedInr, { decimals: 2 })}`);
 
   return (
-    <span ref={ref} className={row ? 'mgn mgn--row' : 'mgn'}>
+    <span ref={ref} className={compact ? 'mgn mgn--compact' : 'mgn'}>
       <span className={margin < 0 ? 'mgn__v is-loss' : 'mgn__v'}>{inr(margin, { decimals: 2 })}</span>
       {parts.length > 0 && <span className="mgn__d">{parts.join(' ')}</span>}
     </span>

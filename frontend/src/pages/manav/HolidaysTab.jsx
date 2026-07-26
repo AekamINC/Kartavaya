@@ -47,7 +47,7 @@ export default function HolidaysTab() {
       <button className="k-btn k-btn--primary" style={{ fontSize: 13, marginBottom: 16 }} onClick={() => setShowForm(true)}>+ Add Holiday</button>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
               <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
@@ -85,9 +85,9 @@ export default function HolidaysTab() {
               <tr key={h.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
                 <td style={{ padding: '10px' }}>{h.date}</td>
                 <td style={{ padding: '10px', fontWeight: 600 }}>{h.name}</td>
-                <td style={{ padding: '10px' }}><Badge text={h.is_optional ? 'Optional' : 'Mandatory'} color={h.is_optional ? '#f59e0b' : '#10b981'} /></td>
+                <td style={{ padding: '10px' }}><Badge text={h.is_optional ? 'Optional' : 'Mandatory'} color={h.is_optional ? 'var(--warn)' : 'var(--ok)'} /></td>
                 <td style={{ padding: '10px' }}>
-                  <button onClick={() => deleteHoliday(h.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11 }}>Remove</button>
+                  <button onClick={() => deleteHoliday(h.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 11 }}>Remove</button>
                 </td>
               </tr>
             ))}

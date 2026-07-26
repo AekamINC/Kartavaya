@@ -1,26 +1,48 @@
+// Prachar · प्रचार — marketing — on the shared module chrome, 13-module-pages.md §1.
+//
+// Was `PageHeader` + `TabBar`. Three measured differences from the spec:
+//  · `.k-pageh__h1` is `clamp(32px, 4vw, 44px)`; 13 §1 specs `.mh__en` at 25px.
+//  · `.k-pageh__sans` puts the Devanagari at 0.7em of that h1 — 22-31px where
+//    the spec says 15px — in `--k-primary`, i.e. `--primary-vivid`, a FILL.
+//    `.mh__hi` uses `--primary-text`, the measured text pair.
+//  · `PageHeader` carries no module accent; `.mh__ic` is the 38px tinted icon.
+// `.k-tabbar` also has no role="tablist"/aria-selected/aria-controls.
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
-import { PageHeader, StatTile, TabBar, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
+import { StatTile, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
+import ModuleHeader from '../components/module/ModuleHeader';
+import ModuleTabs from '../components/module/ModuleTabs';
+import { ICONS } from '../components/layout/navIcons';
+import { moduleMeta } from '../lib/moduleColors';
 
-const STATUS_COLORS = { draft: '#6E7B91', scheduled: '#0082c6', sending: '#8b5cf6', sent: '#10b981', paused: '#f59e0b', cancelled: '#9ca3af' };
+const STATUS_COLORS = { draft: 'var(--on-surface-3)', scheduled: 'var(--st-in-progress)', sending: 'var(--st-in-review)', sent: 'var(--ok)', paused: 'var(--warn)', cancelled: 'var(--on-surface-3)' };
 
 const TABS = ['dashboard', 'campaigns', 'ads', 'sequences', 'templates', 'automations', 'unsubscribes', 'events'];
 
 export default function PracharPage() {
   const [tab, setTab] = useState('dashboard');
+  const meta = moduleMeta('prachar');
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Prachar" sanskrit="प्रचार" lede="Marketing — Campaigns, Templates & Automations" />
-      <TabBar tabs={TABS} active={tab} onChange={setTab} />
-      {tab === 'dashboard' && <DashboardTab />}
-      {tab === 'campaigns' && <CampaignsTab />}
-      {tab === 'ads' && <AdsTab />}
-      {tab === 'sequences' && <SequencesTab />}
-      {tab === 'templates' && <TemplatesTab />}
-      {tab === 'automations' && <AutomationsTab />}
-      {tab === 'unsubscribes' && <UnsubscribesTab />}
-      {tab === 'events' && <EventsTab />}
+      <ModuleHeader
+        module="prachar"
+        en={meta.en}
+        hi={meta.hi}
+        sub="Campaigns, templates and automations"
+        icon={ICONS.prachar}
+      />
+      <ModuleTabs tabs={TABS.map(id => ({ id, label: id }))} value={tab} onChange={setTab} label="Prachar sections" />
+      <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
+        {tab === 'dashboard' && <DashboardTab />}
+        {tab === 'campaigns' && <CampaignsTab />}
+        {tab === 'ads' && <AdsTab />}
+        {tab === 'sequences' && <SequencesTab />}
+        {tab === 'templates' && <TemplatesTab />}
+        {tab === 'automations' && <AutomationsTab />}
+        {tab === 'unsubscribes' && <UnsubscribesTab />}
+        {tab === 'events' && <EventsTab />}
+      </div>
     </div>
   );
 }
@@ -190,7 +212,7 @@ function CampaignsTab() {
   );
 }
 
-const SEQ_STATUS_COLORS = { draft: '#6E7B91', active: '#10b981', paused: '#f59e0b', completed: '#0082c6' };
+const SEQ_STATUS_COLORS = { draft: 'var(--on-surface-3)', active: 'var(--ok)', paused: 'var(--warn)', completed: 'var(--st-in-progress)' };
 
 function AdsTab() {
   const [view, setView] = useState('overview');
@@ -293,7 +315,7 @@ function AdsTab() {
                   <tr key={c.id}>
                     <td style={{ fontWeight: 500 }}>{c.name}</td>
                     <td>{c.objective}</td>
-                    <td><Badge text={c.status} color={STATUS_COLORS[c.status] || '#6E7B91'} /></td>
+                    <td><Badge text={c.status} color={STATUS_COLORS[c.status] || 'var(--on-surface-3)'} /></td>
                     <Td align="right">{c.daily_budget || 0}</Td>
                   </tr>
                 ))}
@@ -335,7 +357,7 @@ function AdsTab() {
             <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={runAnalysis}>Analyse</button>
           </div>
           {analysis && (
-            <pre style={{ background: 'var(--surface-2)', padding: 16, borderRadius: 8, fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.6, fontFamily: 'var(--font-mono)' }}>{analysis}</pre>
+            <pre style={{ background: 'var(--surface-2)', padding: 16, borderRadius: 'var(--r-sm)', fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.6, fontFamily: 'var(--font-mono)' }}>{analysis}</pre>
           )}
         </Section>
       )}
@@ -403,7 +425,7 @@ function SequencesTab() {
               <h3 className="k-detail__title">{detail.name}</h3>
               <p className="k-detail__sub">{detail.channel} sequence</p>
             </div>
-            <Badge text={detail.status} color={SEQ_STATUS_COLORS[detail.status] || '#6E7B91'} />
+            <Badge text={detail.status} color={SEQ_STATUS_COLORS[detail.status] || 'var(--on-surface-3)'} />
           </div>
 
           <div className="k-detail__actions">
@@ -527,7 +549,7 @@ function SequencesTab() {
                 <strong style={{ fontSize: 14 }}>{s.name}</strong>
                 <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{s.channel}</p>
               </div>
-              <Badge text={s.status} color={SEQ_STATUS_COLORS[s.status] || '#6E7B91'} />
+              <Badge text={s.status} color={SEQ_STATUS_COLORS[s.status] || 'var(--on-surface-3)'} />
             </ModCard>
           ))}
         </div>
@@ -608,10 +630,10 @@ function TemplatesTab() {
               <div>
                 <strong style={{ fontSize: 14 }}>{t.name}</strong>
                 <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>
-                  <Badge text={t.category} color="#6E7B91" /> <span style={{ marginLeft: 6 }}>Subject: {t.subject}</span>
+                  <Badge text={t.category} color="var(--on-surface-3)" /> <span style={{ marginLeft: 6 }}>Subject: {t.subject}</span>
                 </p>
               </div>
-              <button onClick={() => remove(t.id)} style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Delete</button>
+              <button onClick={() => remove(t.id)} style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Delete</button>
             </div>
           ))}
         </div>
@@ -704,7 +726,7 @@ function AutomationsTab() {
                 </p>
                 {a.run_count > 0 && <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>{a.run_count} runs</p>}
               </div>
-              <button onClick={() => remove(a.id)} style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Delete</button>
+              <button onClick={() => remove(a.id)} style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Delete</button>
             </div>
           ))}
         </div>
@@ -751,7 +773,7 @@ function UnsubscribesTab() {
                 <div style={{ fontSize: 13, fontWeight: 500 }}>{u.email}</div>
                 <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{u.reason || 'manual'}</div>
               </div>
-              <button onClick={() => remove(u.id)} style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Remove</button>
+              <button onClick={() => remove(u.id)} style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Remove</button>
             </div>
           ))}
         </div>
@@ -760,8 +782,8 @@ function UnsubscribesTab() {
   );
 }
 
-const EVENT_STATUS_COLORS = { draft: '#6b7280', published: '#3b82f6', ongoing: '#f59e0b', completed: '#10b981', cancelled: '#ef4444' };
-const EVENT_TYPE_COLORS = { webinar: '#3b82f6', meetup: '#8b5cf6', workshop: '#f59e0b', conference: '#0ea5e9', other: '#6b7280' };
+const EVENT_STATUS_COLORS = { draft: 'var(--on-surface-3)', published: 'var(--st-in-progress)', ongoing: 'var(--warn)', completed: 'var(--ok)', cancelled: 'var(--danger)' };
+const EVENT_TYPE_COLORS = { webinar: 'var(--st-in-progress)', meetup: 'var(--st-in-review)', workshop: 'var(--warn)', conference: 'var(--st-in-progress)', other: 'var(--on-surface-3)' };
 
 function EventsTab() {
   const [events, setEvents] = useState([]);
@@ -925,16 +947,16 @@ function EventsTab() {
             <React.Fragment key={ev.id}>
               <tr style={{ cursor: 'pointer' }} onClick={() => toggleExpand(ev.id)}>
                 <td style={{ fontWeight: 500 }}>{ev.title}</td>
-                <td><Badge text={ev.event_type} color={EVENT_TYPE_COLORS[ev.event_type] || '#6b7280'} /></td>
+                <td><Badge text={ev.event_type} color={EVENT_TYPE_COLORS[ev.event_type] || 'var(--on-surface-3)'} /></td>
                 <td>{ev.starts_at ? new Date(ev.starts_at).toLocaleDateString('en-IN') : '-'}</td>
-                <td><Badge text={ev.status} color={EVENT_STATUS_COLORS[ev.status] || '#6b7280'} /></td>
+                <td><Badge text={ev.status} color={EVENT_STATUS_COLORS[ev.status] || 'var(--on-surface-3)'} /></td>
                 <Td align="right">{ev.reg_count || 0}</Td>
                 <td>
                   <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
                     <button className="k-btn" style={{ fontSize: 12 }} onClick={() => setForm({ ...ev, starts_at: ev.starts_at ? ev.starts_at.slice(0, 16) : '', ends_at: ev.ends_at ? ev.ends_at.slice(0, 16) : '' })}>Edit</button>
                     {ev.status === 'draft' && <button className="k-btn" style={{ fontSize: 12 }} onClick={() => updateStatus(ev.id, 'published')}>Publish</button>}
                     {ev.status === 'published' && <button className="k-btn" style={{ fontSize: 12 }} onClick={() => updateStatus(ev.id, 'cancelled')}>Cancel</button>}
-                    <button style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }} onClick={() => remove(ev.id)}>Delete</button>
+                    <button style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }} onClick={() => remove(ev.id)}>Delete</button>
                   </div>
                 </td>
               </tr>
@@ -976,7 +998,7 @@ function EventsTab() {
                             <td style={{ fontSize: 13 }}>{reg.name}</td>
                             <td style={{ fontSize: 13 }}>{reg.email}</td>
                             <td style={{ fontSize: 13 }}>{reg.phone || '-'}</td>
-                            <td><Badge text={reg.status} color={reg.status === 'attended' ? '#10b981' : '#6b7280'} /></td>
+                            <td><Badge text={reg.status} color={reg.status === 'attended' ? 'var(--ok)' : 'var(--on-surface-3)'} /></td>
                             <td style={{ fontSize: 12 }}>{reg.registered_at ? new Date(reg.registered_at).toLocaleDateString('en-IN') : '-'}</td>
                             <td>
                               {reg.status !== 'attended' && (

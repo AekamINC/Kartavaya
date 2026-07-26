@@ -50,10 +50,31 @@ export const tasksApi = {
   requestApproval: (taskId: string, notes?: string) =>
     apiClient.post(`/tasks/${taskId}/request-approval`, { notes }).then(r => r.data),
 
-  reviewApproval: (taskId: string, status: 'approved' | 'rejected' | 'pending_client', opts?: {
+  /**
+   * Review a task-level approval.
+   *
+   * TWO CONTRACT BUGS FIXED HERE, both of which made this call fail outright:
+   *
+   * 1. The id separator is `--`, not `::`. The server builds the id as
+   *    CONCAT('task_approval--', t.task_id) (server.py:1008) and dispatches on
+   *    approval_id.startswith("task_approval--") (server.py:1191). A `::` id
+   *    misses that branch, falls through to the plain `approvals` table lookup,
+   *    finds nothing and 404s. The web client and the backend tests both use
+   *    `--`; mobile was the only caller using `::`.
+   *
+   * 2. There is no `pending_client` status. The server rejects anything that is
+   *    not "approved" or "rejected" with a 400. Sending to the client is
+   *    status="approved" plus send_to_client and client_email — that is what
+   *    ApprovalsPage.jsx:110 does, and the server routes it to
+   *    _approve_task_send_client.
+   *
+   * `sendToClient` is modelled as its own argument rather than a status so the
+   * impossible state cannot be expressed at the call site.
+   */
+  reviewApproval: (taskId: string, status: 'approved' | 'rejected', opts?: {
     notes?: string; send_to_client?: boolean; client_email?: string;
-  }) => apiClient.post(`/approvals/task_approval::${taskId}/review`, {
-    status, ...opts,
+  }) => apiClient.post(`/approvals/task_approval--${taskId}/review`, {
+    status, notes: opts?.notes ?? '', ...opts,
   }).then(r => r.data),
 
   clientApprove: (taskId: string) =>

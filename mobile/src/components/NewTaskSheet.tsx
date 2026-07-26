@@ -21,7 +21,7 @@ import { enqueueMutation } from '../offline/mutationQueue';
 import NetInfo from '@react-native-community/netinfo';
 import { templatesApi } from '../api/templates';
 import type { TeamMember, TaskTemplate } from '../api/types';
-import { AVATAR_COLORS } from '../theme/tokens';
+import { AVATAR_COLORS, PRIORITY_COLORS, withAlpha } from '../theme/tokens';
 
 const MAX_ATTACHMENTS = 5;
 const MAX_MB = 5;
@@ -31,17 +31,26 @@ interface Props {
   onClose: () => void;
 }
 
+/**
+ * Priority is a key and a label here; the COLOUR comes from PRIORITY_COLORS at
+ * render time.
+ *
+ * These four used to carry literal hexes, which made this the tenth independent
+ * priority map in the product and froze it to light mode — 00 §9's --pr-* tokens
+ * flip with the theme, so the light-mode urgent red was being drawn on the dark
+ * sheet.
+ */
 const PRIORITY = [
-  { key: 'urgent', label: 'Urgent', color: '#C0392B' },
-  { key: 'high',   label: 'High',   color: '#B06A00' },
-  { key: 'medium', label: 'Medium', color: '#3E5C8A' },
-  { key: 'low',    label: 'Low',    color: '#7D8BA6' },
+  { key: 'urgent', label: 'Urgent' },
+  { key: 'high',   label: 'High'   },
+  { key: 'medium', label: 'Medium' },
+  { key: 'low',    label: 'Low'    },
 ] as const;
 
 type Priority = typeof PRIORITY[number]['key'];
 
 export default function NewTaskSheet({ visible, onClose }: Props) {
-  const { t }      = useTheme();
+  const { t, scheme } = useTheme();
   const { user }   = useAuth();
   const qc         = useQueryClient();
   const isClient   = user?.role === 'client';
@@ -204,14 +213,14 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
               onChangeText={v => { setTitle(v); if (v.trim()) setTitleError(false); }}
               placeholder="Write a clear, action-first title…"
               placeholderTextColor={t.ink3}
-              style={[s.titleInput, { borderBottomColor: titleError ? '#dc2626' : t.outline, color: t.ink }]}
+              style={[s.titleInput, { borderBottomColor: titleError ? t.error : t.outline, color: t.ink }]}
               autoFocus
               multiline
               returnKeyType="done"
               blurOnSubmit
               onSubmitEditing={handleSubmit}
             />
-            {titleError && <Text style={s.fieldError}>Title is required.</Text>}
+            {titleError && <Text style={[s.fieldError, { color: t.error }]}>Title is required.</Text>}
 
             {/* Project */}
             <FieldLabel t={t}>PROJECT · परियोजना</FieldLabel>
@@ -285,10 +294,10 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
                 <TouchableOpacity
                   key={p.key}
                   onPress={() => setPriority(p.key)}
-                  style={[s.priorityChip, priority === p.key && { borderColor: p.color, backgroundColor: p.color + '18' }]}
+                  style={[s.priorityChip, priority === p.key && { borderColor: PRIORITY_COLORS[scheme][p.key], backgroundColor: withAlpha(PRIORITY_COLORS[scheme][p.key], 0.09) }]}
                 >
-                  <View style={[s.prioDot, { backgroundColor: p.color }]} />
-                  <Text style={[s.priorityLabel, priority === p.key && { color: p.color, fontWeight: '700' }]}>{p.label}</Text>
+                  <View style={[s.prioDot, { backgroundColor: PRIORITY_COLORS[scheme][p.key] }]} />
+                  <Text style={[s.priorityLabel, priority === p.key && { color: PRIORITY_COLORS[scheme][p.key], fontWeight: '700' }]}>{p.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -405,7 +414,7 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
               textAlignVertical="top"
             />
 
-            {error && <Text style={s.fieldError}>{error}</Text>}
+            {error && <Text style={[s.fieldError, { color: t.error }]}>{error}</Text>}
 
             <View style={{ height: 24 }} />
           </ScrollView>
@@ -508,7 +517,7 @@ const styles = (t: ReturnType<typeof useTheme>['t']) => StyleSheet.create({
     minHeight: 36,
   },
   fieldError: {
-    fontSize: 11, color: '#dc2626', marginTop: 4,
+    fontSize: 11, marginTop: 4,
   },
   chipRow: {
     flexDirection: 'row',

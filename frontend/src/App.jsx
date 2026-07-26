@@ -29,6 +29,7 @@ import { ToastProvider }               from './components/ui/toast';
 import AppShell, { Protected }         from './components/layout/AppShell';
 import AdminShell                      from './components/admin/AdminShell';
 import { currentUser }                 from './lib/auth';
+import { navContext }                  from './components/layout/navConfig';
 import PageLoader                      from './components/layout/PageLoader';
 import { CustomizeProvider } from './components/CustomizePanel';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -58,7 +59,10 @@ const AdminPage             = lazy(() => import('./pages/AdminPage'));
 const ClientProjectsPage    = lazy(() => import('./pages/ClientProjectsPage'));
 const ClientBoardPage       = lazy(() => import('./pages/ClientBoardPage'));
 const InboxPage             = lazy(() => import('./pages/InboxPage'));
-const BillingPage           = lazy(() => import('./pages/BillingPage'));
+// BillingPage is no longer routed. `10-org-settings.md` folded it into
+// `pages/org/TabBilling.jsx`; `/billing` redirects to that tab below so
+// bookmarks and emailed links still land somewhere real.
+const OnboardingPage        = lazy(() => import('./pages/onboarding/OnboardingPage'));
 const AdminBillingPage      = lazy(() => import('./pages/AdminBillingPage'));
 const AdminOrgsPage         = lazy(() => import('./pages/AdminOrgsPage'));
 const AdminCostDashboardPage = lazy(() => import('./pages/AdminCostDashboardPage'));
@@ -111,7 +115,11 @@ const ReportsWithContext      = withContext(ReportsPage,      ctx => ({ teams: c
  * problem the landing page exists to solve.
  */
 function RootGate() {
-  return currentUser() ? <Navigate to="/dashboard" replace /> : <LandingPage />;
+  const user = currentUser();
+  if (!user) return <LandingPage />;
+  // A client's product is the portal. Sending them to /dashboard first only for
+  // `Protected` to bounce them back costs a render of a shell they may not see.
+  return <Navigate to={navContext(user).isClient ? '/client' : '/dashboard'} replace />;
 }
 
 // ── Route tree ─────────────────────────────────────────────────────────────────
@@ -130,6 +138,50 @@ function AppRouter() {
         {/* Public landing at `/` — see RootGate. Declared before the protected
             shell so the exact-match wins for an anonymous visitor. */}
         <Route path="/" element={<RootGate />} />
+
+        {/* Onboarding — authenticated, and deliberately OUTSIDE AppShell.
+            12-auth-onboarding.md §5 asks for this route and for a redirect into
+            it when `org.onboarding_complete` is false; the redirect lives in
+            `Protected` beside the other role gates.
+
+            No sidebar and no topbar: the wizard's own step rail is the
+            navigation, and a user who has not finished setting up their
+            organisation has nothing to reach through a module rail. It was
+            fully built at `pages/onboarding/` — six steps, resume state, real
+            POSTs for invites and the first project — and had no route at all,
+            so none of it could be opened. */}
+        <Route path="/onboarding" element={<Protected><OnboardingPage /></Protected>} />
+
+        {/* ── Client portal ────────────────────────────────────────────────
+            Its OWN routes, outside AppShell. `19-client-portal.md` · Shell:
+            "No sidebar. The firm's brand, not ours." Every one of these pages
+            renders `pages/client/ClientShell.jsx`, which draws the firm's logo
+            and a three-item horizontal nav.
+
+            While these sat inside AppShell, the portal was painted inside the
+            staff chrome: the module sidebar — first entry on 19's never-see
+            list, since a client has no modules and every link on it leads
+            somewhere they cannot go — plus the staff topbar, the notification
+            bell and the "New task" button, all wrapped around a surface whose
+            entire design brief is that it belongs to the accountant's brand
+            rather than ours. */}
+        <Route path="/client"                    element={<Protected><ClientProjectsPage /></Protected>} />
+        <Route path="/client/projects"           element={<Protected><ClientProjectsPage /></Protected>} />
+        <Route path="/client/project/:projectId" element={<Protected><ClientBoardPage /></Protected>} />
+
+        {/* 19 names `/client/approvals` and `/client/files` as routes. The
+            screens exist and are reachable — `ClientPages.jsx` carries the view
+            in the query string (`/client?view=approvals`) because it could not
+            edit this file — but the paths 19 names resolved to nothing, so any
+            link written against the spec 404'd into the staff dashboard.
+
+            These are redirects rather than route entries because making them
+            real needs a `view` prop on `ClientProjectsPage`, which is outside
+            this change's ownership; the exact edit is in the report. Both
+            spellings now work and one canonical URL survives in the address
+            bar, which is what a bookmark and a back button need. */}
+        <Route path="/client/approvals" element={<Navigate to="/client?view=approvals" replace />} />
+        <Route path="/client/files"     element={<Navigate to="/client?view=files" replace />} />
 
         {/* Protected shell — all child routes inherit auth + layout */}
         <Route path="/" element={<Protected><AppShell /></Protected>}>
@@ -161,8 +213,11 @@ function AppRouter() {
           <Route path="settings/customize"     element={<CustomizeSettingsPage />} />
           <Route path="settings/organisation" element={<OrgSettingsPage />} />
 
-          {/* Billing */}
-          <Route path="billing"                element={<BillingPage />} />
+          {/* Billing lives in Organisation settings now — `10-org-settings.md`
+              folded `BillingPage.jsx` into `org/TabBilling.jsx`. The route
+              survives as a redirect: invoices and renewal emails carry
+              /billing links that would otherwise land on the fallback. */}
+          <Route path="billing"                element={<Navigate to="/settings/organisation?tab=billing" replace />} />
 
           {/* Srijan */}
           <Route path="hub"                    element={<HubDashboardPage />} />
@@ -184,10 +239,8 @@ function AppRouter() {
           <Route path="esign"                  element={<EsignPage />} />
           <Route path="sanvaad"                element={<SanvaadPage />} />
 
-          {/* Client portal */}
-          <Route path="client"                          element={<ClientProjectsPage />} />
-          <Route path="client/projects"                 element={<ClientProjectsPage />} />
-          <Route path="client/project/:projectId"       element={<ClientBoardPage />} />
+          {/* /client/* is NOT here any more — see the standalone ClientShell
+              routes above. A client must never be handed the staff sidebar. */}
         </Route>
 
         {/* Aekam platform console — its OWN shell, not a page inside the app
@@ -221,15 +274,10 @@ function AppRouter() {
 
 function StagingBanner() {
   if (import.meta.env.VITE_ENVIRONMENT !== 'staging') return null;
-  return (
-    <div style={{
-      background: '#f59e0b', color: '#000', textAlign: 'center',
-      padding: '4px 0', fontSize: '12px', fontWeight: 600,
-      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
-    }}>
-      STAGING ENVIRONMENT
-    </div>
-  );
+  // Was `#f59e0b` on `#000` at `zIndex: 9999`. Both colours are now the warning
+  // pair, so it follows the theme, and 620 is the top rung of 26 §4's ladder —
+  // an environment warning a mobile sheet can cover is not doing its job.
+  return <div className="kv__staging">STAGING ENVIRONMENT</div>;
 }
 
 export default function App() {

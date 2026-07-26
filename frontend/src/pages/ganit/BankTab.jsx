@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { StatTile } from '../../components/editorial';
 import { Badge } from './_shared';
+import { inr } from '../../lib/inr';
 
 export default function BankTab() {
   const { pushToast } = useToast();
@@ -15,7 +16,7 @@ export default function BankTab() {
   const [importing, setImporting] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
-  const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+  const FMT = v => inr(Number(v || 0));
 
   useEffect(() => { load(); loadStats(); }, []);
 
@@ -91,7 +92,7 @@ export default function BankTab() {
       </div>
 
       {showImport && (
-        <form onSubmit={handleImport} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={handleImport} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Import Bank Statement</h4>
           <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Batch Label</span>
             <input className="k-input" placeholder="e.g. HDFC Jul-2026" value={batchLabel} onChange={e => setBatchLabel(e.target.value)} style={{ marginBottom: 12 }} /></label>
@@ -128,13 +129,13 @@ export default function BankTab() {
                 <td style={{ padding: '10px', fontSize: 12 }}>{s.statement_date}</td>
                 <td style={{ padding: '10px' }}>{s.description}</td>
                 <td style={{ padding: '10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{s.reference || '—'}</td>
-                <td style={{ padding: '10px', textAlign: 'right', fontWeight: 600 }}>{FMT(s.amount)}</td>
+                <td className="mtbl__num" style={{ padding: '10px', fontWeight: 600 }}>{FMT(s.amount)}</td>
                 <td style={{ padding: '10px' }}>
-                  {s.is_reconciled ? <Badge text="Matched" color="#10b981" /> : <Badge text="Unmatched" color="#f59e0b" />}
+                  {s.is_reconciled ? <Badge text="Matched" color="var(--ok)" /> : <Badge text="Unmatched" color="var(--warn)" />}
                 </td>
                 <td style={{ padding: '10px' }}>
                   {s.is_reconciled && (
-                    <button onClick={() => unmatch(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', fontSize: 11 }}>Unmatch</button>
+                    <button onClick={() => unmatch(s.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 11 }}>Unmatch</button>
                   )}
                 </td>
               </tr>

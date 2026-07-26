@@ -5,7 +5,7 @@
 import React from 'react';
 import { Avatar } from '../../components/ui';
 import { formatTime } from '../../lib/timeFormat';
-import { groupReactions } from './messageUtils';
+import { groupReactions, splitMentions } from './messageUtils';
 import { SvIcons } from './icons';
 
 /**
@@ -14,17 +14,33 @@ import { SvIcons } from './icons';
  */
 export const QUICK = ['👍', '✅', '👀', '❤️', '😂'];
 
+/** Body text with `@name` lifted out of it — see `splitMentions`. */
+function Body({ text, names, meName }) {
+  const parts = splitMentions(text, names, meName);
+  return parts.map((p, i) => (typeof p === 'string' ? p : (
+    <span key={i} className={`msg__mn${p.me ? ' msg__mn--me' : ''}`}>{p.mention}</span>
+  )));
+}
+
 export default function Message({
-  msg, continuation = false, meId, onReact, onOpenThread, onReply,
+  msg, continuation = false, meId, meName, names, onReact, onOpenThread, onReply,
 }) {
   const cont = continuation;
   const rx = groupReactions(msg.reactions, meId);
   const who = msg.sender_name || 'Unknown';
   const threads = Number(msg.thread_count) || 0;
+  const when = formatTime(msg.created_at);
 
   return (
     <article className={`msg${cont ? ' msg--cont' : ''}`}>
-      <Avatar className="msg__av" name={who} src={msg.sender_avatar} size={32} />
+      {/* Grouping hides the avatar with `visibility` so nothing shifts, which
+          also hid the only timestamp a continuation row had. The gutter puts it
+          back in that slot on hover — `00-tokens.md` §11 names
+          `.msg--cont:hover .msg__gut` as a call site, and `ScreensSanvaad.jsx`
+          swaps the avatar for it outright. */}
+      {cont
+        ? <time className="msg__gut" dateTime={msg.created_at}>{when}</time>
+        : <Avatar className="msg__av" name={who} src={msg.sender_avatar} size={32} />}
 
       <div className="msg__c">
         {!cont && (
@@ -32,7 +48,7 @@ export default function Message({
             <span className="msg__who">{who}</span>
             {/* `lib/timeFormat.js`, not a second date helper — 06 §5: message
                 timestamps must honour the 12h/24h preference. */}
-            <time className="msg__when" dateTime={msg.created_at}>{formatTime(msg.created_at)}</time>
+            <time className="msg__when" dateTime={msg.created_at}>{when}</time>
             {msg.is_edited && <span className="msg__when">(edited)</span>}
           </div>
         )}
@@ -40,7 +56,7 @@ export default function Message({
         <div className="msg__b">
           {msg.is_deleted
             ? <span className="msg__gone">Message deleted</span>
-            : msg.content}
+            : <Body text={msg.content} names={names} meName={meName} />}
         </div>
 
         {rx.length > 0 && (

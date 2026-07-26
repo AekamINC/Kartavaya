@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Badge, CANDIDATE_STAGES, STAGE_COLORS_REC } from './_shared';
+import { mixAlpha } from '../../lib/statusColors';
 
 export default function RecruitmentTab() {
   const { pushToast } = useToast();
@@ -116,7 +117,7 @@ export default function RecruitmentTab() {
       </div>
 
       {showOpeningForm && (
-        <form onSubmit={createOpening} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={createOpening} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>New Job Opening</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
@@ -132,7 +133,7 @@ export default function RecruitmentTab() {
       )}
 
       {editingOpening && (
-        <form onSubmit={saveEditOpening} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={saveEditOpening} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Edit Job Opening</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title</span>
@@ -152,7 +153,7 @@ export default function RecruitmentTab() {
       )}
 
       {showCandidateForm && (
-        <form onSubmit={createCandidate} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={createCandidate} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Add Candidate</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Full Name *</span>
@@ -178,25 +179,26 @@ export default function RecruitmentTab() {
           {CANDIDATE_STAGES.map(stage => {
             const inStage = candidates.filter(c => c.stage === stage);
             return (
-              <div key={stage} style={{ minWidth: 220, flex: '1 0 220px', background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 16 }}>
+              <div key={stage} style={{ minWidth: 220, flex: '1 0 220px', background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 16 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <Badge text={stage} color={STAGE_COLORS_REC[stage]} />
                   <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{inStage.length}</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {inStage.map(c => (
-                    <div key={c.id} style={{ background: 'var(--bg)', border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 10 }}>
+                    <div key={c.id} style={{ background: 'var(--bg)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 10 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{c.full_name}</div>
                       {c.email && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 2 }}>{c.email}</div>}
                       {c.resume_url && <a href={c.resume_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--k-primary)' }}>Resume ↗</a>}
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
                         {stage === 'offer' && (
-                          <button onClick={() => hire(c.id)} style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#10b98118', color: '#10b981', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Hire</button>
+                          <button onClick={() => hire(c.id)} style={{ fontSize: 'var(--t-label-sm)', padding: '2px 6px', borderRadius: 'var(--r-xs)', background: mixAlpha('var(--ok)', 9), color: 'var(--ok)', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Hire</button>
                         )}
                         {CANDIDATE_STAGES.filter(s => s !== stage && s !== 'hired').map(s => (
                           <button key={s} onClick={() => moveStage(c.id, s)}
-                            style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: `${STAGE_COLORS_REC[s]}18`,
-                              color: STAGE_COLORS_REC[s], border: 'none', cursor: 'pointer', fontWeight: 600 }}>{s}</button>
+                            style={{ fontSize: 'var(--t-label-sm)', padding: '2px 6px', borderRadius: 'var(--r-xs)',
+                              background: mixAlpha(STAGE_COLORS_REC[s] || 'var(--on-surface-3)', 9),
+                              color: STAGE_COLORS_REC[s] || 'var(--on-surface-3)', border: 'none', cursor: 'pointer', fontWeight: 600 }}>{s}</button>
                         ))}
                       </div>
                     </div>

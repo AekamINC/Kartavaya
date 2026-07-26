@@ -101,7 +101,7 @@ export default function LeavesTab() {
       </div>
 
       {showConflict && (
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--k-primary)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--k-primary)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Check Leave Conflicts</h4>
           <form onSubmit={checkConflicts} style={{ display: 'flex', gap: 12, alignItems: 'end', marginBottom: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Start *</span>
@@ -117,10 +117,10 @@ export default function LeavesTab() {
             <div style={{ fontSize: 13 }}>
               <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
                 <span><strong>Overlap:</strong> {conflicts.overlap_count} of {conflicts.department_size} ({conflicts.overlap_percentage}%)</span>
-                <Badge text={conflicts.has_conflict ? 'Conflict' : 'OK'} color={conflicts.has_conflict ? '#ef4444' : '#10b981'} />
+                <Badge text={conflicts.has_conflict ? 'Conflict' : 'OK'} color={conflicts.has_conflict ? 'var(--danger)' : 'var(--ok)'} />
               </div>
               {conflicts.has_conflict && (
-                <p style={{ color: '#ef4444', fontSize: 12, margin: '4px 0 0' }}>
+                <p style={{ color: 'var(--danger)', fontSize: 12, margin: '4px 0 0' }}>
                   Over 30% of the department would be on leave. Consider rescheduling.
                 </p>
               )}
@@ -139,7 +139,7 @@ export default function LeavesTab() {
       )}
 
       {showType && (
-        <form onSubmit={createType} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={createType} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>New Leave Type</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
@@ -163,7 +163,7 @@ export default function LeavesTab() {
       )}
 
       {showRequest && (
-        <form onSubmit={submitRequest} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 12, padding: 24, marginBottom: 16 }}>
+        <form onSubmit={submitRequest} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
           <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Request Leave</h4>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee *</span>
@@ -203,23 +203,23 @@ export default function LeavesTab() {
         ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {leaves.map(lr => (
-            <div key={lr.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 10, padding: '12px 16px' }}>
+            <div key={lr.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: '12px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                 <div>
                   <span style={{ fontWeight: 700, fontSize: 14 }}>{lr.employee_name}</span>
                   <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ink-3)' }}>{lr.employee_code}</span>
                 </div>
-                <Badge text={lr.status} color={LEAVE_COLORS[lr.status] || '#6E7B91'} />
+                <Badge text={lr.status} color={LEAVE_COLORS[lr.status] || 'var(--on-surface-3)'} />
               </div>
               <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>
                 <strong>{lr.leave_type_name}</strong> ({lr.leave_type_code}) · {lr.start_date} → {lr.end_date} · {lr.days} day{lr.days > 1 ? 's' : ''}
                 {lr.reason && <span> · {lr.reason}</span>}
-                {lr.rejection_reason && <span style={{ color: '#ef4444' }}> · Rejected: {lr.rejection_reason}</span>}
+                {lr.rejection_reason && <span style={{ color: 'var(--danger)' }}> · Rejected: {lr.rejection_reason}</span>}
               </div>
               {lr.status === 'pending' && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <button className="k-btn k-btn--primary" style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => actionLeave(lr.id, 'approved')}>Approve</button>
-                  <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px', color: '#ef4444' }} onClick={() => actionLeave(lr.id, 'rejected')}>Reject</button>
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px', color: 'var(--danger)' }} onClick={() => actionLeave(lr.id, 'rejected')}>Reject</button>
                 </div>
               )}
             </div>

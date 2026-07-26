@@ -18,7 +18,7 @@ function Logo() {
             <stop stopColor="#0082c6" /><stop offset="1" stopColor="#05b7aa" />
           </linearGradient>
         </defs>
-        <text x="16" y="22" textAnchor="middle" fill="white" fontSize="16" fontWeight="700" fontFamily="serif">क</text>
+        <text x="16" y="22" textAnchor="middle" fill="white" fontSize="16" fontWeight="700" fontFamily="var(--font-hindi)">क</text>
       </svg>
       <div>
         <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, color: 'var(--ink)', letterSpacing: '-0.01em' }}>Kartavaya</div>

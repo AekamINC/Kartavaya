@@ -28,10 +28,10 @@ export function SubtaskRow({ sub, t, members, canEdit, onToggle, onDelete }: Pro
     <View style={s.subtaskRow}>
       <TouchableOpacity
         onPress={onToggle}
-        style={[s.checkbox, { borderColor: sub.is_done ? '#22c55e' : t.outline, backgroundColor: sub.is_done ? '#22c55e18' : 'transparent' }]}
+        style={[s.checkbox, { borderColor: sub.is_done ? t.success : t.outline, backgroundColor: sub.is_done ? t.successBg : 'transparent' }]}
         {...a11yToggle(sub.title, sub.is_done, sub.is_done ? 'Mark as incomplete' : 'Mark as complete')}
       >
-        {sub.is_done && <Ionicons name="checkmark" size={12} color="#22c55e" accessibilityElementsHidden />}
+        {sub.is_done && <Ionicons name="checkmark" size={12} color={t.success} accessibilityElementsHidden />}
       </TouchableOpacity>
       <Text
         style={[s.subtaskTitle, { color: sub.is_done ? t.ink4 : t.ink, textDecorationLine: sub.is_done ? 'line-through' : 'none' }]}

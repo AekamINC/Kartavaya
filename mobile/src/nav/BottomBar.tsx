@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../theme/ThemeProvider';
+import { hindi } from '../theme/fonts';
 
 /**
  * The five-tab bar: Today · Tasks · ＋ · Messages · More.
@@ -163,7 +164,9 @@ const s = StyleSheet.create({
   // 9.5px only because it is a recognition cue beside a label that is already
   // legible — never the sole carrier of meaning.
   label:   { fontSize: 10, fontWeight: '700', marginTop: 2 },
-  labelHi: { fontSize: 9.5, fontWeight: '500' },
+  // No fontWeight: Tiro ships only a 400 and a synthesised bold is exactly the
+  // mixed-weight defect theme/fonts.ts documents.
+  labelHi: { fontSize: 9.5, ...hindi() },
   actionWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: -18 },
   actionPill: {
     width: 56, height: 56, borderRadius: 28,

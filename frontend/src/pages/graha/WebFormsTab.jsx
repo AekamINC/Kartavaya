@@ -57,7 +57,7 @@ export default function WebFormsTab() {
       </div>
 
       {showCreate && (
-        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16, marginBottom: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Form Name</span>
               <input className="k-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /></label>
@@ -85,7 +85,7 @@ export default function WebFormsTab() {
             <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => loadSubs(f.id)}>
               {openSubs === f.id ? 'Hide' : 'Submissions'}
             </button>
-            <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: '#ef4444' }} onClick={() => remove(f.id)}>Delete</button>
+            <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--danger)' }} onClick={() => remove(f.id)}>Delete</button>
           </div>
           {openSubs === f.id && submissions[f.id] && (
             <div style={{ marginTop: 8, paddingLeft: 12 }}>
@@ -93,7 +93,7 @@ export default function WebFormsTab() {
                 <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>No submissions yet.</p>
               ) : submissions[f.id].map(s => (
                 <div key={s.id} style={{ fontSize: 12, padding: '4px 0', borderBottom: '1px solid var(--rule-soft)' }}>
-                  <Badge text={s.status} color={s.status === 'processed' ? '#10b981' : '#6b7280'} />
+                  <Badge text={s.status} color={s.status === 'processed' ? 'var(--ok)' : 'var(--on-surface-3)'} />
                   <span style={{ marginLeft: 8, color: 'var(--ink-2)' }}>
                     {Object.entries(s.data || {}).slice(0, 3).map(([k, v]) => `${k}: ${String(v).slice(0, 30)}`).join(' · ')}
                   </span>
@@ -108,7 +108,7 @@ export default function WebFormsTab() {
       ))}
 
       {forms.length > 0 && (
-        <div style={{ marginTop: 24, padding: 16, background: 'var(--bg-raised)', borderRadius: 8, fontSize: 12, color: 'var(--ink-3)' }}>
+        <div style={{ marginTop: 24, padding: 16, background: 'var(--bg-raised)', borderRadius: 'var(--r-sm)', fontSize: 12, color: 'var(--ink-3)' }}>
           <strong>Embed code:</strong> POST your form data as JSON to <code>/api/v1/graha/f/{'<slug>'}</code> — fields: name, email, phone, company, message. No auth required.
         </div>
       )}

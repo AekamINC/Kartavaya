@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../lib/api';
-import { Badge, STAGE_COLORS, TL_ICONS, TL_SUB_ICONS, TL_COLORS } from './_shared';
+import { Badge, stageColor, TL_ICONS, TL_SUB_ICONS, TL_COLORS } from './_shared';
+import { mixAlpha } from '../../lib/statusColors';
+import { inr } from '../../lib/inr';
 
 export default function ContactTimeline({ contactId }) {
   const [items, setItems] = useState([]);
@@ -37,12 +39,12 @@ export default function ContactTimeline({ contactId }) {
             const color = TL_COLORS[it.type] || TL_COLORS._default;
             return (
             <div key={`${it.type}-${it.id}-${i}`} style={{ position: 'relative', paddingBottom: 14, paddingLeft: 12 }}>
-              <span style={{ position: 'absolute', left: -24, top: 1, width: 18, height: 18, borderRadius: 99,
-                background: `${color}14`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>{icon}</span>
+              <span style={{ position: 'absolute', left: -24, top: 1, width: 18, height: 18, borderRadius: 'var(--r-pill)',
+                background: mixAlpha(color, 8), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>{icon}</span>
               <div style={{ fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <span>{it.title}</span>
-                {it.amount != null && <span style={{ color: '#10b981', fontWeight: 600, fontSize: 12 }}>₹{Number(it.amount).toLocaleString('en-IN')}</span>}
-                {it.stage && <Badge text={it.stage} color={STAGE_COLORS[it.stage] || '#6b7280'} />}
+                {it.amount != null && <span style={{ color: 'var(--ok)', fontWeight: 600, fontSize: 12 }}>{inr(Number(it.amount))}</span>}
+                {it.stage && <Badge text={it.stage} color={stageColor(it.stage)} />}
               </div>
               <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>
                 <span style={{ color, fontWeight: 600, textTransform: 'capitalize' }}>{it.subtype || it.type}</span>

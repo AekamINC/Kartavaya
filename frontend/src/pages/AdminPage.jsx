@@ -47,7 +47,7 @@ import {
 } from '../components/ui';
 import { currentUser } from '../lib/auth';
 import SlideOver from './admin/SlideOver';
-import { ASSIGNABLE_ROLES, PLATFORM_ROLES, roleMeta, roleColor, isGodMode } from './admin/platformRoles';
+import { ASSIGNABLE_ROLES, PLATFORM_ROLES, roleMeta, roleColor, isGodMode, canOpenConsole } from './admin/platformRoles';
 import '../styles/admin.css';
 
 const EMPTY_INVITE = { full_name: '', email: '', role: 'member', member_role: '', receives_approval_emails: true };
@@ -280,13 +280,20 @@ function PlatformRolesPanel() {
   const me = currentUser();
   const mayAssign = isGodMode(me?.platform_roles);
 
+  /* `GET /roles/platform`, `/users/search`, `/roles/assign` and
+     `DELETE /roles/{id}` are ALL guarded on SUPERUSER_ONLY_ROLES — a role that
+     can grant roles can grant itself anything, so it is never delegated. Only
+     the buttons were gated before, not the read, so a platform_manager opening
+     this tab got a 403 toast and an empty table that read as "nobody holds a
+     platform role" — the most misleading possible answer to that question. */
   const load = useCallback(() => {
+    if (!mayAssign) { setLoading(false); return Promise.resolve(); }
     setLoading(true);
     return api.get('/v1/admin/orgs/roles/platform')
       .then(r => setRows(Array.isArray(r.data) ? r.data : []))
       .catch(() => pushToast({ type: 'error', title: 'Could not load platform roles' }))
       .finally(() => setLoading(false));
-  }, [pushToast]);
+  }, [pushToast, mayAssign]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -313,6 +320,37 @@ function PlatformRolesPanel() {
   }, {})), [rows]);
 
   const selected = roleMeta(code);
+
+  /* The vocabulary itself is not privileged — it is a static list in this
+     file — so a non-owner still gets the reference table. What they do not get
+     is a request that will 403 and a table that will read as empty. */
+  const reference = (
+    <Card>
+      <CardHead title="What each role reaches" sanskrit="भूमिकाएँ" />
+      <CardBody>
+        <div className="adm-kv">
+          {PLATFORM_ROLES.map(r => (
+            <div key={r.code}>
+              <div className="adm-kv__k">
+                {r.label}
+                <span className="adm-kv__hi" lang="hi" aria-hidden="true">{r.hi}</span>
+              </div>
+              <div className="adm-kv__v">{r.blurb}</div>
+            </div>
+          ))}
+        </div>
+      </CardBody>
+    </Card>
+  );
+
+  if (!mayAssign) {
+    return (
+      <div className="apg__sec">
+        <ErrorState kind="denied" grant="platform owner access — role assignment is never delegated" />
+        {reference}
+      </div>
+    );
+  }
 
   return (
     <>
@@ -416,28 +454,14 @@ function PlatformRolesPanel() {
               </Field>
             </div>
             <div className="adm-actions">
-              <Button variant="fill" disabled={!mayAssign || busy || !email.trim()} onClick={assign}>
+              <Button variant="fill" disabled={busy || !email.trim()} onClick={assign}>
                 {busy ? 'Granting…' : 'Grant role'}
               </Button>
-              {!mayAssign && <span className="apg__secn">Platform owner only.</span>}
-            </div>
-
-            <div className="apg__sec">
-              <div className="apg__sech"><h3 className="apg__sect">What each role reaches</h3></div>
-              <div className="adm-kv">
-                {PLATFORM_ROLES.map(r => (
-                  <div key={r.code}>
-                    <div className="adm-kv__k">
-                      {r.label}
-                      <span className="apg__hi" lang="hi" aria-hidden="true">{r.hi}</span>
-                    </div>
-                    <div className="adm-kv__v">{r.blurb}</div>
-                  </div>
-                ))}
-              </div>
             </div>
           </CardBody>
         </Card>
+
+        {reference}
       </div>
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
@@ -465,8 +489,15 @@ export default function AdminPage() {
   const [confirm, setConfirm] = useState(null);
 
   const me = currentUser();
+  /* `/admin/users`, `/admin/invites` and `/admin/teams` are all guarded on
+     `CONSOLE_ROLES`, which excludes `account_finance`, `srijan_admin` and
+     `platform_support`. The sidebar shows this entry to all three, so without
+     the gate they land here, three requests fail, and the page resolves into a
+     generic error. */
+  const mayOpen = canOpenConsole(me?.platform_roles);
 
   const load = useCallback(() => {
+    if (!mayOpen) { setLoading(false); return Promise.resolve(); }
     setLoading(true);
     return Promise.all([
       api.get('/admin/users').then(r => setUsers(Array.isArray(r.data) ? r.data : [])),
@@ -476,7 +507,7 @@ export default function AdminPage() {
       .then(() => setErr(null))
       .catch(setErr)
       .finally(() => setLoading(false));
-  }, []);
+  }, [mayOpen]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -528,6 +559,22 @@ export default function AdminPage() {
     } finally { setSending(false); }
   };
 
+  if (!mayOpen) {
+    return (
+      <div className="apg">
+        <header className="apg__head">
+          <div className="apg__titles">
+            <h1 className="apg__t">
+              Platform
+              <span className="apg__hi" lang="hi" aria-hidden="true">प्रशासन</span>
+            </h1>
+          </div>
+        </header>
+        <ErrorState kind="denied" grant="platform owner, manager or staff access to the accounts console" />
+      </div>
+    );
+  }
+
   if (loading && users.length === 0) return <SkeletonPage withStats withTable />;
   if (err && users.length === 0) {
     return <ErrorState kind={errorKind(err)} grant="platform access to the console" onRetry={load} />;
@@ -556,7 +603,7 @@ export default function AdminPage() {
           )}
         />
         <CardBody flush>
-          <p className="apg__lede" style={{ padding: '0 var(--pad-card)' }}>
+          <p className="apg__lede apg__lede--inset">
             Attachments live under <code>projects/&#123;team_id&#125;/</code>. This is the
             lookup from a folder nobody can read to the project it belongs to.
           </p>

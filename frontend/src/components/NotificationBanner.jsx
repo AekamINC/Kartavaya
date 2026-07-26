@@ -3,7 +3,7 @@ import { Bell, BellOff, Moon, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { ensureServiceWorkerRegistered, urlBase64ToUint8Array } from '../lib/push';
 import {
-  clearAskReason, inDND, notifPermission, pushSupported, readNotifPrefs, useNotifications,
+  clearAskReason, notifPermission, pushSupported, useNotifications,
 } from '../context/NotificationContext';
 
 /**
@@ -27,10 +27,29 @@ import {
  *
  * Nothing here suppresses a notification. Quiet hours mute the toast, the sound
  * and the push; the record still arrives in the Inbox with its real timestamp,
- * which is what the third row says out loud.
+ * which is what the fourth row says out loud.
+ *
+ * QUIET HOURS COME FROM THE SERVER. The handover's `inDND()` read
+ * `prefs.dnd` / `dndFrom` / `dndTo` out of `k_prefs`, three keys that are not in
+ * CustomizePanel's DEFAULTS and were deliberately never added — so the read was
+ * always undefined, the check always false, and this row could never render.
+ * The capability was never missing, only unreachable: `push_service.py` refuses
+ * delivery inside the window stored on the `notification_prefs` row, and
+ * `GET /api/me/notification_prefs` is where that window lives. This banner now
+ * reports THAT value, so it says what the sender will actually do. The window is
+ * evaluated in IST, as the server evaluates it, not against the device clock.
  */
 
 const DISMISS_KEY = 'kv_notif_banner_dismissed';
+
+/** 07:00 → "7:00 am". The stored value is 24-hour; the sentence is not. */
+function clock(hhmm) {
+  const [h, m] = String(hhmm || '').split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return hhmm || '';
+  const suffix = h < 12 ? 'am' : 'pm';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, '0')} ${suffix}`;
+}
 
 function readDismissed() {
   try { return new Set(JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]')); }
@@ -57,7 +76,11 @@ async function subscribeToPush() {
 
 function Row({ tone, icon, title, hi, body, actions, onDismiss }) {
   return (
-    <div className="k-notifbanner" data-tone={tone} role="status">
+    // No `role="status"` per row. Up to four of these can be on screen at once,
+    // and four status regions announce four times over each other on mount. The
+    // live region is the container, once, so an arriving row is announced and a
+    // row that was already there is not re-read. 23 §3.
+    <div className="k-notifbanner" data-tone={tone}>
       <span className="k-notifbanner__ic" aria-hidden="true">{icon}</span>
       <span className="k-notifbanner__body">
         <span className="k-notifbanner__t">
@@ -77,12 +100,14 @@ function Row({ tone, icon, title, hi, body, actions, onDismiss }) {
 }
 
 export default function NotificationBanner() {
-  const { askReason } = useNotifications({ autoLoad: false });
+  // `autoLoad: false` — the banner never reads the list, so it must not be the
+  // thing that fetches it. `quietHours: true` — the window is the one server
+  // value it does render.
+  const { askReason, quiet, inQuiet } = useNotifications({ autoLoad: false, quietHours: true });
   const [permission, setPermission] = useState('default');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [dismissed, setDismissed] = useState(() => new Set());
-  const [prefs, setPrefs] = useState({});
 
   // The guarded read happens in an effect, never at module scope or in the
   // initial state — a throw at either of those points is a blank screen rather
@@ -90,7 +115,16 @@ export default function NotificationBanner() {
   useEffect(() => {
     setPermission(notifPermission());
     setDismissed(readDismissed());
-    setPrefs(readNotifPrefs());
+  }, []);
+
+  // Quiet hours open and close on the clock, not on an event. Without a tick a
+  // tab left open across 22:00 keeps saying notifications are arriving while the
+  // server has already stopped sending them. Once a minute is the resolution of
+  // the window itself — it is stored as HH:MM.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
   }, []);
 
   const dismiss = useCallback((id) => {
@@ -177,19 +211,35 @@ export default function NotificationBanner() {
     );
   }
 
-  if (inDND(prefs)) {
+  // `inQuiet` is false until the window has actually been read back from the
+  // server — an unread schedule is not a schedule we may announce.
+  if (inQuiet) {
     rows.push(
       <Row
-        key="dnd"
+        key="quiet"
         tone="info"
         icon={<Moon size={15} />}
         title="Quiet hours are on"
         hi="शांत समय"
-        body={`Toasts, sounds and push are muted until ${prefs.dndTo || '07:00'}. Notifications still arrive here, timestamped when they happened.`}
+        body={`Push is held until ${clock(quiet.end)} IST — the window is ${clock(quiet.start)} to ${clock(quiet.end)}, and it's applied on the server, not on this device. Notifications still arrive here, timestamped when they happened. Change the window in Customize → Notifications.`}
       />
     );
   }
 
-  if (!rows.length) return null;
-  return <div className="k-notifbanners">{rows}</div>;
+  // The live region is a SEPARATE, always-mounted node, not the visible
+  // container. A live region only announces changes made INSIDE a region the
+  // screen reader was already tracking, so `role="status"` on a container that
+  // is created together with its first row announces nothing — which is what
+  // per-row `role="status"` did here. This element is present whenever the
+  // banner is, and its text changes, which is the case that does announce.
+  // `.k-sr-only` is `position: absolute`, so it is out of flow and adds no gap
+  // to `.k-screen`'s flex column even when the visible container is gone.
+  const announce = rows.length ? rows.map((r) => r.props.title).join('. ') : '';
+
+  return (
+    <>
+      <p className="k-sr-only" role="status">{announce}</p>
+      {rows.length > 0 && <div className="k-notifbanners">{rows}</div>}
+    </>
+  );
 }

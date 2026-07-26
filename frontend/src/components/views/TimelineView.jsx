@@ -1,6 +1,26 @@
 /**
- * TimelineView.jsx — Gantt-style horizontal bar chart grouped by status column.
- * Tasks without due dates are listed at the bottom as "No date".
+ * TimelineView — a Gantt-style bar chart grouped by board column.
+ *
+ * 04 §5 marks this view **restyle only**: its drag-to-reschedule and multi-day
+ * behaviour is unspecified and needs a design pass before the interaction is
+ * touched. What follows is that restyle, and it closed three defects:
+ *
+ *  · **`:hover` was an inline style mutation.** `onMouseEnter` wrote
+ *    `e.currentTarget.style.background` and `onMouseLeave` cleared it — the
+ *    exact defect 04 §1 names on the table, where it went on to outrank the
+ *    selection styling added later. It is `.tl__row:hover` now. The mutation
+ *    was also load-bearing here in a way it was not on the table: the sticky
+ *    label column is `background: inherit`, so an inline write on the parent
+ *    was the only thing keeping the label opaque over the scrolling bars.
+ *  · **`--ink-faint` carried text** on the weekend day numbers and the
+ *    "No due date" note. It is 2.3:1 on `--bg` and declared non-text in 00 §12;
+ *    both are `--on-surface-3` (4.8:1).
+ *  · **Two hardcoded radii** (`4` on the bar, `2` on the column swatch) which
+ *    ignore the Sharp and Pill settings in exactly those two places.
+ *
+ * Geometry stays inline. Bar offsets and widths are `DAY_W` multiples computed
+ * per task, which is a value CSS cannot know; colour, type and state are
+ * classes.
  */
 import React, { useState, useMemo } from 'react';
 import TaskDrawer from '../TaskDrawer';
@@ -75,9 +95,9 @@ export default function TimelineView({ tasks = [], columns = [], teamMembers = [
   const todayOffset = daysBetween(rangeStart, today);
 
   return (
-    <div style={{ overflowX: 'auto', overflowY: 'auto', position: 'relative' }}>
+    <div className="tl">
       {/* Header: month labels */}
-      <div style={{ display: 'flex', paddingLeft: 220, position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg)', borderBottom: '1px solid var(--rule)' }}>
+      <div className="tl__months">
         {/* Month groupings */}
         {(() => {
           const groups = [];
@@ -91,7 +111,7 @@ export default function TimelineView({ tasks = [], columns = [], teamMembers = [
           });
           if (cur) groups.push({ key: cur, count, month: dayLabels[dayLabels.length - count].month, year: dayLabels[dayLabels.length - count].date.getFullYear() });
           return groups.map(g => (
-            <div key={g.key} style={{ width: g.count * DAY_W, flexShrink: 0, fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', letterSpacing: '0.1em', textTransform: 'uppercase', padding: '6px 8px', borderRight: '1px solid var(--rule-soft)' }}>
+            <div key={g.key} className="tl__month" style={{ width: g.count * DAY_W }}>
               {MONTHS[g.month]} {g.year}
             </div>
           ));
@@ -99,22 +119,26 @@ export default function TimelineView({ tasks = [], columns = [], teamMembers = [
       </div>
 
       {/* Day columns header */}
-      <div style={{ display: 'flex', paddingLeft: 220, position: 'sticky', top: 29, zIndex: 10, background: 'var(--bg-soft)', borderBottom: '1px solid var(--rule)' }}>
-        {dayLabels.map((d, i) => (
-          <div key={i} style={{
-            width: DAY_W, flexShrink: 0, textAlign: 'center',
-            fontSize: 10, color: d.isToday ? 'var(--k-primary)' : (d.date.getDay() === 0 || d.date.getDay() === 6) ? 'var(--ink-faint)' : 'var(--ink-3)',
-            fontWeight: d.isToday ? 700 : 400, padding: '4px 0',
-            background: d.isToday ? 'color-mix(in srgb, var(--k-primary) 8%, var(--bg-soft))' : undefined,
-          }}>{d.label}</div>
-        ))}
+      <div className="tl__days">
+        {dayLabels.map((d, i) => {
+          const weekend = d.date.getDay() === 0 || d.date.getDay() === 6;
+          return (
+            <div
+              key={i}
+              className={['tl__day', d.isToday && 'is-today', weekend && 'is-weekend'].filter(Boolean).join(' ')}
+              style={{ width: DAY_W }}
+            >
+              {d.label}
+            </div>
+          );
+        })}
       </div>
 
       {/* Rows */}
-      <div style={{ position: 'relative' }}>
+      <div className="tl__body">
         {/* Today line */}
         {todayOffset >= 0 && todayOffset < totalDays && (
-          <div style={{ position: 'absolute', left: 220 + todayOffset * DAY_W + DAY_W / 2, top: 0, bottom: 0, width: 1.5, background: 'var(--k-primary)', zIndex: 5, opacity: 0.6 }} />
+          <div className="tl__now" style={{ left: 220 + todayOffset * DAY_W + DAY_W / 2 }} />
         )}
 
         {sortedCols.map(colId => {
@@ -123,12 +147,10 @@ export default function TimelineView({ tasks = [], columns = [], teamMembers = [
           return (
             <div key={colId}>
               {/* Column group header */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: 'var(--bg-soft)', borderBottom: '1px solid var(--rule-soft)', position: 'sticky', left: 0 }}>
-                {col && <span style={{ width: 10, height: 10, borderRadius: 2, background: col.color || 'var(--ink-3)', flexShrink: 0, display: 'inline-block' }} />}
-                <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-2)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                  {col?.name || 'No status'}
-                </span>
-                <span style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>{colTasks.length}</span>
+              <div className="tl__grp">
+                {col && <span className="tl__grpdot" style={{ '--c': col.color || 'var(--on-surface-3)' }} />}
+                <span className="tl__grpn">{col?.name || 'No status'}</span>
+                <span className="tl__grpc">{colTasks.length}</span>
               </div>
 
               {colTasks.map(task => {
@@ -142,49 +164,43 @@ export default function TimelineView({ tasks = [], columns = [], teamMembers = [
                 const pColor = priorityColor(task.priority);
 
                 return (
-                  <div key={task.task_id} style={{ display: 'flex', alignItems: 'center', height: 40, borderBottom: '1px solid var(--rule-soft)', position: 'relative' }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
-                    onMouseLeave={e => e.currentTarget.style.background = ''}
-                  >
+                  <div key={task.task_id} className="tl__row">
                     {/* Task label — fixed left */}
-                    <div style={{ width: 220, flexShrink: 0, padding: '0 14px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', position: 'sticky', left: 0, background: 'inherit', zIndex: 2 }}
-                      onClick={() => setDrawer(task.task_id)}>
-                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: pColor, flexShrink: 0 }} />
-                      <span style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{task.title}</span>
-                    </div>
+                    <button
+                      type="button"
+                      className="tl__label"
+                      onClick={() => setDrawer(task.task_id)}
+                    >
+                      <span className="tl__pdot" style={{ '--c': pColor }} />
+                      <span className="tl__title">{task.title}</span>
+                    </button>
 
                     {/* Gantt bar area */}
-                    <div style={{ flex: 1, position: 'relative', height: '100%', display: 'flex', alignItems: 'center' }}>
+                    <div className="tl__lane">
                       {/* Weekend shading */}
                       {dayLabels.map((d, i) => (
                         (d.date.getDay() === 0 || d.date.getDay() === 6) ? (
-                          <div key={i} style={{ position: 'absolute', left: i * DAY_W, width: DAY_W, top: 0, bottom: 0, background: 'color-mix(in srgb, var(--ink) 3%, transparent)', pointerEvents: 'none' }} />
+                          <div key={i} className="tl__wknd" style={{ left: i * DAY_W, width: DAY_W }} />
                         ) : null
                       ))}
 
                       {hasDue && barStart !== null && barW > 0 && (
-                        <div
+                        <button
+                          type="button"
+                          className={['tl__bar', task.status === 'done' && 'is-done'].filter(Boolean).join(' ')}
                           onClick={() => setDrawer(task.task_id)}
                           style={{
-                            position: 'absolute', left: barStart * DAY_W, width: barW,
-                            height: 20, borderRadius: 4, cursor: 'pointer',
-                            background: isOverdue ? 'var(--danger)' : pColor,
-                            opacity: task.status === 'done' ? 0.4 : 0.85,
-                            display: 'flex', alignItems: 'center', paddingLeft: 6,
-                            fontSize: 10.5, color: '#fff', fontWeight: 600,
-                            overflow: 'hidden', whiteSpace: 'nowrap',
-                            boxShadow: '0 1px 3px rgba(0,0,0,.15)',
-                            transition: 'opacity .15s',
+                            left: barStart * DAY_W,
+                            width: barW,
+                            '--c': isOverdue ? 'var(--danger)' : pColor,
                           }}
                           title={task.title}
                         >
                           {barW > 60 && task.title}
-                        </div>
+                        </button>
                       )}
 
-                      {!hasDue && (
-                        <span style={{ position: 'absolute', left: 8, fontSize: 11, color: 'var(--ink-faint)', fontStyle: 'italic' }}>No due date</span>
-                      )}
+                      {!hasDue && <span className="tl__nodue">No due date</span>}
                     </div>
                   </div>
                 );

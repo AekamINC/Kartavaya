@@ -58,6 +58,12 @@ export const NAV_FULL = [
       { to: '/prachar', icon: 'prachar', en: 'Marketing', hi: 'प्रचार',  gu: 'પ્રચાર', module: 'prachar' },
       { to: '/esign',   icon: 'esign',   en: 'E-Sign',    hi: 'प्रमाण',  gu: 'પ્રમાણ', module: 'esign' },
       { to: '/sanvaad', icon: 'inbox',   en: 'Messages',  hi: 'संवाद',   gu: 'સંવાદ',  module: 'sanvaad' },
+      // Pahchan was routed in App.jsx and rendered a finished page, but it was
+      // in NO nav list — it appeared only in EXTRA_ROUTES, which exists to give
+      // a breadcrumb to routes that have no sidebar entry. So the module was
+      // reachable exclusively by typing the URL. It is a module like the nine
+      // above it and belongs in the group with them.
+      { to: '/pahchan', icon: 'pahchan', en: 'Attendance', hi: 'पहचान',  gu: 'પહચાન',  module: 'pahchan' },
     ],
   },
   {
@@ -66,7 +72,11 @@ export const NAV_FULL = [
       { to: '/settings/categories',    icon: 'categories',    en: 'Categories',    hi: 'वर्ग',   gu: 'વર્ગ' },
       { to: '/settings/customize',     icon: 'customize',     en: 'Customize',     hi: 'सजावट',  gu: 'સજાવટ' },
       { to: '/settings/organisation',  icon: 'org',           en: 'Organisation',  hi: 'संगठन',  gu: 'સંગઠન', orgAdminOnly: true },
-      { to: '/billing',                icon: 'billing',       en: 'Billing',       hi: 'बिलिंग', gu: 'બિલિંગ' },
+      // Points at the tab, not at `/billing`. `10-org-settings.md` folded
+      // BillingPage.jsx into `org/TabBilling.jsx`; `/billing` survives in
+      // App.jsx only as a redirect for bookmarks and emailed links, and a nav
+      // item that routes through a redirect flashes the wrong screen first.
+      { to: '/settings/organisation?tab=billing', icon: 'billing', en: 'Billing', hi: 'बिलिंग', gu: 'બિલિંગ' },
     ],
   },
 ];
@@ -94,11 +104,20 @@ export function navContext(user) {
   // A client with an org role is staff who also happens to be flagged client;
   // the portal nav is only for someone with no org membership at all.
   const isClient      = user?.role === 'client' && orgRoles.length === 0;
+  // `module_grants[]` is what 01 §4 says drives the module predicates. The
+  // backend does not send it yet (`auth_router.py:125 _safe_user` returns
+  // `platform_roles` and `org_roles` and nothing else), so `null` means "no
+  // opinion" and every module stays visible — which is today's behaviour.
+  // The moment /auth/me returns the array, gating starts working with no
+  // further change here. A missing signal must not read as an empty grant, or
+  // the entire modules group vanishes the day someone adds the field.
+  const moduleGrants  = Array.isArray(user?.module_grants) ? user.module_grants : null;
   return {
     isPlatform,
     isOrgOwner,
     isOrgAdmin,
     isClient,
+    moduleGrants,
     // Legacy `role` column is still the only signal for orgs that predate
     // user_roles, so it is a fallback, not the primary test.
     isOwnerish: isOrgOwner || isOrgAdmin || isPlatform || user?.role === 'owner' || user?.role === 'admin',
@@ -110,6 +129,10 @@ export function canSeeNavItem(item, ctx) {
   if (item.adminOnly && !ctx.isPlatform) return false;
   if (item.orgAdminOnly && !ctx.isOrgAdmin) return false;
   if (item.ownerOnly && !ctx.isOwnerish) return false;
+  // `module` was declared on all ten module entries and read by nothing — the
+  // predicate existed in the data and never in the filter. See `moduleGrants`
+  // above for why an absent grant list is permissive rather than empty.
+  if (item.module && ctx.moduleGrants && !ctx.moduleGrants.includes(item.module)) return false;
   return true;
 }
 
@@ -138,16 +161,33 @@ export const MOBILE_NAV = [
   { kind: 'more',                   icon: 'more',      en: 'More',     hi: 'अधिक',    gu: 'વધુ' },
 ];
 
+/**
+ * The client portal's three destinations — and nothing else.
+ *
+ * This list used to be a STAFF sidebar handed to a client: `/dashboard`,
+ * `/tasks`, `/approvals`, `/inbox` and `/settings/customize`. Every one of
+ * those routes renders a staff screen against a staff endpoint. `/approvals`
+ * is `ApprovalsPage`, which is the firm's own approval queue with the
+ * requester's name and email on each row; `/inbox` is the staff notification
+ * feed. `19-client-portal.md`'s never-see list names both — "the firm's own
+ * queue", "team member emails" — and `08-rbac-screens.md` enforces it at the
+ * serializer. A nav that points a client at them is an invitation to find out
+ * whether the API also forgot.
+ *
+ * A client no longer reaches `AppShell` at all (`App.jsx` routes `/client/*`
+ * through `ClientShell` instead, and `Protected` bounces a client off every
+ * staff path), so in practice this list renders nowhere. It is kept, pointed
+ * at the portal, for two reasons: `ROUTE_META` builds the breadcrumb map from
+ * it, and if some future route ever does put a client in front of the staff
+ * sidebar, the failure should be a cosmetic one rather than a disclosure.
+ */
 export const NAV_CLIENT = [
   {
-    section: 'workspace', sans: 'कार्यक्षेत्र', gu: 'કાર્યક્ષેત્ર',
+    section: 'portal', sans: 'द्वार', gu: 'દ્વાર',
     items: [
-      { to: '/dashboard',              icon: 'dashboard',     en: 'Dashboard',     hi: 'अद्य',    gu: 'ડૅશબોર્ડ' },
-      { to: '/client/projects',        icon: 'projects',      en: 'My Projects',   hi: 'योजना',   gu: 'યોજના' },
-      { to: '/tasks',                  icon: 'tasks',         en: 'My Tasks',      hi: 'कर्तव्य', gu: 'કાર્ય' },
-      { to: '/approvals',              icon: 'approvals',     en: 'Approvals',     hi: 'सम्मति',  gu: 'મંજૂરી' },
-      { to: '/inbox',                  icon: 'inbox',         en: 'Inbox',         hi: 'सन्देश',  gu: 'સંદેશ', badge: 'unread' },
-      { to: '/settings/customize?tab=notifications', icon: 'notifications', en: 'Notifications', hi: 'सूचना',   gu: 'સૂચના' },
+      { to: '/client',           icon: 'dashboard', en: 'Overview',  hi: 'अवलोकन', gu: 'અવલોકન' },
+      { to: '/client/approvals', icon: 'approvals', en: 'Approvals', hi: 'सम्मति',  gu: 'મંજૂરી' },
+      { to: '/client/files',     icon: 'documents', en: 'Files',     hi: 'संचिका',  gu: 'ફાઇલ' },
     ],
   },
 ];
@@ -161,23 +201,40 @@ const EXTRA_ROUTES = [
   { to: '/admin/orgs',            en: 'Organisations',   hi: 'संस्थाएँ' },
   { to: '/admin/costs',           en: 'Cost Dashboard',  hi: 'लागत' },
   { to: '/hub/clients',           en: 'Srijan Clients',  hi: 'सृजन ग्राहक' },
-  { to: '/client',                en: 'Client Portal',   hi: 'पोर्टल' },
   { to: '/settings',              en: 'Settings',        hi: 'व्यवस्था' },
-  { to: '/pahchan',               en: 'Pahchan',         hi: 'पहचान' },
+  // Routed but nav-less, and each one previously fell through to the app name.
+  { to: '/onboarding',            en: 'Set up',          hi: 'आरम्भ' },
+  { to: '/billing',               en: 'Billing',         hi: 'बिलिंग' },
+  { to: '/client/projects',       en: 'Your work',       hi: 'कार्य' },
+  { to: '/client/project',        en: 'Project',         hi: 'योजना' },
+  { to: '/approve',               en: 'Approval',        hi: 'सम्मति' },
+  { to: '/sign',                  en: 'Sign document',   hi: 'हस्ताक्षर' },
 ];
 
-/** Every known route, flattened — nav items win over extras on collision. */
+/**
+ * Every known route, flattened.
+ *
+ * FIRST declaration wins, not last. Two nav entries can legitimately share a
+ * pathname once an entry carries a query string — Billing points at
+ * `/settings/organisation?tab=billing`, which strips to the same key as
+ * Organisation. Under last-wins the Organisation page's breadcrumb read
+ * "Billing". Nav still beats EXTRA_ROUTES, because the nav groups are walked
+ * after the extras and an extra is only kept when nothing has claimed the key.
+ */
 export const ROUTE_META = (() => {
   const map = {};
-  for (const r of EXTRA_ROUTES) map[r.to] = { en: r.en, hi: r.hi };
+  const claim = (key, value) => {
+    if (!Object.prototype.hasOwnProperty.call(map, key)) map[key] = value;
+  };
   for (const group of [...NAV_CLIENT, ...NAV_FULL]) {
     // Keyed by pathname — a nav entry may carry a query string to land on a
     // specific tab, and resolveRouteMeta is only ever given a bare pathname,
     // so an unstripped key would sit in the map and never match anything.
     for (const it of group.items) {
-      map[it.to.split('?')[0]] = { en: it.en, hi: it.hi, gu: it.gu, module: it.module };
+      claim(it.to.split('?')[0], { en: it.en, hi: it.hi, gu: it.gu, module: it.module });
     }
   }
+  for (const r of EXTRA_ROUTES) claim(r.to, { en: r.en, hi: r.hi });
   return map;
 })();
 

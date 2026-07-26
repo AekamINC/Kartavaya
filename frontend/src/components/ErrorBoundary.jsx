@@ -15,7 +15,7 @@ export default class ErrorBoundary extends React.Component {
         <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px', fontFamily: 'var(--font-display)' }}>
           Something went wrong
         </h2>
-        <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20, fontFamily: 'var(--font-hindi)' }}>
+        <p lang="hi" style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20, fontFamily: 'var(--font-hindi)' }}>
           कुछ गलत हो गया — कृपया पुनः प्रयास करें
         </p>
         <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>

@@ -18,6 +18,13 @@
  * it later without a flag day. When it does, both read the same array and the
  * disagreement is structurally impossible rather than merely fixed.
  *
+ * Two things this file owns beyond that, both documented at the code:
+ *   · WHOSE notifications the cache holds. A module-level cache lives as long
+ *     as the tab, not as long as the session, so it is scoped to the signed-in
+ *     user and drops itself the moment that changes. See "Whose notifications
+ *     are these?" below — it is a privacy boundary, not an optimisation.
+ *   · QUIET HOURS come from the server, not from `k_prefs`. See "Quiet hours".
+ *
  * ONE REQUEST SHAPE PER CALL. `markRead` sends `{ notification_ids }` and never
  * `mark_all`; `markAll` sends `{ mark_all: true }` and never `notification_ids`.
  * Staging sent `{ mark_all: true, notification_ids: [] }` from two callers, which
@@ -35,17 +42,35 @@ import { api } from '../lib/api';
 
 const STALE_MS = 30_000;
 
-let state = {
+/** The server's documented quiet window, mirrored from `GET /me/notification_prefs`. */
+const DEFAULT_QUIET = { start: '22:00', end: '07:00' };
+
+const EMPTY = {
   items: [],
   loading: false,
   loaded: false,
   error: null,
   /** Why we are about to ask for browser permission — see `askAfterAction`. */
   askReason: null,
+  /**
+   * The SERVER's quiet-hours window and per-kind delivery modes. Not read from
+   * localStorage — see the quiet-hours section below.
+   * `loaded` is false until `GET /me/notification_prefs` has answered; the
+   * window still carries the server's defaults so the gate behaves like the
+   * sender does, but no UI may CLAIM quiet hours are on until `loaded`.
+   */
+  quiet: { loaded: false, start: DEFAULT_QUIET.start, end: DEFAULT_QUIET.end, modes: null },
 };
+
+let state = { ...EMPTY };
 
 let lastFetch = 0;
 let inflight = null;
+// Declared with the rest of the store rather than beside `refreshQuietHours`,
+// because `purgeIfForeign` clears them and would otherwise touch a `let` in its
+// temporal dead zone if anything ever called into the store during module init.
+let quietFetch = 0;
+let quietInflight = null;
 const listeners = new Set();
 
 function emit() { for (const fn of [...listeners]) fn(); }
@@ -55,14 +80,90 @@ function subscribe(fn) {
   listeners.add(fn);
   return () => { listeners.delete(fn); };
 }
-function getSnapshot() { return state; }
 
-/** Test seam and logout hook — drops the cache without a network round trip. */
+/* ── Whose notifications are these? ────────────────────────────────────────
+   PRIVACY, not polish. The cache above is module-level, which is the whole
+   point of this file — but a module lives as long as the TAB, not as long as
+   the session. Sign out and sign back in as somebody else without reloading
+   and the second user renders the first user's inbox: their titles, their
+   client names, their approval requests. `resetNotifications()` exists for
+   `apiLogout()` to call and `apiLogout()` does not call it, so the store
+   defends itself instead of trusting a caller it does not control:
+
+   every read and every write first checks WHO the cache belongs to, and a
+   cache belonging to anybody else is dropped before it can be rendered. That
+   also covers the cases a logout hook alone would miss — a token expiring and
+   a different account signing in, a second tab logging out, a session restored
+   from a stale localStorage. The logout hook is still worth wiring (it frees
+   the memory a beat earlier and is the obvious place to look); it is no longer
+   the only thing standing between two users and each other's mail. */
+
+/** The key `lib/auth.js` writes on sign-in and clears on `apiLogout()`. */
+const USER_KEY = 'Kartavaya_user';
+
+let owner;      // `undefined` until the first check — never a valid id.
+let ownerRaw;   // the raw record `owner` was derived from, so the hot path can
+                // compare strings instead of parsing JSON on every render.
+
+function rawUser() {
+  try { return localStorage.getItem(USER_KEY); } catch (_) { return null; }
+}
+
+function idFrom(raw) {
+  if (!raw) return null;
+  try { const u = JSON.parse(raw); return u?.user_id || u?.id || u?.email || null; }
+  catch (_) { return null; }
+}
+
+/**
+ * Drop anything cached for a different signed-in user. Returns true if it did.
+ *
+ * Deliberately does NOT emit: it is called from `getSnapshot`, which React runs
+ * during render, and an emit there would be a re-entrant store update. It
+ * replaces `state` with a fresh empty object, so the very next `getSnapshot`
+ * returns that same object and `useSyncExternalStore` settles in one step.
+ */
+function purgeIfForeign() {
+  const raw = rawUser();
+  if (raw === ownerRaw) return false;   // hot path: unchanged record, no parse.
+  ownerRaw = raw;
+  const id = idFrom(raw);
+  // The record is rewritten on a profile edit, which is not a change of user.
+  if (id === owner) return false;
+  owner = id;
+  lastFetch = 0;
+  quietFetch = 0;
+  inflight = null;
+  quietInflight = null;
+  state = { ...EMPTY, quiet: { ...EMPTY.quiet } };
+  return true;
+}
+
+function getSnapshot() {
+  purgeIfForeign();
+  return state;
+}
+
+/** Logout hook and test seam — drops the cache without a network round trip. */
 export function resetNotifications() {
   lastFetch = 0;
+  quietFetch = 0;
   inflight = null;
-  state = { items: [], loading: false, loaded: false, error: null, askReason: null };
+  quietInflight = null;
+  ownerRaw = rawUser();
+  owner = idFrom(ownerRaw);
+  state = { ...EMPTY, quiet: { ...EMPTY.quiet } };
   emit();
+}
+
+/* A logout in a second tab clears the record there; `storage` is how this tab
+   hears about it. Without this the other tab's list stays in memory until
+   something happens to call into the store. */
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key && e.key !== USER_KEY) return;
+    if (purgeIfForeign()) emit();
+  });
 }
 
 /**
@@ -70,6 +171,7 @@ export function resetNotifications() {
  * `STALE_MS`, so mounting the Inbox while the bell is open is one request.
  */
 export function refreshNotifications({ force = false } = {}) {
+  purgeIfForeign();
   if (inflight) return inflight;
   if (!force && state.loaded && Date.now() - lastFetch < STALE_MS) {
     return Promise.resolve(state.items);
@@ -97,6 +199,7 @@ export function refreshNotifications({ force = false } = {}) {
  * click, not on the response — with a full rollback if the write fails.
  */
 export async function markNotificationsRead(ids) {
+  purgeIfForeign();
   const list = (Array.isArray(ids) ? ids : [ids]).filter(Boolean);
   if (!list.length) return true;
   const prev = state.items;
@@ -117,6 +220,7 @@ export async function markNotificationsRead(ids) {
 
 /** Mark every unread notification read. Same optimistic contract. */
 export async function markAllNotificationsRead() {
+  purgeIfForeign();
   const prev = state.items;
   if (!prev.some((n) => !n.read_at)) return true;
 
@@ -138,6 +242,7 @@ export async function markAllNotificationsRead() {
  * `/notifications`.
  */
 export function ingestNotifications(fresh) {
+  purgeIfForeign();
   if (!Array.isArray(fresh) || !fresh.length) return;
   const seen = new Set(state.items.map((n) => n.notification_id));
   const added = fresh.filter((n) => n?.notification_id && !seen.has(n.notification_id));
@@ -145,12 +250,10 @@ export function ingestNotifications(fresh) {
   set({ items: [...added, ...state.items], loaded: true });
 }
 
-/* ── Preferences, quiet hours and the delivery gate ────────────────────────
-   `k_prefs` is the object CustomizePanel writes. The handover asks for the
-   notification preference to move into it rather than living alone in
-   localStorage, so this reads from there and tolerates its absence — none of
-   the DND keys exist in DEFAULTS yet, and a missing key must mean "not in DND"
-   rather than throwing. */
+/* ── Preferences ───────────────────────────────────────────────────────────
+   `k_prefs` is the object CustomizePanel writes. It carries device-local taste
+   — the notification SOUND — and nothing that decides delivery. Everything a
+   sender consults lives on the server; see the next section. */
 
 const PREFS_KEY = 'k_prefs';
 
@@ -161,45 +264,145 @@ export function readNotifPrefs() {
   } catch (_) { return {}; }
 }
 
+/* ── Quiet hours — the SERVER's window, evaluated in IST ───────────────────
+
+   THE CONTRADICTION THIS RESOLVES. The handover's `inDND()` read
+   `prefs.dnd` / `dndFrom` / `dndTo` out of `k_prefs`. Those three keys do not
+   exist in CustomizePanel's DEFAULTS and were deliberately never added, on the
+   correct reasoning that quiet hours are enforced SERVER-side. The consequence
+   was that `prefs.dnd` was always undefined, `inDND()` always returned false,
+   and the banner could never show quiet-hours state at all — a schedule that
+   silences nothing and a UI that can never say so.
+
+   Adding the three keys would have been worse than leaving them out. NOTHING
+   READS THEM: `services/push_service.py` decides delivery from the
+   `notification_prefs` row — `_in_quiet_hours(quiet_start, quiet_end)`,
+   midnight-wrapping, plus `_mode_allows(mode, is_mine)` per kind — and
+   `GET/PUT /api/me/notification_prefs` is the only way to move those values.
+   A localStorage window would have LOOKED set, on one device, and muted
+   nothing anywhere.
+
+   So this reads the server's window and mirrors the server's arithmetic.
+   `components/customize/NotifyPrefs.jsx` is the UI that writes it; the shapes
+   here match that contract exactly and this file never writes it.
+
+   IST, NOT THE BROWSER CLOCK. `push_service.py` evaluates the window against
+   `datetime.now(IST)`. A user in London reading `getHours()` would be told
+   quiet hours end at 07:00 and see their toasts stop five and a half hours off
+   what the server actually does. The window is a wall-clock time in one fixed
+   zone, so it is computed from UTC plus a fixed offset, not from the device. */
+
+export const IST_OFFSET_MIN = 5 * 60 + 30;
+
+const QUIET_STALE_MS = 300_000;
+
+const isHHMM = (v) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(v ?? ''));
+
 function minutesOf(hhmm, fallback) {
   const [h, m] = String(hhmm ?? '').split(':').map(Number);
   if (Number.isFinite(h) && Number.isFinite(m)) return h * 60 + m;
   return fallback;
 }
 
+/** Minutes past midnight IST, wherever the device thinks it is. */
+export function istMinutes(now = new Date()) {
+  return (now.getUTCHours() * 60 + now.getUTCMinutes() + IST_OFFSET_MIN + 1440) % 1440;
+}
+
 /**
- * Quiet hours, wrap-aware.
+ * Load the server's quiet window and per-kind modes.
+ *
+ * Cached for five minutes: a schedule changes about once, and `NotifyPrefs`
+ * is the only writer. Call with `{ force: true }` after a save there.
+ */
+export function refreshQuietHours({ force = false } = {}) {
+  purgeIfForeign();
+  if (quietInflight) return quietInflight;
+  if (!force && state.quiet.loaded && Date.now() - quietFetch < QUIET_STALE_MS) {
+    return Promise.resolve(state.quiet);
+  }
+  quietInflight = api.get('/me/notification_prefs')
+    .then((r) => {
+      const d = r?.data || {};
+      quietFetch = Date.now();
+      const quiet = {
+        loaded: true,
+        // The endpoint's own fallbacks, restated because a row written before
+        // the columns had defaults can still answer with null.
+        start: isHHMM(d.quiet_start) ? d.quiet_start : DEFAULT_QUIET.start,
+        end: isHHMM(d.quiet_end) ? d.quiet_end : DEFAULT_QUIET.end,
+        // GET merges DEFAULT_PREFS server-side, so this is complete and there
+        // is no need for a fourth copy of that table on the client.
+        modes: d.prefs && typeof d.prefs === 'object' ? d.prefs : {},
+      };
+      set({ quiet });
+      return quiet;
+    })
+    .catch(() => {
+      // A window we could not read is not a window we may announce. The gate
+      // keeps the server's defaults so it behaves like the sender; `loaded`
+      // stays false so no banner claims quiet hours are on.
+      set({ quiet: { ...state.quiet, loaded: false } });
+      return state.quiet;
+    })
+    .finally(() => { quietInflight = null; });
+  return quietInflight;
+}
+
+/**
+ * Quiet hours, wrap-aware, in IST — the same arithmetic as
+ * `push_service._in_quiet_hours`.
  *
  * The wrap case is the whole point: quiet hours nearly always cross midnight,
- * and a naive `from <= m && m < to` silences nothing at all for 20:00 → 09:00.
+ * and a naive `from <= m && m < to` silences nothing at all for 22:00 → 07:00.
+ * An empty window (`from === to`) silences nothing, which is what the server
+ * returns for it too.
  */
-export function inDND(prefs, now = new Date()) {
-  if (!prefs?.dnd) return false;
-  const m = now.getHours() * 60 + now.getMinutes();
-  const from = minutesOf(prefs.dndFrom, 22 * 60);
-  const to = minutesOf(prefs.dndTo, 7 * 60);
-  return from <= to ? (m >= from && m < to) : (m >= from || m < to);
+export function inQuietHours(quiet = state.quiet, now = new Date()) {
+  const from = minutesOf(quiet?.start, 22 * 60);
+  const to = minutesOf(quiet?.end, 7 * 60);
+  if (from === to) return false;
+  const m = istMinutes(now);
+  return from < to ? (m >= from && m < to) : (m >= from || m < to);
 }
 
 /**
  * One gate, three channels.
  *
- * DND suppresses the toast, the sound and the push. It never suppresses the
- * notification — it arrives in the Inbox with its real timestamp. The record is
- * when it happened, not when you saw it.
+ * Quiet hours suppress the toast, the sound and the push. They never suppress
+ * the notification — it arrives in the Inbox with its real timestamp. The
+ * record is when it happened, not when you saw it.
  *
- * `support` ignores DND and ignores the email preference. A customer being asked
- * to grant access to their own data is told immediately, at 3am, whatever their
- * settings say; `11-platform-admin.md` states support access is never silent.
+ * `type` is the RAW backend type string (`approval_request`, `status_changed`,
+ * …), not one of the eight display kinds, because that is the key the mode map
+ * is stored under. `isMine` mirrors the server's argument of the same name:
+ * `mine_only` delivers when the event is yours, `project` for anything in a
+ * project you belong to.
+ *
+ * `support` ignores quiet hours and ignores the email preference. A customer
+ * being asked to grant access to their own data is told immediately, at 3am,
+ * whatever their settings say; `11-platform-admin.md` states support access is
+ * never silent.
+ *
+ * This is the client half only — it governs the in-app toast and the sound.
+ * Push is refused or allowed by `push_service.py` regardless of what this
+ * returns; the `push` field is what this device would ADD to that, never a
+ * licence to override it.
  */
-export function shouldDeliver(kind, prefs = readNotifPrefs(), now = new Date()) {
-  if (kind === 'support') return { toast: true, sound: true, push: true, email: true };
-  const quiet = inDND(prefs, now);
+export function shouldDeliver(type, {
+  quiet = state.quiet, prefs = readNotifPrefs(), now = new Date(), isMine = true,
+} = {}) {
+  if (type === 'support') return { toast: true, sound: true, push: true, email: true };
+  const quietNow = inQuietHours(quiet, now);
+  const mode = quiet?.modes?.[type];
+  // Unknown mode = not yet loaded, or a kind with no row in the preference
+  // table. Both mean "the user has not switched this off".
+  const allowed = mode === 'off' ? false : mode === 'mine_only' ? isMine : true;
   return {
-    toast: !quiet,
-    sound: !quiet && prefs?.notifSound !== false,
-    push: !quiet && prefs?.push !== false && notifPermission() === 'granted',
-    email: prefs?.email?.[kind] !== false,
+    toast: !quietNow,
+    sound: !quietNow && prefs?.notifSound !== false,
+    push: !quietNow && allowed && notifPermission() === 'granted',
+    email: allowed,
   };
 }
 
@@ -225,6 +428,23 @@ export function pushSupported() {
 const ASK_KEY = 'kv_notif_ask_reason';
 
 /**
+ * The reasons, as a closed set.
+ *
+ * The banner renders "You just {reason}." so the string has to be a past-tense
+ * verb phrase that finishes that sentence. Exported as a table rather than left
+ * to each call site because four call sites writing their own copy is four
+ * chances to produce "You just Task assigned." — and this is the one prompt the
+ * browser will let us show exactly once.
+ */
+export const ASK_REASONS = {
+  assigned: 'assigned a task to someone',
+  approval: 'requested an approval',
+  mention: 'mentioned a teammate',
+  comment: 'commented on a task',
+  message: 'sent a message',
+};
+
+/**
  * Defect 4 · the permission prompt must not fire on a timer.
  *
  * AppShell asks after a 4-second `setTimeout` on the first authenticated load —
@@ -234,6 +454,15 @@ const ASK_KEY = 'kv_notif_ask_reason';
  * actually produce a notification — assigning a task, requesting an approval,
  * sending a message — and the prompt explains itself, because the user just did
  * the thing it is about.
+ *
+ * CALL IT WITH AN `ASK_REASONS` VALUE, from the success path of the action —
+ * `askAfterAction(ASK_REASONS.assigned)` after the assign request resolves, not
+ * before it is sent. An ask attached to an action that then failed is the timer
+ * again, with extra steps.
+ *
+ * Silent unless the browser is still undecided: once permission is `granted`,
+ * `denied` or `unsupported` there is nothing to ask for, and calling this from
+ * a hot path costs nothing.
  *
  * Persisted, so the reason survives the reload that follows the action.
  */
@@ -258,13 +487,21 @@ function storedAskReason() {
  * The only read path. Bell, Inbox and the unread count all call this, so there
  * is one array and one definition of unread.
  */
-export function useNotifications({ autoLoad = true } = {}) {
+export function useNotifications({ autoLoad = true, quietHours = false } = {}) {
   const snap = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   useEffect(() => {
     if (!autoLoad) return;
     refreshNotifications();
   }, [autoLoad]);
+
+  // Opt-in, so the bell popover does not fetch a schedule it never renders.
+  // Anything that decides delivery — the banner, and the toast gate when
+  // `layout/` adopts `shouldDeliver` — passes `{ quietHours: true }`.
+  useEffect(() => {
+    if (!quietHours) return;
+    refreshQuietHours();
+  }, [quietHours]);
 
   // Hydrate the persisted ask reason once, so a reload after the triggering
   // action still explains itself.
@@ -283,12 +520,21 @@ export function useNotifications({ autoLoad = true } = {}) {
   return {
     items: snap.items,
     unread,
-    // Only the FIRST load is a loading state. A background revalidation must not
-    // replace a list the user is already reading with a skeleton.
-    isLoading: snap.loading && !snap.loaded,
+    // "Has never finished a load", not "a request is in flight".
+    //
+    // `snap.loading && !snap.loaded` was false on the very first render — the
+    // fetch starts in an effect, which runs AFTER that render — so the Inbox
+    // painted its "You're all caught up" empty state for one frame, then the
+    // skeleton, then the list. The first thing a user with 40 unread saw was a
+    // claim that they had none. `loaded` turns true on success AND on failure,
+    // so this is exactly the pre-first-answer window.
+    isLoading: !snap.loaded,
     isRefreshing: snap.loading,
     error: snap.error,
     askReason: snap.askReason,
+    /** The server's window, plus whether it is open right now. */
+    quiet: snap.quiet,
+    inQuiet: snap.quiet.loaded && inQuietHours(snap.quiet),
     refresh,
     markRead,
     markAll,
@@ -309,7 +555,9 @@ const NotificationCtx = createContext(null);
  * exactly the rows it needs to toast.
  */
 export function NotificationProvider({ children, intervalMs = 60_000, onFresh }) {
-  const bag = useNotifications();
+  // The shell is where toasts and sounds fire, so the Provider is the one
+  // consumer that always needs the quiet-hours window.
+  const bag = useNotifications({ quietHours: true });
 
   useEffect(() => {
     let live = true;
