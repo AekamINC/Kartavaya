@@ -91,6 +91,7 @@ GENERATED, never transcribed: `cd frontend && node scripts/check-contrast.mjs --
 3:1 large text (>=24px, or >=18.66px at >=700 weight) and non-text UI.
 Regenerated after rebasing onto staging at 58+ commits, so these are current.
 
+
 #### LIGHT
 
 | foreground | resolved | `--bg` | `--surface` | `--s-low` | `--s-container` | `--s-high` | `--s-highest` |
@@ -270,12 +271,12 @@ Six live rules land below 4.5:1 at 9.5–11px, all in light mode:
 
 | rule | file:line | measured |
 |---|---|---|
-| `.k-apcard__kind--creative` | `editorial.css:1900` | **4.13** |
-| `.k-actitem__verb--attached` | `editorial.css:1984` | **4.13** |
-| `.k-rule__status--off` | `editorial.css:2022` | **4.15** |
-| `.k-actitem__verb--assigned` | `editorial.css:1986` | **4.20** |
-| `.k-actitem__verb--approved` | `editorial.css:1983` | **4.21** |
-| `.k-rule__status--on` | `editorial.css:2014` | **4.33** |
+| `.k-apcard__kind--creative` | `editorial.css:1915` | **4.13** |
+| `.k-actitem__verb--attached` | `editorial.css:1999` | **4.13** |
+| `.k-rule__status--off` | `editorial.css:2037` | **4.15** |
+| `.k-actitem__verb--assigned` | `editorial.css:2001` | **4.20** |
+| `.k-actitem__verb--approved` | `editorial.css:1998` | **4.21** |
+| `.k-rule__status--on` | `editorial.css:2029` | **4.33** |
 
 Live in `AutomationsPage.jsx`, `TasksListPage.jsx`, `ModuleUI.jsx`.
 `--danger` and `--primary-text` survive at 4.57 and 4.55 — a 0.05 margin, so
