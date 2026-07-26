@@ -72,6 +72,7 @@ const GrahaPage             = lazy(() => import('./pages/GrahaPage'));
 const GanitPage             = lazy(() => import('./pages/GanitPage'));
 const ManavPage             = lazy(() => import('./pages/ManavPage'));
 const VikrayPage            = lazy(() => import('./pages/VikrayPage'));
+const PahchanPage           = lazy(() => import('./pages/PahchanPage'));
 const VetanaPage            = lazy(() => import('./pages/VetanaPage'));
 const DristiPage            = lazy(() => import('./pages/DristiPage'));
 const PracharPage           = lazy(() => import('./pages/PracharPage'));
@@ -181,6 +182,7 @@ function AppRouter() {
           <Route path="ganit"                  element={<GanitPage />} />
           <Route path="manav"                  element={<ManavPage />} />
           <Route path="vikray"                 element={<VikrayPage />} />
+          <Route path="pahchan"                element={<PahchanPage />} />
           <Route path="vetana"                 element={<VetanaPage />} />
           <Route path="dristi"                 element={<DristiPage />} />
           <Route path="prachar"                element={<PracharPage />} />

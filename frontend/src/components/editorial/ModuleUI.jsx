@@ -80,9 +80,16 @@ export function DataTable({ columns, children }) {
       <table className="k-modtable">
         <thead>
           <tr>
-            {columns.map(c => (
-              <th key={typeof c === 'string' ? c : c.label}
-                data-align={typeof c === 'object' && c.align === 'right' ? 'right' : undefined}>
+            {columns.map((c, i) => (
+              <th
+                key={typeof c === 'string' ? c || `col-${i}` : c.label || `col-${i}`}
+                data-align={typeof c === 'object' && c.align === 'right' ? 'right' : undefined}
+                // A column may carry a className so a responsive rule can hide
+                // the header and its cells together. The register needs this:
+                // 07-pahchan.md drops .rv__loc and .rv__v below 900px, and a
+                // hidden cell under a visible header is a shifted table.
+                className={typeof c === 'object' ? c.className : undefined}
+              >
                 {typeof c === 'string' ? c : c.label}
               </th>
             ))}
@@ -94,14 +101,22 @@ export function DataTable({ columns, children }) {
   );
 }
 
-export function Td({ align, mono, bold, color, children }) {
+export function Td({ align, mono, bold, color, className, children }) {
   return (
-    <td data-align={align} style={{
-      fontFamily: mono ? 'var(--font-mono)' : undefined,
-      fontVariantNumeric: mono ? 'tabular-nums' : undefined,
-      fontWeight: bold ? 600 : undefined,
-      color: color || undefined,
-    }}>
+    <td
+      data-align={align}
+      // Needed by any table with per-column responsive behaviour, and by
+      // 07-pahchan.md §179's requirement that a loading skeleton SHARE the real
+      // row's cell rules rather than mirror them — which is only possible if the
+      // real cells carry classes to share.
+      className={className}
+      style={{
+        fontFamily: mono ? 'var(--font-mono)' : undefined,
+        fontVariantNumeric: mono ? 'tabular-nums' : undefined,
+        fontWeight: bold ? 600 : undefined,
+        color: color || undefined,
+      }}
+    >
       {children}
     </td>
   );

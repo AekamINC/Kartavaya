@@ -28,7 +28,7 @@
 .st__group { margin-bottom: 26px; }
 .st__gt {
   font-size: 10px; font-weight: 700; letter-spacing: .12em;
-  text-transform: uppercase; color: var(--primary); margin-bottom: 2px;
+  text-transform: uppercase; color: var(--primary-text); margin-bottom: 2px;
 }
 .st__gh { font-family: var(--font-hindi); font-size: 11px; color: var(--on-surface-3); }
 
@@ -95,7 +95,7 @@
   background: var(--s-high); overflow: hidden;
 }
 .accpv__meter b { display: block; height: 100%; width: 62%; background: var(--primary); }
-.accpv__link { color: var(--primary); font-size: 12.5px; text-decoration: underline; }
+.accpv__link { color: var(--primary-text); font-size: 12.5px; text-decoration: underline; }
 
 /* ── Sidebar background variants ───────────────────────────────────────── */
 .sbg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -284,7 +284,7 @@
   color: var(--on-surface-3); font-weight: 700;
 }
 .au__dot { width: 4px; height: 4px; border-radius: 50%; background: var(--primary); }
-.au__aekam { color: var(--primary); font-weight: 800; }
+.au__aekam { color: var(--primary-text); font-weight: 800; }
 
 /* Hidden, not stacked: a tall decorative panel above the form on a phone means
    scrolling past marketing to reach a password field. */
@@ -293,3 +293,17 @@
   .au__brand { display: none; }
   .au__form { padding: 28px 20px; }
 }
+
+/* ── Segmented control count ────────────────────────────────────────────────
+   Optional trailing count on a Seg option. 07-pahchan.md asks for it as a
+   distinct node rather than folded into the label string, because "All 12" baked
+   into a label is untranslatable.
+   ────────────────────────────────────────────────────────────────────────── */
+.seg__n {
+  margin-left: 6px;
+  font-size: max(11px, calc(var(--font-size-base) * .79));
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--on-surface-3);
+}
+.seg__b.on .seg__n { color: var(--primary-text); }

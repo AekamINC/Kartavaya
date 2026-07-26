@@ -1,9 +1,36 @@
 import React from 'react';
 import { cn } from '../../lib/utils';
 
+/**
+ * Named glyphs for `icon`. The previous implementation rendered a string icon as
+ * TEXT at 40px, which meant `icon="check"` printed the word "check" and
+ * `icon="📋"` printed an emoji — and 07 §175 is explicit that the design system
+ * has no emoji. These are the small set the attendance surfaces need.
+ */
+const GLYPHS = {
+  check: (
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" opacity=".35" />
+      <path d="M7.5 12.5l3 3 6-6.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  clock: (
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.5" opacity=".45" />
+      <path d="M12 7.5V12l3.2 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  ),
+  generic: (
+    <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="4" y="5" width="16" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" opacity=".4" />
+      <path d="M7.5 10h9M7.5 14h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity=".5" />
+    </svg>
+  ),
+};
+
 const ILLUSTRATIONS = {
   tasks: (
-    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
+    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" aria-hidden="true">
       <rect x="20" y="15" width="80" height="12" rx="6" fill="currentColor" opacity="0.08" />
       <rect x="20" y="35" width="80" height="12" rx="6" fill="currentColor" opacity="0.06" />
       <rect x="20" y="55" width="80" height="12" rx="6" fill="currentColor" opacity="0.04" />
@@ -12,7 +39,7 @@ const ILLUSTRATIONS = {
     </svg>
   ),
   projects: (
-    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
+    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" aria-hidden="true">
       <rect x="10" y="20" width="30" height="60" rx="6" fill="currentColor" opacity="0.06" />
       <rect x="45" y="20" width="30" height="60" rx="6" fill="currentColor" opacity="0.08" />
       <rect x="80" y="20" width="30" height="60" rx="6" fill="currentColor" opacity="0.06" />
@@ -22,14 +49,14 @@ const ILLUSTRATIONS = {
     </svg>
   ),
   search: (
-    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
+    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" aria-hidden="true">
       <circle cx="52" cy="44" r="22" stroke="currentColor" strokeWidth="2" opacity="0.12" />
       <path d="M68 60l16 16" stroke="currentColor" strokeWidth="3" strokeLinecap="round" opacity="0.15" />
       <path d="M44 38h16M44 50h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.1" />
     </svg>
   ),
   teams: (
-    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
+    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" aria-hidden="true">
       <circle cx="46" cy="38" r="14" stroke="currentColor" strokeWidth="2" opacity="0.14" />
       <circle cx="78" cy="38" r="10" stroke="currentColor" strokeWidth="2" opacity="0.1" />
       <path d="M24 78c0-14 10-22 22-22s22 8 22 22" stroke="currentColor" strokeWidth="2" opacity="0.12" />
@@ -37,27 +64,27 @@ const ILLUSTRATIONS = {
     </svg>
   ),
   contacts: (
-    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
+    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" aria-hidden="true">
       <circle cx="60" cy="34" r="16" stroke="currentColor" strokeWidth="2" opacity="0.14" />
       <path d="M28 82c0-18 14-28 32-28s32 10 32 28" stroke="currentColor" strokeWidth="2" opacity="0.12" />
       <circle cx="60" cy="34" r="4" fill="currentColor" opacity="0.14" />
     </svg>
   ),
   invoice: (
-    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
+    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" aria-hidden="true">
       <rect x="35" y="12" width="50" height="76" rx="4" stroke="currentColor" strokeWidth="2" opacity="0.12" />
       <path d="M45 30h30M45 42h30M45 54h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" opacity="0.12" />
       <circle cx="60" cy="70" r="8" stroke="currentColor" strokeWidth="1.5" opacity="0.14" strokeDasharray="3 3" />
     </svg>
   ),
   success: (
-    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
+    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" aria-hidden="true">
       <circle cx="60" cy="46" r="26" stroke="currentColor" strokeWidth="1.5" opacity="0.14" />
       <path d="M48 46l8 8 16-16" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" opacity="0.22" />
     </svg>
   ),
   generic: (
-    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" className="text-textSubtle">
+    <svg width="120" height="100" viewBox="0 0 120 100" fill="none" aria-hidden="true">
       <circle cx="60" cy="45" r="25" stroke="currentColor" strokeWidth="1.5" opacity="0.1" strokeDasharray="4 3" />
       <path d="M52 45l5 5 11-11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.15" />
       <rect x="35" y="78" width="50" height="4" rx="2" fill="currentColor" opacity="0.06" />
@@ -77,41 +104,51 @@ const ILLUSTRATIONS = {
  *  - onAction: callback fired when the CTA is clicked (used when `action` is a string)
  *  - className: extra classes for the wrapper
  */
-export function EmptyState({ illustration = 'generic', icon, title, description, action, onAction, className }) {
+/**
+ * Ported off Tailwind, as 07-pahchan.md §175 requires: "ui/EmptyState.jsx has
+ * eight real SVG illustrations, bilingual {en, hi} titles and a proper CTA — but
+ * is still on Tailwind classes (text-textDefault, cn) from the old system. Use
+ * EmptyState, and port it off Tailwind; the design system has no emoji."
+ *
+ * The `tone` prop is new. A FINISHED queue is not an empty one — 07 §179 wants
+ * the "nothing needs a look" state to read as an achievement with --ok and a
+ * check, where "nobody has clocked in yet" is neutral and not an error at all.
+ * Without a tone both render identically and the distinction is lost.
+ */
+export function EmptyState({
+  illustration = 'generic', icon, title, description, action, onAction, className, tone,
+}) {
   let titleEn = title, titleSecondary = null;
   if (title && typeof title === 'object') {
     titleEn = title.en;
     titleSecondary = title.hi || title.gu || null;
   }
 
+  const accent = tone === 'ok' ? 'var(--ok)' : 'var(--on-surface-faint)';
+
   return (
-    <div className={cn('flex flex-col items-center justify-center py-12 px-6 text-center mx-auto', className)} style={{ maxWidth: 400 }}>
-      <div className="mb-4" style={{ color: 'var(--ink-faint, #b9c0cc)' }}>
+    <div className={cn('empty', className)} style={{ maxWidth: 400 }}>
+      <div className="empty__art" style={{ color: accent }}>
         {icon
-          ? (typeof icon === 'string' ? <span style={{ fontSize: 40, lineHeight: 1, opacity: 0.6 }}>{icon}</span> : icon)
+          ? (typeof icon === 'string' ? GLYPHS[icon] || GLYPHS.generic : icon)
           : (typeof illustration === 'string' ? ILLUSTRATIONS[illustration] || ILLUSTRATIONS.generic : illustration)}
       </div>
       {titleEn && (
-        <h3 className="text-base font-semibold text-textDefault mb-1">
+        <h3 className="empty__title">
           {titleEn}
-          {titleSecondary && <span style={{ display: 'block', fontFamily: 'var(--font-hindi)', fontWeight: 400, fontSize: '0.85em', color: 'var(--ink-3, #8a93a3)', marginTop: 2 }}>{titleSecondary}</span>}
+          {titleSecondary && <span className="empty__title-hi">{titleSecondary}</span>}
         </h3>
       )}
-      {description && <p className="text-sm text-textMuted max-w-xs">{description}</p>}
+      {description && <p className="empty__body">{description}</p>}
       {action && (
-        <div className="mt-4">
-          {typeof action === 'string' ? (
-            <button
-              type="button"
-              className="k-btn k-btn--primary k-btn--sm"
-              onClick={onAction}
-              style={{ background: 'var(--accent, var(--k-primary))' }}
-            >
-              {action}
-            </button>
-          ) : action}
+        <div className="empty__act">
+          {typeof action === 'string'
+            ? <button type="button" className="btn btn--fill" onClick={onAction}>{action}</button>
+            : action}
         </div>
       )}
     </div>
   );
 }
+
+export default EmptyState;

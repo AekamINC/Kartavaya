@@ -74,7 +74,7 @@
    a page with no h1 gives screen-reader users nothing to jump to. The UA
    heading margin would otherwise break the baseline alignment with .mh__hi. */
 .mh__en  { font-family: var(--font-display); font-size: 25px; font-weight: 400; letter-spacing: -.024em; margin: 0; }
-.mh__hi  { font-family: var(--font-indic); font-size: 15px; color: var(--primary); }
+.mh__hi  { font-family: var(--font-indic); font-size: 15px; color: var(--primary-text); }
 .mh__sub { font-size: 12.5px; color: var(--on-surface-3); margin-top: 3px; }
 .mh__act { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
@@ -137,3 +137,61 @@
 .note--warn    { background: var(--warn-container); color: var(--warn); }
 .note--danger  { background: var(--danger-container); color: var(--danger); }
 .note b        { font-weight: 600; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Attendance register — 07-pahchan.md §3
+
+   "The surface that decides whether this works." Human comparison is the only
+   verification in v1, so the reviewer's throughput IS the feature. The row
+   carries the punch selfie and BOTH references inline at 50×62 — large enough to
+   recognise a face without opening anything, so twelve punches is one scroll and
+   twelve glances rather than thirty-six interactions.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.rv__hint { font-size: max(11px, calc(var(--font-size-base) * .86)); }
+.rv__hint kbd {
+  display: inline-block;
+  min-width: 17px; padding: 1px 5px;
+  font-family: var(--font-mono);
+  font-size: .92em;
+  text-align: center;
+  color: var(--on-surface-2);
+  background: var(--s-container);
+  border: 1px solid var(--outline-variant);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+
+/* The cursor row. Outlined rather than filled: a fill would sit behind the three
+   photographs the reviewer is comparing and change how the faces read, which is
+   the one thing this row must not do. */
+.rv__r.is-cursor { background: color-mix(in srgb, var(--primary) 5%, transparent); }
+
+.rv__n   { font-variant-numeric: tabular-nums; color: var(--on-surface-3); width: 26px; }
+.rv__who { min-width: 0; }
+.rv__t   { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rv__loc { font-size: max(11.5px, calc(var(--font-size-base) * .86)); color: var(--on-surface-2); }
+.rv__v   { white-space: nowrap; }
+
+/* The comparison. `.rv__trip` is one of the four things 07 §"Reuse before you
+   create" lists as genuinely new, because no primitive covers it. */
+.rv__trip-cell { width: 176px; }
+.rv__trip { display: flex; gap: 6px; align-items: center; }
+.rv__slot {
+  width: 50px; height: 62px; flex-shrink: 0;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  background: var(--s-low);
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.rv__slot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Below 900px the location and verdict columns drop and the row becomes
+   index / person / triple / time. 07 §3: "a reviewer on a phone is triaging, not
+   clearing a day." The header cells carry the same classes, so they hide with
+   their column — a hidden cell under a visible header is a shifted table. */
+@media (max-width: 900px) {
+  .rv__loc, .rv__v { display: none; }
+  .rv__trip-cell { width: auto; }
+}

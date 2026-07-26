@@ -23,6 +23,13 @@ export default function Seg({ options, value, onChange, label }) {
             onClick={() => onChange(o.value)}
           >
             {o.label}
+            {/* Optional count, as a distinct node rather than folded into the
+                label string. 07-pahchan.md asks for the latter specifically:
+                the register needs "All 12" and "Needs a look 6", and baking the
+                number into the label makes it untranslatable. Rendered inside
+                the button so it is part of the radio's accessible name — a
+                reviewer using a screen reader needs to hear the count too. */}
+            {o.count != null && <span className="seg__n">{o.count}</span>}
           </button>
         );
       })}

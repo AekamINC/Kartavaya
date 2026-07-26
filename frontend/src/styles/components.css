@@ -27,7 +27,7 @@
 .btn--tonal:hover { background: color-mix(in srgb, var(--primary-container) 78%, var(--primary)); }
 .btn--out   { border: 1px solid var(--outline); color: var(--on-surface-2); }
 .btn--out:hover   { background: var(--s-container); color: var(--on-surface); }
-.btn--text  { color: var(--primary); padding: 8px 10px; }
+.btn--text  { color: var(--primary-text); padding: 8px 10px; }
 .btn--text:hover  { background: var(--primary-container); }
 .btn--ghost { background: transparent; color: var(--on-surface-2); }
 .btn--ghost:hover  { background: var(--s-container); color: var(--on-surface); }
@@ -47,7 +47,7 @@
 /* Labels that follow the user's language use --font-indic, never --font-hindi.
    --font-hindi is reserved for fixed decorative Devanagari (watermarks), and
    --font-devanagari was a third name that only existed in FormGroup.jsx. */
-.fld__hi   { font-family: var(--font-indic); text-transform: none; letter-spacing: 0; color: var(--primary); margin-left: 6px; }
+.fld__hi   { font-family: var(--font-indic); text-transform: none; letter-spacing: 0; color: var(--primary-text); margin-left: 6px; }
 .fld__req  { color: var(--danger); margin-left: 3px; }
 .fld__hint { font-size: var(--t-label); color: var(--on-surface-3); }
 .fld__err  { font-size: var(--t-label); color: var(--danger); }
@@ -95,7 +95,7 @@ textarea.inp { resize: vertical; min-height: 76px; }
    and reads as a heading plus subheading, which is a different thing. */
 .card__titles { display: block; min-width: 0; }
 .card__title  { display: inline; font-family: var(--font-display); font-size: var(--t-title-lg); font-weight: var(--t-title-lg-w); letter-spacing: -.01em; line-height: 1.4; }
-.card__hi     { display: inline; margin-left: 9px; font-family: var(--font-indic); font-size: 14px; color: var(--primary); }
+.card__hi     { display: inline; margin-left: 9px; font-family: var(--font-indic); font-size: 14px; color: var(--primary-text); }
 .card__body   { padding: 0 var(--pad-card) var(--pad-card); }
 .card__body--flush { padding: 0; }
 
@@ -167,7 +167,7 @@ textarea.inp { resize: vertical; min-height: 76px; }
   transition: color var(--dur-fast) var(--ease-standard);
 }
 .tabs__b:hover { color: var(--on-surface); }
-.tabs__b.on    { color: var(--primary); }
+.tabs__b.on    { color: var(--primary-text); }
 .tabs__b:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--r-xs); }
 .tabs__label { display: flex; align-items: center; gap: 6px; }
 .tabs__n {
@@ -176,7 +176,7 @@ textarea.inp { resize: vertical; min-height: 76px; }
   border-radius: var(--r-pill); font-size: var(--t-label-sm); font-weight: 700;
   background: var(--s-container); color: var(--on-surface-3);
 }
-.tabs__b.on .tabs__n { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); }
+.tabs__b.on .tabs__n { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary-text); }
 .tabs__ind {
   position: absolute; bottom: 0; height: 2px; border-radius: var(--r-pill);
   background: var(--primary);
@@ -313,7 +313,7 @@ textarea.inp { resize: vertical; min-height: 76px; }
   display: flex; align-items: center; justify-content: center; gap: 8px;
   width: 100%; padding: 11px 18px;
   border: 1.5px dashed var(--primary); border-radius: var(--r-sm);
-  background: transparent; color: var(--primary);
+  background: transparent; color: var(--primary-text);
   font-family: inherit; font-size: var(--t-body-sm); font-weight: 600;
   cursor: pointer;
   transition: background var(--dur-fast);
@@ -342,3 +342,35 @@ textarea.inp { resize: vertical; min-height: 76px; }
   border-top: 1px solid var(--outline-variant);
 }
 .k-mcard__admin .inp { flex: 1; padding: 6px 9px; font-size: var(--t-label); }
+
+/* ── Empty state ────────────────────────────────────────────────────────────
+   `ui/EmptyState.jsx` ported off Tailwind, per 07-pahchan.md §175. It had the
+   eight SVG illustrations, bilingual {en, hi} titles and a real CTA, and was the
+   better of the two empty-state components — it was just still styled with
+   `text-textDefault` / `max-w-xs` from the old system, so it themed with nothing.
+
+   `--tone-ok` is set inline by the component: a FINISHED queue is not an empty
+   one (§179), and "nothing needs a look" earns --ok and a check where "nobody has
+   clocked in yet" is neutral and not an error at all.
+   ────────────────────────────────────────────────────────────────────────── */
+.empty {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center;
+  margin-inline: auto;
+  padding: var(--sp-7) var(--sp-6);
+  gap: var(--sp-2);
+}
+.empty__art   { margin-bottom: var(--sp-2); line-height: 0; }
+.empty__title { font-size: var(--t-title); font-weight: 600; color: var(--on-surface); margin: 0; }
+.empty__title-hi {
+  display: block; margin-top: 2px;
+  font-family: var(--font-indic); font-weight: 400;
+  font-size: .85em; color: var(--on-surface-3);
+}
+.empty__body {
+  margin: 0; max-width: 34ch;
+  font-size: var(--t-body-sm); line-height: 1.55;
+  color: var(--on-surface-2);
+}
+.empty__act { margin-top: var(--sp-3); }
