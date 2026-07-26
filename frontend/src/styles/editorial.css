@@ -620,14 +620,46 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border: 1.5px solid var(--surface);
 }
 
+/* THE ONE `.k-btn`. It was declared twice — here and in `kartavaya-design.css`,
+   which `App.jsx` imports first — at identical specificity, so no single file
+   described the button that rendered. The winner was resolved per PROPERTY by
+   document order and the result was an interleaving of both. That block is now
+   gone (see the note there); everything below is the interleaved result, so all
+   454 `.k-btn` call sites are unchanged.
+
+   `.btn` in components.css is the canonical vocabulary (02 §1) and this is the
+   legacy one. They are NOT merged: `.btn` is 8px/15px with gap 7 and a flat
+   `--primary` fill, `.k-btn` is 8px/14px with gap 6 and a gradient fill, so
+   rewriting 454 call sites could not be done without moving pixels. Converging
+   them needs a call-site sweep, not a stylesheet edit. */
 .k-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  border: 0; border-radius: 8px;
+  border: 0;
+  /* 00-tokens.md §96, verbatim: "Never hard-code a radius. A literal
+     `border-radius: 8px` breaks the Sharp and Pill settings in exactly that one
+     place." This selector was that exact literal, and `--r-md` is exactly what
+     `kartavaya-design.css` had before this file's `8px` outranked it by
+     document order — so the Corner radius control in the customize hub moved
+     cards, inputs and chips while the product's most-used button stayed at 8px
+     under all three settings. `--r-md: var(--radius-base)`, so Sharp is 4px,
+     Default 10px and Pill 20px. THE ONE DELIBERATE PIXEL CHANGE in this merge:
+     +2px at the default. Restoring the token is the point of the fix. */
+  border-radius: var(--r-md);
   font-weight: 600; font-size: 13px;
   padding: 8px 14px;
   cursor: pointer;
   font-family: inherit;
+  /* Survived from kartavaya-design.css, which is the only reason `.k-btn` ever
+     animated: this file declared no `transition` at all, so the property was
+     never overridden and the earlier file's value stayed live. Written out here
+     so the next person deleting a duplicate does not silently take the motion
+     with it. Driven by --ix, so anim:none collapses it (16 §"Audit"). */
+  transition: background calc(.12s * var(--ix)),
+              box-shadow calc(.12s * var(--ix)),
+              transform  calc(.08s * var(--ix));
 }
+/* Also survived from kartavaya-design.css — same reason. */
+.k-btn:active { transform: translateY(1px); }
 .k-btn--sm { padding: 7px 12px; font-size: 12.5px; }
 .k-btn--primary {
   background: var(--k-grad);
@@ -636,7 +668,13 @@ input, textarea, select { font-family: inherit; color: inherit; }
   color: var(--on-primary);
   box-shadow: 0 1px 0 rgba(255,255,255,.15) inset, 0 4px 14px -4px color-mix(in srgb, var(--k-deep) 60%, transparent);
 }
-.k-btn--primary:hover { transform: translateY(-1px); }
+/* Both halves applied and both are kept: the lift is this file's, the hover
+   shadow is kartavaya-design.css's, and because they set DIFFERENT properties
+   neither ever overrode the other. Dropping either one is a visible change. */
+.k-btn--primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--primary-vivid) 38%, transparent);
+}
 .k-btn--ghost {
   background: transparent; color: var(--ink-2);
   border: 1px solid var(--rule);

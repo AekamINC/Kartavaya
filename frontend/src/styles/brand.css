@@ -71,19 +71,28 @@ body {
 
 .k-mark { background: var(--k-gradient-d); border-radius: var(--r-md); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 
-.k-btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 10px 20px; border-radius: var(--r-md); font-family: var(--font-ui);
-  font-size: 12px; font-weight: 800; cursor: pointer; transition: all 0.18s ease;
-  border: none; text-decoration: none; letter-spacing: 1px; text-transform: uppercase;
-}
-.k-btn-primary { background: var(--k-gradient); color: #fff; }
-.k-btn-primary:hover  { opacity: 0.88; transform: translateY(-1px); }
-.k-btn-primary:active { opacity: 1; transform: translateY(0); }
-.k-btn-outline { background: transparent; border: 1.5px solid var(--k-border); color: var(--k-muted); letter-spacing: 0.5px; }
-.k-btn-outline:hover { border-color: var(--k-mid); color: var(--k-mid); }
-.k-btn-ghost { background: transparent; color: var(--k-blue); border: none; padding: 7px 12px; letter-spacing: 0; text-transform: none; }
-.k-btn-ghost:hover { background: rgba(0,130,198,0.06); }
+/* THE THIRD BUTTON VOCABULARY IS GONE. `.k-btn` / `.k-btn-primary` /
+   `.k-btn-outline` / `.k-btn-ghost` used to sit here, and they were the most
+   dangerous of the three because they were invisible:
+
+     · this file is imported by NOTHING. Not `styles/index.css`, not `App.jsx`,
+       not `index.html`. `src/styles/README.md` says `lib/brand.js` imports it;
+       `lib/brand.js` does not exist. So none of these rules have ever loaded.
+     · `.k-btn-primary`, `.k-btn-outline` and `.k-btn-ghost` have ZERO call
+       sites in the entire `src` tree — a single-dash vocabulary nothing writes.
+     · the bare `.k-btn` DID collide by name with the live one (454 call sites,
+       `editorial.css` + `kartavaya-design.css`) while declaring a completely
+       different button: 10px/20px padding against 8px/14px, weight 800 against
+       600, plus `letter-spacing: 1px` and `text-transform: uppercase`. One
+       `@import` line away from restyling every button in the product.
+     · `transition: all 0.18s ease` is a hardcoded literal, so it also ignored
+       `--ix` — `16-animations.md` §"Audit before you ship" says every timing is
+       either `calc(… * var(--ix))` or a bug, with no third case.
+
+   Deleting an unloaded rule cannot change a pixel, which is what makes this the
+   one third of the button convergence that is provable rather than argued.
+   The two live vocabularies are `.btn` (components.css, canonical — 02 §1) and
+   `.k-btn` (editorial.css, legacy). See the note above `.k-btn` there. */
 
 .k-input {
   width: 100%; padding: 11px 14px; background: var(--k-input-bg);

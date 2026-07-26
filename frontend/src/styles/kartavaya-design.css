@@ -578,41 +578,31 @@ body {
   border: 1.5px solid var(--surface);
 }
 
-/* ── Buttons ───────────────────────────────────────────────────────────── */
-.k-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: var(--r-md);
-  font-size: 13px;
-  font-weight: 600;
-  font-family: var(--font-ui);
-  border: none;
-  cursor: pointer;
-  transition: background calc(.12s * var(--ix)), box-shadow calc(.12s * var(--ix)), transform calc(.08s * var(--ix));
-}
-.k-btn:active { transform: translateY(1px); }
+/* ── Buttons ───────────────────────────────────────────────────────────────
+   `.k-btn` USED TO BE DECLARED HERE AS WELL. It now lives once, in
+   `editorial.css`, and this block is deliberately empty.
 
-.k-btn--primary {
-  background: var(--k-grad);
-  /* #fff is correct in light and 1.8:1 in dark, where --primary is the light
-     mint. --on-primary is the fill's declared partner and flips with it. */
-  color: var(--on-primary);
-  /* rgba(5,183,170,…) froze the default teal into the shadow, so an Emerald or
-     Rose accent still cast a teal glow — and it did not darken for dark mode. */
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--primary-vivid) 28%, transparent);
-}
-.k-btn--primary:hover { box-shadow: 0 4px 14px color-mix(in srgb, var(--primary-vivid) 38%, transparent); }
+   `App.jsx` imports this file BEFORE `editorial.css`, and both declared the
+   same six selectors at the same specificity — so the winner was decided
+   per-PROPERTY by document order, and the button that actually rendered existed
+   in neither file. It was the interleaving of the two:
 
-.k-btn--ghost {
-  background: transparent;
-  color: var(--ink-2);
-  border: 1px solid var(--rule);
-}
-.k-btn--ghost:hover { background: var(--bg-soft); color: var(--ink); }
+     border-radius   editorial's literal `8px`  beat  this file's `var(--r-md)`
+     font-family     editorial's `inherit`      beat  this file's `var(--font-ui)`
+     .k-btn--sm      editorial's `7px 12px`     beat  this file's `6px 12px`
+     --primary shadow  editorial's inset+k-deep beat  this file's primary-vivid
+     transition      SURVIVED from this file — editorial declared none
+     :active         SURVIVED from this file — editorial declared none
+     --primary:hover BOTH applied: this file's box-shadow AND editorial's
+                     transform, because they set different properties
 
-.k-btn--sm { padding: 6px 12px; font-size: 12.5px; }
+   That last row is the tell. Reading either file alone gives you a button that
+   is wrong in four places, which is the same failure the `.k-stat__val`
+   cross-file specificity bug had and the reason it survived so long.
+
+   The merged block in `editorial.css` carries the interleaved result verbatim,
+   so all 454 call sites render as they did — with ONE deliberate exception, the
+   hardcoded radius, documented there. */
 
 /* ── Page scaffold ─────────────────────────────────────────────────────── */
 .k-page {
