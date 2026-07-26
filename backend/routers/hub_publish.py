@@ -33,6 +33,24 @@ async def _store_oauth_state(state: str, data: dict):
         state, json.dumps(data),
     )
 
+async def _require_client_in_org(pool, client_id: str, org_id: str):
+    """Every `/clients/{client_id}/…` route must prove the client belongs to the
+    caller's org before touching anything keyed on `client_id`.
+
+    Half the routes in this file did this inline and half did not, so a member
+    of any org holding a Srijan grant could read another org's connected social
+    accounts, their scheduled posts and their content calendar — and, through
+    bulk-schedule, queue a post to another org's account. Nothing about the
+    request had to be forged: the id was simply never checked.
+    """
+    ok = await pool.fetchval(
+        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        client_id, org_id,
+    )
+    if not ok:
+        raise HTTPException(404, "Client not found")
+
+
 async def _pop_oauth_state(state: str) -> dict | None:
     pool = await get_pool()
     row = await pool.fetchrow(
@@ -392,6 +410,7 @@ async def list_social_accounts(
 ):
     pool = await get_pool()
     cid = str(client_id)
+    await _require_client_in_org(pool, cid, org_id)
     rows = await pool.fetch(
         "SELECT id, platform, account_name, account_id, page_id, "
         "token_expires_at, is_active, connected_at "
@@ -474,6 +493,7 @@ async def schedule_post(
 ):
     pool = await get_pool()
     cid = str(client_id)
+    await _require_client_in_org(pool, cid, org_id)
 
     content = await pool.fetchrow(
         "SELECT id, status FROM staging.hub_content_items WHERE id=$1::uuid AND client_id=$2::uuid",
@@ -519,9 +539,31 @@ async def bulk_schedule(
     """Schedule same content to multiple platforms at once."""
     cid = str(client_id)
     pool = await get_pool()
-    results = []
+    await _require_client_in_org(pool, cid, org_id)
 
+    # This route validated nothing at all — it inserted whatever content_id and
+    # social_account_id it was handed. Given an account id from another org it
+    # would publish that org's queue item to their real social account. The
+    # single-post route checks both ids against the client; so does this one now.
+    content = await pool.fetchval(
+        "SELECT id FROM staging.hub_content_items "
+        "WHERE id=$1::uuid AND client_id=$2::uuid",
+        body.content_id, cid,
+    )
+    if not content:
+        raise HTTPException(404, "Content not found")
+
+    results = []
     for acct_id in body.account_ids:
+        owned = await pool.fetchval(
+            "SELECT 1 FROM staging.hub_social_accounts "
+            "WHERE id=$1::uuid AND client_id=$2::uuid AND is_active=TRUE",
+            acct_id, cid,
+        )
+        if not owned:
+            results.append({"account_id": acct_id, "status": "failed",
+                            "error": "Social account not found"})
+            continue
         try:
             row = await pool.fetchrow(
                 "INSERT INTO staging.hub_publish_queue "
@@ -587,6 +629,7 @@ async def list_publish_queue(
 ):
     pool = await get_pool()
     cid = str(client_id)
+    await _require_client_in_org(pool, cid, org_id)
 
     query = (
         "SELECT q.id, q.scheduled_for, q.status, q.platform_url, q.error_message, "
@@ -622,6 +665,7 @@ async def content_calendar(
     """Get all scheduled/published content for a month (content calendar view)."""
     pool = await get_pool()
     cid = str(client_id)
+    await _require_client_in_org(pool, cid, org_id)
 
     if month:
         year, mo = month.split("-")
@@ -687,6 +731,7 @@ async def list_client_platforms(
     """List which platforms are enabled for this client."""
     pool = await get_pool()
     cid = str(client_id)
+    await _require_client_in_org(pool, cid, org_id)
     rows = await pool.fetch(
         "SELECT platform, enabled FROM staging.hub_client_platforms "
         "WHERE client_id=$1::uuid ORDER BY platform",

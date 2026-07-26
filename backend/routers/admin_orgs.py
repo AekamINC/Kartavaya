@@ -184,10 +184,20 @@ async def create_org(
 
 @router.get("")
 async def list_orgs(
+    count_only: int = 0,
     user=Depends(require_platform_role("platform_admin", "account_manager", "account_finance")),
 ):
-    """List all orgs with plan and owner info."""
+    """List all orgs with plan and owner info.
+
+    `count_only=1` returns just `{"count": n}`. The admin sidebar badge
+    (01-navigation.md §4) needs the number on every admin page, and pulling
+    every org row plus its plan and owner joins to render one integer is the
+    kind of waste that only shows up once a customer has a few hundred orgs.
+    """
     pool = await get_pool()
+    if count_only:
+        n = await pool.fetchval("SELECT COUNT(*) FROM staging.organisations")
+        return {"count": n or 0}
     rows = await pool.fetch(
         "SELECT o.id, o.name, o.team_id, o.owner_user_id, o.is_active, "
         "o.storage_used_bytes, o.storage_limit_bytes, o.created_at, "

@@ -104,3 +104,6 @@ android-sdk/ frontend/node_modules/.cache/default-development/0.pack
 *.env.*
 .claude/worktrees/
 .claude/worktrees/
+
+# Local DB snapshots — contain user and org IDs, never committed
+.backups/

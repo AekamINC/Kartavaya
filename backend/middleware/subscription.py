@@ -11,6 +11,7 @@ from fastapi import Depends, HTTPException, Request
 
 from db import get_pool
 from middleware.org_resolver import get_org_id
+from services.audit import emit as audit
 
 _cache: dict = {}
 _CACHE_TTL = timedelta(minutes=5)
@@ -18,7 +19,22 @@ _CACHE_MAX_SIZE = 2000
 
 BUNDLED_MODULES = {"srijan", "esign"}
 
-SENSITIVE_MODULES = {"vetana", "ganit", "manav"}
+# Modules holding payroll, financial records, HR files or biometric attendance.
+# `pahchan` is here because its rows are face-match scores and selfies against a
+# named employee — biometric-adjacent data that is at least as sensitive as the
+# HR file it attaches to, and the standing constraints already single it out.
+SENSITIVE_MODULES = {"vetana", "ganit", "manav", "pahchan"}
+
+# Platform roles that may cross into a customer's *operational* data.
+# `account_manager` is deliberately absent: it is a commercial role — create
+# orgs, toggle modules, chase invoices — and PLAN_ROLES §2.1 grants it no
+# customer data at all. It previously bypassed this gate for every module in
+# every org, which meant whoever ran the commercial side could read any
+# customer's payroll, Aadhaar and attendance without leaving a trace.
+OPERATIONAL_PLATFORM_ROLES = ("platform_admin",)
+
+# Roles that may bypass the per-user grant check on a non-sensitive module.
+SUPPORT_PLATFORM_ROLES = ("platform_admin", "account_manager")
 
 
 def require_module(module_code: str):
@@ -31,32 +47,59 @@ def require_module(module_code: str):
 
         pool = await get_pool()
 
-        # Platform staff (account_manager+) bypass per-user module check.
+        # Platform staff bypass the per-user module grant check.
         #
-        # This bypass is SILENT and unaudited, which conflicts with the standing
-        # rule that support access is never silent. It is left silent here
-        # deliberately: this dependency guards every module endpoint, so writing
-        # an audit row per request would be high-volume, and whether to accept
-        # that volume is a product decision, not one to make inside a middleware.
+        # Two tiers, because the two kinds of module are not the same risk.
         #
-        # What is closed: the endpoints that expose an identity document do not
-        # rely on this gate alone. `manav.get_employee_sensitive` audits every
-        # read with severity=warn and records `via: platform_bypass` when the
-        # caller arrived through this branch. Any future endpoint returning
-        # Aadhaar, PAN or bank details must do the same — module membership is
-        # not authority to read an identity document.
+        # Non-sensitive modules (Kartavya, Graha, Prachar, …): platform_admin
+        # and account_manager both pass, and the pass is silent. That is a
+        # volume decision — this dependency guards ~400 endpoints and a row per
+        # request is a product call, not one to make inside a middleware.
         #
-        # Open question for the owner: `account_manager` is a commercial role.
-        # It currently reaches every module in every org, including HR records.
+        # Sensitive modules (payroll, accounting, HR, biometric attendance):
+        # only platform_admin passes, and every pass writes an audit row. The
+        # volume objection does not apply here — these are a small minority of
+        # requests, made rarely by three people — so the standing rule that
+        # support access is never silent is enforced rather than deferred.
+        # account_manager is refused outright: a commercial role has no business
+        # in a customer's salary register or Aadhaar file.
         if user:
-            is_platform = await pool.fetchval(
-                "SELECT 1 FROM staging.user_roles "
+            # A user can hold several platform rows. Order so the strongest
+            # wins — otherwise someone who is both platform_admin and
+            # account_manager would be refused or admitted at random depending
+            # on row order, and the audit row would name the wrong role.
+            platform_role = await pool.fetchval(
+                "SELECT role_code FROM staging.user_roles "
                 "WHERE user_id=$1 AND org_id IS NULL "
-                "AND role_code IN ('platform_admin','account_manager')",
-                user.get("user_id"),
+                "AND role_code = ANY($2::text[]) "
+                "ORDER BY (role_code = 'platform_admin') DESC LIMIT 1",
+                user.get("user_id"), list(SUPPORT_PLATFORM_ROLES),
             )
-            if is_platform:
-                return  # platform staff can access any module for support
+            if platform_role:
+                if module_code not in SENSITIVE_MODULES:
+                    return
+                if platform_role in OPERATIONAL_PLATFORM_ROLES:
+                    audit(
+                        "platform.sensitive_module_access",
+                        request,
+                        org_id=org_id,
+                        user_id=user.get("user_id"),
+                        resource_type="module",
+                        resource_id=module_code,
+                        detail={
+                            "role": platform_role,
+                            "path": str(request.url.path),
+                            "method": request.method,
+                            "via": "platform_bypass",
+                        },
+                        severity="warn",
+                    )
+                    return
+                raise HTTPException(
+                    403,
+                    f"The {platform_role} role cannot access the {module_code} "
+                    "module. It holds payroll, financial, HR or biometric data.",
+                )
 
         # Gate 2: per-user module grant (before subscription check for fast 403)
         if user:

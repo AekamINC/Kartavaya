@@ -52,7 +52,17 @@ def require_platform_role(*allowed_roles: str):
 
 def require_org_role(*allowed_roles: str):
     """Check staging.user_roles for org-scoped roles.
-    Platform admins always pass."""
+
+    `platform_admin` passes unconditionally — that is god mode, held by exactly
+    three people, and removing it would lock support out of every org.
+
+    `account_manager` used to pass here too. It no longer does. It is a
+    commercial role (create orgs, toggle modules, chase invoices) and this
+    dependency guards org member management, org profile, HR PII reveal and
+    Pahchan review — none of which are commercial actions. Aekam's commercial
+    surfaces live behind `require_platform_role` in `admin_orgs.py` and are
+    unaffected.
+    """
 
     async def _check(user=Depends(require_user), org_id: str = Depends(get_org_id)):
         pool = await get_pool()
@@ -60,7 +70,7 @@ def require_org_role(*allowed_roles: str):
         is_platform = await pool.fetchval(
             "SELECT 1 FROM staging.user_roles "
             "WHERE user_id=$1 AND org_id IS NULL "
-            "AND role_code IN ('platform_admin', 'account_manager')",
+            "AND role_code = 'platform_admin'",
             user["user_id"],
         )
         if is_platform:
@@ -82,7 +92,15 @@ def require_org_role(*allowed_roles: str):
 
 
 async def is_platform_staff(user_id: str) -> bool:
-    """Check if user has a platform-wide role (platform_admin or account_manager)."""
+    """Check if user has a platform-wide role (platform_admin or account_manager).
+
+    NOTE: this is "is Aekam staff", not "may read anything". Its call sites are
+    all Kartavya project surfaces — templates, views, time entries, activity —
+    where seeing the project structure is what support means. It must not be
+    used to gate payroll, HR, accounting or attendance: those are guarded by
+    `require_module`, which admits only `platform_admin` for sensitive modules
+    and writes an audit row when it does.
+    """
     pool = await get_pool()
     return bool(await pool.fetchval(
         "SELECT 1 FROM staging.user_roles "

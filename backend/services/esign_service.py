@@ -8,6 +8,8 @@ import logging
 import secrets
 from datetime import datetime, timezone, timedelta
 
+from fastapi import HTTPException
+
 from db import get_pool
 
 logger = logging.getLogger(__name__)
@@ -195,11 +197,18 @@ async def submit_signature(
 
 
 async def cancel_signature(pool, contract_id: str, org_id: str, cancelled_by: str):
-    await pool.execute(
+    # The contract UPDATE was org-scoped but the signer UPDATE below was not,
+    # so a caller in another org silently expired every pending signer on a
+    # contract they could not otherwise touch — the contract row stayed
+    # 'sent' while nobody could sign it. Fail on the contract first so the
+    # rest of the function only runs for a contract this org owns.
+    result = await pool.execute(
         "UPDATE staging.ganit_contracts SET signature_status='cancelled', "
         "updated_at=NOW() WHERE id=$1::uuid AND org_id=$2::uuid",
         contract_id, org_id,
     )
+    if result == "UPDATE 0":
+        raise HTTPException(404, "Contract not found")
     await pool.execute(
         "UPDATE staging.ganit_contract_signers SET status='expired' "
         "WHERE contract_id=$1::uuid AND status IN ('pending','sent','viewed')",

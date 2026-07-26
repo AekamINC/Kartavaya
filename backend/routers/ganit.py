@@ -1208,6 +1208,14 @@ async def get_audit_trail_endpoint(
 ):
     from services.esign_service import get_audit_trail
     pool = await get_pool()
+    # The trail carries signer names, emails, IP addresses and user agents.
+    # `ganit_contract_audit_trail` is keyed on contract_id alone, so this
+    # returned another org's signing evidence for any contract id.
+    if not await pool.fetchval(
+        "SELECT 1 FROM staging.ganit_contracts WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(contract_id), org_id,
+    ):
+        raise HTTPException(404, "Contract not found")
     trail = await get_audit_trail(pool, str(contract_id))
     return {"audit_trail": trail}
 

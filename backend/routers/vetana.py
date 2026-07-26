@@ -11,19 +11,104 @@ from typing import Optional
 import traceback
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
+from middleware.roles import is_org_admin, is_platform_staff
 from middleware.subscription import require_module
+from services.audit import emit as audit
+from services.pii import mask_bank, mask_tail
 from utils import next_doc_number
 
 router = APIRouter(prefix="/api/v1/vetana", tags=["vetana-payroll"])
 
 _gate = require_module("vetana")
+
+# ── Who may see what in payroll ───────────────────────────────────────────────
+#
+# `require_module("vetana")` was, until now, the *only* guard on all 19
+# endpoints in this file. It checks module membership with no role level at all,
+# so anyone holding a Vetana grant could read every colleague's CTC, net pay,
+# PAN and bank account, and could approve a payroll run and mark salaries
+# disbursed. That is not a permission model; it is a list of people who happen
+# to have the tab.
+#
+# RBAC-SPEC settles the shape:
+#
+#   "Sensitive modules are role-derived, not granted. Vetana, Ganit and Manav
+#    have no per-member grant row at all. Access is a function of the org role:
+#    org_owner and org_admin get admin, everyone else none."
+#   "Viewer on Vetana is scoped to self. It is the only module where viewer
+#    means 'my own record'."
+#
+# So: two tiers, enforced here.
+#
+#   org_owner / org_admin (and platform_admin, audited by the module gate)
+#       — the whole register: process payroll, approve runs, disburse, salary
+#         structures, loans, statutory filings.
+#   everyone else with a Vetana grant
+#       — their own payslips and their own salary structure. Nothing else.
+#
+# PAN, UAN and account numbers are masked in every JSON response regardless of
+# role, matching the rule established for `manav_employees`: an endpoint that
+# lists people never emits a full identity document. The one place full values
+# survive is the payslip PDF, which is a statutory document the employee is
+# entitled to — and a manager pulling someone else's PDF is audited.
+
+
+async def _is_payroll_admin(user, org_id: str) -> bool:
+    """True for org_owner / org_admin, and for platform_admin.
+
+    `is_org_admin` already returns True for platform staff; the module gate has
+    already refused `account_manager` before any request reaches this file.
+    """
+    return await is_org_admin(user["user_id"], org_id)
+
+
+async def _require_payroll_admin(user, org_id: str):
+    if not await _is_payroll_admin(user, org_id):
+        raise HTTPException(
+            403,
+            "This action needs the org owner or an org admin. Payroll figures "
+            "and approvals are not part of module access.",
+        )
+
+
+async def _own_employee_id(pool, user, org_id: str) -> str | None:
+    """The caller's own employee row in this org, if they have one."""
+    return await pool.fetchval(
+        "SELECT id::text FROM staging.manav_employees "
+        "WHERE user_id=$1 AND org_id=$2::uuid AND is_active=TRUE LIMIT 1",
+        user["user_id"], org_id,
+    )
+
+
+def _mask_payslip_row(row: dict) -> dict:
+    """Mask the identity documents a payslip join drags in from the employee
+    row. `bank_details` arrives as JSONB; `bank_account` as a flat column on
+    older rows. Both are handled, and absent keys are left absent."""
+    out = dict(row)
+    for key in ("pan", "emp_pan"):
+        if key in out:
+            out[key] = mask_tail(out[key], 4)
+    if "uan" in out:
+        out["uan"] = mask_tail(out["uan"], 4)
+    if "bank_account" in out:
+        out["bank_account"] = mask_tail(out["bank_account"], 4)
+    if "bank_details" in out:
+        details = out["bank_details"]
+        if isinstance(details, str):
+            try:
+                details = json.loads(details or "{}")
+            except ValueError:
+                details = {}
+        out["bank_details"] = mask_bank(details)
+    out["_pii_masked"] = True
+    return out
 
 
 # ── Pydantic Models ──────────────────────────────────────────
@@ -99,6 +184,17 @@ async def list_structures(
         "WHERE s.org_id=$1::uuid AND s.is_active=TRUE"
     )
     params: list = [org_id]
+
+    # A salary structure is what someone is paid. Without an org role, the only
+    # one you may see is your own — and if you have no employee row, none.
+    if not await _is_payroll_admin(user, org_id):
+        own = await _own_employee_id(pool, user, org_id)
+        if not own:
+            return {"data": []}
+        if employee_id and employee_id != own:
+            raise HTTPException(403, "You can only view your own salary structure")
+        employee_id = own
+
     if employee_id:
         params.append(employee_id)
         q += f" AND s.employee_id=${len(params)}::uuid"
@@ -115,6 +211,7 @@ async def create_structure(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    await _require_payroll_admin(user, org_id)
     row = await pool.fetchrow(
         "INSERT INTO staging.vetana_salary_structures "
         "(org_id, employee_id, effective_from, ctc_annual, basic, hra, da, "
@@ -143,7 +240,7 @@ async def get_structure(
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT s.*, "
-        "e.name AS employee_name "
+        "e.name AS employee_name, e.user_id AS employee_user_id "
         "FROM staging.vetana_salary_structures s "
         "JOIN staging.manav_employees e ON e.id = s.employee_id "
         "WHERE s.id=$1::uuid AND s.org_id=$2::uuid",
@@ -151,7 +248,13 @@ async def get_structure(
     )
     if not row:
         raise HTTPException(404, "Salary structure not found")
-    return dict(row)
+    out = dict(row)
+    # Someone else's structure is someone else's salary. 404 rather than 403 so
+    # the response does not confirm that a structure exists for that person.
+    if out.pop("employee_user_id", None) != user["user_id"]:
+        if not await _is_payroll_admin(user, org_id):
+            raise HTTPException(404, "Salary structure not found")
+    return out
 
 
 @router.patch("/salary-structures/{sid}")
@@ -163,6 +266,7 @@ async def update_structure(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    await _require_payroll_admin(user, org_id)
     updates, vals = [], []
     for field in ("ctc_annual", "basic", "hra", "da", "special_allowance",
                   "conveyance", "medical", "pf_enabled", "esi_enabled",
@@ -196,6 +300,7 @@ async def delete_structure(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    await _require_payroll_admin(user, org_id)
     result = await pool.execute(
         "UPDATE staging.vetana_salary_structures SET is_active=FALSE, updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -262,6 +367,7 @@ async def process_payroll(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    await _require_payroll_admin(user, org_id)
     month = body.month  # YYYY-MM
     parts = month.split("-")
     if len(parts) != 2:
@@ -514,6 +620,10 @@ async def list_runs(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # A payroll run carries the org's total gross, net, PF, ESI and TDS. That
+    # is the whole salary bill — an org-level financial figure, not something a
+    # module grant should reveal.
+    await _require_payroll_admin(user, org_id)
     rows = await pool.fetch(
         "SELECT * FROM staging.vetana_payroll_runs "
         "WHERE org_id=$1::uuid ORDER BY month DESC",
@@ -530,6 +640,8 @@ async def get_run(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # Returns every payslip in the run — the entire org's pay in one response.
+    await _require_payroll_admin(user, org_id)
     run = await pool.fetchrow(
         "SELECT * FROM staging.vetana_payroll_runs "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -557,6 +669,9 @@ async def approve_run(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # Approving a run is the moment salaries become payable. Module membership
+    # is not authority to release money.
+    await _require_payroll_admin(user, org_id)
     run = await pool.fetchrow(
         "SELECT status FROM staging.vetana_payroll_runs "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -608,6 +723,7 @@ async def revert_run(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    await _require_payroll_admin(user, org_id)
     run = await pool.fetchrow(
         "SELECT status FROM staging.vetana_payroll_runs "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -645,6 +761,18 @@ async def list_payslips(
         "WHERE p.org_id=$1::uuid AND p.is_active=TRUE"
     )
     params: list = [org_id]
+
+    # Viewer on Vetana is scoped to self — the one module where "view" means
+    # "my own record" (RBAC-SPEC). Previously this listed every colleague's
+    # gross, deductions and net pay to anyone holding the module.
+    if not await _is_payroll_admin(user, org_id):
+        own = await _own_employee_id(pool, user, org_id)
+        if not own:
+            return {"data": []}
+        if employee_id and employee_id != own:
+            raise HTTPException(403, "You can only view your own payslips")
+        employee_id = own
+
     if employee_id:
         params.append(employee_id)
         q += f" AND p.employee_id=${len(params)}::uuid"
@@ -667,7 +795,8 @@ async def get_payslip(
     row = await pool.fetchrow(
         "SELECT p.*, "
         "e.name AS employee_name, "
-        "e.employee_code, e.pan, e.uan, e.bank_details "
+        "e.employee_code, e.pan, e.uan, e.bank_details, "
+        "e.user_id AS employee_user_id "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
         "WHERE p.id=$1::uuid AND p.org_id=$2::uuid",
@@ -675,7 +804,17 @@ async def get_payslip(
     )
     if not row:
         raise HTTPException(404, "Payslip not found")
-    return dict(row)
+
+    out = dict(row)
+    # This endpoint returned a colleague's PAN, UAN and full bank account to
+    # anyone holding a Vetana grant — the same failure closed for
+    # `manav_employees` in 4f10b6c, still open here because the payslip join
+    # pulls the identity columns off that very table. Own payslip or not, the
+    # JSON is masked; the PDF is where an employee gets their real figures.
+    if out.pop("employee_user_id", None) != user["user_id"]:
+        if not await _is_payroll_admin(user, org_id):
+            raise HTTPException(404, "Payslip not found")
+    return _mask_payslip_row(out)
 
 
 @router.patch("/payslips/{payslip_id}/disburse")
@@ -686,6 +825,8 @@ async def disburse_payslip(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # Marking a salary disbursed is a money movement record.
+    await _require_payroll_admin(user, org_id)
     ps = await pool.fetchrow(
         "SELECT status, run_id FROM staging.vetana_payslips "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -716,6 +857,7 @@ async def disburse_payslip(
 @router.get("/payslips/{payslip_id}/pdf")
 async def download_payslip_pdf(
     payslip_id: str,
+    request: Request,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
@@ -729,6 +871,7 @@ async def download_payslip_pdf(
         "SELECT p.*, "
         "e.name AS employee_name, e.employee_code, e.designation, "
         "e.pan AS emp_pan, e.uan, e.bank_details, e.email AS emp_email, "
+        "e.user_id AS employee_user_id, "
         "COALESCE(d.name, e.department, '') AS department_name "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
@@ -739,6 +882,30 @@ async def download_payslip_pdf(
     if not row:
         raise HTTPException(404, "Payslip not found")
 
+    # The PDF is the one place full PAN, UAN and account number still appear —
+    # it is a statutory document and an employee is entitled to their own with
+    # real figures on it. Anyone else pulling it needs an org role, and the
+    # read is audited: this is the payroll equivalent of Manav's
+    # /employees/{id}/sensitive, and it must not be quieter than that one.
+    payslip = dict(row)
+    is_own = payslip.pop("employee_user_id", None) == user["user_id"]
+    if not is_own:
+        await _require_payroll_admin(user, org_id)
+        audit(
+            "vetana.payslip_pdf_downloaded",
+            request,
+            org_id=org_id,
+            user_id=user["user_id"],
+            resource_type="vetana_payslip",
+            resource_id=str(payslip_id),
+            detail={
+                "fields": ["pan", "uan", "bank_account"],
+                "employee": payslip.get("employee_name", ""),
+                "via": "platform_bypass" if await is_platform_staff(user["user_id"]) else "org_admin",
+            },
+            severity="warn",
+        )
+
     org = await pool.fetchrow(
         "SELECT name, gstin, pan, billing_address, logo_url, logo_key, email, phone, website, "
         "COALESCE(authorized_signatory_name, '') AS authorized_signatory_name, "
@@ -747,7 +914,6 @@ async def download_payslip_pdf(
         org_id,
     )
 
-    payslip = dict(row)
     bank_details = payslip.pop("bank_details", None) or {}
     if isinstance(bank_details, str):
         bank_details = json.loads(bank_details or "{}")
@@ -795,6 +961,8 @@ async def dashboard(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # YTD gross, net and a per-department salary split. Org-level financials.
+    await _require_payroll_admin(user, org_id)
     latest_run = await pool.fetchrow(
         "SELECT * FROM staging.vetana_payroll_runs "
         "WHERE org_id=$1::uuid ORDER BY month DESC LIMIT 1",
@@ -841,6 +1009,11 @@ async def statutory_summary(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # A PF/ESI/PT/TDS register for the whole org, carrying everyone's PAN and
+    # UAN. This is a filing document — org owner or admin only. PAN and UAN are
+    # still masked: nothing here needs the full number on screen, and the
+    # figures are what the filing is for.
+    await _require_payroll_admin(user, org_id)
     if not month:
         month = f"{date.today().year}-{date.today().month:02d}"
     rows = await pool.fetch(
@@ -867,7 +1040,7 @@ async def statutory_summary(
     )
     return {
         "month": month,
-        "employees": [dict(r) for r in rows],
+        "employees": [_mask_payslip_row(dict(r)) for r in rows],
         "totals": dict(totals) if totals else {},
     }
 
@@ -890,6 +1063,17 @@ async def list_loans(
         "WHERE l.org_id=$1::uuid"
     )
     params: list = [org_id]
+
+    # A loan against salary is a personal financial record. Same rule as the
+    # payslip: your own, or an org role.
+    if not await _is_payroll_admin(user, org_id):
+        own = await _own_employee_id(pool, user, org_id)
+        if not own:
+            return {"data": []}
+        if employee_id and employee_id != own:
+            raise HTTPException(403, "You can only view your own loans")
+        employee_id = own
+
     if employee_id:
         params.append(employee_id)
         q += f" AND l.employee_id=${len(params)}::uuid"
@@ -911,6 +1095,14 @@ async def create_loan(
     if body.principal_amount <= 0 or body.emi_amount <= 0:
         raise HTTPException(400, "Principal and EMI amounts must be positive")
     pool = await get_pool()
+    await _require_payroll_admin(user, org_id)
+    # The employee must be in this org. Without this the row would reference a
+    # foreign employee and the notification below would email a stranger.
+    if not await pool.fetchval(
+        "SELECT 1 FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+        body.employee_id, org_id,
+    ):
+        raise HTTPException(404, "Employee not found")
     row = await pool.fetchrow(
         "INSERT INTO staging.vetana_loans "
         "(org_id, employee_id, principal_amount, emi_amount, balance_remaining, "
@@ -923,7 +1115,9 @@ async def create_loan(
     )
     # ── Notify employee ──
     emp = await pool.fetchrow(
-        "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", body.employee_id,
+        "SELECT name, email FROM staging.manav_employees "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        body.employee_id, org_id,
     )
     if emp and emp.get("email"):
         from services.employee_email import send_loan_email
@@ -943,6 +1137,7 @@ async def update_loan(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    await _require_payroll_admin(user, org_id)
     updates, vals = [], []
     for field in ("emi_amount", "status", "notes"):
         val = getattr(body, field)

@@ -16,6 +16,7 @@ from middleware.org_resolver import get_org_id
 from middleware.roles import is_org_admin, is_platform_staff, require_org_role
 from middleware.subscription import require_module
 from services.audit import emit as audit
+from services.pii import mask_bank, mask_tail
 
 router = APIRouter(prefix="/api/v1/manav", tags=["manav-hrms"])
 
@@ -55,29 +56,12 @@ _EMP_SAFE_COLS = (
 _SENSITIVE_COLS = ("aadhaar", "pan", "bank_details")
 
 
-def _mask_tail(value: Optional[str], keep: int = 4, group: Optional[int] = None) -> Optional[str]:
-    """Mask all but the last `keep` characters. None and '' pass through
-    untouched so the UI can still distinguish "not on file" from "hidden"."""
-    if not value:
-        return value
-    s = str(value).strip()
-    if len(s) <= keep:
-        return "•" * len(s)
-    masked = "•" * (len(s) - keep) + s[-keep:]
-    if group:
-        return " ".join(masked[i:i + group] for i in range(0, len(masked), group))
-    return masked
-
-
-def _mask_bank(details: Optional[dict]) -> Optional[dict]:
-    """Mask the account number only. IFSC, bank and branch are public routing
-    information, and the account holder's name is already on the row."""
-    if not details:
-        return details
-    out = dict(details)
-    if out.get("account_number"):
-        out["account_number"] = _mask_tail(out["account_number"], 4)
-    return out
+# The masking rules now live in services/pii.py, because Vetana reads the same
+# PAN / UAN / bank_details columns off this table when it builds a payslip and
+# was returning them unmasked. Aliased here so the names used throughout this
+# file — and asserted by test_manav.py — keep working.
+_mask_tail = mask_tail
+_mask_bank = mask_bank
 
 
 def _mask_employee_pii(row: dict) -> dict:

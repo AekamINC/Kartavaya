@@ -656,6 +656,13 @@ async def get_report_logs(
     org_id=Depends(get_org_id),
 ):
     pool = await get_pool()
+    # Logs carry recipient addresses and failure reasons, and are keyed on the
+    # report id alone — so any report id in any org returned its delivery history.
+    if not await pool.fetchval(
+        "SELECT 1 FROM staging.dristi_scheduled_reports WHERE id=$1::uuid AND org_id=$2::uuid",
+        report_id, org_id,
+    ):
+        raise HTTPException(404, "Scheduled report not found")
     rows = await pool.fetch(
         "SELECT * FROM staging.dristi_report_logs "
         "WHERE scheduled_report_id=$1::uuid ORDER BY sent_at DESC LIMIT 50",

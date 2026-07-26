@@ -439,6 +439,13 @@ async def campaign_stats(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # `prachar_campaign_contacts` is keyed on campaign_id only, so without this
+    # the counts came back for any campaign id in any org.
+    if not await pool.fetchval(
+        "SELECT 1 FROM staging.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid",
+        camp_id, org_id,
+    ):
+        raise HTTPException(404, "Campaign not found")
     stats = await pool.fetchrow(
         "SELECT "
         "COUNT(*) AS total, "
@@ -781,9 +788,24 @@ async def update_sequence(seq_id: str, body: SequenceUpdate, user=Depends(requir
     return {"status": "updated"}
 
 
+async def _require_sequence_in_org(pool, seq_id: str, org_id: str):
+    """`prachar_sequence_steps` has no `org_id` of its own — it hangs off the
+    sequence. Routes keyed on `seq_id` alone therefore reached across tenants:
+    the step routes below could rewrite the subject and body of another
+    company's outbound email sequence, which is content injection into mail
+    their contacts receive over their name."""
+    ok = await pool.fetchval(
+        "SELECT 1 FROM staging.prachar_sequences WHERE id=$1::uuid AND org_id=$2::uuid",
+        seq_id, org_id,
+    )
+    if not ok:
+        raise HTTPException(404, "Sequence not found")
+
+
 @router.post("/sequences/{seq_id}/steps", dependencies=[Depends(_gate)])
 async def add_step(seq_id: str, body: StepCreate, user=Depends(require_user), org_id=Depends(get_org_id)):
     pool = await get_pool()
+    await _require_sequence_in_org(pool, seq_id, org_id)
     valid_channels = ("email", "whatsapp", "call_task", "manual")
     if body.channel not in valid_channels:
         raise HTTPException(400, f"channel must be one of: {', '.join(valid_channels)}")
@@ -803,6 +825,7 @@ async def add_step(seq_id: str, body: StepCreate, user=Depends(require_user), or
 @router.delete("/sequences/{seq_id}/steps/{step_order}", dependencies=[Depends(_gate)])
 async def delete_step(seq_id: str, step_order: int, user=Depends(require_user), org_id=Depends(get_org_id)):
     pool = await get_pool()
+    await _require_sequence_in_org(pool, seq_id, org_id)
     await pool.execute(
         "DELETE FROM staging.prachar_sequence_steps "
         "WHERE sequence_id=$1::uuid AND step_order=$2",
@@ -860,6 +883,7 @@ async def pause_sequence(seq_id: str, user=Depends(require_user), org_id=Depends
 @router.get("/sequences/{seq_id}/stats", dependencies=[Depends(_gate)])
 async def sequence_stats(seq_id: str, user=Depends(require_user), org_id=Depends(get_org_id)):
     pool = await get_pool()
+    await _require_sequence_in_org(pool, seq_id, org_id)
     steps = await pool.fetch(
         "SELECT st.id, st.step_order, st.channel, st.subject, "
         "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id) AS total_sent, "

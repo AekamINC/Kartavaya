@@ -1467,11 +1467,41 @@ async def update_team_brand(team_id:str, body:dict, pool=Depends(get_db), user=D
 
 @api_router.get("/users")
 async def list_users(pool=Depends(get_db),user=Depends(require_user)):
-    """Return all registered users — for admin member picker."""
-    if user.get("role") != "admin":  # system-role "owner" does not exist; admin only
-        raise HTTPException(403,"Admins only")
-    rows=await pool.fetch(
-        "SELECT user_id,COALESCE(full_name,name,email) AS display_name,email,role,company_name FROM users ORDER BY display_name ASC"
+    """Users available to add to a project — the member picker.
+
+    This used to return every registered user on the platform: display name,
+    email, role and company, for every tenant, gated on `users.role == 'admin'`
+    — a global column with no org scope on it at all. Two things were wrong.
+    Whoever held that flag saw every customer's staff directory, and an actual
+    org owner did not (their `users.role` is 'member'), so the picker was
+    simultaneously too open and broken for the people meant to use it.
+
+    Now: platform staff see everyone, because supporting a customer means being
+    able to find their users. An org owner or admin sees their own org. Nobody
+    else gets a directory.
+    """
+    from middleware.roles import is_platform_staff, admin_org_id
+
+    if await is_platform_staff(user["user_id"]):
+        rows = await pool.fetch(
+            "SELECT user_id,COALESCE(full_name,name,email) AS display_name,email,role,company_name "
+            "FROM users ORDER BY display_name ASC"
+        )
+        return [dict(r) for r in rows]
+
+    org_id = await admin_org_id(user["user_id"])
+    if not org_id:
+        raise HTTPException(403, "This action requires an org owner or org admin")
+
+    rows = await pool.fetch(
+        "SELECT u.user_id,COALESCE(u.full_name,u.name,u.email) AS display_name,"
+        "u.email,u.role,u.company_name "
+        "FROM users u "
+        "JOIN staging.user_roles ur ON ur.user_id = u.user_id "
+        "WHERE ur.org_id=$1::uuid "
+        "GROUP BY u.user_id,u.full_name,u.name,u.email,u.role,u.company_name "
+        "ORDER BY display_name ASC",
+        org_id,
     )
     return [dict(r) for r in rows]
 
@@ -2309,8 +2339,36 @@ async def poll_notifications(pool=Depends(get_db),user=Depends(require_user)):
         " AND created_at > NOW() - INTERVAL '70 seconds' ORDER BY created_at DESC LIMIT 5",
         user["user_id"]
     )
+    # Pending approvals the user can actually action. 01-navigation.md §4 asks
+    # for ONE call returning { inbox, approvals } — the sidebar declared
+    # `badge: 'approvals'` on /approvals and nothing ever fetched the number,
+    # so the badge element was gated on a hardcoded 0 and never mounted.
+    #
+    # It rides on this endpoint rather than a new one because this is already
+    # polled every 60 s; a second poll for a second integer is the waste §4
+    # names. Mirrors the visibility rules in approvals_router.get_pending_approvals.
+    from middleware.roles import is_org_admin
+    if await is_org_admin(user["user_id"]):
+        approvals = await pool.fetchval("""
+            SELECT COUNT(*) FROM tasks t
+            WHERE t.approval_status = 'pending'
+              AND (
+                EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1)
+                OR EXISTS (SELECT 1 FROM team_members tmem WHERE tmem.team_id=t.team_id AND tmem.user_id=$1 AND tmem.status='active')
+              )
+        """, user["user_id"])
+    else:
+        approvals = await pool.fetchval("""
+            SELECT COUNT(*) FROM tasks t
+            JOIN team_members tmem ON tmem.team_id = t.team_id AND tmem.user_id = $1
+            WHERE t.approval_status = 'pending'
+              AND tmem.role IN ('owner', 'admin')
+              AND tmem.status = 'active'
+        """, user["user_id"])
+
     return {
         "unread": unread or 0,
+        "approvals": approvals or 0,
         "fresh": [NotificationOut(**dict(r)).model_dump(mode="json") for r in fresh],
     }
 

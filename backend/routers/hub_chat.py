@@ -202,6 +202,19 @@ async def create_chat_session(
     _gate=Depends(_hub_gate),
 ):
     pool = await get_pool()
+    # The client id was taken on trust and stamped with the caller's org. Every
+    # read is org-scoped, so this looked contained — but `send_chat_message`
+    # reads `client_id` back off the session and hands it to `search_hybrid`,
+    # which retrieves knowledge-base chunks for that client. Pointing a session
+    # at another org's client made the assistant read and summarise their
+    # knowledge base. The org filter has to be here, at the point the link is
+    # created, because after that the id looks legitimate.
+    owns = await pool.fetchval(
+        "SELECT 1 FROM staging.hub_clients WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(client_id), org_id,
+    )
+    if not owns:
+        raise HTTPException(404, "Client not found")
     row = await pool.fetchrow(
         "INSERT INTO staging.hub_chat_sessions "
         "(client_id, org_id, title, session_type, created_by) "

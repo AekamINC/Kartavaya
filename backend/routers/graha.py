@@ -1577,8 +1577,8 @@ async def list_inbound_emails(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT id, sender, subject, status, contact_id, created_at "
@@ -1596,8 +1596,8 @@ async def get_inbound_email(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT * FROM staging.graha_inbound_emails WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -1722,8 +1722,8 @@ async def rescore_all_contacts(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     contacts = await pool.fetch(
         "SELECT id FROM staging.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE",
@@ -1764,8 +1764,8 @@ async def update_scoring_rule(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     _RULE_COLS = {"points", "is_active"}
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None and k in _RULE_COLS}
@@ -1819,8 +1819,8 @@ async def create_automation(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     valid_triggers = (
         "lead_created", "deal_stage_changed", "deal_created",
@@ -1852,8 +1852,8 @@ async def toggle_automation(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     await pool.execute(
         "UPDATE staging.graha_automations SET is_active = NOT is_active "
@@ -1870,8 +1870,8 @@ async def delete_automation(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     await pool.execute(
         "DELETE FROM staging.graha_automations WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -1886,8 +1886,8 @@ async def list_automation_logs(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT al.id, al.automation_id, a.name AS automation_name, "
@@ -2161,8 +2161,8 @@ async def create_territory(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     row = await pool.fetchrow(
         "INSERT INTO staging.graha_territories (org_id, name, description, assigned_users, rules) "
@@ -2181,8 +2181,8 @@ async def update_territory(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     await pool.execute(
         "UPDATE staging.graha_territories SET name=$1, description=$2, assigned_users=$3, "
@@ -2200,8 +2200,8 @@ async def delete_territory(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     await pool.execute(
         "UPDATE staging.graha_territories SET is_active=FALSE "
@@ -2274,8 +2274,8 @@ async def create_custom_field(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     valid_entities = ("contact", "deal")
     valid_types = ("text", "number", "date", "select", "checkbox", "url", "email", "phone")
     if body.entity_type not in valid_entities:
@@ -2303,8 +2303,8 @@ async def delete_custom_field(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     await pool.execute(
         "UPDATE staging.graha_custom_fields SET is_active=FALSE "
@@ -2348,8 +2348,8 @@ async def create_web_form(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     import re
     slug = re.sub(r"[^a-z0-9-]", "", body.slug.lower().strip())
@@ -2377,8 +2377,8 @@ async def delete_web_form(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Admin only")
+    if not await is_org_admin(user["user_id"], org_id):
+        raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     await pool.execute(
         "UPDATE staging.graha_web_forms SET is_active=FALSE "
