@@ -4,6 +4,7 @@ Table-based layout — Outlook 2019+ / Gmail / Apple Mail / Gmail Android compat
 """
 import logging
 import os
+import re
 import threading
 from html import escape as _h
 
@@ -47,28 +48,53 @@ else:
     logger.warning("⚠️  No email provider configured (set RESEND_API_KEY or AWS_ACCESS_KEY_ID) — emails logged to console only")
 
 
-# ── Design tokens (baked hex — no CSS vars, no color-mix) ─────────────────────
-_BG         = "#F6F3EC"
-_BG_SOFT    = "#F0ECDF"
-_SURFACE    = "#FCFAF5"
-_RULE       = "#E2DCC9"
-_RULE_SOFT  = "#EFE9D8"
-_INK        = "#1A2230"
-_INK2       = "#4A5468"
-_INK3       = "#6E7B91"
-_TEAL       = "#05b7aa"
-_MID        = "#03a1b6"
-_DEEP       = "#0082c6"
-_OK_BG      = "#E8F5F3"
-_OK_BORDER  = "#0A7A6E"
-_WARN_BG    = "#FEF3E2"
-_WARN_BORD  = "#B06A00"
-_DANGER_BG  = "#F8E9E5"
-_DANGER_BOR = "#C0392B"
+# ── Design tokens ─────────────────────────────────────────────────────────────
+# Literal hex, resolved from the design files by
+# `python backend/scripts/build_email_tokens.py`. Never hand-edit email_tokens.py
+# and never write a raw hex below — email clients drop var(), so a colour typed
+# here by hand is a colour nobody can trace back to a token.
+from email_tokens import (                                          # noqa: E402
+    PAGE_BG, SURFACE, SURFACE_2, CARD_BG, RULE, RULE_SOFT, OUTLINE,
+    INK, INK_2, INK_3, PRIMARY, PRIMARY_TEXT, ON_PRIMARY,
+    OK, WARN, DANGER, OK_BG, WARN_BG, DANGER_BG,
+    ON_OK_BG, ON_WARN_BG, ON_DANGER_BG, PLATFORM_VIOLET,
+    FONT_DISPLAY, FONT_UI, FONT_HINDI, FONT_MONO,
+    D_PAGE_BG as PAGE_BG_D, D_SURFACE as SURFACE_D, D_CARD_BG as CARD_BG_D,
+    D_RULE as RULE_D, D_INK as INK_D, D_INK_2 as INK_2_D, D_INK_3 as INK_3_D,
+    D_LINK as LINK_D, D_WARN_BG as WARN_BG_D, D_ON_WARN_BG as ON_WARN_BG_D,
+)
 
-_FONT_DISP  = "'Newsreader', Georgia, 'Times New Roman', serif"
-_FONT_UI    = "Inter, -apple-system, 'Helvetica Neue', Arial, sans-serif"
-_FONT_HINDI = "'Tiro Devanagari Hindi', 'Noto Serif Devanagari', 'Newsreader', Georgia, serif"
+# Legacy private aliases. `services/employee_email.py` imports `_INK3`, and the
+# report builder below is ~300 lines of f-strings using the underscore names.
+# Kept as aliases rather than renamed so this conversion is a design change and
+# not also a 300-line rename nobody can review.
+_BG         = PAGE_BG
+_BG_SOFT    = CARD_BG
+_SURFACE    = SURFACE
+_RULE       = RULE
+_RULE_SOFT  = RULE_SOFT
+_INK        = INK
+_INK2       = INK_2
+_INK3       = INK_3
+_TEAL       = PRIMARY_TEXT     # was #05b7aa — 2.41:1 as text, see report E-02
+_MID        = PRIMARY_TEXT     # was #03a1b6 — 2.97:1 as text
+_DEEP       = PRIMARY_TEXT     # was #0082c6 — 4.02:1 as text
+_OK_BG      = OK_BG
+_OK_BORDER  = OK
+_WARN_BG    = WARN_BG
+_WARN_BORD  = WARN
+_DANGER_BG  = DANGER_BG
+_DANGER_BOR = DANGER
+
+_FONT_DISP  = FONT_DISPLAY
+_FONT_UI    = FONT_UI
+_FONT_HINDI = FONT_HINDI
+
+# Devanagari script range. Used to split a mixed "LATIN · देवनागरी" label so the
+# tracking and uppercasing only ever touch the Latin run — see `_kicker_html`.
+_DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+
+MARK_URL = f"{FRONTEND_URL}/kartavaya-mark.png"
 
 
 def _safe_subject(s: str) -> str:
@@ -78,36 +104,147 @@ def _safe_subject(s: str) -> str:
 
 def _preheader(text: str) -> str:
     """Return an invisible preheader div shown in email client preview text."""
-    return (f'<div style="display:none;font-size:1px;color:{_BG};line-height:1px;'
-            f'max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">{_h(text)}</div>')
+    # The trailing entities push the recipient's own quoted body out of the
+    # preview strip, which otherwise appends the first line of the email to it.
+    return (f'<div style="display:none;font-size:1px;color:{PAGE_BG};line-height:1px;'
+            f'max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">{_h(text)}'
+            f'{"&#847;&zwnj;&nbsp;" * 30}</div>')
 
 
-def _dark_mode_css() -> str:
-    """Return a <style> block with dark-mode and mobile media query overrides."""
-    return """
+def _kicker_html(kicker: str) -> str:
+    """Render the eyebrow label, keeping tracking and uppercase off Devanagari.
+
+    `24-bilingual-devanagari.md` §"Never set letter-spacing on Devanagari" —
+    tracking splits conjunct ligatures, so क्ष and ज्ञ draw as two glyphs with a
+    gap — and §"never text-transform: uppercase", because Devanagari is unicase
+    so the transform silently changes only the Latin half of the pair.
+
+    16 templates pass a kicker shaped `LATIN · देवनागरी` ("LEAVE · अवकाश",
+    "PASSWORD RESET · पासवर्ड रीसेट"). Splitting on the separator here fixes all
+    16 without touching a single call site.
+    """
+    if not kicker:
+        return ""
+    latin, sep, deva = kicker.partition("·")
+    latin, deva = latin.strip(), deva.strip()
+    if not (sep and _DEVANAGARI.search(deva)):
+        # No Devanagari to protect — but a Devanagari-only kicker must still not
+        # be tracked or uppercased.
+        if _DEVANAGARI.search(kicker):
+            return (f'<span lang="hi" style="font-family:{FONT_HINDI};font-size:12px;'
+                    f'color:{INK_3};font-weight:400;">{_h(kicker)}</span>')
+        return (f'<span style="font-family:{FONT_UI};font-size:9px;font-weight:600;'
+                f'letter-spacing:1.8px;text-transform:uppercase;color:{INK_3};">'
+                f'{_h(kicker)}</span>')
+    return (
+        f'<span style="font-family:{FONT_UI};font-size:9px;font-weight:600;'
+        f'letter-spacing:1.8px;text-transform:uppercase;color:{INK_3};">{_h(latin)}</span>'
+        f'<span style="color:{INK_3};">&nbsp;·&nbsp;</span>'
+        f'<span lang="hi" style="font-family:{FONT_HINDI};font-size:12px;'
+        f'color:{INK_3};font-weight:400;letter-spacing:normal;text-transform:none;">'
+        f'{_h(deva)}</span>'
+    )
+
+
+def _head_css() -> str:
+    """<style> block: dark-mode overrides and the small-screen stack.
+
+    Two things worth knowing about this block.
+
+    Dark mode is *additive only*. Every colour-bearing cell in the document also
+    carries an inline background, so a client that ignores `<style>` (Gmail on
+    Android strips it in some configurations) renders the light design intact
+    rather than half-converted. The previous version restyled four classes and
+    left the page, footer, info card, tiles and button light — light text on
+    light chrome, which is worse than no dark mode at all.
+
+    The button deliberately does not flip. Dark `--primary` is #4FD8CB and needs
+    a dark label; a button whose label colour has to change with the media query
+    breaks in any client that applies one declaration but not the other. #04837A
+    with a white label is 4.63:1 and reads correctly against both schemes.
+    """
+    return f"""
 <style type="text/css">
-@media (prefers-color-scheme:dark){
-  .em__envelope{background:#122035 !important;border-color:#1A2A45 !important;}
-  .em__h1{color:#E6EEFC !important;}
-  .em__lede,.em__body-text{color:#B0BDD4 !important;}
-  .em__card{background:#0B1828 !important;border-color:#1A2A45 !important;}
-}
-@media screen and (max-width:480px){
-  .em__cta-cell{display:block !important;width:100% !important;padding-bottom:10px !important;}
-  .em__cta-btn{width:100% !important;display:block !important;}
-}
+@media (prefers-color-scheme:dark) {{
+  .em__page      {{ background:{PAGE_BG_D} !important; }}
+  .em__envelope  {{ background:{SURFACE_D} !important; border-color:{RULE_D} !important; }}
+  .em__card      {{ background:{CARD_BG_D} !important; border-color:{RULE_D} !important; }}
+  .em__hairline  {{ border-color:{RULE_D} !important; }}
+  .em__ink, .em__ink *  {{ color:{INK_D} !important; }}
+  .em__ink2, .em__ink2 * {{ color:{INK_2_D} !important; }}
+  .em__ink3, .em__ink3 * {{ color:{INK_3_D} !important; }}
+  .em__link      {{ color:{LINK_D} !important; }}
+  .em__warn      {{ background:{WARN_BG_D} !important; }}
+  .em__warn, .em__warn * {{ color:{ON_WARN_BG_D} !important; }}
+  .em__tile      {{ background:{CARD_BG_D} !important; border-color:{RULE_D} !important; }}
+}}
+@media screen and (max-width:600px) {{
+  .em__envelope {{ width:100% !important; max-width:100% !important; border-radius:0 !important; }}
+  .em__pad      {{ padding-left:20px !important; padding-right:20px !important; }}
+  .em__h1       {{ font-size:23px !important; }}
+  .em__cta-cell {{ display:block !important; width:100% !important; padding:0 0 10px !important; }}
+  .em__cta-btn  {{ display:block !important; width:100% !important; box-sizing:border-box !important; }}
+  .em__tile-row, .em__tile-cell {{ display:block !important; width:100% !important; }}
+}}
 </style>"""
 
 
 def _base(preheader: str, kicker: str, headline: str, sanskrit: str,
-          lede: str, body_rows: str, show_gita: bool = False) -> str:
-    """Assemble the full HTML email document from layout components and body rows."""
+          lede: str, body_rows: str, show_gita: bool = False,
+          accent: str = None, footer_note: str = None) -> str:
+    """Assemble the full HTML email document from layout components and body rows.
+
+    Geometry, type and colour follow
+    `design-reference/Kartavaya Redesign/Auth Emails.html`: 600px envelope,
+    14px radius, table layout, `role="presentation"`, inline styles, no external
+    stylesheet and no webfont link.
+
+    `kicker`, `headline` and `sanskrit` are escaped **here**. They were previously
+    interpolated raw, and 9 callers in `services/employee_email.py` passed
+    employee names and announcement titles straight through. Escaping at the
+    choke point covers every present and future caller, which is the same
+    argument `outbound.py` makes for guarding sends in one place.
+
+    `lede` and `body_rows` stay HTML-bearing — callers legitimately pass
+    `<strong>` — so those two remain the caller's responsibility.
+
+    `accent` paints a 4px keyline across the top of the envelope. Used by the
+    platform-support template to mark the mail as Aekam rather than the tenant.
+    """
+    keyline = ""
+    if accent:
+        keyline = (f'<tr><td style="height:4px;background:{accent};'
+                   f'font-size:0;line-height:0;">&nbsp;</td></tr>')
+
     gita = ""
     if show_gita:
-        gita = (f'<tr><td style="padding:20px 0 0;font-family:{_FONT_HINDI};'
-                f'font-size:14px;color:{_INK3};font-style:italic;text-align:center;">'
-                f'कर्मण्येवाधिकारस्ते मा फलेषु कदाचन — Bhagavad Gita 2.47'
-                f'</td></tr>')
+        gita = (f'<tr><td class="em__ink3" lang="sa" style="padding:0 0 18px;'
+                f'font-family:{FONT_HINDI};font-size:14px;color:{INK_3};'
+                f'text-align:center;letter-spacing:normal;">'
+                f'कर्मण्येवाधिकारस्ते मा फलेषु कदाचन'
+                f'<span style="font-family:{FONT_DISPLAY};font-style:italic;font-size:12px;">'
+                f' — Bhagavad Gita 2.47</span></td></tr>')
+
+    kicker_html = _kicker_html(kicker)
+    kicker_row = (f'<tr><td style="padding-bottom:10px;">{kicker_html}</td></tr>'
+                  if kicker_html else '')
+
+    sanskrit_row = ''
+    if sanskrit:
+        sanskrit_row = (
+            f'<p lang="hi" class="em__ink3" style="margin:12px 0 0;font-family:{FONT_HINDI};'
+            f'font-size:15px;font-weight:400;color:{INK_3};letter-spacing:normal;">'
+            f'{_h(sanskrit)}</p>')
+
+    lede_row = ''
+    if lede:
+        lede_row = (
+            f'<p class="em__ink2" style="margin:18px 0 0;font-family:{FONT_UI};font-size:14px;'
+            f'font-weight:400;color:{INK_2};line-height:1.68;">{lede}</p>')
+
+    note = footer_note or (
+        "You are receiving this because you are a member or invitee of a "
+        "Kartavaya workspace. If you did not expect it, you can safely ignore it.")
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -115,70 +252,68 @@ def _base(preheader: str, kicker: str, headline: str, sanskrit: str,
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="format-detection" content="telephone=no">
+<!-- Declares the document handles both schemes, which is what stops Apple Mail
+     and Outlook.com applying their own blanket inversion on top of ours. -->
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
 <title>Kartavaya</title>
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;1,400&family=Tiro+Devanagari+Hindi&display=swap" rel="stylesheet">
-{_dark_mode_css()}
+{_head_css()}
 </head>
-<body style="margin:0;padding:0;background:{_BG};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<body class="em__page" style="margin:0;padding:0;background:{PAGE_BG};
+  -webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
 {_preheader(preheader)}
-<!--[if mso]><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center"><![endif]-->
-<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:{_BG};">
-  <tr><td align="center" style="padding:32px 16px 40px;">
-    <table class="em__envelope" width="600" cellpadding="0" cellspacing="0" border="0"
-      style="background:{_SURFACE};border:1px solid {_RULE};border-radius:18px;
-             box-shadow:0 1px 0 rgba(20,30,50,.04),0 30px 60px -40px rgba(10,20,40,.25);">
-      <tr><td style="padding:40px 36px 0;">
-        <!-- brand bar -->
-        <table width="100%" cellpadding="0" cellspacing="0" border="0"
-          style="border-bottom:1px solid {_RULE_SOFT};padding-bottom:24px;margin-bottom:28px;">
-          <tr>
-            <td style="font-family:{_FONT_DISP};font-size:22px;font-weight:500;
-                       color:{_INK};letter-spacing:0.005em;">Kartavaya</td>
-            <td style="font-family:{_FONT_HINDI};font-size:16px;color:{_MID};padding-left:10px;">कर्तव्य</td>
-            <td align="right" style="font-family:{_FONT_UI};font-size:10px;
-                letter-spacing:0.2em;text-transform:uppercase;color:{_INK3};font-weight:700;">
-              By Aekam Inc</td>
-          </tr>
-        </table>
-        <!-- kicker -->
-        <p style="margin:0 0 14px;font-family:{_FONT_UI};font-size:11px;letter-spacing:0.22em;
-                  text-transform:uppercase;color:{_MID};font-weight:700;">{kicker}</p>
-        <!-- headline -->
-        <h1 class="em__h1" style="margin:0 0 6px;font-family:{_FONT_DISP};font-size:36px;
-                  font-weight:400;line-height:1.1;letter-spacing:-0.02em;color:{_INK};">{headline}</h1>
-        <p style="margin:0 0 24px;font-family:{_FONT_HINDI};font-size:18px;color:{_TEAL};font-weight:400;">{sanskrit}</p>
-        {f'<!-- lede --><p class="em__lede" style="margin:0 0 24px;font-family:{_FONT_UI};font-size:16px;line-height:1.65;color:{_INK2};">{lede}</p>' if lede else ''}
+<!--[if mso]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center"><![endif]-->
+<table role="presentation" class="em__page" width="100%" cellpadding="0" cellspacing="0"
+  border="0" style="background:{PAGE_BG};">
+  <tr><td align="center" style="padding:28px 12px;">
+    <table role="presentation" class="em__envelope" width="600" cellpadding="0" cellspacing="0"
+      border="0" style="width:600px;max-width:600px;background:{SURFACE};
+      border:1px solid {RULE};border-radius:14px;overflow:hidden;">
+      {keyline}
+      <!-- brand lockup: mark + wordmark, so a blocked-image inbox still reads
+           "Kartavaya · by Aekam Inc" rather than an empty box -->
+      <tr><td class="em__pad" style="padding:26px 32px 0;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+          <td style="padding-right:11px;">
+            <img src="{MARK_URL}" width="34" height="34" alt="Kartavaya"
+              style="display:block;border-radius:8px;border:0;outline:none;text-decoration:none;"></td>
+          <td>
+            <div class="em__ink" style="font-family:{FONT_DISPLAY};font-size:18px;
+              font-weight:500;color:{INK};line-height:1.1;">Kartavaya</div>
+            <div class="em__ink3" style="font-family:{FONT_UI};font-size:8.5px;font-weight:600;
+              letter-spacing:2px;text-transform:uppercase;color:{INK_3};padding-top:3px;">by Aekam Inc</div>
+          </td>
+        </tr></table>
       </td></tr>
-      <!-- body rows -->
+      <!-- kicker / headline / Devanagari subhead / lede -->
+      <tr><td class="em__pad" style="padding:26px 32px 0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+          {kicker_row}
+          <tr><td>
+            <h1 class="em__h1 em__ink" style="margin:0;font-family:{FONT_DISPLAY};font-size:27px;
+              font-weight:400;color:{INK};letter-spacing:-.5px;line-height:1.2;">{_h(headline)}</h1>
+            {sanskrit_row}
+            {lede_row}
+          </td></tr>
+        </table>
+      </td></tr>
       {body_rows}
-      <!-- gita / footer -->
-      <tr><td style="padding:28px 36px 0;border-top:1px solid {_RULE_SOFT};">
-        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+      <!-- footer -->
+      <tr><td class="em__pad" style="padding:24px 32px 26px;">
+        <table role="presentation" class="em__hairline" width="100%" cellpadding="0"
+          cellspacing="0" border="0" style="border-top:1px solid {RULE};">
           {gita}
-          <tr><td style="padding:20px 0 0;font-family:{_FONT_UI};font-size:11.5px;
-                         color:{_INK3};line-height:1.6;">
-            You are receiving this because you are a member or invitee of a Kartavaya workspace.
-            If you did not expect this email, you can safely ignore it.
+          <tr><td class="em__ink3" style="padding-top:16px;font-family:{FONT_UI};font-size:11px;
+            color:{INK_3};line-height:1.6;">
+            {_h(note)}<br>
+            Aekam Inc &middot; Ahmedabad, IN &nbsp;&middot;&nbsp;
+            <a class="em__link" href="{FRONTEND_URL}/dashboard"
+              style="color:{PRIMARY_TEXT};text-decoration:none;">Open Kartavaya</a>
+            &nbsp;&middot;&nbsp;
+            <a class="em__link" href="{FRONTEND_URL}/settings/notifications"
+              style="color:{PRIMARY_TEXT};text-decoration:none;">Notification settings</a>
           </td></tr>
-          <!-- bottom bar -->
-          <tr><td style="padding:16px 0 0;">
-            <table width="100%" cellpadding="0" cellspacing="0" border="0">
-              <tr>
-                <td style="font-family:{_FONT_UI};font-size:11px;color:{_INK3};">
-                  Kartavaya &mdash; <em>do what must be done.</em><br>
-                  <span style="color:{_INK3};">Aekam Inc &middot; Ahmedabad, IN</span>
-                </td>
-                <td align="right" style="font-family:{_FONT_UI};font-size:11px;color:{_INK3};white-space:nowrap;vertical-align:top;">
-                  <a href="{FRONTEND_URL}/dashboard" style="color:{_DEEP};text-decoration:none;">Open app</a>
-                  &nbsp;&middot;&nbsp;
-                  <a href="{FRONTEND_URL}/settings/notifications" style="color:{_DEEP};text-decoration:none;">Settings</a>
-                  &nbsp;&middot;&nbsp;
-                  <a href="{FRONTEND_URL}/settings/notifications" style="color:{_DEEP};text-decoration:none;">Unsubscribe</a>
-                </td>
-              </tr>
-            </table>
-          </td></tr>
-          <tr><td style="padding:16px 0 32px;"></td></tr>
         </table>
       </td></tr>
     </table>
@@ -191,75 +326,109 @@ def _base(preheader: str, kicker: str, headline: str, sanskrit: str,
 def _task_card(task_title: str, project: str = None, priority: str = None,
                due_date: str = None, note: str = None) -> str:
     """Render a styled task-detail card row for embedding in an email body."""
-    rows = f"""<tr><td style="padding:14px 18px;font-family:{_FONT_DISP};
-                  font-size:17px;font-weight:500;color:{_INK};line-height:1.3;">{_h(task_title)}</td></tr>"""
+    rows = (f'<tr><td class="em__ink" style="padding:16px 18px 6px;font-family:{FONT_DISPLAY};'
+            f'font-size:17px;font-weight:500;color:{INK};line-height:1.3;">'
+            f'{_h(task_title)}</td></tr>')
     if project or priority or due_date:
         meta_items = []
-        if project:  meta_items.append(f'<b>Project:</b> {_h(project)}')
-        if priority: meta_items.append(f'<b>Priority:</b> {_h(priority)}')
-        if due_date: meta_items.append(f'<b>Due:</b> {_h(due_date)}')
-        rows += (f'<tr><td style="padding:0 18px 14px;font-family:{_FONT_UI};'
-                 f'font-size:13px;color:{_INK3};">' + ' &nbsp;·&nbsp; '.join(meta_items) + '</td></tr>')
+        if project:  meta_items.append(f'<strong style="color:{INK_2};">Project:</strong> {_h(project)}')
+        if priority: meta_items.append(f'<strong style="color:{INK_2};">Priority:</strong> {_h(priority)}')
+        if due_date: meta_items.append(f'<strong style="color:{INK_2};">Due:</strong> {_h(due_date)}')
+        rows += (f'<tr><td class="em__ink3" style="padding:0 18px 16px;font-family:{FONT_UI};'
+                 f'font-size:13px;color:{INK_3};line-height:1.6;">'
+                 + ' &nbsp;·&nbsp; '.join(meta_items) + '</td></tr>')
     if note:
-        rows += (f'<tr><td style="padding:0 18px 14px;font-family:{_FONT_UI};font-size:14px;'
-                 f'color:{_INK2};font-style:italic;border-top:1px solid {_RULE_SOFT};">'
+        rows += (f'<tr><td class="em__ink2 em__hairline" style="padding:12px 18px 16px;'
+                 f'font-family:{FONT_UI};font-size:13.5px;color:{INK_2};font-style:italic;'
+                 f'line-height:1.6;border-top:1px solid {RULE};">'
                  f'&ldquo;{_h(note)}&rdquo;</td></tr>')
-    return (f'<tr><td style="padding:0 36px 28px;"><table class="em__card" width="100%" '
-            f'cellpadding="0" cellspacing="0" border="0" style="background:{_BG};'
-            f'border:1px solid {_RULE};border-radius:10px;overflow:hidden;">{rows}</table></td></tr>')
+    return (f'<tr><td class="em__pad" style="padding:20px 32px 0;">'
+            f'<table role="presentation" class="em__card" width="100%" cellpadding="0" '
+            f'cellspacing="0" border="0" style="background:{CARD_BG};border-radius:10px;">'
+            f'{rows}</table></td></tr>')
 
-
-_GRAD_PRIMARY = "linear-gradient(90deg,#0082c6,#03a1b6,#05b7aa)"
-_GRAD_APPROVE = "linear-gradient(135deg,#0A7A6E,#13a895)"
-_RULE_STRONG  = "#C8C0AA"
 
 def _cta_row(primary_url: str, primary_label: str, primary_style: str = "primary",
              ghost_url: str = None, ghost_label: str = None) -> str:
-    """Render a CTA button row with an optional secondary ghost button."""
-    if primary_style == "approve":
-        btn_bg     = _GRAD_APPROVE
-        btn_shadow = "0 4px 14px -4px rgba(10,122,110,.5)"
-    else:
-        btn_bg     = _GRAD_PRIMARY
-        btn_shadow = "0 4px 14px -4px rgba(0,130,198,.5),0 1px 0 rgba(255,255,255,.15) inset"
+    """Render a CTA button row with an optional quieter secondary action.
 
-    if primary_style == "approve":
-        btn_bg_color = "#0A7A6E"
-    else:
-        btn_bg_color = "#05b7aa"
+    Flat fill, no gradient. The previous version emitted
+    `background-color:#05b7aa;background:linear-gradient(...)`. Outlook's Word
+    rendering engine drops the gradient and keeps the flat colour, so every
+    Outlook recipient saw a white label on #05b7aa — **2.51:1**, on the product's
+    primary call to action. `Auth Emails.html` uses a flat #04837A (4.63:1 with a
+    white label) and has no fallback to get wrong.
 
+    `primary_style="approve"` no longer paints a second brand colour. An approve
+    and a proceed button are the same affordance; the previous #0A7A6E green was
+    in neither token file.
+    """
     ghost_cell = ""
     if ghost_url:
-        ghost_cell = (f'<td class="em__cta-cell" align="center" style="padding:0 0 0 12px;">'
-                      f'<table cellpadding="0" cellspacing="0" border="0">'
-                      f'<tr><td style="border:1px solid {_RULE_STRONG};border-radius:8px;">'
-                      f'<a class="em__cta-btn" href="{_h(ghost_url)}" '
-                      f'style="font-family:{_FONT_UI};font-size:14px;font-weight:600;'
-                      f'color:{_INK};text-decoration:none;'
-                      f'padding:13px 22px;display:inline-block;'
-                      f'min-width:140px;text-align:center;letter-spacing:0.005em;">'
-                      f'{_h(ghost_label)}</a></td></tr></table></td>')
-    return (f'<tr><td style="padding:4px 36px 20px;"><table cellpadding="0" cellspacing="0" border="0">'
-            f'<tr>'
-            f'<td class="em__cta-cell" align="center">'
-            f'<table cellpadding="0" cellspacing="0" border="0">'
-            f'<tr><td style="background-color:{btn_bg_color};background:{btn_bg};'
-            f'border-radius:8px;box-shadow:{btn_shadow};">'
+        # Quieter, not a competing filled button — Auth Emails.html renders
+        # "Decline" as a bare link beside "Accept invitation".
+        ghost_cell = (f'<td class="em__cta-cell" align="center" style="padding-left:10px;">'
+                      f'<a class="em__cta-btn em__ink3" href="{_h(ghost_url)}" '
+                      f'style="display:inline-block;padding:13px 20px;font-family:{FONT_UI};'
+                      f'font-size:14px;font-weight:600;color:{INK_3};text-decoration:none;'
+                      f'text-align:center;">{_h(ghost_label)}</a></td>')
+    return (f'<tr><td class="em__pad" style="padding:22px 32px 0;">'
+            f'<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
+            f'<td class="em__cta-cell" style="background:{PRIMARY};border-radius:9px;">'
             f'<a class="em__cta-btn" href="{_h(primary_url)}" '
-            f'style="font-family:{_FONT_UI};font-size:14px;font-weight:600;color:#ffffff;'
-            f'text-decoration:none;'
-            f'padding:13px 22px;display:block;min-width:140px;text-align:center;'
-            f'letter-spacing:0.005em;">'
-            f'{_h(primary_label)}</a></td></tr></table>'
-            f'</td>'
+            f'style="display:inline-block;padding:13px 26px;font-family:{FONT_UI};'
+            f'font-size:14px;font-weight:600;color:{ON_PRIMARY};text-decoration:none;'
+            f'text-align:center;">{_h(primary_label)}</a></td>'
             f'{ghost_cell}'
             f'</tr></table></td></tr>')
 
 
 def _body_text(text: str) -> str:
-    """Wrap a paragraph of HTML text in a standard body-text table row."""
-    return (f'<tr><td style="padding:0 36px 20px;font-family:{_FONT_UI};font-size:15px;'
-            f'line-height:1.65;color:{_INK2};" class="em__body-text">{text}</td></tr>')
+    """Wrap a paragraph of HTML text in a standard body-text table row.
+
+    `text` is HTML — callers pass `<strong>`. It is the caller's job to escape
+    every interpolated value before it gets here.
+    """
+    return (f'<tr><td class="em__pad em__ink2" style="padding:18px 32px 0;'
+            f'font-family:{FONT_UI};font-size:14px;font-weight:400;line-height:1.68;'
+            f'color:{INK_2};">{text}</td></tr>')
+
+
+def _quote_block(html: str, accent: str = None) -> str:
+    """Render a quoted excerpt — a comment body, a mention, a support agent's reason.
+
+    `html` must already be escaped by the caller; it is an excerpt of user text.
+    """
+    edge = f'border-left:3px solid {accent};' if accent else ''
+    return (f'<tr><td class="em__pad" style="padding:20px 32px 0;">'
+            f'<table role="presentation" class="em__card" width="100%" cellpadding="0"'
+            f' cellspacing="0" border="0" style="background:{CARD_BG};{edge}'
+            f'border-radius:0 10px 10px 0;">'
+            f'<tr><td class="em__ink2" style="padding:14px 18px;font-family:{FONT_UI};'
+            f'font-size:13.5px;color:{INK_2};font-style:italic;line-height:1.66;">'
+            f'{html}</td></tr></table></td></tr>')
+
+
+def _fallback_url(url: str, label: str = "Button not working? Paste this into your browser:") -> str:
+    """Render the plain-text copy of a magic link.
+
+    `Auth Emails.html` #reset carries this under every tokenised button. A signer
+    or invitee whose client strips the anchor otherwise has no way through.
+    """
+    return (f'<tr><td class="em__pad em__ink3" style="padding:14px 32px 0;'
+            f'font-family:{FONT_MONO};font-size:11px;color:{INK_3};line-height:1.6;'
+            f'word-break:break-all;">{_h(label)}<br>{_h(url)}</td></tr>')
+
+
+def _notice(text: str, tone: str = "warn") -> str:
+    """Render a filled notice strip — the amber block under the reset button."""
+    bg, fg = (WARN_BG, ON_WARN_BG) if tone == "warn" else (CARD_BG, INK_2)
+    cls = "em__warn" if tone == "warn" else "em__card"
+    return (f'<tr><td class="em__pad" style="padding:20px 32px 0;">'
+            f'<table role="presentation" class="{cls}" width="100%" cellpadding="0" '
+            f'cellspacing="0" border="0" style="background:{bg};border-radius:10px;">'
+            f'<tr><td style="padding:14px 16px;font-family:{FONT_UI};font-size:13px;'
+            f'color:{fg};line-height:1.6;">{text}</td></tr></table></td></tr>')
 
 
 # ── Core send (threaded) ───────────────────────────────────────────────────────
@@ -313,44 +482,46 @@ def send_email(to_email: str, subject: str, html_content: str,
 
 # ── 1. Invite email ────────────────────────────────────────────────────────────
 def _info_card(rows: list[tuple[str, str]], hindi_sub: dict[str, str] = None) -> str:
-    """Render an editorial card with dashed-separator rows matching the email design.
-    rows: list of (label, value) tuples.
-    hindi_sub: optional dict of label -> hindi subtitle shown below the value.
+    """Render the key/value card — `Auth Emails.html`'s #F0ECDF block.
+
+    rows: list of (label, value) tuples. Both are escaped; `label` previously was
+    not, and although every current caller passes a literal, nothing enforced it.
+    hindi_sub: optional label -> Devanagari subtitle shown under the value. It
+    gets `lang="hi"` and no tracking, per `24-bilingual-devanagari.md`.
     """
     hindi_sub = hindi_sub or {}
-
     n = len(rows)
+
     def _row(i, label, value):
-        is_first = (i == 0)
-        is_last  = (i == n - 1)
-        pt = "0"   if is_first else "8px"
-        pb = "0"   if is_last  else "8px"
-        border = "" if is_last else f"border-bottom:1px dashed {_RULE};"
+        is_last = (i == n - 1)
+        pt = "0" if i == 0 else "9px"
+        pb = "0" if is_last else "9px"
+        border = "" if is_last else f"border-bottom:1px dashed {RULE};"
         sub = ""
         if label in hindi_sub:
-            sub = (f'<br><span style="font-family:{_FONT_HINDI};'
-                   f'font-size:13px;color:{_INK3};margin-top:2px;">{_h(hindi_sub[label])}</span>')
+            sub = (f'<br><span lang="hi" style="font-family:{FONT_HINDI};font-size:13px;'
+                   f'font-weight:400;color:{INK_3};letter-spacing:normal;">'
+                   f'{_h(hindi_sub[label])}</span>')
         return (
             f'<tr>'
-            f'<td style="padding:{pt} 0 {pb};font-family:{_FONT_UI};font-size:10.5px;'
-            f'letter-spacing:0.16em;text-transform:uppercase;color:{_INK3};font-weight:700;'
-            f'vertical-align:top;{border}white-space:nowrap;">{label}</td>'
-            f'<td style="padding:{pt} 0 {pb};font-family:{_FONT_UI};font-size:14px;color:{_INK};'
-            f'font-weight:500;text-align:right;vertical-align:top;{border}">{_h(value)}{sub}</td>'
+            f'<td class="em__ink3" style="padding:{pt} 12px {pb} 0;font-family:{FONT_UI};'
+            f'font-size:9px;font-weight:600;letter-spacing:1.8px;text-transform:uppercase;'
+            f'color:{INK_3};vertical-align:top;{border}white-space:nowrap;">{_h(label)}</td>'
+            f'<td class="em__ink" style="padding:{pt} 0 {pb};font-family:{FONT_UI};'
+            f'font-size:13.5px;font-weight:500;color:{INK};text-align:right;'
+            f'vertical-align:top;{border}">{_h(value)}{sub}</td>'
             f'</tr>'
         )
 
     inner = "".join(_row(i, lbl, val) for i, (lbl, val) in enumerate(rows))
     return (
-        f'<tr><td style="padding:0 36px 24px;">'
-        f'<table width="100%" cellpadding="0" cellspacing="0" border="0"'
-        f' style="background:{_BG_SOFT};border:1px solid {_RULE};border-radius:12px;">'
-        f'<tr><td style="padding:18px 20px;">'
-        f'<table width="100%" cellpadding="0" cellspacing="0" border="0">'
+        f'<tr><td class="em__pad" style="padding:20px 32px 0;">'
+        f'<table role="presentation" class="em__card" width="100%" cellpadding="0"'
+        f' cellspacing="0" border="0" style="background:{CARD_BG};border-radius:10px;">'
+        f'<tr><td style="padding:16px 18px;">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
         f'{inner}'
-        f'</table>'
-        f'</td></tr>'
-        f'</table></td></tr>'
+        f'</table></td></tr></table></td></tr>'
     )
 
 
@@ -383,17 +554,21 @@ def send_invite_email(to_email: str, inviter_name: str, role: str,
         _body_text(f'{greeting}<strong>{_h(inviter_name)}</strong> has invited you to collaborate '
                    f'on <strong>Kartavaya</strong> — the task workspace where '
                    f'{_h(workspace_name)}\'s team plans projects, collaborates, and ships client work. '
-                   f'<span style="color:#03a1b6;">साथ मिलकर काम करें।</span>')
+                   f'<span lang="hi" style="font-family:{FONT_HINDI};color:{PRIMARY_TEXT};'
+                   f'letter-spacing:normal;">साथ मिलकर काम करें।</span>')
         + card
-        + _cta_row(invite_url, "Accept invite", "primary", workspace_url, "View workspace")
-        + _body_text(f'<span style="font-size:12.5px;color:{_INK3};">The invite link expires in '
-                     f'7 days. If you weren\'t expecting this email, you can safely ignore it.</span>')
+        + _cta_row(invite_url, "Accept invitation", "primary", workspace_url, "Decline")
+        + _body_text(f'Expires in <strong>{_h(expires_label)}</strong>. Only '
+                     f'<strong>{_h(to_email)}</strong> can accept it.')
+        + _fallback_url(invite_url)
     )
     return send_email(
         to_email,
-        f"{inviter_name} invited you to {workspace_name} on Kartavaya",
+        _safe_subject(f"{inviter_name} invited you to {workspace_name} on Kartavaya"),
+        # headline / kicker / sanskrit are escaped inside _base — passing _h()
+        # values here would double-escape and print &amp;amp; in a company name
         _base(preheader, "YOU'RE INVITED",
-              f"{_h(inviter_first)} invited you to {_h(workspace_short)} Workspace.",
+              f"{inviter_first} invited you to {workspace_short} Workspace.",
               "आपका स्वागत है", "", body),
         reply_to=None,
     )
@@ -402,8 +577,11 @@ def send_invite_email(to_email: str, inviter_name: str, role: str,
 # ── 2. Welcome email ───────────────────────────────────────────────────────────
 def send_welcome_email(user_email: str, user_name: str):
     """Send a welcome email with onboarding steps to a newly registered user."""
-    first_name = _h(user_name.split()[0] if user_name else "there")
-    preheader  = f"Your Kartavaya account is live. Here's the shortest path to doing what must be done."
+    # Two forms on purpose: the raw one goes to _base, which escapes; the escaped
+    # one goes into _body_text, which does not.
+    first_raw  = user_name.split()[0] if user_name else "there"
+    first_name = _h(first_raw)
+    preheader  = "Your Kartavaya account is live. Here's the shortest path to doing what must be done."
 
     def _step(num_hi, title, body_text):
         return (
@@ -455,8 +633,8 @@ def send_welcome_email(user_email: str, user_name: str):
     )
     return send_email(
         user_email,
-        f"Welcome to Kartavaya",
-        _base(preheader, "WELCOME ABOARD", f"Glad to have you, {first_name}.",
+        _safe_subject("Welcome to Kartavaya"),
+        _base(preheader, "WELCOME ABOARD", f"Glad to have you, {first_raw}.",
               "कर्तव्य में आपका स्वागत है", "", body),
     )
 
@@ -499,7 +677,7 @@ def send_approval_request_email(user_email: str, user_name: str,
     return send_email(
         user_email,
         _safe_subject(f"Approval needed: {task_title}"),
-        _base(preheader, "APPROVAL NEEDED", f"{_h(requester_name)} requested a new task.",
+        _base(preheader, "APPROVAL NEEDED", f"{requester_name} requested a new task.",
               "अनुमोदन हेतु अनुरोध", "", body),
     )
 
@@ -622,10 +800,7 @@ def send_comment_email(user_email: str, user_name: str, actor_name: str,
     body = (
         _body_text(f'Hi <strong>{first_name}</strong>, '
                    f'<strong>{_h(actor_name)}</strong> commented on <strong>{_h(task_title)}</strong>:')
-        + (f'<tr><td style="padding:0 36px 24px;"><table width="100%" cellpadding="0" cellspacing="0" border="0"'
-           f' style="background:{_BG};border-left:3px solid {_RULE};border-radius:0 8px 8px 0;">'
-           f'<tr><td style="padding:14px 18px;font-family:{_FONT_UI};font-size:14px;'
-           f'color:{_INK2};font-style:italic;line-height:1.6;">{preview}</td></tr></table></td></tr>')
+        + _quote_block(preview, _RULE)
         + _cta_row(task_url, "View Comment", "primary")
     )
     return send_email(
@@ -646,10 +821,7 @@ def send_mention_email(user_email: str, user_name: str, actor_name: str,
     body = (
         _body_text(f'Hi <strong>{first_name}</strong>, '
                    f'<strong>{_h(actor_name)}</strong> mentioned you in <strong>{_h(task_title)}</strong>:')
-        + (f'<tr><td style="padding:0 36px 24px;"><table width="100%" cellpadding="0" cellspacing="0" border="0"'
-           f' style="background:{_BG};border-left:3px solid {_TEAL};border-radius:0 8px 8px 0;">'
-           f'<tr><td style="padding:14px 18px;font-family:{_FONT_UI};font-size:14px;'
-           f'color:{_INK2};font-style:italic;line-height:1.6;">{preview}</td></tr></table></td></tr>')
+        + _quote_block(preview, _TEAL)
         + _cta_row(task_url, "View Task", "primary")
     )
     return send_email(
@@ -725,6 +897,12 @@ def send_approval_decision_email(user_email: str, user_name: str, reviewer_name:
     )
 
 
+# Avatar backgrounds for the report leaderboard. In neither token file — the
+# previous inline list mixed two brand blues with Tailwind indigo/pink, none of
+# which the design system uses anywhere. Reduced to token-derived fills.
+_AVATAR_BG = [PRIMARY, OK, WARN, DANGER, INK_2]
+
+
 # ── Report delivery email (MIME raw with attachments) ─────────────────────────
 def send_report_email(
     to_email: str,
@@ -745,6 +923,14 @@ def send_report_email(
     from email.mime.base      import MIMEBase
     from email              import encoders
 
+    # This sender builds its own MIME and talks to SES directly, so it never
+    # reaches the guard inside send_email(). Without this line, OUTBOUND_MODE=dry
+    # on staging — which shares production's SES identity and database — still
+    # delivers the scheduled report cron to real customers.
+    from outbound import suppressed
+    if suppressed("email", to_email, f"{frequency} report: {team_name}"):
+        return True
+
     data_summary     = data_summary or {}
     by_member_tasks  = by_member_tasks or []
     daily_throughput = daily_throughput or []
@@ -760,20 +946,20 @@ def send_report_email(
     in_prog    = data_summary.get("in_progress", 0)
     todo_count = data_summary.get("todo", 0)
     if frequency == "daily":
-        kicker   = f"DAILY REPORT · {_h(period_from)}"
-        headline = f"{_h(team_name)} — yesterday's pulse."
+        kicker   = f"DAILY REPORT · {period_from}"
+        headline = f"{team_name} — yesterday's pulse."
         sanskrit = "दैनिक प्रतिवेदन"
         lede     = (f'Here\'s the rollup for <strong>{_h(team_name)}</strong> over the last 24 hours. '
                     f'The Excel below has per-task detail.')
     elif frequency == "weekly":
-        kicker   = f"WEEKLY REPORT · {_h(period_from)} to {_h(period_to)}"
-        headline = f"{_h(team_name)} closed {done_count} tasks this week."
+        kicker   = f"WEEKLY REPORT · {period_from} to {period_to}"
+        headline = f"{team_name} closed {int(done_count)} tasks this week."
         sanskrit = "साप्ताहिक प्रतिवेदन"
         lede     = (f'Here\'s the weekly rollup for <strong>{_h(team_name)}</strong>. '
                     f'Full per-task detail is in the attached Excel.')
     else:
-        kicker   = f"MONTHLY REPORT · {_h(period_from)} to {_h(period_to)}"
-        headline = f"{done_count} tasks shipped in {_h(period_from[:7])}."
+        kicker   = f"MONTHLY REPORT · {period_from} to {period_to}"
+        headline = f"{int(done_count)} tasks shipped in {period_from[:7]}."
         sanskrit = "मासिक प्रतिवेदन"
         lede     = (f'Monthly summary for <strong>{_h(team_name)}</strong>. '
                     f'Full per-task detail is in the attached Excel.')
@@ -781,16 +967,15 @@ def send_report_email(
     preheader = f"{freq_cap} report for {team_name} ({period_from} to {period_to}) — {done_count} done, {overdue} overdue."
 
     # Helper: stat tile (table cell, 25% width)
-    _S = "#FCFAF5"  # surface
     def _stat_tile(k, v, hint, tone="neutral"):
         if tone == "ok":
-            bg, border, vc = "#E8F5F3", "#0A7A6E", "#0A7A6E"
+            bg, border, vc = OK_BG, OK, ON_OK_BG
         elif tone == "warn":
-            bg, border, vc = "#FEF3E2", "#B06A00", "#B06A00"
+            bg, border, vc = WARN_BG, WARN, ON_WARN_BG
         elif tone == "bad":
-            bg, border, vc = "#F8E9E5", "#C0392B", "#C0392B"
+            bg, border, vc = DANGER_BG, DANGER, ON_DANGER_BG
         else:
-            bg, border, vc = "#FFFFFF", _RULE, _INK
+            bg, border, vc = SURFACE_2, RULE, INK
         return (
             f'<td width="25%" style="padding:4px;">'
             f'<table width="100%" cellpadding="0" cellspacing="0" border="0"'
@@ -861,7 +1046,7 @@ def send_report_email(
         f'font-family:{_FONT_DISP};font-size:18px;color:{_INK};">{todo_count}</td>'
         f'<td style="text-align:right;padding:14px 8px;border-bottom:1px dashed {_RULE};'
         f'font-family:{_FONT_DISP};font-size:18px;'
-        f'color:{"#C0392B" if overdue > 0 else _INK};">{overdue}</td>'
+        f'color:{DANGER if overdue > 0 else INK};">{int(overdue)}</td>'
         f'</tr></tbody></table></td></tr>'
     )
 
@@ -871,8 +1056,8 @@ def send_report_email(
         top = by_member_tasks[0]
         nm   = top.get("user_name", "Team")
         cnt  = top.get("tasks_done", 0)
-        init = "".join(p[0].upper() for p in nm.split()[:2])
-        av_colors = ["#0082c6", "#0A7A6E", "#6366f1", "#ec4899", "#B06A00"]
+        init = _h("".join(p[0].upper() for p in str(nm).split()[:2]))
+        av_colors = _AVATAR_BG
         av_bg = av_colors[hash(nm) % len(av_colors)]
         if frequency == "daily":
             champ_label = "CHAMPION OF THE DAY"
@@ -887,7 +1072,7 @@ def send_report_email(
         champ_block = (
             f'<tr><td style="padding:4px 36px 16px;">'
             f'<table width="100%" cellpadding="0" cellspacing="0" border="0"'
-            f' style="background:#F0F9FF;border:1px solid #BAD9F5;border-radius:14px;">'
+            f' style="background:{CARD_BG};border-radius:10px;">'
             f'<tr><td style="padding:18px 20px;">'
             f'<div style="font-family:{_FONT_UI};font-size:10px;letter-spacing:0.24em;'
             f'text-transform:uppercase;color:{_MID};font-weight:700;margin-bottom:12px;">'
@@ -907,7 +1092,7 @@ def send_report_email(
             f'</td>'
             f'<td align="right" style="vertical-align:middle;font-family:{_FONT_DISP};'
             f'font-size:15px;color:{_INK};">'
-            f'<strong style="font-size:22px;">{cnt}</strong> tasks closed'
+            f'<strong style="font-size:22px;">{int(cnt or 0)}</strong> tasks closed'
             f'{"<br><span style=\"font-family:" + _FONT_UI + ";font-size:11.5px;color:" + _INK3 + ";\">" + total_h_entry + " total time</span>" if total_h_entry else ""}'
             f'</td>'
             f'</tr></table>'
@@ -925,10 +1110,10 @@ def send_report_email(
             bar_h     = max(4, int(val / max_val * 80))
             bar_cells += (
                 f'<td align="center" style="vertical-align:bottom;padding:0 5px;">'
-                f'<div style="width:28px;height:{bar_h}px;background:linear-gradient(135deg,#0082c6,#05b7aa);'
+                f'<div style="width:28px;height:{bar_h}px;background:{PRIMARY};'
                 f'border-radius:3px 3px 0 0;margin:0 auto;"></div>'
                 f'<div style="font-family:{_FONT_UI};font-size:9.5px;letter-spacing:0.12em;'
-                f'text-transform:uppercase;color:{_INK3};font-weight:700;margin-top:5px;">{day_label}</div>'
+                f'text-transform:uppercase;color:{INK_3};font-weight:700;margin-top:5px;">{_h(day_label)}</div>'
                 f'<div style="font-family:{_FONT_DISP};font-size:13px;color:{_INK};">{val}</div>'
                 f'</td>'
             )
@@ -948,7 +1133,7 @@ def send_report_email(
     if frequency == "monthly" and by_member_tasks:
         max_t = max((r.get("tasks_done", 0) for r in by_member_tasks), default=1) or 1
         board_rows = ""
-        av_colors = ["#0082c6", "#0A7A6E", "#6366f1", "#ec4899", "#B06A00"]
+        av_colors = _AVATAR_BG
         for i, r in enumerate(by_member_tasks[:5]):
             nm_b  = r.get("user_name", "")
             cnt_b = r.get("tasks_done", 0)
@@ -966,7 +1151,7 @@ def send_report_email(
                 f'<div style="width:{pct}%;height:8px;background:{color};border-radius:99px;min-width:6px;"></div>'
                 f'</td></tr></table></td>'
                 f'<td align="right" style="padding:8px 0;font-family:{_FONT_DISP};'
-                f'font-size:16px;color:{_INK};width:36px;">{cnt_b}</td>'
+                f'font-size:16px;color:{INK};width:36px;">{int(cnt_b or 0)}</td>'
                 f'</tr>'
             )
         board_block = (
@@ -988,12 +1173,12 @@ def send_report_email(
         attach_block = (
             f'<tr><td style="padding:8px 36px 12px;">'
             f'<table width="100%" cellpadding="0" cellspacing="0" border="0"'
-            f' style="background:#FFFFFF;border:1px solid {_RULE};border-radius:10px;">'
+            f' style="background:{SURFACE_2};border:1px solid {RULE};border-radius:10px;">'
             f'<tr><td style="padding:14px 16px;">'
             f'<table cellpadding="0" cellspacing="0" border="0"><tr>'
             f'<td style="vertical-align:middle;width:52px;">'
             f'<div style="width:44px;height:54px;border-radius:4px;'
-            f'background:linear-gradient(180deg,#1e6e3c,#146a35);'
+            f'background:{OK};'
             f'text-align:center;color:#fff;font-family:monospace;font-size:10px;'
             f'font-weight:700;letter-spacing:0.06em;line-height:54px;">XLS</div>'
             f'</td>'
@@ -1087,21 +1272,26 @@ def send_report_email(
 def send_password_reset_email(user_email: str, user_name: str, reset_token: str):
     """Send a password-reset link to the user."""
     reset_url  = f"{FRONTEND_URL}/reset-password?token={reset_token}"
-    first_name = _h(user_name.split()[0] if user_name else "there")
-    preheader  = "Reset your Kartavaya password — link expires in 1 hour."
+    preheader  = "This link expires in one hour."
+    # `Auth Emails.html` #reset: state the expiry, the sign-out side effect and
+    # the plain-text URL. It also never confirms whether the address has an
+    # account, which is why nothing here addresses the recipient by name.
     body = (
-        _body_text(f'Hi <strong>{first_name}</strong>, we received a request to reset the password '
-                   f'for your Kartavaya account. Click the button below to choose a new password.')
-        + _cta_row(reset_url, "Reset password", "primary")
-        + _body_text(f'<span style="font-size:12.5px;color:{_INK3};">This link expires in '
-                     f'<strong>1 hour</strong>. If you didn\'t request a password reset, '
-                     f'you can safely ignore this email — your password won\'t change.</span>')
+        _body_text('Somebody asked for a password reset on this address. '
+                   'If that was you, use the button below.')
+        + _cta_row(reset_url, "Set a new password", "primary")
+        + _notice(f'This link <strong style="color:{ON_WARN_BG};">expires in one hour</strong> '
+                  f'and works only once. Setting a new password signs out every other device.')
+        + _body_text('<strong>Did not ask for this?</strong> Nothing has changed yet — you can '
+                     'ignore this email and your password stays as it is. If you get several '
+                     'of these, someone may be trying your address.')
+        + _fallback_url(reset_url)
     )
     return send_email(
         user_email,
-        "Reset your Kartavaya password",
+        _safe_subject("Reset your Kartavaya password"),
         _base(preheader, "PASSWORD RESET · पासवर्ड रीसेट",
-              "Reset your password.", "सुरक्षा", "", body),
+              "Reset your password", "सुरक्षा", "", body),
     )
 
 
@@ -1127,7 +1317,7 @@ def send_status_changed_email(user_email: str, user_name: str,
     )
     return send_email(
         user_email,
-        f"Task updated: {task_title}",
+        _safe_subject(f"Task updated: {task_title}"),
         _base(preheader, "STATUS UPDATE · स्थिति", "Task status changed", "स्थिति परिवर्तन",
               "", body),
     )
