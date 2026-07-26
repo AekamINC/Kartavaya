@@ -17,7 +17,7 @@ nothing, because `body.dict(exclude_unset=True)` can only contain keys the model
 declares. Both halves are fixed together, and they must stay together:
 
   · the four names below, and
-  · `migrations/PROPOSED_067_org_profile_fields.sql`, which adds the columns.
+  · `migrations/PROPOSED_068_org_profile_fields.sql`, which adds the columns.
 
 ── Why the columns are PROBED rather than assumed ───────────────────────────
 Staging and production share one Supabase project, so the migration is proposed
@@ -37,7 +37,7 @@ So `_available_columns()` asks the catalogue once which of the four exist, and:
     frontend's objection was to a save that reports success and loses the text.
     A refusal that says why is honest; a silent 200 is not.
 
-The day `PROPOSED_067` is applied the probe re-runs and the fields start working
+The day `PROPOSED_068` is applied the probe re-runs and the fields start working
 with no code change. Nothing here needs a redeploy to notice.
 """
 import json
@@ -82,7 +82,7 @@ _MAX_TEAM_SIZE = 40
 #: Nothing was founded before this, and a year in the future is a typo.
 _MIN_FOUNDED_YEAR = 1800
 
-#: The columns `PROPOSED_067_org_profile_fields.sql` adds. Everything in
+#: The columns `PROPOSED_068_org_profile_fields.sql` adds. Everything in
 #: `_PROFILE_COLUMNS` that is NOT in here has existed since 047 and is assumed.
 _PENDING_COLUMNS = frozenset({"description", "industry", "team_size", "founded_year"})
 
@@ -236,7 +236,7 @@ async def update_profile(
             f"{', '.join(missing)} cannot be saved yet: the column"
             f"{'s are' if len(missing) > 1 else ' is'} not on "
             "staging.organisations. Apply "
-            "migrations/PROPOSED_067_org_profile_fields.sql, then retry. "
+            "migrations/PROPOSED_068_org_profile_fields.sql, then retry. "
             "Nothing was saved — your other edits were not written either.",
         )
 

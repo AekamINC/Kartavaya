@@ -112,7 +112,7 @@ COMMENT ON COLUMN staging.org_security.ip_ranges IS
 COMMENT ON COLUMN staging.org_security.tfa_enforced IS
     'Refused by PATCH until the number of members who would be locked out is '
     'countable, and then only when the request carries acknowledge_lockout '
-    'equal to that exact number. See the ENFORCEMENT note in 068.';
+    'equal to that exact number. See the ENFORCEMENT note in 069.';
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- TWO NOTES FOR WHOEVER BUILDS THE ENFORCEMENT

@@ -828,7 +828,7 @@ async def revoke_role(
 # that table spells the module `sanvaad` — verified live, it holds `sanvaad` and
 # never `samvada`. Importing role_tiers' spelling alone would swap one 400 for
 # another and reject the exact code the live data uses. Both spellings are
-# accepted until `PROPOSED_069_sanvaad_spelling.sql` converges them; that file
+# accepted until `PROPOSED_070_sanvaad_spelling.sql` converges them; that file
 # names this line as one of the places the workaround disappears from.
 ALL_MODULES = frozenset(ROLE_TIER_MODULES) | {"sanvaad"}
 

@@ -106,7 +106,7 @@ to match a constant. Converging on `sanvaad` means rewriting the constant.
 This file cannot do that rename: `role_tiers.py` is owned elsewhere and the
 CHECK is a migration that must not be applied against a shared project. So it
 translates at the boundary instead, and the translation is EXPLICIT and
-one-line-visible rather than smeared through the queries. `PROPOSED_069`
+one-line-visible rather than smeared through the queries. `PROPOSED_070`
 proposes the rename that deletes this map; until then it accepts BOTH spellings
 on input, which is the only behaviour that cannot reject a caller for being
 right.
@@ -132,7 +132,7 @@ router = APIRouter(prefix="/api/v1/org/modules", tags=["org-modules"])
 # ── Spelling ──────────────────────────────────────────────────────────────────
 
 #: canonical (role_tiers / grant) → entitlement (module_subscriptions) spelling.
-#: One entry. If it ever gains a second, the rename in PROPOSED_069 stopped
+#: One entry. If it ever gains a second, the rename in PROPOSED_070 stopped
 #: being optional.
 _ENTITLEMENT_SPELLING: dict[str, str] = {"samvada": "sanvaad"}
 

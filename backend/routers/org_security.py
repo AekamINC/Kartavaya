@@ -116,7 +116,7 @@ an org that has locked itself out.
 5 · THE TABLE MAY NOT EXIST
 ═══════════════════════════════════════════════════════════════════════════════
 
-`migrations/PROPOSED_068_org_security.sql` is proposed, not applied — staging
+`migrations/PROPOSED_069_org_security.sql` is proposed, not applied — staging
 and production share one Supabase project. So this router probes for the table:
 GET returns defaults with `storage_ready: false`, and PATCH returns 503 naming
 the migration rather than 500ing on a missing relation. Mounting this router
@@ -393,7 +393,7 @@ async def get_security(
         "storage_note": None if ready else (
             "staging.org_security does not exist yet, so these are the "
             "defaults and nothing can be saved. Apply "
-            "migrations/PROPOSED_068_org_security.sql."
+            "migrations/PROPOSED_069_org_security.sql."
         ),
         "two_factor": {
             **enrolment,
@@ -448,7 +448,7 @@ async def patch_security(
         raise HTTPException(
             503,
             "Security settings cannot be saved yet: staging.org_security does "
-            "not exist. Apply migrations/PROPOSED_068_org_security.sql, then "
+            "not exist. Apply migrations/PROPOSED_069_org_security.sql, then "
             "retry. Nothing was saved.",
         )
 
