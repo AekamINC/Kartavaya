@@ -8,6 +8,7 @@ from email_service import (
     send_email, _base, _body_text, _info_card, _cta_row, _safe_subject,
     FRONTEND_URL, _INK3, FROM_EMAIL, _resend_client, ses_client,
 )
+from html import escape as _h
 import logging
 import threading
 
@@ -37,7 +38,9 @@ def send_leave_decision_email(employee_email, employee_name, leave_type, start_d
         kicker=f"LEAVE · अवकाश",
         headline=f"Leave {decision.title()}",
         sanskrit="अवकाश निर्णय",
-        lede=f"Hi {employee_name}, your {leave_type} leave request from {start_date} to {end_date} has been <b>{decision}</b> by {reviewer_name}.",
+        lede=f"Hi {_h(employee_name)}, your {_h(leave_type)} leave request from "
+             f"{_h(start_date)} to {_h(end_date)} has been <strong>{_h(decision)}</strong> "
+             f"by {_h(reviewer_name)}.",
         body_rows=card + cta,
     )
     send_email(employee_email, _safe_subject(f"Leave {decision.title()} — {leave_type}"), html)
@@ -61,7 +64,8 @@ def send_expense_decision_email(employee_email, employee_name, claim_title, amou
         kicker="EXPENSE · व्यय",
         headline=f"Expense {decision.title()}",
         sanskrit="व्यय निर्णय",
-        lede=f"Hi {employee_name}, your expense claim for {claim_title} has been <b>{decision}</b> by {reviewer_name}.",
+        lede=f"Hi {_h(employee_name)}, your expense claim for {_h(claim_title)} has been "
+             f"<strong>{_h(decision)}</strong> by {_h(reviewer_name)}.",
         body_rows=card,
     )
     send_email(employee_email, _safe_subject(f"Expense {decision.title()} — {claim_title}"), html)
@@ -72,14 +76,18 @@ def send_expense_decision_email(employee_email, employee_name, claim_title, amou
 def send_announcement_email(employee_email, employee_name, title, body_content, org_name=""):
     if _skip(employee_email):
         return
-    body = _body_text(str(body_content) if body_content else "")
+    # AnnouncementsTab.jsx:71 composes this in a plain <textarea> and :108 renders
+    # it as text with white-space:pre-wrap. Email was the one surface treating it
+    # as markup — an HR admin could put an anchor in a Kartavaya-branded mail to
+    # every employee. Escape, then restore the line breaks the composer implies.
+    body = _body_text(_h(str(body_content)).replace("\n", "<br>") if body_content else "")
     cta = _cta_row(f"{FRONTEND_URL}/manav?tab=announcements", "View Announcements")
     html = _base(
         preheader=f"New announcement: {title}",
         kicker="ANNOUNCEMENT · घोषणा",
         headline=str(title),
         sanskrit="घोषणा",
-        lede=f"Hi {employee_name}, a new announcement has been posted.",
+        lede=f"Hi {_h(employee_name)}, a new announcement has been posted.",
         body_rows=body + cta,
     )
     send_email(employee_email, _safe_subject(f"Announcement — {title}"), html)
@@ -101,7 +109,7 @@ def send_shift_schedule_email(employee_email, employee_name, shift_name, date, s
         kicker="SHIFT · पारी",
         headline="Shift Assigned",
         sanskrit="पारी निर्धारण",
-        lede=f"Hi {employee_name}, you have been assigned a shift.",
+        lede=f"Hi {_h(employee_name)}, you have been assigned a shift.",
         body_rows=card + cta,
     )
     send_email(employee_email, _safe_subject(f"Shift Assigned — {shift_name} on {date}"), html)
@@ -123,7 +131,8 @@ def send_asset_email(employee_email, employee_name, asset_name, asset_type, acti
         kicker="ASSET · संपत्ति",
         headline=f"Asset {verb}",
         sanskrit="संपत्ति सूचना",
-        lede=f"Hi {employee_name}, the asset <b>{asset_name}</b> has been {verb.lower()} {'to' if action == 'assigned' else 'from'} you.",
+        lede=f"Hi {_h(employee_name)}, the asset <strong>{_h(asset_name)}</strong> has been "
+             f"{verb.lower()} {'to' if action == 'assigned' else 'from'} you.",
         body_rows=card,
     )
     send_email(employee_email, _safe_subject(f"Asset {verb} — {asset_name}"), html)
@@ -146,7 +155,7 @@ def send_loan_email(employee_email, employee_name, loan_type, amount, emi, actio
         kicker="LOAN · ऋण",
         headline=f"Loan {action_label}",
         sanskrit="ऋण सूचना",
-        lede=f"Hi {employee_name}, your loan has been {action}.",
+        lede=f"Hi {_h(employee_name)}, your loan has been {_h(action)}.",
         body_rows=card,
     )
     send_email(employee_email, _safe_subject(f"Loan {action_label}"), html)
@@ -170,13 +179,22 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
         kicker="PAYSLIP · वेतन पर्ची",
         headline="Payslip Ready",
         sanskrit="वेतन पर्ची",
-        lede=f"Hi {employee_name}, your payslip for {month} is now available.",
+        lede=f"Hi {_h(employee_name)}, your payslip for {_h(month)} is now available.",
         body_rows=card + attach_note + cta,
     )
     subject = _safe_subject(f"Payslip Ready — {month} ({payslip_number})")
 
     if not pdf_bytes:
         send_email(employee_email, subject, html_content)
+        return
+
+    # The attachment branch below builds its own MIME and calls Resend/SES
+    # directly, so it never reaches the guard inside send_email(). Without this,
+    # OUTBOUND_MODE=dry on staging — which shares production's SES identity and
+    # its database — still mails real payslips to real employees on a payroll run.
+    # This is the same bypass send_report_email had; both are now closed.
+    from outbound import suppressed
+    if suppressed("email", employee_email, subject):
         return
 
     def _send_with_attachment():
@@ -243,7 +261,8 @@ def send_performance_email(employee_email, employee_name, review_period, reviewe
         kicker="PERFORMANCE · प्रदर्शन",
         headline="Performance Review",
         sanskrit="प्रदर्शन समीक्षा",
-        lede=f"Hi {employee_name}, a performance review for {review_period} has been submitted by {reviewer_name}.",
+        lede=f"Hi {_h(employee_name)}, a performance review for {_h(review_period)} "
+             f"has been submitted by {_h(reviewer_name)}.",
         body_rows=card + cta,
     )
     send_email(employee_email, _safe_subject(f"Performance Review — {review_period}"), html)

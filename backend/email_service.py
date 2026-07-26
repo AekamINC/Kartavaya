@@ -1326,14 +1326,25 @@ def send_status_changed_email(user_email: str, user_name: str,
 # ── Legacy aliases ─────────────────────────────────────────────────────────────
 def send_approval_notification_email(user_email: str, user_name: str, task_title: str,
                                      notification_type: str, notes: str = None,
-                                     task_id: str = None, requester_name: str = None):
-    """Dispatch to send_approval_request_email or send_approval_decision_email."""
+                                     task_id: str = None, requester_name: str = None,
+                                     reviewer_name: str = None):
+    """Dispatch to send_approval_request_email or send_approval_decision_email.
+
+    `reviewer_name` was previously hardcoded to "The reviewer" here, so every
+    approve/reject email in the product read "The reviewer has approved your
+    task" — the approver's identity existed at the call site and was thrown away
+    one frame later. `approvals_router.send_approval_notification` now resolves
+    it from `tasks.approved_by`, which every handler writes before notifying.
+
+    The literal is kept as the fallback: a decision email with a slightly generic
+    subject is better than one that fails because a join came back empty.
+    """
     if notification_type == "request":
         return send_approval_request_email(
             user_email, user_name, requester_name or "A team member", task_title, notes=notes)
-    else:
-        return send_approval_decision_email(
-            user_email, user_name, "The reviewer", task_title, task_id or "", notification_type, notes)
+    return send_approval_decision_email(
+        user_email, user_name, reviewer_name or "The reviewer",
+        task_title, task_id or "", notification_type, notes)
 
 
 def send_team_invite_email(to_email: str, team_name: str, inviter_name: str, invite_token: str):

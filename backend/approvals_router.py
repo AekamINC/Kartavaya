@@ -129,6 +129,23 @@ async def send_approval_notification(pool, task_id: str, task_title: str,
     )
     if user:
         await _notify(pool, task_id, task_title, recipient_id, notification_type, notes, team_id=team_id)
+
+        # The approve/reject email said "The reviewer has approved your task" for
+        # every decision — the approver's name was hardcoded in the email layer
+        # and never reached the template. Every handler that reaches here has
+        # already written the decider to `tasks.approved_by`, so resolve it from
+        # the row rather than threading a new argument through nine call sites.
+        reviewer_name = None
+        if notification_type in ("approved", "rejected"):
+            try:
+                reviewer_name = await pool.fetchval(
+                    "SELECT COALESCE(u.full_name, u.name) FROM tasks t "
+                    "JOIN users u ON u.user_id = t.approved_by WHERE t.task_id = $1",
+                    task_id,
+                )
+            except Exception:
+                reviewer_name = None      # fall back to the generic wording
+
         try:
             from email_service import send_approval_notification_email
             send_approval_notification_email(
@@ -136,6 +153,7 @@ async def send_approval_notification(pool, task_id: str, task_title: str,
                 task_title, notification_type, notes,
                 task_id=task_id,
                 requester_name=requester_name,
+                reviewer_name=reviewer_name,
             )
         except Exception as exc:
             import logging; logging.getLogger(__name__).warning("approval email failed: %s", exc)
