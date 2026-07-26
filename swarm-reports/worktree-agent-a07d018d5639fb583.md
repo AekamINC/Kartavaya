@@ -211,7 +211,215 @@ through to Tiro, proven by width in §1a.
 `.au__wm` computed `letter-spacing: normal` **confirms CLAIM 2's fix on the live
 cascade**, not merely by reading the CSS.
 
-Gates green after these changes: tokens 279 declared / 229 referenced / 0 missing;
-classes 2096 defined / 1416 used / 0 missing a rule.
+Gates green after these changes (re-run bare on the final branch, no pipe —
+§2 of `_COORDINATION.md`): tokens 339 declared / 233 referenced / 0 missing;
+classes 2114 defined / 1437 used / 0 missing a rule. Both exit 0.
 
 ---
+
+## 3 · The auth flows, driven in a real browser
+
+Vite dev server, real components, **network intercepted at the browser** so no
+request reached a backend. Nothing was written to a database and **no email was
+ever triggered** — the invite and reset paths were exercised against fulfilled
+routes only.
+
+`node_modules` was not installed in the worktree; the main repo's was junctioned
+in. `git status` stayed clean, **no lockfile was touched**.
+
+| Flow | Result |
+|---|---|
+| **Login submits** | **YES.** `POST /api/auth/login`, body `{"email":"Keval@Example.com","password":"hunter2-not-real"}` |
+| Email trimmed, password not | Confirmed — typed `␣␣Keval@Example.com␣␣`, sent trimmed; password preserved byte-for-byte |
+| Inline validation precedes the request | Confirmed — invalid email produced `aria-invalid="true"` + "That does not look like an email address." and **zero requests** |
+| Empty submit | Names both fields: "Enter your email address." / "Enter your password." |
+| Rejected credential | Banner + `.is-shake` present at 180ms, cleared by 1000ms |
+| Network failure | Toast "Could not reach the server", **no** banner — correct per 12 §5 |
+| Forgot password | Conditional confirmation, 60s resend countdown runs |
+| Accept-invite / reset without a token | Specific, correct dead-end states with a route out |
+| Onboarding endpoints | All real — `POST /invites` (`invite_router.py:274`), `POST /teams` (`server.py:1766`), columns GET/POST/PUT/DELETE (`server.py:837/846/857/873`) |
+
+**Login was not broken.** All four named exports match what `App.jsx:38-41`
+lazy-imports, and all four routes resolve.
+
+### 3a · Four defects found here, all fixed
+
+1. **The 429 banner printed slowapi's raw string.** Measured:
+   `Rate limit exceeded: 5 per 1 minute` rendered verbatim on the sign-in screen
+   (login is `5/minute`, forgot-password `3/minute`). Now "Too many attempts.
+   Wait a minute and try again." The forgot-password toast gets its own wording,
+   because "try again in a moment" is the wrong advice when only waiting helps.
+2. **The sign-in banner echoed the server's `detail` verbatim** — precisely where
+   an enumeration oracle would appear. Verified with a hostile stub: a backend
+   answering `"No account exists with that email address"` had that string
+   rendered to the user. The form now prints its own copy and never the
+   server's; re-tested, the generic message is shown instead. `accept-invite`
+   and `reset` keep `detail`, where it is useful and there is nothing to protect.
+3. **A 500 printed whatever was in `detail`**, including a stubbed
+   `asyncpg.exceptions.UndefinedColumnError`. Now a plain sentence.
+4. **`POST /invites` was being retried — and it sends an email.** Measured: one
+   call against a 503 put **four requests on the wire**. A gateway 503 in the
+   Railway restart window arrives *after* the backend created the invite and
+   mailed the person, so each retry mails them again — up to four identical
+   invitations to a client. Now `noRetry`, the opt-out `api.js` already
+   documents for uploads "to avoid double-sending". Re-measured: **1 request**.
+   `POST /teams` got it too — a non-idempotent create that would otherwise leave
+   duplicate projects and orphan all but the last.
+
+### 3b · Not fixed, recorded — login is slow to report a dead network
+
+`api.js` retries network failures 3× at 800/1600/2400ms, so the sign-in button
+sits on "Signing in…" for **~4.8s** before the toast appears. Sampled every
+500ms: first feedback at 5000ms. Defensible for background fetches, wrong for a
+foreground credential submit where the user is watching. Changing the shared
+interceptor's semantics affects every surface, so it is flagged rather than
+altered.
+
+---
+
+## 4 · Dark mode — and a correction to my own earlier claim
+
+**I first reported a severe dark-mode defect here. It was my test that was
+wrong, and the palette is fine.** Recording it because the methodology trap will
+catch the next person.
+
+Setting `data-theme="dark"` with `setAttribute` is **not** a valid theme switch
+in this app. `applyPrefs` (`CustomizePanel.jsx:191-225`) writes `--primary`,
+`--primary-text`, `--primary-hover` and `--primary-vivid` as **inline custom
+properties on `:root`**, and an inline property beats every stylesheet rule. So
+poking the attribute flips the token-file values while leaving the inline ones
+frozen at the previous theme — which reads exactly like a broken dark mode.
+
+Driving the real preference (`k_prefs.mode`, then reload) instead, all four auth
+screens are correct in both themes: `--s-container` `#EEE9DC` → `#1D2229`,
+input text 14.0:1 light and 12.93:1 dark, kick/link on the vivid accent in dark.
+
+Contrast, measured on the rendered pages, WCAG AA 4.5:1 for normal text:
+
+| pair | light | dark |
+|---|---|---|
+| input text / input bg | 14.00 | 12.93 |
+| floating label / input bg | 4.56 | 4.81 |
+| h1 / page | 14.79 | 15.63 |
+| kick / page | 7.48 | 7.69 |
+| lede · note / page | 4.82 | 5.81 |
+| link / page | 7.48 | 7.69 |
+| brand em · rot-k / brand panel | 7.00 | 7.89 |
+| rot-l · wordmark / brand panel | 17.57 | 19.82 |
+| **button label / button fill** | **4.30 ✗** | 5.52 |
+
+One failure, and it is not an auth bug — see §5.
+
+---
+
+## 5 · The primary button label fails AA, and it is a global token defect
+
+`00-tokens.md:471` states `--on-primary` on `--primary` is **5.1:1, pass**. Two
+things are wrong with that row.
+
+**It does not match its own static tokens.** White `#FFFFFF` on `--primary`
+`#04837A` measures **4.63:1**, not 5.1.
+
+**And those static values are not what runs.** `applyPrefs` overrides `--primary`
+inline with the accent's derived `mid` (light) / `color` (dark), so the shipped
+pair is never the one the table was computed against. At the **default teal**,
+light mode is **4.30:1 — below AA**, on the "Sign in" button of the first screen.
+
+The accent is user-configurable, so I measured all twelve presets:
+
+**Light — white on `--primary` (`mid`): 3 of 12 fail**
+
+| preset | ratio |
+|---|---|
+| saffron | **3.18** |
+| coral | **3.87** |
+| teal *(default)* | **4.30** |
+
+**Dark — `--on-primary` `#00332F` on `--primary` (`color`): 10 of 12 fail**
+
+| preset | ratio | | preset | ratio |
+|---|---|---|---|---|
+| forest | **1.96** | | rose | **3.01** |
+| crimson | **2.21** | | indigo | **3.10** |
+| violet | **2.43** | | emerald | **3.68** |
+| slate | **2.91** | | blue | **3.77** |
+| amber | **4.35** | | coral | **4.40** |
+
+Only teal (5.52) and saffron (6.46) pass in dark. `--on-primary` in dark is the
+fixed literal `#00332F`, a dark teal — it is a sensible partner for a teal accent
+and for nothing else. Against violet it is 2.43:1.
+
+**The codebase already solved this problem one token over.** `deriveAccentText`
+(`CustomizePanel.jsx:149-157`) *measures* and steps lightness down until the
+value clears 4.5:1, with a comment saying that taking a derived value "on trust
+would leave each one an unmeasured contrast risk". `mid` and `--on-primary` never
+got the same treatment.
+
+**Recommended fix (not applied):** derive `--on-primary` the same way — pick
+white or a dark tone by measurement against the resolved `--primary`, and darken
+`mid` until white clears. **I did not apply it:** it changes every primary button
+in the product across twelve accents, which is a blast radius an auth-surface
+agent should not take unilaterally mid-swarm. It belongs to the tokens owner.
+
+---
+
+## 6 · Gaps confirmed present, none of them regressions
+
+Each of these is something `12-auth-onboarding.md` asks for that does not exist.
+The code is honest about all of them — nothing claims a capability it lacks.
+
+- **No `GET /auth/invite/:token`** (12 §4 lists it as NEW). So the accept screen
+  cannot show org, inviter, role or grants, and `auth.css` deliberately ships no
+  CSS for that panel — a comment in the file says why.
+- **No `GET/POST /v1/onboarding`.** Resume is the local `kv_onboarding` write and
+  only that; a phone→laptop handoff does not resume, and nothing claims it does.
+- **Three of five onboarding steps have no endpoint** (profile, org, module set).
+  They save locally and `StepDone` reports them in the dashed PENDING state
+  rather than ticking them.
+- **No session refresh.** There is no `/auth/refresh` and no refresh token issued
+  anywhere in `auth_router.py`. The JWT is minted at login and expires. So "verify
+  session refresh" has nothing to verify — it does not exist.
+- **`api.js` has no 401 handling at all** (12 §5 asks it to distinguish an expired
+  session from bad credentials). Nothing redirects to `/login` on expiry.
+- **`reset-password` does not invalidate other sessions** (12 §4). The screen
+  correctly does *not* claim it does, and a comment records why.
+- **No `emails/` directory.** The four templates 12 §3 asks for do not exist as
+  files; `email_service.py:1087` builds the reset mail inline. The design source
+  is `design-reference/Kartavaya Redesign/Auth Emails.html`. **Left alone for the
+  dedicated email agent** — recorded, not rewritten.
+- **Accept-invite returns 409 "An account with this email already exists"**, a
+  mild enumeration signal — but it is gated behind holding a valid invite token,
+  which already implies knowing the address. Low severity, not changed.
+
+---
+
+## 7 · Branch hygiene
+
+This branch was rebuilt. The original was cut from `main` (271 commits behind),
+and a later `pull --rebase` against a stale remote replayed 47 other agents'
+staging commits as duplicates, leaving it 50 ahead of staging.
+
+Recovery, per the coordinator: verified the duplicates were already on staging by
+subject (`fix(sanvaad): drop Devanagari…` → `47af41d`, `refactor(boards): delete
+the dead TaskEditor…` → `88eaab4`), then branched fresh from `origin/staging` and
+cherry-picked **only** the three commits that are mine. The messy tip is tagged
+`backup-messy-a07d018` locally and preserved at
+`origin/rescue/a07d018d5639fb583`. Nothing was force-pushed.
+
+---
+
+## 8 · Claims: held vs stale
+
+| Claim | Verdict |
+|---|---|
+| `.au__sub` had no font rule; Devanagari fell to an OS face | **HELD as history** — reproduced the exact numbers, 580.85 vs 540.19 = 7.5% |
+| …and it is now fixed | **HELD** — measured identical to Tiro, 540.19px |
+| `.au__wm` tracking crushes the conjuncts | **HELD** — 23.05px total crush at 256px |
+| …and `lang="hi"` fires a reset that fixes it | **HELD** — computed `letter-spacing: normal` on the live cascade |
+| Tiro ships a single weight; Devanagari in a 700/800 label is faux-bold | **HELD** — all six registered faces are weight 400; one occurrence found (`.ob__mod-hi` at 500) and fixed |
+| "Login was broken and rebuilt — verify it submits" | **STALE** — it submits, correctly, with the right trimming |
+| Onboarding might be stubbed | **STALE** — every available endpoint is real and wired; the three unavailable ones are honestly reported as pending |
+| Dark mode is on the old palette | **STALE** — correct in both themes; my own contrary claim was a bad test method (§4) |
+| Error states leak account existence | **STALE at the backend, REAL at the frontend** — backend is single-branch and correct, but the frontend echoed `detail` verbatim and would have leaked any future backend change. Fixed. |
+
+My own §1 claim of a dark-mode break was **wrong and is retracted in §4**.
