@@ -15,9 +15,12 @@ export default class ErrorBoundary extends React.Component {
         <h2 style={{ fontSize: 18, fontWeight: 700, margin: '0 0 8px', fontFamily: 'var(--font-display)' }}>
           Something went wrong
         </h2>
-        <p lang="hi" style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20, fontFamily: 'var(--font-hindi)' }}>
-          कुछ गलत हो गया — कृपया पुनः प्रयास करें
-        </p>
+        {/* 24-bilingual-devanagari.md, "Where Devanagari appears — and where it
+            must not": error text is on the No list. The rule is that Devanagari
+            is a recognition cue on things the user already knows the meaning of;
+            someone reading an error for the first time is not helped by half of
+            it being in a script they may not read, and a bilingual error is
+            longer and harder to scan at the moment they are least patient. */}
         <p style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>
           {this.state.error?.message || 'An unexpected error occurred.'}
         </p>
