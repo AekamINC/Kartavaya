@@ -22,6 +22,8 @@ import NetInfo from '@react-native-community/netinfo';
 import { templatesApi } from '../api/templates';
 import type { TeamMember, TaskTemplate } from '../api/types';
 import { AVATAR_COLORS, PRIORITY_COLORS, withAlpha } from '../theme/tokens';
+import BiLabel from '../theme/BiLabel';
+import { display } from '../theme/fonts';
 
 const MAX_ATTACHMENTS = 5;
 const MAX_MB = 5;
@@ -195,9 +197,16 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
           {/* Header */}
           <View style={s.header}>
             <View>
-              <Text style={s.headerKicker}>
+              {/* Same split as FieldLabel — `नया कार्य` inside a tracked 800
+                  kicker was breaking its own shirorekha. */}
+              <BiLabel
+                latinStyle={s.headerKicker}
+                hindiStyle={{ color: t.primaryText }}
+                hindiSize={11}
+                style={{ marginBottom: 2 }}
+              >
                 {isClient ? 'REQUEST TASK · अनुरोध' : 'NEW TASK · नया कार्य'}
-              </Text>
+              </BiLabel>
               <Text style={s.headerTitle}>What needs doing?</Text>
             </View>
             <TouchableOpacity onPress={handleClose} hitSlop={12}>
@@ -445,14 +454,32 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
 }
 
 
-function FieldLabel({ children, t }: { children: React.ReactNode; t: ReturnType<typeof useTheme>['t'] }) {
+/**
+ * Every label here is bilingual — `PROJECT · परियोजना`, `STATUS · स्थिति`, and
+ * five more — and all seven went into ONE <Text> carrying
+ * `{ fontWeight: '800', letterSpacing: 1.2 }`.
+ *
+ * `letterSpacing` is the damaging half. React Native applies tracking after the
+ * shaping engine runs, so it forces space between glyphs that are required to
+ * join: the shirorekha breaks into disconnected segments and conjunct clusters
+ * come apart. `fontWeight: '800'` is the other half — Tiro Devanagari Hindi
+ * ships one weight (verified from the binary, `OS/2.usWeightClass = 400`), so
+ * Android synthesises a fake bold and iOS falls back to the system face.
+ *
+ * BiLabel splits on the separator and gives each script its own typography. The
+ * Latin run keeps the tracked uppercase kicker it was designed as; the Hindi run
+ * gets the face that has the glyphs, no tracking, no synthetic weight.
+ */
+function FieldLabel({ children, t }: { children: string; t: ReturnType<typeof useTheme>['t'] }) {
   return (
-    <Text style={{
-      fontSize: 10, fontWeight: '800', letterSpacing: 1.2,
-      color: t.primary, marginBottom: 8, marginTop: 16,
-    }}>
+    <BiLabel
+      style={{ marginBottom: 8, marginTop: 16 }}
+      latinStyle={{ fontSize: 10, fontWeight: '800', letterSpacing: 1.2, color: t.primary }}
+      hindiStyle={{ color: t.primaryText }}
+      hindiSize={11}
+    >
       {children}
-    </Text>
+    </BiLabel>
   );
 }
 
@@ -495,13 +522,22 @@ const styles = (t: ReturnType<typeof useTheme>['t']) => StyleSheet.create({
     borderBottomColor: t.outline,
   },
   headerKicker: {
+    // marginBottom moved to the BiLabel wrapper — on the inner Latin <Text> it
+    // would offset only that run inside the row, not the label.
     fontSize: 10, fontWeight: '800', letterSpacing: 1.2,
-    color: t.primary, marginBottom: 2,
+    color: t.primary,
   },
   headerTitle: {
-    fontSize: 20, fontWeight: '400',
+    fontSize: 20,
     color: t.ink,
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    // Was `Platform.OS === 'ios' ? 'Georgia' : 'serif'` — two different system
+    // typefaces on the two platforms, neither of them the brand face. Android's
+    // generic `serif` resolves to Noto Serif, which is a different design from
+    // Georgia, so the same sheet header looked like two different products.
+    // Newsreader is bundled and loaded at the root precisely so this is one
+    // face everywhere; `display()` also carries the matching real weight rather
+    // than letting the platform synthesise one.
+    ...display(400),
   },
   body: {
     paddingHorizontal: 20,
@@ -509,7 +545,9 @@ const styles = (t: ReturnType<typeof useTheme>['t']) => StyleSheet.create({
   },
   titleInput: {
     fontSize: 20,
-    fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+    // Same substitution as headerTitle. The task title the user types must be
+    // the same face as the heading above it.
+    ...display(400),
     color: t.ink,
     borderBottomWidth: 2,
     paddingBottom: 10,

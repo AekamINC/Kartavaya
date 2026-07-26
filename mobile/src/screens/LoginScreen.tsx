@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
 import { KIcon } from '../components/icons/KIcon';
 import { BRAND_GRADIENT } from '../theme/tokens';
+import { useReducedMotion, amplitude, EASE, SHAKE } from '../theme/motion';
 
 // LoginScreen does not use ThemeProvider tokens — it always renders the dark
 // branded gradient regardless of system theme preference.
@@ -38,15 +39,38 @@ export default function LoginScreen() {
   const [showPw, setShowPw]    = useState(false);
   const pwRef = useRef<RNTextInput>(null);
   const shake = useRef(new Animated.Value(0)).current;
+  const reduced = useReducedMotion();
 
+  /**
+   * The auth error shake.
+   *
+   * Two things were wrong with it.
+   *
+   * It ran unguarded. A ±8px horizontal oscillation is the most vestibular-
+   * hostile motion in the app, it fires on every failed login — i.e. repeatedly,
+   * to someone already having trouble — and it was one of two animations that
+   * never consulted `AccessibilityInfo.isReduceMotionEnabled`. Under reduced
+   * motion it is now skipped entirely and the value pinned to 0: the error text
+   * and the red border still appear, so nothing about the failure goes
+   * unreported, it simply is not reported by shoving the card sideways.
+   *
+   * And it was off-spec in both dimensions. MOTION-SPEC §4 gives the form shake
+   * as `420ms cubic-bezier(.36,.07,.19,.97)`, ±4px. This was 5 × 60ms = 300ms at
+   * ±8px with RN's default easing — 40% too fast and twice the throw, which is
+   * why it read as a judder rather than a nudge. Both numbers now come from
+   * SHAKE and the curve from EASE.shake, and the amplitude runs through
+   * `amplitude()` so the distance collapses on the same signal as the duration.
+   */
   const doShake = () => {
-    Animated.sequence([
-      Animated.timing(shake, { toValue: 8,  duration: 60, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: -8, duration: 60, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: 6,  duration: 60, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: -6, duration: 60, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: 0,  duration: 60, useNativeDriver: true }),
-    ]).start();
+    if (reduced) { shake.setValue(0); return; }
+    const a = amplitude(SHAKE.amplitude, reduced);
+    // Four traversals plus the settle, sharing the spec's 420ms budget.
+    const step = SHAKE.duration / 5;
+    const leg = (toValue: number) =>
+      Animated.timing(shake, {
+        toValue, duration: step, easing: EASE.shake, useNativeDriver: true,
+      });
+    Animated.sequence([leg(a), leg(-a), leg(a * 0.75), leg(-a * 0.75), leg(0)]).start();
   };
 
   const submit = async () => {

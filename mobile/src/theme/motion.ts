@@ -17,19 +17,45 @@
  *
  * ── The `--ix: .001` trap, and why this file does NOT copy it ─────────────────
  *
- * The web spec reduces motion by scaling durations to a thousandth. That works
+ * The web SPEC reduces motion by scaling durations to a thousandth. That works
  * for a one-shot: a 220ms fade becomes 0.22ms, i.e. instant. It is WRONG for
  * anything that repeats. A 1.7s shimmer scaled to 1.7ms does not stop — it
- * becomes a 588Hz flicker, which is a strobe, and strobing is precisely what
- * reduced-motion exists to prevent. That was a real defect on the web side.
+ * becomes a ~588Hz flicker, which is a strobe, and strobing is precisely what
+ * reduced-motion exists to prevent.
  *
- * So the rule here is a hard split, not a multiplier:
+ * This is not hypothetical and it is not merely a build bug: **the spec mandates
+ * it.** `16-animations.md:44` gives `animation: dmSpin calc(.7s * var(--ix))
+ * linear infinite` as its worked example, and reference `motion.css:117`
+ * implements it — a 0.7ms spinner for the user who just asked for less motion.
+ * Three live sites on the web side were measured strobing at 2.000ms, 1.5ms and
+ * 0.8ms (~1250Hz) before they were fixed. **Do not port that pattern here.**
  *
- *   · A ONE-SHOT under reduced motion jumps to its end state. `duration()`
- *     returns 0 and the value is set, not animated.
- *   · A REPEATING animation under reduced motion DOES NOT RUN AT ALL. There is
- *     no "faster" version of an infinite loop that is safe. `shouldLoop()`
- *     returns false and the caller renders the static frame.
+ * ── Mirror the BUILD's two-scalar split, not the spec's one ───────────────────
+ *
+ * `frontend/src/styles/animations.css` solved this with a split the reference
+ * does not have, and it is the better design:
+ *
+ *   · `--ix`           scales DURATION.  Bottoms out at `.001`.
+ *   · `--motion-scale` scales DISTANCE.  Bottoms out at **`0`**.
+ *
+ * Infinite animations there keep a FIXED duration and put their amplitude on
+ * `--motion-scale`, so at scale 0 the 50% keyframe equals the 0%/100% keyframe
+ * and the loop is visually inert instead of fast. That is the insight worth
+ * carrying over, so this file exposes both scalars rather than one:
+ * `duration()` and `amplitude()`.
+ *
+ * Two deliberate divergences from the web, because RN is not CSS:
+ *
+ *   · `duration()` returns **0**, not `ms * .001`. The `.001` on the web is a
+ *     workaround for CSS engines that treat `0s` inconsistently across the three
+ *     spec files that disagree about it. RN's `Animated.timing` with
+ *     `duration: 0` applies the end value on the next frame, exactly and
+ *     without a rounding argument.
+ *   · A repeating animation is **not started at all**, rather than run inert.
+ *     CSS keeps the inert loop because stopping it would mean a second rule; RN
+ *     would be burning a JS-thread or native-driver animation forever to render
+ *     a frame that never changes. `shouldLoop()` returns false and the caller
+ *     renders the static frame.
  *
  * `shouldLoop` is deliberately a separate call from `duration` so that a caller
  * cannot express "loop, but shortened" without writing that phrase out.
@@ -111,11 +137,32 @@ export function useReducedMotion(): boolean {
 /**
  * A one-shot duration, collapsed to 0 under reduced motion.
  *
- * 0 rather than 1: `Animated.timing` with `duration: 0` applies the end value on
- * the next frame, which is the intended "no transition, correct final state".
+ * The `--ix` half of the build's split. 0 rather than the web's `.001` scalar:
+ * `Animated.timing` with `duration: 0` applies the end value on the next frame,
+ * which is the intended "no transition, correct final state", with none of the
+ * ambiguity CSS has about `0s`.
+ *
+ * NEVER pass the result to a looping animation. See `shouldLoop`.
  */
 export function duration(ms: number, reduced: boolean): number {
   return reduced ? 0 : ms;
+}
+
+/**
+ * A travel distance, collapsed to 0 under reduced motion.
+ *
+ * The `--motion-scale` half of the build's split, which the reference does not
+ * have. Use it for anything measured in pixels — a slide-in offset, a shake
+ * amplitude, a scale delta — so that reduced motion removes the MOVEMENT while
+ * leaving the opacity or colour change that carried the actual information.
+ *
+ * This is what makes the split worth having. Collapsing only duration gives you
+ * a 0ms jump across the full distance, which is a teleport; collapsing only
+ * distance gives you a slow fade in place. Both together give you the thing that
+ * appears where it belongs, immediately, which is what was asked for.
+ */
+export function amplitude(px: number, reduced: boolean): number {
+  return reduced ? 0 : px;
 }
 
 /**

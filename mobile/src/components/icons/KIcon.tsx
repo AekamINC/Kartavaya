@@ -17,6 +17,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BRAND_GRADIENT } from '../../theme/tokens';
+import { FAMILY } from '../../theme/fonts';
 
 interface KIconProps {
   size?:   number;
@@ -97,7 +98,12 @@ const s = StyleSheet.create({
   },
   glyph: {
     color:       '#fff',
-    fontFamily:  'TiroDevanagariHindi',
+    // Was the family name as a bare string literal. FAMILY.devanagari exists so
+    // nothing has to spell it: a typo in a `fontFamily` string is silent — RN
+    // keeps the style, finds no such registered face and renders the system
+    // one — and this particular string is the brand mark, so the failure would
+    // be the logo quietly turning into whatever Devanagari face the OS ships.
+    fontFamily:  FAMILY.devanagari,
     textAlign:   'center',
     includeFontPadding: false,
   },
