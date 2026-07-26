@@ -23,8 +23,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from auth_router import require_user, security
 from middleware.roles import require_platform_role
+from middleware.role_tiers import OPERATIONS_CONSOLE_ROLES
 
-_require_admin = require_platform_role("platform_admin", "account_manager")
+_require_admin = require_platform_role(*OPERATIONS_CONSOLE_ROLES)
 from db import get_pool
 from utils import now_utc, log_safe as _log_safe
 from services.web_push_service import send_web_push

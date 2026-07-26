@@ -107,6 +107,68 @@ def is_god_mode(platform_role: str | None) -> bool:
     return platform_role in GOD_MODE_ROLES
 
 
+# ── Console guard sets ────────────────────────────────────────────────────────
+#
+# These exist because the guards they replace were written as bare strings at the
+# call site, which is the same failure this module was created to end. Two
+# concrete consequences were live before they landed:
+#
+#   · `require_platform_role("platform_admin")` locks out `platform_owner`. Today
+#     that is invisible, because every god-mode account still holds the legacy
+#     `platform_admin` row. It becomes a total lockout of all four accounts on
+#     the day those rows are renamed — which is exactly the migration this model
+#     was designed for.
+#   · `require_platform_role("platform_admin", "account_manager")` omits
+#     `platform_manager`, the role that SUPERSEDES `account_manager`. The
+#     successor reached strictly less than the role it replaced.
+
+#: Aekam's own commercial data — platform-wide KPIs, cost summaries, provider
+#: reconciliation, margin. NOT widened to platform_manager: that role is defined
+#: over a CUSTOMER's modules, and Aekam's own P&L is not one of them.
+FINANCE_CONSOLE_ROLES: tuple[str, ...] = GOD_MODE_ROLES + ("account_finance",)
+
+#: Customer subscriptions, plans, invoices and payments. `platform_manager` is
+#: included because it supersedes `account_manager`; `platform_staff` is not,
+#: because its operating set deliberately excludes finance.
+BILLING_CONSOLE_ROLES: tuple[str, ...] = (
+    GOD_MODE_ROLES + MANAGER_ROLES + ("account_manager", "account_finance")
+)
+
+#: Irreversible or trust-establishing platform actions: assigning and revoking
+#: roles, deactivating an org, writing storage credentials. God mode only.
+#: Role assignment in particular must never be delegated — a role that can grant
+#: roles can grant itself anything.
+SUPERUSER_ONLY_ROLES: tuple[str, ...] = GOD_MODE_ROLES
+
+#: Day-to-day operating work: authoring and publishing Srijan skills, running
+#: scrapers, configuring reminder automations.
+#:
+#: This is the set that makes `platform_staff` mean anything. Before it, every
+#: Srijan hub route required platform_admin/account_manager/srijan_admin, so all
+#: four platform_staff holders were locked out of the exact work the role was
+#: created for — "Srijan, including authoring skills and publishing" — and both
+#: platform_manager holders with them.
+OPERATIONS_CONSOLE_ROLES: tuple[str, ...] = (
+    GOD_MODE_ROLES + MANAGER_ROLES + STAFF_ROLES + ("account_manager", "srijan_admin")
+)
+
+#: Srijan work that MOVES OR REPORTS MONEY: client records, credit top-ups, spend
+#: analytics.
+#:
+#: Deliberately NOT OPERATIONS_CONSOLE_ROLES. Authoring a skill and topping up a
+#: client's credit balance are both "Srijan", but only one of them spends. The
+#: operating set exists to let staff do the work, not to let them bill for it —
+#: the same separation Vetana and Ganit make between admin and approver.
+SRIJAN_COMMERCIAL_ROLES: tuple[str, ...] = (
+    GOD_MODE_ROLES + MANAGER_ROLES + ("account_manager", "account_finance", "srijan_admin")
+)
+
+#: Modules whose grants are withheld by default when a member is added without an
+#: explicit list. Broader than HR_MODULES: it adds `ganit`, the org's finances.
+#: Payroll, personnel files and the books are not handed out by omission.
+SENSITIVE_MODULES: frozenset[str] = HR_MODULES | {"ganit"}
+
+
 #: Ranked most-privileged first. Where a user holds several platform rows, the
 #: strongest wins — matching how `subscription.py` already picks a role with
 #: `ORDER BY (role_code = 'platform_admin') DESC LIMIT 1`.

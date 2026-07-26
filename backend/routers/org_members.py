@@ -12,25 +12,61 @@ from auth_router import require_user
 from db import get_pool
 from middleware.roles import require_org_role
 from middleware.org_resolver import get_org_id
+from middleware.role_tiers import (
+    ALL_MODULES, SENSITIVE_MODULES, DEFAULT_GRANT_LEVEL, valid_levels_for,
+)
 
 router = APIRouter(prefix="/api/v1/org/members", tags=["org-members"])
 
-ALL_MODULES = [
-    "graha", "ganit", "manav", "vikray", "vetana",
-    "dristi", "prachar", "srijan",
-]
-SENSITIVE = {"vetana", "ganit", "manav"}
+# ALL_MODULES and SENSITIVE_MODULES now come from role_tiers rather than being
+# retyped here. The local list held EIGHT codes where role_tiers holds twelve, so
+# a grant naming esign, samvada, varta or pahchan was rejected with 400 by the
+# only endpoint that can create one — four modules unreachable through the UI
+# that exists to reach them.
+
+
+def _normalise_grant(g) -> tuple[str, str]:
+    """
+    Accept a bare "ganit" or a {"code": "ganit", "role": "editor"} and return
+    (module_code, level).
+
+    Both shapes are accepted because the bare-string form is what every existing
+    caller sends. Rejecting it would break the member editor the moment this
+    deploys, and a level-aware API that no client can call is not an improvement.
+    """
+    if isinstance(g, str):
+        return g, DEFAULT_GRANT_LEVEL
+    if isinstance(g, dict):
+        code = g.get("code") or g.get("module_code")
+        level = g.get("role") or g.get("level") or DEFAULT_GRANT_LEVEL
+        if code:
+            return code, level
+    raise HTTPException(400, f"Malformed module grant: {g!r}")
+
+
+def _validate_grant(code: str, level: str) -> None:
+    """Reject an unknown module, and a level that module has no use for."""
+    if code not in ALL_MODULES:
+        raise HTTPException(400, f"Unknown module: {code}")
+    allowed = valid_levels_for(code)
+    if level not in allowed:
+        raise HTTPException(
+            400,
+            f"'{level}' is not a level {code} has. Valid: {', '.join(allowed)}.",
+        )
 
 
 class AddMemberBody(BaseModel):
     email: EmailStr
     role: str = "org_member"
-    module_grants: list[str] = []
+    # list[str] | list[{code, role}] — see _normalise_grant.
+    module_grants: list = []
     mobile_number: str = ""
 
 
 class UpdateModulesBody(BaseModel):
-    modules: list[str]
+    # Same two shapes as module_grants.
+    modules: list
 
 
 @router.get("")
@@ -54,13 +90,21 @@ async def list_members(
     members = []
     for r in rows:
         mods = await pool.fetch(
-            "SELECT module_code FROM staging.org_member_modules "
+            "SELECT module_code, role FROM staging.org_member_modules "
             "WHERE user_id=$1 AND org_id=$2::uuid",
             r["user_id"], org_id,
         )
         members.append({
             **dict(r),
+            # `modules` keeps the bare-code shape every existing caller reads.
+            # `module_grants` carries the level alongside it. Returning only the
+            # new shape would blank the module column in any client that has not
+            # been redeployed yet; returning only the old one is what hid the
+            # level from the UI in the first place.
             "modules": [m["module_code"] for m in mods],
+            "module_grants": [
+                {"code": m["module_code"], "role": m["role"]} for m in mods
+            ],
         })
     return members
 
@@ -155,30 +199,47 @@ async def add_member(
         )
 
     if body.module_grants:
-        grant_codes = [m for m in body.module_grants if m in ALL_MODULES]
+        # An explicit list is validated and REJECTED on error rather than
+        # filtered. The old `if m in ALL_MODULES` silently dropped anything it
+        # did not recognise, so adding a member with a typo'd or newer module
+        # reported success while granting less than was asked for.
+        grants = [_normalise_grant(g) for g in body.module_grants]
+        for code, level in grants:
+            _validate_grant(code, level)
     elif body.role == "org_admin":
-        grant_codes = []
+        grants = []
     else:
         enabled = await pool.fetch(
             "SELECT module_code FROM staging.module_subscriptions "
             "WHERE org_id=$1::uuid AND is_active=TRUE",
             org_id,
         )
-        grant_codes = [r["module_code"] for r in enabled if r["module_code"] not in SENSITIVE]
+        # Defaults are deliberately the weakest level, and skip the sensitive
+        # modules entirely. Payroll, personnel files and the books are granted
+        # on purpose or not at all — never by omission.
+        grants = [
+            (r["module_code"], DEFAULT_GRANT_LEVEL)
+            for r in enabled
+            if r["module_code"] not in SENSITIVE_MODULES
+            and r["module_code"] in ALL_MODULES
+            and DEFAULT_GRANT_LEVEL in valid_levels_for(r["module_code"])
+        ]
 
-    for mc in grant_codes:
+    for code, level in grants:
         await pool.execute(
-            "INSERT INTO staging.org_member_modules (user_id, org_id, module_code, granted_by) "
-            "VALUES ($1, $2::uuid, $3, $4) "
+            "INSERT INTO staging.org_member_modules "
+            "(user_id, org_id, module_code, role, granted_by) "
+            "VALUES ($1, $2::uuid, $3, $4, $5) "
             "ON CONFLICT (user_id, org_id, module_code) DO NOTHING",
-            target["user_id"], org_id, mc, user["user_id"],
+            target["user_id"], org_id, code, level, user["user_id"],
         )
 
     return {
         "status": "added",
         "email": body.email,
         "role": body.role,
-        "modules": grant_codes,
+        "modules": [c for c, _ in grants],
+        "module_grants": [{"code": c, "role": r} for c, r in grants],
     }
 
 
@@ -256,22 +317,40 @@ async def set_member_modules(
 ):
     """Replace a member's module grants."""
     pool = await get_pool()
-    for mc in body.modules:
-        if mc not in ALL_MODULES:
-            raise HTTPException(400, f"Unknown module: {mc}")
 
-    await pool.execute(
-        "DELETE FROM staging.org_member_modules WHERE user_id=$1 AND org_id=$2::uuid",
-        target_user_id, org_id,
-    )
-    for mc in body.modules:
-        await pool.execute(
-            "INSERT INTO staging.org_member_modules (user_id, org_id, module_code, granted_by) "
-            "VALUES ($1, $2::uuid, $3, $4)",
-            target_user_id, org_id, mc, user["user_id"],
-        )
+    # Validate the WHOLE list before deleting anything. This used to validate in
+    # one loop and write in another, with the DELETE between them — so a request
+    # whose last entry was a bad module code passed the first loop for every
+    # earlier entry, wiped the member's grants, and only then raised. The member
+    # ended up with nothing.
+    grants = [_normalise_grant(g) for g in body.modules]
+    for code, level in grants:
+        _validate_grant(code, level)
 
-    return {"status": "updated", "modules": body.modules}
+    # THE DEFECT THIS ENDPOINT EXISTED WITH: the INSERT never named `role`, so
+    # every re-INSERT landed on the column default. Saving a member's modules to
+    # change one checkbox silently demoted every other grant they held to viewer,
+    # and nothing in the response said so.
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "DELETE FROM staging.org_member_modules "
+                "WHERE user_id=$1 AND org_id=$2::uuid",
+                target_user_id, org_id,
+            )
+            for code, level in grants:
+                await conn.execute(
+                    "INSERT INTO staging.org_member_modules "
+                    "(user_id, org_id, module_code, role, granted_by) "
+                    "VALUES ($1, $2::uuid, $3, $4, $5)",
+                    target_user_id, org_id, code, level, user["user_id"],
+                )
+
+    return {
+        "status": "updated",
+        "modules": [c for c, _ in grants],
+        "module_grants": [{"code": c, "role": r} for c, r in grants],
+    }
 
 
 @router.get("/search")

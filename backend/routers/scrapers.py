@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from auth_router import require_user
 from db import get_pool
 from middleware.roles import require_platform_role, get_org_id
+from middleware.role_tiers import OPERATIONS_CONSOLE_ROLES
 from middleware.subscription import require_module
 
 import math
@@ -499,7 +500,7 @@ async def list_runs(
 
 # ── Admin: billing overview ──────────────────────────────
 
-_admin = require_platform_role("platform_admin", "account_manager")
+_admin = require_platform_role(*OPERATIONS_CONSOLE_ROLES)
 
 @router.get("/admin/usage")
 async def admin_usage(

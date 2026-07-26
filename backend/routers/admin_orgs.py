@@ -20,6 +20,7 @@ from services.forex import get_usd_inr, get_usd_inr_sync
 from services.storage import create_org_bucket, verify_r2_credentials, clear_org_r2_cache
 from middleware.role_tiers import (
     ALL_PLATFORM_ROLES, GOD_MODE_ROLES, MANAGER_ROLES, STAFF_ROLES,
+    FINANCE_CONSOLE_ROLES, SUPERUSER_ONLY_ROLES,
 )
 
 # Who may open the platform console. Reaching the console is not the same as
@@ -243,7 +244,7 @@ def _period_start(period: str) -> date:
 @router.get("/platform-analytics")
 async def platform_analytics(
     period: str = "30d",
-    user=Depends(require_platform_role("platform_admin", "account_finance")),
+    user=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
 ):
     """Platform-wide KPIs for Aekam super-admin dashboard."""
     pool = await get_pool()
@@ -377,7 +378,7 @@ async def platform_analytics(
 @router.get("/cost-summary")
 async def all_orgs_cost_summary(
     period: str = "30d",
-    user=Depends(require_platform_role("platform_admin", "account_finance")),
+    user=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
 ):
     """All orgs cost summary table for admin cost dashboard."""
     pool = await get_pool()
@@ -439,7 +440,7 @@ async def all_orgs_cost_summary(
 
 @router.get("/provider-costs")
 async def provider_costs(
-    user=Depends(require_platform_role("platform_admin", "account_finance")),
+    user=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
 ):
     """Real-time costs from provider accounts for reconciliation against tracked spend."""
     pool = await get_pool()
@@ -546,7 +547,7 @@ async def get_org(
 @router.patch("/{org_id}/deactivate")
 async def deactivate_org(
     org_id: str,
-    user=Depends(require_platform_role("platform_admin")),
+    user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
 ):
     pool = await get_pool()
     await pool.execute(
@@ -731,7 +732,7 @@ async def remove_member(
 @router.get("/users/search")
 async def search_user_by_email(
     email: str = Query(...),
-    user=Depends(require_platform_role("platform_admin")),
+    user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
@@ -745,7 +746,7 @@ async def search_user_by_email(
 
 @router.get("/roles/platform")
 async def list_platform_roles(
-    user=Depends(require_platform_role("platform_admin")),
+    user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
 ):
     pool = await get_pool()
     rows = await pool.fetch(
@@ -762,7 +763,7 @@ async def list_platform_roles(
 @router.post("/roles/assign")
 async def assign_role(
     body: RoleAssign,
-    user=Depends(require_platform_role("platform_admin")),
+    user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
 ):
     """Assign any role (platform or org-scoped) to a user."""
     pool = await get_pool()
@@ -799,7 +800,7 @@ async def assign_role(
 @router.delete("/roles/{role_id}")
 async def revoke_role(
     role_id: str,
-    user=Depends(require_platform_role("platform_admin")),
+    user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
 ):
     pool = await get_pool()
     await pool.execute("DELETE FROM staging.user_roles WHERE id=$1::uuid", role_id)
@@ -934,7 +935,7 @@ async def verify_r2(
 async def set_org_r2(
     org_id: str,
     body: R2Credentials,
-    user=Depends(require_platform_role("platform_admin")),
+    user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
 ):
     """Set or update R2 credentials for an org."""
     pool = await get_pool()
