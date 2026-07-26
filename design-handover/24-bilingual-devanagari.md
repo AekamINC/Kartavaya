@@ -83,7 +83,15 @@ export function label(key, lang) {
 
 Returning the key on a miss matters: a missing label should render `vikray` — visibly wrong, easy to spot, harmless — not crash the sidebar.
 
-`sa` is Sanskrit and is **not a copy of `hi`** for every term. Several module names are already Sanskrit rather than Hindi (कर्तव्य, सम्मति, प्रमाण), so where they coincide the duplication is correct; where they don't, they need separate values from someone who knows the difference. Do not machine-fill this column.
+### `sa` is a closed set, not a translation job
+
+Only terms in a fixed list get a Sanskrit form: the fifteen module names, the six task statuses, the four approval states, the three priorities, and the dozen or so nav items — **roughly 50–60 strings, enumerated once and frozen.** Everything else falls back to `hi`. Sanskrit is not a UI language and cannot absorb "Upload failed, retry?"; treating `sa` as a language to be filled in across the product invites a translator to coin vocabulary that no user reads and nobody can review.
+
+Two consequences for `labels.js`: `sa` is optional on every entry rather than required, and the resolver falls through `sa → hi → en` silently. A missing `sa` is the normal case, not an error.
+
+**`boards` is the worked example of why the list needs a Sanskrit speaker, not a dictionary.** The table above has `hi: 'फ़लक'` — *falak*, which is Persian by way of Urdu, carrying the nuqta that marks it as a loanword. It is perfectly good Hindi and completely wrong in the `sa` column, where it currently sits as `फलक` with the nuqta dropped. Sanskrit `फलक` (*phalaka*) does exist and means a plank or slab, which is a defensible root for "board" — but it arrived by transliteration rather than choice, and that is the failure mode to catch across all sixty.
+
+`sa` is **not a copy of `hi`** for every term. Several module names are already Sanskrit rather than Hindi (कर्तव्य, सम्मति, प्रमाण), so where they coincide the duplication is correct; where they don't, they need separate values from someone who knows the difference. Do not machine-fill this column.
 
 ## The component
 
@@ -180,9 +188,33 @@ Day-first, always. `en-US` gives `Jul 25, 2026`, which an Indian user reads as a
 
 **Yes:** sidebar nav, module headers, notification kinds, status chips, document titles, section headers in documents (`18-documents.md`), the greeting on Today.
 
+### The landing page is an exception, and it is deliberate
+
+`22-landing-page.md` uses Devanagari more freely than the rule above allows — beside module names a visitor has never seen, in the hero, and as ornament. That contradicts "a recognition cue on things the user already knows the meaning of", because a first-time visitor knows none of them.
+
+Keep it. The two surfaces are doing different jobs. In the app, a Devanagari sub-label is **wayfinding** for someone who navigates the same eight items every day; a word they cannot decode is noise in a path they walk constantly. On the landing page it is **positioning** — it says this product was built for an Indian practice, by people who name things in Sanskrit, before a single feature is read. A visitor is not navigating, so nothing is slowed down by a word they skim past.
+
+The exception is bounded to `Landing.jsx` / `Landing2.jsx` and does not extend to the marketing site's app screenshots, the auth screens, or onboarding — by the time someone signs in they are navigating, and the app rule applies.
+
 **No:** validation messages, error text, empty-state explanations, tooltips, form field labels, table column headers, anything inside a data cell.
 
 The rule is that Devanagari is a **recognition cue on things the user already knows the meaning of**. A user who cannot read the English label for a module they use daily is helped by "गणित". A user reading an error for the first time is not helped by having half of it in a script they may not read, and a bilingual error is longer, slower and harder to scan at the moment they are least patient.
+
+## The CRM label is wrong on a public page
+
+`navConfig.js` and the landing page both label CRM **ग्राह**. That word is *grāha* — seizing, or a crocodile. It is not a near-miss for the intended word; it is a different word, and it is live.
+
+**Use ग्राहक** (*grāhak*, customer).
+
+The reasoning is the naming pattern the rest of the product already follows. Every module name is a meaningful word for what the module does, not a transliteration of a brand: कर्तव्य duty, गणित arithmetic, मानव human, वेतन salary, विक्रय sale, प्रचार promotion, दृष्टि vision, सृजन creation, संवाद dialogue, पहचान identity. A CRM is where customers live, so the word is *customer*.
+
+ग्रह (*graha*, planet or house) is the correct transliteration of the Latin "Graha" and is the wrong meaning — it would read as an astrology module. ग्राहक is the right meaning and is one syllable longer than the Latin name.
+
+**That mismatch is acceptable and the label should change without the route.** `/graha`, the `graha` key and `/v1/graha/*` are internal identifiers that no user reads; renaming them is a migration with no user-visible benefit. The Devanagari sub-label is the thing a Hindi reader actually parses, and today it says the wrong word on a public marketing page.
+
+If the Latin name is also open to change, **Grahak** makes the pair agree exactly, and is the better long-term answer.
+
+*Checked: the string appears in `navConfig.js` and in the landing page module list. Both are user-facing; the route and API paths were not changed by this recommendation.*
 
 ## The Aekam platform surface has no Devanagari
 

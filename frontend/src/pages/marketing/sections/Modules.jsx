@@ -13,7 +13,7 @@ import React from 'react';
  * page cannot drift from the product's own menu.
  */
 const MODULES = [
-  { hi: 'ग्राह',    en: 'CRM' },
+  { hi: 'ग्राहक',    en: 'CRM' },
   { hi: 'गणित',     en: 'Invoicing & GST' },
   { hi: 'मानव',     en: 'HRMS' },
   { hi: 'वेतन',     en: 'Payroll' },

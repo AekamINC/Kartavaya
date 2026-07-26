@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   { id: 'templates', label: 'Templates', hi: 'साँचा', section: 'Navigate', route: '/templates', keywords: 'templates' },
   { id: 'teams', label: 'Team', hi: 'सहयोगी', section: 'Navigate', route: '/teams', keywords: 'team members people' },
   { id: 'inbox', label: 'Inbox', hi: 'सन्देश', section: 'Navigate', route: '/inbox', keywords: 'inbox messages chat' },
-  { id: 'graha', label: 'CRM', hi: 'ग्राह', section: 'Navigate', route: '/graha', keywords: 'crm contacts leads graha' },
+  { id: 'graha', label: 'CRM', hi: 'ग्राहक', section: 'Navigate', route: '/graha', keywords: 'crm contacts leads graha' },
   { id: 'ganit', label: 'Invoicing', hi: 'गणित', section: 'Navigate', route: '/ganit', keywords: 'invoicing billing ganit invoices' },
   { id: 'manav', label: 'HRMS', hi: 'मानव', section: 'Navigate', route: '/manav', keywords: 'hrms hr employees manav' },
   { id: 'vikray', label: 'Sales', hi: 'विक्रय', section: 'Navigate', route: '/vikray', keywords: 'sales pipeline vikray deals' },

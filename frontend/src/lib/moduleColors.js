@@ -9,7 +9,7 @@
 // correct in both themes without any consumer knowing which theme is active.
 
 export const MODULES = {
-  graha:     { color: 'var(--m-graha)',     en: 'CRM',        hi: 'ग्राह',   route: '/graha' },
+  graha:     { color: 'var(--m-graha)',     en: 'CRM',        hi: 'ग्राहक',   route: '/graha' },
   ganit:     { color: 'var(--m-ganit)',     en: 'Invoicing',  hi: 'गणित',    route: '/ganit' },
   manav:     { color: 'var(--m-manav)',     en: 'HRMS',       hi: 'मानव',    route: '/manav' },
   vikray:    { color: 'var(--m-vikray)',    en: 'Sales',      hi: 'विक्रय',  route: '/vikray' },

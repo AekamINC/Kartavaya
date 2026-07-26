@@ -2,39 +2,15 @@ repo: kevalvshah/Kartavya
 branch: staging
 
 ## Last sync
-date: 2026-07-25T17:56:00Z
+date: 2026-07-26T12:18:11Z
 
 ### Updated in this project
-- Added `26-component-inventory.md` + `Component Inventory.html` — state vocabulary, spacing assignment, form rules, unified Picker, keyframe values, legacy-class policy
-- Fixed two token gaps found writing it: `--shadow-4` was used in four files and defined nowhere; `--dur-instant`/`--dur-xslow` lived only in `motion.css`
-- Wrote the seven remaining handover files. **25 of 26 done**; `25-qa-acceptance.md` is deliberately last. Empty/loading/error folded into `02` rather than becoming its own file.
-- Resolved seven conflicts against `00-tokens.md`: **status colours now flip with the theme** (three of six just reuse `--ok`/`--warn`/`--danger`), the retired `#0082c6` removed from the three tokens it had crept back into, read tick fixed at `#4FC3F7`, `--shadow-4` defined, type scale `calc()`-derived with `max()` floors, radius default 12 → 10, and `applyPrefs` now writes `--ix-user` so the OS reduced-motion setting wins.
-- **No focus trap exists anywhere in `frontend/src`** — 0 matches for focusTrap/focusLock across 158 files.
-- **`ConfirmDialog.jsx` sets `aria-modal` with no `role`**, so the destructive-action guard never announces itself; `NotifToast` has no live region, so every toast is silent to a screen reader.
-- **`CommandPalette.jsx` searches nothing** — placeholder promises search, `ALL_ITEMS` is 30 hardcoded nav/action entries.
-- **No translation layer exists**, but the language selector offers हिन्दी and ગુજરાતી as interface languages. Four incompatible bilingual label shapes across Sidebar/Topbar/CommandPalette/InboxPage, Gujarati in only one.
-- **Two client portals ship**; `ClientPagesImpl.jsx` calls one "legacy dark portal" in its own source — a fourth token vocabulary.
-- **Vikray (Sales) has a page, route and palette entry and is in no handover file.**
-
-## Previous sync
-date: 2026-07-25T17:23:35Z
-
-### Updated in this project
-- Wrote all 19 `design-handover/` files (`00-tokens` through `18-documents`), each grounded in the actual staging source rather than the prototype. They reference the six spec documents instead of restating them and carry only CSS, component trees, endpoints and a before/after per changed file.
-- **`addToast` does not exist.** `components/ui/toast.jsx` returns `{pushToast, error, success, warning, info}`; `SanvaadPage.jsx` destructures `addToast` in three places, so creating a channel succeeds server-side then throws in the UI, and every send failure throws instead of reporting.
-- **Sanvaad scrollback is unreadable** — a 5s poll replaces the message array and an unconditional `scrollIntoView` effect yanks the view to the bottom on every change.
-- **`/admin/billing` has no `org_id` on any call** — every endpoint is `/v1/subscription/*`, so "Billing Administration" administers the operator's own org. Only the overdue list is cross-org.
-- **Pahchan does not exist** — 0 matches for pahchan/attendance/clock/face across all 158 `frontend/src` and 49 `mobile/src` files. Entirely net-new.
-- **Threads are write-only** — replies post with `parent_message_id`, `thread_count` increments, and there is no thread view, so the replies are unreachable.
-- **Three module pages are unmaintainable**: `GrahaPage.jsx` 150 KB, `ManavPage.jsx` 133 KB, `GanitPage.jsx` 125 KB. Splitting is a prerequisite to restyling; `ClientBoardPage.jsx` (138 bytes over `ClientPagesImpl.jsx`) is the existing pattern.
-- **`PageHeader` is called with four different prop signatures** (`sanskrit`/`lede`, `sans`/`subtitle`, `subtitle`, `kicker`+`sanskrit`+`lede`+`right`), so at least one page silently drops its subtitle and Devanagari.
-- **`var(--k-danger)` and `var(--danger)` appear in the same file** in `ApprovalsPage.jsx`, so one of the two reject buttons is not red.
-- **GST is a single 18% column** — cannot represent a compliant intra-state CGST+SGST invoice. Recording a payment has no date or amount, so partials are impossible.
-- Eight independent status-colour maps, all light-only. Three token systems ship: web (warm-earthy), auth (cold blue), mobile app (iOS grey + M3 teal).
-- Corrected an earlier note: the plan catalogue does carry `price_monthly` and `price_per_user_monthly`, so plan pricing is likely list-price-with-override rather than fully negotiated. Needs verification before the landing page goes public.
-
-### Read this sync
-`pages/SanvaadPage.jsx` · `ApprovalsPage.jsx` · `AdminBillingPage.jsx` · `BillingPage.jsx` · `CustomizeSettingsPage.jsx` · `components/ui/toast.jsx` · trees of `frontend/src/pages` and `mobile/src`
+- Read the real component library before writing the Pahchan reuse map. Two plausible paths do not exist — there is no components/navigation/ and no components/data-display/. Seg lives in components/customize/, StatusChip in components/editorial/.
+- Found a live shipped defect: ModuleUI.Badge does background: `${c}18`, and statusColors.js now returns var(--st-done), so it evaluates to "var(--st-done)18" and is dropped. Every status badge renders with no background, including all six order states in VikrayPage. mixAlpha already exists for exactly this. Logged in 02 and the README ledger.
+- Seg takes {value,label} with no count prop, so the register's "All 12 / Needs a look 6" needs one added rather than assumed.
+- No attendance states in statusColors.js — specified PUNCH_COLORS as a sixth shared map rather than a tenth private one.
+- Two empty-state components exist: ModuleUI.Empty (emoji default) and ui/EmptyState.jsx (real SVGs, bilingual, but still on Tailwind classes).
+- Added loading / empty / finished / error to the Pahchan register, with the filtered-empty designed as a finished queue rather than an absence.
 
 ## Screen map
 

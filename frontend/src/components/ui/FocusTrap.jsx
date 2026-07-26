@@ -31,6 +31,14 @@ const SELECTOR = [
  * - Focus is restored in the cleanup, to the element captured *before* anything
  *   inside received focus. Capturing it later returns focus to a child that is
  *   about to unmount, which drops the user at <body>.
+ * - The captured element is checked for `isConnected` before being focused.
+ *   Capturing the right element is not enough if that element is gone by the
+ *   time the overlay closes: delete a task and the row holding the trigger
+ *   unmounts, so `focus()` on it is a silent no-op and the user still lands at
+ *   <body>. That is the destructive path, which is exactly where ConfirmDialog
+ *   is used most. When the trigger has gone, focus falls back to the main
+ *   landmark so a keyboard user resumes inside the content rather than at the
+ *   top of the document.
  */
 export default function FocusTrap({ children, active = true, initialFocus }) {
   const ref = useRef(null);
@@ -64,7 +72,21 @@ export default function FocusTrap({ children, active = true, initialFocus }) {
     root.addEventListener('keydown', onKeyDown);
     return () => {
       root.removeEventListener('keydown', onKeyDown);
-      previous?.focus?.({ preventScroll: true });
+
+      if (previous?.isConnected) {
+        previous.focus({ preventScroll: true });
+        return;
+      }
+
+      // The trigger unmounted while the overlay was open — the destructive
+      // case. Land on the main landmark instead of <body>. `tabindex="-1"` is
+      // set only if absent, and left in place: it makes the element
+      // programmatically focusable without adding it to the Tab order, so a
+      // second restore behaves the same as the first.
+      const fallback = document.querySelector('[data-focus-fallback]') || document.querySelector('main');
+      if (!fallback) return;
+      if (!fallback.hasAttribute('tabindex')) fallback.setAttribute('tabindex', '-1');
+      fallback.focus({ preventScroll: true });
     };
   }, [active, initialFocus]);
 

@@ -5,7 +5,7 @@ const SHORTCUTS = [
     { keys: ['⌘', 'K'], label: 'Command palette', hi: 'कमांड पैलेट' },
     { keys: ['G', 'D'], label: 'Go to Dashboard', hi: 'डैशबोर्ड' },
     { keys: ['G', 'T'], label: 'Go to Tasks', hi: 'कार्य' },
-    { keys: ['G', 'C'], label: 'Go to CRM', hi: 'ग्राह' },
+    { keys: ['G', 'C'], label: 'Go to CRM', hi: 'ग्राहक' },
     { keys: ['G', 'I'], label: 'Go to Invoicing', hi: 'गणित' },
     { keys: ['G', 'H'], label: 'Go to HRMS', hi: 'मानव' },
   ]},

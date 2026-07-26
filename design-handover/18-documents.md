@@ -59,7 +59,9 @@ The tenant switcher converts from `fixed` to `sticky` at ≤1023px, not ≤767px
 
 ### Tax invoice
 
-A compliant Indian tax invoice needs: supplier GSTIN, recipient GSTIN, place of supply, HSN/SAC per line, taxable value, **IGST or CGST+SGST as separate lines** (never a merged "GST"), total in words, and a declaration. Resolve the split from the billing state via `lib/gst.js` (`13-module-pages.md`) — the single `gst` column in the current schema (`11-platform-admin.md`) cannot represent an intra-state invoice.
+A compliant Indian tax invoice needs: supplier GSTIN, recipient GSTIN, place of supply, HSN/SAC per line, taxable value, **IGST or CGST+SGST as separate lines** (never a merged "GST"), total in words, and a declaration. Resolve the split from the billing state via `lib/gst.js` (`13-module-pages.md`).
+
+**Correction.** This paragraph previously cited `11-platform-admin.md` for "the single `gst` column in the current schema". Wrong table. Read in full: `11-platform-admin.md:47` describes `AdminBillingPage.jsx` — **Aekam's own subscription invoices to its client organisations**, a platform-side artefact. A tenant's tax invoice is Ganit's schema, which this file has not audited. The flat-18% defect is real where it was found; it says nothing about whether Ganit can represent CGST+SGST. Verify Ganit's invoice schema separately before scoping that work.
 
 ### GSTR-3B summary
 

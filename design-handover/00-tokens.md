@@ -439,6 +439,20 @@ mq.addEventListener('change', () => { if (prefs.mode === 'system') applyPrefs(pr
 
 Because the `--primary` / `--primary-hover` pair above is theme-dependent, `applyPrefs` **must re-run on every theme change**, not only on preference change. The `system`-mode listener already does this; a manual light/dark toggle must call it too, or the accent keeps its previous theme's hover direction.
 
+## `--on-surface-faint` is not a text colour
+
+It resolves to `var(--on-surface-3)` in both themes. The name survives because roughly sixty call sites use it and every one of them is content text.
+
+The ramp was designed with four foreground steps and only supports three. On `--bg` (`#F3EFE6`), a colour needs relative luminance **≤ 0.153** to clear 4.5:1; `--on-surface-3` (`#666A61`) is already at **0.140**. A compliant fourth step would sit in the sliver between those two numbers and be visually indistinguishable from the third. That is arithmetic, not preference — the step cannot exist on this background.
+
+Measured before the fix: `#9DA096` gave **2.32:1** and **2.48:1** in light, `#64645F` gave **3.25:1** and **3.08:1** in dark. **It failed in both themes**, which is the signature of a token that is wrong rather than a pairing that is wrong.
+
+`--on-surface-disabled` carries the old values (`#9DA096` / `#64645F`) for **inactive controls only**, which WCAG 1.4.3 exempts. Nothing inherits it; opt in explicitly. Current legitimate users: `.mocktab.off`, `.lockbtn`, `.degul li::marker`, `.bar__crumb-sep`, `.msg--cont:hover .msg__gut`.
+
+### The general rule this is the third instance of
+
+A token may sit behind text **only if it has a declared `on-` partner**. `--outline` (a count badge, 3.5:1 light and 3.3:1 dark) and self-tinted chips — `color-mix(in srgb, var(--warn) 17%, transparent)` with `color: var(--warn)` — are the other two. A chip tinted with its own foreground hue can never reach 4.5:1, because deepening the tint moves the background *toward* the text. Use `--warn-container` / `--on-warn-container`.
+
 ## 12 · Contrast floors
 
 **Measured against `--bg`, not `--surface`.** `--bg` is where the page paints; `--surface` is a card on top of it and is always the more forgiving of the two. An earlier version of this table used `--surface` and passed three tokens that fail on the canvas.

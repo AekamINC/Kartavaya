@@ -1,4 +1,4 @@
-// Graha · ग्राह — CRM route shell.
+// Graha · ग्राहक — CRM route shell.
 //
 // This file was 2,648 lines and 148 KB. Per 13-module-pages.md the module pages
 // are split into a route file plus a directory of tab components BEFORE any
@@ -47,7 +47,7 @@ export default function GrahaPage() {
       <ModuleHeader
         module="graha"
         en="CRM"
-        hi="ग्राह"
+        hi="ग्राहक"
         sub="Contacts, deals and pipeline"
         icon={ICONS.graha}
       />

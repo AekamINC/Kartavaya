@@ -88,7 +88,7 @@ export default function Features() {
           </div>
           <Frame>
             <div className="k-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {[['गणित · Invoicing', true], ['वेतन · Payroll', false], ['ग्राह · CRM', true]].map(([label, on]) => (
+              {[['गणित · Invoicing', true], ['वेतन · Payroll', false], ['ग्राहक · CRM', true]].map(([label, on]) => (
                 <div key={label} style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   fontSize: 12.5, padding: '6px 9px', borderRadius: 'var(--r-sm)',

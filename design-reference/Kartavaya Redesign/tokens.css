@@ -74,7 +74,14 @@
   --on-surface: #1B1D1A;
   --on-surface-2: #4A4E48;
   --on-surface-3: #666A61;
-  --on-surface-faint: #9DA096;
+  /* --on-surface-faint is NOT a text colour. On --bg, 4.5:1 needs relative
+     luminance <= 0.153; --on-surface-3 is already 0.140. There is no room for
+     a fourth text step, so faint resolves to the third. It survives as a name
+     because ~60 call sites use it, and every one of them is content text. */
+  --on-surface-faint: var(--on-surface-3);
+  /* The old faint value, for INACTIVE CONTROLS ONLY — WCAG 1.4.3 exempts
+     those. Never for content. Opt in explicitly; nothing inherits it. */
+  --on-surface-disabled: #9DA096;
 
   --outline-variant: #D8D1BE;
   --outline: #ADA692;
@@ -160,7 +167,8 @@
   --on-surface: #E9E7E1;
   --on-surface-2: #BFBDB6;
   --on-surface-3: #8E8D87;
-  --on-surface-faint: #64645F;
+  --on-surface-faint: var(--on-surface-3);
+  --on-surface-disabled: #64645F;
 
   --outline-variant: #333A43;
   --outline: #5B626C;

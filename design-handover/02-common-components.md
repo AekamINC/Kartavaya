@@ -345,3 +345,34 @@ export function OfflineBanner() {
 `role="status"`, not `role="alert"`: going offline is information, not an interruption, and `alert` cuts off whatever the screen reader was reading.
 
 The copy claims changes are saved, so **that claim must be true before this ships**. `17-mobile-app.md` documents the existing offline mutation queue (`offline/mutationQueue.ts`); web has no equivalent. Either wire the same queue on web or change the copy to "You're offline — changes may not save." A false reassurance about unsaved work is the worst possible thing to be wrong about.
+
+## `Badge` produces an invalid colour — fix before any new call site
+
+`components/editorial/ModuleUI.jsx`:
+
+```jsx
+<span className="k-badge" style={{ background: `${c}18`, color: c }}>{text}</span>
+```
+
+The `${c}18` hex-alpha suffix worked when `statusColors.js` held hexes. It now holds custom-property references, so this evaluates to `"var(--st-done)18"` — not a colour, silently dropped. **Every `Badge` fed from a status map renders with no background today**, including all six order states in `VikrayPage.jsx`.
+
+`statusColors.js` anticipated this and exports the fix:
+
+```js
+export const mixAlpha = (color, pct) => `color-mix(in srgb, ${color} ${pct}%, transparent)`;
+```
+
+Two changes, not one. `background: mixAlpha(c, 10)`, **and** the text must not be the same hue as its tint — see `00-tokens.md`, "a token may sit behind text only if it has a declared `on-` partner". `StatusChip` already models the correct pattern: `style={{'--c': s.color}}` with a separate `.k-statuschip__dot`, so the colour identifies without carrying the text.
+
+**Prefer `StatusChip` over `Badge`.** `Badge` remains only for text that is not a status.
+
+### Two empty states, neither ready
+
+| | |
+|---|---|
+| `ModuleUI.Empty` | Emoji default (`📋`). Used across module pages. The design system has no emoji |
+| `ui/EmptyState.jsx` | Eight real SVG illustrations, bilingual `{en, hi}` titles, proper CTA — but still on Tailwind classes (`text-textDefault`, `cn`, `text-textMuted`) from the retired system |
+
+Port `EmptyState` onto tokens and delete `ModuleUI.Empty`. Until then, new screens use `EmptyState`.
+
+**A filtered list reaching zero is not the same state as a list with nothing in it.** One is a finished queue and should read as an accomplishment; the other is an absence. Reusing one component with one string for both tells a user who just finished their work that something is missing. `07-pahchan.md` has the worked example.

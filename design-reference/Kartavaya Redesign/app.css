@@ -76,7 +76,7 @@ a:hover { color: var(--primary-hover); text-decoration: underline; text-underlin
 [data-platform="win"] .bar { background: var(--s-low); }
 .bar__crumb { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
 .bar__crumb-hi { font-family: var(--font-hindi); font-size: 16px; color: var(--primary-text); line-height: 1.6; }
-.bar__crumb-sep { color: var(--on-surface-faint); }
+.bar__crumb-sep { color: var(--on-surface-disabled); }
 .bar__crumb-cur { font-size: 13.5px; font-weight: 600; color: var(--on-surface); }
 .bar__spacer { flex: 1; }
 
@@ -428,7 +428,7 @@ select.inp { appearance: none; padding-right: 30px; background-image: url("data:
 .msg { position: relative; }
 .msg--cont { margin-top: -11px; }
 .msg__gut { width: 30px; text-align: right; font-family: var(--font-mono); font-size: 9.5px; color: transparent; padding-top: 3px; }
-.msg--cont:hover .msg__gut { color: var(--on-surface-faint); }
+.msg--cont:hover .msg__gut { color: var(--on-surface-disabled); }
 .msg__ed { font-size: 10.5px; color: var(--on-surface-faint); margin-left: 6px; }
 .msg__acts { position: absolute; top: -12px; right: 6px; display: none; gap: 1px; padding: 2px; background: var(--s-lowest); border: 1px solid var(--outline-variant); border-radius: var(--r-sm); box-shadow: var(--shadow-2); z-index: 3; }
 .msg:hover .msg__acts { display: flex; }
@@ -537,7 +537,7 @@ select.inp { appearance: none; padding-right: 30px; background-image: url("data:
 .mockbar::-webkit-scrollbar { height: 0; }
 .mocktab { display: inline-flex; align-items: center; gap: 5px; padding: 9px 11px; font-size: 12px; font-weight: 600; text-transform: capitalize; color: var(--on-surface-3); border-bottom: 2px solid transparent; white-space: nowrap; }
 .mocktab.on { color: var(--on-surface); border-bottom-color: var(--primary-text); }
-.mocktab.off { color: var(--on-surface-faint); opacity: .55; }
+.mocktab.off { color: var(--on-surface-disabled); opacity: .55; }
 .mocktab__lk { display: inline-flex; opacity: .7; }
 .mockcard { border: 1px solid var(--outline-variant); border-radius: var(--r-md); padding: 11px 13px; background: var(--s-lowest); }
 .mockfoot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 11px; border-top: 1px solid var(--outline-variant); }
@@ -560,7 +560,7 @@ select.inp { appearance: none; padding-right: 30px; background-image: url("data:
 .degl--ok { color: var(--ok); }
 .degl--no { color: var(--danger); }
 .degul { margin: 0; padding-left: 17px; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--on-surface-2); line-height: 1.5; }
-.degul li::marker { color: var(--on-surface-faint); }
+.degul li::marker { color: var(--on-surface-disabled); }
 .degnote { margin-top: 14px; padding: 11px 13px; border-radius: var(--r-sm); background: var(--s-container); font-size: 12.5px; line-height: 1.6; color: var(--on-surface-2); text-wrap: pretty; }
 .degnote--hi { background: var(--primary-container); color: var(--on-primary-container); font-weight: 500; margin-top: 0; }
 .dnycard { display: flex; flex-direction: column; gap: 11px; padding: var(--pad-card); border: 1px solid var(--outline-variant); border-radius: var(--r-lg); background: var(--surface); }

@@ -48,32 +48,19 @@ A shadow on a dark surface is nearly invisible even at those alphas. **Elevation
 
 ### 3 · Semantic colours lighten, containers darken
 
-```css
---ok:     #14743A → #5BD98A    --ok-container:     #C6EFD2 → #14432A
---warn:   #955806 → #E8B45C    --warn-container:   #FBE3BE → #4A3312
---danger: #B42318 → #F2867A    --danger-container: #FBDAD5 → #55201B
-```
+`--ok`, `--warn`, `--danger` and their containers all flip. **The values are in `00-tokens.md` §7 and §8 — this file does not restate them.**
+
+An earlier draft did, and shipped stale twice: it still carried `--ok: #16803F` and `--warn: #A66207` after §7 darkened them to `#14743A` and `#955806` for contrast. A file that duplicates hexes has to be re-edited every time the palette moves, and it silently will not be.
+
+Every `on-` half exists in both themes, including `--on-ok-container`, `--on-warn-container` and `--on-danger-container`, which were missing entirely until §7 was corrected.
 
 The foreground lightens for contrast against dark; the container darkens. Inverting both keeps neither.
 
-**Measured against `--bg`, not `--surface`** (`00-tokens.md` §12): `--bg` is where the page paints, `--surface` is a card on top of it and is always the more forgiving of the two. Light `--bg` `#F3EFE6`, dark `#0C0E11`:
-
-| Token | Light | Dark |
-|---|---|---|
-| `--ok` `#14743A` | 5.1:1 | 10.8:1 |
-| `--warn` `#955806` | 4.9:1 | 10.3:1 |
-| `--danger` `#B42318` | 5.8:1 | 7.8:1 |
-
-An earlier draft of this file quoted `#16803F` and `#A66207` and measured them against `--surface`, which passed them at 4.7:1 and 4.5:1 while they failed on the canvas at 4.4:1 and 4.2:1. Both were darkened in `00` §7. There is no longer a "little margin" caveat on `--ok`, and no size restriction on either.
+Contrast is measured in `00-tokens.md` §12 and `23-accessibility.md`, **against `--bg`, not `--surface`** — the canvas, not the card that sits on it. Measuring against `--surface` is what let three tokens pass while failing on the page. Do not re-measure here; the numbers move. Light little margin — it is fine for a chip label at 12px+ but should not carry 11px metadata.
 
 ### 4 · The accent needs four values
 
-```css
---primary:           #04837A → #4FD8CB
---primary-hover:     #026B64 → #6FE6DA     /* note the direction flip */
---primary-container: #B4F1E8 → #00514B
---on-primary:        #FFFFFF → #00332F
-```
+The four accent values per theme are in `00-tokens.md` §6, along with `--primary-text` — the token any primary-coloured *text* uses, because `--primary` itself is 4.04:1 on `--bg` and is a fill, not a text colour.
 
 **Hover reverses direction with the theme.** On light surfaces hover is darker than rest; on dark surfaces it is lighter. A component that hardcodes "hover = darker" is wrong in one of the two modes. This is also why `applyPrefs` must re-run on theme change — see `00-tokens.md` §11.
 

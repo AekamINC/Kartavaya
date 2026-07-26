@@ -17,7 +17,7 @@ Every "what changes" table was written after reading the actual staging file at 
 | `04-boards-table-views.md` | Kanban, table, filters, three-state sort, bulk, inline edit, column resize |
 | `05-today-dashboard.md` | Today layout, hero, stats, activity, week strip, onboarding checklist |
 | `06-sanvaad-varta.md` | Channels, messages, threads, reactions, DMs, WhatsApp, emoji picker |
-| `07-pahchan.md` | Clock-in, face frame, calendar, register, exceptions, geofence policy. **Net-new — no staging code exists** |
+| `07-pahchan.md` | **Rewritten for v1** — human comparison, camera-only, punch contract, retention |
 | `08-rbac-screens.md` | Members, invite wizard, matrix, support access, audit log, denied + degraded states |
 | `09-customization.md` | Appearance, typography, layout, language, notifications, data & privacy |
 | `10-org-settings.md` | Org profile, members, billing, modules, security, danger zone |
@@ -35,9 +35,13 @@ Every "what changes" table was written after reading the actual staging file at 
 | `22-landing-page.md` | Public marketing page |
 | `23-accessibility.md` | Focus traps, ARIA, contrast obligations, keyboard nav |
 | `24-bilingual-devanagari.md` | English/Hindi labels, font loading, the 6 language options |
-| `25-qa-acceptance.md` | Per-screen checklist — **written last, after implementation starts** |
+| `25-qa-acceptance.md` | Two CI scripts, contrast method, per-screen checklist |
+| `26-component-inventory.md` | Class vocabulary, state modifiers, the shared Picker |
+| `27-vikray.md` | Sales — orders, stock, targets. **Contains a ship-blocker** |
 
-**25 of 26 written.** `25-qa-acceptance.md` is deliberately last — it derives from the others and would be stale before it was used.
+**All 28 written.** `25` was parked until implementation started and is now unparked; its first section is two CI scripts, because eight defects in this handover were the same bug class and every one was invisible to reading and obvious to a script.
+
+**Treat every defect claim here as a line-quote, not a behavioural test.** Two of the five ship-blockers in `CLAUDE-CODE-START-HERE.md` were false — produced by grepping identifier names rather than reading behaviour — and they concealed a real defect in the same file. `25` §3 has the method.
 
 `22` is the landing page. Empty/loading/error never became its own file: `Skeleton.jsx` already lives in `02-common-components.md`, so the four error states and the offline banner were folded in there as a revision.
 
@@ -138,7 +142,8 @@ Sixteen more, from grounding files 19–24 in the staging source.
 | 25 | **Two client portals ship**, and `ClientPagesImpl.jsx` labels one of them "legacy dark portal" in its own source — a **fourth** token vocabulary. | `19` |
 | 26 | **The content-free toast.** `AppShell` manufactures "New notification / Open notifications to view" with no `url`, so it interrupts, costs a decision and returns nothing. | `21` |
 | 27 | **`NotificationsSettingsPage` reads `Notification.permission` unguarded** — throws on iOS Safari < 16.4, embedded webviews, and any non-secure context. `AppShell` guards the same call correctly. | `21` |
-| 28 | **Vikray (Sales · विक्रय) is never covered.** It has a page, a route and a palette entry, and no handover file or prototype screen. | `20` |
+| 29 | **`Badge` emits an invalid colour.** `background: \`${c}18\`` in `ModuleUI.jsx` — with `statusColors.js` now returning `var(--st-done)`, this evaluates to `"var(--st-done)18"` and is dropped. Every status badge renders with no background, including all six order states in Vikray. `mixAlpha` already exists for this. | `02` |
+| 28 | **`TargetsTab` is rendered and does not exist.** `VikrayPage.jsx` has `'targets'` in `TABS` and renders `<TargetsTab />`; the component is not defined in the file and not exported anywhere in `frontend/src`. Clicking the fourth tab is an uncaught `ReferenceError`. | `27` |
 | 29 | **Four different shapes for one bilingual label** (`{en,hi,gu}`, `{en,hi}`, `{label,hi}`, `{label,sans}`) and Gujarati exists in only one of them — so a Gujarati user sees three scripts on one screen. | `24` |
 
 ### Medium

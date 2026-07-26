@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-density="cozy" data-display="serif" data-platform="mac">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pahchan v1 — attendance</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="components.css">
+<link rel="stylesheet" href="motion.css">
+<link rel="stylesheet" href="pahchan.css">
+<style>a{color:var(--primary-text)}a:hover{color:var(--primary)}.leaflet-container{font-family:var(--font-ui)}</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<script type="text/babel" src="PahchanData.jsx"></script>
+<script type="text/babel" src="PahchanClock.jsx"></script>
+<script type="text/babel" src="PahchanReview.jsx"></script>
+<script type="text/babel" src="PahchanAdmin.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+
+function Sec({ n, t, hi, d, note, children }) {
+  return (
+    <section className="ph-sec" id={'s' + n} data-screen-label={n}>
+      <div className="ph-sec__h"><span className="ph-sec__n">{n}</span><h2 className="ph-sec__t">{t}</h2><span className="ph-sec__hi">{hi}</span></div>
+      {d && <p className="ph-sec__d">{d}</p>}
+      {note && <p className="ph-note">{note}</p>}
+      {children}
+    </section>
+  );
+}
+
+function App() {
+  const [theme, setTheme] = useState('light');
+  React.useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+
+  return (
+    <div className="ph-wrap">
+      <div className="ph-bar">
+        <span className="ph-bar__t">Pahchan<span className="ph-bar__hi">पहचान</span></span>
+        <span style={{ fontSize: 11, color: 'var(--on-surface-3)', fontFamily: 'var(--font-mono)' }}>v1 · human comparison</span>
+        <span className="ph-bar__sp" />
+        <span className="ph-seg">
+          {['light', 'dark'].map(k => <button key={k} className={'ph-seg__b' + (theme === k ? ' on' : '')} onClick={() => setTheme(k)}>{k[0].toUpperCase() + k.slice(1)}</button>)}
+        </span>
+      </div>
+
+      <div className="ph-main">
+        <p className="ph-sec__d" style={{ maxWidth: '74ch', fontSize: 13.5, marginBottom: 26 }}>
+          Face matching is parked to v2 and device enrollment is dropped. In v1 an employee signs in with their own account, takes a live selfie, and punches in or out; the organisation verifies by <b>human comparison</b> against two reference photos captured at enrollment. Two consequences run through every screen below — the register has to be scannable in seconds rather than one record at a time, because a reviewer who cannot keep up will rubber-stamp; and the two reference photos are what keep v2 cheap, since they become the embeddings with no re-enrollment across any client's workforce.
+        </p>
+
+        <Sec n="01" t="Clock in / clock out" hi="उपस्थिति" d="Camera-first and immersive — a viewfinder is not a page. Three chips carry the only state that changes the outcome: location, camera, connection. One tap after the frame settles."
+          note={<><b>Camera-only, and no gallery permission is requested.</b> With login-only auth the selfie is the only identity evidence in the system. A gallery path means one saved selfie works forever, which would make the whole feature theatre. The framing guide settles on its own here; in the build it is driven by the face-bounds callback.</>}>
+          <div className="ph-row">
+            <div className="ph-dev"><div className="ph-dev__l">Ready <i>· framing, then one tap</i></div><div className="ph-scr ph-scr--dark"><PhClock dir="in" /></div></div>
+            <div className="ph-dev"><div className="ph-dev__l">Sent <i>· the receipt is the proof</i></div><div className="ph-scr ph-scr--dark"><PhClock dir="in" start="done" /></div></div>
+            <div className="ph-dev"><div className="ph-dev__l">Clock out <i>· different colour, same flow</i></div><div className="ph-scr ph-scr--dark"><PhClock dir="out" /></div></div>
+          </div>
+        </Sec>
+
+        <Sec n="02" t="When something is wrong" hi="अपवाद" d="Nothing here blocks a punch. Field staff are the reason this module exists, and a blocked punch on a client site is a payroll dispute a week later — so every degraded case records the punch and flags it for the reviewer."
+          note={<><b>Weak GPS is not fraud.</b> An indoor or basement fix routinely exceeds ±100m, and blocking on accuracy would lock out exactly the people who work in warehouses and parking levels. Flag it, show the reviewer the accuracy radius, and let a human decide.</>}>
+          <div className="ph-row">
+            <div className="ph-dev"><div className="ph-dev__l">Location off</div><div className="ph-scr ph-scr--dark"><PhClock dir="in" gps="off" /></div></div>
+            <div className="ph-dev"><div className="ph-dev__l">Weak GPS ±184m</div><div className="ph-scr ph-scr--dark"><PhClock dir="in" gps="weak" /></div></div>
+            <div className="ph-dev"><div className="ph-dev__l">Offline <i>· queued, then self-sends</i></div><div className="ph-scr ph-scr--dark"><PhClock dir="in" net="off" start="queued" /></div></div>
+            <div className="ph-dev"><div className="ph-dev__l">No reference pair yet</div><div className="ph-scr ph-scr--dark"><PhClock dir="in" noRef /></div></div>
+          </div>
+        </Sec>
+
+        <Sec n="03" t="The register" hi="रजिस्टर" d="The surface the feature lives or dies on. Human comparison is the only verification there is, so a reviewer has to clear a day in seconds — which means the punch selfie and both references sit inline on every row, at a size where a face is recognisable, and the keyboard moves and decides."
+          note={<><b>A click-into-each-record design guarantees rubber-stamping.</b> Twelve punches at three clicks each is thirty-six interactions before anyone has looked at a face. Here the triple is the row: <code>J</code>/<code>K</code> to move, <code>↵</code> to confirm, <code>F</code> to flag, <code>O</code> to open. Opening is for the outliers, not the routine. Try it — the list has focus.</>}>
+          <PhRegister />
+        </Sec>
+
+        <Sec n="04" t="Enrollment" hi="नामांकन" d="Two photos, not one. A straight-on frame and a three-quarter, each with its own framing guide and its own pass conditions."
+          note={<><b>The second photo is a v2 decision made in v1.</b> A single frontal embedding fails on anyone who turns their head, and re-enrolling every client's workforce later is the kind of migration that quietly kills a feature. Capturing the pair now costs one extra tap per employee, once.</>}>
+          <PhEnroll />
+          <div style={{ marginTop: 20 }}><PhQueue /></div>
+          <p className="ph-sec__d" style={{ marginTop: 14, marginBottom: 0 }}>
+            Two routes in — HR uploads on someone's behalf, or the employee captures their own. Both land in the same queue, and <b>neither becomes a reference until a human approves it</b>. An unapproved self-capture is the obvious attack: enroll a photo of someone else, then match against it forever.
+          </p>
+        </Sec>
+
+        <Sec n="05" t="Two-tab shell" hi="सरल" d="For someone whose entire relationship with Kartavaya is attendance — a driver, a site worker, a shop assistant. Clock and Me. No modules, no boards, no inbox."
+          note={<>The full app's eight-tab bar is right for staff who live in Kartavaya and wrong for someone who opens it twice a day. <b>Same account, same permissions</b> — this is a shell chosen by role, not a second product.</>}>
+          <div className="ph-row">
+            <div className="ph-dev"><div className="ph-dev__l">Clock</div><div className="ph-scr"><PhMini /></div></div>
+            <div className="ph-dev"><div className="ph-dev__l">Me <i>· their own references, and the retention promise</i></div><div className="ph-scr"><PhMini tab="me" /></div></div>
+            <div className="ph-dev" style={{ width: 393 }}>
+              <div className="ph-dev__l">Notice <i>· layered, six lines</i></div>
+              <div style={{ padding: 2 }}><PhNotice /></div>
+            </div>
+          </div>
+        </Sec>
+
+        <Sec n="06" t="Policy" hi="नीति" d="Every value an organisation can set, and which ones it cannot. The fixed ones are fixed because making them configurable would let an org configure the feature into meaninglessness.">
+          <PhPolicy />
+        </Sec>
+
+        <Sec n="07" t="Register and the monthly email" hi="मासिक" d="The portal view carries photographs. The email does not.">
+          <PhReport />
+        </Sec>
+
+        <Sec n="08" t="What Aekam sees" hi="मंच" d="">
+          <div className="ph-card" style={{ maxWidth: 620 }}>
+            <div className="ph-card__t">Platform console — per org</div>
+            <p className="ph-card__d">One number.</p>
+            <div className="ph-kv"><span className="ph-kv__k">Pahchan users</span><span className="ph-kv__v"><b>34</b></span></div>
+            <div className="ph-kv"><span className="ph-kv__k">Names</span><span className="ph-kv__v">Not available</span></div>
+            <div className="ph-kv"><span className="ph-kv__k">Photographs</span><span className="ph-kv__v">Not available</span></div>
+            <div className="ph-kv"><span className="ph-kv__k">Times and locations</span><span className="ph-kv__v">Not available</span></div>
+            <p style={{ fontSize: 11.5, lineHeight: 1.7, color: 'var(--on-surface-2)', margin: '13px 0 0', textWrap: 'pretty' }}>
+              This has to be enforced in the query, not the view. A console that fetches the roster and renders a count has already read the roster — and the first support ticket asking "which employee?" will be one <code>console.log</code> away from answering.
+            </p>
+          </div>
+        </Sec>
+
+        <Sec n="09" t="What the research changed" hi="आधार" d="Four things came from checking the pattern rather than inventing it, and two of them contradict the brief.">
+          <div className="ph-cols">
+            <div className="ph-card">
+              <div className="ph-card__t">v2 will need consent collected again</div>
+              <p className="ph-card__d" style={{ margin: '4px 0 0' }}>
+                The brief asked for wording that lets v2 face matching start without re-collecting consent. It cannot. Routine attendance is arguably a <b>legitimate use</b> under the DPDP Act — a notice, not consent. Automated face matching is a different purpose, and consent under the Act has to be specific and granular, with bundled or blanket consent expressly not valid. A forward-looking clause covering v2 is exactly the bundling the rules prohibit.
+                <span className="ph-src">Checked: DPDP Act 2023 §7 legitimate use; DPDP Rules notified 13 Nov 2025. The v1 notice in §05 is written as a notice, and says face recognition is not used.</span>
+              </p>
+            </div>
+            <div className="ph-card">
+              <div className="ph-card__t">The punch record outlives the photo, by law</div>
+              <p className="ph-card__d" style={{ margin: '4px 0 0' }}>
+                The brief sets retention for both photo classes and is silent on the record. State Shops &amp; Establishments rules require the attendance register — name, hours, arrival, departure — to be kept for <b>three years, five in some states</b>, and formats vary state to state. That is the one retention with a penalty attached, and it is now a policy field.
+                <span className="ph-src">Karnataka Rule 24(8) and equivalents; muster roll is a prescribed register.</span>
+              </p>
+            </div>
+            <div className="ph-card">
+              <div className="ph-card__t">Mock location is table stakes</div>
+              <p className="ph-card__d" style={{ margin: '4px 0 0' }}>
+                Not in the brief. A mock-location app spoofs coordinates in about thirty seconds, and Indian competitors block the check-in outright when they detect one. Coordinates that can be faked for free are not evidence. Added as a policy field and as a row in the review metadata, because the reviewer needs to know it was checked.
+              </p>
+            </div>
+            <div className="ph-card">
+              <div className="ph-card__t">A printed photo defeats a plain selfie</div>
+              <p className="ph-card__d" style={{ margin: '4px 0 0' }}>
+                The known attack on selfie attendance is holding up a printed photograph. v1's answer is the human reviewer, which is genuinely a good one — a person spots a photo-of-a-photo instantly, where a naive matcher does not. Worth stating plainly in the spec so that <b>v2 does not remove the reviewer without adding liveness</b>. That would be a downgrade wearing the word "automatic".
+              </p>
+            </div>
+          </div>
+        </Sec>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

@@ -49,7 +49,7 @@ export const NAV_FULL = [
   {
     section: 'modules', sans: 'मॉड्यूल', gu: 'મૉડ્યુલ',
     items: [
-      { to: '/graha',   icon: 'graha',   en: 'CRM',       hi: 'ग्राह',   gu: 'ગ્રાહ',   module: 'graha' },
+      { to: '/graha',   icon: 'graha',   en: 'CRM',       hi: 'ग्राहक',   gu: 'ગ્રાહક',   module: 'graha' },
       { to: '/ganit',   icon: 'ganit',   en: 'Invoicing', hi: 'गणित',    gu: 'ગણિત',   module: 'ganit' },
       { to: '/manav',   icon: 'manav',   en: 'HRMS',      hi: 'मानव',    gu: 'માનવ',   module: 'manav' },
       { to: '/vikray',  icon: 'vikray',  en: 'Sales',     hi: 'विक्रय',  gu: 'વિક્રય', module: 'vikray' },

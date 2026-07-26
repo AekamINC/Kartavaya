@@ -1,6 +1,6 @@
 # Implementation ledger
 
-**Not part of the numbered handover set.** Claude Design owns `00`–`25` and `README.md`. This file is mine — what I found, what I decided provisionally, what must be re-checked. Claude Design never sees it and should not be asked to reconcile against it.
+**Not part of the numbered handover set.** Claude Design owns `00`–`27` and `README.md`. This file is mine — what I found, what I decided provisionally, what must be re-checked. Claude Design never sees it and should not be asked to reconcile against it.
 
 Last updated: 2026-07-26
 
@@ -10,13 +10,16 @@ Last updated: 2026-07-26
 
 | Files | State |
 |---|---|
-| `00`–`24`, `26`, `README.md` | **All 26 present.** `00` is canonical |
-| `26-component-inventory.md` | New in the 2026-07-26 bundle. Supersedes the state guidance in `02`; live counterpart is `Kartavaya Redesign/Component Inventory.html` |
-| `14`, `17` | Claude Design's real reissues, **forward-patched by me** to `00` §7's darkened values — they shipped quoting `#16803F`/`#A66207`/`#74786F` while declaring `00` authoritative. **Shipped stale a second time in the 2026-07-26 bundle; held back again.** See §9 |
+| `00`–`27`, `README.md` | **All 28 present.** `00` is canonical. Nothing held back for the first time |
+| `25-qa-acceptance.md` | Unparked and delivered in the second 2026-07-26 bundle. §1 is two CI scripts — add them before trusting any other claim in the set |
+| `26-component-inventory.md` | Supersedes the state guidance in `02`; live counterpart is `Kartavaya Redesign/Component Inventory.html` |
+| `27-vikray.md` | New. Closes the gap `20` §Unreported flagged. Found the `TargetsTab` crash, now fixed — see §11 |
+| `14`, `17` | **Resolved.** Both now refer to `00` §7/§8 instead of restating hexes; `14` dropped its two hex tables and `17` went from 22 literals to 3, all of which are descriptive rather than prescriptive. Two rounds of forward-patching no longer needed. One prose defect remains in `14` — see §11.2 |
 | `06` | Bundle version restored — it carried a section heading the earlier copy had lost |
-| `25-qa-acceptance.md` | Parked by agreement — written after implementation starts |
 
-Reference material is in **`design-reference/`** (4.9 MB): nine HTML prototypes, the six specs, the real stylesheets (`tokens.css`, `app.css`, `motion.css`, per-surface CSS), 16 `guidelines/` token pages, `docs/` with `doc-page.js` and `brand.css`, the mark asset, and the mobile prototype. `design-handover/` stays the spec; `design-reference/` is what it quotes.
+Reference material is in **`design-reference/`**: **eleven** HTML prototypes, the six specs, the real stylesheets (`tokens.css`, `app.css`, `motion.css`, `pahchan.css`, `blueprint.css`, per-surface CSS), 16 `guidelines/` token pages, `docs/` with `doc-page.js` and `brand.css`, the mark asset, and the mobile prototype. `design-handover/` stays the spec; `design-reference/` is what it quotes.
+
+New in the second 2026-07-26 bundle: the **Pahchan v1 prototype** (`Pahchan v1.html`, `PahchanClock.jsx`, `PahchanReview.jsx`, `PahchanAdmin.jsx`, `PahchanData.jsx`, `pahchan.css`) and a **System Blueprint** (`System Blueprint.html`, `Blueprint.jsx`, `BlueprintData.jsx`, `blueprint.css`).
 
 **`design-reference/Kartavaya Redesign/docs/doc-page.js` is the vendored web component** `18-documents.md` requires. Copy to `public/doc-page.js` — do not fork.
 
@@ -100,7 +103,7 @@ Lesson for the rest of the implementation: **the handover's defect claims are li
 ## 4 · Open decisions
 
 1. ~~Landing page bilingual hierarchy~~ — **decided 2026-07-26**, see below.
-2. **Vikray (Sales · विक्रय) scope.** Page, route and palette entry; covered by no file. Plus nine more in `20` §Unreported. Requested from Claude Design 2026-07-26.
+2. ~~Vikray (Sales · विक्रय) scope~~ — **closed 2026-07-26.** `27-vikray.md` delivered. The nine minor pages in `20` §Unreported inherit from `02`; the restyle work `27` asks for is open, see §11.4.
 3. ~~`lib/labels.js` Sanskrit column~~ — **decided 2026-07-26**, see below. Still blocked on a Sanskrit-literate reviewer, but the scope is now fixed.
 4. ~~Face matching provider~~ — **parked to v2 2026-07-26.** Pahchan v1 redefined; see below.
 5. ~~GST split~~ — **resolved 2026-07-26: no work needed.** The premise was wrong, see §10.
@@ -326,3 +329,52 @@ Device enrollment was proposed and rejected for a good reason: it assumes you ca
 ### 10.3 · New table
 
 `pahchan_enrollment_photos` — a sixth alongside the five in `07:196`. A dedicated table rather than columns on `manav_employees`, for three reasons: retention is a different class from punch selfies and needs its own deletion policy; an audit trail of who uploaded and who approved is required; and photo replacement must be visible, since swapping a reference to match a different face is the obvious attack. Reuse `services/storage.py` — it already has `upload_file`, `sign_key`, `refresh_signed_url`, `delete_file` and per-org R2 buckets, so client isolation comes for free.
+
+---
+
+## 11 · Second 2026-07-26 bundle
+
+117 files. Everything requested in `_REQUEST-2026-07-26.md` arrived: `25-qa-acceptance.md` unparked, `27-vikray.md` written, the Pahchan v1 prototype built, `14`/`17` rewritten to alias, `18:62` corrected, the landing exception codified in `24`, and the `ग्राह` question answered. A System Blueprint came in unrequested.
+
+`00` also gained a section resolving §3.1 of this ledger: `--on-surface-faint` now resolves to `var(--on-surface-3)`, with `--on-surface-disabled` carrying the old values for inactive controls only, which WCAG 1.4.3 exempts. The argument is arithmetic and checkable — on `--bg` a colour needs luminance ≤ 0.153 to clear 4.5:1 and `--on-surface-3` is already 0.140, so a compliant fourth step cannot exist on this background. That closes it properly rather than by moving seven call sites one at a time.
+
+### 11.1 · The five ship-blockers, each checked against the branch
+
+`CLAUDE-CODE-START-HERE.md` states all five are verified against the branch rather than quoted from a grep. **Two are real, two are stale, one is false.** Checked individually:
+
+| | Claim | Verdict |
+|---|---|---|
+| 1 | `addToast` does not exist; `SanvaadPage.jsx` destructures it in three places | **Stale.** `addToast` does not appear in `SanvaadPage.jsx` at all — fixed in `d9638ae` |
+| 2 | Sanvaad scrollback `#94a3b8` on `#0f172a`, 2.9:1 | **Stale.** The file contains exactly one hex, `#4FC3F7`, which is the correct read tick per `00` §9. All text uses tokens. Neither quoted colour appears |
+| 3 | `FocusTrap` cleanup calls `previous?.focus?.()` with no `isConnected` check | **Real.** Confirmed at `FocusTrap.jsx:67`. Fixed — see 11.3 |
+| 4 | Kanban drag does not work on touch at all — HTML5 drag API | **False.** `KanbanView.jsx:3` imports `@hello-pangea/dnd`; `KanbanCard` renders inside `<Draggable>` with `dragHandleProps` on the wrapper, and `draggable` is never passed, so the HTML5 attributes on the card are inert. The library implements its own touch sensor |
+| 5 | `TargetsTab` is rendered and defined nowhere | **Real, and newly introduced.** Fixed — see 11.3 |
+
+Blockers 1 and 2 were real before PR #41 merged and were fixed by it. The refresh did not re-check them. Blocker 4 was never right about the mechanism.
+
+This is the second round where the ratio held at roughly half. The file now tells its own reader to verify before acting, which is the right instruction — it just has not been applied to its own table yet. **Keep checking every claim.** It has paid for itself four times.
+
+### 11.2 · One prose defect in the incoming `14-dark-mode.md`
+
+The rewrite left a mangled sentence:
+
+> Do not re-measure here; the numbers move. Light little margin — it is fine for a chip label at 12px+ but should not carry 11px metadata.
+
+"Light little margin —" is a fragment of the sentence the rewrite replaced, and it reintroduces the "little margin" caveat on `--ok` that `00` §7 removed when the token was darkened to `#14743A`.
+
+**Deliberately not patched.** Forward-patching `14` is what produced two rounds of drift; the file is Claude Design's and stays byte-identical to the bundle. Raised for them to fix. Do not act on the caveat — `00` §7 is authoritative and carries no size restriction on `--ok`.
+
+### 11.3 · Fixed in this pass
+
+**`TargetsTab` restored** (`VikrayPage.jsx`). `cae0e0a` set out to drop the two tabs duplicating Graha — pipeline and customers — and removed a third component with them, while leaving `'targets'` in `TABS` and `<TargetsTab />` in the render. Clicking the fourth tab was an uncaught `ReferenceError` that took the page down. The 135-line implementation was recovered from `cae0e0a^` rather than rewritten; the backend was never the problem — `POST/GET/PATCH/DELETE /v1/vikray/targets`, `/targets/leaderboard` and `staging.vikray_targets` all exist. Which also corrects `27-vikray.md:197`, which lists `/v1/vikray/targets` as "needed, does not exist". Tokens fixed on the way back in per `27`: `#10b981` → `var(--ok)`, `var(--k-primary)` → `var(--primary)`, emoji removed. The split into `vikray/` that `27` asks for is separate work.
+
+**`FocusTrap` restores to a connected element.** Capturing the right element was already correct; the gap was that the captured element may be gone by the time the overlay closes. Delete a task and the row holding the trigger unmounts, so `focus()` on it is a silent no-op and the user lands at `<body>` — on the destructive path, which is where `ConfirmDialog` is used most. Now checks `isConnected` and falls back to `[data-focus-fallback]` or `main`, setting `tabindex="-1"` only if absent so a second restore behaves like the first.
+
+**`ग्राह` → `ग्राहक`** across seven sites: `CommandPalette.jsx`, `KeyboardShortcuts.jsx`, `navConfig.js` (Hindi **and** Gujarati `ગ્રાહ` → `ગ્રાહક`), `moduleColors.js`, `GrahaPage.jsx` (comment and header), `marketing/sections/Modules.jsx`, `marketing/sections/Features.jsx`. `24` settled the word: *grāha* is seizing or a crocodile; a CRM is where customers live, so it is *grāhak*. Replacement was scoped to quoted whole-string values so the four places already correct — `'सृजन ग्राहक'`, `AdminPage` `sanskrit="ग्राहक"`, two in `DristiPage` — could not become `ग्राहकक`. Route, module key and `/v1/graha/*` deliberately unchanged: `24` reasons that they are internal identifiers no user reads, and renaming them is a migration with no user-visible benefit. If the Latin name is ever revisited, `24` recommends **Grahak** to make the pair agree.
+
+### 11.4 · Still open
+
+- **`27-vikray.md` asks for `VikrayPage.jsx` to be split into `vikray/`**, one `LineItemEditor`, detail into a drawer, `ConfirmDialog` on cancel, client totals labelled "estimated". Not started. The crash fix above is not that work.
+- **`var(--k-primary)` remains at two sites in `OrdersTab`** and widely across the drawer and field components. It resolves — `kartavaya-design.css:348` aliases it to `--primary-vivid` — so it is a migration, not a defect.
+- **`applyPrefs` must still derive `--primary-text` per accent preset** (§9). Twelve presets; still not done.
+- §3.2's ten sub-11px literals are still unaddressed.

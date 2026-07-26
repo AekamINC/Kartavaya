@@ -39,15 +39,17 @@ Three files define status colour. They do not agree:
 
 | State | `drawer/constants.js` | `editorial/StatusChip.jsx` | Target |
 |---|---|---|---|
-| `todo` | `#64748b` | `#94a3b8` | `#94a3b8` |
-| `in_progress` | `#0082c6` | `#0082c6` | `#3E5C8A` |
-| `in_review` | `#8b5cf6` | `#a78bfa` | `#a78bfa` |
-| `done` | **`#16a34a`** | **`#05b7aa`** | `#2E6B49` |
-| `requested` | **`#9333ea`** | **`#f59e0b`** | `#f59e0b` |
-| `rejected` | `#ef4444` | `#ef4444` | `#ef4444` |
-| `pending` | `#d97706` | `#f59e0b` | `#f59e0b` |
-| `pending_client` | `#7c3aed` | `#8b5cf6` | `#8b5cf6` |
-| `approved` | `#16a34a` | `#05b7aa` | `#2E6B49` |
+| `todo` | `#64748b` | `#94a3b8` | `var(--st-todo)` |
+| `in_progress` | `#0082c6` | `#0082c6` | `var(--st-in-progress)` |
+| `in_review` | `#8b5cf6` | `#a78bfa` | `var(--st-in-review)` |
+| `done` | **`#16a34a`** | **`#05b7aa`** | `var(--st-done)` |
+| `requested` | **`#9333ea`** | **`#f59e0b`** | `var(--st-requested)` |
+| `rejected` | `#ef4444` | `#ef4444` | `var(--st-rejected)` |
+| `pending` | `#d97706` | `#f59e0b` | `var(--ap-pending)` |
+| `pending_client` | `#7c3aed` | `#8b5cf6` | `var(--ap-pending-client)` |
+| `approved` | `#16a34a` | `#05b7aa` | `var(--ap-approved)` |
+
+The Target column names tokens, not hexes. It listed hexes until `00-tokens.md` §9 revised four of them, at which point this table was quietly wrong — the same failure as `14`. `00` §9 holds the values and both themes.
 
 **A task that is `done` renders green in the drawer header and teal in the task list. A `requested` task renders purple in the drawer and amber in the list.** Same task, same state, two colours, depending on which component is drawing. The labels drift too: `rejected` is "Declined" in `drawer/constants.js` and "Rejected" in `editorial/StatusChip.jsx`.
 

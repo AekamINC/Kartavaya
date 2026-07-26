@@ -497,3 +497,147 @@ function StockTab() {
     </div>
   );
 }
+
+
+// Restored. `cae0e0a` set out to drop the two tabs that duplicated Graha —
+// pipeline and customers — and removed this one as well, while leaving
+// 'targets' in TABS and <TargetsTab /> in the render. Clicking the fourth tab
+// was an uncaught ReferenceError that took the page down. The backend was
+// never the problem: POST/GET/PATCH/DELETE /v1/vikray/targets and
+// staging.vikray_targets all exist. Tokens corrected to `00` §2 on the way
+// back in; the split into vikray/ that `27-vikray.md` asks for is separate.
+function TargetsTab() {
+  const { pushToast } = useToast();
+  const [targets, setTargets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [members, setMembers] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ salesperson_id: '', period_start: '', period_end: '', target_amount: 0, target_deals: 0, notes: '' });
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    try { const r = await api.get('/v1/vikray/targets'); setTargets(r.data.data || []); } catch {}
+    finally { setLoading(false); }
+  }
+
+  async function loadMembers() {
+    try { const r = await api.get('/teams'); setMembers(r.data || []); } catch {}
+  }
+
+  async function save(e) {
+    e.preventDefault();
+    if (!form.salesperson_id || !form.period_start || !form.period_end) { pushToast({ title: 'Fill required fields', type: 'error' }); return; }
+    setSaving(true);
+    try {
+      await api.post('/v1/vikray/targets', form);
+      pushToast({ title: 'Target saved', type: 'success' });
+      setShowForm(false);
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    finally { setSaving(false); }
+  }
+
+  function startEditTarget(t) {
+    setEditId(t.id);
+    setEditForm({ target_amount: t.target_amount || 0, target_deals: t.target_deals || 0, notes: t.notes || '' });
+  }
+
+  async function saveEditTarget(e) {
+    e.preventDefault();
+    setEditSaving(true);
+    try {
+      await api.patch(`/v1/vikray/targets/${editId}`, editForm);
+      pushToast({ title: 'Target updated', type: 'success' });
+      setEditId(null);
+      load();
+    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update target', type: 'error' }); }
+    finally { setEditSaving(false); }
+  }
+
+  return (
+    <div>
+      <div className="k-section__head" style={{ marginBottom: 20 }}>
+        <h3 className="k-section__title">Sales Targets<span className="k-section__title-hi">लक्ष्य</span></h3>
+        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
+          onClick={() => { setShowForm(!showForm); if (!showForm) loadMembers(); }}>
+          {showForm ? 'Cancel' : '+ Set Target'}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={save} className="k-formpanel">
+          <div className="k-formpanel__grid k-formpanel__grid--3">
+            <label className="k-formpanel__label">Salesperson
+              <input value={form.salesperson_id} onChange={e => setForm(f => ({ ...f, salesperson_id: e.target.value }))}
+                placeholder="User ID" className="k-formpanel__input" />
+            </label>
+            <label className="k-formpanel__label">Period Start
+              <input type="date" value={form.period_start} onChange={e => setForm(f => ({ ...f, period_start: e.target.value }))} className="k-formpanel__input" />
+            </label>
+            <label className="k-formpanel__label">Period End
+              <input type="date" value={form.period_end} onChange={e => setForm(f => ({ ...f, period_end: e.target.value }))} className="k-formpanel__input" />
+            </label>
+          </div>
+          <div className="k-formpanel__grid k-formpanel__grid--2">
+            <label className="k-formpanel__label">Target Amount (₹)
+              <input type="number" value={form.target_amount} onChange={e => setForm(f => ({ ...f, target_amount: Number(e.target.value) }))} className="k-formpanel__input" />
+            </label>
+            <label className="k-formpanel__label">Target Deals
+              <input type="number" value={form.target_deals} onChange={e => setForm(f => ({ ...f, target_deals: Number(e.target.value) }))} className="k-formpanel__input" />
+            </label>
+          </div>
+          <div className="k-formpanel__actions">
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving} style={{ fontSize: 13 }}>{saving ? 'Saving…' : 'Save Target'}</button>
+          </div>
+        </form>
+      )}
+
+      {loading ? <Shimmer count={4} /> : targets.length === 0 ? (
+        <Empty title="No targets set" sub="Set sales targets for your team to track performance and achievement." cta="+ Set Target" onCta={() => { setShowForm(true); loadMembers(); }} />
+      ) : (
+        <DataTable columns={['Salesperson', 'Period', { label: 'Target', align: 'right' }, { label: 'Actual', align: 'right' }, 'Achievement', '']}>
+          {targets.map(t => {
+            const pct = t.target_amount > 0 ? Math.round((t.actual_amount || 0) / t.target_amount * 100) : 0;
+            if (editId === t.id) {
+              return (
+                <tr key={t.id}>
+                  <td>{t.salesperson_name || t.salesperson_id}</td>
+                  <td style={{ fontSize: 12 }}>{t.period_start} — {t.period_end}</td>
+                  <Td align="right"><input type="number" value={editForm.target_amount} onChange={e => setEditForm(f => ({ ...f, target_amount: Number(e.target.value) }))} className="k-input" style={{ width: 100 }} /></Td>
+                  <Td align="right" mono>{FMT(t.actual_amount)}</Td>
+                  <td><input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} className="k-input" placeholder="Notes" style={{ width: 100 }} /></td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="k-btn k-btn--primary" style={{ fontSize: 11, marginRight: 4 }} disabled={editSaving} onClick={saveEditTarget}>{editSaving ? '…' : 'Save'}</button>
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => setEditId(null)}>Cancel</button>
+                  </td>
+                </tr>
+              );
+            }
+            return (
+              <tr key={t.id}>
+                <td>{t.salesperson_name || t.salesperson_id}</td>
+                <td style={{ fontSize: 12 }}>{t.period_start} — {t.period_end}</td>
+                <Td align="right" mono>{FMT(t.target_amount)}</Td>
+                <Td align="right" mono>{FMT(t.actual_amount)}</Td>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 80, height: 6, background: 'var(--rule-soft)', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pct >= 100 ? 'var(--ok)' : 'var(--primary)', borderRadius: 3, transition: 'width .4s' }} />
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)', color: pct >= 100 ? 'var(--ok)' : 'var(--ink-2)' }}>{pct}%</span>
+                  </div>
+                </td>
+                <td><button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => startEditTarget(t)}>Edit</button></td>
+              </tr>
+            );
+          })}
+        </DataTable>
+      )}
+    </div>
+  );
+}
