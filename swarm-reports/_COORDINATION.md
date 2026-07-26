@@ -343,11 +343,35 @@ Recorded in `design-handover/_SOURCE-MAP.md`. Highlights:
 - The "no fixed-width centring" owner rule contradicts the reference's own public
   surfaces (`auth.css` centres a 392px card). **Owner rule wins.**
 
-## 8. Known pre-existing test failure — not yours
+## 8. ~~Known pre-existing test failure~~ — RETIRED, IT IS FIXED
 
-`test_ganit.py::test_create_invoice_success` fails identically on clean staging.
-Cause: `conftest.make_pool()` leaves `conn_mock.fetchval` a bare MagicMock. Three agents
-have now confirmed it independently. Do not chase it.
+`test_ganit.py::test_create_invoice_success` used to fail on clean staging
+(`conftest.make_pool()` left `conn_mock.fetchval` a bare MagicMock). Five agents
+confirmed it independently and were told not to chase it.
+
+**A sibling fixed it. The suite is now 526 passed / 0 failed** — verified by me on
+staging's own tree. **If you see a failing test now, it is real. Do not wave it through
+as "the known ganit failure".**
+
+## 8b. `git stash` is DANGEROUS in these worktrees
+
+`refs/stash` is **shared across every worktree in this repo**. Two agents have been bitten:
+one popped another agent's WIP by mistake, and one ran a "compare against clean staging"
+test that silently captured nothing and so compared its branch against itself — the
+conclusion was worthless and looked fine.
+
+Never use `git stash` here. To read a clean copy of a file:
+```
+git checkout origin/staging -- <path>      # or:
+git show origin/staging:<path> > /tmp/clean-copy
+```
+
+## 8c. Never chain a rebase and a push
+
+One agent ran `git rebase && git push origin HEAD:staging`. The rebase stopped on a
+conflict, `HEAD` was detached mid-replay, and the push shipped code **without the tests
+that make it pass** — staging's suite was red until they caught it. Run the rebase, look
+at the result, run the gates, *then* push. Three separate commands, three separate looks.
 
 ## 9. Standing owner rules
 
