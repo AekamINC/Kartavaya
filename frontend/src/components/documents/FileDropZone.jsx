@@ -7,10 +7,12 @@ import { formatBytes, fileExt } from './fileMeta';
  * FileDropZone — one drop target with all five states it can be in.
  *
  * The build had two drop zones before this one and they disagreed on every
- * state: `drawer/DrawerAttachments.jsx` (converted, correct) and
- * `components/TaskEditor.jsx` (still on `#8b5cf6`, `#c4b5fd` and
- * `var(--k-primary-dim, rgba(0,130,198,0.06))`). EsignPage had no drop zone at
- * all — it shipped a bare `<input type="file">`, so the create flow's only
+ * state: `drawer/DrawerAttachments.jsx` (converted, correct) and the one in
+ * `components/TaskEditor.jsx`, which was still on `#8b5cf6`, `#c4b5fd` and
+ * `var(--k-primary-dim, rgba(0,130,198,0.06))`. That file has since been
+ * deleted outright — it had zero importers, so its drop zone was unreachable
+ * code disagreeing with the two that ship. EsignPage had no drop zone at all —
+ * it shipped a bare `<input type="file">`, so the create flow's only
  * affordance was the browser's default button.
  *
  * Two things carried over from the drawer's implementation because they are

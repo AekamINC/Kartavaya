@@ -129,9 +129,14 @@ export default function BulkBar({ ids, columns = [], teamMembers = [], onClear, 
           items={assigneeItems}
         />
 
+        {/* `.inp`, not `.k-input`. The legacy class hard-codes
+            `border-radius: 8px` — 00 §3 forbids a literal radius because it
+            ignores the Sharp/Pill setting — and takes its focus border from
+            `--k-primary`, an alias of `--primary-vivid`, which is a FILL and
+            fails contrast as a 1px ring. `.bulk .inp` sizes it to the bar. */}
         {dueOpen ? (
           <input
-            className="k-input"
+            className="inp"
             type="date"
             aria-label="Set due date"
             autoFocus

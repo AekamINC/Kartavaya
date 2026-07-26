@@ -395,7 +395,9 @@ export default function AppShell() {
             deletion … two 32 KB components editing the same entity is how the
             status-colour drift happened". `NewTaskModal`'s own header names
             this exact call site as its purpose, and it was already the surface
-            `BoardsPage` used, so the two create paths now agree. */}
+            `BoardsPage` used, so the two create paths now agree. The audit is
+            closed: `TaskEditor.jsx` had no importer left once this slot moved,
+            so it was deleted rather than converged. */}
         <NewTaskModal
           open={newTaskOpen}
           onClose={() => setNewTaskOpen(false)}

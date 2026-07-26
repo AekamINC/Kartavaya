@@ -2,11 +2,10 @@
  * File classification and formatting — one implementation.
  *
  * The extension tests were written out a third time in EsignPage's create flow
- * after `drawer/DrawerAttachments.jsx` and `components/TaskEditor.jsx` had each
- * grown their own copy. Three copies of `isImage` is how a `.heic` preview
- * works in the drawer and silently falls through to a generic icon everywhere
- * else. This file is the shared set; the drawer's copy is left alone because
- * `components/drawer/**` belongs to another surface owner (reported, not edited).
+ * after `drawer/DrawerAttachments.jsx` and the now-deleted
+ * `components/TaskEditor.jsx` had each grown their own copy. Three copies of
+ * `isImage` is how a `.heic` preview works in the drawer and silently falls
+ * through to a generic icon everywhere else. This file is the shared set.
  */
 
 export const IMAGE_EXT  = /\.(jpg|jpeg|png|gif|webp|heic|heif|avif|bmp|svg)$/i;

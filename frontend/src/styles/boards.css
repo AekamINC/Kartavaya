@@ -198,6 +198,12 @@
 }
 /* Windows gets no glass — 00 §6. */
 [data-platform="win"] .tbv .tbl__bulk { background: var(--s-low); -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* The due-date field appears in place of its button, in the same flex row as
+   the four `.btn--sm` verbs. `.inp` is `width: 100%` because it is built for a
+   stacked form field, so unconstrained it would push every other action off the
+   bar the moment it opened. 30px is `.btn--sm`'s height — the field replaces a
+   button in that row and must not change the bar's height when it does. */
+.tbl__bulk .inp { width: auto; min-width: 0; height: 30px; padding: 0 10px; font-size: 12.5px; }
 
 /* ── 4 · Filter builder ───────────────────────────────────────────────────
    field → operator → value, one row per clause. */
