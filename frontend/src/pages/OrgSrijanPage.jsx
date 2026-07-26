@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
 import { PageHeader, StatTile } from '../components/editorial';
@@ -36,15 +37,55 @@ function Badge({ status }) {
 
 const TABS = ['skills', 'content', 'generate', 'data catalog', 'data runs', 'credits'];
 
+/**
+ * `?tab=` aliases. The command palette links here as `/hub/org?tab=scrapers`
+ * (`lib/commands.js`) — "scrapers" is the vocabulary of the ROUTER
+ * (`routers/scrapers.py`) and of `20-search-palette.md` §3, while this page
+ * calls the same feature "data catalog". Accepting both keeps the palette
+ * entry honest without renaming a tab users already read.
+ *
+ * Why this map exists at all: `20` §3 records that `srijan` and `scrapers` both
+ * pointed at `/hub/org`, so picking "Data Tools" silently landed on Srijan.
+ * `commands.js` deep-links to fix it — but this page ignored the query string
+ * entirely and defaulted to `skills`, so the fix was inert and the original
+ * defect was still live.
+ */
+const TAB_ALIASES = {
+  scrapers: 'data catalog',
+  'data-catalog': 'data catalog',
+  'data-runs': 'data runs',
+  runs: 'data runs',
+};
+
+function resolveTab(raw) {
+  if (!raw) return null;
+  const key = raw.toLowerCase();
+  const resolved = TAB_ALIASES[key] || key;
+  return TABS.includes(resolved) ? resolved : null;
+}
+
 export default function OrgSrijanPage() {
   const { pushToast } = useToast();
   const me = currentUser();
-  const [tab, setTab] = useState('skills');
+  const [params, setParams] = useSearchParams();
+  // Read once for the initial value: after mount the tab buttons own the
+  // state, so a later param change must not yank the user off the tab they
+  // just clicked. An unknown or absent value falls back to `skills`.
+  const [tab, setTab] = useState(() => resolveTab(params.get('tab')) || 'skills');
   const [loading, setLoading] = useState(true);
   const [credits, setCredits] = useState(null);
   const [pendingRunId, setPendingRunId] = useState(null);
 
   useEffect(() => { loadCredits(); }, []);
+
+  /* Keep the URL truthful so the tab stays shareable and survives a refresh.
+     `replace` rather than push: six tabs behind a Back button that only undoes
+     tab clicks is not history anyone wants. Same idiom as
+     CustomizeSettingsPage.jsx:50, which solves the identical problem. */
+  const selectTab = useCallback((t) => {
+    setTab(t);
+    setParams(t === 'skills' ? {} : { tab: t }, { replace: true });
+  }, [setParams]);
 
   async function loadCredits() {
     try {
@@ -72,7 +113,7 @@ export default function OrgSrijanPage() {
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)', overflowX: 'auto' }}>
         {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)}
+          <button key={t} onClick={() => selectTab(t)}
             style={{ padding: '8px 16px', fontSize: 13, fontWeight: tab === t ? 700 : 400,
               color: tab === t ? 'var(--k-primary)' : 'var(--ink-3)',
               borderBottom: tab === t ? '2px solid var(--k-primary)' : '2px solid transparent',
@@ -85,7 +126,7 @@ export default function OrgSrijanPage() {
       {tab === 'skills' && <SkillsTab onCreditsChange={loadCredits} />}
       {tab === 'content' && <ContentTab />}
       {tab === 'generate' && <GenerateTab credits={credits} onCreditsChange={loadCredits} />}
-      {tab === 'data catalog' && <DataCatalogTab onViewResult={id => { setPendingRunId(id); setTab('data runs'); }} />}
+      {tab === 'data catalog' && <DataCatalogTab onViewResult={id => { setPendingRunId(id); selectTab('data runs'); }} />}
       {tab === 'data runs' && <DataRunsTab initialRunId={pendingRunId} onConsumeInitial={() => setPendingRunId(null)} />}
       {tab === 'credits' && <CreditsTab credits={credits} />}
     </div>
