@@ -12,6 +12,7 @@ import TodayScreen       from '../screens/TodayScreen';
 import TasksScreen       from '../screens/TasksScreen';
 import MessagesScreen    from '../screens/MessagesScreen';
 import MoreScreen        from '../screens/MoreScreen';
+import ClockScreen       from '../screens/pahchan/ClockScreen';
 import SettingsScreen    from '../screens/SettingsScreen';
 import InboxScreen       from '../screens/InboxScreen';
 import MeScreen          from '../screens/MeScreen';
@@ -31,6 +32,9 @@ export type RootStackParamList = {
   Board:        { projectId?: string; projectName?: string } | undefined;
   Inbox:        undefined;
   Settings:     undefined;
+  // Reachable from the full shell's More tab as well as being the whole app for
+  // an attendance-only user, so it is a stack screen in both cases.
+  Clock:        undefined;
   Login:        undefined;
   Client:       undefined;
 };
@@ -124,10 +128,10 @@ function PahchanTabs() {
       screenOptions={{ headerShown: false }}
       tabBar={(props) => <BottomBar {...props} />}
     >
-      {/* Clock points at Today until PahchanScreen lands. The shell and its
-          role selection are the structural half and ship first; the capture
-          screen needs expo-camera, which is not yet a dependency. */}
-      <PahchanTab.Screen name="Clock" component={TodayScreen} />
+      {/* Clock is the attendance-only user's whole app: 07 §9. 
+          Me is not a reduced Settings — it carries their own reference pair,
+          their register, and the retention promise in plain words. */}
+      <PahchanTab.Screen name="Clock" component={ClockScreen} />
       <PahchanTab.Screen name="Me"    component={MeScreen} />
     </PahchanTab.Navigator>
   );
@@ -184,6 +188,7 @@ export default function RootStack() {
             {/* Inbox lost its tab to Messages and is reached from More. It stays
                 a stack screen so its deep link and its badge still work. */}
             <Stack.Screen name="Inbox"     component={InboxScreen} />
+            <Stack.Screen name="Clock"     component={ClockScreen} />
             <Stack.Screen name="Settings"  component={SettingsScreen} />
           </>
         )}

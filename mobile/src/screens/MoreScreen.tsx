@@ -44,7 +44,7 @@ const WORK: Dest[] = [
 ];
 
 const MODULES: Dest[] = [
-  { key: 'pahchan', en: 'Attendance', hi: 'पहचान',  icon: 'finger-print-outline', note: 'Clock in and out arrives with Pahchan v1.' },
+  { key: 'pahchan', en: 'Attendance', hi: 'पहचान',  icon: 'finger-print-outline', route: 'Clock' },
   { key: 'graha',   en: 'CRM',        hi: 'ग्राहक',  icon: 'people-outline',       note: 'Read-only on mobile. Full CRM is on the web.' },
   { key: 'ganit',   en: 'Invoicing',  hi: 'गणित',    icon: 'receipt-outline',      note: 'Shows what is outstanding. Raising an invoice is desktop-only.' },
   { key: 'manav',   en: 'HR',         hi: 'मानव',    icon: 'id-card-outline',      note: 'Leave and holidays. Employee records are desktop-only.' },

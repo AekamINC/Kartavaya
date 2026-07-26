@@ -14,6 +14,7 @@ import { AuthProvider } from './hooks/useAuth';
 import { queryClient, persister, setupQueryPersistence } from './offline/queryClient';
 import { useFonts } from './theme/fonts';
 import { flushQueue, getQueueCount, clearQueue, friendlyFlushError } from './offline/mutationQueue';
+import { flushPunches, getPunchCount } from './offline/punchQueue';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import { NotificationProvider } from './context/NotificationContext';
 import { NotificationBannerContainer } from './components/NotificationBanner';
@@ -101,16 +102,45 @@ function InnerApp() {
 
   const doFlush = useCallback(async () => {
     const count = getQueueCount();
-    if (count === 0) { setBanner(null); return; }
+    const punchCount = getPunchCount();
+    // Both queues, or the early return silently strands attendance: a device with
+    // no pending edits but three unsent punches would never flush them.
+    if (count === 0 && punchCount === 0) { setBanner(null); return; }
 
-    setBanner({
-      message:  `Syncing ${count} offline change${count === 1 ? '' : 's'}…`,
-      kind:     'syncing',
-      canRetry: false,
-      canClear: false,
-    });
+    if (count > 0 || punchCount > 0) {
+      const parts: string[] = [];
+      if (punchCount > 0) parts.push(`${punchCount} clock-in${punchCount === 1 ? '' : 's'}`);
+      if (count > 0) parts.push(`${count} change${count === 1 ? '' : 's'}`);
+      setBanner({
+        message:  `Syncing ${parts.join(' and ')}…`,
+        kind:     'syncing',
+        canRetry: false,
+        canClear: false,
+      });
+    }
 
-    const result = await flushQueue();
+    const result = count > 0
+      ? await flushQueue()
+      : { failed: [] as Awaited<ReturnType<typeof flushQueue>>['failed'] };
+
+    // Punches replay from their own queue, separately and unconditionally.
+    // 17: "A dropped punch is an unpaid day" — so a failure in the mutation
+    // queue must not skip attendance, and vice versa. Failures here are carried
+    // forward rather than surfaced as errors, because the punch is not lost;
+    // expiry is the only thing worth interrupting someone about.
+    const punchResult = await flushPunches();
+    if (punchResult.expired.length > 0) {
+      // A punch that aged out past 72 hours cannot be recovered by retrying, and
+      // only the employee knows it happened. They have to raise a regularisation,
+      // so this is the one queue outcome that gets a persistent, blocking notice.
+      Alert.alert(
+        'A clock-in could not be sent',
+        `${punchResult.expired.length} punch${punchResult.expired.length === 1 ? '' : 'es'} `
+        + 'stayed unsent for more than 72 hours and can no longer be submitted. '
+        + 'Ask your manager to add the time manually.',
+        [{ text: 'Understood' }],
+      );
+    }
 
     if (result.failed.length > 0) {
       const permanent = result.failed.filter(f => f.permanent);
@@ -167,13 +197,25 @@ function InnerApp() {
       if (online) {
         await doFlush();
       } else {
+        // 17: "The offline banner must state which mutations are queued, not just
+        // that the device is offline. '3 changes waiting to sync' is actionable;
+        // a grey cloud is not." Punches are counted separately and named
+        // separately — a queued clock-in is the one item where the employee needs
+        // to know it is still pending, because their pay depends on it arriving.
         const queued = getQueueCount();
+        const punches = getPunchCount();
+        const parts: string[] = [];
+        if (punches > 0) parts.push(`${punches} clock-in${punches === 1 ? '' : 's'}`);
+        if (queued > 0) parts.push(`${queued} change${queued === 1 ? '' : 's'}`);
         setBanner({
-          message:  queued > 0
-            ? `You're offline — ${queued} change${queued === 1 ? '' : 's'} queued.`
+          message: parts.length
+            ? `You're offline — ${parts.join(' and ')} waiting to sync.`
             : "You're offline — changes will sync when reconnected.",
           kind:     'info',
           canRetry: false,
+          // Discarding must never offer to throw away a punch. canClear drives
+          // clearQueue(), which only touches the mutation queue, so it is offered
+          // on changes alone.
           canClear: queued > 0,
         });
       }
