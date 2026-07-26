@@ -1705,6 +1705,28 @@ class SwapCreate(BaseModel):
 @router.post("/swaps")
 async def create_swap(body: SwapCreate, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
+    # Asking to give away YOUR OWN shift is self-service, so it is reachable at
+    # self scope — but only for a shift that is actually yours. Offering someone
+    # else's shift is rostering, which is the editor's job.
+    #
+    # The schedule must also be in this org. Without that check a uuid from
+    # another tenant could be attached to a row here, and `GET /swaps` joins
+    # through it and would print that tenant's employee name.
+    sched = await pool.fetchrow(
+        "SELECT s.id, e.user_id FROM staging.manav_schedules s "
+        "JOIN staging.manav_employees e ON e.id = s.employee_id "
+        "WHERE s.id=$1::uuid AND s.org_id=$2::uuid",
+        body.requester_schedule_id, org_id,
+    )
+    if not sched:
+        raise HTTPException(404, "Schedule not found")
+    if sched["user_id"] != user["user_id"]:
+        _require(levels, EDITOR)
+    if body.target_employee_id and not await pool.fetchval(
+        "SELECT 1 FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+        body.target_employee_id, org_id,
+    ):
+        raise HTTPException(404, "Employee not found")
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_swap_requests "
         "(org_id, requester_schedule_id, target_employee_id, reason) "
@@ -2364,6 +2386,14 @@ async def employee_assets(
     levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Every other asset route requires viewer because the rows name the employee
+    # they are issued to. This one takes the employee id in the path, so without
+    # a filter it is the same disclosure with an extra step. Own kit at self
+    # scope, anybody else's needs viewer.
+    if not _can(levels, VIEWER):
+        own = await _own_employee_id(pool, user, org_id)
+        if not own or str(employee_id) != own:
+            raise HTTPException(403, "You can only view your own assets")
     rows = await pool.fetch(
         "SELECT * FROM staging.manav_assets "
         "WHERE org_id=$1::uuid AND assigned_to=$2::uuid AND is_active=TRUE ORDER BY assigned_date DESC",
