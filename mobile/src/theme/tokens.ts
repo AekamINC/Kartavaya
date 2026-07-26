@@ -1,3 +1,6 @@
+import { lightPalette, darkPalette } from './palette.generated';
+import type { GeneratedTokenName } from './palette.generated';
+
 export type ColorScheme = 'light' | 'dark';
 
 const brand = {
@@ -9,96 +12,98 @@ const brand = {
   mid:      '#04837A',
 };
 
-const light = {
+/**
+ * The palette is DERIVED, not transcribed.
+ *
+ * 17-mobile-app.md is emphatic about why: React Native has no CSS custom
+ * properties, so this file must hold literals, which makes it the one place in
+ * the system that cannot alias and therefore the one guaranteed to go stale. It
+ * did, twice. Values now come from `palette.generated.ts`, produced by
+ * `npm run tokens` from the web stylesheets, with every var() alias resolved.
+ *
+ * Only the MAPPING is by hand, because the mobile API predates the CSS names and
+ * twenty files consume it: `success` is `--ok`, `approval` is `--warn`, `error`
+ * is `--danger`. Renaming a CSS token now breaks this map at compile time
+ * instead of leaving a colour quietly undefined.
+ *
+ * Generating it immediately caught real drift: dark `bg` was #101311 here while
+ * the stylesheets had moved to #0C0E11, and the dark surface ramp had diverged
+ * at every step.
+ */
+// `p` is typed as a record of plain strings rather than `typeof lightPalette`
+// on purpose. The generated file is `as const`, so its values are literal string
+// types; letting those propagate makes every token here a one- or two-member
+// union, and `colors.surfaceLow = colors.errorBg` then fails to compile for
+// being the wrong literal rather than the wrong colour. The key names stay
+// checked — GeneratedTokenName is the union of what the generator emitted, so a
+// renamed CSS token still breaks this map at compile time.
+const mapPalette = (p: Record<GeneratedTokenName, string>) => ({
   // Surfaces
-  bg:             '#F3EFE6',
-  surface:        '#FAF7F0',
-  surfaceLow:     '#F5F1E7',
-  surfaceHigh:    '#E7E1D1',
-  // M3 surface levels
-  surface1: '#FAF7F0',
-  surface2: '#F5F1E7',
-  surface3: '#EEE9DC',
-  surface4: '#E7E1D1',
-  surface5: '#DFD8C5',
-  // M3 secondary / tertiary / purple
-  secondaryContainer:   '#E1E7D4',
-  onSecondaryContainer: '#1A2013',
-  tertiaryContainer:    '#FFDCC3',
-  onTertiaryContainer:  '#301A07',
-  purpleContainer:      '#EDE7F6',
-  purple:               '#7C3AED',
-  // iOS translucent tab bar background
-  tabBg: 'rgba(250,247,240,0.78)',
+  bg:         p.bg,
+  surface:    p.surface,
+  surfaceLow: p.sLow,
+  surfaceHigh: p.sHigh,
+  // M3 surface levels — the --s-* ramp, lowest to highest
+  surface1: p.surface,
+  surface2: p.sLow,
+  surface3: p.sContainer,
+  surface4: p.sHigh,
+  surface5: p.sHighest,
+  // M3 secondary / tertiary
+  secondaryContainer:   p.secondaryContainer,
+  onSecondaryContainer: p.onSecondaryContainer,
+  tertiaryContainer:    p.tertiaryContainer,
+  onTertiaryContainer:  p.onTertiaryContainer,
   // Text
-  onSurface:      '#1B1D1A',
-  onSurfaceVar:   '#4A4E48',
-  onSurfaceVar2:  '#666A61',
-  onSurfaceFaint: '#9DA096',
-  // Shorthand aliases
-  ink:   '#1B1D1A',
-  ink2:  '#4A4E48',
-  ink3:  '#666A61',
-  ink4:  '#9DA096',
-  // Primary (M3 teal)
-  primary:          '#04837A',
-  primaryContainer: '#B4F1E8',
-  onPrimary:        '#FFFFFF',
-  onPrimaryContainer: '#00201D',
-  // Accents
-  approval:       '#955806',
-  approvalBg:     '#FBE3BE',
-  error:          '#B42318',
-  errorBg:        '#FBDAD5',
-  success:        '#14743A',
-  successBg:      '#C6EFD2',
+  onSurface:      p.onSurface,
+  onSurfaceVar:   p.onSurface2,
+  onSurfaceVar2:  p.onSurface3,
+  onSurfaceFaint: p.onSurfaceFaint,
+  // Shorthand aliases, same values
+  ink:  p.onSurface,
+  ink2: p.onSurface2,
+  ink3: p.onSurface3,
+  ink4: p.onSurfaceFaint,
+  // Primary. `primaryText` is the one to use for TEXT — `primary` is 4.04:1 on
+  // the light canvas and is a fill (00 §7). `primaryHover` reverses direction by
+  // theme, so never derive a pressed state by subtracting luminance.
+  primary:            p.primary,
+  primaryText:        p.primaryText,
+  primaryHover:       p.primaryHover,
+  primaryContainer:   p.primaryContainer,
+  onPrimary:          p.onPrimary,
+  onPrimaryContainer: p.onPrimaryContainer,
+  // Accents. Mobile names on the left predate the CSS names on the right.
+  approval:   p.warn,
+  approvalBg: p.warnContainer,
+  error:      p.danger,
+  errorBg:    p.dangerContainer,
+  success:    p.ok,
+  successBg:  p.okContainer,
+  // `purple` was a local invention for the waiting-on-client approval state.
+  // --ap-pending-client is the token that actually means that, and 00 §9 keeps
+  // it a different hue from --ap-pending on purpose: "waiting on us" versus
+  // "waiting on the client" is the distinction the approval flow exists for.
+  purple:          p.apPendingClient,
+  purpleContainer: p.tertiaryContainer,
   // Borders
-  outline:        '#ADA692',
-  outlineVar:     '#D8D1BE',
+  outline:    p.outline,
+  outlineVar: p.outlineVariant,
+});
+
+const light = {
+  ...mapPalette(lightPalette),
+  // iOS translucent tab bar. Stays hand-written: RN needs a literal rgba and
+  // there is no CSS token for a blurred bar, which is a platform affordance the
+  // web does not have.
+  tabBg: 'rgba(250,247,240,0.78)',
   // Brand (same both themes for CTAs)
   ...brand,
 };
 
 const dark = {
-  bg:             '#101311',
-  surface:        '#171A18',
-  surfaceLow:     '#131614',
-  surfaceHigh:    '#242A27',
-  // M3 surface levels
-  surface1: '#171A18',
-  surface2: '#131614',
-  surface3: '#1D2229',
-  surface4: '#242A27',
-  surface5: '#2A312D',
-  // M3 secondary / tertiary / purple
-  secondaryContainer:   '#434A36',
-  onSecondaryContainer: '#DFE7CB',
-  tertiaryContainer:    '#6A3F1A',
-  onTertiaryContainer:  '#FFDCC3',
-  purpleContainer:      '#2D1B52',
-  purple:               '#A78BFA',
-  // iOS translucent tab bar background
-  tabBg: 'rgba(23,26,24,0.78)',
-  onSurface:      '#E8E6DF',
-  onSurfaceVar:   '#BFC2B8',
-  onSurfaceVar2:  '#94988D',
-  onSurfaceFaint: '#6B6F66',
-  ink:   '#E8E6DF',
-  ink2:  '#BFC2B8',
-  ink3:  '#94988D',
-  ink4:  '#6B6F66',
-  primary:          '#05b7aa',
-  primaryContainer: '#00514B',
-  onPrimary:        '#00201D',
-  onPrimaryContainer: '#74F5E8',
-  approval:       '#E8B45C',
-  approvalBg:     '#4A3312',
-  error:          '#F2867A',
-  errorBg:        '#55201B',
-  success:        '#5BD98A',
-  successBg:      '#14432A',
-  outline:        '#6B6F66',
-  outlineVar:     '#3A403B',
+  ...mapPalette(darkPalette),
+  tabBg: 'rgba(18,21,26,0.78)',
   ...brand,
 };
 
