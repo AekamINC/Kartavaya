@@ -270,12 +270,12 @@ Six live rules land below 4.5:1 at 9.5–11px, all in light mode:
 
 | rule | file:line | measured |
 |---|---|---|
-| `.k-apcard__kind--creative` | `editorial.css:1820` | **4.13** |
-| `.k-actitem__verb--attached` | `editorial.css:1904` | **4.13** |
-| `.k-rule__status--off` | `editorial.css:1935` | **4.15** |
-| `.k-actitem__verb--assigned` | `editorial.css:1906` | **4.20** |
-| `.k-actitem__verb--approved` | `editorial.css:1903` | **4.21** |
-| `.k-rule__status--on` | `editorial.css:1934` | **4.33** |
+| `.k-apcard__kind--creative` | `editorial.css:1900` | **4.13** |
+| `.k-actitem__verb--attached` | `editorial.css:1984` | **4.13** |
+| `.k-rule__status--off` | `editorial.css:2022` | **4.15** |
+| `.k-actitem__verb--assigned` | `editorial.css:1986` | **4.20** |
+| `.k-actitem__verb--approved` | `editorial.css:1983` | **4.21** |
+| `.k-rule__status--on` | `editorial.css:2014` | **4.33** |
 
 Live in `AutomationsPage.jsx`, `TasksListPage.jsx`, `ModuleUI.jsx`.
 `--danger` and `--primary-text` survive at 4.57 and 4.55 — a 0.05 margin, so
@@ -302,10 +302,10 @@ the system, and inventing one mid-swarm in the most-edited file in the repo is
 how merge conflicts get made. All numbers needed to land it are above.
 
 **SPEC-A11Y-3 — `.k-pill-*` / `.k-role-*` in `brand.css` pair a hardcoded
-light background with a theme-flipping foreground.** `brand.css:114`
+light background with a theme-flipping foreground.** `brand.css:121`
 `.k-pill-high { background: #fff0f0; color: var(--k-danger) }`. `--k-danger` is
 `#c0392b` in `brand.css:39` but is REDECLARED as `var(--danger)` in
-`kartavaya-design.css:459`, so in dark it resolves to `#F2867A` on a hardcoded
+`kartavaya-design.css:487`, so in dark it resolves to `#F2867A` on a hardcoded
 near-white: **2.24:1**. Light is 4.91:1 — passes, barely.
 **These classes are dead**: `k-pill-high|k-pill-medium|k-pill-low|k-pill-done|k-role-owner|k-role-admin`
 match zero `.jsx`/`.js` files; the only hit in the tree is `brand.css` itself.
@@ -337,4 +337,259 @@ body-text threshold applies:
 | `#3E5C8A` | 6.77:1 | AA |
 
 The docblock claim at `Avatar.jsx:10-11` is **accurate**. Verified, not assumed.
+
+### 2g · Defects that landed DURING this run, found by re-measuring after rebase
+
+Both arrived in stylesheets between my first pass and my rebase onto staging,
+and both are the same bug: a fixed colour paired with a token that flips.
+Recorded partly as evidence the script earns its keep — neither was visible to
+any existing gate. Both fixed.
+
+| Rule | Was | Measured | Now |
+|---|---|---|---|
+| `.bc__tick.on`, `.bc__tick:hover` `boards.css:190-191` | `#fff` on `var(--ok)` | 5.85 light, **1.79 dark** | `var(--on-ok)` — 5.85 / **7.75** |
+| `.trp__task` `editorial.css:3241`, `.trp__ref` `:3247` | `var(--k-primary)` as 11–13px text | **2.19** on `--bg`, **2.35** on `--surface` | `var(--primary-text)` — 5.56 / 11.06 |
+
+**`--on-ok` is a new token** completing a pattern the system already documents
+for `--on-danger`: *"--danger itself is a FILL … and inverts hard between
+themes — #B42318 takes white, #F2867A takes near-black."* `--ok` is the
+identical case, missed only because `--ok` as a fill is rarer. Declared in both
+themes (`kartavaya-design.css:225` light `#FFFFFF`, `:296` dark `#06341A`) and
+added to the measured on-pairs so the pair cannot drift apart unnoticed.
+
+**`--primary-vivid` at 2.19:1 is the sharpest single number in this report.**
+It is a fixed brand literal that does not flip, reached as `color:` through the
+`--k-primary` alias. It is *correct* at every other call site — `auth.css:89`,
+`auth.css:132` and `editorial.css:177/255/276` all paint it on the near-black
+sidebar or auth brand panel, where it is the only teal that reads, and
+`auth.css:128-131` documents that choice explicitly. The two time-report table
+cells were the only ones on a page surface. It is now in the measured foreground
+set so a third cannot appear silently.
+
+---
+
+## 3 · `lang` — the Devanagari / screen-reader half
+
+`PageHeader` **is fixed** — `lang="hi"` at `PageHeader.jsx:61`, with a docblock
+enumerating why none of the 53 values is Sanskrit. Claim confirmed stale.
+
+I then checked every other `lang=` in the tree. Five `lang="sa"` remain and
+**four are correct**: `Citation.jsx:9` plus the Gītā verses at
+`ReportsPage.jsx:758` and `TimeReportPage.jsx:322` are genuine Sanskrit (note
+the visarga in `कालः`), and `CustomizeSettingsPage.jsx:58` is the यथारुचि
+epigraph.
+
+**One was wrong, and it is the same defect class the PageHeader sweep was
+about.** `Footer.jsx` wrapped `कर्तव्य — that which must be done` in a single
+`lang="sa"` span, handing the English gloss to a screen reader's Sanskrit voice.
+`CustomizeSettingsPage` already had the right shape — Devanagari inside the
+span, English outside — so the fix follows an existing pattern rather than
+inventing one. Fixed.
+
+## 4 · Segmented control — the standard won everywhere
+
+Confirmed stale, exhaustively rather than by sampling. **All six**
+`role="radio"` components carry `aria-checked` and **none** carries
+`aria-selected`: `Seg.jsx:51-52`, `AccentGrid.jsx:26-27`, `FontList.jsx:22-23`,
+`SidebarBgCards.jsx:27-28`, `SoundGrid.jsx:36-37`, `Radio.jsx:14-15`.
+`Seg.jsx:17-19` records the reasoning.
+
+Every `aria-selected` in the tree sits on a role that permits it —
+`role="option"` (`CommandPalette.jsx:428`, `MentionTextarea.jsx:148`,
+`Picker.jsx:93`) or `role="tab"` (`ModuleTabs.jsx:24`, `Tabs.jsx:63`).
+
+## 5 · Focus traps — every dialog, and which I verified
+
+`FocusTrap.jsx`, `SkipLink.jsx` and `useRestoreFocus.js` all exist. The
+implementation is careful: it captures the trigger *before* moving focus,
+rebuilds the focusable list on every keypress filtered on `offsetParent`, uses
+`preventScroll`, and checks `isConnected` before restoring — with a
+`[data-focus-fallback]` / `<main>` landing for the destructive case where the
+trigger itself unmounted.
+
+| Overlay | Trap | Status |
+|---|---|---|
+| `modal.jsx:57` | `active={open}` | pre-existing |
+| `ConfirmDialog.jsx:82` | `initialFocus={cancelRef}`, `role="alertdialog"` | pre-existing |
+| `Sheet.jsx:53` | `active={open}` | pre-existing |
+| `TaskDrawer.jsx:630` | `active` | pre-existing |
+| `CommandPalette.jsx:350` | `initialFocus={inputRef}` | pre-existing |
+| `KeyboardShortcuts.jsx:61` | `active` | pre-existing |
+| `MobileDrawer.jsx:31` | wraps panel, not scrim | pre-existing |
+| `SlideOver.jsx:40` (admin) | `active={open}` | pre-existing |
+| **`NewTaskModal.jsx:383`** | `active` | **ADDED — was a documented gap** |
+| **`DrawerAttachments.jsx:139`** | `initialFocus={closeRef}` | **ADDED** |
+
+`NewTaskModal` is the product's primary create surface — AppShell's `n`, the
+mobile FAB, the command palette and three board pages all open it — and its own
+comment had recorded the missing trap as a known gap. Its preview lightbox stays
+**outside** the trap deliberately: it portals to `document.body`, so it is not a
+DOM descendant of the panel, and a trap here would rebuild its focusable list
+from a subtree the lightbox is not in.
+
+`DrawerAttachments`' lightbox declared `aria-modal="true"` — telling a screen
+reader the rest of the page was inert — while Tab walked out into the drawer
+behind it, which is itself trapped, landing focus in a second modal layer with
+no way back. It also used `autoFocus`, which fires on mount only (so previewing
+a second file within one mount left focus where it was) and gives no focus
+*restore*, dropping a keyboard user at the top of the document on close.
+
+**Non-modal `role="dialog"` panels, correctly left untrapped:**
+`NotificationsModal.jsx:99` (no `aria-modal`), `Picker.jsx:87` and
+`Popover.jsx:68` — dismissible popovers with their own key handling, where
+trapping Tab would be the wrong behaviour.
+
+**Stale:** `ApprovalsPage.jsx:343`'s comment describes a bare fixed div with no
+trap, no Escape and no `role`. It now renders `<Modal>`, which traps. The
+comment is history, not a live defect.
+
+## 6 · Touch targets — `scripts/check-touch-targets.mjs` (new)
+
+The existing block in `mobile-responsive.css` is careful and measured, but it is
+a **hand-maintained list of selectors** — the only thing keeping it complete was
+somebody remembering. The script replays the mobile cascade and finds what
+nobody remembered. Seven controls were under 44px with nothing raising them:
+
+| Control | Declared | Strategy |
+|---|---|---|
+| `.cbx` `components.css:726` | 17×17 | pseudo-element overlay |
+| `.rdo` `components.css:737` | 17×17 | pseudo-element overlay |
+| `.tgl` `components.css:713` | 38×22 | pseudo-element overlay |
+| `.k-onboard__iconbtn` | 24×24 | real size |
+| `.svbtn` | 26×26 | real size |
+| `.k-file__more` | 30×30 | real size |
+| `.cmp__send` | 36×36 | real size |
+
+`.cbx` and `.rdo` at 17px fail even WCAG **2.5.8**'s 24×24 Level-AA floor, not
+merely the spec's 44px.
+
+**Two strategies, chosen per control, because they fail in opposite
+directions.** Real size where the control stands alone in its row — growing it
+moves nothing that matters. Overlay where the visual size carries meaning and
+the neighbour is text: a 44px checkbox beside a 13px label is not a checkbox any
+more. The overlay is a child of the control, so a tap on it still activates the
+control, and it overlaps only the label, where stealing the tap is the behaviour
+you want anyway.
+
+`.k-onboard__iconbtn` deliberately does **not** get an overlay: its row is
+`gap: 2px`, so two 24px buttons expanded to 44px would overlap by 18px and steal
+each other's taps — trading a small-target failure for an ambiguous-target one.
+
+**One finding verified as a non-issue and recorded in the script so nobody
+re-investigates:** `.side--rail .side__toggle` (32px) is unreachable on mobile
+because `editorial.css:89` `@media (max-width: 1023px) { .kv__side { display: none } }`
+removes the whole sidebar and swaps in `.kv__mobbar` + `MobileDrawer`.
+
+## 7 · Responsive and fluid layout
+
+**Verified present:** `viewport-fit=cover` (`index.html:5`, required for
+`env(safe-area-inset-*)` to resolve); the 16px input floor gated on
+`(max-width: 767px), (hover: none) and (pointer: coarse)` — the pointer clause
+matters, an iPhone 15 Pro Max in landscape is 932px CSS and still zooms a 13px
+field; and hover-only actions given persistent fallbacks under
+`@media (hover: none)`.
+
+**No live fixed-width centring on a product page.** Every `margin: 0 auto` in
+the tree is one of: empty-state copy (`.k-empty__sub`, `.mempty`, `.k-err`, and
+~20 inline `maxWidth: 300` empty states — all legitimately centred *within* an
+already-centred empty state), a `margin-left: auto` flex push, dead legacy CSS,
+or the marketing landing wrapper. `client.css:28-35` records the owner's rule
+overriding the handover's `.cl-main{max-width:1040px;margin:0 auto}`.
+`settings.css:7` `.st { max-width: 920px }` caps width but does **not** centre,
+and its stated reason — a settings row stretched to 1600px separates label from
+control until the pair stops reading as a pair — is a legibility argument.
+
+**Dead, so harmless, but worth knowing before anyone revives it:**
+`layout.css` `.content-wrapper` (+ `--dashboard` / `--list` / `--form`) sets
+`margin: 0 auto` with `max-width` up to 1800px. It, `.split-layout`,
+`.layout-main`, `.grid-2/3/4` and `.card-grid` match **zero** `.jsx` files.
+
+**SPEC-A11Y-4 — the breakpoint count.** `15-mobile-web.md:18` says *"Three, not
+five. Every additional breakpoint is another combination nobody tests."* The
+build has **16** distinct width breakpoints: 560, 600, 640, 719, 720, 767, 768,
+860, 900, 1023, 1024, 1080, 1100, 1280, 1400, plus compound queries. Two are
+off-by-one pairs against the spec's own lines (`719`/`720` beside `767`;
+`1024` beside `1023`), and **`max-width: 768px` overlaps `min-width: 768px`** —
+at exactly 768px CSS, which is iPad portrait, both match. Not fixed here: a
+layout-wide change across seven files that would collide with most of the fleet.
+Listed so it can be done once, deliberately.
+
+## 8 · Motion
+
+**Resolved:** four spinners had three behaviours under reduced motion.
+`animations.css:302-322` sets the policy and argues it — a loading indicator is
+*functional* motion, freezing it removes the only feedback a slow request has
+and reads as a hung UI — and `.spin`, `.gr__spin` and `.prg--ind .prg__f` all
+follow it. `.k-spinner` alone set `animation: none`. Removed; the policy is now
+uniform and stated where the exception used to be.
+
+**The trap, recorded in the rule itself:** `.k-spinner`'s `.7s` is deliberately
+NOT routed through `--ix`. `16-animations.md:44` gives
+`animation: dmSpin calc(.7s * var(--ix)) linear infinite` as its worked example
+while the same file sets `--ix: .001` under reduce — a **0.7ms** spinner, the
+500–1250Hz strobe measured and removed elsewhere in this run. **The spec
+mandates the bug.** Do not "correct" the build toward it.
+
+**`AutomationsPage.jsx:374`** carried `style={{ animation: 'spin 1s linear
+infinite' }}` on a hand-rolled SVG. An inline style is invisible to every
+stylesheet rule, reduced-motion block included, so this was the one infinite
+loop in the build that no CSS could govern — and it duplicated a spinner the
+design system already owns. Now `<span className="spin" aria-hidden="true" />`.
+
+**Verified after:** no infinite animation multiplies its duration by `--ix` or
+`--motion-scale` anywhere in `src/styles`, and the shortest infinite duration in
+the build is **640ms**.
+
+**STALE:** `@keyframes dmPop` is declared **once**, at `components.css:493`.
+`drawer.css` does not declare it, and `animations.css:21` documents deliberately
+not re-declaring it to avoid exactly that collision.
+
+---
+
+## 9 · What I did NOT fix, and why
+
+Each is a real measured defect left deliberately, with the numbers needed to
+land it.
+
+1. **SPEC-A11Y-1 `--outline`** — fails 1.4.11 on 11 of 12 surface/theme
+   combinations. A system-wide token; changing its luminance is a whole-app
+   visual diff and the likeliest edit in this report to collide. Targets that
+   clear 3:1 on the worst surface: light ≈ `#78725F`, dark ≈ `#7E8590`.
+2. **SPEC-A11Y-3, the remaining five tinted chips** — needs a token decision
+   (`--st-in-review` is a violet with no `on-` counterpart), in the most-edited
+   file in the repo. Remedies measured in §2d.
+3. **SPEC-A11Y-4 breakpoints** — 16 where the spec says 3, with a real overlap
+   at iPad portrait. Seven files.
+4. **`brand.css` `.k-pill-*` / `.k-role-*`** — 2.24:1 in dark, but the classes
+   match zero `.jsx`. Deleting dead legacy CSS is another agent's sweep.
+5. **`.av` fallback** — `var(--av-bg, var(--s-high))` is 1.31:1 if `--av-bg` is
+   ever unset. `Avatar.jsx:29` and `MemberTable.jsx:87` always set it, so it is
+   latent, not live.
+
+## 10 · The bugs in my own instruments
+
+Recorded because a checker that lies is worse than none, and each was caught by
+disagreeing with something already known.
+
+1. **Selector lists.** `:root, [data-theme="light"]` applies in **both** themes,
+   because `:root` matches regardless of the attribute. Reading it as light-only
+   manufactured 9 parity failures against healthy tokens (`--st-done` and
+   friends, which alias `--ok`/`--warn`/`--danger` and flip with them).
+2. **Line numbers.** Comments were collapsed to a single space before parsing,
+   shifting every line number after them. Now blanked in place, preserving
+   newlines. Every citation here was re-opened after the rebase.
+3. **Backdrops.** Translucent backgrounds were first skipped entirely (missing
+   the whole tinted-chip family), then composited over `--bg` — which flagged 14
+   sidebar rules at ~1.1:1. The sidebar is an *inverted* surface; white-on-white
+   is only a failure if you think the ground is cream. Now per-region, with an
+   explicit `SKIP` where the ground genuinely is not knowable.
+4. **Over-broad matching** in the touch-target script: its first regex matched
+   any selector containing `dot`, `act`, `x` or `item` and produced 112
+   findings, nearly all decoration — a 6px `.k-statuschip__dot` is a dot
+   *inside* a tap target, not one. Tightened to 15, then to 7 real ones.
+
+**And one wrong verdict in this report**, corrected in §1a: I recorded the
+`--on-surface-disabled` workarounds as "already migrated" on the strength of a
+grep instead of opening the two files named. Both were still there. The brief
+was right and I was not.
 
