@@ -14,7 +14,8 @@ from pydantic import BaseModel, EmailStr
 from db import get_pool
 from middleware.roles import require_platform_role
 from middleware.role_tiers import (
-    GOD_MODE_ROLES, MANAGER_ROLES, STAFF_ROLES,
+    ALL_PLATFORM_ROLES, GOD_MODE_ROLES, MANAGER_ROLES, STAFF_ROLES,
+    SUPERUSER_ONLY_ROLES, strongest,
 )
 
 # Who may open the platform console. Reaching the console is not the same as
@@ -32,6 +33,73 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://kartavaya.com")
 
 
+# ── The account-type ladder ───────────────────────────────────────────────────
+#
+# `users.role` is the LEGACY account type, not a tier in the four-tier model. It
+# is not dead: `approvals_router.py:402,610` and `server.py:345,1134` still read
+# it, so a user created at `admin` can approve work and act as a team admin.
+#
+# Which means minting one is a role grant, and role_tiers.py:138-141 is explicit
+# about those: "Role assignment in particular must never be delegated — a role
+# that can grant roles can grant itself anything." So the top rung is
+# SUPERUSER_ONLY_ROLES. The lower two are open to the whole console.
+#
+# Before this, `create_invite`, `update_user` and `change_user_role` each
+# validated `role in ("admin","member","client")` and stopped there — no
+# comparison against the caller at all. A platform_staff, whose entire remit is
+# the operating set (CRM, marketing, Srijan), could invite an `admin` and then
+# sign in as them.
+ACCOUNT_TYPES: tuple[str, ...] = ("client", "member", "admin")
+
+#: Account types any console role may hand out.
+DELEGABLE_ACCOUNT_TYPES: frozenset[str] = frozenset({"client", "member"})
+
+
+async def _caller_platform_role(pool, user_id: str) -> str | None:
+    """The caller's strongest platform role, or None."""
+    rows = await pool.fetch(
+        "SELECT role_code FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[])",
+        user_id, list(ALL_PLATFORM_ROLES),
+    )
+    return strongest([r["role_code"] for r in rows])
+
+
+async def _assert_may_grant(pool, caller: dict, account_type: str) -> None:
+    """Refuse an account type the caller is not senior enough to hand out."""
+    if account_type not in ACCOUNT_TYPES:
+        raise HTTPException(400, "Role must be 'admin', 'member', or 'client'")
+    if account_type in DELEGABLE_ACCOUNT_TYPES:
+        return
+    role = await _caller_platform_role(pool, caller["user_id"])
+    if role not in SUPERUSER_ONLY_ROLES:
+        raise HTTPException(
+            403,
+            "Only a platform owner may create an admin account. "
+            "Invite them as a member and have an owner raise the account type.",
+        )
+
+
+async def _assert_target_not_platform(pool, caller: dict, target_user_id: str,
+                                      what: str) -> None:
+    """Refuse to touch a user who holds a platform role, unless the caller is god mode.
+
+    Without this, every write below is a lateral escalation: `remove_user` is
+    guarded by CONSOLE_ROLES, so a platform_staff could delete a platform_owner's
+    account outright, and `update_user` could re-point their email.
+    """
+    target_role = await _caller_platform_role(pool, target_user_id)
+    if not target_role:
+        return
+    caller_role = await _caller_platform_role(pool, caller["user_id"])
+    if caller_role not in SUPERUSER_ONLY_ROLES:
+        raise HTTPException(
+            403,
+            f"{what} a user who holds the {target_role} platform role requires "
+            "a platform owner.",
+        )
+
+
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 class InviteCreate(BaseModel):
@@ -43,10 +111,27 @@ class InviteCreate(BaseModel):
 
 
 class InviteOut(BaseModel):
+    """Returned by `create_invite` ONLY — it is the one response that carries the
+    redemption link, and only to the person who just created it."""
     invite_id: str
     email: str
     role: str
     invite_link: str
+    created_at: datetime
+    expires_at: datetime
+    accepted_at: Optional[datetime] = None
+    full_name: Optional[str] = None
+    member_role: Optional[str] = None
+    receives_approval_emails: Optional[bool] = True
+    invited_by_name: Optional[str] = None
+
+
+class InviteListOut(BaseModel):
+    """The listing shape. Deliberately has no `invite_link` and no `token`
+    field — a response model without them cannot leak them by accident later."""
+    invite_id: str
+    email: str
+    role: str
     created_at: datetime
     expires_at: datetime
     accepted_at: Optional[datetime] = None
@@ -94,13 +179,14 @@ async def list_users(pool=Depends(get_pool), admin=Depends(_require_admin)):
 @router.patch("/users/{user_id}", response_model=UserOut)
 async def update_user(user_id: str, body: UserUpdate, pool=Depends(get_pool), admin=Depends(_require_admin)):
     """Edit a user's profile fields. Email is immutable."""
+    await _assert_target_not_platform(pool, admin, user_id, "Editing")
+
     # Build dynamic SET clause for only provided fields
     fields, vals = [], []
     if body.full_name is not None:
         fields.append(f"full_name=${len(vals)+1}"); vals.append(body.full_name)
     if body.role is not None:
-        if body.role not in ("admin", "member", "client"):
-            raise HTTPException(status_code=400, detail="Invalid role")
+        await _assert_may_grant(pool, admin, body.role)
         fields.append(f"role=${len(vals)+1}"); vals.append(body.role)
     if body.member_role is not None:
         fields.append(f"member_role=${len(vals)+1}"); vals.append(body.member_role)
@@ -130,8 +216,8 @@ async def update_user(user_id: str, body: UserUpdate, pool=Depends(get_pool), ad
 @router.put("/users/{user_id}/role")
 async def change_user_role(user_id: str, body: dict, pool=Depends(get_pool), admin=Depends(_require_admin)):
     role = body.get("role")
-    if role not in ("admin", "member", "client"):
-        raise HTTPException(status_code=400, detail="Invalid role")
+    await _assert_may_grant(pool, admin, role)
+    await _assert_target_not_platform(pool, admin, user_id, "Changing the role of")
     await pool.execute("UPDATE users SET role=$1, updated_at=NOW() WHERE user_id=$2", role, user_id)
     return {"ok": True}
 
@@ -140,6 +226,7 @@ async def change_user_role(user_id: str, body: dict, pool=Depends(get_pool), adm
 async def remove_user(user_id: str, reassign_to: Optional[str] = None, pool=Depends(get_pool), admin=Depends(_require_admin)):
     if user_id == admin["user_id"]:
         raise HTTPException(status_code=400, detail="Cannot remove yourself")
+    await _assert_target_not_platform(pool, admin, user_id, "Deleting")
     if reassign_to == user_id:
         raise HTTPException(status_code=400, detail="Cannot reassign to the same user")
     if reassign_to:
@@ -273,8 +360,7 @@ async def remove_user(user_id: str, reassign_to: Optional[str] = None, pool=Depe
 
 @router.post("/invites", response_model=InviteOut)
 async def create_invite(body: InviteCreate, pool=Depends(get_pool), admin=Depends(_require_admin)):
-    if body.role not in ("admin", "member", "client"):
-        raise HTTPException(status_code=400, detail="Role must be 'admin', 'member', or 'client'")
+    await _assert_may_grant(pool, admin, body.role)
 
     existing = await pool.fetchrow("SELECT 1 FROM users WHERE email=$1", body.email.lower())
     if existing:
@@ -338,32 +424,34 @@ async def create_invite(body: InviteCreate, pool=Depends(get_pool), admin=Depend
     )
 
 
-@router.get("/invites", response_model=List[InviteOut])
+@router.get("/invites", response_model=List[InviteListOut])
 async def list_invites(pool=Depends(get_pool), admin=Depends(_require_admin)):
+    """Pending and accepted invites. **Never carries the token.**
+
+    This endpoint used to select `i.token` and hand back a ready-made
+    `/accept-invite?token=…` link for every invite in the system, 100 at a time,
+    to anyone holding CONSOLE_ROLES — which includes platform_staff and
+    account_manager.
+
+    `POST /api/auth/accept-invite` asks for nothing but that token: it looks the
+    invite up by it, creates the account, and sets whatever password the caller
+    supplies. So the list was a set of live credentials for every account that
+    had not been claimed yet, readable by roles whose remit is CRM and
+    marketing. The token is 256 bits from `secrets.token_urlsafe(32)` and cannot
+    be guessed — it did not need to be.
+
+    The link is still returned once, by `create_invite`, to the person who
+    created it. That is the only party who should ever hold it.
+    """
     rows = await pool.fetch(
-        """SELECT i.invite_id, i.email, i.role, i.token, i.created_at, i.expires_at,
+        """SELECT i.invite_id, i.email, i.role, i.created_at, i.expires_at,
                   i.accepted_at, i.full_name, i.member_role, i.receives_approval_emails,
                   COALESCE(u.full_name, u.name, u.email) AS invited_by_name
            FROM invites i
            LEFT JOIN users u ON u.user_id = i.invited_by
            ORDER BY i.created_at DESC LIMIT 100"""
     )
-    return [
-        InviteOut(
-            invite_id=r["invite_id"],
-            email=r["email"],
-            role=r["role"],
-            invite_link=f"{FRONTEND_URL}/accept-invite?token={r['token']}",
-            created_at=r["created_at"],
-            expires_at=r["expires_at"],
-            accepted_at=r["accepted_at"],
-            full_name=r["full_name"],
-            member_role=r["member_role"],
-            receives_approval_emails=r["receives_approval_emails"],
-            invited_by_name=r["invited_by_name"],
-        )
-        for r in rows
-    ]
+    return [InviteListOut(**dict(r)) for r in rows]
 
 
 @router.post("/users/{user_id}/send-reset-link")

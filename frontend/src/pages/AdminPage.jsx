@@ -484,6 +484,12 @@ export default function AdminPage() {
   const [invite, setInvite] = useState(EMPTY_INVITE);
   const [sending, setSending] = useState(false);
   const [copied, setCopied] = useState('');
+  // The redemption link for the invite THIS operator just created, held in
+  // memory for this render only. `GET /admin/invites` no longer carries
+  // `invite_link` for anyone — the token in it is a working credential, and the
+  // listing was serving every unclaimed one to every console role. See
+  // backend/invite_router.py::list_invites.
+  const [freshInvite, setFreshInvite] = useState(null);
   const [editing, setEditing] = useState(null);
   const [removing, setRemoving] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -544,14 +550,15 @@ export default function AdminPage() {
     if (!invite.email.trim()) return;
     setSending(true);
     try {
-      await api.post('/admin/invites', {
+      const r = await api.post('/admin/invites', {
         email: invite.email.trim(),
         full_name: invite.full_name.trim() || undefined,
         role: invite.role,
         member_role: invite.member_role.trim() || undefined,
         receives_approval_emails: invite.receives_approval_emails,
       });
-      pushToast({ type: 'success', title: 'Invite sent', message: 'Copy the link below if the email is slow.' });
+      setFreshInvite({ invite_id: r?.data?.invite_id, invite_link: r?.data?.invite_link });
+      pushToast({ type: 'success', title: 'Invite sent', message: 'Copy the link below if the email is slow — it is shown once.' });
       setInvite(EMPTY_INVITE);
       await load();
     } catch (e) {
@@ -806,9 +813,11 @@ export default function AdminPage() {
                       </Cell>
                       <Cell>
                         <span className="adm-actions">
-                          <Button size="sm" variant="ghost" onClick={() => copy(iv.invite_link, iv.invite_id)}>
-                            {copied === iv.invite_id ? 'Copied' : 'Copy link'}
-                          </Button>
+                          {freshInvite?.invite_id === iv.invite_id && freshInvite.invite_link ? (
+                            <Button size="sm" variant="ghost" onClick={() => copy(freshInvite.invite_link, iv.invite_id)}>
+                              {copied === iv.invite_id ? 'Copied' : 'Copy link'}
+                            </Button>
+                          ) : null}
                           <Button
                             size="sm"
                             variant="danger"
