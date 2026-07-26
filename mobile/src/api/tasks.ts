@@ -1,5 +1,32 @@
 import { apiClient } from './client';
-import type { Task, Subtask } from './types';
+import type { Task, Subtask, TaskReminder, ReminderChannel } from './types';
+
+/**
+ * The offsets the server will accept, newest-first for display.
+ *
+ * `REMINDER_OFFSETS` in server.py:522 is a set of exactly these seven values and
+ * `_replace_task_reminders` silently `continue`s past anything else — so an
+ * unlisted offset is not rejected with an error, it is dropped, and the caller
+ * gets a 200 with fewer reminders than it asked for. Sending only these means
+ * the response always matches the request.
+ */
+export const REMINDER_OFFSETS = [2880, 1440, 240, 120, 60, 30, 15] as const;
+
+export const REMINDER_OFFSET_LABEL: Record<number, string> = {
+  2880: '2 days before',
+  1440: '1 day before',
+  240:  '4 hours before',
+  120:  '2 hours before',
+  60:   '1 hour before',
+  30:   '30 minutes before',
+  15:   '15 minutes before',
+};
+
+export const REMINDER_CHANNEL_LABEL: Record<ReminderChannel, string> = {
+  in_app: 'In app',
+  push:   'Push',
+  email:  'Email',
+};
 
 export const tasksApi = {
   list:   (params?: Record<string, unknown>) =>
@@ -13,6 +40,31 @@ export const tasksApi = {
 
   update: (taskId: string, body: Partial<Task>) =>
     apiClient.put<Task>(`/tasks/${taskId}`, body).then(r => r.data),
+
+  /**
+   * PUT /api/tasks/{id}/reminders — replace the whole pending set.
+   *
+   * This is a REPLACE, not a merge: `_replace_task_reminders` deletes every
+   * unsent row for the task before inserting, inside one transaction. Sending
+   * `[]` is therefore how you turn reminders off, and sending one offset when
+   * three were set removes the other two. There is no per-reminder delete.
+   *
+   * Two server rules the caller must respect:
+   *   · 400 "Task has no due date" if the task has none and the payload is
+   *     non-empty — offsets are relative to `due_at`, so there is nothing to
+   *     compute from. An empty payload on a task with no due date is fine.
+   *   · Already-sent rows are left alone. Only unsent ones are replaced, so a
+   *     reminder that has already fired stays in the history.
+   *
+   * Preferred over the legacy `reminder_at` field for anything the app arms:
+   * `reminder_sent_at` is never reset by any endpoint and the poll query
+   * requires it to be NULL, so a legacy reminder can fire exactly once and can
+   * never be re-armed. These rows can.
+   */
+  setReminders: (
+    taskId: string,
+    reminders: { offset_minutes: number; channels: ReminderChannel[] }[],
+  ) => apiClient.put<TaskReminder[]>(`/tasks/${taskId}/reminders`, reminders).then(r => r.data),
 
   move:   (taskId: string, columnId: string, order = 0) =>
     apiClient.patch<Task>(`/tasks/${taskId}/move`, { column_id: columnId, order }).then(r => r.data),

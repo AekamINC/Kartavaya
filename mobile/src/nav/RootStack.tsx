@@ -24,6 +24,16 @@ import TaskDetailScreen  from '../screens/TaskDetailScreen';
 import BoardScreen       from '../screens/BoardScreen';
 import LoginScreen       from '../screens/LoginScreen';
 import ClientPortalScreen from '../screens/ClientPortalScreen';
+import RemindersScreen   from '../screens/RemindersScreen';
+// The seven light module surfaces (17 §Screens). Each is the CHECKING view and
+// states its own boundary; none of them is a stub.
+import GrahaScreen       from '../screens/modules/GrahaScreen';
+import GanitScreen       from '../screens/modules/GanitScreen';
+import ManavScreen       from '../screens/modules/ManavScreen';
+import VetanaScreen      from '../screens/modules/VetanaScreen';
+import DristiScreen      from '../screens/modules/DristiScreen';
+import SrijanScreen      from '../screens/modules/SrijanScreen';
+import PracharScreen     from '../screens/modules/PracharScreen';
 import { useAuth } from '../hooks/useAuth';
 import { useNotifications } from '../context/NotificationContext';
 import { Splash } from '../App';
@@ -40,7 +50,17 @@ export type RootStackParamList = {
   Approvals:    undefined;
   Time:         undefined;
   Inbox:        undefined;
+  Reminders:    undefined;
   Settings:     undefined;
+  // The seven light module surfaces. Stack screens rather than tabs: they are
+  // destinations you go to from More and come back from, not places you live.
+  Graha:        undefined;
+  Ganit:        undefined;
+  Manav:        undefined;
+  Vetana:       undefined;
+  Dristi:       undefined;
+  Srijan:       undefined;
+  Prachar:      undefined;
   // Reachable from the full shell's More tab as well as being the whole app for
   // an attendance-only user, so it is a stack screen in both cases.
   Clock:        undefined;
@@ -205,7 +225,18 @@ export default function RootStack() {
             <Stack.Screen name="Inbox"     component={InboxScreen} />
             <Stack.Screen name="Clock"     component={ClockScreen} />
             <Stack.Screen name="Enroll"    component={EnrollScreen} />
+            <Stack.Screen name="Reminders" component={RemindersScreen} />
             <Stack.Screen name="Settings"  component={SettingsScreen} />
+            {/* The seven light module surfaces. Every one of the six tiles that
+                used to show a "not built yet" note is now a real destination,
+                and Srijan and Prachar are added — 17 lists seven. */}
+            <Stack.Screen name="Graha"   component={GrahaScreen} />
+            <Stack.Screen name="Ganit"   component={GanitScreen} />
+            <Stack.Screen name="Manav"   component={ManavScreen} />
+            <Stack.Screen name="Vetana"  component={VetanaScreen} />
+            <Stack.Screen name="Dristi"  component={DristiScreen} />
+            <Stack.Screen name="Srijan"  component={SrijanScreen} />
+            <Stack.Screen name="Prachar" component={PracharScreen} />
           </>
         )}
       </Stack.Navigator>

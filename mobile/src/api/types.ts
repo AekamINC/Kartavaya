@@ -57,6 +57,21 @@ export interface Attachment {
   key?:  string;
 }
 
+/**
+ * One row of `task_reminders`. `fire_at` is computed by the SERVER as
+ * `due_at - offset_minutes` and is not settable directly — the client sends an
+ * offset and a channel list, never a timestamp.
+ */
+export interface TaskReminder {
+  reminder_id:    string;
+  offset_minutes: number;
+  channels:       ReminderChannel[];
+  fire_at:        string;
+  sent_at:        string | null;
+}
+
+export type ReminderChannel = 'in_app' | 'push' | 'email';
+
 export interface Task {
   task_id:              string;
   team_id:              string;
@@ -72,6 +87,27 @@ export interface Task {
   tags:                 string[];
   assignee_user_ids:    string[];
   due_at?:              string;
+  /**
+   * The LEGACY single reminder, fired by `GET /api/notifications/poll` and
+   * `POST /api/notifications/process` (server.py:2822, :2793). Returned by both
+   * the list and the detail endpoint.
+   *
+   * `reminder_sent_at` is never reset by any endpoint, and the poll query
+   * requires it to be NULL — so once this has fired it cannot be re-armed. That
+   * is why RemindersScreen writes through `reminders` below instead.
+   */
+  reminder_at?:         string | null;
+  reminder_sent_at?:    string | null;
+  /**
+   * The CURRENT mechanism: rows in `task_reminders`, dispatched by the cron at
+   * `POST /api/task-reminders/dispatch`, with per-channel delivery.
+   *
+   * Only `GET /api/tasks/{id}` populates this. The list endpoint leaves it at
+   * the model default of `[]` (server.py:2252 sets it on the detail path only),
+   * so an empty array from a list response means "not loaded", NOT "none set" —
+   * a distinction worth keeping straight before building UI on it.
+   */
+  reminders?:           TaskReminder[];
   attachments:          Attachment[];
   subtasks:             Subtask[];
   order:                number;

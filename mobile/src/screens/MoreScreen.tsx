@@ -42,15 +42,32 @@ const WORK: Dest[] = [
   { key: 'inbox',     en: 'Inbox',     hi: 'संदेश-पेटी', icon: 'notifications-outline',   route: 'Inbox', badge: 'unread' },
   { key: 'approvals', en: 'Approvals', hi: 'सम्मति',     icon: 'checkmark-circle-outline', route: 'Approvals' },
   { key: 'time',      en: 'Time',      hi: 'काल',        icon: 'time-outline',            route: 'Time' },
+  { key: 'reminders', en: 'Reminders', hi: 'स्मरण',      icon: 'alarm-outline',           route: 'Reminders' },
 ];
 
+/**
+ * All seven module surfaces are built and routed. They were `note` entries —
+ * tiles that opened a "not on mobile yet" toast — and Srijan and Prachar were
+ * missing from the list entirely, though 17 §Screens lists seven.
+ *
+ * Each surface states its own boundary on the screen itself rather than in a
+ * toast here, which is the point 17 makes: the user should be told where the
+ * work happens while looking at the data, not instead of seeing it.
+ *
+ * A user whose org lacks a module, or who holds no grant for it, gets a 403 and
+ * the surface renders its `forbidden` state. The tile stays visible on purpose —
+ * hiding it would leave someone who has been told "check Vetana on your phone"
+ * with nothing to find and no explanation.
+ */
 const MODULES: Dest[] = [
   { key: 'pahchan', en: 'Attendance', hi: 'पहचान',  icon: 'finger-print-outline', route: 'Clock' },
-  { key: 'graha',   en: 'CRM',        hi: 'ग्राहक',  icon: 'people-outline',       note: 'Read-only on mobile. Full CRM is on the web.' },
-  { key: 'ganit',   en: 'Invoicing',  hi: 'गणित',    icon: 'receipt-outline',      note: 'Shows what is outstanding. Raising an invoice is desktop-only.' },
-  { key: 'manav',   en: 'HR',         hi: 'मानव',    icon: 'id-card-outline',      note: 'Leave and holidays. Employee records are desktop-only.' },
-  { key: 'vetana',  en: 'Payroll',    hi: 'वेतन',    icon: 'cash-outline',         note: 'Your own payslips only.' },
-  { key: 'dristi',  en: 'Analytics',  hi: 'दृष्टि',  icon: 'stats-chart-outline',  note: 'Dashboards are desktop-only — they need the width.' },
+  { key: 'graha',   en: 'CRM',        hi: 'ग्राहक',  icon: 'people-outline',       route: 'Graha' },
+  { key: 'ganit',   en: 'Invoicing',  hi: 'गणित',    icon: 'receipt-outline',      route: 'Ganit' },
+  { key: 'manav',   en: 'HR',         hi: 'मानव',    icon: 'id-card-outline',      route: 'Manav' },
+  { key: 'vetana',  en: 'Payslips',   hi: 'वेतन',    icon: 'cash-outline',         route: 'Vetana' },
+  { key: 'dristi',  en: 'Analytics',  hi: 'दृष्टि',  icon: 'stats-chart-outline',  route: 'Dristi' },
+  { key: 'srijan',  en: 'Assistant',  hi: 'सृजन',    icon: 'sparkles-outline',     route: 'Srijan' },
+  { key: 'prachar', en: 'Marketing',  hi: 'प्रचार',  icon: 'megaphone-outline',    route: 'Prachar' },
 ];
 
 export default function MoreScreen() {

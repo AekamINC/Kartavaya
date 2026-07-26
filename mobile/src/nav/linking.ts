@@ -37,7 +37,18 @@ export const linking: LinkingOptions<RootStackParamList> = {
       // More. Its link keeps working because it moved rather than disappearing —
       // push notifications already in flight point at `inbox`.
       Inbox:      'inbox',
+      Reminders:  'reminders',
       Settings:   'settings',
+      // The seven light module surfaces. A notification about an outstanding
+      // invoice or a leave request is worth deep-linking to the surface that
+      // shows it, rather than dropping the user on Today to go and find it.
+      Graha:      'crm',
+      Ganit:      'invoices',
+      Manav:      'hr',
+      Vetana:     'payslips',
+      Dristi:     'analytics',
+      Srijan:     'assistant',
+      Prachar:    'marketing',
     },
   },
 };
