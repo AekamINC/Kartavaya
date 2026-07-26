@@ -88,6 +88,8 @@ from routers.messaging      import router as messaging_router
 from routers.whatsapp       import router as whatsapp_router
 from routers.pahchan        import router as pahchan_router
 from routers.me             import router as me_router
+from routers.search         import router as search_router
+from routers.tasks_bulk     import router as tasks_bulk_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -2948,6 +2950,14 @@ app.include_router(messaging_router)
 app.include_router(whatsapp_router)
 app.include_router(pahchan_router)
 app.include_router(me_router)
+# Both of these were written, reviewed and left unregistered, so the module was
+# dead while its callers shipped. `GET /api/search` is what CommandPalette.jsx:107
+# has always called — the palette treats one 404 as "absent" and stops asking, so
+# the symptom was a quiet ⌘K that only ever returned the static commands.
+# `/api/v1/tasks/bulk` is what BulkBar.jsx:74,102 calls; without it every bulk
+# action fell back to nothing. Registering a router is the whole fix in both cases.
+app.include_router(search_router)
+app.include_router(tasks_bulk_router)
 
 # ── Local file storage (dev only) ────────────────────────────────────────────
 _local_storage = os.getenv("LOCAL_STORAGE_PATH")
