@@ -55,6 +55,35 @@ export function inrCompact(v: number | string | null | undefined): string {
 
 interface Envelope<T> { data: T[] }
 
+/**
+ * ── `useQuery(...).data` is `any` on this project. Annotate where you read it ─
+ *
+ * Under TS 5.3.3 (pinned in `mobile/package.json`) TanStack Query v5.51's
+ * `useQuery` returns `UseQueryResult<NoInfer<TData>, Error>` with `TData` left
+ * unresolved — inference through the library's own `NoInfer` polyfill does not
+ * complete on this compiler. Probed directly: `const bad: number = q.data`
+ * compiles clean on a query whose `queryFn` is typed `Promise<Deal[]>`.
+ *
+ * Passing the type argument explicitly — `useQuery<Deal[]>({ … })` — does NOT
+ * fix it. `TData` is still a naked parameter at the return position, so the
+ * result is `any` either way. That was worth testing before assuming.
+ *
+ * What does work is annotating the value you pull out of the hook:
+ *
+ *     const rows: Deal[] = deals.data ?? [];
+ *
+ * `any` is assignable to `Deal[]`, so the annotation is accepted, and from that
+ * point on every `.map`, `.filter` and field access is checked properly. This
+ * is why the screens in `screens/modules/` all read their query results into an
+ * annotated local instead of using `q.data` inline.
+ *
+ * The functions in THIS file are correctly typed on their own —
+ * `grahaApi.deals()` resolves to `Deal[]`. Only the hook loses it, and the loss
+ * affects every pre-existing `useQuery` in the app, not just these screens.
+ * Fixing it at the root means bumping TypeScript, which rewrites
+ * `package-lock.json` — out of scope here, and flagged in the report instead.
+ */
+
 // ── Graha · CRM ──────────────────────────────────────────────────────────────
 
 export interface Deal {

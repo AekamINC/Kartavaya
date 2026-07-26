@@ -50,7 +50,8 @@ export default function VetanaScreen() {
 
   const q = useQuery({ queryKey: ['vetana', 'payslips'], queryFn: vetanaApi.payslips });
 
-  const rows = q.data ?? [];
+  // Annotated, not inferred — see the note in api/modules.ts.
+  const rows: Payslip[] = q.data ?? [];
   const latest = rows[0];
 
   const status = resolveScreenState({

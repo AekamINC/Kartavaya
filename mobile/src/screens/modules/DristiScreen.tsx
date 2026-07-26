@@ -5,7 +5,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
 import ModuleShell, { Stat, StatRow, SectionHead, Card } from './ModuleShell';
-import { dristiApi, inrCompact, num } from '../../api/modules';
+import { dristiApi, inrCompact, num, type DristiOverview, type RevenuePoint } from '../../api/modules';
 import { withAlpha } from '../../theme/tokens';
 
 /**
@@ -31,8 +31,9 @@ export default function DristiScreen() {
   const overview = useQuery({ queryKey: ['dristi', 'overview'], queryFn: dristiApi.overview });
   const revenue  = useQuery({ queryKey: ['dristi', 'revenue'],  queryFn: () => dristiApi.revenue(6) });
 
-  const o = overview.data;
-  const trend = revenue.data ?? [];
+  // Annotated, not inferred — see the note in api/modules.ts.
+  const o:     DristiOverview | undefined = overview.data;
+  const trend: RevenuePoint[]             = revenue.data ?? [];
 
   const hasData = overview.data !== undefined;
   const status = resolveScreenState({

@@ -5,7 +5,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
 import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag } from './ModuleShell';
-import { pracharApi, num } from '../../api/modules';
+import { pracharApi, num, type PracharDashboard } from '../../api/modules';
 import { withAlpha } from '../../theme/tokens';
 
 /**
@@ -37,7 +37,8 @@ export default function PracharScreen() {
 
   const q = useQuery({ queryKey: ['prachar', 'dashboard'], queryFn: pracharApi.dashboard });
 
-  const d = q.data;
+  // Annotated, not inferred — see the note in api/modules.ts.
+  const d: PracharDashboard | undefined = q.data;
   const recent = d?.recent_campaigns ?? [];
 
   const status = resolveScreenState({

@@ -6,7 +6,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
 import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag } from './ModuleShell';
-import { srijanApi, num } from '../../api/modules';
+import { srijanApi, num, type HubDashboard } from '../../api/modules';
 import { withAlpha } from '../../theme/tokens';
 import { hindi } from '../../theme/fonts';
 
@@ -51,7 +51,8 @@ export default function SrijanScreen() {
 
   const q = useQuery({ queryKey: ['srijan', 'dashboard'], queryFn: srijanApi.dashboard });
 
-  const d = q.data;
+  // Annotated, not inferred — see the note in api/modules.ts.
+  const d: HubDashboard | undefined = q.data;
   const recent = d?.recent_content ?? [];
 
   const status = resolveScreenState({

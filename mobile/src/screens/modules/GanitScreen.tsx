@@ -5,7 +5,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
 import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag } from './ModuleShell';
-import { ganitApi, inrCompact, inr, num, type Invoice } from '../../api/modules';
+import { ganitApi, inrCompact, inr, num, type Invoice, type InvoiceStats } from '../../api/modules';
 import { withAlpha } from '../../theme/tokens';
 
 /**
@@ -49,8 +49,9 @@ export default function GanitScreen() {
   const stats    = useQuery({ queryKey: ['ganit', 'stats'],    queryFn: ganitApi.stats });
   const invoices = useQuery({ queryKey: ['ganit', 'invoices'], queryFn: ganitApi.invoices });
 
-  const rows = invoices.data ?? [];
-  const st   = stats.data;
+  // Annotated, not inferred — see the note in api/modules.ts.
+  const rows: Invoice[]                = invoices.data ?? [];
+  const st:   InvoiceStats | undefined = stats.data;
 
   const hasData = stats.data !== undefined || invoices.data !== undefined;
   const status = resolveScreenState({

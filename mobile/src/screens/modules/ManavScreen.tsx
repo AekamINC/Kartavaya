@@ -9,7 +9,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
 import ModuleShell, { Stat, StatRow, SectionHead, Card } from './ModuleShell';
-import { manavApi, num, type LeaveRequest } from '../../api/modules';
+import { manavApi, num, type LeaveRequest, type HrStats, type Holiday } from '../../api/modules';
 import { a11yButton } from '../../components/a11y';
 
 /**
@@ -55,8 +55,10 @@ export default function ManavScreen() {
   const [declining, setDeclining] = useState<LeaveRequest | null>(null);
   const [reason,   setReason]   = useState('');
 
-  const st   = stats.data;
-  const rows = leaves.data ?? [];
+  // Annotated, not inferred — see the note in api/modules.ts.
+  const st:        HrStats | undefined = stats.data;
+  const rows:      LeaveRequest[]      = leaves.data   ?? [];
+  const holidayRows: Holiday[]         = holidays.data ?? [];
 
   const hasData = stats.data !== undefined || leaves.data !== undefined;
   const status = resolveScreenState({
@@ -98,7 +100,7 @@ export default function ManavScreen() {
     }
   };
 
-  const nextHoliday = (holidays.data ?? []).find(h => {
+  const nextHoliday = holidayRows.find(h => {
     const d = new Date(h.date);
     return !Number.isNaN(d.getTime()) && d >= new Date(new Date().toDateString());
   });

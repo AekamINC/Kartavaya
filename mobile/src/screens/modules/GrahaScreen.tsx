@@ -5,7 +5,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
 import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag } from './ModuleShell';
-import { grahaApi, inrCompact, inr, num, type Deal } from '../../api/modules';
+import { grahaApi, inrCompact, inr, num, type Deal, type PipelineStage } from '../../api/modules';
 import { withAlpha } from '../../theme/tokens';
 
 /**
@@ -37,8 +37,11 @@ export default function GrahaScreen() {
     queryFn:  grahaApi.deals,
   });
 
-  const rows = deals.data ?? [];
-  const stages = summary.data ?? [];
+  // Annotated, not inferred: `useQuery(...).data` is `any` on this toolchain.
+  // See the note in api/modules.ts — without these two annotations every field
+  // access below this line is unchecked.
+  const rows:   Deal[]          = deals.data   ?? [];
+  const stages: PipelineStage[] = summary.data ?? [];
 
   const totals = useMemo(() => {
     const open = stages.filter(st => isOpen(st.stage));
