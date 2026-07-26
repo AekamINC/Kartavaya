@@ -1,10 +1,12 @@
 name: CI
 
 on:
+  # Every push, on every branch. The previous filter was
+  # `[main, staging, feat/**]`, so work on fix/**, salvage/**, audit/** and the
+  # agent/** branches — which is where most changes are actually written — ran
+  # no checks at all until they were already merged into staging.
   push:
-    branches: [main, staging, feat/**]
   pull_request:
-    branches: [main]
 
 jobs:
   # ── Backend: import smoke + unit tests ──────────────────────────────────────
@@ -69,6 +71,19 @@ jobs:
 
       - name: Install deps
         run: yarn install --frozen-lockfile
+
+      # The two mechanical gates from design-handover/25-qa-acceptance.md §1.
+      # Eight defects in that handover were the same bug — a token or class
+      # referenced everywhere and declared nowhere — and an unresolved var()
+      # returns an empty string, so CSS drops the declaration with no console
+      # warning. Every one survived multiple careful reads and would have died
+      # instantly to these. They run before the tests because they take under a
+      # second and their failure explains the others.
+      - name: Design token gate
+        run: node scripts/check-tokens.mjs
+
+      - name: Design class gate
+        run: node scripts/check-classes.mjs
 
       - name: Type check
         run: npx tsc --noEmit --skipLibCheck

@@ -156,31 +156,46 @@ def inject_pool(mock_pool):
     db._pool = original
 
 
-# ── Rate limiter ──────────────────────────────────────────────────────────────
+# ── Rate limiters ─────────────────────────────────────────────────────────────
 
 @pytest.fixture(autouse=True)
 def reset_rate_limits():
-    """Clear both rate limiters before every test.
+    """Clear BOTH rate limiters before every test.
 
-    `server.global_write_rate_limit` counts POST/PUT/PATCH/DELETE per client IP
-    in a module-level dict, 120 per wall-clock minute, and nothing resets it
-    between tests. Every test shares one IP under ASGITransport, so the whole
-    suite draws on a single budget: pass/fail depended on how many writes the
-    run happened to make in the same minute. Adding tests anywhere pushed
-    unrelated files over the edge and the 429 surfaced in whichever test ran
-    last, which is a bad afternoon for whoever has to find it.
+    There are two, they fail the same way, and they were found independently
+    from opposite ends of the suite:
 
-    Cleared per test so a test's outcome depends only on that test.
+    1. `server._write_rate_buckets` — `global_write_rate_limit` counts
+       POST/PUT/PATCH/DELETE per client IP in a module-level dict, 120 per
+       wall-clock minute. Every test shares one IP under ASGITransport, so the
+       whole suite drew on a single budget and adding tests anywhere pushed
+       unrelated files over the edge.
+
+    2. `limiter` (slowapi) — a module-level singleton keyed on remote address.
+       `/api/auth/login` allows five a minute, so the sixth login ANYWHERE in
+       the session got a 429. Adding auth tests to a second file was enough to
+       start failing tests in the first.
+
+    Both made a test's outcome depend on how many earlier tests happened to run,
+    in what order, and how fast — and the 429 surfaces in whichever test ran
+    last, which looks nothing like the assertion that fails. Cleared per test so
+    a test's outcome depends only on that test, and a test that wants to prove a
+    limiter works can spend its budget deliberately.
     """
     import server
     server._write_rate_buckets.clear()
-    try:
-        limiter = server.app.state.limiter
-        limiter.reset()
-    except Exception:
-        # slowapi's in-memory storage exposes reset(); a backend that does not
-        # is not worth failing a test over.
-        pass
+
+    def _reset_slowapi():
+        from limiter import limiter
+        try:
+            limiter.reset()
+        except Exception:
+            # Older slowapi storages have no reset(); clear the dict directly.
+            storage = getattr(limiter, "_storage", None)
+            if storage is not None and hasattr(storage, "storage"):
+                storage.storage.clear()
+
+    _reset_slowapi()
     yield
     server._write_rate_buckets.clear()
 
