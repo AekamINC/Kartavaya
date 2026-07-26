@@ -51,6 +51,27 @@ ALL_PLATFORM_ROLES: tuple[str, ...] = (
     GOD_MODE_ROLES + MANAGER_ROLES + STAFF_ROLES + SUPPORT_ROLES + COMMERCIAL_ONLY_ROLES
 )
 
+# ── Tier 2: organisation ──────────────────────────────────────────────────────
+#
+# These were the one tier this file did not name, so Tier 2 was still written as
+# bare strings at every call site — `role_code IN ('org_owner','org_admin',
+# 'org_member')` appears in `org_resolver.py`, `roles.py` and `subscription.py`,
+# and `('org_owner','org_admin')` in several more. That is the exact 84-strings
+# problem this module was created to end, just one tier down: adding an org role
+# means finding every one, and a missed site fails silently in whichever
+# direction is wrong.
+#
+# Naming them changes no behaviour. It gives the next person one place to edit.
+
+#: Every Tier-2 code. Membership of an org at all — the sole tenant path.
+ORG_ROLES: tuple[str, ...] = ("org_owner", "org_admin", "org_member")
+
+#: Org roles that manage the org rather than merely belong to it. These are the
+#: two that `require_module` already treats as holding every enabled module
+#: without an explicit grant row, so they are the natural stand-in for "module
+#: admin" until `org_member_modules.role` exists (see PROPOSED_065).
+ORG_MANAGEMENT_ROLES: tuple[str, ...] = ("org_owner", "org_admin")
+
 # ── Module reach ──────────────────────────────────────────────────────────────
 
 #: Employee personal data. HR and Payroll hold salaries and personnel files;

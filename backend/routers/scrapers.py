@@ -10,8 +10,9 @@ from pydantic import BaseModel
 
 from auth_router import require_user
 from db import get_pool
-from middleware.roles import require_platform_role, get_org_id
-from middleware.role_tiers import OPERATIONS_CONSOLE_ROLES
+from middleware.org_resolver import get_org_id
+from middleware.roles import require_platform_role
+from middleware.role_tiers import FINANCE_CONSOLE_ROLES, OPERATIONS_CONSOLE_ROLES
 from middleware.subscription import require_module
 
 import math
@@ -20,11 +21,20 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/scrapers", tags=["scrapers"])
 _gate = require_module("srijan")
 
-SCRAPER_MARGIN = 0.45  # 45% markup on actual Apify cost for credit calc
+# Markup applied to the real Apify cost when converting a finished run into
+# credits. Commercial figure — do not restate it in prose, in docstrings or in
+# API responses.
+#
+# NOTE FOR THE OWNER: `staging.hub_scraper_catalog` already carries a
+# `margin_pct` column per scraper (migration 032), which is where this belongs —
+# a single hardcoded rate cannot differ per scraper and cannot be changed
+# without a deploy. Switching to the column would change what runs actually
+# cost, so it is a pricing decision and is deliberately left un-made here.
+SCRAPER_MARGIN = 0.45
 
 
 async def _calc_actual_credits(cost_usd: float, org_id: str, min_credits: int) -> int:
-    """Calculate actual credits from real Apify cost. 45% margin, minimum = min_credits."""
+    """Convert a run's real Apify cost into credits, never below `min_credits`."""
     if cost_usd <= 0:
         return min_credits
     from services.forex import get_usd_inr
@@ -75,7 +85,17 @@ async def list_scrapers(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    q = "SELECT * FROM staging.hub_scraper_catalog WHERE is_active=TRUE "
+    # `SELECT *` here served `cost_per_run` and `margin_pct` — our per-scraper
+    # supplier cost and our markup — to every org user with a Srijan grant, on an
+    # unremarkable catalog listing. `apify_actor_id` goes with them: it names the
+    # exact marketplace actor behind each entry, which is the other half of
+    # reproducing the offering without us. Columns are now enumerated, so a new
+    # commercial column added to this table is not published by default.
+    q = (
+        "SELECT id, name, description, icon, category, input_schema, "
+        "price_inr, max_results, result_columns, is_active "
+        "FROM staging.hub_scraper_catalog WHERE is_active=TRUE "
+    )
     params = []
     if category:
         q += "AND category=$1 "
@@ -323,6 +343,9 @@ async def get_run(
     # §1 puts that containment here, in the query that builds the response, not
     # in whichever UI happens to render it. The admin views below select it under
     # `require_platform_role`, which is where it belongs.
+    #
+    # Paired with `billed_inr` it is also our exact per-run margin, which is the
+    # standing "never publish OUR prices" rule and not only a tidiness question.
     row = await pool.fetchrow(
         "SELECT r.id, r.org_id, r.scraper_id, r.user_id, r.status, r.result_count, "
         "r.billed_inr, r.credits_charged, r.error, r.created_at, r.finished_at, "
@@ -493,7 +516,8 @@ async def list_runs(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    # No `r.cost_usd` — see `get_run` above. This is a tenant-scoped list.
+    # No `r.cost_usd` — see `get_run` above. This is a tenant-scoped list, and a
+    # list is the easiest place of all to diff supplier cost against billed_inr.
     rows = await pool.fetch(
         "SELECT r.id, r.scraper_id, r.status, r.result_count, r.billed_inr, "
         "r.credits_charged, r.created_at, r.finished_at, c.name as scraper_name, c.icon "
@@ -507,12 +531,25 @@ async def list_runs(
 
 # ── Admin: billing overview ──────────────────────────────
 
+#: Operational triage — run status, errors, which org ran what. This is the
+#: day-to-day work `platform_staff` exists for, so it stays on the operating set.
 _admin = require_platform_role(*OPERATIONS_CONSOLE_ROLES)
+
+#: `/admin/usage` is not triage. It sums our supplier cost against what we billed,
+#: per org, across every org — that is Aekam's own P&L, and role_tiers.py already
+#: names the set for it: "platform-wide KPIs, cost summaries, provider
+#: reconciliation, margin". It was on the operating set, which meant every
+#: platform_staff holder could read the margin on every customer. The operating
+#: set "deliberately excludes finance" by its own definition, so narrowing here
+#: is the documented intent rather than a new policy. platform_manager is
+#: excluded for the reason role_tiers gives: that role is defined over a
+#: CUSTOMER's modules, and Aekam's P&L is not one of them.
+_finance = require_platform_role(*FINANCE_CONSOLE_ROLES)
 
 @router.get("/admin/usage")
 async def admin_usage(
     user=Depends(require_user),
-    _a=Depends(_admin),
+    _a=Depends(_finance),
 ):
     pool = await get_pool()
     rows = await pool.fetch(

@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
+from middleware.role_tiers import OPERATIONS_CONSOLE_ROLES, ORG_MANAGEMENT_ROLES
 from middleware.subscription import require_module
 from services.social_publisher import publish_content, process_scheduled_posts
 
@@ -24,6 +25,66 @@ router = APIRouter(prefix="/api/v1/hub", tags=["hub-publish"])
 
 _hub_gate = require_module("srijan")
 log = logging.getLogger(__name__)
+
+
+async def _require_publish_authority(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+):
+    """Gate the actions that hand out a credential or put something in public.
+
+    `require_module("srijan")` answers "does this user have Srijan at all" and
+    nothing more — the grant carries no level, because `org_member_modules` has
+    no `role` column yet (PROPOSED_065, not applied). So every route in this file
+    was reachable by the WEAKEST possible Srijan grant, including:
+
+      · connecting an OAuth account, which writes a live credential;
+      · disconnecting one, which silently stops a customer's publishing;
+      · `publish-now`, which posts to a real audience and cannot be recalled.
+
+    RBAC-SPEC's module matrix puts all three at Srijan **admin**: viewer is
+    "use chatbot", editor is "manage KB docs", and only admin "configures models,
+    publishes bots". Srijan has no approver level. The guard and the designed
+    screens contradicted each other, and the guard was the one that was wrong —
+    a viewer able to post publicly as a customer's brand is not a design anyone
+    chose.
+
+    Until the level column exists this uses the coarser control the schema can
+    actually support — the org role — which is the same fallback PROPOSED_065
+    §1 records for Vetana. `ORG_MANAGEMENT_ROLES` is the right stand-in because
+    `require_module` already grants org_owner/org_admin every enabled module
+    without a grant row; they are the org's module admins in all but name.
+
+    Aekam operators are admitted through `OPERATIONS_CONSOLE_ROLES` FIRST. That
+    set exists precisely so platform_staff can do "Srijan, including authoring
+    skills and publishing" — gating on the org role alone would lock out the
+    role created for this work, which is the regression role_tiers.py documents
+    at length. This is also why it does not use `require_org_role`: that helper
+    admits only the literal string `platform_admin`, so platform_staff and
+    platform_manager would both be refused.
+    """
+    pool = await get_pool()
+
+    platform_role = await pool.fetchval(
+        "SELECT role_code FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[]) LIMIT 1",
+        user["user_id"], list(OPERATIONS_CONSOLE_ROLES),
+    )
+    if platform_role:
+        return user
+
+    org_role = await pool.fetchval(
+        "SELECT role_code FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[]) LIMIT 1",
+        user["user_id"], org_id, list(ORG_MANAGEMENT_ROLES),
+    )
+    if not org_role:
+        raise HTTPException(
+            403,
+            "Connecting or publishing to a social account needs Srijan admin. "
+            "Ask an organisation admin.",
+        )
+    return user
 
 async def _store_oauth_state(state: str, data: dict):
     pool = await get_pool()
@@ -165,6 +226,7 @@ async def oauth_authorize(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
+    _auth=Depends(_require_publish_authority),
 ):
     """Generate OAuth authorization URL for a platform."""
     config = OAUTH_CONFIGS.get(platform)
@@ -460,6 +522,7 @@ async def connect_social_account(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
+    _auth=Depends(_require_publish_authority),
 ):
     pool = await get_pool()
     cid = str(client_id)
@@ -498,6 +561,7 @@ async def disconnect_social_account(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
+    _auth=Depends(_require_publish_authority),
 ):
     pool = await get_pool()
     result = await pool.execute(
@@ -615,6 +679,7 @@ async def publish_now(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
+    _auth=Depends(_require_publish_authority),
 ):
     """Immediately publish a scheduled post."""
     pool = await get_pool()
@@ -779,6 +844,7 @@ async def set_client_platforms(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
+    _auth=Depends(_require_publish_authority),
 ):
     """Set which platforms a client can use. Only valid platform keys accepted."""
     pool = await get_pool()
