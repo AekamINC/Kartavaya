@@ -62,19 +62,20 @@ export const NAV_FULL = [
       { to: '/dristi',  icon: 'dristi',  en: 'Analytics', hi: 'दृष्टि',  gu: 'દૃષ્ટિ', module: 'dristi' },
       { to: '/prachar', icon: 'prachar', en: 'Marketing', hi: 'प्रचार',  gu: 'પ્રચાર', module: 'prachar' },
       { to: '/esign',   icon: 'esign',   en: 'E-Sign',    hi: 'प्रमाण',  gu: 'પ્રમાણ', module: 'esign' },
-      // `samvada`, NOT `sanvaad`. The ROUTE is /sanvaad and the page is
-      // SanvaadPage, but the entitlement code this key is matched against is
-      // whatever `org_member_modules.module_code` holds, and that is written by
-      // `require_module("samvada")` (`routers/messaging.py:21`) — the spelling
-      // `role_tiers.py:62` calls out by name. Keyed `sanvaad`, this row could
-      // never match a real grant, so the one module the predicate would have
-      // hidden first was the one it could never see.
+      // `sanvaad` — ONE spelling, and this is it. The key is compared against
+      // `module_grants[]`, which carries whatever code `require_module(...)`
+      // gates on, and `routers/messaging.py:27` now gates on `sanvaad`.
       //
-      // Note the plans catalogue disagrees: `migrations/010_…sql:147` sells the
-      // module as `sanvaad`. That is a SEPARATE vocabulary from the per-member
-      // grant table and is recorded as a data defect, not reconciled here — this
-      // key is compared against grants, never against plan features.
-      { to: '/sanvaad', icon: 'inbox',   en: 'Messages',  hi: 'संवाद',   gu: 'સંવાદ',  module: 'samvada' },
+      // This row briefly read `samvada` in this branch. It was wrong, and the
+      // reason is worth keeping: `role_tiers` and `messaging.py` DID say
+      // `samvada` at the time, so matching them looked like matching the source
+      // of truth. It was the narrower half of the problem. `require_module`
+      // feeds the same string to the grant lookup AND the entitlement lookup,
+      // and `module_subscriptions` has never held `samvada` — so the module was
+      // 403ing for everyone, org_owner included, and standardising the nav on
+      // `samvada` would have preserved that. Settled the other way; the tables
+      // keep their `samvada_` prefix, the module code does not.
+      { to: '/sanvaad', icon: 'inbox',   en: 'Messages',  hi: 'संवाद',   gu: 'સંવાદ',  module: 'sanvaad' },
       // Pahchan was routed in App.jsx and rendered a finished page, but it was
       // in NO nav list — it appeared only in EXTRA_ROUTES, which exists to give
       // a breadcrumb to routes that have no sidebar entry. So the module was
