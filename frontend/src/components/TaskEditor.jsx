@@ -2,7 +2,8 @@
  * TaskEditor.jsx — create/edit task modal. k-* design system.
  * Used by TasksListPage and ProjectBoardPage (new-task-in-column flow).
  */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useDismiss } from '../hooks/useDismiss';
 import { createPortal } from 'react-dom';
 import { api } from '../lib/api';
 import { toLocal, fromLocal } from '../lib/auth';
@@ -59,17 +60,8 @@ export default function TaskEditor({
       .catch(() => setMembers([]));
   }, [form.team_id]);
 
-  // Close assignee dropdown on outside click
-  useEffect(() => {
-    if (!assigneeOpen) return;
-    const handler = (e) => {
-      if (assigneeRef.current && !assigneeRef.current.contains(e.target)) {
-        setAssigneeOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [assigneeOpen]);
+  // Outside-click AND Escape — this used to be outside-click only.
+  useDismiss(assigneeOpen, assigneeRef, useCallback(() => setAssigneeOpen(false), []));
 
   useEffect(() => {
     if (!open) return;

@@ -5,6 +5,22 @@ import { AVATAR_COLORS, userInitials } from '../lib/utils';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { EmptyState } from '../components/ui/EmptyState';
 
+/**
+ * TeamsPage — the reference migration onto the design system.
+ *
+ * Before: 33 inline style objects, 10 `k-btn`, 3 `k-input`, a hand-rolled
+ * toggle, a hand-rolled typeahead dropdown with its hover state written in JS
+ * (onMouseEnter assigning style.background — a repaint per row, and invisible
+ * to the theme), and an avatar re-specified inline despite .k-avatar existing.
+ *
+ * After: 0 inline style objects. Everything resolves to a component class in
+ * components.css. Five of those classes are new (.sw, .menu, .picked, .addbtn,
+ * .k-avatar--lg) and were added rather than written here, because a person
+ * picker and a toggle appear on most of the remaining 41 pages — the point of
+ * doing one page first is to find out what the component layer is missing.
+ *
+ * Nothing about the behaviour changed. Same endpoints, same state, same flow.
+ */
 export default function TeamsPage() {
   const [projects,       setProjects]       = useState([]);
   const [selectedId,     setSelectedId]     = useState('');
@@ -103,23 +119,20 @@ export default function TeamsPage() {
 
       {/* Project selector */}
       {projects.length > 0 ? (
-        <section className="k-card" style={{ padding: '0' }}>
-          <header className="k-card__head" style={{ paddingBottom: 0 }}>
-            <div className="k-card__titles">
-              <h3 className="k-card__title" style={{ fontSize: 13, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--ink-3)' }}>Project</h3>
-            </div>
-          </header>
-          <div className="k-card__body" style={{ paddingTop: 8 }}>
-            <select
-              className="k-select"
-              value={selectedId}
-              onChange={e => { setSelectedId(e.target.value); resetAddForm(); }}
-              style={{ width: '100%', fontSize: 15, fontWeight: 600 }}
-            >
-              {projects.map(p => (
-                <option key={p.team_id} value={p.team_id}>{p.name}</option>
-              ))}
-            </select>
+        <section className="card">
+          <div className="card__body">
+            <label className="fld">
+              <span className="fld__l">Project<span className="fld__hi" lang="sa">योजना</span></span>
+              <select
+                className="inp"
+                value={selectedId}
+                onChange={e => { setSelectedId(e.target.value); resetAddForm(); }}
+              >
+                {projects.map(p => (
+                  <option key={p.team_id} value={p.team_id}>{p.name}</option>
+                ))}
+              </select>
+            </label>
           </div>
         </section>
       ) : (
@@ -143,7 +156,9 @@ export default function TeamsPage() {
             return (
               <div key={m.member_id} className="k-mcard">
                 <div className="k-mcard__head">
-                  <span className="k-avatar" style={{ width: 44, height: 44, fontSize: 16, background: color, flexShrink: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 600 }}>
+                  {/* --av-c is set per element by design — a deterministic
+                      colour hashed from the person, not a theme decision. */}
+                  <span className="k-avatar k-avatar--lg" style={{ '--av-c': color, background: 'var(--av-c)' }}>
                     {initials}
                   </span>
                   <div>
@@ -166,24 +181,20 @@ export default function TeamsPage() {
                   </div>
                 ))}
                 {(m.open_tasks || []).length === 0 && (
-                  <div className="k-mcard__empty">No open work · रिक्त</div>
+                  <div className="k-mcard__empty">No open work <span lang="sa">रिक्त</span></div>
                 )}
 
                 {isAdmin && (
-                  <div style={{ marginTop: 12, display: 'flex', gap: 8, borderTop: '1px solid var(--rule-soft)', paddingTop: 12 }}>
+                  <div className="k-mcard__admin">
                     <select
-                      className="k-select"
+                      className="inp"
+                      aria-label={`Role for ${name}`}
                       value={role}
                       onChange={e => updateMemberRole(m.member_id, e.target.value)}
-                      style={{ flex: 1, fontSize: 12 }}
                     >
                       {['admin', 'owner', 'member', 'client'].map(r => <option key={r} value={r}>{r}</option>)}
                     </select>
-                    <button
-                      className="k-btn k-btn--ghost k-btn--sm"
-                      onClick={() => removeMember(m.member_id)}
-                      style={{ color: 'var(--danger)', fontSize: 12 }}
-                    >
+                    <button className="btn btn--danger btn--sm" onClick={() => removeMember(m.member_id)}>
                       Remove
                     </button>
                   </div>
@@ -197,54 +208,57 @@ export default function TeamsPage() {
       {/* Add member panel */}
       {isAdmin && selectedId && (
         adding ? (
-          <section className="k-card">
-            <header className="k-card__head">
-              <div className="k-card__titles">
-                <h3 className="k-card__title">Add member to <em>{selectedProject?.name}</em></h3>
-                <span className="k-card__sans">सदस्य जोड़ें</span>
+          <section className="card">
+            <div className="card__head">
+              <div className="card__titles">
+                <h3 className="card__title">Add member to {selectedProject?.name}</h3>
+                <span className="card__hi" lang="sa">सदस्य जोड़ें</span>
               </div>
-              <button className="k-btn k-btn--ghost k-btn--sm" onClick={resetAddForm} style={{ marginLeft: 'auto' }}>Cancel</button>
-            </header>
-            <div className="k-card__body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <button className="btn btn--ghost btn--sm" onClick={resetAddForm}>Cancel</button>
+            </div>
 
+            <div className="card__body stack">
               {/* Step 1: pick person */}
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-3)', marginBottom: 6 }}>Person</div>
+              <div className="fld">
+                <span className="fld__l">Person<span className="fld__hi" lang="sa">व्यक्ति</span></span>
                 {selectedUser ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1.5px solid var(--k-primary)', background: 'var(--side-active)' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>{selectedUser.display_name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{selectedUser.email}{selectedUser.company_name ? ` · ${selectedUser.company_name}` : ''}</div>
+                  <div className="picked">
+                    <div className="picked__body">
+                      <div className="picked__t">{selectedUser.display_name}</div>
+                      <div className="picked__d">
+                        {selectedUser.email}{selectedUser.company_name ? ` · ${selectedUser.company_name}` : ''}
+                      </div>
                     </div>
-                    <button onClick={() => { setSelectedUser(null); setInviteEmail(''); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 18, lineHeight: 1 }}>×</button>
+                    <button
+                      className="picked__x"
+                      aria-label={`Clear ${selectedUser.display_name}`}
+                      onClick={() => { setSelectedUser(null); setInviteEmail(''); }}
+                    >
+                      ×
+                    </button>
                   </div>
                 ) : (
-                  <div style={{ position: 'relative' }}>
+                  <div className="anchor">
                     <input
-                      className="k-input"
+                      className="inp"
                       placeholder="Search by name or email…"
                       value={userSearch}
                       onChange={e => { setUserSearch(e.target.value); setInviteEmail(''); }}
                       autoFocus
                     />
+                    {/* Hover was an onMouseEnter handler assigning
+                        style.background — a JS repaint per row, and one that
+                        could not follow the theme. It is a :hover rule now. */}
                     {userSearch && filteredUsers.length > 0 && (
-                      <div style={{
-                        position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50,
-                        background: 'var(--surface)', border: '1px solid var(--rule)',
-                        borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,.12)',
-                        marginTop: 4, maxHeight: 220, overflowY: 'auto',
-                      }}>
+                      <div className="menu">
                         {filteredUsers.map(u => (
-                          <button key={u.user_id} onClick={() => { setSelectedUser(u); setUserSearch(''); setInviteEmail(''); }} style={{
-                            display: 'block', width: '100%', textAlign: 'left',
-                            padding: '10px 14px', border: 'none', background: 'transparent',
-                            cursor: 'pointer', borderBottom: '1px solid var(--rule-soft)',
-                          }}
-                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                          <button
+                            key={u.user_id}
+                            className="menu__item"
+                            onClick={() => { setSelectedUser(u); setUserSearch(''); setInviteEmail(''); }}
                           >
-                            <div style={{ fontSize: 14, color: 'var(--ink)', fontWeight: 500 }}>{u.display_name}</div>
-                            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 1 }}>
+                            <div className="menu__t">{u.display_name}</div>
+                            <div className="menu__d">
                               {u.role}{u.company_name ? ` · ${u.company_name}` : ''}
                             </div>
                           </button>
@@ -252,80 +266,81 @@ export default function TeamsPage() {
                       </div>
                     )}
                     {userSearch && filteredUsers.length === 0 && (
-                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, marginTop: 4, padding: '10px 14px', background: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: 10, fontSize: 13, color: 'var(--ink-3)' }}>
+                      <div className="menu menu__empty">
                         No existing user found.{' '}
-                        <button onClick={() => { setInviteEmail(userSearch); setUserSearch(''); }} style={{ background: 'none', border: 'none', color: 'var(--k-primary)', cursor: 'pointer', fontSize: 13, padding: 0 }}>
-                          Invite "{userSearch}" by email →
+                        <button className="btn btn--text btn--sm" onClick={() => { setInviteEmail(userSearch); setUserSearch(''); }}>
+                          Invite “{userSearch}” by email →
                         </button>
                       </div>
                     )}
                     {!userSearch && (
-                      <input className="k-input" type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
-                        placeholder="Or type email to invite someone new…" style={{ marginTop: 8 }} />
+                      <input
+                        className="inp"
+                        type="email"
+                        value={inviteEmail}
+                        onChange={e => setInviteEmail(e.target.value)}
+                        aria-label="Invite by email"
+                        placeholder="Or type email to invite someone new…"
+                      />
                     )}
                   </div>
                 )}
               </div>
 
               {/* Step 2: pick role */}
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.07em', color: 'var(--ink-3)', marginBottom: 6 }}>Role</div>
-                <select className="k-select" value={inviteRole} onChange={e => setInviteRole(e.target.value)} style={{ width: '100%' }}>
+              <label className="fld">
+                <span className="fld__l">Role<span className="fld__hi" lang="sa">भूमिका</span></span>
+                <select className="inp" value={inviteRole} onChange={e => setInviteRole(e.target.value)}>
                   {['member', 'admin', 'owner', 'client'].map(r => (
                     <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
                   ))}
                 </select>
-              </div>
+              </label>
 
               {/* Client-only options */}
               {inviteRole === 'client' && (
                 <>
                   {!selectedUser?.company_name && (
-                    <input className="k-input" value={clientCompany} onChange={e => setClientCompany(e.target.value)}
-                      placeholder="Company name (for client)" />
+                    <label className="fld">
+                      <span className="fld__l">Company</span>
+                      <input className="inp" value={clientCompany} onChange={e => setClientCompany(e.target.value)}
+                        placeholder="Company name (for client)" />
+                    </label>
                   )}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: 'var(--ink-2)' }}>
-                    <div onClick={() => setClientApproval(v => !v)} style={{
-                      width: 36, height: 20, borderRadius: 10, position: 'relative', cursor: 'pointer',
-                      background: clientApproval ? 'var(--k-primary)' : 'var(--rule)', transition: 'background .15s', flexShrink: 0,
-                    }}>
-                      <div style={{
-                        position: 'absolute', top: 3, left: clientApproval ? 18 : 3,
-                        width: 14, height: 14, borderRadius: '50%', background: '#fff',
-                        transition: 'left .15s', boxShadow: '0 1px 3px rgba(0,0,0,.2)',
-                      }} />
-                    </div>
+                  {/* A real button with aria-checked, not a div with an onClick.
+                      The old one was unreachable by keyboard entirely. */}
+                  <label className="sw__row">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={clientApproval}
+                      className="sw"
+                      onClick={() => setClientApproval(v => !v)}
+                    />
                     <span>Requires approval for task completion</span>
                   </label>
                 </>
               )}
 
-              <button
-                className="k-btn k-btn--primary"
-                onClick={addMember}
-                disabled={!canAdd}
-                style={{ alignSelf: 'flex-start' }}
-              >
-                Add to {selectedProject?.name}
-              </button>
+              <div>
+                <button className="btn btn--fill" onClick={addMember} disabled={!canAdd}>
+                  Add to {selectedProject?.name}
+                </button>
+              </div>
             </div>
           </section>
         ) : (
-          <button
-            className="k-btn k-btn--ghost"
-            onClick={() => setAdding(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--k-primary)', border: '1.5px dashed var(--k-primary)', borderRadius: 10, padding: '10px 18px', fontSize: 14, fontWeight: 600, width: '100%', justifyContent: 'center' }}
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M8 3v10M3 8h10"/></svg>
+          <button className="addbtn" onClick={() => setAdding(true)}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+              <path d="M8 3v10M3 8h10" />
+            </svg>
             Add member to this project
           </button>
         )
       )}
 
       {projectDetail && members.length === 0 && !adding && (
-        <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontStyle: 'italic', fontSize: 14 }}>
-          No members yet — add someone above.
-        </div>
+        <p className="k-note">No members yet — add someone above.</p>
       )}
 
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />

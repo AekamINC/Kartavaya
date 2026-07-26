@@ -18,11 +18,16 @@ function Badge({ status }) {
   );
 }
 
+/* NOTE: --surface-1, --ink-1 and --k-primary-ghost were used throughout this
+   file and are defined NOWHERE in src/. An undefined custom property is invalid
+   at computed-value time, so every Card here rendered with no background, its
+   title colour inherited, and the active module tab had no highlight at all.
+   Mapped onto the real tokens. Same class of defect as the undefined --ink-4. */
 function Card({ title, children, style }) {
   return (
-    <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)',
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--rule-soft)',
       borderRadius: 12, padding: 24, ...style }}>
-      {title && <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: 'var(--ink-1)' }}>{title}</h3>}
+      {title && <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{title}</h3>}
       {children}
     </div>
   );
@@ -34,7 +39,7 @@ function Input({ label, value, onChange, type = 'text', ...rest }) {
       <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', display: 'block', marginBottom: 4 }}>{label}</span>
       <input type={type} value={value} onChange={e => onChange(e.target.value)}
         style={{ width: '100%', padding: '8px 12px', fontSize: 13, border: '1px solid var(--rule-soft)',
-          borderRadius: 8, background: 'var(--surface-1)', color: 'var(--ink-1)', boxSizing: 'border-box' }}
+          borderRadius: 8, background: 'var(--surface)', color: 'var(--ink)', boxSizing: 'border-box' }}
         {...rest} />
     </label>
   );
@@ -46,7 +51,7 @@ function Select({ label, value, onChange, options }) {
       <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', display: 'block', marginBottom: 4 }}>{label}</span>
       <select value={value} onChange={e => onChange(e.target.value)}
         style={{ width: '100%', padding: '8px 12px', fontSize: 13, border: '1px solid var(--rule-soft)',
-          borderRadius: 8, background: 'var(--surface-1)', color: 'var(--ink-1)' }}>
+          borderRadius: 8, background: 'var(--surface)', color: 'var(--ink)' }}>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </label>
@@ -58,7 +63,7 @@ function Btn({ children, onClick, variant = 'primary', disabled, style: s }) {
     cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, transition: 'all .15s' };
   const styles = variant === 'primary'
     ? { ...base, background: 'var(--k-primary)', color: '#fff' }
-    : { ...base, background: 'var(--surface-2)', color: 'var(--ink-1)', border: '1px solid var(--rule-soft)' };
+    : { ...base, background: 'var(--surface-2)', color: 'var(--ink)', border: '1px solid var(--rule-soft)' };
   return <button onClick={onClick} disabled={disabled} style={{ ...styles, ...s }}>{children}</button>;
 }
 
@@ -77,7 +82,7 @@ export default function AdminBillingPage() {
   // Invoice form
   const [invForm, setInvForm] = useState({ period_start: '', period_end: '', due_date: '', description: '', amount: '' });
   // Payment form
-  const [payForm, setPayForm] = useState({ invoiceId: null, method: '', reference: '' });
+  const [payForm, setPayForm] = useState({ invoiceId: null, method: '', reference: '', paidAt: '' });
   // Plan change
   const [planForm, setPlanForm] = useState({ plan_code: '', billing_cycle: 'monthly' });
 
@@ -160,11 +165,17 @@ export default function AdminBillingPage() {
   async function handleRecordPayment() {
     if (!payForm.invoiceId) return;
     try {
+      // paid_at was never sent, so a payment received last Tuesday was recorded
+      // as today. The backend has accepted it all along —
+      // RecordPayment.paid_at is Optional[datetime] and the handler already does
+      // `body.paid_at or now()`. This was a frontend-only gap.
       await api.patch(`/v1/subscription/admin/invoices/${payForm.invoiceId}/record-payment`, {
-        payment_method: payForm.method, payment_reference: payForm.reference,
+        payment_method: payForm.method,
+        payment_reference: payForm.reference,
+        paid_at: payForm.paidAt ? new Date(payForm.paidAt).toISOString() : null,
       });
       pushToast({ title: 'Payment recorded' });
-      setPayForm({ invoiceId: null, method: '', reference: '' });
+      setPayForm({ invoiceId: null, method: '', reference: '', paidAt: '' });
       load();
     } catch (e) {
       pushToast({ title: e.response?.data?.detail || 'Failed to record payment', type: 'error' });
@@ -182,7 +193,7 @@ export default function AdminBillingPage() {
 
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Billing Administration" subtitle="Manage subscriptions, modules, invoices, and payments" />
+      <PageHeader kicker="ADMIN" title="Billing Administration" sanskrit="शुल्क प्रशासन" lede="Manage subscriptions, modules, invoices, and payments" />
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 28, borderBottom: '1px solid var(--rule-soft)', paddingBottom: 0 }}>
@@ -238,7 +249,7 @@ export default function AdminBillingPage() {
               const isActive = activeModules.includes(m.code);
               return (
                 <div key={m.code} style={{ border: '1px solid var(--rule-soft)', borderRadius: 10, padding: 16,
-                  background: isActive ? 'var(--k-primary-ghost)' : 'transparent' }}>
+                  background: isActive ? 'color-mix(in srgb, var(--k-primary) 12%, transparent)' : 'transparent' }}>
                   <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
                     {m.name || m.code.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                   </div>
@@ -265,7 +276,7 @@ export default function AdminBillingPage() {
           </div>
           {(sub?.plan_code === 'free' || !sub) && (
             <p style={{ fontSize: 12, color: '#f59e0b', marginTop: 16, fontWeight: 600 }}>
-              Upgrade to Professional or higher to enable add-on modules.
+              Upgrade to Growth or Scale to enable add-on modules.
             </p>
           )}
         </Card>
@@ -310,6 +321,8 @@ export default function AdminBillingPage() {
                     { value: 'cash', label: 'Cash' },
                     { value: 'other', label: 'Other' },
                   ]} />
+                <Input label="Date received" type="date" value={payForm.paidAt}
+                  onChange={v => setPayForm(f => ({ ...f, paidAt: v }))} />
                 <Input label="Payment Reference / UTR" value={payForm.reference}
                   onChange={v => setPayForm(f => ({ ...f, reference: v }))} />
               </div>

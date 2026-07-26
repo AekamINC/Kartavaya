@@ -59,6 +59,49 @@ export const APPROVAL_LABELS = {
 
 export const PRIORITY_LABELS = { low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' };
 
+// Subscription and invoice states. A separate domain from task status, but it
+// lives here so there is still ONE file to look in for a status colour —
+// BillingPage had a sixth private map of hardcoded hexes.
+export const BILLING_COLORS = {
+  active:    'var(--ok)',
+  paid:      'var(--ok)',
+  trialing:  'var(--warn)',
+  pending:   'var(--warn)',
+  paused:    'var(--on-surface-3)',
+  cancelled: 'var(--danger)',
+  overdue:   'var(--danger)',
+};
+
+export const BILLING_LABELS = {
+  active: 'Active', paid: 'Paid', trialing: 'Trialing', pending: 'Pending',
+  paused: 'Paused', cancelled: 'Cancelled', overdue: 'Overdue',
+};
+
+// Sales order lifecycle (Vikray). draft → confirmed → dispatched → delivered →
+// closed, plus cancelled. `cancelled` is NOT --danger: an order the customer
+// withdrew is a normal terminal state, not an error, and colouring it red makes
+// a routine list look like a list of failures.
+export const ORDER_COLORS = {
+  draft:      'var(--on-surface-2)',
+  confirmed:  'var(--st-in-progress)',
+  dispatched: 'var(--st-in-review)',
+  delivered:  'var(--ok)',
+  closed:     'var(--primary)',
+  cancelled:  'var(--on-surface-3)',
+};
+
+export const ORDER_LABELS = {
+  draft: 'Draft', confirmed: 'Confirmed', dispatched: 'Dispatched',
+  delivered: 'Delivered', closed: 'Closed', cancelled: 'Cancelled',
+};
+
+export const orderColor = s => ORDER_COLORS[s] || FALLBACK;
+
+export const billingColor = s => BILLING_COLORS[s] || FALLBACK;
+/** Title-cased label for an enum, so `active` never reaches the user as-is. */
+export const billingLabel = s =>
+  BILLING_LABELS[s] || (s ? String(s).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '—');
+
 const FALLBACK = 'var(--on-surface-3)';
 
 export const statusColor   = s => STATUS_COLORS[s]   || FALLBACK;

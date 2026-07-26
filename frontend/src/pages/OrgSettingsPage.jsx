@@ -7,6 +7,7 @@ import { currentUser } from '../lib/auth';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
 import { PageHeader } from '../components/editorial';
+import { validateGSTIN, validatePAN, validateIFSC } from '../lib/validators';
 
 const ALL_MODULES = [
   { code: 'graha',   label: 'Graha · CRM' },
@@ -24,6 +25,14 @@ const ROLE_OPTIONS = [
   { code: 'org_member', label: 'Org Member' },
 ];
 
+const ROLE_LABELS = { org_owner: 'Owner', org_admin: 'Org Admin', org_member: 'Org Member' };
+/** `org_member`.replace('_',' ') rendered "org member" — lowercase, to the user. */
+const roleLabel = code =>
+  ROLE_LABELS[code] || String(code || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+/** Sensitive modules read as danger; the rest take the accent. */
+const modTone = mod => (mod.sensitive ? 'var(--danger)' : 'var(--primary)');
+
 const EMPTY_PROFILE = {
   name: '', gstin: '', pan: '', logo_url: '', email: '', phone: '', website: '',
   billing_address: { line1: '', line2: '', city: '', state: '', pincode: '', country: 'India' },
@@ -38,9 +47,14 @@ export default function OrgSettingsPage() {
   const [loading, setLoading] = useState(true);
 
   const [profile, setProfile] = useState(EMPTY_PROFILE);
+  // The value the server gave us, so a save can send only what actually
+  // changed. See saveProfile for why sending the whole object was destructive.
+  const [loadedProfile, setLoadedProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [codeErrors, setCodeErrors] = useState({});
 
   const [addEmail, setAddEmail] = useState('');
   const [addRole, setAddRole] = useState('org_member');
@@ -61,26 +75,64 @@ export default function OrgSettingsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // A failed load used to be swallowed with `.catch(() => {})`, leaving the form
+  // showing EMPTY_PROFILE — indistinguishable from an org that has filled in
+  // nothing. Since saveProfile PATCHed the whole object, the next click of Save
+  // overwrote a real company profile with blank strings. A display bug that
+  // destroys data, so the form is not rendered at all unless the load succeeded.
   useEffect(() => {
     api.get('/v1/org/profile')
-      .then(r => setProfile({
-        ...EMPTY_PROFILE, ...r.data,
-        billing_address: { ...EMPTY_PROFILE.billing_address, ...(r.data.billing_address || {}) },
-        bank_details: { ...EMPTY_PROFILE.bank_details, ...(r.data.bank_details || {}) },
-      }))
-      .catch(() => {})
+      .then(r => {
+        const merged = {
+          ...EMPTY_PROFILE, ...r.data,
+          billing_address: { ...EMPTY_PROFILE.billing_address, ...(r.data.billing_address || {}) },
+          bank_details: { ...EMPTY_PROFILE.bank_details, ...(r.data.bank_details || {}) },
+        };
+        setProfile(merged);
+        setLoadedProfile(merged);
+      })
+      .catch(() => setProfileError(true))
       .finally(() => setProfileLoading(false));
   }, []);
 
   const saveProfile = async () => {
+    const errors = {
+      gstin: validateGSTIN(profile.gstin),
+      pan: validatePAN(profile.pan),
+      ifsc: validateIFSC(profile.bank_details.ifsc),
+    };
+    if (Object.values(errors).some(Boolean)) {
+      setCodeErrors(errors);
+      pushToast({ type: 'error', title: 'Fix the highlighted codes before saving' });
+      return;
+    }
+
+    // Send only what changed. Two reasons beyond bandwidth: GET returns a
+    // freshly SIGNED logo_url derived from logo_key, so echoing the whole object
+    // back writes an expiring URL into the stored column; and a PATCH that
+    // always carries every field turns any stale local state into a silent
+    // overwrite of someone else's concurrent edit.
+    const changed = {};
+    for (const [k, v] of Object.entries(profile)) {
+      if (JSON.stringify(v) !== JSON.stringify(loadedProfile?.[k])) changed[k] = v;
+    }
+    if (!Object.keys(changed).length) {
+      pushToast({ type: 'info', title: 'No changes to save' });
+      return;
+    }
+
     setSavingProfile(true);
     try {
-      await api.patch('/v1/org/profile', profile);
+      await api.patch('/v1/org/profile', changed);
+      setLoadedProfile(profile);
       pushToast({ type: 'success', title: 'Company profile saved' });
     } catch (err) {
       pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to save profile' });
     } finally { setSavingProfile(false); }
   };
+
+  const checkCode = (field, validate) => (e) =>
+    setCodeErrors(prev => ({ ...prev, [field]: validate(e.target.value) }));
 
   const uploadLogo = async (file) => {
     if (!file) return;
@@ -144,17 +196,21 @@ export default function OrgSettingsPage() {
   if (!orgRole) {
     return (
       <div className="k-screen">
-        <PageHeader title="Organisation" subtitle="संगठन" />
+        <PageHeader title="Organisation" sanskrit="संगठन" />
         <p style={{ padding: 24, color: 'var(--ink-3)' }}>You do not have permission to manage this organisation.</p>
       </div>
     );
   }
 
   const labelSt = { fontSize: 10, fontWeight: 700, color: 'var(--ink-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 };
+  // GSTIN, PAN and IFSC are fixed-format codes. Uppercase monospace signals
+  // that and makes a mistyped character findable by eye.
+  const codeSt = { fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.02em' };
+  const errSt = { display: 'block', fontSize: 11, color: 'var(--danger)', marginTop: 3, textTransform: 'none', letterSpacing: 0, fontWeight: 400 };
 
   return (
     <div className="k-screen">
-      <PageHeader title="Organisation" subtitle="संगठन" />
+      <PageHeader title="Organisation" sanskrit="संगठन" />
 
       <div style={{ padding: '0 24px', maxWidth: 720 }}>
         {orgRole.org_name && (
@@ -171,7 +227,13 @@ export default function OrgSettingsPage() {
             Shown on the letterhead of every invoice PDF (Ganit).
           </div>
 
-          {profileLoading ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>Loading…</div> : (
+          {profileLoading ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>Loading…</div> : profileError ? (
+            <div style={{ fontSize: 12, color: 'var(--danger)' }}>
+              Couldn’t load the company profile. The form is hidden rather than shown
+              blank, because saving a blank form would overwrite what’s stored. Reload
+              to try again.
+            </div>
+          ) : (
             <>
               <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 14 }}>
                 {profile.logo_url
@@ -187,10 +249,23 @@ export default function OrgSettingsPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 10 }}>
                 <label style={{ fontSize: 12 }}><span style={labelSt}>Legal Name</span>
                   <input className="k-input" value={profile.name} onChange={e => setProfile({ ...profile, name: e.target.value })} /></label>
+                {/* Validated on BLUR, not per keystroke — a GSTIN is invalid for
+                    the first 14 characters you type, and flagging it the whole
+                    way trains people to ignore the warning. */}
                 <label style={{ fontSize: 12 }}><span style={labelSt}>GSTIN</span>
-                  <input className="k-input" value={profile.gstin || ''} onChange={e => setProfile({ ...profile, gstin: e.target.value })} /></label>
+                  <input className="k-input" style={codeSt} value={profile.gstin || ''}
+                    aria-invalid={!!codeErrors.gstin}
+                    aria-describedby={codeErrors.gstin ? 'err-gstin' : undefined}
+                    onBlur={checkCode('gstin', validateGSTIN)}
+                    onChange={e => setProfile({ ...profile, gstin: e.target.value })} />
+                  {codeErrors.gstin && <span id="err-gstin" style={errSt}>{codeErrors.gstin}</span>}</label>
                 <label style={{ fontSize: 12 }}><span style={labelSt}>PAN</span>
-                  <input className="k-input" value={profile.pan || ''} onChange={e => setProfile({ ...profile, pan: e.target.value })} /></label>
+                  <input className="k-input" style={codeSt} value={profile.pan || ''}
+                    aria-invalid={!!codeErrors.pan}
+                    aria-describedby={codeErrors.pan ? 'err-pan' : undefined}
+                    onBlur={checkCode('pan', validatePAN)}
+                    onChange={e => setProfile({ ...profile, pan: e.target.value })} />
+                  {codeErrors.pan && <span id="err-pan" style={errSt}>{codeErrors.pan}</span>}</label>
                 <label style={{ fontSize: 12 }}><span style={labelSt}>Email</span>
                   <input className="k-input" value={profile.email} onChange={e => setProfile({ ...profile, email: e.target.value })} /></label>
                 <label style={{ fontSize: 12 }}><span style={labelSt}>Phone</span>
@@ -221,8 +296,16 @@ export default function OrgSettingsPage() {
                   onChange={e => setProfile({ ...profile, bank_details: { ...profile.bank_details, account_name: e.target.value } })} />
                 <input className="k-input" placeholder="Account number" value={profile.bank_details.account_number}
                   onChange={e => setProfile({ ...profile, bank_details: { ...profile.bank_details, account_number: e.target.value } })} />
-                <input className="k-input" placeholder="IFSC" value={profile.bank_details.ifsc}
-                  onChange={e => setProfile({ ...profile, bank_details: { ...profile.bank_details, ifsc: e.target.value } })} />
+                <div>
+                  <input className="k-input" style={{ ...codeSt, width: '100%' }} placeholder="IFSC"
+                    value={profile.bank_details.ifsc}
+                    aria-invalid={!!codeErrors.ifsc}
+                    aria-describedby={codeErrors.ifsc ? 'err-ifsc' : undefined}
+                    aria-label="IFSC"
+                    onBlur={checkCode('ifsc', validateIFSC)}
+                    onChange={e => setProfile({ ...profile, bank_details: { ...profile.bank_details, ifsc: e.target.value } })} />
+                  {codeErrors.ifsc && <span id="err-ifsc" style={errSt}>{codeErrors.ifsc}</span>}
+                </div>
                 <input className="k-input" placeholder="Bank name" value={profile.bank_details.bank_name}
                   onChange={e => setProfile({ ...profile, bank_details: { ...profile.bank_details, bank_name: e.target.value } })} />
                 <input className="k-input" placeholder="Branch" value={profile.bank_details.branch}
@@ -272,7 +355,7 @@ export default function OrgSettingsPage() {
 
                   {isOwner ? (
                     <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em',
-                      padding: '2px 8px', borderRadius: 99, background: 'rgba(0,130,198,.1)', color: 'var(--k-primary)' }}>
+                      padding: '2px 8px', borderRadius: 99, background: 'color-mix(in srgb, var(--primary) 12%, transparent)', color: 'var(--primary)' }}>
                       Owner
                     </span>
                   ) : !isSelf ? (
@@ -282,8 +365,8 @@ export default function OrgSettingsPage() {
                     </select>
                   ) : (
                     <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em',
-                      padding: '2px 8px', borderRadius: 99, background: 'rgba(0,130,198,.1)', color: 'var(--k-primary)' }}>
-                      {m.role_code.replace('_', ' ')}
+                      padding: '2px 8px', borderRadius: 99, background: 'color-mix(in srgb, var(--primary) 12%, transparent)', color: 'var(--primary)' }}>
+                      {roleLabel(m.role_code)}
                     </span>
                   )}
 
@@ -319,16 +402,16 @@ export default function OrgSettingsPage() {
                         return (
                           <label key={mod.code} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: savingModules ? 'wait' : 'pointer',
                             padding: '4px 8px', borderRadius: 6, fontSize: 11, userSelect: 'none',
-                            border: `1px solid ${mod.sensitive ? (granted ? 'rgba(229,62,62,.3)' : 'var(--rule-soft)') : (granted ? 'rgba(5,183,170,.3)' : 'var(--rule-soft)')}`,
-                            background: granted ? (mod.sensitive ? 'rgba(229,62,62,.06)' : 'rgba(5,183,170,.06)') : 'transparent' }}>
+                            border: `1px solid ${granted ? `color-mix(in srgb, ${modTone(mod)} 40%, transparent)` : 'var(--rule-soft)'}`,
+                            background: granted ? `color-mix(in srgb, ${modTone(mod)} 8%, transparent)` : 'transparent' }}>
                             <input type="checkbox" checked={granted} disabled={savingModules}
                               onChange={() => {
                                 const next = granted ? m.modules.filter(c => c !== mod.code) : [...(m.modules || []), mod.code];
                                 saveModules(m.user_id, next);
                               }}
-                              style={{ accentColor: mod.sensitive ? '#E53E3E' : '#05b7aa' }} />
+                              style={{ accentColor: modTone(mod) }} />
                             <span style={{ fontWeight: 600, color: granted ? 'var(--ink)' : 'var(--ink-3)' }}>{mod.label}</span>
-                            {mod.sensitive && <span style={{ fontSize: 9, color: '#E53E3E', fontWeight: 700 }}>SENSITIVE</span>}
+                            {mod.sensitive && <span style={{ fontSize: 9, color: 'var(--danger)', fontWeight: 700 }}>SENSITIVE</span>}
                           </label>
                         );
                       })}

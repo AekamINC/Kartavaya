@@ -19,9 +19,15 @@ import './App.css';
 import './styles/index.css';
 import './styles/kartavaya-design.css';
 import './styles/editorial.css';
+// Global, not imported from CustomizeSettingsPage: it carries the
+// [data-sidebar-bg] and [data-toast-pos] rules, which apply app-wide. Behind
+// the lazy-loaded page they would not exist until you first opened Customize,
+// so a saved sidebar preference would silently not apply on boot.
+import './styles/settings.css';
 
 import { ToastProvider }               from './components/ui/toast';
 import AppShell, { Protected }         from './components/layout/AppShell';
+import { currentUser }                 from './lib/auth';
 import PageLoader                      from './components/layout/PageLoader';
 import { CustomizeProvider } from './components/CustomizePanel';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -47,11 +53,9 @@ const ReportsPage           = lazy(() => import('./pages/ReportsPage'));
 const ApprovalsPage         = lazy(() => import('./pages/ApprovalsPage'));
 const TemplatesPage         = lazy(() => import('./pages/TemplatesPage'));
 const CategoriesPage        = lazy(() => import('./pages/CategoriesPage'));
-const NotificationsSettings = lazy(() => import('./pages/NotificationsSettingsPage'));
 const AdminPage             = lazy(() => import('./pages/AdminPage'));
 const ClientProjectsPage    = lazy(() => import('./pages/ClientProjectsPage'));
 const ClientBoardPage       = lazy(() => import('./pages/ClientBoardPage'));
-const ClientPortal          = lazy(() => import('./pages/ClientPortal'));
 const InboxPage             = lazy(() => import('./pages/InboxPage'));
 const BillingPage           = lazy(() => import('./pages/BillingPage'));
 const AdminBillingPage      = lazy(() => import('./pages/AdminBillingPage'));
@@ -75,6 +79,7 @@ const EsignPage             = lazy(() => import('./pages/EsignPage'));
 const SanvaadPage           = lazy(() => import('./pages/SanvaadPage'));
 const SigningPage           = lazy(() => import('./pages/SigningPage'));
 const CustomizeSettingsPage = lazy(() => import('./pages/CustomizeSettingsPage'));
+const LandingPage           = lazy(() => import('./pages/marketing/LandingPage'));
 
 // ── Outlet context wrappers ────────────────────────────────────────────────────
 // Pages that need teamId or teams from AppShell's outlet context.
@@ -93,6 +98,20 @@ const AutomationsWithContext  = withContext(AutomationsPage,  'teamId');
 const TimeWithContext         = withContext(TimeReportPage,   'teamId');
 const ReportsWithContext      = withContext(ReportsPage,      ctx => ({ teams: ctx.teams }));
 
+/**
+ * `/` serves two audiences. An anonymous visitor gets the public landing page;
+ * someone already signed in gets their dashboard, because a logged-in user
+ * landing on marketing copy has to click again to reach the product they were
+ * going to.
+ *
+ * This sits OUTSIDE <Protected> deliberately — inside it, an anonymous visitor
+ * would be bounced to /login and never see the page at all, which is the whole
+ * problem the landing page exists to solve.
+ */
+function RootGate() {
+  return currentUser() ? <Navigate to="/dashboard" replace /> : <LandingPage />;
+}
+
 // ── Route tree ─────────────────────────────────────────────────────────────────
 function AppRouter() {
   return (
@@ -106,9 +125,12 @@ function AppRouter() {
         <Route path="/approve"          element={<ApprovePage />} />
         <Route path="/sign/:token"      element={<SigningPage />} />
 
+        {/* Public landing at `/` — see RootGate. Declared before the protected
+            shell so the exact-match wins for an anonymous visitor. */}
+        <Route path="/" element={<RootGate />} />
+
         {/* Protected shell — all child routes inherit auth + layout */}
         <Route path="/" element={<Protected><AppShell /></Protected>}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
 
           {/* Core */}
           <Route path="dashboard"              element={<DashboardWithContext />} />
@@ -129,7 +151,11 @@ function AppRouter() {
 
           {/* Settings */}
           <Route path="settings/categories"    element={<CategoriesPage />} />
-          <Route path="settings/notifications" element={<NotificationsSettings />} />
+          {/* Notification settings folded into the customize hub — they are
+              preferences, and having them on their own route meant "where do I
+              turn that off" had two answers. Redirect, so existing links and
+              bookmarks land on the right tab instead of 404ing. */}
+          <Route path="settings/notifications" element={<Navigate to="/settings/customize?tab=notifications" replace />} />
           <Route path="settings/customize"     element={<CustomizeSettingsPage />} />
           <Route path="settings/organisation" element={<OrgSettingsPage />} />
 
@@ -168,7 +194,13 @@ function AppRouter() {
         </Route>
 
         {/* Legacy client portal (direct access, own Protected wrapper) */}
-        <Route path="/client/legacy" element={<Protected><ClientPortal /></Protected>} />
+        {/* /client/legacy retired. It rendered a dark portal from an earlier
+            design era — hardcoded K.dark surfaces and #8aa5be copy, a fourth
+            token vocabulary alongside the k-* CSS, Tailwind and the drawer's
+            --ink set — so a client landing there saw a different product from
+            the one their accountant was describing on the phone. Redirected
+            rather than removed, so an emailed link still arrives somewhere. */}
+        <Route path="/client/legacy" element={<Navigate to="/client" replace />} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

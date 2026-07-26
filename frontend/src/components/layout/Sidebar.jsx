@@ -116,8 +116,18 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0 }) {
     );
   }
 
-  const isActive = (to) =>
-    location.pathname === to || location.pathname.startsWith(to + '/');
+  // An entry may carry a query string (the client nav points at a specific tab
+  // of the customize hub). Entries without one match on path alone, so
+  // Customize stays lit on every tab; entries with one must also match the
+  // param, so a tab-specific link doesn't light up on its siblings.
+  const isActive = (to) => {
+    const [path, query] = to.split('?');
+    if (location.pathname !== path && !location.pathname.startsWith(path + '/')) return false;
+    if (!query) return true;
+    const want = new URLSearchParams(query);
+    const have = new URLSearchParams(location.search);
+    return [...want].every(([k, v]) => have.get(k) === v);
+  };
 
   const initials = ((user?.full_name || user?.name || 'U')
     .split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase());

@@ -1,0 +1,240 @@
+/* landing.css — the public marketing page.
+ *
+ * A marketing type scale over the SAME tokens as the product: larger display
+ * sizes, more negative tracking, identical colours. 00 §2 still governs, so a
+ * palette or type change propagates here without a second edit.
+ *
+ * Loaded only by the landing route.
+ */
+
+.lp {
+  background: var(--bg);
+  color: var(--on-surface);
+  font-family: var(--font-ui);
+  overflow-x: hidden;
+}
+.lwrap { width: min(1240px, 100% - 44px); margin: 0 auto; }
+.lsec  { padding: 82px 0; }
+
+/* ── Scroll reveal ────────────────────────────────────────────────────────
+   Default state is VISIBLE. The observer removes the offset; it never adds
+   it. If the observer never runs — reduced motion, an old browser, a script
+   error — the page reads normally instead of being blank, which is the
+   failure mode of every reveal implementation that starts at opacity 0. */
+[data-rev] {
+  opacity: 1;
+  transform: none;
+  transition: opacity var(--dur-slow) var(--ease-standard),
+              transform var(--dur-slow) var(--ease-standard);
+}
+.js-rev [data-rev]:not(.in) {
+  opacity: 0;
+  transform: translateY(calc(18px * var(--motion-scale, 1)));
+}
+
+/* ── Nav ──────────────────────────────────────────────────────────────── */
+.lnav {
+  position: sticky; top: 0; z-index: 40;
+  background: transparent;
+  transition: background var(--dur-fast), border-color var(--dur-fast);
+  border-bottom: 1px solid transparent;
+}
+.lnav.solid {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border-bottom-color: var(--outline-variant);
+}
+.lnav__in {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 20px; padding: 14px 0;
+}
+.lnav__links { display: flex; align-items: center; gap: 26px; }
+.lnav__a {
+  font-size: 13.5px; color: var(--on-surface-2); text-decoration: none;
+  background: none; border: 0; cursor: pointer; font-family: inherit;
+}
+.lnav__a:hover { color: var(--on-surface); }
+.lnav__burger { display: none; }
+
+/* ── Hero ─────────────────────────────────────────────────────────────── */
+.lhero { padding: 68px 0 82px; position: relative; }
+.lhero__grid {
+  display: grid; grid-template-columns: minmax(0, 1.02fr) minmax(0, .98fr);
+  gap: 54px; align-items: center;
+}
+.lhero__h {
+  font-family: var(--font-display);
+  font-size: clamp(40px, 5.4vw, 68px);
+  font-weight: 400; line-height: 1.06; letter-spacing: -.034em;
+  margin: 0 0 18px; color: var(--on-surface); text-wrap: balance;
+}
+.lhero__h em {
+  font-style: italic;
+  color: var(--primary);
+}
+.lhero__sub {
+  font-size: 17px; line-height: 1.6; color: var(--on-surface-2);
+  margin: 0 0 28px; max-width: 30em; text-wrap: pretty;
+}
+.lhero__ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+.lcta {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 13px 26px; border-radius: var(--r-sm);
+  font-size: 14.5px; font-weight: 600; font-family: inherit;
+  text-decoration: none; cursor: pointer; border: 1px solid transparent;
+  transition: background var(--dur-fast), border-color var(--dur-fast);
+}
+.lcta--fill { background: var(--primary); color: var(--on-primary); }
+.lcta--fill:hover { background: var(--primary-hover); }
+.lcta--out {
+  background: transparent; color: var(--on-surface);
+  border-color: var(--outline);
+}
+.lcta--out:hover { background: var(--s-container); }
+.lhero__trust { font-size: 12.5px; color: var(--on-surface-3); }
+
+/* ── Product visual frame ─────────────────────────────────────────────────
+   The fragments inside are real components, so the frame must not restyle
+   them — it only provides the browser chrome and the scale. */
+.lframe {
+  border-radius: var(--r-lg);
+  border: 1px solid var(--outline-variant);
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+.lframe__bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 9px 13px;
+  background: var(--s-container);
+  border-bottom: 1px solid var(--outline-variant);
+}
+.lframe__dot { width: 9px; height: 9px; border-radius: 50%; background: var(--outline); }
+.lframe__body { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+
+/* ── Section headings ─────────────────────────────────────────────────── */
+.lsec__kicker {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .16em;
+  text-transform: uppercase; color: var(--primary); margin-bottom: 10px;
+}
+.lsec__h {
+  font-family: var(--font-display);
+  font-size: clamp(28px, 3.2vw, 40px);
+  font-weight: 400; letter-spacing: -.028em; line-height: 1.12;
+  margin: 0 0 14px; color: var(--on-surface); text-wrap: balance;
+}
+.lsec__lede {
+  font-size: 15.5px; line-height: 1.6; color: var(--on-surface-2);
+  max-width: 62ch; margin: 0 0 40px; text-wrap: pretty;
+}
+
+/* ── Modules ──────────────────────────────────────────────────────────────
+   Devanagari LEADS here, and this is the one place the bilingual hierarchy
+   inverts from 24's rule. On the marketing page the Devanagari IS the
+   differentiator rather than a recognition cue, and a firm in Ahmedabad
+   reads गणित faster than "Invoicing". */
+.lmods { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 12px; }
+.lmod {
+  padding: 18px; border-radius: var(--r-md);
+  border: 1px solid var(--outline-variant); background: var(--surface);
+  transition: border-color var(--dur-fast), transform var(--dur-fast);
+}
+.lmod:hover { border-color: var(--primary); }
+.lmod__hi {
+  font-family: var(--font-indic); font-size: 21px;
+  color: var(--on-surface); line-height: 1.35; margin-bottom: 2px;
+}
+.lmod__en { font-size: 12.5px; color: var(--on-surface-3); }
+
+/* ── Feature rows ─────────────────────────────────────────────────────── */
+.lfeat {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 48px; align-items: center; padding: 46px 0;
+}
+.lfeat:nth-child(even) .lfeat__txt { order: 2; }
+.lfeat__h {
+  font-family: var(--font-display); font-size: 27px; font-weight: 400;
+  letter-spacing: -.024em; margin: 0 0 12px; color: var(--on-surface);
+}
+.lfeat__p { font-size: 15px; line-height: 1.65; color: var(--on-surface-2); text-wrap: pretty; }
+
+/* ── Pricing ──────────────────────────────────────────────────────────── */
+.lplans { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.lplan {
+  display: flex; flex-direction: column;
+  padding: 24px; border-radius: var(--r-md);
+  border: 1px solid var(--outline-variant); background: var(--surface);
+}
+.lplan--hi { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.lplan__n {
+  font-size: 15px; font-weight: 600; text-transform: capitalize;
+  color: var(--on-surface); margin-bottom: 4px;
+}
+.lplan__d { font-size: 12.5px; color: var(--on-surface-3); line-height: 1.5; }
+/* margin-top:auto pins the credit row to the bottom of every card regardless
+   of how tall the description above it runs. A fixed description height was
+   what put the chips 20px out of alignment. */
+.lplan__cr { margin-top: auto; padding-top: 20px; }
+.lplan__n2 {
+  font-family: var(--font-display); font-size: 32px; font-weight: 400;
+  letter-spacing: -.03em; font-variant-numeric: tabular-nums;
+  color: var(--on-surface); line-height: 1;
+}
+.lplan__u { font-size: 11.5px; color: var(--on-surface-3); margin-top: 4px; }
+
+/* ── Trust ────────────────────────────────────────────────────────────── */
+.ltrust { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.ltrust__c {
+  padding: 20px; border-radius: var(--r-md);
+  border: 1px solid var(--outline-variant); background: var(--s-lowest);
+}
+.ltrust__h { font-size: 14px; font-weight: 600; color: var(--on-surface); margin-bottom: 6px; }
+.ltrust__p { font-size: 13px; line-height: 1.55; color: var(--on-surface-2); text-wrap: pretty; }
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+.lfoot {
+  border-top: 1px solid var(--outline-variant);
+  padding: 44px 0 34px; background: var(--s-lowest);
+}
+.lfoot__grid { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 32px; }
+.lfoot__h {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--on-surface-3); margin-bottom: 12px;
+}
+.lfoot__l { display: flex; flex-direction: column; gap: 9px; }
+.lfoot__a { font-size: 13px; color: var(--on-surface-2); text-decoration: none; }
+.lfoot__a:hover { color: var(--on-surface); }
+.lfoot__base {
+  margin-top: 34px; padding-top: 20px;
+  border-top: 1px solid var(--outline-variant);
+  display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between;
+  font-size: 12px; color: var(--on-surface-3);
+}
+
+/* ── Responsive: three breakpoints ────────────────────────────────────── */
+@media (max-width: 1080px) {
+  .lhero__grid,
+  .lfeat { grid-template-columns: 1fr; gap: 34px; }
+  .lfeat:nth-child(even) .lfeat__txt { order: 0; }
+  .lplans { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lfoot__grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 860px) {
+  .lnav__links { display: none; }
+  .lnav__burger { display: inline-flex; }
+  .lnav__links.open {
+    display: flex; flex-direction: column; align-items: flex-start;
+    position: absolute; left: 0; right: 0; top: 100%;
+    padding: 18px 22px; gap: 16px;
+    background: var(--surface); border-bottom: 1px solid var(--outline-variant);
+  }
+  .lsec { padding: 58px 0; }
+}
+
+@media (max-width: 560px) {
+  .lwrap { width: calc(100% - 32px); }
+  .lplans, .lfoot__grid { grid-template-columns: 1fr; }
+  .lhero__ctas { flex-direction: column; align-items: stretch; }
+  .lcta { width: 100%; }
+}

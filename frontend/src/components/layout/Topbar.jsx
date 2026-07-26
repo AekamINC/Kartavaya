@@ -1,10 +1,15 @@
 /**
- * Topbar.jsx — editorial header: "कर्तव्य / Page" breadcrumb, pill search, command palette.
+ * Topbar.jsx — editorial header: breadcrumb, pill search, actions.
+ *
+ * The search button opens AppShell's palette via onOpenCmdk. It used to render
+ * a SECOND CommandPalette of its own, with its own command list — and since
+ * both that component and AppShell bind Cmd/Ctrl+K on window, pressing the
+ * shortcut opened two stacked palettes with two different command sets. The
+ * onOpenCmdk prop was already being passed in and simply ignored.
  */
-import React, { useState } from 'react';
+import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { resolveRouteMeta } from './navConfig';
-import { CommandPalette } from '../ui/CommandPalette';
 
 // PAGE_META removed — the breadcrumb now derives from navConfig.js.
 // It had 21 entries against far more live routes, so /sanvaad, /graha,
@@ -12,39 +17,9 @@ import { CommandPalette } from '../ui/CommandPalette';
 // /admin/orgs and /admin/costs all fell through and rendered the app name.
 // It also disagreed with the sidebar on two labels (see navConfig.js).
 
-const COMMANDS = [
-  { id: 'new-task',    label: 'New Task',       section: 'Actions',    shortcut: 'N', keywords: ['create', 'add'] },
-  { id: 'dashboard',   label: 'Go to Today',    section: 'Navigation', shortcut: 'G D', keywords: ['home', 'dashboard'] },
-  { id: 'tasks',       label: 'Go to Tasks',    section: 'Navigation', shortcut: 'G T', keywords: ['list'] },
-  { id: 'projects',    label: 'Go to Projects', section: 'Navigation', shortcut: 'G P', keywords: ['boards'] },
-  { id: 'boards',      label: 'Go to Boards',   section: 'Navigation', keywords: ['kanban'] },
-  { id: 'inbox',       label: 'Go to Inbox',    section: 'Navigation', shortcut: 'G I', keywords: ['messages', 'notifications'] },
-  { id: 'approvals',   label: 'Go to Approvals',section: 'Navigation', keywords: ['approve', 'review'] },
-  { id: 'activity',    label: 'Go to Activity',  section: 'Navigation', keywords: ['feed', 'log'] },
-  { id: 'time',        label: 'Go to Time Report', section: 'Navigation', keywords: ['timer', 'tracking'] },
-  { id: 'reports',     label: 'Go to Reports',  section: 'Navigation', keywords: ['analytics'] },
-  { id: 'teams',       label: 'Go to Team',     section: 'Navigation', keywords: ['members', 'people'] },
-  { id: 'templates',   label: 'Go to Templates',section: 'Navigation', keywords: ['template'] },
-  { id: 'automations', label: 'Go to Automations', section: 'Navigation', keywords: ['rules', 'automation'] },
-  { id: 'settings',    label: 'Go to Settings', section: 'Navigation', keywords: ['categories', 'preferences'] },
-  { id: 'sanvaad',    label: 'Go to Messages', section: 'Navigation', keywords: ['messaging', 'chat', 'sanvaad', 'samvada'] },
-];
-
-export default function Topbar({ unread = 0, onOpenNotifications, onNewTask }) {
+export default function Topbar({ unread = 0, onOpenNotifications, onNewTask, onOpenCmdk }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const [cmdOpen, setCmdOpen] = useState(false);
-
-  const handleCommand = (cmd) => {
-    if (cmd.id === 'new-task') { onNewTask?.(); return; }
-    const routes = {
-      dashboard: '/dashboard', tasks: '/tasks', projects: '/projects', boards: '/boards',
-      inbox: '/inbox', approvals: '/approvals', activity: '/activity', time: '/time',
-      reports: '/reports', teams: '/teams', templates: '/templates', automations: '/automations',
-      settings: '/settings/categories', sanvaad: '/sanvaad',
-    };
-    if (routes[cmd.id]) navigate(routes[cmd.id]);
-  };
 
   const meta = resolveRouteMeta(location.pathname);
 
@@ -66,7 +41,7 @@ export default function Topbar({ unread = 0, onOpenNotifications, onNewTask }) {
       <button
         type="button"
         className="k-topbar__search"
-        onClick={() => setCmdOpen(true)}
+        onClick={onOpenCmdk}
         aria-keyshortcuts="Meta+K Control+K"
         style={{ cursor: 'pointer' }}
       >
@@ -93,12 +68,6 @@ export default function Topbar({ unread = 0, onOpenNotifications, onNewTask }) {
           New task
         </button>
       </div>
-      <CommandPalette
-        open={cmdOpen}
-        onOpenChange={setCmdOpen}
-        commands={COMMANDS}
-        onSelect={handleCommand}
-      />
     </header>
   );
 }

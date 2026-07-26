@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
+import { useDismiss } from '../../hooks/useDismiss';
 import { Check, X } from 'lucide-react';
 import { AVATAR_COLORS, userInitials } from '../../lib/utils';
 import { lbl } from './constants';
@@ -8,12 +9,8 @@ function SubtaskAssigneePicker({ subtaskId, assigneeUserId, aName, members, onAs
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [open]);
+  // Outside-click AND Escape — this used to be outside-click only.
+  useDismiss(open, ref, useCallback(() => setOpen(false), []));
 
   const assignableMembers = members.filter(m => m.display_name || m.full_name || m.name);
 

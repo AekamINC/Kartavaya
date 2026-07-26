@@ -121,7 +121,7 @@ export default function HubDashboardPage() {
 
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Srijan · सृजन" subtitle="AI content, chatbot, knowledge base, social publishing" />
+      <PageHeader title="Srijan" sanskrit="सृजन" lede="AI content, chatbot, knowledge base, social publishing" />
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)', overflowX: 'auto' }}>

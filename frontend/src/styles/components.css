@@ -118,6 +118,72 @@ textarea.inp { resize: vertical; min-height: 76px; }
   color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent);
 }
 
+/* ── Status pipeline (.pipe) and tabs (.tabs) ─────────────────────────────
+   Both were Tailwind with ZERO `dark:` variants, and both render inside the
+   task drawer. tailwind.config.js bakes static hexes — bgMuted #f1f3f7,
+   borderDefault #e2e6ed, textMuted #6b7280 — so in dark mode a near-white
+   pipeline and a near-white tab rule painted on a near-black drawer panel.
+   On tokens they now flip with the theme like everything else.
+
+   --seg-bg is set per state so the chevron notch can match its own segment;
+   a triangle whose colour is restated per variant drifts the moment one
+   background changes. */
+.pipe { display: flex; align-items: center; width: 100%; }
+.pipe__seg {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  min-width: 80px; padding: 8px 16px;
+  font-family: inherit; font-size: var(--t-label); font-weight: 600;
+  border: none; user-select: none; outline: none;
+  background: var(--seg-bg); color: var(--seg-fg);
+  transition: background var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard);
+}
+.pipe__seg:first-child { border-radius: var(--r-pill) 0 0 var(--r-pill); }
+.pipe__seg:last-child  { border-radius: 0 var(--r-pill) var(--r-pill) 0; }
+.pipe__seg--on     { --seg-bg: var(--primary); --seg-fg: var(--on-primary); z-index: 1; box-shadow: var(--shadow-1); }
+.pipe__seg--past   { --seg-bg: color-mix(in srgb, var(--primary) 15%, transparent); --seg-fg: var(--primary); }
+.pipe__seg--past:hover { --seg-bg: color-mix(in srgb, var(--primary) 25%, transparent); }
+.pipe__seg--future { --seg-bg: var(--s-container); --seg-fg: var(--on-surface-3); }
+.pipe__seg--future:hover { --seg-bg: var(--s-high); }
+.pipe__seg--click  { cursor: pointer; }
+.pipe__seg:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.pipe__tick { margin-right: 6px; flex-shrink: 0; }
+/* Chevron notch, inheriting the segment's own background. */
+.pipe__seg:not(:last-child)::after {
+  content: ''; position: absolute; right: 0; top: 50%; z-index: 2;
+  transform: translate(50%, -50%); width: 0; height: 0;
+  border-top: 14px solid transparent; border-bottom: 14px solid transparent;
+  border-left: 8px solid var(--seg-bg);
+}
+
+.tabs__bar { position: relative; border-bottom: 1px solid var(--outline-variant); }
+.tabs__list { display: flex; gap: 0; overflow-x: auto; scrollbar-width: none; }
+.tabs__list::-webkit-scrollbar { display: none; }
+.tabs__b {
+  position: relative; padding: 10px 16px; white-space: nowrap;
+  font-family: inherit; font-size: var(--t-body-sm); font-weight: 500;
+  background: none; border: none; cursor: pointer; outline: none;
+  color: var(--on-surface-3);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.tabs__b:hover { color: var(--on-surface); }
+.tabs__b.on    { color: var(--primary); }
+.tabs__b:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--r-xs); }
+.tabs__label { display: flex; align-items: center; gap: 6px; }
+.tabs__n {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: var(--r-pill); font-size: var(--t-label-sm); font-weight: 700;
+  background: var(--s-container); color: var(--on-surface-3);
+}
+.tabs__b.on .tabs__n { background: color-mix(in srgb, var(--primary) 15%, transparent); color: var(--primary); }
+.tabs__ind {
+  position: absolute; bottom: 0; height: 2px; border-radius: var(--r-pill);
+  background: var(--primary);
+  transition: left var(--dur-base) var(--ease-standard), width var(--dur-base) var(--ease-standard);
+}
+.tabs__panel { padding-top: 16px; }
+
 /* ── Error states — four, not one "Something went wrong" ───────────────────
    A single generic error tells the user nothing and gives them nothing to do.
    Only `server` is red: a 404 on a deleted task is not an alarm, and colouring
@@ -130,3 +196,149 @@ textarea.inp { resize: vertical; min-height: 76px; }
 .k-err__d  { font-size: var(--t-body-sm); line-height: var(--line-height-base); color: var(--on-surface-3); text-wrap: pretty; margin: 0; }
 
 .k-offline { position: sticky; top: 0; z-index: 60; padding: 7px var(--pad-page); background: var(--warn-container); color: var(--warn); font-size: var(--t-label); font-weight: 500; text-align: center; }
+
+/* ── Modal ────────────────────────────────────────────────────────────────
+   Converted off the static Tailwind palette (bg-bgDefault/border-borderDefault
+   had no dark: variants, so the panel stayed cream over a near-black app). */
+.modal__scrim {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, .45);
+  animation: modalIn calc(var(--dur-fast) * var(--ix)) var(--ease-standard);
+}
+.modal__panel {
+  width: 100%; max-height: calc(100vh - 32px);
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+.modal__panel--sm { max-width: 420px; }
+.modal__panel--md { max-width: 620px; }
+.modal__panel--lg { max-width: 900px; }
+.modal__head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+.modal__title {
+  margin: 0; font-size: 14px; font-weight: 600;
+  color: var(--on-surface); font-family: var(--font-ui);
+}
+.modal__body { padding: 18px 20px; overflow: auto; flex: 1; min-height: 0; }
+.modal__foot {
+  padding: 14px 20px; border-top: 1px solid var(--outline-variant);
+  display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0;
+}
+@keyframes modalIn { from { opacity: 0 } to { opacity: 1 } }
+
+/* ── Switch ───────────────────────────────────────────────────────────────
+   A boolean that applies immediately, as distinct from a checkbox inside a
+   form that is committed on submit. Wrap it in a <label> with the text after
+   it so the whole row is the hit target. */
+.sw {
+  position: relative; width: 38px; height: 22px; flex-shrink: 0;
+  border-radius: var(--r-pill); border: 0; padding: 0; cursor: pointer;
+  background: var(--s-high);
+  transition: background var(--dur-base) var(--ease-standard);
+}
+.sw::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #fff; box-shadow: var(--shadow-1);
+  transition: transform var(--dur-base) var(--ease-spring);
+}
+.sw[aria-checked="true"] { background: var(--primary); }
+/* Travel is scaled by --motion-scale so "reduced" moves less, not just faster. */
+.sw[aria-checked="true"]::after { transform: translateX(calc(16px * var(--motion-scale, 1))); }
+.sw:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.sw__row {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  font-size: var(--t-body-sm); color: var(--on-surface-2);
+}
+
+/* ── Menu / typeahead results ─────────────────────────────────────────────
+   The floating list under a search field. Every page that has a person or
+   product picker had rebuilt this with inline styles and its own hover
+   handlers written in JS (onMouseEnter setting style.background), which is a
+   repaint per row and invisible to the theme. */
+.menu {
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+  margin-top: 4px; max-height: 220px; overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-3);
+}
+.menu__item {
+  display: block; width: 100%; text-align: left;
+  padding: 10px 14px; border: 0; background: transparent; cursor: pointer;
+  font-family: inherit;
+  border-bottom: 1px solid var(--outline-variant);
+  transition: background var(--dur-fast);
+}
+.menu__item:last-child { border-bottom: 0; }
+.menu__item:hover  { background: var(--s-container); }
+.menu__item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.menu__t { font-size: var(--t-body-sm); font-weight: 500; color: var(--on-surface); }
+.menu__d { font-size: var(--t-label); color: var(--on-surface-3); margin-top: 1px; }
+.menu__empty { padding: 10px 14px; font-size: var(--t-body-sm); color: var(--on-surface-3); }
+
+/* ── Avatar sizes ─────────────────────────────────────────────────────── */
+.k-avatar--sm { width: 28px; height: 28px; font-size: 11px; }
+.k-avatar--md { width: 36px; height: 36px; font-size: 13px; }
+.k-avatar--lg { width: 44px; height: 44px; font-size: 16px; }
+
+/* ── Selected-entity chip ─────────────────────────────────────────────────
+   A person or record already chosen, with a means of clearing it. */
+.picked {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--r-sm);
+  border: 1px solid var(--primary); background: var(--primary-container);
+}
+.picked__body { flex: 1; min-width: 0; }
+.picked__t { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-primary-container); }
+.picked__d { font-size: var(--t-label); color: var(--on-primary-container); opacity: .8; }
+.picked__x {
+  background: none; border: 0; cursor: pointer; padding: 0; line-height: 1;
+  font-size: 18px; color: var(--on-primary-container);
+}
+
+/* ── Dashed "add" affordance ──────────────────────────────────────────── */
+.addbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 11px 18px;
+  border: 1.5px dashed var(--primary); border-radius: var(--r-sm);
+  background: transparent; color: var(--primary);
+  font-family: inherit; font-size: var(--t-body-sm); font-weight: 600;
+  cursor: pointer;
+  transition: background var(--dur-fast);
+}
+.addbtn:hover { background: var(--primary-container); }
+.addbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── Layout primitives ────────────────────────────────────────────────────
+   The two arrangements that inline styles were being written for over and
+   over: a vertical rhythm inside a card body, and a positioning context for a
+   floating menu. Naming them stops each page inventing its own gap value. */
+.stack  { display: flex; flex-direction: column; gap: 14px; }
+.stack--tight { gap: 8px; }
+.anchor { position: relative; display: flex; flex-direction: column; gap: 8px; }
+
+/* A quiet note between sections — "nothing here yet", "showing 20 of 340". */
+.k-note {
+  padding: 32px 0; text-align: center;
+  font-size: var(--t-body-sm); font-style: italic; color: var(--on-surface-3);
+}
+
+/* Admin row at the foot of a member card: role select + destructive action. */
+.k-mcard__admin {
+  display: flex; gap: 8px; align-items: center;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--outline-variant);
+}
+.k-mcard__admin .inp { flex: 1; padding: 6px 9px; font-size: var(--t-label); }

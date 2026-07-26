@@ -128,14 +128,19 @@ export default function AppShell() {
         if (live) {
           if (prevUnread.current !== null && count > prevUnread.current) {
             if (document.visibilityState === 'visible') {
-              // Show custom in-app toasts for each fresh notification
+              // Show a toast per fresh notification.
+              //
+              // The `else` branch here used to manufacture a synthetic toast
+              // reading "New notification / Open notifications to view", with
+              // url: null so it was not even clickable. A notification that
+              // interrupts and then declines to say what happened is worse than
+              // none — it costs a decision and returns nothing. When the poll
+              // knows the count but not the content, update the badge silently
+              // and let the user open the bell when they choose.
               if (fresh.length > 0) {
                 setToasts(prev => [...prev, ...fresh.filter(n => !prev.find(p => p.notification_id === n.notification_id))]);
-              } else {
-                // Fallback synthetic toast if fresh list is empty
-                setToasts(prev => [...prev, { notification_id: `synth-${Date.now()}`, title: 'New notification', message: 'Open notifications to view', url: null }]);
+                playNotifSound();
               }
-              playNotifSound();
             } else if (Notification.permission === 'granted') {
               fireBrowserNotif(
                 fresh[0]?.title ?? 'New notification',

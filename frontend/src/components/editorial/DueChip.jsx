@@ -1,7 +1,21 @@
 import React from 'react';
 import { formatTime, hasTimeComponent } from '../../lib/timeFormat';
 
-function relDue(iso) {
+/**
+ * The single due-date presentation rule.
+ *
+ * This logic existed three times and the three disagreed, so the same task read
+ * "Today, 4:30 pm" in a list, "Due today, 4:30 pm" on a board and "Jul 25" in
+ * the table — and only the board had a two-day "soon" tier. Worse, the table
+ * formatted with toLocaleDateString(undefined, …), i.e. the BROWSER's locale,
+ * while the other two pin en-IN: a US-locale browser showed the same date in
+ * two different formats on two screens of the same app.
+ *
+ * The board's `soon` tier is adopted here — it is genuinely useful — but
+ * adopted ONCE. Tone names are this file's (danger/warn/soon/normal/muted);
+ * the board's parallel vocabulary (overdue/today/soon/…) is gone.
+ */
+export function relDue(iso) {
   if (!iso) return { label: '—', tone: 'muted' };
   const time = hasTimeComponent(iso) ? `, ${formatTime(iso)}` : '';
   const d = new Date(iso); d.setHours(0, 0, 0, 0);
@@ -10,6 +24,7 @@ function relDue(iso) {
   if (diff < 0)   return { label: `${Math.abs(diff)}d overdue`, tone: 'danger' };
   if (diff === 0) return { label: `Today${time}`,    tone: 'warn' };
   if (diff === 1) return { label: `Tomorrow${time}`, tone: 'warn' };
+  if (diff === 2) return { label: `In ${diff}d${time}`, tone: 'soon' };
   if (diff < 7)   return { label: `In ${diff}d${time}`, tone: 'normal' };
   return { label: `${d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}${time}`, tone: 'muted' };
 }

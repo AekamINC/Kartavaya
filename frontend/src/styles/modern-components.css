@@ -20,7 +20,7 @@
   padding: 16px;
   border: 1px solid var(--border);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s ease;
+  transition: all calc(0.2s * var(--ix)) ease;
 }
 
 .elevated-card:hover {
@@ -77,7 +77,7 @@
   font-weight: 500;
   font-size: 14px;
   letter-spacing: 0.5px;
-  transition: all 0.2s ease;
+  transition: all calc(0.2s * var(--ix)) ease;
   border: none;
   cursor: pointer;
 }
@@ -90,7 +90,7 @@
   border: 2px solid var(--border);
   background: var(--input-bg);
   font-size: 14px;
-  transition: all 0.2s ease;
+  transition: all calc(0.2s * var(--ix)) ease;
   outline: none;
 }
 
@@ -126,7 +126,7 @@
   height: 100%;
   background: linear-gradient(90deg, #0082c6, #05b7aa);
   border-radius: 4px;
-  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width calc(0.6s * var(--ix)) cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
   overflow: hidden;
 }

@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useDismiss } from '../hooks/useDismiss';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import ConfirmDialog from './ui/ConfirmDialog';
+import FocusTrap from './ui/FocusTrap';
 import { StatusBar } from './ui/StatusBar';
 import { Tabs } from './ui/Tabs';
 import FieldRenderer from './fields/FieldRenderer';
@@ -89,15 +91,10 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   const [showRequestPanel, setShowRequestPanel] = useState(false);
   const [showRejectInput,  setShowRejectInput]  = useState(false);
 
-  // ── Close assignee dropdown on outside click ──────────────────────────────
-  useEffect(() => {
-    if (!assigneeOpen) return;
-    const handler = e => {
-      if (assigneeRef.current && !assigneeRef.current.contains(e.target)) setAssigneeOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [assigneeOpen]);
+  // Dismissal for the assignee dropdown. This handler lived here rather than in
+  // the component that renders the dropdown, which is why it drifted from the
+  // other three copies; all four now share one hook, and all four gain Escape.
+  useDismiss(assigneeOpen, assigneeRef, useCallback(() => setAssigneeOpen(false), []));
 
   // ── Load task on open ─────────────────────────────────────────────────────
   const mentionSource = teamMembers.length > 0 ? teamMembers : members;
@@ -504,8 +501,19 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
 
   return (
     <>
-      <div className="k-dr-scrim" onClick={e => e.target === e.currentTarget && onClose()}>
-        <div className={`k-dr${scrolled ? ' is-scrolled' : ''}`}>
+      <div className="k-dr-scrim" role="presentation" onClick={e => e.target === e.currentTarget && onClose()}>
+        {/* The drawer was the last overlay with no focus trap — modal,
+            ConfirmDialog and CommandPalette all have one. Tab walked straight
+            out of the open drawer into the board behind the scrim, and closing
+            dropped focus at <body> instead of returning it to the card that
+            opened it. Trap wraps the panel, not the scrim. */}
+        <FocusTrap active>
+        <div
+          className={`k-dr${scrolled ? ' is-scrolled' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label={task?.title ? `Task: ${task.title}` : 'Task details'}
+        >
 
           <DrawerHeader
             task={task} draft={draft} setDraft={setDraft} saving={saving}
@@ -667,6 +675,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
             )}
           </div>
         </div>
+        </FocusTrap>
       </div>
 
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />

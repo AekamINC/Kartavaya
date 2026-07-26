@@ -125,7 +125,7 @@ export default function HubClientDetailPage() {
       <div style={{ marginBottom: 8 }}>
         <button onClick={() => navigate('/hub/clients')} className="k-btn k-btn--ghost" style={{ fontSize: 12 }}>← Back to Clients</button>
       </div>
-      <PageHeader title={client.name} subtitle={`${client.slug} · ${client.industry || 'No industry'}`} />
+      <PageHeader title={client.name} lede={`${client.slug} · ${client.industry || 'No industry'}`} />
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)' }}>

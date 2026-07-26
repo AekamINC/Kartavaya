@@ -18,7 +18,7 @@ export default function ScrapersPage() {
 
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Data Tools · डेटा" subtitle="Scrape leads, profiles & insights from the web" />
+      <PageHeader title="Data Tools" sanskrit="डेटा" lede="Scrape leads, profiles & insights from the web" />
       <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--rule-soft)' }}>
         {tabs.map(t => (
           <button key={t} onClick={() => setTab(t)}

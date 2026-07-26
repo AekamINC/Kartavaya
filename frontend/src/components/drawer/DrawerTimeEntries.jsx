@@ -46,7 +46,11 @@ export default function DrawerTimeEntries({
             <button
               onClick={stopTimer}
               className="k-btn k-btn--sm"
-              style={{ background: '#dc2626', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: 5 }}
+              // Was a hardcoded #dc2626. --danger is themed (#B42318 light,
+              // #F2867A dark), so every other danger surface lightens in dark
+              // mode while this button stayed at light-mode weight on a dark
+              // panel.
+              style={{ background: 'var(--danger)', color: 'var(--on-primary)', border: 'none', display: 'flex', alignItems: 'center', gap: 5 }}
             >
               <Square size={11} /> Stop
             </button>

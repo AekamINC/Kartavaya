@@ -79,7 +79,10 @@ async def list_plans(user=Depends(require_user)):
     mod_list = []
     for r in modules:
         m = dict(r)
-        if not is_admin:
+        # is_staff, not is_admin — the latter was never defined, so this raised
+        # NameError for any org with an active add-on module, which failed the
+        # whole billing page (its four requests are awaited together).
+        if not is_staff:
             m.pop("price_per_user_monthly", None)
         mod_list.append(m)
 
@@ -389,9 +392,15 @@ async def get_usage(user=Depends(require_user), org_id: str = Depends(get_org_id
         "WHERE org_id=$1::uuid AND recorded_at=CURRENT_DATE",
         org_id,
     )
+    # COALESCE, so a per-org seat count overrides the tier default. The org
+    # column is the seats actually bought; the plan column is the tier's
+    # default. NULL on both still means unlimited, which is the existing
+    # behaviour for every plan except basic and must not become 0.
     sub = await pool.fetchrow(
-        "SELECT p.max_users FROM staging.subscriptions s "
+        "SELECT COALESCE(o.max_users, p.max_users) AS max_users "
+        "FROM staging.subscriptions s "
         "JOIN staging.plans p ON p.id = s.plan_id "
+        "JOIN staging.organisations o ON o.id = s.org_id "
         "WHERE s.org_id=$1::uuid",
         org_id,
     )

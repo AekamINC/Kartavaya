@@ -11,6 +11,8 @@ import { PageHeader, StatTile, DueChip, PriorityDot } from '../components/editor
 import { relTime } from '../lib/utils';
 import TaskDrawer from '../components/TaskDrawer';
 import { EmptyState } from '../components/ui/EmptyState';
+import { Modal } from '../components/ui/modal';
+import { approvalColor, APPROVAL_LABELS } from '../lib/statusColors';
 
 export default function ApprovalsPage() {
   const { pushToast } = useToast();
@@ -26,6 +28,9 @@ export default function ApprovalsPage() {
   const [sendNotes,     setSendNotes]     = useState('');
   const [rejectModal, setRejectModal] = useState(null); // { approvalId } | null
   const [rejectNote,  setRejectNote]  = useState('');
+  const [clientApproveModal, setClientApproveModal] = useState(null); // { approvalId } | null
+  const [clientApproveNote,  setClientApproveNote]  = useState('');
+  const [stats, setStats] = useState(null);
   const [drawerTaskId, setDrawerTaskId] = useState(null);
   const user     = currentUser();
   const isClient = user?.role === 'client';
@@ -38,6 +43,10 @@ export default function ApprovalsPage() {
       setRequests(Array.isArray(r.data) ? r.data : []);
       if (!isClient) {
         api.get('/approvals/history').then(h => setHistory(Array.isArray(h.data) ? h.data : [])).catch(() => {});
+        // Counted server-side. Deriving these from /approvals/history was wrong
+        // because that endpoint is capped at 50 rows, so a day with more than
+        // 50 decisions under-reported with a plausible-looking number.
+        api.get('/approvals/stats').then(st => setStats(st.data)).catch(() => {});
       }
     } catch (_) {
       pushToast({ type: 'error', title: 'Could not load approvals' });
@@ -81,6 +90,21 @@ export default function ApprovalsPage() {
     setRejectModal({ approvalId });
   };
 
+  // A client could decline with a reason but approve only silently — the
+  // approve button posted no notes at all. "Fine, but make the logo smaller
+  // next time" is the commonest thing a client wants to say, and there was
+  // nowhere to say it. Same modal shape as reject, comment optional.
+  const openClientApproveFlow = (approvalId) => {
+    setClientApproveNote('');
+    setClientApproveModal({ approvalId });
+  };
+
+  const confirmClientApprove = async () => {
+    const { approvalId } = clientApproveModal;
+    setClientApproveModal(null);
+    await clientDecideTask(approvalId, 'approved', clientApproveNote);
+  };
+
   const confirmApproveWithClient = async () => {
     const { approvalId } = clientModal;
     const selected = clientList.find(c => c.user_id === clientUserId);
@@ -119,9 +143,8 @@ export default function ApprovalsPage() {
     }
   };
 
-  const today   = new Date(); today.setHours(0,0,0,0);
-  const approved = history.filter(h => h.status === 'approved' && new Date(h.updated_at) >= today).length;
-  const rejected = history.filter(h => h.status === 'rejected' && new Date(h.updated_at) >= today).length;
+  const approved = stats?.approved_today ?? null;
+  const rejected = stats?.rejected_today ?? null;
 
   // Split admin requests into task-creation requests vs work approvals
   const taskRequestRows = requests.filter(r => !r.approval_id?.startsWith('task_approval--'));
@@ -149,8 +172,8 @@ export default function ApprovalsPage() {
       {!isClient && (
         <div className="k-stats">
           <StatTile variant="amber" label="PENDING"  sanskrit="लंबित"    value={requests.length}  sub="awaiting your call" />
-          <StatTile variant="teal"  label="APPROVED" sanskrit="स्वीकृत"  value={approved}          sub="today" />
-          <StatTile variant="red"   label="REJECTED" sanskrit="अस्वीकृत" value={rejected}          sub="today" />
+          <StatTile variant="teal"  label="APPROVED" sanskrit="स्वीकृत"  value={approved ?? '—'}   sub="today" />
+          <StatTile variant="red"   label="REJECTED" sanskrit="अस्वीकृत" value={rejected ?? '—'}   sub="today" />
         </div>
       )}
 
@@ -254,7 +277,7 @@ export default function ApprovalsPage() {
                     <div className="k-approval-row__actions">
                       <button
                         className="k-btn k-btn--primary k-btn--sm"
-                        onClick={() => clientDecideTask(r.approval_id, 'approved')}
+                        onClick={() => openClientApproveFlow(r.approval_id)}
                         disabled={isDeciding}
                       >
                         {isDeciding ? '…' : '✓ Approve'}
@@ -270,7 +293,7 @@ export default function ApprovalsPage() {
                     </div>
                   )}
                   {isClient && !r.approval_id?.startsWith('task_approval--') && (
-                    <span className="k-statuschip" style={{ '--c': '#f59e0b' }}>
+                    <span className="k-statuschip" style={{ '--c': approvalColor('pending') }}>
                       <span className="k-statuschip__dot" />
                       Pending admin review
                     </span>
@@ -297,10 +320,10 @@ export default function ApprovalsPage() {
                 <div className="k-approval-row__main">
                   <span
                     className="k-statuschip"
-                    style={{ '--c': h.status === 'approved' ? '#05b7aa' : '#C0392B' }}
+                    style={{ '--c': approvalColor(h.status) }}
                   >
                     <span className="k-statuschip__dot" />
-                    {h.status === 'approved' ? 'Approved' : 'Rejected'}
+                    {APPROVAL_LABELS[h.status] || h.status}
                   </span>
                   <div className="k-approval-row__body">
                     <div className="k-approval-row__title">{h.task_title || 'Untitled'}</div>
@@ -315,13 +338,27 @@ export default function ApprovalsPage() {
           </div>
         </section>
       )}
-      {/* Approve modal — option to send to client */}
-      {clientModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div className="k-card" style={{ width: 420, padding: '28px 32px' }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, color: 'var(--ink)', marginBottom: 4 }}>Approve task</div>
-            <div style={{ fontFamily: 'var(--font-hindi)', fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>स्वीकृत करें</div>
-
+      {/* Approve modal — option to send to client.
+          Was a bare fixed-position div: no focus trap, no Escape, no
+          role="dialog", no scroll lock. A keyboard user could Tab straight out
+          of it into the list behind and act on the wrong row. */}
+      <Modal
+        open={!!clientModal}
+        onOpenChange={o => { if (!o) setClientModal(null); }}
+        dataTestId="approve-modal"
+        size="sm"
+        title={<>Approve task <span lang="sa" style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, color: 'var(--on-surface-3)', marginLeft: 6 }}>स्वीकृत करें</span></>}
+        footer={
+          <>
+            <button className="k-btn k-btn--ghost" onClick={() => setClientModal(null)}>Cancel</button>
+            <button className="k-btn k-btn--primary" onClick={confirmApproveWithClient}>
+              {clientUserId ? '✓ Approve & Send to Client' : '✓ Approve & Mark Done'}
+            </button>
+          </>
+        }
+      >
+        {clientModal && (
+          <>
             <div style={{ marginBottom: 16 }}>
               <label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>
                 Notes (optional)
@@ -361,16 +398,9 @@ export default function ApprovalsPage() {
                 </select>
               )}
             </div>
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button className="k-btn k-btn--ghost" onClick={() => setClientModal(null)} style={{ flex: 1 }}>Cancel</button>
-              <button className="k-btn k-btn--primary" onClick={confirmApproveWithClient} style={{ flex: 2 }}>
-                {clientUserId ? '✓ Approve & Send to Client' : '✓ Approve & Mark Done'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        )}
+      </Modal>
 
       {/* Task drawer */}
       <TaskDrawer
@@ -381,37 +411,72 @@ export default function ApprovalsPage() {
         onDeleted={() => { setDrawerTaskId(null); load(); }}
       />
 
+      {/* Client approve modal — the comment box that did not exist */}
+      <Modal
+        open={!!clientApproveModal}
+        onOpenChange={o => { if (!o) setClientApproveModal(null); }}
+        dataTestId="client-approve-modal"
+        size="sm"
+        title={<>Approve <span lang="sa" style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, color: 'var(--on-surface-3)', marginLeft: 6 }}>स्वीकृत</span></>}
+        footer={
+          <>
+            <button className="k-btn k-btn--ghost" onClick={() => setClientApproveModal(null)}>Cancel</button>
+            <button className="k-btn k-btn--primary" onClick={confirmClientApprove}>✓ Approve</button>
+          </>
+        }
+      >
+        <label htmlFor="client-approve-note" style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--on-surface-3)', display: 'block', marginBottom: 6 }}>
+          Comment (optional)
+        </label>
+        <textarea
+          id="client-approve-note"
+          value={clientApproveNote}
+          onChange={e => setClientApproveNote(e.target.value)}
+          placeholder="Anything to pass back with the approval…"
+          rows={3}
+          className="k-input"
+          style={{ width: '100%', resize: 'none', boxSizing: 'border-box' }}
+        />
+      </Modal>
+
       {/* Reject modal */}
-      {rejectModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div className="k-card" style={{ width: 380, padding: '28px 32px' }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, color: 'var(--ink)', marginBottom: 4 }}>Reject task</div>
-            <div style={{ fontFamily: 'var(--font-hindi)', fontSize: 13, color: 'var(--ink-3)', marginBottom: 20 }}>अस्वीकृत करें</div>
-            <label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>
-              Reason (required)
-            </label>
-            <textarea
-              value={rejectNote}
-              onChange={e => setRejectNote(e.target.value)}
-              placeholder="Why is this being rejected?"
-              rows={3}
-              className="k-input"
-              style={{ width: '100%', resize: 'none', boxSizing: 'border-box', marginBottom: 16 }}
-            />
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button className="k-btn k-btn--ghost" onClick={() => setRejectModal(null)} style={{ flex: 1 }}>Cancel</button>
-              <button
-                className="k-btn k-btn--ghost"
-                onClick={confirmReject}
-                disabled={!rejectNote.trim()}
-                style={{ flex: 2, color: 'var(--k-danger)', borderColor: 'var(--k-danger)' }}
-              >
-                ✕ Confirm Reject
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        open={!!rejectModal}
+        onOpenChange={o => { if (!o) setRejectModal(null); }}
+        dataTestId="reject-modal"
+        size="sm"
+        title={<>Reject task <span lang="sa" style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, color: 'var(--on-surface-3)', marginLeft: 6 }}>अस्वीकृत करें</span></>}
+        footer={
+          <>
+            <button className="k-btn k-btn--ghost" onClick={() => setRejectModal(null)}>Cancel</button>
+            {/* --danger, matching the row action. This read --k-danger while the
+                row's Reject read --danger — two names for one colour, 200 lines
+                apart. Both resolve today, but only because 00 aliased the legacy
+                name; using one name is the actual fix. */}
+            <button
+              className="k-btn k-btn--ghost"
+              onClick={confirmReject}
+              disabled={!rejectNote.trim()}
+              style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
+            >
+              ✕ Confirm Reject
+            </button>
+          </>
+        }
+      >
+        <label htmlFor="reject-reason" style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--on-surface-3)', display: 'block', marginBottom: 6 }}>
+          Reason (required)
+        </label>
+        <textarea
+          id="reject-reason"
+          value={rejectNote}
+          onChange={e => setRejectNote(e.target.value)}
+          placeholder="Why is this being rejected?"
+          rows={3}
+          className="k-input"
+          style={{ width: '100%', resize: 'none', boxSizing: 'border-box' }}
+        />
+      </Modal>
     </div>
   );
 }

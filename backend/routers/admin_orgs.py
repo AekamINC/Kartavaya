@@ -50,6 +50,10 @@ class OrgCreate(BaseModel):
     markup_pct: float = 0.30
     monthly_credits: Optional[int] = None
     monthly_price: Optional[float] = None
+    # Seats bought by this org. None = inherit the plan's default (5 on basic).
+    # Not constrained to multiples of 5: that is a pricing convention, and a
+    # negotiated 12 must stay expressible.
+    max_users: Optional[int] = None
     r2: Optional[R2Credentials] = None
 
 class OrgMemberAdd(BaseModel):
@@ -124,11 +128,12 @@ async def create_org(
         "INSERT INTO staging.organisations "
         "(id, team_id, name, owner_user_id, r2_account_id, r2_access_key_id, "
         " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, markup_pct, "
-        " monthly_credits, monthly_price, is_active) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, TRUE)",
+        " monthly_credits, monthly_price, max_users, is_active) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, TRUE)",
         org_id, tm["team_id"], body.name, owner["user_id"],
         r2_account_id, r2_access_key, r2_secret_key, r2_bucket,
         storage_limit, body.markup_pct, monthly_credits, monthly_price,
+        body.max_users,
     )
 
     bucket_name = None

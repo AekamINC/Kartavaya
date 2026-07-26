@@ -1,9 +1,18 @@
-/** ClientProjectsPage, ClientProjectBoardPage, ClientPortal */
+/**
+ * ClientPages.jsx — the LIVE client-facing pages.
+ *
+ * Not a re-export barrel, despite what pages/README.md said. The thin files
+ * ClientProjectsPage.jsx and ClientBoardPage.jsx re-export FROM here for the
+ * lazy split; nothing re-exports into it. (ClientPagesImpl.jsx exported the
+ * same three names and was imported by nothing at all — 36KB that never
+ * reached a bundle. Deleted.)
+ *
+ * ClientPortal, the dark legacy portal behind /client/legacy, is gone with it.
+ */
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
-import { K, KLogo, KWordmark } from '../lib/brand';
-import { apiLogout, currentUser } from '../lib/auth';
+import { currentUser } from '../lib/auth';
 import { relTime } from '../lib/utils';
 import { useToast } from '../components/ui/toast';
 import { PageHeader, StatTile } from '../components/editorial';
@@ -238,31 +247,6 @@ export function ClientProjectBoardPage() {
         defaultProjectId={projectId}
         defaultColumnId={newTaskEditor.columnId}
       />
-    </div>
-  );
-}
-
-export function ClientPortal() {
-  const navigate = useNavigate();
-  const [tasks, setTasks] = useState([]);
-  useEffect(() => { api.get('/client/tasks').then((r) => setTasks(r.data)).catch(() => {}); }, []);
-
-  return (
-    <div style={{ minHeight: '100vh', background: K.dark, fontFamily: "'Inter',sans-serif", padding: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}><KLogo size={36} /><KWordmark dark /></div>
-        <button onClick={async () => { await apiLogout(); navigate('/login'); }}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#8aa5be', background: 'none', border: 'none', cursor: 'pointer' }}>
-          Sign out
-        </button>
-      </div>
-      {tasks.length === 0 && <div style={{ color: '#8aa5be', fontSize: 14 }}>No tasks shared with you yet.</div>}
-      {tasks.map(t => (
-        <div key={t.task_id} style={{ background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.08)', borderRadius: 16, padding: '16px 20px', marginBottom: 10 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{t.title}</div>
-          {t.description && <div style={{ fontSize: 12, color: '#8aa5be', marginTop: 4 }}>{t.description}</div>}
-        </div>
-      ))}
     </div>
   );
 }

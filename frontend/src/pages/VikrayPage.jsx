@@ -1,26 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
 import { PageHeader, StatTile, TabBar, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
+import { ORDER_COLORS } from '../lib/statusColors';
+import { inr } from '../lib/inr';
 
-const STATUS_COLORS = { draft: '#6E7B91', confirmed: '#0082c6', dispatched: '#8b5cf6', delivered: '#10b981', closed: '#05b7aa', cancelled: '#9ca3af' };
-const FMT = v => `₹${Number(v || 0).toLocaleString('en-IN')}`;
+// Order statuses and rupee formatting come from the shared modules. This file
+// carried a private hex map — the ninth in the codebase — whose `confirmed`
+// was #0082c6, the brand blue that 00 §9 retires, and a local FMT that
+// reimplemented Indian digit grouping.
+const STATUS_COLORS = ORDER_COLORS;
+const FMT = inr;
 
-const TABS = ['dashboard', 'orders', 'stock', 'pipeline', 'targets', 'customers'];
+const TABS = ['dashboard', 'orders', 'stock', 'targets'];
 
 export default function VikrayPage() {
   const [tab, setTab] = useState('dashboard');
   return (
     <div style={{ padding: '0 0 48px' }}>
-      <PageHeader title="Vikray" sanskrit="विक्रय" lede="Sales — Orders, Targets & Pipeline" />
+      <PageHeader title="Vikray" sanskrit="विक्रय" lede="Sales — Orders, Stock & Targets. Customers and pipeline live in Graha (CRM)." />
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
       {tab === 'dashboard' && <DashboardTab />}
       {tab === 'orders' && <OrdersTab />}
       {tab === 'stock' && <StockTab />}
-      {tab === 'pipeline' && <PipelineTab />}
       {tab === 'targets' && <TargetsTab />}
-      {tab === 'customers' && <CustomersTab />}
     </div>
   );
 }
@@ -230,10 +233,10 @@ function OrdersTab() {
 
           <div className="k-detail__actions">
             {NEXT_STATUS[o.status] && <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => updateStatus(NEXT_STATUS[o.status])}>{NEXT_LABEL[o.status]}</button>}
-            {o.status !== 'draft' && !o.invoice_id && <button className="k-btn k-btn--primary" style={{ fontSize: 12, background: '#10b981' }} onClick={generateInvoice}>Generate Invoice</button>}
+            {o.status !== 'draft' && !o.invoice_id && <button className="k-btn k-btn--primary" style={{ fontSize: 12, background: 'var(--ok)' }} onClick={generateInvoice}>Generate Invoice</button>}
             {!editing && (o.status === 'draft' || o.status === 'confirmed') && <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={startEdit}>Edit</button>}
-            {(o.status === 'draft' || o.status === 'confirmed') && <button className="k-btn k-btn--ghost" style={{ fontSize: 12, color: '#ef4444' }} onClick={cancelOrder}>Cancel</button>}
-            {o.invoice_id && <Badge text="Invoiced" color="#10b981" />}
+            {(o.status === 'draft' || o.status === 'confirmed') && <button className="k-btn k-btn--ghost" style={{ fontSize: 12, color: 'var(--danger)' }} onClick={cancelOrder}>Cancel</button>}
+            {o.invoice_id && <Badge text="Invoiced" color="var(--ok)" />}
           </div>
 
           {o.contact_name && (
@@ -267,7 +270,7 @@ function OrdersTab() {
               </>) : (
                 <div className="k-totals__row" style={{ color: 'var(--ink-3)' }}><span>IGST</span><span>{FMT(o.igst)}</span></div>
               )}
-              {Number(o.discount) > 0 && <div className="k-totals__row" style={{ color: '#ef4444' }}><span>Discount</span><span>-{FMT(o.discount)}</span></div>}
+              {Number(o.discount) > 0 && <div className="k-totals__row" style={{ color: 'var(--danger)' }}><span>Discount</span><span>-{FMT(o.discount)}</span></div>}
               <div className="k-totals__row k-totals__row--total"><span>Total</span><span>{FMT(o.total)}</span></div>
             </div>
           </div>
@@ -294,7 +297,7 @@ function OrdersTab() {
                     <input type="number" min="1" value={li.quantity} onChange={e => editUpdateLine(idx, 'quantity', Number(e.target.value))} className="k-input" />
                     <input type="number" value={li.rate} onChange={e => editUpdateLine(idx, 'rate', Number(e.target.value))} className="k-input" />
                     <input type="number" value={li.gst_rate} onChange={e => editUpdateLine(idx, 'gst_rate', Number(e.target.value))} className="k-input" />
-                    {editForm.line_items.length > 1 && <button type="button" onClick={() => editRemoveLine(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16 }}>×</button>}
+                    {editForm.line_items.length > 1 && <button type="button" onClick={() => editRemoveLine(idx)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }}>×</button>}
                   </div>
                 ))}
                 <button type="button" onClick={editAddLine} style={{ fontSize: 12, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, marginBottom: 12 }}>+ Add line item</button>
@@ -366,7 +369,7 @@ function OrdersTab() {
                 <input type="number" value={li.rate} onChange={e => updateLine(idx, 'rate', Number(e.target.value))} className="k-formpanel__input" style={{ padding: '6px 10px' }} />
                 <input type="number" value={li.gst_rate} onChange={e => updateLine(idx, 'gst_rate', Number(e.target.value))} className="k-formpanel__input" style={{ padding: '6px 10px' }} />
                 <span style={{ fontSize: 12, fontWeight: 600, padding: '8px 0', fontFamily: 'var(--font-mono)' }}>{FMT(li.quantity * li.rate * (1 - (li.discount_pct || 0) / 100))}</span>
-                {form.line_items.length > 1 && <button type="button" onClick={() => removeLine(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 16 }}>×</button>}
+                {form.line_items.length > 1 && <button type="button" onClick={() => removeLine(idx)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }}>×</button>}
               </div>
             ))}
             <button type="button" onClick={addLine} style={{ fontSize: 12, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, marginBottom: 12 }}>+ Add line item</button>
@@ -474,7 +477,7 @@ function StockTab() {
             const low = Number(s.quantity_on_hand) <= Number(s.low_stock_threshold) && Number(s.low_stock_threshold) > 0;
             return (
               <tr key={s.product_id}>
-                <td>{s.name} {low && <Badge text="Low Stock" color="#ef4444" />}</td>
+                <td>{s.name} {low && <Badge text="Low Stock" color="var(--danger)" />}</td>
                 <Td align="right" mono bold>{s.quantity_on_hand} {s.unit}</Td>
                 <Td align="right">
                   <input type="number" placeholder={s.low_stock_threshold} value={edits[s.product_id] ?? ''}
@@ -494,207 +497,3 @@ function StockTab() {
     </div>
   );
 }
-
-
-function PipelineTab() {
-  const { pushToast } = useToast();
-  const [deals, setDeals] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const STAGE_COLORS = { Lead: '#6E7B91', Qualified: '#0082c6', Proposal: '#8b5cf6', Negotiation: '#f59e0b', Won: '#10b981', Lost: '#ef4444' };
-
-  useEffect(() => {
-    api.get('/v1/graha/pipeline-summary').then(r => { setDeals(r.data.data || r.data.stages || []); setLoading(false); })
-      .catch(() => { pushToast({ title: 'Failed to load pipeline', type: 'error' }); setLoading(false); });
-  }, []);
-
-  if (loading) return <Shimmer count={6} />;
-  if (deals.length === 0) return <Empty icon="📊" title="No pipeline data" sub="Add deals in the Graha (CRM) module to see your sales pipeline here." />;
-
-  return (
-    <Section title="Pipeline Stages" hi="चरण">
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 16 }}>
-        {deals.map(s => (
-          <div key={s.stage} className="k-stat">
-            <div style={{ marginBottom: 8 }}><Badge text={s.stage} color={STAGE_COLORS[s.stage]} /></div>
-            <div className="k-stat__val" style={{ fontSize: 28 }}>{s.count}</div>
-            <div className="k-stat__sub">{FMT(s.total_value)}</div>
-          </div>
-        ))}
-      </div>
-      <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>Full pipeline management is in Graha (CRM) module.</p>
-    </Section>
-  );
-}
-
-
-function TargetsTab() {
-  const { pushToast } = useToast();
-  const [targets, setTargets] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [members, setMembers] = useState([]);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ salesperson_id: '', period_start: '', period_end: '', target_amount: 0, target_deals: 0, notes: '' });
-  const [editId, setEditId] = useState(null);
-  const [editForm, setEditForm] = useState({});
-  const [editSaving, setEditSaving] = useState(false);
-
-  useEffect(() => { load(); }, []);
-
-  async function load() {
-    try { const r = await api.get('/v1/vikray/targets'); setTargets(r.data.data || []); } catch {}
-    finally { setLoading(false); }
-  }
-
-  async function loadMembers() {
-    try { const r = await api.get('/teams'); setMembers(r.data || []); } catch {}
-  }
-
-  async function save(e) {
-    e.preventDefault();
-    if (!form.salesperson_id || !form.period_start || !form.period_end) { pushToast({ title: 'Fill required fields', type: 'error' }); return; }
-    setSaving(true);
-    try {
-      await api.post('/v1/vikray/targets', form);
-      pushToast({ title: 'Target saved', type: 'success' });
-      setShowForm(false);
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-    finally { setSaving(false); }
-  }
-
-  function startEditTarget(t) {
-    setEditId(t.id);
-    setEditForm({ target_amount: t.target_amount || 0, target_deals: t.target_deals || 0, notes: t.notes || '' });
-  }
-
-  async function saveEditTarget(e) {
-    e.preventDefault();
-    setEditSaving(true);
-    try {
-      await api.patch(`/v1/vikray/targets/${editId}`, editForm);
-      pushToast({ title: 'Target updated', type: 'success' });
-      setEditId(null);
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update target', type: 'error' }); }
-    finally { setEditSaving(false); }
-  }
-
-  return (
-    <div>
-      <div className="k-section__head" style={{ marginBottom: 20 }}>
-        <h3 className="k-section__title">Sales Targets<span className="k-section__title-hi">लक्ष्य</span></h3>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
-          onClick={() => { setShowForm(!showForm); if (!showForm) loadMembers(); }}>
-          {showForm ? 'Cancel' : '+ Set Target'}
-        </button>
-      </div>
-
-      {showForm && (
-        <form onSubmit={save} className="k-formpanel">
-          <div className="k-formpanel__grid k-formpanel__grid--3">
-            <label className="k-formpanel__label">Salesperson
-              <input value={form.salesperson_id} onChange={e => setForm(f => ({ ...f, salesperson_id: e.target.value }))}
-                placeholder="User ID" className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Period Start
-              <input type="date" value={form.period_start} onChange={e => setForm(f => ({ ...f, period_start: e.target.value }))} className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Period End
-              <input type="date" value={form.period_end} onChange={e => setForm(f => ({ ...f, period_end: e.target.value }))} className="k-formpanel__input" />
-            </label>
-          </div>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Target Amount (₹)
-              <input type="number" value={form.target_amount} onChange={e => setForm(f => ({ ...f, target_amount: Number(e.target.value) }))} className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Target Deals
-              <input type="number" value={form.target_deals} onChange={e => setForm(f => ({ ...f, target_deals: Number(e.target.value) }))} className="k-formpanel__input" />
-            </label>
-          </div>
-          <div className="k-formpanel__actions">
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving} style={{ fontSize: 13 }}>{saving ? 'Saving…' : 'Save Target'}</button>
-          </div>
-        </form>
-      )}
-
-      {loading ? <Shimmer count={4} /> : targets.length === 0 ? (
-        <Empty icon="🎯" title="No targets set" sub="Set sales targets for your team to track performance and achievement." cta="+ Set Target" onCta={() => { setShowForm(true); loadMembers(); }} />
-      ) : (
-        <DataTable columns={['Salesperson', 'Period', { label: 'Target', align: 'right' }, { label: 'Actual', align: 'right' }, 'Achievement', '']}>
-          {targets.map(t => {
-            const pct = t.target_amount > 0 ? Math.round((t.actual_amount || 0) / t.target_amount * 100) : 0;
-            if (editId === t.id) {
-              return (
-                <tr key={t.id}>
-                  <td>{t.salesperson_name || t.salesperson_id}</td>
-                  <td style={{ fontSize: 12 }}>{t.period_start} — {t.period_end}</td>
-                  <Td align="right"><input type="number" value={editForm.target_amount} onChange={e => setEditForm(f => ({ ...f, target_amount: Number(e.target.value) }))} className="k-input" style={{ width: 100 }} /></Td>
-                  <Td align="right" mono>{FMT(t.actual_amount)}</Td>
-                  <td><input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} className="k-input" placeholder="Notes" style={{ width: 100 }} /></td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    <button className="k-btn k-btn--primary" style={{ fontSize: 11, marginRight: 4 }} disabled={editSaving} onClick={saveEditTarget}>{editSaving ? '…' : 'Save'}</button>
-                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => setEditId(null)}>Cancel</button>
-                  </td>
-                </tr>
-              );
-            }
-            return (
-              <tr key={t.id}>
-                <td>{t.salesperson_name || t.salesperson_id}</td>
-                <td style={{ fontSize: 12 }}>{t.period_start} — {t.period_end}</td>
-                <Td align="right" mono>{FMT(t.target_amount)}</Td>
-                <Td align="right" mono>{FMT(t.actual_amount)}</Td>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 80, height: 6, background: 'var(--rule-soft)', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pct >= 100 ? '#10b981' : 'var(--k-primary)', borderRadius: 3, transition: 'width .4s' }} />
-                    </div>
-                    <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)', color: pct >= 100 ? '#10b981' : 'var(--ink-2)' }}>{pct}%</span>
-                  </div>
-                </td>
-                <td><button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => startEditTarget(t)}>Edit</button></td>
-              </tr>
-            );
-          })}
-        </DataTable>
-      )}
-    </div>
-  );
-}
-
-
-function CustomersTab() {
-  const navigate = useNavigate();
-  const { pushToast } = useToast();
-  const [contacts, setContacts] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api.get('/v1/graha/contacts?type=customer').then(r => { setContacts(r.data.data || []); setLoading(false); })
-      .catch(() => { pushToast({ title: 'Failed to load customers', type: 'error' }); setLoading(false); });
-  }, []);
-
-  if (loading) return <Shimmer count={4} />;
-  if (contacts.length === 0) return <Empty icon="👥" title="No customers yet" sub="Convert leads in the CRM module to see your customers here." />;
-
-  return (
-    <Section title="Customer List" hi="ग्राहक">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {contacts.map(c => (
-          <ModCard key={c.id} onClick={() => navigate('/graha')} style={{ cursor: 'pointer' }}>
-            <div>
-              <strong style={{ fontSize: 14 }}>{c.name}</strong>
-              {c.company && <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{c.company}</span>}
-              <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{c.email} {c.phone && `· ${c.phone}`}</p>
-            </div>
-            <Badge text={c.type || 'customer'} color="#10b981" />
-          </ModCard>
-        ))}
-      </div>
-      <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 12 }}>Click any customer to view their full profile in Graha (CRM).</p>
-    </Section>
-  );
-}
-
-
