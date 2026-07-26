@@ -850,8 +850,29 @@ async def enroll_contacts(seq_id: str, body: EnrollBody, user=Depends(require_us
         seq_id,
     )
     delay = first_step["delay_days"] if first_step else 1
+
+    # The SEQUENCE was checked against the org; the CONTACTS were not.
+    # `prachar_sequence_enrollments` has no org_id, and the ids came straight
+    # from the request body into the insert — so any contact id from any org
+    # could be enrolled into this org's sequence, and the sequence engine would
+    # then send that org's marketing email to another tenant's contacts.
+    #
+    # Filtering to the caller's own contacts is what scopes this table: it has
+    # no org column of its own, so the guarantee has to be established here, at
+    # the only point where an id from outside enters.
+    if not body.contact_ids:
+        return {"enrolled": 0}
+
+    owned = await pool.fetch(
+        "SELECT id FROM staging.graha_contacts "
+        "WHERE org_id=$1::uuid AND id = ANY($2::uuid[])",
+        org_id, body.contact_ids,
+    )
+    owned_ids = [str(r["id"]) for r in owned]
+    rejected = len(body.contact_ids) - len(owned_ids)
+
     enrolled = 0
-    for cid in body.contact_ids:
+    for cid in owned_ids:
         row = await pool.fetchrow(
             "INSERT INTO staging.prachar_sequence_enrollments "
             "(sequence_id, contact_id, current_step, next_step_at) "
@@ -861,7 +882,7 @@ async def enroll_contacts(seq_id: str, body: EnrollBody, user=Depends(require_us
         )
         if row:
             enrolled += 1
-    return {"enrolled": enrolled}
+    return {"enrolled": enrolled, "rejected": rejected}
 
 
 @router.post("/sequences/{seq_id}/pause", dependencies=[Depends(_gate)])

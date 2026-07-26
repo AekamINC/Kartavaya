@@ -18,13 +18,32 @@ logger = logging.getLogger(__name__)
 
 from auth_router import require_user
 from db import get_pool
+from middleware.module_levels import require_level
 from middleware.org_resolver import get_org_id
+from middleware.role_tiers import APPROVER
 from middleware.subscription import require_module
+from services.gstin import GSTINError, requires_supplier_gstin
+from services.gstin import validate as validate_gstin
 from utils import next_doc_number
 
 router = APIRouter(prefix="/api/v1/ganit", tags=["ganit-invoicing"])
 
 _gate = require_module("ganit")
+
+#: Ganit is a SEPARATED-DUTY module: administering the books and releasing money
+#: against them are different authorities, and holding `admin` does not confer
+#: `approver`. See middleware/role_tiers.py and middleware/module_levels.py.
+#:
+#: Applied to the two actions that are unambiguously "release money" or "destroy
+#: a legal document" rather than ordinary bookkeeping:
+#:   · paying a vendor bill  — money leaves the company
+#:   · cancelling an invoice — voids a tax document already issued
+#:
+#: Ordinary writes are deliberately NOT raised to `editor` yet. Every existing
+#: grant predates the level column or defaults to `viewer`, so enforcing editor
+#: today would revoke ordinary bookkeeping from real users with no migration to
+#: restore it. That tightening needs a grant-level backfill first.
+_approver = require_level("ganit", APPROVER)
 
 
 # ── Pydantic Models ──────────────────────────────────────────
@@ -498,6 +517,30 @@ async def download_invoice_pdf(
         contact["billing_address"] = json.loads(contact["billing_address"] or "{}")
 
     org_dict = dict(org) if org else {}
+
+    # A tax invoice, credit note or debit note without the supplier's GSTIN is
+    # not an incomplete document — it is an INVALID one. It fails e-invoice
+    # validation and blocks the recipient's input tax credit, and neither
+    # failure is visible to whoever sent it until the recipient complains.
+    #
+    # The renderer marks the gap in red, which stops it looking complete. That
+    # is not enough on its own: the file still downloads, still attaches to an
+    # email, and still reaches a customer. `Tax Invoice.html` in the design
+    # reference is unambiguous about the intended behaviour — "This document
+    # cannot be issued." — so the endpoint refuses rather than rendering.
+    #
+    # 409 rather than 400: the request is well-formed, the ORG is in the wrong
+    # state, and the fix is a settings change rather than a different request.
+    if requires_supplier_gstin(invoice.get("invoice_type") or "") and not org_dict.get("gstin"):
+        raise HTTPException(
+            409,
+            f"This {invoice.get('invoice_type', 'document').replace('_', ' ')} "
+            "cannot be issued: your organisation has no GSTIN on its company "
+            "profile. A tax invoice without a supplier GSTIN fails e-invoice "
+            "validation and blocks the recipient's input tax credit. Add it "
+            "under Settings → Organisation → Company Profile.",
+        )
+
     for jsonb_field in ("billing_address", "bank_details"):
         if isinstance(org_dict.get(jsonb_field), str):
             org_dict[jsonb_field] = json.loads(org_dict[jsonb_field] or "{}")
@@ -526,6 +569,7 @@ async def cancel_invoice(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
+    _a=Depends(_approver),
 ):
     pool = await get_pool()
     await pool.execute(
@@ -1475,6 +1519,25 @@ async def create_invoice_from_deal(
 
 # ── Vendors & Vendor Bills (Accounts Payable) ────────────────
 
+def _checked_gstin(raw: str | None) -> str:
+    """Validate a vendor GSTIN, or raise 400 naming the specific fault.
+
+    A vendor GSTIN was previously stored exactly as typed — "abc" was accepted,
+    and so was a real number with two characters transposed. The GSTIN carries a
+    check digit so that a typo is catchable at entry; not checking it means the
+    error surfaces months later as a refused input tax credit on a filed return.
+
+    Blank stays legal: an unregistered supplier genuinely has no GSTIN, and
+    demanding one would make small vendors unrecordable.
+    """
+    if not raw or not raw.strip():
+        return ""
+    try:
+        return validate_gstin(raw)
+    except GSTINError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @router.get("/vendors")
 async def list_vendors(
     search: str = "",
@@ -1501,10 +1564,11 @@ async def create_vendor(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    gstin = _checked_gstin(body.gstin)
     row = await pool.fetchrow(
         "INSERT INTO staging.ganit_vendors (org_id, name, gstin, email, phone, address) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6::jsonb) RETURNING *",
-        org_id, body.name, body.gstin, body.email, body.phone, json.dumps(body.address),
+        org_id, body.name, gstin, body.email, body.phone, json.dumps(body.address),
     )
     return dict(row)
 
@@ -1522,6 +1586,8 @@ async def update_vendor(
     for field in ("name", "gstin", "email", "phone"):
         val = getattr(body, field)
         if val is not None:
+            if field == "gstin":
+                val = _checked_gstin(val)
             vals.append(val)
             updates.append(f"{field}=${len(vals)}")
     if body.address is not None:
@@ -1667,6 +1733,7 @@ async def record_vendor_payment(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
+    _a=Depends(_approver),
 ):
     pool = await get_pool()
     bill = await pool.fetchrow(
@@ -1872,12 +1939,31 @@ async def create_invoice_from_time_entries(
 ):
     pool = await get_pool()
 
+    # `time_entries` is a production-schema table with no org_id, so its scoping
+    # has to come through a join to a parent that has one. Two things were wrong
+    # with how that was done.
+    #
+    # 1. The only parent joined was `manav_employees`, on user_id — which scopes
+    #    by WHO LOGGED the entry, not by which org the WORK belongs to. A
+    #    contractor who is an employee row in two orgs had every entry they ever
+    #    logged, in either org, swept into whichever org billed first.
+    #
+    # 2. The entry's real parent is the task, and through it the team and the
+    #    org. That path was not joined at all, so nothing tied the entry to the
+    #    billing org's work.
+    #
+    # Both parents are now required: the entry must belong to a task in one of
+    # this org's teams AND be logged by someone this org employs.
     q = (
         "SELECT te.entry_id, te.task_id, te.minutes, te.description, te.user_id, "
         "e.name AS employee_name, e.hourly_rate "
         "FROM time_entries te "
-        "JOIN staging.manav_employees e ON e.user_id::text = te.user_id "
-        "WHERE e.org_id=$1::uuid AND te.is_billed=FALSE AND te.minutes IS NOT NULL AND te.minutes > 0"
+        "JOIN tasks tk ON tk.task_id = te.task_id "
+        "JOIN teams tm ON tm.team_id = tk.team_id "
+        "JOIN staging.manav_employees e "
+        "  ON e.user_id::text = te.user_id AND e.org_id = tm.org_id "
+        "WHERE tm.org_id=$1::uuid AND te.is_billed=FALSE "
+        "AND te.minutes IS NOT NULL AND te.minutes > 0"
     )
     params: list = [org_id]
 
@@ -1931,9 +2017,18 @@ async def create_invoice_from_time_entries(
                 computed["total"], user["user_id"],
             )
 
+            # `staging.time_entries` does not exist and never has — the table is
+            # `time_entries` in the production schema (migration 007, 042). The
+            # UPDATE therefore raised UndefinedTable inside the transaction and
+            # rolled the invoice back with it, so this endpoint returned 500 on
+            # every call and had never once billed anything.
+            #
+            # Fixing the name is what makes the is_billed flag real, and that
+            # flag is the only thing standing between this endpoint and billing
+            # the same hours twice.
             for eid in entry_ids:
                 await conn.execute(
-                    "UPDATE staging.time_entries SET is_billed=TRUE, invoice_id=$1 WHERE entry_id=$2",
+                    "UPDATE time_entries SET is_billed=TRUE, invoice_id=$1 WHERE entry_id=$2",
                     inv["id"], eid,
                 )
 

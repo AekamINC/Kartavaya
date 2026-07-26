@@ -53,8 +53,9 @@ approver rows in the same transaction so nobody is locked out mid-flight.
 """
 import logging
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException
 
+from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import (
@@ -171,10 +172,10 @@ def require_level(module_code: str, required: str):
     rule: Aekam support must never be able to release a customer's money.
     """
 
-    async def _check(request: Request, org_id: str = Depends(get_org_id)):
-        user = getattr(request.state, "_auth_user", None)
-        if not user:
-            raise HTTPException(401, "Authentication required")
+    async def _check(
+        user=Depends(require_user),
+        org_id: str = Depends(get_org_id),
+    ):
         user_id = user.get("user_id")
         pool = await get_pool()
 

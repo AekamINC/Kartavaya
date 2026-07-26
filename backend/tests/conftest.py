@@ -60,6 +60,14 @@ def make_pool() -> MagicMock:
     conn_mock.__aexit__ = AsyncMock(return_value=False)
     conn_mock.execute = AsyncMock()
     conn_mock.fetch = AsyncMock(return_value=[])
+    # `next_doc_number` (utils.py) takes a connection out of the pool and calls
+    # fetchval on it to read the last document number. Without these two the
+    # attribute resolves to a bare MagicMock, which is not awaitable, and every
+    # test that creates an invoice, order or payslip dies with
+    # "'MagicMock' object can't be awaited" — a harness gap that reads like a
+    # product bug. fetchval returns None so numbering starts at 0001.
+    conn_mock.fetchval = AsyncMock(return_value=None)
+    conn_mock.fetchrow = AsyncMock(return_value=None)
     conn_mock.transaction = MagicMock(return_value=conn_mock)
     pool.acquire = MagicMock(return_value=conn_mock)
     return pool

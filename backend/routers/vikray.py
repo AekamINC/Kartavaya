@@ -20,6 +20,22 @@ router = APIRouter(prefix="/api/v1/vikray", tags=["vikray-sales"])
 
 _gate = require_module("vikray")
 
+#: Writing a row into `staging.ganit_invoices` is an accounting action, and the
+#: entitlement that governs it is `ganit` — not `vikray`.
+#:
+#: `POST /orders/{id}/invoice` creates a tax invoice, and it was gated on the
+#: sales module alone. Ganit is a SENSITIVE module: withheld by default, audited
+#: on platform bypass, and deliberately excluded from `STAFF_MODULES`. So a
+#: vikray-only member could issue tax invoices they were never granted the books
+#: for — and `platform_staff`, a role defined to exclude finance entirely, could
+#: issue them in a customer's ledger.
+#:
+#: Stacking the ganit gate closes that. It DOES narrow access: a member holding
+#: vikray but not ganit can no longer convert an order to an invoice. That is
+#: the intent — they were reaching the books without the grant that governs
+#: them, and the remedy is a ganit grant, not a hole in the gate.
+_ganit_gate = require_module("ganit")
+
 
 # ── Pydantic Models ──────────────────────────────────────────
 
@@ -327,6 +343,7 @@ async def generate_invoice_from_order(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
+    _gg=Depends(_ganit_gate),
 ):
     pool = await get_pool()
     order = await pool.fetchrow(
@@ -355,8 +372,8 @@ async def generate_invoice_from_order(
     )
     await pool.execute(
         "UPDATE staging.vikray_orders SET invoice_id=$1, updated_at=NOW() "
-        "WHERE id=$2::uuid",
-        inv["id"], order_id,
+        "WHERE id=$2::uuid AND org_id=$3::uuid",
+        inv["id"], order_id, org_id,
     )
     return {"ok": True, "invoice_id": str(inv["id"]), "invoice_number": inv_number}
 
