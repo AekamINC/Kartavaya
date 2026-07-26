@@ -120,6 +120,11 @@
   --glass-blur:  calc(22px * var(--glass-mix));
   --glass-sat:   calc(1 + .5 * var(--glass-mix));
   --glass-alpha: calc(1 - (.28 * var(--glass-mix)));
+
+  /* Bottom safe area, for the mobile nav (01 §1). env() is not usable inside a
+     var() fallback chain, so it is resolved once here and referenced as a
+     plain token — which also keeps it visible to check-tokens.mjs. */
+  --m-safe-b: env(safe-area-inset-bottom, 0px);
 }
 
 /* ── 7 · Light palette (§7) ─────────────────────────────────────────────── */
@@ -163,6 +168,16 @@
   --ok:     #14743A;  --ok-container:     #C6EFD2;   /* was #16803F — 4.4:1 */
   --warn:   #955806;  --warn-container:   #FBE3BE;   /* was #A66207 — 4.2:1 */
   --danger: #B42318;  --danger-container: #FBDAD5;
+  /* 00 §7: every container has an `on-` half, and --on-danger is separate from
+     --on-danger-container because --danger itself is a FILL (badges, count
+     chips, destructive buttons) and inverts hard between themes — #B42318
+     takes white, #F2867A takes near-black. These four were specified in 00 and
+     never declared; check-tokens.mjs caught --on-danger the moment the sidebar
+     count badge referenced it. */
+  --on-ok-container:     #06341A;
+  --on-warn-container:   #4A2D00;
+  --on-danger-container: #5C1109;
+  --on-danger:           #FFFFFF;
 
   --scrim:      rgba(28, 26, 20, .34);
   --glass-tint: 250, 247, 240;
@@ -223,6 +238,10 @@
   --ok:     #5BD98A;  --ok-container:     #14432A;
   --warn:   #E8B45C;  --warn-container:   #4A3312;
   --danger: #F2867A;  --danger-container: #55201B;
+  --on-ok-container:     #C6EFD2;
+  --on-warn-container:   #FBE3BE;
+  --on-danger-container: #FBDAD5;
+  --on-danger:           #2A0A06;
 
   --scrim:      rgba(0, 0, 0, .58);
   --glass-tint: 18, 21, 26;
@@ -401,194 +420,12 @@ body {
   background: var(--bg);
 }
 
-/* ── Sidebar ───────────────────────────────────────────────────────────── */
-.k-sidebar {
-  width: 236px;
-  background: var(--side-bg);
-  color: var(--side-fg);
-  display: flex;
-  flex-direction: column;
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.k-sidebar::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--side-glow);
-  pointer-events: none;
-  z-index: 0;
-}
-
-.k-sidebar > * { position: relative; z-index: 1; }
-
-.k-sidebar__brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 18px 16px 14px;
-  border-bottom: 1px solid rgba(255,255,255,.07);
-}
-
-.k-wordmark__main {
-  font-family: var(--font-display);
-  font-size: 17px;
-  font-weight: 500;
-  color: #fff;
-  letter-spacing: -0.01em;
-  line-height: 1.1;
-}
-.k-wordmark__sans {
-  font-family: var(--font-hindi);
-  font-size: 11px;
-  color: var(--k-primary);
-  line-height: 1.2;
-}
-.k-wordmark__sub {
-  font-size: 9.5px;
-  color: rgba(255,255,255,.38);
-  letter-spacing: 0.06em;
-  line-height: 1.2;
-}
-
-.k-sidebar__nav {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px 10px 6px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,.1) transparent;
-}
-.k-sidebar__nav::-webkit-scrollbar { width: 3px; }
-.k-sidebar__nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 99px; }
-
-.k-sidebar__group { margin-bottom: 6px; }
-
-.k-sidebar__section {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 8px 4px;
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  font-weight: 700;
-  color: rgba(255,255,255,.28);
-}
-.k-sidebar__section-hi {
-  font-family: var(--font-hindi);
-  font-size: 10.5px;
-  text-transform: none;
-  letter-spacing: 0;
-  color: rgba(255,255,255,.18);
-}
-
-.k-sidebar__item {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: var(--r-md);
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--side-fg);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  text-align: left;
-  transition: background calc(.12s * var(--ix)), color calc(.12s * var(--ix));
-  position: relative;
-}
-.k-sidebar__item:hover {
-  background: rgba(255,255,255,.06);
-  color: #fff;
-}
-.k-sidebar__item.is-active {
-  background: var(--side-active);
-  color: #fff;
-}
-.k-sidebar__item.is-active::before {
-  content: '';
-  position: absolute;
-  left: 0; top: 20%; bottom: 20%;
-  width: 2.5px;
-  border-radius: 0 2px 2px 0;
-  background: var(--k-primary);
-}
-
-.k-sidebar__icon {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  opacity: 0.75;
-}
-.k-sidebar__item.is-active .k-sidebar__icon,
-.k-sidebar__item:hover .k-sidebar__icon { opacity: 1; }
-
-.k-sidebar__badge {
-  margin-left: auto;
-  background: var(--k-primary);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 99px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-}
-
-.k-sidebar__hi-mute {
-  font-family: var(--font-hindi);
-  font-size: 11.5px;
-  color: rgba(255,255,255,.32);
-  margin-left: 4px;
-}
-
-.k-sidebar__foot {
-  padding: 12px 14px;
-  border-top: 1px solid rgba(255,255,255,.07);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.k-sidebar__me-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: #fff;
-  line-height: 1.2;
-}
-.k-sidebar__me-role {
-  font-size: 10.5px;
-  color: rgba(255,255,255,.42);
-  margin-top: 1px;
-}
-.k-sidebar__foot-btn {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: rgba(255,255,255,.42);
-  transition: color calc(.12s * var(--ix)), background calc(.12s * var(--ix));
-  flex-shrink: 0;
-}
-.k-sidebar__foot-btn:hover {
-  color: #fff;
-  background: rgba(255,255,255,.08);
-}
+/* ── Sidebar ───────────────────────────────────────────────────────────────
+   Deleted. This was a second, fully-shadowed copy of the sidebar — every rule
+   here was overridden by editorial.css, which loads after it. 01-navigation.md
+   moves the surface to the `.side*` vocabulary and editorial.css is now its
+   only definition. Two stylesheets describing one component is how the light
+   sidebar variant shipped without an active-item override. */
 
 /* ── Avatar ────────────────────────────────────────────────────────────── */
 .k-avatar {
@@ -608,91 +445,12 @@ body {
   color: #fff;
 }
 
-/* ── Topbar ────────────────────────────────────────────────────────────── */
-.k-topbar {
-  display: flex;
-  align-items: center;
-  gap: 0;
-  padding: 0 24px;
-  height: 52px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--rule);
-  flex-shrink: 0;
-}
-
-.k-topbar__left {
-  flex: 0 0 auto;
-  min-width: 160px;
-}
-
-.k-crumb {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-.k-crumb__hi {
-  font-family: var(--font-hindi);
-  font-size: 13px;
-  color: var(--ink-3);
-}
-.k-crumb__sep {
-  font-size: 12px;
-  color: var(--rule-strong);
-}
-.k-crumb__cur {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.k-topbar__search {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  max-width: 400px;
-  margin: 0 auto;
-  padding: 7px 14px;
-  background: var(--bg-soft);
-  border: 1px solid var(--rule);
-  border-radius: 99px;
-  color: var(--ink-3);
-  transition: border-color calc(.15s * var(--ix)), background calc(.15s * var(--ix));
-}
-.k-topbar__search:focus-within {
-  border-color: color-mix(in srgb, var(--k-primary) 50%, var(--rule));
-  background: var(--surface-2);
-}
-.k-topbar__search input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
-  font-size: 13px;
-  color: var(--ink);
-  font-family: var(--font-ui);
-}
-.k-topbar__search input::placeholder { color: var(--ink-faint); }
-
-.k-kbd {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--ink-3);
-  background: var(--surface-2);
-  border: 1px solid var(--rule);
-  border-radius: 4px;
-  padding: 1px 5px;
-  white-space: nowrap;
-}
-
-.k-topbar__right {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 160px;
-  justify-content: flex-end;
-}
+/* ── Topbar ────────────────────────────────────────────────────────────────
+   Deleted for the same reason as the sidebar above — a second copy, fully
+   shadowed by editorial.css. The topbar is now `.top` / `.crumb*` there.
+   `.k-kbd` stays in editorial.css because CommandPalette and
+   KeyboardShortcuts also render it; renaming a class with consumers outside
+   this surface is the standalone sweep 26 §7 rules out. */
 
 .k-iconbtn {
   display: flex;
@@ -1286,9 +1044,9 @@ body {
 .k-en { display: inline; }
 
 [data-language="en"] .k-hi,
-[data-language="en"] .k-sidebar__hi-mute,
-[data-language="en"] .k-sidebar__section-hi,
-[data-language="en"] .k-crumb__hi,
+[data-language="en"] .side__hi,
+[data-language="en"] .side__sec-hi,
+[data-language="en"] .crumb__hi,
 [data-language="en"] .k-pageh__sans,
 [data-language="en"] .k-wday__hi { display: none !important; }
 
@@ -1307,8 +1065,9 @@ body {
   .k-twocol { grid-template-columns: 1fr; }
   .k-board { grid-template-columns: repeat(2, 1fr); }
 }
-@media (max-width: 700px) {
+/* 767px, not 700 — README pins three breakpoints and only three. */
+@media (max-width: 767px) {
   .k-board { grid-template-columns: 1fr; }
-  .k-topbar { padding: 0 14px; }
-  .k-page { padding: var(--sp-4); }
+  .top     { padding: 0 14px; }
+  .k-page  { padding: var(--sp-4); }
 }

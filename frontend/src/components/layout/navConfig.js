@@ -65,9 +65,77 @@ export const NAV_FULL = [
     items: [
       { to: '/settings/categories',    icon: 'categories',    en: 'Categories',    hi: 'वर्ग',   gu: 'વર્ગ' },
       { to: '/settings/customize',     icon: 'customize',     en: 'Customize',     hi: 'सजावट',  gu: 'સજાવટ' },
+      { to: '/settings/organisation',  icon: 'org',           en: 'Organisation',  hi: 'संगठन',  gu: 'સંગઠન', orgAdminOnly: true },
       { to: '/billing',                icon: 'billing',       en: 'Billing',       hi: 'बिलिंग', gu: 'બિલિંગ' },
     ],
   },
+];
+
+/**
+ * Nav visibility, expressed against `org_roles` rather than the flat
+ * `user.role` string.
+ *
+ * The old predicate lived in Sidebar.jsx as
+ *   isMember = !isAdmin && !isClient && user?.role !== 'owner'
+ * filtered by `!item.ownerOnly || !isMember`, so a plain `role: 'owner'` user
+ * passed — and so did anyone carrying a platform role, because `isAdmin` was
+ * folded into the same boolean. Fine while `role` was the source of truth;
+ * wrong now that `staging.user_roles` is (RBAC-SPEC.md).
+ *
+ * Returns the flags every nav surface needs, so the sidebar, the mobile
+ * drawer and the bottom bar cannot disagree about who sees what.
+ */
+export function navContext(user) {
+  const platformRoles = Array.isArray(user?.platform_roles) ? user.platform_roles : [];
+  const orgRoles      = Array.isArray(user?.org_roles) ? user.org_roles : [];
+  const isPlatform    = platformRoles.length > 0;
+  const isOrgOwner    = orgRoles.some(r => r.role_code === 'org_owner');
+  const isOrgAdmin    = isOrgOwner || orgRoles.some(r => r.role_code === 'org_admin');
+  // A client with an org role is staff who also happens to be flagged client;
+  // the portal nav is only for someone with no org membership at all.
+  const isClient      = user?.role === 'client' && orgRoles.length === 0;
+  return {
+    isPlatform,
+    isOrgOwner,
+    isOrgAdmin,
+    isClient,
+    // Legacy `role` column is still the only signal for orgs that predate
+    // user_roles, so it is a fallback, not the primary test.
+    isOwnerish: isOrgOwner || isOrgAdmin || isPlatform || user?.role === 'owner' || user?.role === 'admin',
+  };
+}
+
+/** Whether one nav entry is visible to the context `navContext()` returned. */
+export function canSeeNavItem(item, ctx) {
+  if (item.adminOnly && !ctx.isPlatform) return false;
+  if (item.orgAdminOnly && !ctx.isOrgAdmin) return false;
+  if (item.ownerOnly && !ctx.isOwnerish) return false;
+  return true;
+}
+
+/** Groups filtered for a user, empty groups dropped. */
+export function navGroupsFor(user) {
+  const ctx = navContext(user);
+  const groups = ctx.isClient ? NAV_CLIENT : NAV_FULL;
+  return groups
+    .map(g => ({ ...g, items: g.items.filter(it => canSeeNavItem(it, ctx)) }))
+    .filter(g => g.items.length > 0);
+}
+
+/**
+ * The five bottom-nav slots (01 §1 · Mobile bottom nav):
+ * Today · Tasks · ＋ · Messages · More.
+ *
+ * `kind: 'fab'` is the compose action, not a route — it opens the task editor.
+ * `kind: 'more'` opens MobileDrawer, which is the full sidebar. Without that
+ * last slot the bottom bar would be a nav that hides thirty destinations.
+ */
+export const MOBILE_NAV = [
+  { kind: 'link', to: '/dashboard', icon: 'dashboard', en: 'Today',    hi: 'आज',      gu: 'આજ' },
+  { kind: 'link', to: '/tasks',     icon: 'tasks',     en: 'Tasks',    hi: 'कर्तव्य', gu: 'કાર્ય' },
+  { kind: 'fab',                    icon: 'plus',      en: 'New',      hi: 'नया',     gu: 'નવું' },
+  { kind: 'link', to: '/sanvaad',   icon: 'inbox',     en: 'Messages', hi: 'संवाद',   gu: 'સંવાદ', badge: 'unread' },
+  { kind: 'more',                   icon: 'more',      en: 'More',     hi: 'अधिक',    gu: 'વધુ' },
 ];
 
 export const NAV_CLIENT = [

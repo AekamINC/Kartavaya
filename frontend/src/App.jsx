@@ -27,6 +27,7 @@ import './styles/settings.css';
 
 import { ToastProvider }               from './components/ui/toast';
 import AppShell, { Protected }         from './components/layout/AppShell';
+import AdminShell                      from './components/admin/AdminShell';
 import { currentUser }                 from './lib/auth';
 import PageLoader                      from './components/layout/PageLoader';
 import { CustomizeProvider } from './components/CustomizePanel';
@@ -160,12 +161,6 @@ function AppRouter() {
           <Route path="settings/customize"     element={<CustomizeSettingsPage />} />
           <Route path="settings/organisation" element={<OrgSettingsPage />} />
 
-          {/* Admin */}
-          <Route path="admin"                  element={<AdminPage />} />
-          <Route path="admin/billing"          element={<AdminBillingPage />} />
-          <Route path="admin/orgs"             element={<AdminOrgsPage />} />
-          <Route path="admin/costs"            element={<AdminCostDashboardPage />} />
-
           {/* Billing */}
           <Route path="billing"                element={<BillingPage />} />
 
@@ -193,6 +188,19 @@ function AppRouter() {
           <Route path="client"                          element={<ClientProjectsPage />} />
           <Route path="client/projects"                 element={<ClientProjectsPage />} />
           <Route path="client/project/:projectId"       element={<ClientBoardPage />} />
+        </Route>
+
+        {/* Aekam platform console — its OWN shell, not a page inside the app
+            one. 01-navigation.md §1: admin replaces the sidebar and owns the
+            window. While these four rendered inside AppShell, an operator kept
+            their own tenant chrome — their accent, their org's breadcrumb —
+            while looking at another company's data. AdminShell also refuses to
+            render for a user with no platform role. */}
+        <Route path="/admin" element={<Protected><AdminShell /></Protected>}>
+          <Route index                element={<AdminPage />} />
+          <Route path="billing"       element={<AdminBillingPage />} />
+          <Route path="orgs"          element={<AdminOrgsPage />} />
+          <Route path="costs"         element={<AdminCostDashboardPage />} />
         </Route>
 
         {/* Legacy client portal (direct access, own Protected wrapper) */}

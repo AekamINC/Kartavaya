@@ -280,7 +280,10 @@ export default function TasksListPage() {
               <option value="status">Status</option>
             </select>
           </label>
-          <div className="k-topbar__search" style={{ maxWidth: 220 }}>
+          {/* Was `.k-topbar__search`, borrowed from the topbar. 01-navigation
+              made that a <button> trigger for the palette, and this is a real
+              text field, so it now has its own name. */}
+          <div className="k-searchpill" style={{ maxWidth: 220 }}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search…" />
           </div>

@@ -95,7 +95,7 @@ export function SkeletonTable({ rows = 6, columns = 5, showAvatar = true, classN
 }
 
 /**
- * Full page skeleton — sidebar-aware (assumes it renders inside `.k-content`,
+ * Full page skeleton — sidebar-aware (assumes it renders inside `.kv__content`,
  * i.e. sidebar/topbar are already rendered by the app shell). Provides a
  * page-header placeholder + stat row + two-column body so it can stand in
  * for most screens while data loads.

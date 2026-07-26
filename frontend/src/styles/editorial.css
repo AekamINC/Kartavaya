@@ -25,299 +25,567 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-link    { color: var(--k-deep); font-weight: 500; cursor: pointer; }
 .k-link:hover { color: var(--k-mid); text-decoration: underline; text-underline-offset: 3px; }
 
-/* ── App shell ──────────────────────────────────────────────────────────── */
-.k-app {
+/* ── App shell (01-navigation.md §1 · Shell) ─────────────────────────────
+   `grid-template-columns: auto 1fr` — the sidebar sizes itself, the main
+   column takes the rest. Do NOT set an explicit first column: rail collapse
+   then needs no shell change. */
+.kv {
   display: grid;
   grid-template-columns: auto 1fr;
   height: 100vh;
   width: 100vw;
   background: var(--bg);
   overflow: hidden;
+  position: relative;
 }
 
-/* Sidebar slot — hidden on mobile */
-.k-app__sidebar { display: flex; flex-shrink: 0; }
-/* Mobile overlay — hidden on desktop */
-.k-app__mob-overlay {
+/* Sidebar slot — hidden on tablet and phone, where MobileDrawer replaces it. */
+.kv__side { display: flex; flex-shrink: 0; }
+/* Overlay drawer scrim — hidden on desktop */
+.kv__scrim {
   display: none;
   position: fixed; inset: 0; z-index: 200;
-  background: rgba(0,0,0,.55);
+  background: var(--scrim);
 }
-.k-app__mob-drawer {
+.kv__drawer {
   position: absolute; left: 0; top: 0; bottom: 0;
+  box-shadow: var(--shadow-4);
+  animation: kv-drawer-in var(--dur-base) var(--ease-emph);
 }
-/* Mobile topbar — hidden on desktop */
-.k-app__mob-bar {
+@keyframes kv-drawer-in { from { transform: translateX(-100%) } to { transform: none } }
+
+/* Compact top bar — burger + brand + actions. Shown wherever .kv__side is not. */
+.kv__mobbar {
   display: none;
   align-items: center; justify-content: space-between;
+  gap: var(--sp-2);
   padding: 10px 16px;
-  border-bottom: 1px solid var(--rule);
-  background: var(--surface);
+  border-bottom: 1px solid var(--outline-variant);
+  background: rgba(var(--glass-tint), .94);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   flex-shrink: 0;
 }
-/* Desktop topbar — shown on desktop */
-.k-app__topbar { display: block; flex-shrink: 0; }
+[data-platform="win"] .kv__mobbar { background: var(--s-low); }
+.kv__mobbar-brand {
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: 500;
+  color: var(--on-surface);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.kv__mobbar-actions { display: flex; align-items: center; gap: 6px; }
+/* Desktop topbar slot */
+.kv__top { display: block; flex-shrink: 0; }
 
+/* One breakpoint, one swap. The rule that has broken three times in this
+   project: never hide a nav surface without shipping its replacement in the
+   same change. Hiding .kv__side here is paired with .kv__mobbar (burger →
+   MobileDrawer) below, and ≤767px additionally gets .mnav. */
 @media (max-width: 1023px) {
-  .k-app { grid-template-columns: 1fr; }
-  .k-app__sidebar { display: none; }
-  .k-app__mob-overlay { display: block; }
-  .k-app__mob-bar { display: flex; }
-  .k-app__topbar { display: none; }
+  .kv { grid-template-columns: 1fr; }
+  .kv__side { display: none; }
+  .kv__scrim { display: block; }
+  .kv__mobbar { display: flex; }
+  .kv__top { display: none; }
 }
 
-.k-main {
+.kv__main {
   display: flex; flex-direction: column;
   min-width: 0; min-height: 0;
   overflow: hidden;
 }
-.k-content {
+.kv__content {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 32px 40px;
+  padding: var(--pad-page);
   scroll-behavior: smooth;
 }
 .k-screen { display: flex; flex-direction: column; gap: var(--sp-6); width: 100%; }
 
-.k-content::-webkit-scrollbar { width: 10px; }
-.k-content::-webkit-scrollbar-track { background: transparent; }
-.k-content::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--ink-3) 30%, transparent);
-  border: 2px solid var(--bg);
+.kv__content::-webkit-scrollbar { width: 11px; }
+.kv__content::-webkit-scrollbar-track { background: transparent; }
+.kv__content::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--on-surface-3) 34%, transparent);
+  border: 3px solid transparent;
   background-clip: padding-box;
-  border-radius: 99px;
+  border-radius: var(--r-pill);
 }
 
-/* ── Sidebar ────────────────────────────────────────────────────────────── */
-.k-sidebar {
-  background: color-mix(in srgb, var(--side-bg) 92%, transparent);
-  backdrop-filter: blur(16px) saturate(1.3);
-  -webkit-backdrop-filter: blur(16px) saturate(1.3);
-  color: var(--side-fg);
+/* ── Sidebar (01-navigation.md §1 · Sidebar) ─────────────────────────────
+   Glass is expressed through --glass-blur / --glass-sat rather than the
+   literal blur(30px) saturate(1.8) quoted in 01, so the Translucency slider
+   in Customization actually reaches it (00 §6). Windows gets flat ink — see
+   the [data-platform="win"] override and the note in 01. */
+.side {
+  width: 252px; flex-shrink: 0;
   display: flex; flex-direction: column;
-  width: 248px; flex-shrink: 0;
+  height: 100%;
   position: relative;
   overflow: hidden;
-  border-right: 1px solid color-mix(in srgb, #000 60%, transparent);
-  height: 100vh;
+  color: var(--side-fg);
+  background: rgba(var(--side-ink), var(--glass-alpha));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  border-right: 1px solid var(--side-rule);
+  transition: width var(--dur-base) var(--ease-emph);
 }
-.k-sidebar--rail { width: 64px; }
-[data-sidebar="rail"] .k-sidebar { width: 64px; }
-[data-sidebar="rail"] .k-sidebar__brand { justify-content: center; padding: 18px 0; }
-[data-sidebar="rail"] .k-sidebar__item {
-  justify-content: center; padding: 12px 0; margin: 1px 8px;
-  border-left: 0; position: relative;
-}
-[data-sidebar="rail"] .k-sidebar__item.is-active { background: var(--side-active); }
-[data-sidebar="rail"] .k-sidebar__en,
-[data-sidebar="rail"] .k-sidebar__hi-mute,
-[data-sidebar="rail"] .k-sidebar__badge,
-[data-sidebar="rail"] .k-sidebar__section,
-[data-sidebar="rail"] .k-wordmark { display: none; }
+[data-platform="win"] .side { background: rgb(var(--side-ink)); }
+.side--rail { width: 72px; }
 
-.k-sidebar::before {
-  content: ''; position: absolute; inset: -80px -80px auto auto;
-  width: 220px; height: 220px; border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--k-deep) 25%, transparent), transparent 65%);
+/* Two decorative blooms. pointer-events is moot — they are pseudo-elements
+   under `.side > * { z-index: 1 }`, so nothing paints over content. */
+.side::before {
+  content: ''; position: absolute; inset: -60px -80px auto auto;
+  width: 240px; height: 240px; border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--primary-vivid) 18%, transparent), transparent 70%);
   pointer-events: none;
 }
-.k-sidebar::after {
-  content: ''; position: absolute; inset: auto auto -60px -40px;
+.side::after {
+  content: ''; position: absolute; inset: auto auto -70px -50px;
   width: 200px; height: 200px; border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--k-primary) 18%, transparent), transparent 65%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--tertiary) 16%, transparent), transparent 70%);
   pointer-events: none;
 }
+.side > * { position: relative; z-index: 1; }
 
-.k-sidebar__brand {
-  display: flex; align-items: center; gap: 12px;
-  padding: 22px 16px 18px;
-  border-bottom: 1px solid var(--side-rule-2, rgba(255,255,255,.12));
-  position: relative; z-index: 2;
-}
-.k-sidebar--rail .k-sidebar__brand { justify-content: center; padding: 18px 0; }
-
-.k-wordmark { line-height: 1.1; }
-.k-wordmark__main {
-  font-family: var(--font-display);
-  font-size: 22px; font-weight: 500;
-  color: #fff;
-  letter-spacing: 0.005em;
-}
-.k-wordmark__sans {
-  font-family: var(--font-hindi);
-  font-size: 14px; font-weight: 400;
-  color: var(--k-primary);
-  margin-top: 1px;
-  letter-spacing: 0.01em;
-}
-.k-wordmark__sub {
-  font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase;
-  color: rgba(255,255,255,.22); font-weight: 600;
-  margin-top: 4px;
-}
-
-.k-sidebar__nav {
-  flex: 1; overflow-y: auto;
-  padding: var(--sp-4) 0 var(--sp-4);
-  position: relative; z-index: 2;
-  scrollbar-width: none;
-}
-.k-sidebar__nav::-webkit-scrollbar { width: 0; height: 0; }
-.k-sidebar__group + .k-sidebar__group { margin-top: var(--sp-3); }
-
-.k-sidebar__section {
-  display: flex; align-items: baseline; justify-content: space-between;
-  padding: var(--sp-4) 18px 6px;
-  font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase;
-  color: rgba(255,255,255,.22); font-weight: 700;
-}
-.k-sidebar__section-hi {
-  font-family: var(--font-hindi);
-  font-size: 11px; letter-spacing: 0;
-  text-transform: none;
-  color: rgba(255,255,255,.22);
-  font-weight: 400;
-}
-
-.k-sidebar__item {
-  display: flex; align-items: center; gap: 12px;
-  width: calc(100% - 16px);
-  margin: 1px 8px;
-  padding: 9px 12px;
-  border: 0; background: transparent; color: rgba(255,255,255,.72);
-  font-size: 13.5px; font-weight: 500; font-family: var(--font-ui);
-  border-radius: 8px;
-  border-left: 2px solid transparent;
-  text-align: left;
-  transition: background calc(.15s * var(--ix)), color calc(.15s * var(--ix)), border-color calc(.15s * var(--ix));
-}
-.k-sidebar__item:hover {
-  background: rgba(255,255,255,.06);
-  color: rgba(255,255,255,.92);
-}
-.k-sidebar__item.is-active {
-  background: var(--side-active);
-  color: #fff;
-  border-left-color: var(--k-primary);
-}
-.k-sidebar__item.is-active .k-sidebar__icon { color: var(--k-primary); }
-.k-sidebar__icon { display: inline-flex; flex-shrink: 0; opacity: .82; }
-
-.k-sidebar__hi-mute {
-  font-family: var(--font-hindi);
-  font-size: 11.5px;
-  color: rgba(255,255,255,.32);
-  margin-left: 4px;
-}
-
-.k-sidebar__badge {
-  margin-left: auto;
-  background: color-mix(in srgb, var(--k-primary) 24%, transparent);
-  color: var(--k-primary);
-  font-size: 10px; font-weight: 700;
-  padding: 1px 7px;
-  border-radius: 99px;
-}
-
-.k-sidebar--rail .k-sidebar__item {
-  justify-content: center;
-  padding: 12px 0;
-  margin: 1px 8px;
-  border-left: 0;
-  position: relative;
-}
-.k-sidebar--rail .k-sidebar__item.is-active {
-  background: var(--side-active);
-}
-
-.k-sidebar__foot {
-  display: flex; align-items: center; gap: 10px;
-  padding: 14px 16px;
-  border-top: 1px solid rgba(255,255,255,.12);
-  position: relative; z-index: 2;
-}
-.k-sidebar__me { flex: 1; min-width: 0; }
-.k-sidebar__me-name { font-size: 12.5px; font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.k-sidebar__me-role { font-size: 10px; color: rgba(255,255,255,.22); margin-top: 1px; }
-.k-sidebar__foot-btn {
-  background: transparent; border: 0; padding: 6px;
-  color: rgba(255,255,255,.22);
-  border-radius: 6px;
-}
-.k-sidebar__foot-btn:hover { background: rgba(255,255,255,.06); color: #fff; }
-
-/* Collapsed rail is a visual alias of --rail; kept as its own class per naming spec */
-.k-sidebar--collapsed { width: 64px; }
-
-.k-sidebar__section {
-  display: flex; align-items: center; gap: 6px; justify-content: space-between;
-  padding: var(--sp-4) 18px 6px;
-  font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase;
-  color: rgba(255,255,255,.22); font-weight: 700;
-}
-.k-sidebar__section:hover { color: rgba(255,255,255,.42); }
-.k-sidebar__section-hi { margin-left: auto; }
-
-.k-sidebar__toggle {
-  display: flex; align-items: center; justify-content: center; gap: 6px;
-  width: calc(100% - 16px); margin: 0 8px 10px;
-  padding: 8px 0;
-  background: transparent; border: 1px solid rgba(255,255,255,.1);
-  border-radius: 8px; color: rgba(255,255,255,.4);
-  font-size: 11px; font-weight: 600; font-family: var(--font-ui);
-  cursor: pointer; flex-shrink: 0;
-  transition: background calc(.15s * var(--ix)), color calc(.15s * var(--ix));
-}
-.k-sidebar__toggle:hover { background: rgba(255,255,255,.06); color: #fff; }
-.k-sidebar--rail .k-sidebar__toggle,
-.k-sidebar--collapsed .k-sidebar__toggle { width: 32px; margin: 0 auto 10px; }
-
-/* ── Topbar ─────────────────────────────────────────────────────────────── */
-.k-topbar {
-  display: flex; align-items: center; gap: var(--sp-5);
-  height: 60px; padding: 0 var(--sp-6);
-  background: color-mix(in srgb, var(--surface) 85%, transparent);
-  backdrop-filter: blur(12px) saturate(1.2);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
-  border-bottom: 1px solid color-mix(in srgb, var(--rule) 60%, transparent);
+.side__brand {
+  display: flex; align-items: center; gap: 11px;
+  padding: 16px 14px;
+  border-bottom: 1px solid var(--side-rule);
   flex-shrink: 0;
 }
-.k-topbar__left { min-width: 0; }
-.k-crumb { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--ink-3); }
-.k-crumb__hi { font-family: var(--font-hindi); color: var(--k-mid); font-size: 16px; }
-.k-crumb__sep { color: var(--ink-faint); }
-.k-crumb__cur { color: var(--ink); font-weight: 600; text-transform: capitalize; }
+.side--rail .side__brand { justify-content: center; padding: 16px 0; }
+.side__mark { border-radius: var(--r-sm); flex-shrink: 0; object-fit: cover; display: block; }
 
-.k-topbar__search {
-  flex: 1; max-width: 460px;
+.side__wm { line-height: 1.12; min-width: 0; }
+.side__wm-en {
+  font-family: var(--font-display);
+  font-size: var(--t-title-lg); font-weight: var(--t-title-lg-w);
+  color: #fff;
+  letter-spacing: -.01em;
+}
+/* Same fixed-glyph exception as .crumb__hi — the brand word never translates. */
+.side__wm-hi {
+  font-family: var(--font-hindi);
+  font-size: var(--t-body); font-weight: 400;
+  color: var(--primary-vivid);
+  margin-top: 1px;
+}
+.side__wm-sub {
+  font-size: var(--t-label-sm);
+  letter-spacing: .18em; text-transform: uppercase;
+  color: var(--side-fg-faint); font-weight: 600;
+  margin-top: 3px;
+}
+
+.side__nav {
+  flex: 1; overflow-y: auto;
+  padding: 10px 0 14px;
+  scrollbar-width: none;
+}
+.side__nav::-webkit-scrollbar { width: 0; height: 0; }
+
+.side__sec {
+  display: flex; align-items: baseline; gap: 8px;
+  width: calc(100% - 16px); margin: 0 8px;
+  padding: 14px 10px 5px;
+  background: transparent; border: 0;
+  font-family: inherit;
+  font-size: 8.5px; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--side-fg-faint); font-weight: 700;
+  cursor: pointer;
+}
+.side__sec:hover { color: var(--side-fg-mute); }
+.side__sec-hi {
+  font-family: var(--font-indic);
+  /* Tracks the Text size slider instead of a 10px literal — a fixed sub-label
+     under a scaling label is the defect the ledger records at §3.2. */
+  font-size: var(--t-label); letter-spacing: 0; text-transform: none;
+  margin-left: auto;
+}
+.side__sec-chev { flex-shrink: 0; transition: transform var(--dur-fast) var(--ease-standard); }
+.side__sec[aria-expanded="true"] .side__sec-chev { transform: rotate(90deg); }
+.side--rail .side__sec { justify-content: center; padding: 12px 0 6px; margin: 0; width: 100%; }
+.side--rail .side__sec-name,
+.side--rail .side__sec-hi,
+.side--rail .side__sec-chev { display: none; }
+.side--rail .side__sec::after { content: ''; width: 22px; height: 1px; background: var(--side-rule); }
+
+/* Collapsible group body. `grid-template-rows: 0fr → 1fr` replaces the old
+   `maxHeight: items.length * 44` literal, which broke the moment density or
+   font size changed — and 09-customization.md makes both user-settable. */
+.side__sec-items {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-base) var(--ease-standard);
+}
+.side__sec-items > * { overflow: hidden; min-height: 0; }
+.side__sec-items[data-open="1"] { grid-template-rows: 1fr; }
+
+.side__item {
+  display: flex; align-items: center; gap: 11px;
+  width: calc(100% - 16px);
+  margin: 1px 8px;
+  padding: 9px 11px;
+  border: 0; background: transparent;
+  border-radius: var(--r-sm);
+  color: var(--side-fg);
+  font-family: var(--font-ui);
+  font-size: var(--t-body-sm);
+  text-align: left;
+  position: relative;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.side__item:hover { background: var(--side-hover); color: #fff; }
+.side__item.on { background: color-mix(in srgb, var(--primary-vivid) 20%, transparent); color: #fff; }
+.side__item.on::before {
+  content: ''; position: absolute;
+  left: -8px; top: 22%; bottom: 22%;
+  width: 3px; border-radius: 0 3px 3px 0;
+  background: var(--primary-vivid);
+}
+.side__ic { display: inline-flex; flex-shrink: 0; opacity: .8; }
+.side__item.on .side__ic { opacity: 1; color: var(--primary-vivid); }
+
+.side__label { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.side__en {
+  font-size: var(--t-body-sm); font-weight: 500; letter-spacing: -.005em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Devanagari renders optically smaller than Latin at the same px, so the sub
+   label sits one step below the primary rather than at a fixed 10px. If it
+   proves too tight, raise this step — do not touch .side__en. */
+.side__hi {
+  font-family: var(--font-indic);
+  font-size: var(--t-label-sm); line-height: 1.5;
+  color: var(--side-fg-mute);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.side__item.on .side__hi { color: rgba(255,255,255,.62); }
+
+.side__badge {
+  margin-left: auto; flex-shrink: 0;
+  background: color-mix(in srgb, var(--primary-vivid) 26%, transparent);
+  color: var(--primary-vivid);
+  font-size: var(--t-label-sm); font-weight: 700;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+}
+.side__badge--admin { letter-spacing: .1em; }
+.side__badge--count {
+  background: var(--danger);
+  color: var(--on-danger);
+  min-width: 18px; text-align: center;
+}
+
+.side--rail .side__item { justify-content: center; padding: 11px 0; }
+.side--rail .side__label,
+.side--rail .side__badge { display: none; }
+.side--rail .side__item.on::before { display: none; }
+
+.side__foot {
   display: flex; align-items: center; gap: 10px;
-  height: 38px; padding: 0 14px;
-  background: var(--bg);
-  border: 1px solid var(--rule);
-  border-radius: 99px;
-  color: var(--ink-3);
+  padding: 12px 14px;
+  border-top: 1px solid var(--side-rule);
+  flex-shrink: 0;
+}
+.side--rail .side__foot { justify-content: center; padding: 12px 0; }
+.side__me { flex: 1; min-width: 0; }
+.side__me-n { font-size: var(--t-body-sm); font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side__me-r { font-size: var(--t-label-sm); color: var(--side-fg-mute); margin-top: 1px; text-transform: capitalize; }
+.side__foot-btn {
+  background: transparent; border: 0; padding: 6px;
+  color: var(--side-fg-mute);
+  border-radius: var(--r-xs);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.side__foot-btn:hover { background: var(--side-hover); color: #fff; }
+
+.side__toggle {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  margin: 0 8px 8px; padding: 7px 0;
+  background: transparent;
+  border: 1px solid var(--side-rule);
+  border-radius: var(--r-sm);
+  color: var(--side-fg-mute);
+  font-family: var(--font-ui);
+  font-size: var(--t-label); font-weight: 600;
+  flex-shrink: 0; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.side__toggle:hover { background: var(--side-hover); color: #fff; }
+.side--rail .side__toggle { width: 32px; margin: 0 auto 8px; }
+.side__toggle-chev { transition: transform var(--dur-fast) var(--ease-standard); }
+.side--rail .side__toggle-chev { transform: rotate(180deg); }
+
+/* ── Topbar (01-navigation.md §1 · Topbar) ───────────────────────────────── */
+.top {
+  display: flex; align-items: center; gap: 14px;
+  padding: 0 var(--pad-page);
+  height: 54px; flex-shrink: 0;
+  border-bottom: 1px solid var(--outline-variant);
+  background: rgba(var(--glass-tint), .72);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+}
+[data-platform="win"] .top { background: var(--s-low); }
+.crumb { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; min-width: 0; }
+/* --primary-text, not --primary: 00 §12 makes --primary a 4.04:1 fill and
+   --primary-text the 5.2:1 text value. 01 §1 predates that split. */
+/* --font-hindi, not --font-indic: this कर्तव्य is a fixed decorative glyph,
+   not a translated label, so it must not follow the language setting into a
+   Gujarati face that has no Devanagari coverage (24 §fixed-glyph exception).
+   01 §1 specifies --font-indic here; that is the one place it is wrong. */
+.crumb__hi { font-family: var(--font-hindi); font-size: var(--t-body); color: var(--primary-text); }
+.crumb__sep { color: var(--on-surface-faint); }
+.crumb__cur { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); overflow: hidden; text-overflow: ellipsis; }
+
+.top__search {
+  flex: 1; max-width: 420px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 11px;
+  border-radius: var(--r-pill);
+  background: var(--s-container);
+  border: 1px solid transparent;
+  color: var(--on-surface-3);
+  font-family: inherit; text-align: left;
+  cursor: pointer;
 }
 /* The trigger is a <button>, so it takes real focus rather than :focus-within
    from a readOnly input it used to wrap. */
-.k-topbar__search:focus-visible,
-.k-topbar__search:hover {
-  border-color: color-mix(in srgb, var(--k-primary) 50%, var(--rule));
-  background: var(--surface);
-}
-.k-topbar__search { font-family: inherit; text-align: left; cursor: pointer; }
-.k-topbar__search-ph {
-  flex: 1; font-size: 13.5px; color: var(--ink-3);
+.top__search:hover,
+.top__search:focus-visible { border-color: var(--outline-variant); }
+.top__search-ph {
+  flex: 1; font-size: var(--t-body-sm); color: var(--on-surface-3);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .k-kbd {
-  font-family: var(--font-mono); font-size: 10px;
-  padding: 2px 6px; border-radius: 4px;
-  background: var(--rule-soft); color: var(--ink-3);
-  border: 1px solid var(--rule);
+  font-family: var(--font-mono); font-size: var(--t-label-sm);
+  padding: 2px 5px; border-radius: var(--r-xs);
+  background: var(--surface); color: var(--on-surface-3);
+  border: 1px solid var(--outline-variant);
 }
 
-.k-topbar__right { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+.top__right { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+
+/* Inline search FIELD, for filter bars. Distinct from `.top__search`, which is
+   a button that opens the palette and holds no text. They shared one class
+   until the topbar trigger stopped being an input. */
+.k-searchpill {
+  flex: 1; display: flex; align-items: center; gap: 8px;
+  padding: 6px 11px;
+  border-radius: var(--r-pill);
+  background: var(--s-container);
+  border: 1px solid transparent;
+  color: var(--on-surface-3);
+}
+.k-searchpill:focus-within { border-color: var(--outline-variant); background: var(--surface); }
+.k-searchpill input {
+  flex: 1; min-width: 0;
+  background: transparent; border: 0; outline: none;
+  font-family: var(--font-ui); font-size: var(--t-body-sm);
+  color: var(--on-surface);
+}
+.k-searchpill input::placeholder { color: var(--on-surface-3); }
+
+/* ── Sidebar background variants (control lives in 09-customization.md) ────
+   The light variant must re-point the --side-* set AND override .side__item.on
+   and :hover, which both hardcode #fff. Miss the last two and active items go
+   white-on-cream. */
+[data-sidebar-bg="light"] .side {
+  background: var(--s-container);
+  --side-fg: var(--on-surface-2);
+  --side-fg-mute: var(--on-surface-3);
+  --side-fg-faint: var(--on-surface-3);
+  --side-rule: var(--outline-variant);
+  --side-hover: var(--s-high);
+}
+[data-sidebar-bg="light"] .side__item:hover { color: var(--on-surface); }
+[data-sidebar-bg="light"] .side__item.on {
+  background: var(--primary-container); color: var(--on-primary-container);
+}
+[data-sidebar-bg="light"] .side__item.on .side__hi { color: var(--on-primary-container); }
+[data-sidebar-bg="light"] .side__item.on .side__ic { color: var(--on-primary-container); }
+[data-sidebar-bg="light"] .side__wm-en,
+[data-sidebar-bg="light"] .side__me-n { color: var(--on-surface); }
+/* --primary-vivid is 2.5:1 on the cream container; --primary-text is 5.2:1. */
+[data-sidebar-bg="light"] .side__wm-hi,
+[data-sidebar-bg="light"] .side__badge { color: var(--primary-text); }
+[data-sidebar-bg="light"] .side__toggle:hover,
+[data-sidebar-bg="light"] .side__foot-btn:hover { color: var(--on-surface); }
+
+[data-sidebar-bg="accent"] .side {
+  background: linear-gradient(160deg, var(--k-mid), var(--k-primary));
+  --side-fg: rgba(255,255,255,.86);
+  --side-rule: rgba(255,255,255,.16);
+}
+[data-sidebar-bg="accent"] .side__item.on { background: rgba(255,255,255,.22); color: #fff; }
+[data-sidebar-bg="accent"] .side__badge { background: rgba(255,255,255,.22); color: #fff; }
+
+/* ── Mobile bottom nav (01-navigation.md §1 · Mobile bottom nav) ──────────
+   Five slots: Today · Tasks · ＋ · Messages · More. min-height 48px on every
+   slot; the FAB is 44px inside a 48px row. Never below 44. */
+.mnav {
+  display: none;
+  flex-shrink: 0;
+  padding: 6px 4px calc(6px + var(--m-safe-b));
+  border-top: 1px solid var(--outline-variant);
+  background: rgba(var(--glass-tint), .94);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+}
+[data-platform="win"] .mnav { background: var(--s-low); }
+.mnav__i {
+  flex: 1; min-width: 0; min-height: 48px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px;
+  background: transparent; border: 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-label-sm); font-weight: 600;
+  color: var(--on-surface-3);
+  cursor: pointer;
+  position: relative;
+  border-radius: var(--r-sm);
+}
+.mnav__i.on { color: var(--primary-text); }
+.mnav__lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.mnav__fab {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), var(--primary-vivid));
+  color: var(--on-primary);
+  display: grid; place-items: center;
+  box-shadow: var(--shadow-2);
+}
+.mnav__dot {
+  position: absolute; top: 4px; right: 24%;
+  min-width: 8px; height: 8px; border-radius: var(--r-pill);
+  background: var(--danger);
+}
+
+@media (max-width: 767px) {
+  .mnav { display: flex; }
+}
+
+/* ── Admin surface (01-navigation.md §1 · Admin surface) ──────────────────
+   A different SURFACE, not a page: it replaces the sidebar and owns the
+   window. The violet is not the user's accent and must not be derived from
+   it — an operator looking at another company's data should never see their
+   own theme. Full values in 11-platform-admin.md. */
+.adm {
+  --primary: var(--pf-primary);
+  --primary-vivid: var(--pf-keyline);
+  --primary-text: var(--pf-primary);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  height: 100vh; width: 100vw;
+  background: var(--bg);
+  overflow: hidden;
+}
+[data-theme="dark"] .adm {
+  --primary: var(--pf-primary-dark);
+  --primary-text: var(--pf-primary-dark);
+}
+.adm__side {
+  width: 236px; flex-shrink: 0;
+  display: flex; flex-direction: column;
+  height: 100%; overflow: hidden;
+  color: var(--side-fg);
+  background: rgb(var(--side-ink));
+  box-shadow: inset 3px 0 0 var(--pf-keyline);
+}
+.adm__back {
+  display: flex; align-items: center; gap: 7px;
+  background: transparent; border: 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-label); color: var(--side-fg-mute);
+  padding: 13px 15px 9px;
+  cursor: pointer;
+}
+.adm__back:hover { color: #fff; }
+.adm__badge {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 12px 10px; padding: 9px 11px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--pf-keyline) 22%, transparent);
+  font-size: var(--t-label); font-weight: 600; color: #fff;
+}
+.adm__badge-d {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--pf-primary-dark); flex-shrink: 0;
+  animation: adm-pulse 2s var(--ease-standard) infinite;
+}
+@keyframes adm-pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+.adm__badge-n { margin-left: auto; color: var(--side-fg-mute); font-weight: 500; }
+.adm__nav { flex: 1; overflow-y: auto; padding: 4px 0 12px; scrollbar-width: none; }
+.adm__nav::-webkit-scrollbar { width: 0; height: 0; }
+.adm__item {
+  display: flex; align-items: center; gap: 11px;
+  width: 100%; padding: 9px 15px;
+  background: transparent; border: 0;
+  color: var(--side-fg);
+  font-family: var(--font-ui); font-size: var(--t-body-sm);
+  text-align: left; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.adm__item:hover { background: var(--side-hover); color: #fff; }
+.adm__item.on {
+  background: color-mix(in srgb, var(--pf-keyline) 28%, transparent);
+  color: #fff;
+  box-shadow: inset 3px 0 0 var(--pf-primary-dark);
+}
+.adm__ic { display: inline-flex; flex-shrink: 0; opacity: .82; }
+.adm__l { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.adm__l-hi { font-family: var(--font-indic); font-size: var(--t-label-sm); color: var(--side-fg-mute); }
+.adm__count {
+  margin-left: auto; flex-shrink: 0;
+  background: color-mix(in srgb, var(--pf-keyline) 34%, transparent);
+  color: #fff;
+  font-size: var(--t-label-sm); font-weight: 700;
+  padding: 1px 7px; border-radius: var(--r-pill);
+}
+.adm__foot {
+  padding: 11px 15px;
+  border-top: 1px solid var(--side-rule);
+  font-size: var(--t-label-sm); color: var(--side-fg-mute);
+}
+.adm__main { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.adm__bar {
+  display: flex; align-items: center; gap: 12px;
+  height: 54px; padding: 0 var(--pad-page);
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--outline-variant);
+  background: var(--surface);
+}
+.adm__crumb { display: flex; align-items: baseline; gap: 8px; font-size: var(--t-body-sm); color: var(--on-surface-2); min-width: 0; }
+.adm__crumb-b { font-weight: 700; color: var(--primary-text); }
+.adm__warn {
+  margin-left: auto; flex-shrink: 0;
+  font-size: var(--t-label); color: var(--on-surface-3);
+}
+.adm__burger { display: none; }
+.adm__body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: var(--pad-page); }
+
+/* Same rule as the app shell: the sidebar only leaves the flow where a
+   replacement ships with it. */
+@media (max-width: 1023px) {
+  .adm { grid-template-columns: 1fr; }
+  .adm__side {
+    position: fixed; left: 0; top: 0; bottom: 0; z-index: 201;
+    transform: translateX(-100%);
+    transition: transform var(--dur-base) var(--ease-emph);
+    box-shadow: var(--shadow-4), inset 3px 0 0 var(--pf-keyline);
+  }
+  .adm__side--open { transform: none; }
+  .adm__scrim { position: fixed; inset: 0; z-index: 200; background: var(--scrim); border: 0; }
+  .adm__burger {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: var(--r-sm);
+    background: transparent; border: 0; color: var(--on-surface-2); cursor: pointer;
+  }
+}
 .k-iconbtn {
   width: 34px; height: 34px; border-radius: 8px;
   background: transparent; border: 0;
@@ -2043,9 +2311,9 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-en { display: inline; }
 /* EN only — hide all secondary labels */
 [data-language="en"] .k-hi,
-[data-language="en"] .k-sidebar__hi-mute,
-[data-language="en"] .k-sidebar__section-hi,
-[data-language="en"] .k-crumb__hi,
+[data-language="en"] .side__hi,
+[data-language="en"] .side__sec-hi,
+[data-language="en"] .crumb__hi,
 [data-language="en"] .k-pageh__sans,
 [data-language="en"] .k-wday__hi { display: none !important; }
 
@@ -2059,22 +2327,19 @@ input, textarea, select { font-family: inherit; color: inherit; }
 
 /* Gujarati modes — Gujarati font ONLY where the text is actually Gujarati.
    Sidebar item and section labels genuinely swap script: Sidebar.jsx picks
-   `gu` over `hi` when the language is gu or en+gu.
+   `gu` over `hi` when the language is gu or en+gu, so `.side__hi` and
+   `.side__sec-hi` carry --font-indic in their own rules above. applyPrefs
+   repoints --font-indic per language, so no [data-language] selector is
+   needed here any more.
 
-   .k-crumb__hi and .k-pageh__sans were in this list and must not be. Neither
-   ever holds Gujarati — the breadcrumb is a hardcoded कर्तव्य, and
-   PageHeader's `sanskrit` prop is a fixed Sanskrit term (सजावट, संगठन,
-   प्रमाण). Forcing a Gujarati face onto Devanagari is the same per-glyph
-   fallback failure as the reverse, just less obvious: the font has no
-   Devanagari coverage, so every glyph silently resolves through the fallback
-   chain and the word loses its conjuncts.
-
-   These use --font-indic rather than a literal so the Line height and font
-   controls still reach them, and so there is one place to change the face. */
-[data-language="gu"]    .k-sidebar__hi-mute,
-[data-language="gu"]    .k-sidebar__section-hi,
-[data-language="en+gu"] .k-sidebar__hi-mute,
-[data-language="en+gu"] .k-sidebar__section-hi { font-family: var(--font-indic); }
+   `.crumb__hi` and `.k-pageh__sans` must NOT follow --font-indic. Neither ever
+   holds Gujarati — the breadcrumb is a hardcoded कर्तव्य, and PageHeader's
+   `sanskrit` prop is a fixed Sanskrit term (सजावट, संगठन, प्रमाण). Forcing a
+   Gujarati face onto Devanagari is the same per-glyph fallback failure as the
+   reverse, just less obvious: the font has no Devanagari coverage, so every
+   glyph silently resolves through the fallback chain and the word loses its
+   conjuncts. Both use --font-hindi — 24-bilingual-devanagari.md's fixed-glyph
+   exception. */
 
 /* ── Devanagari metrics ───────────────────────────────────────────────────
    Devanagari hangs a headline (शिरोरेखा) above the baseline and drops
@@ -2096,11 +2361,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
   .k-stats { grid-template-columns: repeat(2, 1fr); }
   .k-hero__watermark { font-size: 200px; }
 }
-@media (max-width: 720px) {
+@media (max-width: 767px) {
   .k-stats { grid-template-columns: 1fr 1fr; }
-  .k-content { padding: 20px 16px; }
+  .kv__content { padding: 20px 16px; }
   .k-page { padding: var(--sp-4); }
-  .k-topbar__search { display: none; }
+  .top__search { display: none; }
 }
 @media (max-width: 600px) {
   .k-cust { right: 12px; left: 12px; width: auto; }
@@ -3090,15 +3355,6 @@ select.k-formpanel__input { appearance: none;
   justify-content: flex-start;
 }
 .k-bcol--add:hover { border-color: var(--primary); background: var(--k-primary-bg); }
-
-/* Sidebar collapsible section. `maxHeight` is computed per section from its item
-   count so it stays inline, but overflow and the transition are static and
-   belong here — a transition in an inline style cannot be overridden by the
-   reduced-motion scale. */
-.k-sidebar__section-items {
-  overflow: hidden;
-  transition: max-height calc(.2s * var(--ix)) var(--ease-standard);
-}
 
 /* Task list column widths. Siblings of .k-c-task / .k-c-project / .k-c-assignees
    above, which is why these four are modifiers on .k-trow__cell rather than

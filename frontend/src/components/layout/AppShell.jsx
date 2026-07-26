@@ -21,9 +21,17 @@ import CommandPalette from '../CommandPalette';
 import KeyboardShortcuts from '../KeyboardShortcuts';
 import OnboardingChecklist from '../OnboardingChecklist';
 import SkipLink from '../ui/SkipLink';
+import MobileDrawer from './MobileDrawer';
+import MobileNav from './MobileNav';
+import { ICONS } from './navIcons';
 import { urlBase64ToUint8Array } from '../../lib/push';
 import { playNotifSound } from '../../lib/notifSound';
-import { Bell, Menu, X } from 'lucide-react';
+
+// `data-platform` is written by the blocking script in index.html, beside
+// data-theme and for the same reason: both must be on <html> before the
+// stylesheet paints. Setting it here, after mount, would show one frame of a
+// blurred sidebar on Windows before it snapped solid — and would leave the
+// admin and auth surfaces without it entirely. See 01-navigation.md §1.
 
 async function subscribeToPush() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
@@ -70,6 +78,7 @@ export default function AppShell() {
   const [cmdkOpen,     setCmdkOpen]     = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [unread,       setUnread]       = useState(0);
+  const [approvals,    setApprovals]    = useState(0);
   const [sidebarOpen,  setSidebarOpen]  = useState(false);
   const [teams,        setTeams]        = useState([]);
   const [teamsLoaded,  setTeamsLoaded]  = useState(false);
@@ -79,6 +88,7 @@ export default function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
   useEffect(() => { window.__kartavya_navigate = navigate; return () => { delete window.__kartavya_navigate; }; }, [navigate]);
+
 
   // Register SW and ask for browser notification permission after 4 s
   useEffect(() => {
@@ -150,6 +160,12 @@ export default function AppShell() {
           }
           prevUnread.current = count;
           setUnread(count);
+          // Both badges arrive on the same call. 01 §4 asks for one endpoint
+          // returning { inbox, approvals } rather than two polls for two
+          // integers on every page; /notifications/poll was already that call
+          // for one of them, so `approvals` was added to its payload instead
+          // of standing up a second poll beside it.
+          setApprovals(r.data.approvals ?? 0);
         }
       } catch (_) {}
     };
@@ -202,50 +218,44 @@ export default function AppShell() {
   const teamId = teamIdFromPath || (teamsLoaded ? (teams[0]?.team_id || '') : null);
 
   return (
-    <div data-testid="app-shell" className="k-app">
+    <div data-testid="app-shell" className="kv">
       {/* First tab stop. Must stay first in DOM order — the sidebar below is
           15 module links plus a settings group. */}
       <SkipLink />
 
-      {/* Sidebar — hidden on mobile via CSS */}
-      <div className="k-app__sidebar">
-        <Sidebar inboxCount={unread} />
+      {/* Sidebar slot. The ≤1023px media query hides THIS, not `.side`, so the
+          second copy rendered inside MobileDrawer survives — hiding `.side`
+          directly is what makes a burger open an empty scrim. */}
+      <div className="kv__side">
+        <Sidebar inboxCount={unread} approvalsCount={approvals} />
       </div>
 
-      {/* Mobile overlay drawer */}
-      {sidebarOpen && (
-        <div className="k-app__mob-overlay" onClick={() => setSidebarOpen(false)}>
-          <div className="k-app__mob-drawer" onClick={e => e.stopPropagation()}>
-            <Sidebar inboxCount={unread} />
-          </div>
-        </div>
-      )}
+      {/* The replacement that ships with that media query, in the same change. */}
+      <MobileDrawer
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        inboxCount={unread}
+        approvalsCount={approvals}
+      />
 
       {/* Main column */}
-      <div className="k-main">
-        {/* Mobile topbar */}
-        <div className="k-app__mob-bar">
-          <button className="k-iconbtn" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
-            <Menu size={18} />
+      <div className="kv__main">
+        {/* Compact bar — burger, brand, actions. Shown ≤1023px. */}
+        <div className="kv__mobbar">
+          <button type="button" className="k-iconbtn" onClick={() => setSidebarOpen(true)} aria-label="Open menu" aria-expanded={sidebarOpen}>
+            {ICONS.burger}
           </button>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 16, color: 'var(--ink)', fontWeight: 500 }}>Kartavaya</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button className="k-iconbtn" style={{ position: 'relative' }} onClick={() => setNotifOpen(true)} aria-label="Notifications">
-              <Bell size={18} />
-              {unread > 0 && (
-                <span style={{ position: 'absolute', top: -4, right: -4, height: 16, minWidth: 16, padding: '0 4px', borderRadius: 99, fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#dc2626', color: '#fff', fontWeight: 700 }}>
-                  {unread > 9 ? '9+' : unread}
-                </span>
-              )}
-            </button>
-            <button className="k-btn k-btn--primary k-btn--sm" onClick={() => setNewTaskOpen(true)} style={{ padding: '6px 12px', fontSize: 12 }}>
-              + New task
+          <span className="kv__mobbar-brand">Kartavaya</span>
+          <div className="kv__mobbar-actions">
+            <button type="button" className="k-iconbtn" onClick={() => setNotifOpen(true)} aria-label="Notifications">
+              {ICONS.bell}
+              {unread > 0 && <span className="k-iconbtn__dot" />}
             </button>
           </div>
         </div>
 
         {/* Desktop topbar */}
-        <div className="k-app__topbar">
+        <div className="kv__top">
           <Topbar unread={unread} onOpenNotifications={() => setNotifOpen(true)} onNewTask={() => setNewTaskOpen(true)} onOpenCmdk={() => setCmdkOpen(true)} />
         </div>
 
@@ -253,9 +263,17 @@ export default function AppShell() {
         {/* Page content. tabIndex={-1} is required by the skip link — without
             it the jump moves the scroll position but not focus, so the next Tab
             continues from the sidebar. */}
-        <main className="k-content" id="main" tabIndex={-1}>
+        <main className="kv__content" id="main" tabIndex={-1}>
           <Outlet context={{ teamId, teams }} />
         </main>
+
+        {/* Bottom bar, ≤767px. The compact bar above carries no "New task"
+            because the FAB here is that action, at 44px, within thumb reach. */}
+        <MobileNav
+          unread={unread}
+          onNewTask={() => setNewTaskOpen(true)}
+          onOpenMore={() => setSidebarOpen(true)}
+        />
       </div>
 
       <NotificationsModal open={notifOpen} onOpenChange={setNotifOpen} />

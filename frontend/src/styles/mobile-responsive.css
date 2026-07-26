@@ -4,7 +4,7 @@
  * REWRITTEN, because the previous version was almost entirely dead. It was
  * authored against a class vocabulary this app does not use — .layout-sidebar,
  * .layout-main, .layout-header, .table-container, .kanban-container,
- * .stat-card, .input-modern — while the app renders .k-sidebar, .k-main,
+ * .stat-card, .input-modern — while the app renders .side, .kv__main,
  * .k-card, .k-input, .k-board. 26 of its 31 class selectors matched nothing in
  * any rendered markup, and the handful that did matched by coincidence.
  *
@@ -15,12 +15,12 @@
  * 44px floor under every inline text link, so a link inside a sentence
  * stretches the line it sits in.
  *
- * Navigation is deliberately NOT here. The sidebar overlay, its scrim and the
- * burger live in editorial.css and AppShell.jsx, and they are already correct:
- * the media query hides the sidebar SLOT (.k-app__sidebar), not .k-sidebar
- * itself, so the second copy rendered inside the mobile drawer survives.
- * Hiding .k-sidebar directly is exactly what makes a burger open an empty
- * scrim.
+ * Navigation is deliberately NOT here. The sidebar overlay, its scrim, the
+ * burger and the bottom bar live in editorial.css and the layout/ components,
+ * and they are already correct: the media query hides the sidebar SLOT
+ * (.kv__side), not .side itself, so the second copy rendered inside
+ * MobileDrawer survives. Hiding .side directly is exactly what makes a burger
+ * open an empty scrim.
  *
  * Breakpoints, three only — each extra one is another combination nobody
  * tests:
@@ -66,8 +66,8 @@
   }
 
   /* ── Layout ───────────────────────────────────────────────────────────── */
-  .k-content { padding: 16px; }
-  .k-card    { padding: 16px; }
+  .kv__content { padding: 16px; }
+  .k-card      { padding: 16px; }
 
   /* Two 160px tiles on a 360px screen leaves neither wide enough for its own
      number, so stat rows go to one column. */
@@ -138,6 +138,6 @@
    Vertical space is the scarce axis, so trim vertical padding rather than
    reflowing anything — a reflow here would fight the ≤767 rules above. */
 @media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
-  .k-content    { padding: 10px 16px; }
+  .kv__content  { padding: 10px 16px; }
   .modal__panel { max-height: 96vh; }
 }

@@ -215,30 +215,11 @@
 [data-toast-pos="bl"] .k-toasts { bottom: 20px; top: auto; left: 20px; right: auto; flex-direction: column-reverse; }
 [data-toast-pos="br"] .k-toasts { bottom: 20px; top: auto; right: 20px; left: auto; flex-direction: column-reverse; }
 
-/* ── Sidebar background application ────────────────────────────────────── */
-/* The light variant must also flip the active item and the wordmark, or the
-   active row and the brand disappear into the pale background. */
-[data-sidebar-bg="light"] .k-sidebar { background: var(--s-container); }
-[data-sidebar-bg="light"] .k-sidebar__item { color: var(--on-surface-2); }
-[data-sidebar-bg="light"] .k-sidebar__item:hover {
-  background: color-mix(in srgb, var(--on-surface) 6%, transparent);
-  color: var(--on-surface);
-}
-[data-sidebar-bg="light"] .k-sidebar__item.is-active {
-  background: var(--primary-container); color: var(--on-primary-container);
-}
-[data-sidebar-bg="light"] .k-wordmark,
-[data-sidebar-bg="light"] .k-sidebar__me-name { color: var(--on-surface); }
-[data-sidebar-bg="light"] .k-sidebar__hi-mute,
-[data-sidebar-bg="light"] .k-sidebar__section,
-[data-sidebar-bg="light"] .k-sidebar__me-role { color: var(--on-surface-3); }
-
-[data-sidebar-bg="accent"] .k-sidebar {
-  background: linear-gradient(160deg, var(--primary-vivid), var(--primary));
-}
-[data-sidebar-bg="accent"] .k-sidebar__item.is-active {
-  background: rgba(255,255,255,.22); color: #fff;
-}
+/* ── Sidebar background application ──────────────────────────────────────
+   Moved to editorial.css, beside the `.side` rules it overrides. Keeping the
+   variant in a different file from the base was how the light variant shipped
+   without overriding `.side__item.on` — the two rules were never read
+   together. `data-sidebar-bg` is still written by applyPrefs. */
 
 /* ── Auth shell (12-auth-onboarding.md §1) ────────────────────────────────
    The sign-in flow was the last screen on the old cold-blue system, with

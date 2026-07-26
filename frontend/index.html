@@ -23,6 +23,19 @@
       } catch (e) {
         document.documentElement.setAttribute('data-theme', 'light');
       }
+      // data-platform, same reason and same timing. backdrop-filter on a large
+      // always-visible surface is unreliable on Windows, so the sidebar, topbar
+      // and bottom bar take flat ink there (01-navigation.md §1). Set before
+      // paint, or a Windows user sees one frame of a blurred sidebar that then
+      // snaps solid.
+      try {
+        var pl = ((navigator.userAgentData && navigator.userAgentData.platform) ||
+                  navigator.platform || '').toLowerCase();
+        document.documentElement.setAttribute(
+          'data-platform',
+          pl.indexOf('win') >= 0 ? 'win' : pl.indexOf('mac') >= 0 ? 'mac' : 'other'
+        );
+      } catch (e) { /* attribute is optional — glass is the default */ }
     </script>
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
