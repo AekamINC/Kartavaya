@@ -58,6 +58,27 @@ async def run_retention(x_cron_secret: str = Header("")):
     return {"cleaned": cleaned}
 
 
+@router.post("/cron/pahchan-retention", dependencies=[])
+async def run_pahchan_retention_cron(x_cron_secret: str = Header("")):
+    """
+    Pahchan's three retention deletions. Called daily.
+
+    Separate from /cron/retention on purpose. That job trims logs and activity —
+    losing a day of it costs nothing. This one deletes photographs of employees'
+    faces and payroll records on a promise made to a client, so it needs its own
+    result in the logs and its own failure to be visible rather than buried in
+    another job's summary.
+
+    Registered as its own Railway cron entry. 07 §5's three windows are
+    independent and per-org; see services/pahchan_retention.py.
+    """
+    await _verify_cron(x_cron_secret)
+    from services.pahchan_retention import run_pahchan_retention
+    result = await run_pahchan_retention()
+    log.info("Cron pahchan-retention: %s", result)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Extended cron jobs — each calls skill/agent functions.
 # Skill modules are built separately; imports are guarded so the endpoints
