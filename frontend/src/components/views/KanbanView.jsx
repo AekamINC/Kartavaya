@@ -25,7 +25,7 @@ const REQUESTED_COL = {
 
   name: 'Requested',
 
-  color: '#94a3b8',
+  color: 'var(--st-requested)',
 
   _synthetic: true,
 

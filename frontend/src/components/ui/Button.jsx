@@ -1,0 +1,35 @@
+import React from 'react';
+
+/**
+ * Button — seven variants, three sizes (02-common-components.md §1).
+ *
+ * Replaces ui/button.js, which had only `primary` and `ghost`. With no outline,
+ * tonal, text or danger variant, every destructive action in the app was styled
+ * ad hoc at the call site — which is why "red button" meant four different reds.
+ *
+ * `danger` is deliberately an OUTLINE variant. A filled red button reads as the
+ * primary action on the screen, which a destructive action never is; the one
+ * exception is a confirmed delete inside a dialog the user opened on purpose,
+ * and that lives in ConfirmDialog rather than being a variant here.
+ */
+const VARIANTS = ['fill', 'tonal', 'out', 'text', 'ghost', 'danger'];
+const SIZES = { sm: 'btn--sm', md: '', lg: 'btn--lg' };
+
+export default function Button({
+  variant = 'ghost',
+  size = 'md',
+  type = 'button',
+  className = '',
+  children,
+  ...rest
+}) {
+  const v = VARIANTS.includes(variant) ? variant : 'ghost';
+  const cls = ['btn', `btn--${v}`, SIZES[size] ?? '', className].filter(Boolean).join(' ');
+  return (
+    <button type={type} className={cls} {...rest}>
+      {children}
+    </button>
+  );
+}
+
+export { Button };

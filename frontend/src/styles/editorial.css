@@ -298,15 +298,18 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-radius: 99px;
   color: var(--ink-3);
 }
-.k-topbar__search:focus-within {
+/* The trigger is a <button>, so it takes real focus rather than :focus-within
+   from a readOnly input it used to wrap. */
+.k-topbar__search:focus-visible,
+.k-topbar__search:hover {
   border-color: color-mix(in srgb, var(--k-primary) 50%, var(--rule));
   background: var(--surface);
 }
-.k-topbar__search input {
-  flex: 1; border: 0; background: transparent; outline: none;
-  font-size: 13.5px; color: var(--ink);
+.k-topbar__search { font-family: inherit; text-align: left; cursor: pointer; }
+.k-topbar__search-ph {
+  flex: 1; font-size: 13.5px; color: var(--ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.k-topbar__search input::placeholder { color: var(--ink-3); }
 .k-kbd {
   font-family: var(--font-mono); font-size: 10px;
   padding: 2px 6px; border-radius: 4px;

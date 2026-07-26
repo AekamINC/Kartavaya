@@ -1,5 +1,6 @@
 import React from 'react';
 import { APPROVAL_STATUS_LABEL, APPROVAL_STATUS_COLOR } from './constants';
+import { mixAlpha } from '../../lib/statusColors';
 
 /**
  * DrawerApproval — approval status badge plus all action panels:
@@ -22,7 +23,7 @@ export default function DrawerApproval({
   approveTask,       rejectTask,
   clientApproveTask, clientRejectTask,
 }) {
-  const statusColor = APPROVAL_STATUS_COLOR[task.approval_status] || '#64748b';
+  const statusColor = APPROVAL_STATUS_COLOR[task.approval_status] || 'var(--on-surface-3)';
 
   return (
     <div style={{
@@ -42,8 +43,8 @@ export default function DrawerApproval({
           <span style={{
             fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 99,
             color: statusColor,
-            background: statusColor + '18',
-            border: `1px solid ${statusColor}40`,
+            background: mixAlpha(statusColor, 9),
+            border: `1px solid ${mixAlpha(statusColor, 25)}`,
           }}>
             {APPROVAL_STATUS_LABEL[task.approval_status] || task.approval_status}
           </span>

@@ -352,13 +352,23 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
           } else {
             pushToast({ type: 'error', title: err?.response?.data?.detail || 'Upload failed' });
           }
-          return;
+          // break, NOT return. This `return` used to sit inside the per-file
+          // catch, inside the loop, inside the outer try — so it jumped past the
+          // persist below. Upload five files, have #3 fail: #1 and #2 were
+          // already in object storage, but newFiles was discarded, saveTask
+          // never ran, and the `finally` then cleared the file inputs. The user
+          // saw only "Upload failed" and had to re-pick everything, including
+          // the files that had actually succeeded. Stop the batch, but keep what
+          // landed.
+          break;
         }
       }
-      const updated = [...attachments, ...newFiles];
-      setAttachments(updated);
-      await saveTask({ attachments: updated.map(f => ({ name: f.name, url: f.url, key: f.key || null, is_private: f.is_private || false, visible_to: f.visible_to || [] })) });
-      pushToast({ type: 'success', title: `${newFiles.length} file${newFiles.length > 1 ? 's' : ''} uploaded` });
+      if (newFiles.length) {
+        const updated = [...attachments, ...newFiles];
+        setAttachments(updated);
+        await saveTask({ attachments: updated.map(f => ({ name: f.name, url: f.url, key: f.key || null, is_private: f.is_private || false, visible_to: f.visible_to || [] })) });
+        pushToast({ type: 'success', title: `${newFiles.length} file${newFiles.length > 1 ? 's' : ''} uploaded` });
+      }
     } finally {
       setUploading(false);
       setUploadProgress(0);

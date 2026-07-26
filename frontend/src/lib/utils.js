@@ -18,12 +18,17 @@ export const AVATAR_COLORS = ['#0082c6','#05b7aa','#8b5cf6','#ec4899','#f59e0b',
 export const PROJECT_COLORS = ['#ec4899','#6366f1','#0A7A6E','#B06A00','#0082c6','#10b981','#a855f7','#f59e0b','#14b8a6','#d97706'];
 
 /** Single source of truth for priority colours across all views. */
+// Token references, not hexes — see lib/statusColors.js. urgent/high alias
+// --danger/--warn and so inherit the 00 §7 contrast fix; medium is the shared
+// blue that --st-in-progress also uses (priority renders as a 6px dot, status
+// as a labelled chip, so they can share a hue). Consumers must build tints with
+// color-mix, not string concatenation — "var(--pr-high)22" is not a colour.
 export const PRIORITY_COLOR = {
-  urgent: '#dc2626',
-  high:   '#ef4444',
-  medium: '#f59e0b',
-  low:    '#22c55e',
-  _default: '#94a3b8',
+  urgent: 'var(--pr-urgent)',
+  high:   'var(--pr-high)',
+  medium: 'var(--pr-medium)',
+  low:    'var(--pr-low)',
+  _default: 'var(--on-surface-3)',
 };
 
 /** Lookup helper — returns the colour for a priority string or the default. */

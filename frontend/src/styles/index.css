@@ -7,6 +7,8 @@
 @import './layout.css';
 @import './modern-components.css';
 @import './dark-theme.css';
+@import './components.css';
+@import './module.css';
 @import './animations.css';
 @import './mobile-responsive.css';
 @import './generate-report.css';

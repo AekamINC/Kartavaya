@@ -1,7 +1,7 @@
 import React from 'react';
 import { PageHeader } from '../components/editorial';
 import { Section } from '../components/editorial';
-import { useCustomize, ACCENTS, FONTS, DEFAULTS, Seg, deriveAccentColors } from '../components/CustomizePanel';
+import { useCustomize, ACCENTS, FONTS, UI_FONTS, DEFAULTS, Seg, deriveAccentColors } from '../components/CustomizePanel';
 
 export default function CustomizeSettingsPage() {
   const { prefs, setPrefs } = useCustomize();
@@ -76,6 +76,14 @@ export default function CustomizeSettingsPage() {
           <label className="k-formpanel__label" style={{ marginBottom: 16 }}>Display font
             <select value={prefs.font} onChange={e => setPrefs({ font: e.target.value })} className="k-formpanel__input">
               {FONTS.map(f => <option key={f.id} value={f.id}>{f.label} · {f.sub}</option>)}
+            </select>
+          </label>
+
+          {/* Independent of the display font — picking a serif for headings no
+              longer turns every label, table cell and button serif. */}
+          <label className="k-formpanel__label" style={{ marginBottom: 16 }}>Interface font
+            <select value={prefs.uiFont || 'inter'} onChange={e => setPrefs({ uiFont: e.target.value })} className="k-formpanel__input">
+              {UI_FONTS.map(f => <option key={f.id} value={f.id}>{f.label} · {f.sub}</option>)}
             </select>
           </label>
 

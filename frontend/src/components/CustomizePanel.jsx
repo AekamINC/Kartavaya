@@ -32,6 +32,23 @@ export const FONTS = [
   { id: 'source-sans',      label: 'Source Sans 3',     sub: 'technical', value: "'Source Sans 3', system-ui, sans-serif" },
 ];
 
+/* The interface-font picker offers the sans subset of FONTS rather than a rival
+   list, so `uiFont` and `font` stay resolvable from one source. Picking a serif
+   for headings must not drag the UI with it — that was the SANS_IDS bug. */
+export const UI_FONTS = FONTS.filter(f => /system-ui/.test(f.value));
+
+/* Standalone hi/gu were dropped as interface languages; the four bilingual
+   options remain (decided 2026-07-25, ledger §4). A value stored before that
+   change must fall through to its bilingual equivalent rather than render the
+   raw key — data-language="hi" matches no stylesheet rule and reads as a
+   missing translation. */
+const LANGUAGES = new Set(['en', 'en+sa', 'en+hi', 'en+gu']);
+const LANG_FALLBACK = { hi: 'en+hi', gu: 'en+gu' };
+export function normalizeLanguage(lang) {
+  if (LANGUAGES.has(lang)) return lang;
+  return LANG_FALLBACK[lang] || 'en+sa';
+}
+
 export const DEFAULTS = {
   mode:         'light',      // light | dark | system
   accent:       'teal',
@@ -159,13 +176,13 @@ export function applyPrefs(prefs) {
 
   root.setAttribute('data-density',  prefs.density);
   root.setAttribute('data-sidebar',  prefs.sidebar);
-  root.setAttribute('data-language', prefs.language);
+  root.setAttribute('data-language', normalizeLanguage(prefs.language));
   if (prefs.sideBg)  root.setAttribute('data-sidebar-bg', prefs.sideBg);
   if (prefs.toastPos) root.setAttribute('data-toast-pos', prefs.toastPos);
 
-  const lang = prefs.language;
+  const lang = normalizeLanguage(prefs.language);
   root.style.setProperty('--font-indic',
-    (lang === 'gu' || lang === 'en+gu')
+    lang === 'en+gu'
       ? "'Noto Sans Gujarati', 'Shruti', sans-serif"
       : 'var(--font-hindi)');
 }

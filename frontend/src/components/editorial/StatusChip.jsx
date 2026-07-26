@@ -1,17 +1,22 @@
 import React from 'react';
+import { STATUS_COLORS, APPROVAL_COLORS } from '../../lib/statusColors';
 
+// Colours and labels come from lib/statusColors.js. This file used to carry its
+// own map, which disagreed with drawer/constants.js on every shared state.
 const STATUS_MAP = {
-  todo:           { label: 'To Do',            color: '#94a3b8' },
-  in_progress:    { label: 'In Progress',       color: '#0082c6' },
-  in_review:      { label: 'In Review',         color: '#a78bfa' },
-  done:           { label: 'Done',              color: '#05b7aa' },
-  requested:      { label: 'Requested',         color: '#f59e0b' },
+  todo:           { label: 'To Do',             color: STATUS_COLORS.todo },
+  in_progress:    { label: 'In Progress',       color: STATUS_COLORS.in_progress },
+  in_review:      { label: 'In Review',         color: STATUS_COLORS.in_review },
+  done:           { label: 'Done',              color: STATUS_COLORS.done },
+  requested:      { label: 'Requested',         color: STATUS_COLORS.requested },
   // approval states
-  pending:        { label: 'Awaiting Approval', color: '#f59e0b' },
-  pending_client: { label: 'Client Review',     color: '#8b5cf6' },
-  approved:       { label: 'Approved',          color: '#05b7aa' },
-  rejected:       { label: 'Rejected',          color: '#ef4444' },
+  pending:        { label: 'Awaiting Approval', color: APPROVAL_COLORS.pending },
+  pending_client: { label: 'Client Review',     color: APPROVAL_COLORS.pending_client },
+  approved:       { label: 'Approved',          color: APPROVAL_COLORS.approved },
+  rejected:       { label: 'Rejected',          color: APPROVAL_COLORS.rejected },
 };
+
+const FALLBACK = 'var(--on-surface-3)';
 
 export default function StatusChip({ status, approvalStatus, columnName, columnColor }) {
   // Approval state takes precedence when active
@@ -19,7 +24,7 @@ export default function StatusChip({ status, approvalStatus, columnName, columnC
   const decidedApproval = approvalStatus === 'approved' || approvalStatus === 'rejected';
 
   if (activeApproval || decidedApproval) {
-    const s = STATUS_MAP[approvalStatus] || { label: approvalStatus, color: '#94a3b8' };
+    const s = STATUS_MAP[approvalStatus] || { label: approvalStatus, color: FALLBACK };
     return (
       <span className="k-statuschip" style={{ '--c': s.color }}>
         <span className="k-statuschip__dot" />
@@ -31,14 +36,14 @@ export default function StatusChip({ status, approvalStatus, columnName, columnC
   // Use column name + color when available (more accurate than raw status field)
   if (columnName) {
     return (
-      <span className="k-statuschip" style={{ '--c': columnColor || '#94a3b8' }}>
+      <span className="k-statuschip" style={{ '--c': columnColor || FALLBACK }}>
         <span className="k-statuschip__dot" />
         {columnName}
       </span>
     );
   }
 
-  const s = STATUS_MAP[status] || { label: status || '—', color: '#94a3b8' };
+  const s = STATUS_MAP[status] || { label: status || '—', color: FALLBACK };
   return (
     <span className="k-statuschip" style={{ '--c': s.color }}>
       <span className="k-statuschip__dot" />

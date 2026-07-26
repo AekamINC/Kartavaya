@@ -47,6 +47,10 @@
   --t-body-sm:   calc(var(--font-size-base) * .93);             /* 13px */
   --t-label:     max(11.5px, calc(var(--font-size-base) * .86));/* 12px */
   --t-label-sm:  max(11px,   calc(var(--font-size-base) * .79));/* 11px */
+  /* Ledger §3.2 — component CSS carries sub-11px literals that bypass the
+     tokens and so do not track the Text size slider. This is their replacement:
+     keeps the intended ratio, keeps a floor. Consumed by module.css .mt__n. */
+  --t-micro:     max(10px,   calc(var(--font-size-base) * .71));
 
   --t-display-w: 400;  --t-headline-w: 400;  --t-title-lg-w: 500;
   --t-title-w:   500;  --t-body-w:     400;  --t-label-w:    500;
@@ -267,6 +271,13 @@
   --ink-2:     var(--on-surface-2);
   --ink-3:     var(--on-surface-3);
   --ink-faint: var(--on-surface-faint);
+  /* --ink-4 was NEVER DEFINED anywhere in src/, yet is used 18 times across
+     SanvaadPage, OrgSrijanPage, HubDashboardPage and HubClientDetailPage for
+     timestamps, "(edited)" and deleted-message text. An undefined custom
+     property is invalid at computed-value time, so `color` falls back to unset
+     → inherit: that text rendered at full-strength body colour instead of
+     reading as muted. Defined at the §12-legal metadata step. */
+  --ink-4:     var(--on-surface-3);
 
   --bg-soft:   var(--s-low);
   --surface-2: var(--s-lowest);

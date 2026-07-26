@@ -3,31 +3,14 @@
  */
 import React, { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { resolveRouteMeta } from './navConfig';
 import { CommandPalette } from '../ui/CommandPalette';
 
-const PAGE_META = {
-  '/dashboard':              { en: 'Today',         hi: 'आज' },
-  '/boards':                 { en: 'Boards',        hi: 'फ़लक' },
-  '/projects':               { en: 'Projects',      hi: 'योजना' },
-  '/tasks':                  { en: 'Tasks',         hi: 'कर्तव्य' },
-  '/teams':                  { en: 'Teams',         hi: 'सहयोगी' },
-  '/inbox':                  { en: 'Inbox',         hi: 'सन्देश' },
-  '/activity':               { en: 'Activity',      hi: 'क्रिया' },
-  '/automations':            { en: 'Automations',   hi: 'स्वतंत्र' },
-  '/time':                   { en: 'Time Report',   hi: 'काल' },
-  '/templates':              { en: 'Templates',     hi: 'रचना' },
-  '/approvals':              { en: 'Approvals',     hi: 'सम्मति' },
-  '/settings/categories':    { en: 'Categories',    hi: 'वर्ग' },
-  '/settings/notifications': { en: 'Notifications', hi: 'सूचना' },
-  '/admin':                  { en: 'Admin',         hi: 'प्रशासन' },
-  '/admin/billing':          { en: 'Admin Billing', hi: 'बिलिंग प्रशासन' },
-  '/billing':                { en: 'Billing',       hi: 'बिलिंग' },
-  '/hub':                    { en: 'Srijan Admin',  hi: 'सृजन व्यवस्था' },
-  '/hub/org':                { en: 'Srijan',        hi: 'सृजन' },
-  '/hub/clients':            { en: 'Srijan Clients', hi: 'सृजन ग्राहक' },
-  '/client':                 { en: 'Client Portal', hi: 'पोर्टल' },
-  '/esign':                  { en: 'E-Sign',        hi: 'प्रमाण' },
-};
+// PAGE_META removed — the breadcrumb now derives from navConfig.js.
+// It had 21 entries against far more live routes, so /sanvaad, /graha,
+// /ganit, /manav, /vikray, /vetana, /dristi, /prachar, /settings/customize,
+// /admin/orgs and /admin/costs all fell through and rendered the app name.
+// It also disagreed with the sidebar on two labels (see navConfig.js).
 
 const COMMANDS = [
   { id: 'new-task',    label: 'New Task',       section: 'Actions',    shortcut: 'N', keywords: ['create', 'add'] },
@@ -63,9 +46,7 @@ export default function Topbar({ unread = 0, onOpenNotifications, onNewTask }) {
     if (routes[cmd.id]) navigate(routes[cmd.id]);
   };
 
-  const meta = PAGE_META[location.pathname]
-    || Object.entries(PAGE_META).find(([k]) => location.pathname.startsWith(k + '/'))?.[1]
-    || { en: 'Kartavaya', hi: 'कर्तव्य' };
+  const meta = resolveRouteMeta(location.pathname);
 
   return (
     <header className="k-topbar">
@@ -78,20 +59,23 @@ export default function Topbar({ unread = 0, onOpenNotifications, onNewTask }) {
         </div>
       </div>
 
-      {/* Center: pill search — click opens command palette */}
-      <div className="k-topbar__search" onClick={() => setCmdOpen(true)} style={{ cursor: 'pointer' }}>
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+      {/* Center: pill search — a BUTTON that opens the palette, not an input.
+          It was a readOnly <input value="">, which puts a focusable, uneditable
+          text field in the tab order for no reason: a keyboard user tabs into
+          something that looks like a search box and cannot type in it. */}
+      <button
+        type="button"
+        className="k-topbar__search"
+        onClick={() => setCmdOpen(true)}
+        aria-keyshortcuts="Meta+K Control+K"
+        style={{ cursor: 'pointer' }}
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
           <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
         </svg>
-        <input
-          value=""
-          onFocus={() => setCmdOpen(true)}
-          placeholder="Search tasks, projects, people…"
-          readOnly
-          style={{ cursor: 'pointer' }}
-        />
+        <span className="k-topbar__search-ph">Search tasks, projects, people…</span>
         <kbd className="k-kbd">⌘K</kbd>
-      </div>
+      </button>
 
       {/* Right: icon buttons + new task */}
       <div className="k-topbar__right">
