@@ -109,6 +109,45 @@ def _embed_logo(logo_url: str) -> str:
         return ""
 
 
+# Document types that are a tax document under GST and therefore MUST carry the
+# supplier's GSTIN. A quotation or proforma is an offer, not a tax document, and
+# is perfectly valid without one.
+_GSTIN_REQUIRED_TYPES = {"tax_invoice", "credit_note", "debit_note"}
+
+
+def _org_gstin_line(org_gstin: str, org_pan: str, invoice_type: str) -> str:
+    """The supplier identity line, which must not silently disappear.
+
+    The previous version rendered this line only `if org_gstin or org_pan`, so
+    an organisation with neither produced a tax invoice with no supplier GSTIN
+    anywhere on it — a document that looks complete and is not. Under GST the
+    supplier's GSTIN is mandatory on a tax invoice, credit note and debit note,
+    so its absence is a defect in the document, not a formatting question.
+
+    Marked in red rather than filled with a placeholder: an invented number is
+    worse than a missing one, and the mark has to be unpleasant enough that
+    nobody sends the document without noticing.
+
+    The RECIPIENT's GSTIN is deliberately not treated this way — a B2C sale to
+    an unregistered buyer legitimately has none, and flagging it would put a red
+    warning on every consumer invoice.
+    """
+    if org_gstin:
+        pan = f' · PAN: {org_pan}' if org_pan else ''
+        return f'<div class="pdf__org-line">GSTIN: {org_gstin}{pan}</div>'
+
+    if invoice_type in _GSTIN_REQUIRED_TYPES:
+        pan = f' · PAN: {org_pan}' if org_pan else ''
+        return (
+            '<div class="pdf__org-line">'
+            '<span class="pdf__unset">GSTIN NOT SET</span>'
+            f'{pan}</div>'
+        )
+
+    # Not a tax document: a missing GSTIN is unremarkable, show PAN if present.
+    return f'<div class="pdf__org-line">PAN: {org_pan}</div>' if org_pan else ''
+
+
 def _build_html(invoice: dict, org: dict, contact: dict) -> str:
     is_export = bool(invoice.get("is_export"))
     currency = invoice.get("currency") or "INR"
@@ -197,7 +236,7 @@ def _build_html(invoice: dict, org: dict, contact: dict) -> str:
       {logo_html}
       <div>
         <div class="pdf__org-name">{org_name}</div>
-        {f'<div class="pdf__org-line">GSTIN: {org_gstin}{" · PAN: " + org_pan if org_pan else ""}</div>' if org_gstin or org_pan else ''}
+        {_org_gstin_line(org_gstin, org_pan, invoice.get("invoice_type") or "")}
         {f'<div class="pdf__org-line">{org_addr}</div>' if org_addr else ''}
         {f'<div class="pdf__org-line">{org_contact_line}</div>' if org_contact_line else ''}
       </div>
@@ -269,6 +308,9 @@ body{{ background:{_SURFACE}; font-family:{_FONT_UI}; color:{_INK}; -webkit-prin
 .pdf__logo{{ width:56px; height:56px; object-fit:contain; }}
 .pdf__org-name{{ font-family:{_FONT_DISP}; font-size:20px; font-weight:700; color:{_INK}; }}
 .pdf__org-line{{ font-size:10.5px; color:{_INK3}; margin-top:2px; }}
+/* Deliberately ugly. A missing supplier GSTIN must never survive to a
+   customer, so it is marked rather than omitted — see _gstin_line(). */
+.pdf__unset{{ color:#B42318; border-bottom:1px dashed #B42318; font-weight:600; }}
 .pdf__doc-meta{{ text-align:right; }}
 .pdf__doc-title{{ font-family:{_FONT_DISP}; font-size:22px; font-weight:700; color:{_DEEP}; letter-spacing:-0.01em; margin-bottom:6px; }}
 .pdf__meta-row{{ font-size:11px; color:{_INK3}; display:flex; justify-content:flex-end; gap:8px; }}
