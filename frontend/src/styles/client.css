@@ -1,0 +1,305 @@
+/* client.css — the client portal (design-handover/19-client-portal.md).
+ *
+ * Imported from `pages/client/ClientShell.jsx`, not from `styles/index.css`.
+ * The portal is the one surface a stranger uses; its stylesheet ships with it.
+ *
+ * Every value here is a token from `00-tokens.md`. There are no literals except
+ * two: the 16px on `.cl-note` (an iOS Safari constraint, §Mobile — anything
+ * smaller zooms the viewport on focus, and the note field is the one input in
+ * the portal a client must type into), and the 44px touch floors, which are the
+ * WCAG target size and not a scale step.
+ *
+ * `--primary` is a FILL at 4.04:1 on --bg. Coloured TEXT in this file uses
+ * `--primary-text` (5.2:1). The one exception is `.cl-nav a[aria-current]`,
+ * where --primary paints a 2px rule and carries no text.
+ *
+ * The legacy dark portal that used to sit behind /client/legacy — a fourth
+ * token vocabulary of hardcoded K.dark surfaces — is gone; nothing here
+ * restates a colour.
+ */
+
+/* ── Shell ────────────────────────────────────────────────────────────────── */
+
+.cl-shell { min-height: 100vh; background: var(--bg); display: flex; flex-direction: column; }
+
+.cl-head {
+  display: flex; align-items: center; gap: var(--sp-4);
+  padding: var(--sp-4) var(--pad-page);
+  border-bottom: 1px solid var(--outline-variant);
+  background: var(--surface);
+}
+.cl-head__logo { height: 30px; width: auto; }
+/* The firm's name, never a Kartavaya mark. When /v1/org/profile carries no
+   logo_url this is the whole brand — 18-documents.md uses the same rule for the
+   same reason: the client's relationship is with their accountant. */
+.cl-head__firm {
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: var(--t-title-lg-w);
+  letter-spacing: -.02em;
+  color: var(--on-surface);
+  margin: 0;
+}
+.cl-head__proj {
+  font-size: var(--t-body-sm); color: var(--on-surface-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cl-head__side { margin-left: auto; display: flex; align-items: center; gap: var(--sp-3); }
+.cl-head__who  { font-size: var(--t-body-sm); color: var(--on-surface-2); }
+
+.cl-nav {
+  display: flex; gap: var(--sp-1);
+  padding: 0 var(--pad-page);
+  border-bottom: 1px solid var(--outline-variant);
+  background: var(--surface);
+  overflow-x: auto;
+}
+.cl-nav a {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  min-height: 44px; padding: 12px 16px;
+  font-family: var(--font-ui); font-size: var(--t-body);
+  color: var(--on-surface-3);
+  border-bottom: 2px solid transparent;
+  text-decoration: none; white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard);
+}
+.cl-nav a:hover { color: var(--on-surface-2); }
+.cl-nav a[aria-current="page"] { color: var(--on-surface); border-bottom-color: var(--primary); }
+
+/* The count on Approvals. --ap-pending-client is "waiting on someone outside
+   the org", which from inside the portal is the reader. It is a container
+   pairing, not a stroke-as-ground: --outline behind text is 3.5:1 (00 §7). */
+.cl-nav__n {
+  display: inline-grid; place-items: center;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--primary-container); color: var(--on-primary-container);
+  font-size: var(--t-label-sm); font-weight: 700; font-variant-numeric: tabular-nums;
+}
+
+.cl-main {
+  flex: 1;
+  padding: var(--pad-page);
+  max-width: 1040px; width: 100%; margin: 0 auto;
+}
+
+/* ── Sections ─────────────────────────────────────────────────────────────── */
+
+.cl-sec { margin-bottom: var(--gap-section); }
+.cl-sec__h {
+  display: flex; align-items: baseline; gap: var(--sp-3);
+  margin: 0 0 var(--sp-3);
+}
+.cl-sec__t {
+  font-family: var(--font-display); font-size: var(--t-title-lg);
+  font-weight: var(--t-title-lg-w); letter-spacing: -.02em;
+  color: var(--on-surface); margin: 0;
+}
+.cl-sec__hi { font-family: var(--font-indic); font-size: var(--t-body-sm); color: var(--on-surface-3); }
+.cl-sec__n  { font-size: var(--t-body-sm); color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+
+/* The banner at the top of Overview: what needs you, and a way to it. It is a
+   link, not a card with a button — one target, the whole strip. */
+.cl-lead {
+  display: flex; align-items: center; gap: var(--sp-4);
+  padding: var(--pad-card);
+  border: 1px solid var(--outline-variant); border-radius: var(--r-lg);
+  background: var(--surface); box-shadow: var(--shadow-1);
+  text-decoration: none; color: inherit;
+  margin-bottom: var(--gap-section);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.cl-lead:hover { background: var(--s-low); }
+.cl-lead__n {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--t-headline); line-height: 1.06; color: var(--primary-text);
+}
+.cl-lead__t { display: block; font-size: var(--t-body); color: var(--on-surface); }
+.cl-lead__d { display: block; font-size: var(--t-body-sm); color: var(--on-surface-3); margin-top: 2px; }
+.cl-lead__go { margin-left: auto; font-size: var(--t-body-sm); color: var(--primary-text); }
+
+/* ── Work list ────────────────────────────────────────────────────────────── */
+
+.cl-list {
+  list-style: none; margin: 0; padding: 0;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-lg);
+  background: var(--surface); box-shadow: var(--shadow-1); overflow: hidden;
+}
+.cl-item {
+  display: flex; align-items: center; gap: var(--sp-4);
+  min-height: 44px; padding: var(--sp-3) var(--pad-card);
+  border-bottom: 1px solid var(--outline-variant);
+}
+.cl-item:last-child { border-bottom: 0; }
+.cl-item__b { min-width: 0; flex: 1; }
+.cl-item__t {
+  font-size: var(--t-body); line-height: var(--line-height-base);
+  color: var(--on-surface); overflow-wrap: anywhere;
+}
+.cl-item__m {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2);
+  margin-top: 2px; font-size: var(--t-label); color: var(--on-surface-3);
+}
+/* `#a1b2c3` — the last six of the task id. A sequential integer would tell a
+   client how many customers the firm has (19 · What a client must never see). */
+.cl-item__id { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.cl-item__sep { color: var(--on-surface-faint); }
+
+/* Three states, not six. `in_review` means nothing to a client; the mapping to
+   With us / With you / Done lives in `clientShape.js` beside the field filter,
+   so the portal cannot drift from it. */
+.cl-state {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: var(--r-sm);
+  font-size: var(--t-label); font-weight: 500; white-space: nowrap;
+  border: 1px solid var(--outline-variant); color: var(--on-surface-2);
+  background: var(--s-low);
+}
+.cl-state__dot { width: 7px; height: 7px; border-radius: var(--r-pill); background: var(--on-surface-3); }
+.cl-state--you { background: var(--warn-container); color: var(--on-warn-container); border-color: transparent; }
+.cl-state--you .cl-state__dot { background: var(--warn); }
+.cl-state--done { background: var(--ok-container); color: var(--on-ok-container); border-color: transparent; }
+.cl-state--done .cl-state__dot { background: var(--ok); }
+
+/* Done is collapsed by default — it is reference, not a decision. */
+.cl-done > summary {
+  cursor: pointer; list-style: none;
+  display: flex; align-items: center; gap: var(--sp-2);
+  min-height: 44px;
+  font-size: var(--t-body-sm); color: var(--on-surface-2);
+}
+.cl-done > summary::-webkit-details-marker { display: none; }
+.cl-done > summary::before {
+  content: '▸'; color: var(--on-surface-3);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.cl-done[open] > summary::before { transform: rotate(90deg); }
+
+/* ── Approvals ────────────────────────────────────────────────────────────── */
+
+.cl-appr {
+  padding: var(--pad-card);
+  border: 1px solid var(--outline-variant); border-radius: var(--r-lg);
+  background: var(--surface); box-shadow: var(--shadow-1);
+  margin-bottom: var(--sp-4);
+}
+.cl-appr__t {
+  font-family: var(--font-display); font-size: var(--t-title-lg);
+  font-weight: var(--t-title-lg-w); letter-spacing: -.02em;
+  color: var(--on-surface); margin: 0; overflow-wrap: anywhere;
+}
+.cl-appr__who { margin: var(--sp-1) 0 0; font-size: var(--t-body-sm); color: var(--on-surface-3); }
+
+/* The requester's note, verbatim, in a quote block. Never paraphrased — the
+   client is deciding on it. */
+.cl-appr__ask {
+  margin: var(--sp-4) 0;
+  padding: var(--sp-3) var(--sp-4);
+  border-left: 2px solid var(--outline);
+  background: var(--s-low);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: var(--t-body); line-height: var(--line-height-base);
+  color: var(--on-surface-2); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.cl-appr__act { display: flex; gap: var(--sp-3); margin-top: var(--sp-5); flex-wrap: wrap; }
+
+/* What to look at. Images and PDFs preview inline; everything else is a link. */
+.cl-prev { display: flex; flex-wrap: wrap; gap: var(--sp-3); margin-top: var(--sp-4); }
+.cl-prev__img {
+  max-width: 100%; max-height: 260px; width: auto; height: auto;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-sm);
+  background: var(--s-lowest);
+}
+.cl-prev__pdf {
+  width: 100%; height: 420px; border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm); background: var(--s-lowest);
+}
+
+/* Request changes: the note is required, and the disabled button says why
+   rather than sitting there inert. */
+.cl-note {
+  width: 100%; min-height: 88px; resize: vertical;
+  padding: 10px 12px;
+  background: var(--s-low); border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  font-family: var(--font-ui);
+  /* 16px, not --t-body-sm. iOS Safari zooms the viewport on focus for anything
+     under 16px, and the portal is opened on a phone more often than anywhere
+     else in the product (19 · Mobile). */
+  font-size: 16px; line-height: var(--line-height-base);
+  color: var(--on-surface); outline: none;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              box-shadow var(--dur-fast) var(--ease-standard);
+}
+.cl-note:focus {
+  border-color: var(--primary); background: var(--s-lowest);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+.cl-note::placeholder { color: var(--on-surface-faint); }
+/* No margin: every parent of this is a flex column with its own gap. */
+.cl-why { margin: 0; font-size: var(--t-label); color: var(--on-surface-3); }
+.cl-ask { margin-top: var(--sp-5); }
+
+/* The written record. Six weeks later the question is "did I approve that?",
+   and a toast that has long since dismissed is not an answer. */
+.cl-out {
+  display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap;
+  margin: var(--sp-4) 0 0; padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-sm);
+  background: var(--s-low);
+  font-size: var(--t-body-sm); color: var(--on-surface-2);
+}
+.cl-out--ok  { background: var(--ok-container);   color: var(--on-ok-container); }
+.cl-out--chg { background: var(--warn-container); color: var(--on-warn-container); }
+.cl-out__w   { font-size: var(--t-label); opacity: .82; font-variant-numeric: tabular-nums; }
+
+/* ── Files ────────────────────────────────────────────────────────────────── */
+
+.cl-file {
+  display: flex; align-items: center; gap: var(--sp-4);
+  min-height: 44px; padding: var(--sp-3) var(--pad-card);
+  border-bottom: 1px solid var(--outline-variant);
+}
+.cl-file:last-child { border-bottom: 0; }
+.cl-file__b { min-width: 0; flex: 1; }
+.cl-file__n { font-size: var(--t-body); color: var(--on-surface); overflow-wrap: anywhere; }
+.cl-file__m { margin-top: 2px; font-size: var(--t-label); color: var(--on-surface-3); }
+/* Download, no delete. A client deleting the firm's working file is not a
+   feature — and `client` never deletes, whatever else it may now do. */
+.cl-file__dl {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 44px; padding: 0 var(--sp-3);
+  font-size: var(--t-body-sm); color: var(--primary-text); text-decoration: none;
+  border-radius: var(--r-sm);
+}
+.cl-file__dl:hover { background: var(--s-container); }
+
+/* ── Request work ─────────────────────────────────────────────────────────── */
+
+.cl-form { display: flex; flex-direction: column; gap: var(--sp-4); }
+.cl-form__act { display: flex; gap: var(--sp-3); justify-content: flex-end; flex-wrap: wrap; }
+
+/* ── Loading ──────────────────────────────────────────────────────────────── */
+
+.cl-load {
+  margin: 0; padding: var(--sp-8) 0; text-align: center;
+  font-family: var(--font-display); font-style: italic;
+  color: var(--on-surface-3);
+}
+
+/* ── Mobile ───────────────────────────────────────────────────────────────── */
+/* The portal is opened on a phone more than any other surface in the product —
+   a client taps a link in an email. Single column, actions full-width and
+   stacked, 44px floors already set above. */
+@media (max-width: 767px) {
+  .cl-head   { flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); }
+  .cl-head__side { margin-left: auto; }
+  .cl-main   { padding: var(--sp-4); }
+  .cl-appr__act { flex-direction: column; align-items: stretch; }
+  .cl-appr__act > .btn { width: 100%; min-height: 44px; }
+  .cl-form__act { flex-direction: column-reverse; align-items: stretch; }
+  .cl-form__act > .btn { width: 100%; min-height: 44px; }
+  .cl-item   { flex-wrap: wrap; }
+  .cl-prev__pdf { height: 300px; }
+}
