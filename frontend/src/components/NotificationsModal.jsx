@@ -42,11 +42,23 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useNotifications } from '../context/NotificationContext';
 import NotifRow from '../pages/inbox/NotifRow';
-import { EmptyState } from './ui';
+import { EmptyState, ErrorState, errorKind } from './ui';
 import '../styles/inbox.css';
 
+/**
+ * The bell shows a GLANCE, not the archive.
+ *
+ * The store now pages, and this panel deliberately does not: it is 382px of
+ * popover under a bell, and a "Load more" inside it would build a second,
+ * worse Inbox in a box a third the width. It shows the newest rows and its
+ * footer says where the rest are. The Inbox owns paging.
+ */
+const GLANCE = 12;
+
 export function NotificationsModal({ open, onOpenChange }) {
-  const { items, unread, isLoading, markRead, markAll } = useNotifications({ autoLoad: open });
+  const {
+    items, unread, isLoading, error, mutationError, refresh, markRead, markAll,
+  } = useNotifications({ autoLoad: open });
   const navigate = useNavigate();
   const ref = useRef(null);
 
@@ -112,10 +124,33 @@ export function NotificationsModal({ open, onOpenChange }) {
         </button>
       </div>
 
-      <div className="k-notif__list">
-        {isLoading && <p className="k-notif__load">Loading…</p>}
+      {/* THE FAILED MARK-READ, HERE TOO. Marking read from the bell is the
+          commonest way it is done, and until now a failure here rolled the row
+          back with nothing said — the badge would tick back up on its own.
+          Same store, same flag, same sentence as the Inbox. */}
+      {mutationError && (
+        <p className="k-notif__mutfail" role="status">
+          That didn’t save — still unread.
+        </p>
+      )}
 
-        {!isLoading && items.length === 0 && (
+      <div className="k-notif__list">
+        {/* Loading. The skeleton belongs to the Inbox; at 382px a line of text
+            is honest and does not pretend to be rows that may not arrive. */}
+        {isLoading && <p className="k-notif__load" role="status">Loading…</p>}
+
+        {/* ERROR. This panel had NO error branch: a failed fetch left
+            `isLoading` false and `items` empty, so it rendered "You're all
+            caught up" — the app cheerfully asserting the user had nothing
+            waiting at the exact moment it had no idea. Someone with an approval
+            pending would close the bell and walk away. The empty state is now
+            reachable only when the fetch actually SUCCEEDED and returned
+            nothing. */}
+        {!isLoading && error && items.length === 0 && (
+          <ErrorState kind={errorKind(error)} onRetry={() => refresh({ force: true })} />
+        )}
+
+        {!isLoading && !error && items.length === 0 && (
           <EmptyState
             illustration="success"
             tone="ok"
@@ -124,7 +159,7 @@ export function NotificationsModal({ open, onOpenChange }) {
           />
         )}
 
-        {!isLoading && items.map(n => (
+        {!isLoading && items.slice(0, GLANCE).map(n => (
           <NotifRow key={n.notification_id} notif={n} onOpen={openNotif} />
         ))}
       </div>
@@ -135,7 +170,9 @@ export function NotificationsModal({ open, onOpenChange }) {
           className="k-notif__ft-link"
           onClick={() => { close(); navigate('/inbox'); }}
         >
-          Open Inbox →
+          {items.length > GLANCE
+            ? `Open Inbox — ${items.length - GLANCE} more →`
+            : 'Open Inbox →'}
         </button>
       </div>
     </div>

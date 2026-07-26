@@ -164,8 +164,18 @@ export default function AppShell() {
    */
   const onFresh = useCallback((fresh) => {
     if (!fresh?.length) return;
+    // `shouldDeliver(type, OPTIONS)` — the second argument is an options bag,
+    // not the prefs object. This passed `prefs` bare, which happened to behave
+    // because `k_prefs` contains no key named `quiet`, `prefs`, `now` or
+    // `isMine`, so every destructured default still applied. It was one
+    // CustomizePanel default away from silently disabling the quiet-hours gate:
+    // add a `quiet` key to `k_prefs` for any unrelated reason and `quiet` would
+    // have destructured to it instead of the server's window, and `inQuietHours`
+    // would have read `undefined.start`.
+    //
+    // Read once, outside the map, so a batch of ten is one localStorage read.
     const prefs = readNotifPrefs();
-    const gates = fresh.map(n => shouldDeliver(n?.type, prefs));
+    const gates = fresh.map(n => shouldDeliver(n?.type, { prefs }));
 
     if (document.visibilityState === 'visible') {
       const showable = fresh.filter((_, i) => gates[i].toast);
@@ -230,27 +240,23 @@ export default function AppShell() {
   /**
    * The approvals badge — the ONE integer the provider does not carry.
    *
-   * `/notifications/poll` returns `{ unread, fresh, approvals }` and
-   * `NotificationProvider` reads only `fresh`, so adopting it would have
-   * silently reverted the approvals badge to the hardcoded 0 it sat at before
-   * anyone wired it. The one-line fix belongs in the provider (pass the whole
-   * payload alongside `fresh`) and is in the handover report rather than here,
-   * because `context/` is outside this change's file ownership.
+   * This used to be a SECOND `/notifications/poll` timer, on its own five-minute
+   * interval, existing solely to read `r.data.approvals` because there was no
+   * way to reach the payload the provider was already fetching. Two timers on
+   * one endpoint — and that endpoint is not a read: `poll_notifications`
+   * processes due reminders and INSERTS notification rows as a side effect, so
+   * the second timer was running that sweep at a cadence nobody chose.
    *
-   * Until then: five minutes, not sixty seconds, and no second timer on the
-   * hot path. A pending-approval count that is a few minutes stale is a badge;
-   * a second 60s poll for one integer is the waste 01 §4 names by name.
+   * `onPoll` now hands over the whole `{ unread, fresh, approvals }` body from
+   * the poll the provider already runs. One call, both numbers — which is what
+   * `01-navigation.md` §4 asked for.
+   *
+   * Stable identity, like `onFresh`: the provider lists it in the effect deps,
+   * so an inline arrow would tear down and rebuild the interval on every
+   * navigation.
    */
-  useEffect(() => {
-    let live = true;
-    const tick = () => {
-      api.get('/notifications/poll')
-        .then(r => { if (live) setApprovals(r.data?.approvals ?? 0); })
-        .catch(() => {});
-    };
-    tick();
-    const id = setInterval(tick, 300_000);
-    return () => { live = false; clearInterval(id); };
+  const onPoll = useCallback((payload) => {
+    setApprovals(payload?.approvals ?? 0);
   }, []);
 
   useEffect(() => { setSidebarOpen(false); setNotifOpen(false); }, [location.pathname]);
@@ -311,7 +317,7 @@ export default function AppShell() {
   const showAsk = Boolean(askReason) && notifPermission() === 'default' && location.pathname !== '/inbox';
 
   return (
-    <NotificationProvider onFresh={onFresh}>
+    <NotificationProvider onFresh={onFresh} onPoll={onPoll}>
       <div data-testid="app-shell" className="kv">
         {/* First tab stop. Must stay first in DOM order — the sidebar below is
             15 module links plus a settings group. */}

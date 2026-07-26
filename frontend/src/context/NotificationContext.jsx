@@ -42,6 +42,13 @@ import { api } from '../lib/api';
 
 const STALE_MS = 30_000;
 
+/**
+ * One page. `GET /notifications` still caps at 200 for a caller that sends no
+ * paging params, but 200 rows is a 200-row DOM on first paint for anyone who
+ * has been away a fortnight. 40 fills the viewport twice over.
+ */
+export const PAGE_SIZE = 40;
+
 /** The server's documented quiet window, mirrored from `GET /me/notification_prefs`. */
 const DEFAULT_QUIET = { start: '22:00', end: '07:00' };
 
@@ -50,6 +57,23 @@ const EMPTY = {
   loading: false,
   loaded: false,
   error: null,
+  /**
+   * Paging state. `hasMore` is inferred from a FULL page, not from a count the
+   * endpoint does not return: a short page is the last page. `loadingMore` is
+   * separate from `loading` so the "Load more" button can spin without the page
+   * reverting to its skeleton — a list that becomes a skeleton when you ask for
+   * more of it has thrown away what you were reading.
+   * `pageError` is separate from `error` for the same reason: a failed page
+   * must not raise the full-page error state over a list that is still good.
+   */
+  hasMore: false,
+  loadingMore: false,
+  pageError: null,
+  /**
+   * A mark-read that failed and was rolled back. Distinct from `error`, which
+   * is the page-level fetch failure — see the rollback note at the mutations.
+   */
+  mutationError: null,
   /** Why we are about to ask for browser permission — see `askAfterAction`. */
   askReason: null,
   /**
@@ -66,6 +90,8 @@ let state = { ...EMPTY };
 
 let lastFetch = 0;
 let inflight = null;
+/** In-flight `loadMoreNotifications`, so a double click is one request. */
+let morePending = null;
 // Declared with the rest of the store rather than beside `refreshQuietHours`,
 // because `purgeIfForeign` clears them and would otherwise touch a `let` in its
 // temporal dead zone if anything ever called into the store during module init.
@@ -134,6 +160,7 @@ function purgeIfForeign() {
   lastFetch = 0;
   quietFetch = 0;
   inflight = null;
+  morePending = null;
   quietInflight = null;
   state = { ...EMPTY, quiet: { ...EMPTY.quiet } };
   return true;
@@ -149,6 +176,7 @@ export function resetNotifications() {
   lastFetch = 0;
   quietFetch = 0;
   inflight = null;
+  morePending = null;
   quietInflight = null;
   ownerRaw = rawUser();
   owner = idFrom(ownerRaw);
@@ -177,11 +205,26 @@ export function refreshNotifications({ force = false } = {}) {
     return Promise.resolve(state.items);
   }
   set({ loading: true });
-  inflight = api.get('/notifications')
+  inflight = api.get('/notifications', { params: { limit: PAGE_SIZE } })
     .then((r) => {
       const items = Array.isArray(r.data) ? r.data : [];
       lastFetch = Date.now();
-      set({ items, loading: false, loaded: true, error: null });
+      // A refresh RESETS paging. Anything the user had loaded past page one is
+      // dropped along with the cursor, because keeping it would splice a fresh
+      // page one onto stale pages two-and-after with an unknown gap between
+      // them — every row in the gap silently missing from a list whose whole
+      // job is not to lose things.
+      set({
+        items,
+        loading: false,
+        loaded: true,
+        error: null,
+        pageError: null,
+        // A full page means there is probably another. A short one is the last
+        // one — the endpoint returns no total, and asking for a count on every
+        // poll to save one empty request at the very end is the wrong trade.
+        hasMore: items.length >= PAGE_SIZE,
+      });
       return items;
     })
     .catch((err) => {
@@ -195,25 +238,106 @@ export function refreshNotifications({ force = false } = {}) {
 }
 
 /**
+ * The next page, keyset-anchored on the oldest row we hold.
+ *
+ * NOT an offset. Notifications are inserted at the HEAD of this list while the
+ * user is reading it, so `OFFSET 40` after one arrival re-serves a row already
+ * on screen and skips one that never was. The cursor is the `created_at` and
+ * `notification_id` of the last row we have, and the server asks for strictly
+ * older than that pair — an insert above the cursor cannot move it.
+ *
+ * `notification_id` is in the cursor because `created_at` alone is not unique:
+ * `_notify_status_changed` and the reminder dispatch each insert a row per
+ * recipient inside one loop, so a batch shares a timestamp to the microsecond.
+ */
+export function loadMoreNotifications() {
+  purgeIfForeign();
+  if (morePending || !state.hasMore || !state.items.length) {
+    return Promise.resolve(state.items);
+  }
+  const last = state.items[state.items.length - 1];
+  if (!last?.created_at || !last?.notification_id) {
+    // No usable cursor — say so rather than looping on the same page forever.
+    set({ hasMore: false });
+    return Promise.resolve(state.items);
+  }
+  set({ loadingMore: true, pageError: null });
+  morePending = api.get('/notifications', {
+    params: { limit: PAGE_SIZE, before: last.created_at, before_id: last.notification_id },
+  })
+    .then((r) => {
+      const page = Array.isArray(r.data) ? r.data : [];
+      // Dedupe defensively. The cursor is exclusive server-side, but a row
+      // ingested by the poll between the two requests could already be here,
+      // and a duplicate key is a React warning plus a row the user reads twice.
+      const seen = new Set(state.items.map((n) => n.notification_id));
+      const added = page.filter((n) => n?.notification_id && !seen.has(n.notification_id));
+      set({
+        items: [...state.items, ...added],
+        loadingMore: false,
+        hasMore: page.length >= PAGE_SIZE,
+      });
+      return state.items;
+    })
+    .catch((err) => {
+      // The page failed; the list did not. `pageError` is rendered beside the
+      // button, not as the page-level error state, so nothing already loaded is
+      // taken away and the user can simply press it again.
+      set({ loadingMore: false, pageError: err });
+      return state.items;
+    })
+    .finally(() => { morePending = null; });
+  return morePending;
+}
+
+/* ── Optimistic reads ──────────────────────────────────────────────────────
+
+   THE ROLLBACK IS SURGICAL, NOT A SNAPSHOT RESTORE. Both mutations used to
+   revert with `set({ items: prev })`, replacing the whole array with the copy
+   taken before the request. The poll runs on a 60-second interval and
+   `ingestNotifications` prepends to that same array, so a notification arriving
+   during the round trip was DELETED by the rollback of an unrelated failed
+   click — the one failure mode this list must not have. The rollback now undoes
+   exactly the `read_at` values this call set, on whatever the array is now, and
+   leaves every other row alone.
+
+   A SILENT REVERT IS ITS OWN LIE. If the write fails the row flips back to
+   unread and, without `mutationError`, nothing tells the user why — they see a
+   row they just read become unread again and conclude the product is broken.
+   `error` is the page-level fetch failure and is NOT reused for this: raising
+   the full-page error state over a list that is still perfectly good would take
+   away more than it explains. */
+
+/** Undo `read_at` for `ids` that this call was the one to set. */
+function rollbackRead(ids, stamp) {
+  const set_ = new Set(ids);
+  return state.items.map((n) => (
+    set_.has(n.notification_id) && n.read_at === stamp ? { ...n, read_at: null } : n
+  ));
+}
+
+/**
  * Mark specific notifications read. Optimistic — the badge has to move on the
- * click, not on the response — with a full rollback if the write fails.
+ * click, not on the response — with a rollback if the write fails.
  */
 export async function markNotificationsRead(ids) {
   purgeIfForeign();
   const list = (Array.isArray(ids) ? ids : [ids]).filter(Boolean);
   if (!list.length) return true;
-  const prev = state.items;
-  if (!prev.some((n) => list.includes(n.notification_id) && !n.read_at)) return true;
+  if (!state.items.some((n) => list.includes(n.notification_id) && !n.read_at)) return true;
 
   const now = new Date().toISOString();
   set({
-    items: prev.map((n) => (list.includes(n.notification_id) ? { ...n, read_at: n.read_at ?? now } : n)),
+    items: state.items.map((n) => (
+      list.includes(n.notification_id) ? { ...n, read_at: n.read_at ?? now } : n
+    )),
+    mutationError: null,
   });
   try {
     await api.post('/notifications/mark-read', { notification_ids: list });
     return true;
   } catch (err) {
-    set({ items: prev, error: err });
+    set({ items: rollbackRead(list, now), mutationError: err });
     return false;
   }
 }
@@ -221,18 +345,26 @@ export async function markNotificationsRead(ids) {
 /** Mark every unread notification read. Same optimistic contract. */
 export async function markAllNotificationsRead() {
   purgeIfForeign();
-  const prev = state.items;
-  if (!prev.some((n) => !n.read_at)) return true;
+  const unreadIds = state.items.filter((n) => !n.read_at).map((n) => n.notification_id);
+  if (!unreadIds.length) return true;
 
   const now = new Date().toISOString();
-  set({ items: prev.map((n) => ({ ...n, read_at: n.read_at ?? now })) });
+  set({
+    items: state.items.map((n) => ({ ...n, read_at: n.read_at ?? now })),
+    mutationError: null,
+  });
   try {
     await api.post('/notifications/mark-read', { mark_all: true });
     return true;
   } catch (err) {
-    set({ items: prev, error: err });
+    set({ items: rollbackRead(unreadIds, now), mutationError: err });
     return false;
   }
+}
+
+/** Dismiss the mark-read failure notice once the user has seen it. */
+export function clearMutationError() {
+  if (state.mutationError) set({ mutationError: null });
 }
 
 /**
@@ -516,6 +648,8 @@ export function useNotifications({ autoLoad = true, quietHours = false } = {}) {
   const markRead = useCallback((ids) => markNotificationsRead(ids), []);
   const markAll = useCallback(() => markAllNotificationsRead(), []);
   const refresh = useCallback((opts) => refreshNotifications(opts), []);
+  const loadMore = useCallback(() => loadMoreNotifications(), []);
+  const dismissMutationError = useCallback(() => clearMutationError(), []);
 
   return {
     items: snap.items,
@@ -531,13 +665,21 @@ export function useNotifications({ autoLoad = true, quietHours = false } = {}) {
     isLoading: !snap.loaded,
     isRefreshing: snap.loading,
     error: snap.error,
+    /** A mark-read that failed and was rolled back — never the fetch error. */
+    mutationError: snap.mutationError,
+    /** Paging. `hasMore` is a full last page, not a count the server never sent. */
+    hasMore: snap.hasMore,
+    loadingMore: snap.loadingMore,
+    pageError: snap.pageError,
     askReason: snap.askReason,
     /** The server's window, plus whether it is open right now. */
     quiet: snap.quiet,
     inQuiet: snap.quiet.loaded && inQuietHours(snap.quiet),
     refresh,
+    loadMore,
     markRead,
     markAll,
+    dismissMutationError,
   };
 }
 
@@ -550,11 +692,19 @@ const NotificationCtx = createContext(null);
  * need this to be mounted — the Provider exists so the shell can move its poll
  * here in one edit instead of keeping a second copy of the count.
  *
- * When `AppShell` adopts it, delete its `unread`/`toasts` state and its
- * `/notifications/poll` effect; this owns both, and `onFresh` hands the shell
- * exactly the rows it needs to toast.
+ * `onFresh(rows)` gets the rows to toast. `onPoll(payload)` gets the WHOLE
+ * `/notifications/poll` body, which is `{ unread, fresh, approvals }`.
+ *
+ * `onPoll` exists because the shell needed exactly one field this store does
+ * not own — `approvals`, the pending-decision badge — and, lacking any way to
+ * reach it, kept a SECOND `/notifications/poll` timer of its own purely to read
+ * that integer. Two timers, one endpoint, and the reminder-processing side
+ * effects in that handler running twice as often as intended. One poll now
+ * serves both, and the shell subscribes to the payload instead of re-fetching
+ * it. `01-navigation.md` §4 asks for one call returning `{ inbox, approvals }`;
+ * this is that call.
  */
-export function NotificationProvider({ children, intervalMs = 60_000, onFresh }) {
+export function NotificationProvider({ children, intervalMs = 60_000, onFresh, onPoll }) {
   // The shell is where toasts and sounds fire, so the Provider is the one
   // consumer that always needs the quiet-hours window.
   const bag = useNotifications({ quietHours: true });
@@ -568,6 +718,7 @@ export function NotificationProvider({ children, intervalMs = 60_000, onFresh })
         const fresh = Array.isArray(r.data?.fresh) ? r.data.fresh : [];
         // The poll invalidates the cache rather than holding its own array.
         ingestNotifications(fresh);
+        onPoll?.(r.data || {});
         if (fresh.length) onFresh?.(fresh);
       } catch (_) { /* a failed poll is not a user-facing error */ }
     };
@@ -584,7 +735,7 @@ export function NotificationProvider({ children, intervalMs = 60_000, onFresh })
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVis);
     };
-  }, [intervalMs, onFresh]);
+  }, [intervalMs, onFresh, onPoll]);
 
   return <NotificationCtx.Provider value={bag}>{children}</NotificationCtx.Provider>;
 }

@@ -41,7 +41,10 @@ const FILTER_EMPTY = {
 };
 
 export default function InboxPage() {
-  const { items, unread, isLoading, error, refresh, markRead, markAll } = useNotifications();
+  const {
+    items, unread, isLoading, error, mutationError, hasMore, loadingMore, pageError,
+    refresh, loadMore, markRead, markAll, dismissMutationError,
+  } = useNotifications();
   const [tab, setTab] = useState('all');
   const [drawerTaskId, setDrawerTaskId] = useState(null);
   const navigate = useNavigate();
@@ -114,6 +117,41 @@ export default function InboxPage() {
             </div>
           </section>
         ))}
+
+        {/* PAGING SITS UNDER THE WHOLE LIST, NOT UNDER THE TAB.
+            The tabs are filters over one array — `filterByTab` — so the next
+            page belongs to the list, not to whichever filter happens to be
+            active. Loading more while Approvals is selected can legitimately
+            add nothing visible, which is why the button says how many rows are
+            held rather than implying the tab will grow.
+
+            Not an infinite scroller. This list is the record of what you were
+            told, and people come here to find something they half remember;
+            a scroller that keeps appending has no end to reach and no position
+            to return to. An explicit control has both. */}
+        {hasMore && (
+          <div className="k-inboxpg__more">
+            <button
+              type="button"
+              className="btn btn--out btn--sm"
+              onClick={() => loadMore()}
+              disabled={loadingMore}
+            >
+              {loadingMore ? 'Loading…' : 'Load older notifications'}
+            </button>
+            <span className="k-inboxpg__morec" aria-live="polite">
+              {loadingMore ? 'Fetching the next page…' : `${items.length} loaded`}
+            </span>
+            {/* The page failed; the list did not. This sits beside the button
+                the user will press again, not over the rows they can still
+                read. */}
+            {pageError && (
+              <span className="k-inboxpg__moree" role="status">
+                That page didn’t load. Try again.
+              </span>
+            )}
+          </div>
+        )}
       </div>
     );
   })();
@@ -161,6 +199,25 @@ export default function InboxPage() {
           so the error sits above whatever is still readable. */}
       {error && !items.length && (
         <ErrorState kind={errorKind(error)} onRetry={() => refresh({ force: true })} />
+      )}
+
+      {/* THE OPTIMISTIC UPDATE MUST NOT LIE IN EITHER DIRECTION. The store marks
+          rows read on the click and rolls them back if the write fails — but a
+          silent rollback is its own untruth: rows the user just cleared quietly
+          reappear as unread and the only available conclusion is that the
+          product is broken. This says what happened. It is not `ErrorState`,
+          which would raise a page-level failure over a list that is entirely
+          fine. */}
+      {mutationError && (
+        <div className="k-inboxpg__mutfail" role="status">
+          <span>
+            That didn’t save — those notifications are still unread.
+            <span className="k-inboxpg__mutfailhi" lang="hi">सहेजा नहीं गया</span>
+          </span>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={dismissMutationError}>
+            Dismiss
+          </button>
+        </div>
       )}
 
       <Tabs tabs={tabs} defaultTab="all" onChange={setTab} className="k-inboxpg" />

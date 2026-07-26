@@ -108,6 +108,21 @@
   color: var(--on-surface-3);
 }
 
+/* A mark-read that failed and was rolled back. It sits ABOVE the list, not in
+   it: the rows underneath are the evidence for what it says, and pushing it
+   into the scroll area would let the user scroll the explanation away from the
+   rows that just changed under them. `--danger` here is a text colour and is
+   measured as one; `--on-surface-faint` is non-text only and is not used. */
+.k-notif__mutfail {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--t-label-sm);
+  color: var(--danger);
+  background: var(--s-low);
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+
 .k-notif__ft {
   display: flex;
   justify-content: flex-end;

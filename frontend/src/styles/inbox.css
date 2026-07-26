@@ -221,6 +221,58 @@
   overflow: hidden;
 }
 
+/* ── Paging ────────────────────────────────────────────────────────────────
+   The control sits at the END of the groups, inside the same column, so it
+   inherits `--gap-section` from `.k-inboxpg__groups` and needs no margin of its
+   own. Left-aligned with everything else on the page — 15 §1 and the fluid rule
+   apply here as much as to a header; a centred button under a left-aligned list
+   is the only centred thing on the screen. */
+
+.k-inboxpg__more {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+
+.k-inboxpg__morec {
+  font-family: var(--font-mono);
+  font-size: var(--t-label-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--on-surface-3);
+}
+
+.k-inboxpg__moree {
+  font-size: var(--t-label-sm);
+  /* Text, so `--danger` and not a fill token. */
+  color: var(--danger);
+}
+
+/* ── A mark-read that failed ───────────────────────────────────────────────
+   Sits above the tabs, so it is adjacent to the rows that just reverted. Tone
+   is `--danger` on `--s-low` rather than a full `ErrorState` card: the list
+   underneath is fine and a page-level failure card would claim otherwise. */
+
+.k-inboxpg__mutfail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  background: var(--s-low);
+  font-size: var(--t-label);
+  color: var(--danger);
+}
+
+.k-inboxpg__mutfailhi {
+  margin-left: 6px;
+  font-family: var(--font-hindi);
+  font-weight: 400;
+  color: var(--on-surface-3);
+}
+
 /* ── Loading ───────────────────────────────────────────────────────────────
    The skeleton reuses `.k-notif__row` and `.k-inboxpg__list`, so its geometry
    is the real geometry and nothing shifts when the fetch lands. Only the two
