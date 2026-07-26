@@ -173,7 +173,17 @@ export default function OnboardingPage() {
     const failed = [];
     for (const inv of state.invites) {
       try {
-        await api.post('/invites', { email: inv.email, role: inv.role });
+        // `noRetry` is load-bearing, not caution. The response interceptor in
+        // lib/api.js retries 502/503/504 up to three times, and POST /invites
+        // SENDS AN EMAIL. Measured in the browser: one call against a 503 put
+        // FOUR requests on the wire. A gateway 503 in the Railway restart
+        // window — the exact case that retry was written for — arrives after
+        // the backend has already created the invite and emailed the person,
+        // so each retry mails them again. Four identical invitations to a
+        // client is not a transient failure the user can undo.
+        // api.js documents this opt-out for uploads "to avoid double-sending";
+        // an invite is the same hazard with a person on the other end.
+        await api.post('/invites', { email: inv.email, role: inv.role }, { noRetry: true });
         sent += 1;
       } catch (err) {
         failed.push(`${inv.email}${err?.response?.data?.detail ? ` — ${err.response.data.detail}` : ''}`);
@@ -196,7 +206,13 @@ export default function OnboardingPage() {
     if (!name) { advance(null); return; }
     setBusy(true);
     try {
-      const res = await api.post('/teams', { name });
+      // Same hazard as the invite POST above, one step less severe: `POST
+      // /teams` is a non-idempotent create, so a retried 503 leaves duplicate
+      // projects behind and the flow then shapes the columns of whichever
+      // team_id came back last, orphaning the rest. Nothing is emailed, so the
+      // damage is recoverable — but four projects from one press is still the
+      // user's mess to clean up.
+      const res = await api.post('/teams', { name }, { noRetry: true });
       const teamId = res.data?.team_id;
       const tpl = OB_TEMPLATES.find((t) => t.id === state.template);
       setState((s) => ({ ...s, createdProject: name }));

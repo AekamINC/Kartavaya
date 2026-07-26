@@ -212,6 +212,28 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const isNetworkError = (err) => !err?.response;
 const detailOf = (err) => err?.response?.data?.detail || '';
 
+/**
+ * What the user is actually shown for a server rejection.
+ *
+ * Two statuses never reach the banner as the server phrased them:
+ *
+ *  - **429.** `login` is `@limiter.limit("5/minute")` and `forgot-password` is
+ *    `3/minute`, and slowapi phrases the refusal as
+ *    "Rate limit exceeded: 5 per 1 minute". Measured in the browser: that exact
+ *    string was rendering in the banner. It is a machine string on the first
+ *    screen of the product, and it tells a locked-out user nothing about what to
+ *    do next.
+ *  - **5xx.** A stack-trace detail or a gateway's HTML is not an error message.
+ *
+ * The sign-in form additionally never prints `detail` at all — see `submit`.
+ */
+function authErrorMessage(err, fallback) {
+  const s = err?.response?.status;
+  if (s === 429) return 'Too many attempts. Wait a minute and try again.';
+  if (s >= 500) return 'Something went wrong at our end. Please try again in a moment.';
+  return fallback;
+}
+
 /** Clear one field's error the moment it is edited. */
 function useFieldErrors() {
   const [errs, setErrs] = useState({});
@@ -302,7 +324,16 @@ export function LoginPage() {
           message: 'Check your connection and try again.',
         });
       } else {
-        setBanner(detailOf(err) || 'That email and password do not match an account.');
+        // DELIBERATELY not `detailOf(err)`. The sign-in form is the one place a
+        // server message must never be echoed, because `detail` is exactly where
+        // an account-enumeration oracle would appear. Today it cannot:
+        // backend/auth_router.py:216-218 answers an unknown email and a wrong
+        // password with one branch and one string. But the frontend should not
+        // be the component that has to stay correct for that property to hold —
+        // a later backend change to "No account with that email" would leak
+        // through this line silently. Our own copy is printed instead, so the
+        // guarantee lives on both sides.
+        setBanner(authErrorMessage(err, 'That email and password do not match an account.'));
         fireShake();
       }
     } finally { setLoading(false); }
@@ -428,7 +459,11 @@ export function AcceptInvitePage() {
         pushToast({ type: 'error', title: 'Account already active', message: 'Your account is set up. Please sign in.' });
         navigate('/login', { replace: true });
       } else {
-        setBanner(detail || 'This invite link may have expired. Ask your admin for a new one.');
+        // `detail` IS kept here, unlike on the sign-in form. Holding a valid
+        // invite token already implies knowing the address, so there is no
+        // enumeration to protect, and the server's wording is the useful one:
+        // "Invite link has expired. Ask your admin for a new one."
+        setBanner(authErrorMessage(err, detail || 'This invite link may have expired. Ask your admin for a new one.'));
         fireShake();
       }
     } finally { setLoading(false); }
@@ -524,11 +559,18 @@ export function ForgotPasswordPage() {
     } catch (err) {
       // The endpoint answers 200 whether or not the account exists (verified in
       // backend/auth_router.py — `forgot_password` returns {"ok": True}
-      // unconditionally), so anything that lands here is a transport failure.
+      // unconditionally), so anything that lands here is a transport failure or
+      // the 3/minute limiter. Those two need different advice: "try again in a
+      // moment" is wrong for a rate limit, where the only thing that helps is
+      // waiting, and the raw slowapi string is not something to show a user.
+      const rate = err?.response?.status === 429;
       pushToast({
         type: 'error',
-        title: isNetworkError(err) ? 'Could not reach the server' : 'Something went wrong',
-        message: 'Please try again in a moment.',
+        title: isNetworkError(err) ? 'Could not reach the server'
+          : rate ? 'Too many requests' : 'Something went wrong',
+        message: rate
+          ? 'You have asked for several reset links. Wait a minute and try again.'
+          : 'Please try again in a moment.',
       });
     } finally { setLoading(false); }
   };
@@ -645,7 +687,7 @@ export function ResetPasswordPage() {
       if (isNetworkError(err)) {
         pushToast({ type: 'error', title: 'Could not reach the server', message: 'Check your connection and try again.' });
       } else {
-        setBanner(detailOf(err) || 'This reset link is invalid or has expired.');
+        setBanner(authErrorMessage(err, detailOf(err) || 'This reset link is invalid or has expired.'));
         fireShake();
       }
     } finally { setLoading(false); }
