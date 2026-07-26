@@ -4,9 +4,11 @@
  * Verifies the token against `/auth/me` before rendering anything, then applies
  * three redirects, in this order:
  *
- *   1. onboarding    — an org that has not finished setup goes to /onboarding
- *   2. client        — a portal client is confined to /client/*
+ *   1. client        — a portal client is confined to /client/*
+ *   2. onboarding    — an org that has not finished setup goes to /onboarding
  *   3. platform      — /admin needs a platform role
+ *
+ * The client rule is FIRST on purpose; see the comment at rule 1.
  *
  * ── The client rule changed shape (19-client-portal.md)
  *
@@ -104,17 +106,32 @@ export default function Protected({ children, requiredRole }) {
   // gates must agree, or the route resolves and then renders nothing.
   const isPlatform = ctx.isPlatform || user?.role === 'admin';
 
-  // 1 · Onboarding.
+  // 1 · Client confinement. Allow-list, not deny-list.
+  //
+  // This runs FIRST, ahead of the onboarding redirect, and the order is the
+  // point. `/onboarding` is a staff surface outside `/client/*` — six steps that
+  // set up an ORGANISATION, invite its members and create its first project. A
+  // client has no organisation to set up; they were invited into somebody
+  // else's. While the onboarding gate ran first, any client whose payload ever
+  // carried `onboarding_complete: false` would have been redirected onto that
+  // wizard and then ALLOWED TO STAY THERE, because rule 1's own `path !==
+  // '/onboarding'` test lets the destination through. That is a hole straight
+  // through the allow-list, opened by a field rather than by a route.
+  //
+  // It is latent rather than live today — `auth_router.py::_safe_user` returns
+  // no `onboarding_complete` and no `org` object, so the test cannot fire. The
+  // whole reason the allow-list replaced a deny-list is that a guard must not
+  // depend on nobody adding the thing that breaks it.
+  if (ctx.isClient) {
+    if (!underPath(path, CLIENT_HOME)) return <Navigate to={CLIENT_HOME} replace />;
+    return children;
+  }
+
+  // 2 · Onboarding — staff only, by the ordering above.
   const onboardingIncomplete =
     user?.org?.onboarding_complete === false || user?.onboarding_complete === false;
   if (onboardingIncomplete && path !== '/onboarding') {
     return <Navigate to="/onboarding" replace />;
-  }
-
-  // 2 · Client confinement. Allow-list, not deny-list.
-  if (ctx.isClient) {
-    if (!underPath(path, CLIENT_HOME)) return <Navigate to={CLIENT_HOME} replace />;
-    return children;
   }
 
   // A non-client must not sit inside the portal either. The portal reads

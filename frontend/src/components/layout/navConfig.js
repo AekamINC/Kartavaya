@@ -42,8 +42,13 @@ export const NAV_FULL = [
   {
     section: 'srijan', sans: 'सृजन', gu: 'સર્જન',
     items: [
-      { to: '/hub/org', icon: 'hub',      en: 'Srijan',       hi: 'सृजन',           gu: 'સર્જન' },
-      { to: '/hub',     icon: 'settings', en: 'Srijan Admin', hi: 'सृजन व्यवस्था', gu: 'સર્જન વ્યવસ્થા', adminOnly: true },
+      // `module` is the code `require_module(...)` uses, which for the AI hub is
+      // `srijan`. Without it these two rows were the only module surfaces in the
+      // sidebar with no entitlement predicate at all, so `platform_support` — a
+      // role `role_tiers.modules_for()` deliberately grants NOTHING until an org
+      // admin approves a session — was offered the Srijan console on the nav.
+      { to: '/hub/org', icon: 'hub',      en: 'Srijan',       hi: 'सृजन',           gu: 'સર્જન', module: 'srijan' },
+      { to: '/hub',     icon: 'settings', en: 'Srijan Admin', hi: 'सृजन व्यवस्था', gu: 'સર્જન વ્યવસ્થા', adminOnly: true, module: 'srijan' },
     ],
   },
   {
@@ -57,7 +62,19 @@ export const NAV_FULL = [
       { to: '/dristi',  icon: 'dristi',  en: 'Analytics', hi: 'दृष्टि',  gu: 'દૃષ્ટિ', module: 'dristi' },
       { to: '/prachar', icon: 'prachar', en: 'Marketing', hi: 'प्रचार',  gu: 'પ્રચાર', module: 'prachar' },
       { to: '/esign',   icon: 'esign',   en: 'E-Sign',    hi: 'प्रमाण',  gu: 'પ્રમાણ', module: 'esign' },
-      { to: '/sanvaad', icon: 'inbox',   en: 'Messages',  hi: 'संवाद',   gu: 'સંવાદ',  module: 'sanvaad' },
+      // `samvada`, NOT `sanvaad`. The ROUTE is /sanvaad and the page is
+      // SanvaadPage, but the entitlement code this key is matched against is
+      // whatever `org_member_modules.module_code` holds, and that is written by
+      // `require_module("samvada")` (`routers/messaging.py:21`) — the spelling
+      // `role_tiers.py:62` calls out by name. Keyed `sanvaad`, this row could
+      // never match a real grant, so the one module the predicate would have
+      // hidden first was the one it could never see.
+      //
+      // Note the plans catalogue disagrees: `migrations/010_…sql:147` sells the
+      // module as `sanvaad`. That is a SEPARATE vocabulary from the per-member
+      // grant table and is recorded as a data defect, not reconciled here — this
+      // key is compared against grants, never against plan features.
+      { to: '/sanvaad', icon: 'inbox',   en: 'Messages',  hi: 'संवाद',   gu: 'સંવાદ',  module: 'samvada' },
       // Pahchan was routed in App.jsx and rendered a finished page, but it was
       // in NO nav list — it appeared only in EXTRA_ROUTES, which exists to give
       // a breadcrumb to routes that have no sidebar entry. So the module was
@@ -104,13 +121,19 @@ export function navContext(user) {
   // A client with an org role is staff who also happens to be flagged client;
   // the portal nav is only for someone with no org membership at all.
   const isClient      = user?.role === 'client' && orgRoles.length === 0;
-  // `module_grants[]` is what 01 §4 says drives the module predicates. The
-  // backend does not send it yet (`auth_router.py:125 _safe_user` returns
-  // `platform_roles` and `org_roles` and nothing else), so `null` means "no
-  // opinion" and every module stays visible — which is today's behaviour.
-  // The moment /auth/me returns the array, gating starts working with no
-  // further change here. A missing signal must not read as an empty grant, or
-  // the entire modules group vanishes the day someone adds the field.
+  // `module_grants[]` is what 01 §4 says drives the module predicates, and
+  // `/auth/me` now sends it (`auth_router.py::_module_grants`, which mirrors
+  // `require_module` gate for gate). Three states, all meaningful:
+  //
+  //   array   these codes and no others — an EMPTY array means nothing, and the
+  //           modules group correctly disappears. RBAC-SPEC · denied state 1:
+  //           "No access → absent from the sidebar."
+  //   absent  no opinion. The server returns no key for an org_owner/org_admin,
+  //           whose reach is the subscription rather than a grant row, and for a
+  //           user with no org at all. Every module stays visible.
+  //
+  // `Array.isArray` is what keeps those apart: a missing signal must never read
+  // as an empty grant, or the entire modules group vanishes for administrators.
   const moduleGrants  = Array.isArray(user?.module_grants) ? user.module_grants : null;
   return {
     isPlatform,
@@ -131,7 +154,9 @@ export function canSeeNavItem(item, ctx) {
   if (item.ownerOnly && !ctx.isOwnerish) return false;
   // `module` was declared on all ten module entries and read by nothing — the
   // predicate existed in the data and never in the filter. See `moduleGrants`
-  // above for why an absent grant list is permissive rather than empty.
+  // above for why an ABSENT grant list is permissive while an EMPTY one is not:
+  // `ctx.moduleGrants` is `null` for "no opinion" and `[]` for "nothing", and
+  // only the first of those short-circuits.
   if (item.module && ctx.moduleGrants && !ctx.moduleGrants.includes(item.module)) return false;
   return true;
 }

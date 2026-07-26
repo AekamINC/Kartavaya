@@ -19,6 +19,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from db import get_pool
 from limiter import limiter
+from middleware.role_tiers import SENSITIVE_MODULES, modules_for, strongest
 from services.audit import emit as audit
 
 _COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "1") != "0"
@@ -122,7 +123,12 @@ class LoginBody(BaseModel):
     password: str
 
 
-def _safe_user(u: dict, platform_roles: list[str] | None = None, org_roles: list[dict] | None = None) -> dict:
+def _safe_user(
+    u: dict,
+    platform_roles: list[str] | None = None,
+    org_roles: list[dict] | None = None,
+    module_grants: list[str] | None = None,
+) -> dict:
     """Return a public-safe subset of user fields for API responses."""
     out = {
         "id": u["user_id"],
@@ -136,7 +142,70 @@ def _safe_user(u: dict, platform_roles: list[str] | None = None, org_roles: list
         out["platform_roles"] = platform_roles
     if org_roles:
         out["org_roles"] = org_roles
+    # `is not None`, NOT truthiness. An EMPTY list is a real answer — "this
+    # member has been granted nothing" — and it is the answer the nav needs in
+    # order to hide the modules group. Dropping it on falsiness would turn the
+    # one case that matters back into "no opinion", which is what left ten
+    # module links in the sidebar of a member who gets 403 on every one.
+    if module_grants is not None:
+        out["module_grants"] = module_grants
     return out
+
+
+async def _module_grants(
+    pool, user_id: str, platform_roles: list[str], org_roles: list[dict]
+) -> list[str] | None:
+    """
+    Which module codes this user may actually reach — the nav's entitlement feed.
+
+    `01-navigation.md` §4 lists `module_grants[]` on `GET /v1/me` as the field that
+    "drives every nav predicate", and `RBAC-SPEC.md` · Denied states rule 1 is
+    explicit about what the nav must then do: **"No access → absent from the
+    sidebar, never a greyed-out row that advertises what is missing."**
+
+    This MIRRORS `middleware/subscription.py::require_module`, gate for gate, so the
+    sidebar cannot promise a module the API refuses:
+
+      gate 1  a platform role decides reach through `role_tiers.modules_for()`
+      gate 2  org_owner / org_admin reach every module of their org
+      gate 3  org_member reaches only what `org_member_modules` names
+
+    Returning ``None`` means "no opinion" and the client leaves every module
+    visible. That is reserved for the two cases where this function genuinely
+    cannot answer — an administrator, whose reach is the plan rather than a grant
+    row, and a user with no organisation at all. An empty LIST is a different
+    answer and is returned deliberately: it means "nothing", and the nav must
+    show nothing.
+
+    Sensitive modules are subtracted for anyone below org_admin regardless of what
+    the grant table holds. `RBAC-SPEC.md`: "Sensitive modules are role-derived, not
+    granted … a grant row naming a sensitive module is invalid input." Filtering
+    here keeps a stale row from re-advertising Payroll in the sidebar.
+    """
+    platform_role = strongest(platform_roles)
+    if platform_role:
+        return sorted(modules_for(platform_role))
+
+    if not org_roles:
+        # A portal client, or staff not yet placed in an org. Neither renders the
+        # staff module rail, so there is nothing to gate.
+        return None
+
+    # The user's primary org, resolved the same way `middleware/org_resolver.py`
+    # resolves it with no `X-Org-Id` header: the earliest grant. Picking a
+    # different org here than the API picks would gate the nav against modules
+    # the requests are not even scoped to.
+    primary = org_roles[0]
+    if primary.get("role_code") in ("org_owner", "org_admin"):
+        return None
+
+    rows = await pool.fetch(
+        "SELECT module_code FROM staging.org_member_modules "
+        "WHERE user_id=$1 AND org_id=$2::uuid",
+        user_id,
+        primary["org_id"],
+    )
+    return sorted({r["module_code"] for r in rows} - SENSITIVE_MODULES)
 
 
 @router.post("/accept-invite")
@@ -311,12 +380,21 @@ async def me(current_user: dict = Depends(require_user)):
         "SELECT role_code FROM staging.user_roles WHERE user_id=$1 AND org_id IS NULL",
         current_user["user_id"],
     )
+    # ORDER BY granted_at, so `or_rows[0]` is the SAME org
+    # `middleware/org_resolver.py` falls back to when no `X-Org-Id` header is
+    # sent. Without the ordering the row order is whatever the planner returns,
+    # and `_module_grants` below could gate the nav against one org while every
+    # request the nav fires is scoped to another.
     or_rows = await pool.fetch(
         "SELECT ur.org_id::text, ur.role_code, o.name AS org_name "
         "FROM staging.user_roles ur "
         "JOIN staging.organisations o ON o.id = ur.org_id "
         "WHERE ur.user_id=$1 AND ur.org_id IS NOT NULL "
-        "AND ur.role_code IN ('org_owner','org_admin','org_member')",
+        "AND ur.role_code IN ('org_owner','org_admin','org_member') "
+        "ORDER BY ur.granted_at",
         current_user["user_id"],
     )
-    return _safe_user(current_user, [r["role_code"] for r in pr], [dict(r) for r in or_rows])
+    platform_roles = [r["role_code"] for r in pr]
+    org_roles = [dict(r) for r in or_rows]
+    grants = await _module_grants(pool, current_user["user_id"], platform_roles, org_roles)
+    return _safe_user(current_user, platform_roles, org_roles, grants)
