@@ -337,3 +337,188 @@ def valid_levels_for(module_code: str) -> tuple[str, ...]:
 #: means every grant is full control and the four levels never get used. A grant
 #: starts at the least it can be and is raised deliberately.
 DEFAULT_GRANT_LEVEL: str = VIEWER
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Tier 4, part two — resolving what a caller actually holds
+#
+# ADD-ONLY. Nothing above this line changed: roles.py, org_resolver.py,
+# subscription.py, invite_router.py, admin_orgs.py, org_members.py, hub.py,
+# scrapers.py, subscription router and task_reminders all import from this file,
+# and a rename here is a silent breakage in eight places.
+#
+# Everything below imports lazily, inside function bodies. `org_resolver` and
+# `subscription` both import THIS module at their own module scope, so a
+# top-level import of either here is a cycle.
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def any_level_satisfies(held, required: str, module_code: str) -> bool:
+    """Does ANY level this caller holds satisfy `required` for this module?
+
+    A caller holds a SET of levels, not one. On a separated-duty module the set
+    is the whole point: admin and approver are two different authorities and
+    neither implies the other, so "the strongest level wins" is the wrong
+    reduction — it would let admin mask an approver grant, or the reverse.
+
+    Empty set, unknown level, unknown required level: False. Every one of those
+    is a bug or a role nobody has taught this file about, and the safe answer to
+    both is no.
+    """
+    if not held:
+        return False
+    return any(level_satisfies(h, required, module_code) for h in held)
+
+
+async def held_module_levels(
+    user_id: str | None, org_id: str | None, module_code: str
+) -> frozenset[str]:
+    """Every Tier-4 level this user holds on this module in this org.
+
+    An EMPTY set is meaningful: it means "no grant at all", which for the three
+    modules in SELF_SCOPED_MODULES is the ordinary case for an ordinary employee
+    and entitles them to read their own row and nothing else.
+
+    Three sources, unioned:
+
+      · a platform role that may reach this module      → admin
+      · org_owner / org_admin                           → admin
+      · a row in staging.org_member_modules             → whatever it says
+
+    Unioned rather than ranked because `staging.org_member_modules` will, after
+    PROPOSED_067, be able to hold more than one row per person per module — the
+    owner's "one user can have both admin and approver, auditable". Today the
+    UNIQUE constraint caps it at one, so this returns at most two entries; the
+    shape is right either way and the callers do not change when it lands.
+
+    Fails closed: a missing user, a missing org, a module this file has never
+    heard of, or a level outside LEVELS contributes nothing.
+    """
+    if not user_id or not org_id or module_code not in ALL_MODULES:
+        return frozenset()
+
+    from db import get_pool  # lazy: db imports nothing from middleware
+
+    pool = await get_pool()
+    levels: set[str] = set()
+
+    # Aekam staff. `can_reach_module` is the same lookup `require_module` makes,
+    # so a role that is refused the module there cannot acquire a level here —
+    # for the HR modules that means god mode only, and that crossing has already
+    # written an audit row by the time this runs.
+    platform_role = await pool.fetchval(
+        "SELECT role_code FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id IS NULL "
+        "AND role_code = ANY($2::text[]) "
+        "ORDER BY array_position($2::text[], role_code) LIMIT 1",
+        user_id, list(PLATFORM_ROLE_PRECEDENCE),
+    )
+    if platform_role and can_reach_module(platform_role, module_code):
+        levels.add(ADMIN)
+
+    org_role = await pool.fetchval(
+        "SELECT role_code FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id=$2::uuid "
+        "AND role_code IN ('org_owner','org_admin') LIMIT 1",
+        user_id, org_id,
+    )
+    if org_role:
+        levels.add(ADMIN)
+
+    rows = await pool.fetch(
+        "SELECT role FROM staging.org_member_modules "
+        "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
+        user_id, org_id, module_code,
+    )
+    for row in rows:
+        granted = row["role"]
+        if granted in LEVELS:
+            levels.add(granted)
+
+    return frozenset(levels)
+
+
+def require_module_or_self(module_code: str):
+    """`require_module`, except a caller with NO grant is admitted SELF-SCOPED.
+
+    Returns a FastAPI dependency whose VALUE is the caller's level set, so a
+    route writes `levels=Depends(_gate)` and has both the gate and the answer
+    from one resolution per request (FastAPI caches a dependency per request).
+
+    An empty set means self scope: read your own row, and submit the things that
+    are yours to submit. It is never authority over anybody else's record, and
+    `any_level_satisfies(frozenset(), anything, ...)` is False, so a route that
+    forgets to special-case self scope refuses rather than leaks.
+
+    Only the three modules in SELF_SCOPED_MODULES may use this. Anywhere else,
+    "no grant" means no.
+    """
+    if module_code not in SELF_SCOPED_MODULES:
+        # Raised at import time, not request time: a self-scope gate on a module
+        # that has no self to scope to is a mistake that must not reach a deploy.
+        raise ValueError(
+            f"{module_code!r} is not in SELF_SCOPED_MODULES — use require_module()"
+        )
+
+    from fastapi import Depends, HTTPException, Request
+
+    from auth_router import require_user
+    from middleware.org_resolver import get_org_id
+    from middleware.subscription import BUNDLED_MODULES, require_module
+
+    inner = require_module(module_code)
+
+    async def _check(
+        request: Request,
+        user=Depends(require_user),
+        org_id: str = Depends(get_org_id),
+    ) -> frozenset[str]:
+        levels = await held_module_levels(user.get("user_id"), org_id, module_code)
+        if levels:
+            # Grant holders take the ordinary path in full — subscription state,
+            # module activation, the sensitive-module audit row, all unchanged.
+            await inner(request, org_id=org_id)
+            return levels
+
+        from db import get_pool
+
+        pool = await get_pool()
+
+        # Aekam staff with no reach into this module are REFUSED, not silently
+        # downgraded to self scope. They are not employees of this org, so there
+        # is no own-row for them to fall back to, and `require_module` says no
+        # in words worth keeping.
+        is_platform = await pool.fetchval(
+            "SELECT 1 FROM staging.user_roles "
+            "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[])",
+            user.get("user_id"), list(ALL_PLATFORM_ROLES),
+        )
+        if is_platform or module_code in BUNDLED_MODULES:
+            # BUNDLED_MODULES can never be self-scoped — none of the three are
+            # bundled — so reaching here means the sets have drifted. Delegate
+            # and let the ordinary gate refuse.
+            await inner(request, org_id=org_id)
+            return frozenset()
+
+        # Self scope still requires the org to actually have the module. Reading
+        # your own payslip is not a way into a module the customer never bought.
+        sub_status = await pool.fetchval(
+            "SELECT status FROM staging.subscriptions WHERE org_id=$1::uuid", org_id
+        )
+        if not sub_status or sub_status in ("cancelled", "paused"):
+            raise HTTPException(403, "Subscription is not active")
+
+        active = await pool.fetchval(
+            "SELECT 1 FROM staging.module_subscriptions "
+            "WHERE org_id=$1::uuid AND module_code=$2 AND is_active=TRUE",
+            org_id, module_code,
+        )
+        if not active:
+            raise HTTPException(
+                403,
+                f"Module '{module_code}' is not active. "
+                "Contact your administrator to activate it.",
+            )
+        return frozenset()
+
+    return _check

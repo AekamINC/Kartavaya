@@ -14,17 +14,56 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import is_org_admin, is_platform_staff, require_org_role
-from middleware.subscription import require_module
+from middleware.role_tiers import (
+    ADMIN, APPROVER, EDITOR, VIEWER,
+    any_level_satisfies, require_module_or_self,
+)
 from services.audit import emit as audit
 from services.pii import mask_bank, mask_tail
 
 router = APIRouter(prefix="/api/v1/manav", tags=["manav-hrms"])
 
-_gate = require_module("manav")
+MODULE = "manav"
+
+#: The gate AND the answer: its value is the caller's Tier-4 level set, resolved
+#: once per request. An EMPTY set is admitted deliberately — Manav is in
+#: role_tiers.SELF_SCOPED_MODULES, so an employee with no grant at all still
+#: reads their own profile, attendance, leave and claims.
+_gate = require_module_or_self(MODULE)
 
 # Reading an identity document needs more than module membership. Declared here
 # rather than inline so tests can override it, same as `_gate`.
 _pii_gate = require_org_role("org_owner", "org_admin")
+
+# ── Who may see what in HR ────────────────────────────────────────────────────
+#
+# SELF SCOPE (role_tiers.SELF_SCOPED_MODULES): "every employee gets read access
+# to THEIR OWN record with no grant at all — own payslip, own profile, own
+# attendance. Anything beyond their own row needs a grant."
+#
+# So an empty level set reads the caller's own employee row, own attendance, own
+# leave, own claims, own schedule, own assets — and nothing about anybody else.
+# It is a query filter, not a grant row.
+#
+# Self scope is READ-ONLY over records the employer owns. It does NOT extend to
+# editing a personnel file, marking attendance, or actioning anything. The one
+# category of write it does reach is the employee's OWN SUBMISSIONS — their leave
+# request, their expense claim, their availability, their shift-bid application —
+# each of which resolves the employee id from the caller and never from the body.
+# Those are the employee authoring their own request, not editing an HR record;
+# submitting a leave request has never been an HR permission and requiring an
+# editor grant for it would mean every employee also gets to edit everyone's
+# attendance.
+#
+# Manav is NOT a separated-duty module (only vetana and ganit are), so admin does
+# satisfy approver here. That is still resolved through
+# `any_level_satisfies(...)` rather than assumed, so the day Manav is added to
+# SEPARATED_DUTY_MODULES this file changes behaviour without changing code.
+#
+# Reference data with no employee in it — leave types, holidays, announcements,
+# shift definitions, open shift bids — is readable at self scope. An employee has
+# to know the holiday calendar and the leave types to make a request about their
+# own record. Everything that names another person needs viewer.
 
 from datetime import time as _dt_time
 
@@ -76,6 +115,39 @@ def _mask_employee_pii(row: dict) -> dict:
         out["bank_details"] = _mask_bank(out["bank_details"])
     out["_pii_masked"] = True
     return out
+
+
+def _can(levels, required: str) -> bool:
+    """Does this caller's level set satisfy `required` on Manav?
+
+    Always through role_tiers — never `LEVELS.index(a) >= LEVELS.index(b)` at a
+    call site, which is the comparison that quietly lets admin approve on a
+    separated-duty module.
+    """
+    return any_level_satisfies(levels, required, MODULE)
+
+
+def _require(levels, required: str) -> None:
+    if _can(levels, required):
+        return
+    raise HTTPException(
+        403,
+        f"This action needs '{required}' on Manav. Without a grant you can see "
+        "your own HR record and nothing else.",
+    )
+
+
+async def _own_employee_id(pool, user, org_id: str) -> str | None:
+    """The caller's own employee row in this org, if they have one.
+
+    None is a real answer and it means NO ACCESS, not unrestricted access: a
+    caller with no grant and no employee row has no own-row to be scoped to.
+    """
+    return await pool.fetchval(
+        "SELECT id::text FROM staging.manav_employees "
+        "WHERE user_id=$1 AND org_id=$2::uuid AND is_active=TRUE LIMIT 1",
+        user["user_id"], org_id,
+    )
 
 
 def _parse_date(s: str) -> date:
@@ -245,7 +317,7 @@ async def list_employees(
     search: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
     query = (
@@ -256,6 +328,16 @@ async def list_employees(
     )
     params: list = [org_id]
     idx = 2
+
+    # The employee directory is other people. Without a grant the "directory" is
+    # one row long — the caller's own — and empty if they have no employee row.
+    if not _can(levels, VIEWER):
+        own = await _own_employee_id(pool, user, org_id)
+        if not own:
+            return {"data": []}
+        query += f"AND id=${idx}::uuid "
+        params.append(own)
+        idx += 1
 
     if department:
         query += f"AND department=${idx} "
@@ -280,9 +362,11 @@ async def create_employee(
     body: EmployeeCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # A personnel file carries Aadhaar, PAN and bank details.
+    _require(levels, ADMIN)
 
     valid_types = ("full_time", "part_time", "contract", "intern", "consultant")
     if body.employment_type not in valid_types:
@@ -312,7 +396,7 @@ async def get_employee(
     employee_id: UUID,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
     # Explicit column list, never SELECT *. The identity-kit columns are fetched
@@ -325,6 +409,12 @@ async def get_employee(
         str(employee_id), org_id,
     )
     if not row:
+        raise HTTPException(404, "Employee not found")
+
+    # Own profile with no grant at all — the SELF_SCOPED_MODULES promise. Anyone
+    # else's needs viewer. 404 rather than 403 so the answer does not confirm
+    # that an employee with that id exists in this org.
+    if row["user_id"] != user["user_id"] and not _can(levels, VIEWER):
         raise HTTPException(404, "Employee not found")
 
     leave_balances = await pool.fetch(
@@ -346,7 +436,7 @@ async def get_employee_sensitive(
     request: Request,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
     _r=Depends(_pii_gate),
 ):
     """Full Aadhaar, PAN and bank account for one employee.
@@ -357,7 +447,15 @@ async def get_employee_sensitive(
     `require_org_role` passes them unconditionally, so without the audit row
     below their access would be silent, which the project's standing rule
     forbids.
+
+    BOTH gates, deliberately. `_pii_gate` is the org role and `admin` is the
+    module level; an unmasked Aadhaar is the highest bar in this file and it
+    keeps whichever of the two is stricter. There is no self-scoped path here on
+    purpose — an employee reading their OWN Aadhaar back from the server is not
+    a flow the product has, and adding it would make this endpoint reachable by
+    everyone in the org.
     """
+    _require(levels, ADMIN)
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT id, name, employee_code, aadhaar, pan, bank_details "
@@ -391,9 +489,11 @@ async def update_employee(
     body: EmployeeUpdate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Same row, same identity kit.
+    _require(levels, ADMIN)
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "No fields to update")
@@ -425,9 +525,11 @@ async def deactivate_employee(
     employee_id: UUID,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Terminating someone is not an editor's call.
+    _require(levels, ADMIN)
     await pool.execute(
         "UPDATE staging.manav_employees SET is_active=FALSE, status='terminated', updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -442,9 +544,11 @@ async def deactivate_employee(
 async def list_departments(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Names a department head, so it names a person.
+    _require(levels, VIEWER)
     rows = await pool.fetch(
         "SELECT d.id, d.name, d.created_at, e.name as head_name, "
         "(SELECT COUNT(*) FROM staging.manav_employees WHERE department=d.name AND org_id=d.org_id AND is_active=TRUE) as employee_count "
@@ -461,9 +565,10 @@ async def create_department(
     body: DepartmentCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, ADMIN)
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_departments (org_id, name, head_employee_id) "
         "VALUES ($1::uuid, $2, NULLIF($3,'')::uuid) RETURNING id, name",
@@ -478,9 +583,10 @@ async def update_department(
     body: DepartmentCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, ADMIN)
     row = await pool.fetchrow(
         "UPDATE staging.manav_departments SET name=$3, head_employee_id=NULLIF($4,'')::uuid "
         "WHERE id=$1::uuid AND org_id=$2::uuid RETURNING id, name",
@@ -496,9 +602,10 @@ async def delete_department(
     dept_id: str,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, ADMIN)
     emp_count = await pool.fetchval(
         "SELECT COUNT(*) FROM staging.manav_employees e "
         "JOIN staging.manav_departments d ON d.name = e.department AND d.org_id = e.org_id "
@@ -523,7 +630,7 @@ async def list_attendance(
     employee_id: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
     d_from = date.fromisoformat(date_from) if date_from else date.today()
@@ -540,6 +647,17 @@ async def list_attendance(
     params: list = [org_id, d_from, d_to]
     idx = 4
 
+    # Own attendance with no grant; anyone else's needs viewer. Asking for a
+    # colleague's employee_id from self scope is refused rather than silently
+    # rewritten, so the caller is not told an empty list means "no records".
+    if not _can(levels, VIEWER):
+        own = await _own_employee_id(pool, user, org_id)
+        if not own:
+            return {"data": []}
+        if employee_id and employee_id != own:
+            raise HTTPException(403, "You can only view your own attendance")
+        employee_id = own
+
     if employee_id:
         query += f"AND a.employee_id=${idx}::uuid "
         params.append(employee_id)
@@ -555,9 +673,11 @@ async def mark_attendance(
     body: AttendanceMark,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Marks attendance for ANY employee — never reachable at self scope.
+    _require(levels, EDITOR)
     att_date = date.fromisoformat(body.date) if body.date else date.today()
 
     valid_statuses = ("present", "absent", "half_day", "late", "on_leave", "holiday", "weekend")
@@ -592,7 +712,7 @@ async def attendance_summary(
     month: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
     if month:
@@ -607,7 +727,7 @@ async def attendance_summary(
     else:
         end = _parse_date(f"{int(year)+1}-01-01")
 
-    rows = await pool.fetch(
+    query = (
         "SELECT e.id, e.name, e.employee_code, "
         "COUNT(*) FILTER (WHERE a.status='present') as present_days, "
         "COUNT(*) FILTER (WHERE a.status='absent') as absent_days, "
@@ -620,9 +740,19 @@ async def attendance_summary(
         "LEFT JOIN staging.manav_attendance a ON a.employee_id=e.id "
         "  AND a.date >= $2 AND a.date < $3 "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
-        "GROUP BY e.id, e.name, e.employee_code ORDER BY e.name",
-        org_id, start, end,
     )
+    params: list = [org_id, start, end]
+
+    # The monthly summary is one row per employee. At self scope it is one row.
+    if not _can(levels, VIEWER):
+        own = await _own_employee_id(pool, user, org_id)
+        if not own:
+            return {"data": [], "month": f"{year}-{mo}"}
+        params.append(own)
+        query += f"AND e.id=${len(params)}::uuid "
+
+    query += "GROUP BY e.id, e.name, e.employee_code ORDER BY e.name"
+    rows = await pool.fetch(query, *params)
     return {"data": [dict(r) for r in rows], "month": f"{year}-{mo}"}
 
 
@@ -632,9 +762,11 @@ async def attendance_summary(
 async def list_leave_types(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Reference data with no employee in it. Readable at self scope: an employee
+    # cannot request leave against their own record without knowing the types.
     rows = await pool.fetch(
         "SELECT * FROM staging.manav_leave_types WHERE org_id=$1::uuid AND is_active=TRUE ORDER BY name",
         org_id,
@@ -647,9 +779,11 @@ async def create_leave_type(
     body: LeaveTypeCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Leave policy is org configuration.
+    _require(levels, ADMIN)
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_leave_types "
         "(org_id, name, code, annual_quota, is_paid, carry_forward, max_carry_forward) "
@@ -668,7 +802,7 @@ async def list_leave_requests(
     employee_id: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
     query = (
@@ -683,6 +817,16 @@ async def list_leave_requests(
     )
     params: list = [org_id]
     idx = 2
+
+    # A leave request carries a reason, which is routinely medical or personal.
+    # Own only without a grant.
+    if not _can(levels, VIEWER):
+        own = await _own_employee_id(pool, user, org_id)
+        if not own:
+            return {"data": []}
+        if employee_id and employee_id != own:
+            raise HTTPException(403, "You can only view your own leave requests")
+        employee_id = own
 
     if status:
         query += f"AND lr.status=${idx} "
@@ -703,18 +847,16 @@ async def create_leave_request(
     body: LeaveRequest,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
 
+    # Submitting YOUR OWN leave request is reachable at self scope: the employee
+    # id comes from the caller's own row, never from the body, so this is the
+    # employee authoring their own request rather than editing an HR record.
+    # Filing one FOR SOMEONE ELSE is an HR action and needs an editor grant.
     if body.employee_id:
-        # The org-scoped user_roles half of this check was already correct; the
-        # `user.get("role") == "admin"` prefix widened it to anyone holding the
-        # legacy JWT claim. is_org_admin keeps the org scoping and adds platform
-        # staff, which the raw query omitted.
-        is_admin = await is_org_admin(user["user_id"], org_id)
-        if not is_admin:
-            raise HTTPException(403, "Only admins can create leaves for other employees")
+        _require(levels, EDITOR)
         emp = await pool.fetchrow(
             "SELECT id FROM staging.manav_employees "
             "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
@@ -758,9 +900,12 @@ async def action_leave_request(
     body: LeaveAction,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Approving leave is the approver rung. Manav is hierarchical, so
+    # admin satisfies it — decided by level_satisfies, not assumed here.
+    _require(levels, APPROVER)
     if body.status not in ("approved", "rejected"):
         raise HTTPException(400, "Status must be 'approved' or 'rejected'")
 
@@ -833,9 +978,10 @@ async def list_holidays(
     year: Optional[int] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # The holiday calendar names nobody. Readable at self scope.
     y = year or date.today().year
     rows = await pool.fetch(
         "SELECT id, name, date, is_optional FROM staging.manav_holidays "
@@ -850,9 +996,10 @@ async def create_holiday(
     body: HolidayCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, ADMIN)
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_holidays (org_id, name, date, is_optional) "
         "VALUES ($1::uuid, $2, $3, $4) RETURNING id, name, date",
@@ -866,9 +1013,10 @@ async def delete_holiday(
     holiday_id: UUID,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, ADMIN)
     await pool.execute(
         "DELETE FROM staging.manav_holidays WHERE id=$1::uuid AND org_id=$2::uuid",
         str(holiday_id), org_id,
@@ -882,9 +1030,11 @@ async def delete_holiday(
 async def hrms_stats(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Org-wide headcount and today's attendance.
+    _require(levels, VIEWER)
     emp_count = await pool.fetchval(
         "SELECT COUNT(*) FROM staging.manav_employees WHERE org_id=$1::uuid AND is_active=TRUE AND status='active'",
         org_id,
@@ -944,9 +1094,11 @@ async def hrms_stats(
 async def list_announcements(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Announcements are broadcast to the whole org by design — every employee is
+    # already emailed one when it is posted. Readable at self scope.
     rows = await pool.fetch(
         "SELECT a.id, a.title, a.body, a.priority, a.pinned, "
         "a.published_at, a.expires_at, a.created_at, "
@@ -966,9 +1118,11 @@ async def create_announcement(
     body: AnnouncementCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Emails every active employee in the org.
+    _require(levels, EDITOR)
 
     valid_priorities = ("low", "normal", "high", "urgent")
     if body.priority not in valid_priorities:
@@ -1002,9 +1156,10 @@ async def update_announcement(
     body: AnnouncementUpdate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, EDITOR)
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "No fields to update")
@@ -1038,9 +1193,10 @@ async def delete_announcement(
     announcement_id: UUID,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, EDITOR)
     await pool.execute(
         "UPDATE staging.manav_announcements SET is_active=FALSE "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -1058,9 +1214,11 @@ async def check_leave_conflicts(
     end_date: str,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Returns colleagues' leave dates by department.
+    _require(levels, VIEWER)
 
     emp = await pool.fetchrow(
         "SELECT id, department FROM staging.manav_employees "
@@ -1113,9 +1271,11 @@ async def performance_summary(
     to_date: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Per-employee attendance for the whole org.
+    _require(levels, VIEWER)
 
     today = date.today()
     if not from_date:
@@ -1169,9 +1329,11 @@ class ShiftUpdate(BaseModel):
     is_active: bool | None = None
 
 
-@router.get("/shifts", dependencies=[Depends(_gate)])
-async def list_shifts(user=Depends(require_user), org_id=Depends(get_org_id)):
+@router.get("/shifts")
+async def list_shifts(user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
+    # Shift definitions name nobody — they are the org's shift catalogue, and an
+    # employee needs them to read their own roster. Readable at self scope.
     rows = await pool.fetch(
         "SELECT * FROM staging.manav_shift_definitions "
         "WHERE org_id=$1::uuid ORDER BY start_time",
@@ -1180,9 +1342,11 @@ async def list_shifts(user=Depends(require_user), org_id=Depends(get_org_id)):
     return {"data": [dict(r) for r in rows]}
 
 
-@router.post("/shifts", dependencies=[Depends(_gate)])
-async def create_shift(body: ShiftCreate, user=Depends(require_user), org_id=Depends(get_org_id)):
+@router.post("/shifts")
+async def create_shift(body: ShiftCreate, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
+    # Shift definitions are org configuration.
+    _require(levels, ADMIN)
     st, et = _parse_time(body.start_time), _parse_time(body.end_time)
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_shift_definitions "
@@ -1196,9 +1360,10 @@ async def create_shift(body: ShiftCreate, user=Depends(require_user), org_id=Dep
     return {"status": "created", **dict(row)}
 
 
-@router.patch("/shifts/{shift_id}", dependencies=[Depends(_gate)])
-async def update_shift(shift_id: UUID, body: ShiftUpdate, user=Depends(require_user), org_id=Depends(get_org_id)):
+@router.patch("/shifts/{shift_id}")
+async def update_shift(shift_id: UUID, body: ShiftUpdate, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
+    _require(levels, ADMIN)
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "No fields to update")
@@ -1233,13 +1398,14 @@ class ScheduleBulkAssign(BaseModel):
     assignments: list[ScheduleAssign]
 
 
-@router.get("/schedules", dependencies=[Depends(_gate)])
+@router.get("/schedules")
 async def list_schedules(
     date_from: str | None = None,
     date_to: str | None = None,
     employee_id: str | None = None,
     user=Depends(require_user),
     org_id=Depends(get_org_id),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
     query = (
@@ -1252,6 +1418,16 @@ async def list_schedules(
     )
     params: list = [org_id]
     idx = 2
+
+    # Own roster at self scope; the whole rota needs viewer.
+    if not _can(levels, VIEWER):
+        own = await _own_employee_id(pool, user, org_id)
+        if not own:
+            return {"data": []}
+        if employee_id and employee_id != own:
+            raise HTTPException(403, "You can only view your own schedule")
+        employee_id = own
+
     if date_from:
         query += f"AND s.date >= ${idx} "
         params.append(_parse_date(date_from))
@@ -1269,9 +1445,11 @@ async def list_schedules(
     return {"data": [dict(r) for r in rows]}
 
 
-@router.post("/schedules", dependencies=[Depends(_gate)])
-async def assign_schedule(body: ScheduleAssign, user=Depends(require_user), org_id=Depends(get_org_id)):
+@router.post("/schedules")
+async def assign_schedule(body: ScheduleAssign, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
+    # Rosters someone else's day.
+    _require(levels, EDITOR)
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_schedules "
         "(org_id, employee_id, shift_id, date, notes, created_by) "
@@ -1298,9 +1476,10 @@ async def assign_schedule(body: ScheduleAssign, user=Depends(require_user), org_
     return {"status": "assigned", "id": str(row["id"])}
 
 
-@router.post("/schedules/bulk", dependencies=[Depends(_gate)])
-async def bulk_assign(body: ScheduleBulkAssign, user=Depends(require_user), org_id=Depends(get_org_id)):
+@router.post("/schedules/bulk")
+async def bulk_assign(body: ScheduleBulkAssign, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
+    _require(levels, EDITOR)
     created = 0
     for a in body.assignments:
         await pool.execute(
@@ -1315,14 +1494,16 @@ async def bulk_assign(body: ScheduleBulkAssign, user=Depends(require_user), org_
     return {"status": "assigned", "count": created}
 
 
-@router.get("/schedules/coverage", dependencies=[Depends(_gate)])
+@router.get("/schedules/coverage")
 async def schedule_coverage(
     date_from: str,
     date_to: str,
     user=Depends(require_user),
     org_id=Depends(get_org_id),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, VIEWER)
     rows = await pool.fetch(
         "SELECT s.date, sd.name AS shift_name, sd.id AS shift_id, "
         "COUNT(s.id) AS assigned_count "
@@ -1350,13 +1531,14 @@ class AvailabilitySet(BaseModel):
     notes: str = ""
 
 
-@router.get("/availability", dependencies=[Depends(_gate)])
+@router.get("/availability")
 async def list_availability(
     employee_id: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
     user=Depends(require_user),
     org_id=Depends(get_org_id),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
     query = "SELECT a.*, e.name AS employee_name FROM staging.manav_availability a " \
@@ -1364,6 +1546,16 @@ async def list_availability(
             "WHERE a.org_id=$1::uuid "
     params: list = [org_id]
     idx = 2
+
+    # Own availability at self scope; everyone's needs viewer.
+    if not _can(levels, VIEWER):
+        own = await _own_employee_id(pool, user, org_id)
+        if not own:
+            return {"data": []}
+        if employee_id and employee_id != own:
+            raise HTTPException(403, "You can only view your own availability")
+        employee_id = own
+
     if employee_id:
         query += f"AND a.employee_id=${idx}::uuid "
         params.append(employee_id)
@@ -1381,10 +1573,12 @@ async def list_availability(
     return {"data": [dict(r) for r in rows]}
 
 
-@router.post("/availability", dependencies=[Depends(_gate)])
-async def set_availability(body: AvailabilitySet, user=Depends(require_user), org_id=Depends(get_org_id)):
+@router.post("/availability")
+async def set_availability(body: AvailabilitySet, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
-    # Find employee by user_id
+    # Self-service, and only ever for yourself: the employee id comes from the
+    # caller's own row and the body has no field to override it. Reachable at
+    # self scope for that reason.
     emp = await pool.fetchval(
         "SELECT id FROM staging.manav_employees WHERE org_id=$1::uuid AND user_id=$2",
         org_id, user["user_id"],
@@ -1411,13 +1605,16 @@ class ShiftBidCreate(BaseModel):
     slots_needed: int = 1
 
 
-@router.get("/shift-bids", dependencies=[Depends(_gate)])
+@router.get("/shift-bids")
 async def list_bids(
     status: str = "open",
     user=Depends(require_user),
     org_id=Depends(get_org_id),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # An open bid is a shift offered to everyone; the row names no employee, only
+    # a response count. Readable at self scope so an employee can apply.
     rows = await pool.fetch(
         "SELECT b.*, sd.name AS shift_name, sd.start_time, sd.end_time, sd.color, "
         "(SELECT COUNT(*) FROM staging.manav_shift_bid_responses WHERE bid_id=b.id) AS responses "
@@ -1429,9 +1626,11 @@ async def list_bids(
     return {"data": [dict(r) for r in rows]}
 
 
-@router.post("/shift-bids", dependencies=[Depends(_gate)])
-async def create_bid(body: ShiftBidCreate, user=Depends(require_user), org_id=Depends(get_org_id)):
+@router.post("/shift-bids")
+async def create_bid(body: ShiftBidCreate, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
+    # Opens a shift to the whole org.
+    _require(levels, EDITOR)
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_shift_bids "
         "(org_id, shift_id, date, slots_needed, created_by) "
@@ -1441,15 +1640,24 @@ async def create_bid(body: ShiftBidCreate, user=Depends(require_user), org_id=De
     return {"status": "created", "id": str(row["id"])}
 
 
-@router.post("/shift-bids/{bid_id}/apply", dependencies=[Depends(_gate)])
-async def apply_to_bid(bid_id: UUID, user=Depends(require_user), org_id=Depends(get_org_id)):
+@router.post("/shift-bids/{bid_id}/apply")
+async def apply_to_bid(bid_id: UUID, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
+    # Applying is the employee volunteering for themselves — employee id from the
+    # caller's own row, never from the path. Reachable at self scope.
     emp = await pool.fetchval(
         "SELECT id FROM staging.manav_employees WHERE org_id=$1::uuid AND user_id=$2",
         org_id, user["user_id"],
     )
     if not emp:
         raise HTTPException(404, "Employee record not found")
+    # The bid must belong to this org. Without it a response row could be
+    # attached to another tenant's bid by guessing a uuid.
+    if not await pool.fetchval(
+        "SELECT 1 FROM staging.manav_shift_bids WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(bid_id), org_id,
+    ):
+        raise HTTPException(404, "Bid not found")
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_shift_bid_responses (bid_id, employee_id) "
         "VALUES ($1::uuid, $2) "
@@ -1459,9 +1667,11 @@ async def apply_to_bid(bid_id: UUID, user=Depends(require_user), org_id=Depends(
     return {"status": "applied" if row else "already_applied"}
 
 
-@router.post("/shift-bids/{bid_id}/accept/{employee_id}", dependencies=[Depends(_gate)])
-async def accept_bid(bid_id: UUID, employee_id: UUID, user=Depends(require_user), org_id=Depends(get_org_id)):
+@router.post("/shift-bids/{bid_id}/accept/{employee_id}")
+async def accept_bid(bid_id: UUID, employee_id: UUID, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
+    # Awards the shift and writes the schedule row.
+    _require(levels, EDITOR)
     bid = await pool.fetchrow(
         "SELECT * FROM staging.manav_shift_bids WHERE id=$1::uuid AND org_id=$2::uuid",
         str(bid_id), org_id,
@@ -1492,8 +1702,8 @@ class SwapCreate(BaseModel):
     reason: str = ""
 
 
-@router.post("/swaps", dependencies=[Depends(_gate)])
-async def create_swap(body: SwapCreate, user=Depends(require_user), org_id=Depends(get_org_id)):
+@router.post("/swaps")
+async def create_swap(body: SwapCreate, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_swap_requests "
@@ -1505,9 +1715,11 @@ async def create_swap(body: SwapCreate, user=Depends(require_user), org_id=Depen
     return {"status": "requested", "id": str(row["id"])}
 
 
-@router.get("/swaps", dependencies=[Depends(_gate)])
-async def list_swaps(status: str = "pending", user=Depends(require_user), org_id=Depends(get_org_id)):
+@router.get("/swaps")
+async def list_swaps(status: str = "pending", user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
+    # Names both sides of every swap.
+    _require(levels, VIEWER)
     rows = await pool.fetch(
         "SELECT sw.*, "
         "e1.name AS requester_name, e2.name AS target_name, "
@@ -1523,11 +1735,13 @@ async def list_swaps(status: str = "pending", user=Depends(require_user), org_id
     return {"data": [dict(r) for r in rows]}
 
 
-@router.patch("/swaps/{swap_id}", dependencies=[Depends(_gate)])
-async def action_swap(swap_id: UUID, action: str, user=Depends(require_user), org_id=Depends(get_org_id)):
+@router.patch("/swaps/{swap_id}")
+async def action_swap(swap_id: UUID, action: str, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     if action not in ("approved", "rejected"):
         raise HTTPException(400, "action must be 'approved' or 'rejected'")
     pool = await get_pool()
+    # Approving a swap moves two people's shifts.
+    _require(levels, APPROVER)
     await pool.execute(
         "UPDATE staging.manav_swap_requests SET status=$1, approved_by=$2 "
         "WHERE id=$3::uuid AND org_id=$4::uuid",
@@ -1577,7 +1791,7 @@ async def list_expense_claims(
     status: str = "",
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
     is_admin = await _is_org_admin(pool, user, org_id)
@@ -1606,9 +1820,11 @@ async def list_expense_claims(
 async def expense_claims_pending_count(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # An org-wide count.
+    _require(levels, VIEWER)
     count = await pool.fetchval(
         "SELECT COUNT(*) FROM staging.manav_expense_claims "
         "WHERE org_id=$1::uuid AND status='pending' AND is_active=TRUE",
@@ -1622,7 +1838,7 @@ async def create_expense_claim(
     body: ExpenseClaimCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
     if body.amount <= 0:
@@ -1659,7 +1875,7 @@ async def approve_expense_claim(
     claim_id: UUID,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
     if not await _is_org_admin(pool, user, org_id):
@@ -1690,7 +1906,7 @@ async def reject_expense_claim(
     body: ExpenseClaimAction,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
     if not await _is_org_admin(pool, user, org_id):
@@ -1722,9 +1938,11 @@ async def list_job_openings(
     status: str = "",
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Recruitment is not employee self-service.
+    _require(levels, VIEWER)
     q = (
         "SELECT j.*, d.name AS department_name, "
         "(SELECT COUNT(*) FROM staging.manav_candidates c WHERE c.job_opening_id = j.id) AS candidate_count "
@@ -1746,9 +1964,10 @@ async def create_job_opening(
     body: JobOpeningCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, EDITOR)
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_job_openings (org_id, title, department_id, description, created_by) "
         "VALUES ($1::uuid, $2, NULLIF($3,'')::uuid, $4, $5) RETURNING *",
@@ -1763,9 +1982,10 @@ async def update_job_opening(
     body: JobOpeningUpdate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, EDITOR)
     updates, vals = [], []
     for field in ("title", "description", "status"):
         val = getattr(body, field)
@@ -1791,9 +2011,11 @@ async def list_candidates(
     stage: str = "",
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Candidate name, email, phone and resume — outsiders' PII.
+    _require(levels, VIEWER)
     q = "SELECT * FROM staging.manav_candidates WHERE org_id=$1::uuid"
     params: list = [org_id]
     if job_opening_id:
@@ -1819,9 +2041,10 @@ async def create_candidate(
     body: CandidateCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, EDITOR)
     opening = await pool.fetchrow(
         "SELECT id FROM staging.manav_job_openings WHERE id=$1::uuid AND org_id=$2::uuid",
         body.job_opening_id, org_id,
@@ -1844,9 +2067,10 @@ async def update_candidate_stage(
     body: CandidateStageUpdate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, EDITOR)
     valid_stages = ("applied", "screening", "interview", "offer", "hired", "rejected")
     if body.stage not in valid_stages:
         raise HTTPException(400, f"stage must be one of: {', '.join(valid_stages)}")
@@ -1866,9 +2090,11 @@ async def hire_candidate(
     candidate_id: UUID,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Creates a personnel record.
+    _require(levels, ADMIN)
     candidate = await pool.fetchrow(
         "SELECT * FROM staging.manav_candidates WHERE id=$1::uuid AND org_id=$2::uuid",
         str(candidate_id), org_id,
@@ -1926,9 +2152,11 @@ async def list_assets(
     assigned: str = "",
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # Names the employee each asset is issued to.
+    _require(levels, VIEWER)
     q = (
         "SELECT a.*, e.name AS employee_name "
         "FROM staging.manav_assets a "
@@ -1953,9 +2181,10 @@ async def create_asset(
     body: AssetCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, EDITOR)
     valid_cats = ("laptop", "phone", "tablet", "vehicle", "furniture", "other")
     if body.category not in valid_cats:
         raise HTTPException(400, f"category must be one of: {', '.join(valid_cats)}")
@@ -1979,9 +2208,10 @@ async def get_asset(
     asset_id: str,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, VIEWER)
     row = await pool.fetchrow(
         "SELECT a.*, e.name AS employee_name "
         "FROM staging.manav_assets a "
@@ -2000,9 +2230,10 @@ async def update_asset(
     body: AssetUpdate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, EDITOR)
     updates, vals = [], []
     for field in ("name", "serial_number", "notes"):
         v = getattr(body, field)
@@ -2041,9 +2272,10 @@ async def delete_asset(
     asset_id: str,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, EDITOR)
     result = await pool.execute(
         "UPDATE staging.manav_assets SET is_active=FALSE, updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -2060,9 +2292,10 @@ async def assign_asset(
     body: AssetAssign,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, EDITOR)
     emp = await pool.fetchrow(
         "SELECT id FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         body.employee_id, org_id,
@@ -2095,9 +2328,10 @@ async def return_asset(
     asset_id: str,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
+    _require(levels, EDITOR)
     # Fetch current assignee before clearing
     prev = await pool.fetchrow(
         "SELECT a.assigned_to, a.name AS asset_name, a.asset_type, e.name, e.email "
@@ -2127,7 +2361,7 @@ async def employee_assets(
     employee_id: str,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    levels=Depends(_gate),
 ):
     pool = await get_pool()
     rows = await pool.fetch(
