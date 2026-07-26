@@ -66,3 +66,53 @@ collides with applied `056_publish_platforms_expansion.sql`. Also 054 and 062 ar
 Both predate this branch.
 
 ---
+
+## 2. Router registration — CLAIM HELD, and it was the worst defect on the branch
+
+**`org_modules.py` and `org_security.py` were dead code.** 1,036 lines of router
+never imported and never included. `grep -n "org_modules\|org_security" backend/server.py`
+returned nothing at 43167f2. `org_profile.py` and `admin_orgs.py` were already wired
+(lines 69/82 import, 2775/2788 include), so the two MODIFIED files were live and the
+two NEW files were not — consistent with an agent killed partway through.
+
+Fixed: added the two imports next to `org_profile`, and the two `include_router` calls
+in the same relative position.
+
+Verified by building the real app and resolving its OpenAPI spec, not by reading the
+diff:
+
+```
+/api/v1/org/modules  ['get', 'patch']
+/api/v1/org/profile  ['get', 'patch']
+/api/v1/org/security ['get', 'patch']
+```
+
+All three pairs resolve. Before the fix only `/api/v1/org/profile` did.
+
+## 3. Guards — CLAIM PARTIALLY STALE as worded
+
+Brief: "Are they guarded through `role_tiers.py`? No router may hardcode a role string."
+
+- **No new router hardcodes a PLATFORM role string.** That is the rule `role_tiers.py`
+  exists to enforce (its docstring: 84 hardcoded strings across five modules). Held.
+  `platform_admin` appears in these files only inside docstrings.
+- **Org-tier roles are a different matter and the wording does not fit.**
+  `role_tiers.py` covers Tier 1 (platform roles) and Tier 4 (module levels). It exports
+  **no** org-tier constant — there is no `ORG_ADMIN_ROLES`. The house convention is
+  `require_org_role("org_admin", "org_owner")` with literals at the call site, used
+  identically in `org_members.py` (6 sites), `manav.py`, `pahchan.py`, `graha.py`.
+  The new routers match it exactly. Routing these through `role_tiers.py` would mean
+  inventing a Tier-2 constant and changing 15 existing call sites — out of scope here,
+  and noted below as work for whoever owns `middleware/roles.py`.
+
+`org_modules.py` does import from `role_tiers` (`ALL_MODULES`, `SENSITIVE_MODULES`).
+`org_security.py` does not import it and does not need to — it holds no module logic.
+
+## 4. Backend suite
+
+`python -m pytest -q` in `backend/`: **265 passed, 1 failed**.
+
+The failure is `tests/test_ganit.py::test_create_invoice_success — TypeError: 'MagicMock'`.
+**Pre-existing, not mine.** Verified by `git stash`-ing my `server.py` change and
+re-running the single test: it fails identically without it. Belongs to whoever owns
+`routers/ganit.py` / the invoice fixtures.
