@@ -86,27 +86,47 @@ historical, not functional. At eventual merge time the rule is: **take staging.*
 | `PROPOSED_070_sanvaad_spelling.sql` | org-endpoints (renumbered) |
 | `074` | claimed by the ganit/vikray agent |
 | `PROPOSED_075_module_grant_composite_key.sql` | migrations agent — **on staging** |
+| `PROPOSED_071_vetana_approver_backfill.sql` | vetana agent — landed mid-run |
+| `PROPOSED_072_task_comment_client_visibility.sql` | was the colliding `056` — **resolved, see below** |
 
-**Take `071` next** (`071`, `072`, `073` are free; `076+` are free). Survey
-`git branch -r` first anyway — proposals are landing live.
+**Take `073` next** (`073` and `076+` are free). `071` was still listed as free above
+until it was claimed mid-run — **survey before taking a number, this table goes stale
+within the hour.**
 
-### ⚠️ `056` COLLIDES AND NOBODY OWNS IT
+### ✅ `056` COLLISION — RESOLVED
+
+Renamed to **`PROPOSED_072_task_comment_client_visibility.sql`** by the org-endpoints
+agent. `071` was taken by then, so it went to `072`.
+
+**The earlier recommendation said "nothing references the filename". That was wrong,
+and acting on it would have broken the build.** There were five references:
+
+| File | Reference |
+|---|---|
+| the SQL file itself | header line 1 |
+| `backend/server.py`:570 | full filename, in a comment beside the query |
+| `backend/server.py`:1610, :1637 | `PROPOSED_056` — one inside a docstring explaining a live client-portal fallback |
+| `backend/tests/test_client_portal.py`:263 | `PROPOSED_056` in a test docstring |
+| `SWARM-FINDINGS-LEDGER.md`:79 | `PROPOSED_056` |
+
+All five repointed. This is the second time this run that "nothing references it" was
+asserted without a grep — **run the grep over `.py`, `.sql` AND `.md` before any
+renumber.** The `067` renumber found 11 references, three inside runtime HTTP 503 bodies.
+
+### The original problem, for the record
 
 `backend/migrations/` on staging contains **both**:
 
 - `056_publish_platforms_expansion.sql` — **APPLIED** (verified against the live schema)
 - `PROPOSED_056_task_comment_client_visibility.sql` — an unapplied proposal
 
-Anyone applying in numeric order sees `056` twice and may apply one and skip the
-other silently. This is the same defect as the `067` collision, which was caught
-only because two agents happened to be looking. **Recommended fix: rename the
-proposal to `PROPOSED_071_task_comment_client_visibility.sql`.** Grep for the old
-filename in SQL *and* Python first — the org-endpoints renumber found 11
-self-references, three of them inside runtime HTTP 503 response bodies.
+Anyone applying in numeric order saw `056` twice and could apply one and skip the
+other silently — the same defect as the `067` collision, caught only because two
+agents happened to be looking.
 
-Not done by me: renaming another agent's in-flight file mid-run is how `067`
-happened. Whoever owns task-comment visibility, or the last agent standing,
-should take it.
+Safe to take because the file was **not** in flight: its last commit was the base
+snapshot `2a2a27b`, and no branch had touched it since. That check is the one that
+makes this different from the `067` situation, where two agents were both writing.
 
 ### ⚠️ The sanvaad spelling fix is HALF LANDED right now
 

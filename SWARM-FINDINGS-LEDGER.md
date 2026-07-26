@@ -76,7 +76,7 @@ shell. Now an allow-list (`/client/*` only). Agent says fixed.
 
 ### A4. Comments: API served clients every comment on any reachable task — **SINGLE, worse than reported**
 backend-leaks agent. Portal didn't render them, but the API returned them.
-Added `is_client_visible` (default False). Migration PROPOSED_056, not applied.
+Added `is_client_visible` (default False). Migration PROPOSED_072, not applied.
 
 ### A5. `SigningPage.jsx` — public signer view, unconverted — **SINGLE, high value**
 39 hardcoded colours, `#0082c6` ×5, no dark mode at all, and spells the brand

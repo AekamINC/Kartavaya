@@ -260,7 +260,7 @@ class TestClientComments:
     async def test_client_sees_no_comments_before_the_migration(
         self, api_client, as_client_user, mock_pool
     ):
-        """`task_comments.is_client_visible` does not exist until PROPOSED_056.
+        """`task_comments.is_client_visible` does not exist until PROPOSED_072.
 
         The column is probed at runtime, so the pre-migration answer is False
         for every row and a client gets an empty list rather than the firm's

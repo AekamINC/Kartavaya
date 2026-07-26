@@ -1,4 +1,4 @@
--- PROPOSED_056_task_comment_client_visibility.sql
+-- PROPOSED_072_task_comment_client_visibility.sql
 -- Kartavaya by Aekam Inc
 --
 -- STATUS: PROPOSED. NOT APPLIED. Do not run this without the owner's go-ahead.

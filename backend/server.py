@@ -567,7 +567,7 @@ class CommentCreate(BaseModel):
 class CommentOut(BaseModel):
     comment_id:str; task_id:str; user_id:str; user_name:str; body:str; created_at:datetime
     # Backed by `task_comments.is_client_visible`, which DOES NOT EXIST YET —
-    # see backend/migrations/PROPOSED_056_task_comment_client_visibility.sql.
+    # see backend/migrations/PROPOSED_072_task_comment_client_visibility.sql.
     # Until that migration is applied the column probe below reports False for
     # every row, so `list_comments` serves a client NOTHING rather than guessing
     # which internal comments are safe. That is the intended pre-migration state.
@@ -1607,7 +1607,7 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user):
 # ── Comments ────────────────────────────────────────────────────
 
 #: Cached once per process. `task_comments.is_client_visible` does not exist
-#: until PROPOSED_056 is applied, and staging shares a database with production,
+#: until PROPOSED_072 is applied, and staging shares a database with production,
 #: so this file must run correctly on BOTH schemas. Probing rather than
 #: hardcoding means the migration takes effect with no code change and no
 #: redeploy — and, critically, that the pre-migration answer is False for every
@@ -1634,7 +1634,7 @@ async def list_comments(task_id:str,pool=Depends(get_db),user=Depends(require_us
     served a client every comment on any task they could reach — the firm's
     internal discussion of their own file, verbatim.
 
-    Until PROPOSED_056 lands there is no flag to be true, so a client gets an
+    Until PROPOSED_072 lands there is no flag to be true, so a client gets an
     empty list. That is deliberate: no comments is correct, and guessing which
     internal comments are safe is not.
     """
