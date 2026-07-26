@@ -102,14 +102,19 @@ def require_org_role(*allowed_roles: str):
 
 
 async def is_platform_staff(user_id: str) -> bool:
-    """Check if user has a platform-wide role (platform_admin or account_manager).
+    """Check if the user holds ANY Tier-1 platform role.
+
+    The set is `ALL_PLATFORM_ROLES` — all eight codes. This docstring used to say
+    "platform_admin or account_manager", naming two of them and understating the
+    guard by six; the code below has read the full tuple for a while.
 
     NOTE: this is "is Aekam staff", not "may read anything". Its call sites are
     all Kartavya project surfaces — templates, views, time entries, activity —
     where seeing the project structure is what support means. It must not be
     used to gate payroll, HR, accounting or attendance: those are guarded by
-    `require_module`, which admits only `platform_admin` for sensitive modules
-    and writes an audit row when it does.
+    `require_module`, which admits only GOD MODE for sensitive modules — through
+    `is_god_mode()`, so both spellings of it — and writes an audit row when it
+    does.
     """
     pool = await get_pool()
     return bool(await pool.fetchval(
