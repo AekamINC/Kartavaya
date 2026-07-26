@@ -15,7 +15,7 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import is_org_admin, is_platform_staff, require_org_role
 from middleware.role_tiers import (
-    ADMIN, APPROVER, EDITOR, ORG_ADMIN_ROLES, VIEWER,
+    ADMIN, APPROVER, EDITOR, ORG_MANAGEMENT_ROLES, VIEWER,
     any_level_satisfies, require_module_or_self,
 )
 from services.audit import emit as audit
@@ -34,7 +34,7 @@ _gate = require_module_or_self(MODULE)
 # Reading an identity document needs more than module membership. Declared here
 # rather than inline so tests can override it, same as `_gate`. The role names
 # come from role_tiers, not from two string literals written out here.
-_pii_gate = require_org_role(*ORG_ADMIN_ROLES)
+_pii_gate = require_org_role(*ORG_MANAGEMENT_ROLES)
 
 # ── Who may see what in HR ────────────────────────────────────────────────────
 #

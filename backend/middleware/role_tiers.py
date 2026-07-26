@@ -240,14 +240,6 @@ PLATFORM_ROLE_PRECEDENCE: tuple[str, ...] = (
 )
 
 
-#: Tier 2 — the org roles that run an organisation. This file had constants for
-#: Tier 1 and Tier 4 but none for Tier 2, so `require_org_role("org_owner",
-#: "org_admin")` stayed written out by hand at every call site — the exact habit
-#: this module exists to end, one tier lower down. Named here so the HR PII gate
-#: reads from the same place as everything else.
-ORG_ADMIN_ROLES: tuple[str, ...] = ("org_owner", "org_admin")
-
-
 def strongest(roles: list[str] | tuple[str, ...] | None) -> str | None:
     """The most privileged platform role from a set, or None."""
     if not roles:
