@@ -50,6 +50,19 @@ export const STATUS_LABELS = {
   rejected:    'Declined',
 };
 
+// The Devanagari half of the same six labels. It was a FOURTH status-label map,
+// written out identically in DashboardPage.jsx and TasksListPage.jsx as a local
+// `STATUS_HI` (05-today-dashboard.md §5 asks for it to be folded in here). Two
+// copies of a translation table is how "requested" ends up meaning two things.
+export const STATUS_LABELS_HI = {
+  todo:        'कार्य',
+  in_progress: 'चालू',
+  in_review:   'समीक्षा',
+  done:        'सम्पन्न',
+  requested:   'अनुरोध',
+  rejected:    'अस्वीकृत',
+};
+
 export const APPROVAL_LABELS = {
   pending:        'Awaiting Approval',
   pending_client: 'Awaiting Client Approval',

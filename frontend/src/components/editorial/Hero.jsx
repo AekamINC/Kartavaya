@@ -1,18 +1,34 @@
 import React from 'react';
 import WeekStrip from './WeekStrip';
 
+/**
+ * Today's hero — 05-today-dashboard.md §1 (Hero) and §5.
+ *
+ * The `dateLine` array API is kept deliberately: the line mixes scripts
+ * ("MONDAY · सोमवार · 26 July 2026 · विक्रम संवत् 2083") and each segment needs
+ * its own font and casing, which a formatted string cannot express. Segments
+ * marked `hindi` take `--font-indic` and opt out of the uppercase tracking.
+ *
+ * The separator dots are gone; §1 gives the row a 9px gap and lets the script
+ * change do the separating, which is one fewer glyph competing with the date.
+ */
 export default function Hero({ name, dateLine, lede, weekDates, dotsByDay, todayIdx }) {
   return (
     <section className="k-hero">
+      {/* opacity .03 — §1: above about .05 the watermark competes with the lede
+          sitting on top of it. Fixed decorative Devanagari, so --font-hindi
+          rather than --font-indic: it does not follow the user's language. */}
       <div className="k-hero__watermark" aria-hidden="true">कर्तव्य</div>
       <div className="k-hero__inner">
         {dateLine && (
           <div className="k-hero__meta">
             {dateLine.map((seg, i) => (
-              <React.Fragment key={seg.label ?? i}>
-                {i > 0 && <span className="k-hero__sep">·</span>}
-                <span className={seg.hindi ? 'k-hero__samvat' : 'k-hero__date'}>{seg.label}</span>
-              </React.Fragment>
+              <span
+                key={seg.label ?? i}
+                className={seg.hindi ? 'k-hero__samvat' : 'k-hero__date'}
+              >
+                {seg.label}
+              </span>
             ))}
           </div>
         )}

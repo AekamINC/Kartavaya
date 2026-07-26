@@ -1,134 +1,67 @@
 /**
- * DashboardPage.jsx — editorial Today screen.
- * Layout: Hero → StatRow (4 tiles) → k-twocol (main + side columns)
- * Data: existing /tasks + /activity/team/:id + /api/verse-of-the-day
+ * Today — 05-today-dashboard.md.
+ *
+ * Layout: Hero → OnboardingChecklist (mounted by AppShell) → ReceivablesKPI →
+ * StatRow → QuickActions → two columns.
+ *
+ * The component is `TodayPage`, matching the nav label (§3). The FILE keeps its
+ * name: renaming it means editing `App.jsx`, which this change does not own.
+ *
+ * Endpoints are unchanged from staging because the ones §4 specifies do not
+ * exist yet. What is needed, in priority order:
+ *
+ *   GET /v1/me/stats      {open, due_today, overdue, completed_week,
+ *                          project_count} computed server-side against
+ *                          completed_at. Today the page pulls every task and
+ *                          derives all five in the browser.
+ *   GET /v1/tasks?scope=mine&open=1   server-side filter, so the plate is not
+ *                          1,000 rows filtered client-side.
+ *   GET /v1/me/onboarding  the five real booleans, so the checklist can finish.
+ *   GET /v1/me/modules     active modules plus the viewer's grants, so the
+ *                          receivables call is never made by someone without a
+ *                          Ganit grant rather than merely 403'd.
+ *
+ * §4 also asks to settle on `/v1`. `/api/tasks`, `/api/activity/feed` and
+ * `/api/verse-of-the-day` have no `/v1` twin in `backend/server.py`, so moving
+ * them is a backend change, not a string edit here.
  */
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
+import { Hero, Citation } from '../components/editorial';
+import { logger } from '../lib/utils';
+import { DAYS_HI_SUN, mondayIndex, weekDates as weekDatesFor, dayWindow } from '../lib/dates';
+import { vikramLabel } from '../lib/vikram';
 import {
-  Hero, StatTile, Card, DueChip, PriorityDot, ProjectTag, AvatarStack, Citation,
-} from '../components/editorial';
-import { AVATAR_COLORS, relTime, userInitials, logger } from '../lib/utils';
-import { STATUS_COLORS, STATUS_LABELS } from '../components/drawer/constants';
-import { SkeletonCardGrid, SkeletonCard, SkeletonRegion } from '../components/ui/Skeleton';
+  StatRow, QuickActions, ReceivablesKPI, TaskListCard,
+  ProjectStatus, UpcomingWeek, TeamPulse, TodaySkeleton,
+} from './today';
 
-const STATUS_HI = { todo:'कार्य', in_progress:'चालू', in_review:'समीक्षा', done:'सम्पन्न', requested:'अनुरोध' };
-
-const ONBOARD_STEPS = [
-  { key: 'logo', label: 'Add your company logo', hi: 'लोगो जोड़ें', hint: 'You can always change this later', route: '/settings/organisation' },
-  { key: 'team', label: 'Invite your team', hi: 'टीम को आमंत्रित करें', hint: 'Get paid faster with collaboration', route: '/teams' },
-  { key: 'project', label: 'Create your first project', hi: 'पहली योजना बनाएं', hint: 'Organize work across boards', route: '/projects' },
-  { key: 'contact', label: 'Add a contact', hi: 'संपर्क जोड़ें', hint: 'Know your clients and leads', route: '/graha' },
-  { key: 'invoice', label: 'Send your first invoice', hi: 'पहला चालान भेजें', hint: 'Get paid faster', route: '/ganit' },
-];
-
-function OnboardingChecklist({ tasks, teams, navigate }) {
-  const storageKey = 'kv_onboard_dismissed';
-  const [dismissed, setDismissed] = useState(() => localStorage.getItem(storageKey) === '1');
-  if (dismissed) return null;
-
-  // The checklist could never complete. `logo`, `contact` and `invoice` were
-  // hardcoded false, so doneCount maxed at 2 of 5 and the self-dismissing
-  // branch below was unreachable — a user who uploaded a logo, added a contact
-  // and sent an invoice still saw "2 of 5 steps complete" forever, with three
-  // ticks they could not earn. (`team` was also inferred from having more than
-  // one PROJECT, which is a different fact from having invited anyone.)
-  //
-  // Only steps with a real signal are shown, so the list is honest and can
-  // finish. Restoring the other three needs GET /v1/me/onboarding returning
-  // {logo, team, project, contact, invoice} from org.logo_url,
-  // org.member_count, boards, graha.contact_count and ganit.invoice_count —
-  // and it should read the onboarding wizard's completion too, since a user who
-  // finished that has already done several of these.
-  const taskCount = Array.isArray(tasks) ? tasks.length : 0;
-  const done = {
-    project: (teams || []).length > 0 || taskCount > 0,
-  };
-
-  const steps = ONBOARD_STEPS.filter(st => st.key in done);
-  const doneCount = Object.values(done).filter(Boolean).length;
-  const total = steps.length;
-  if (doneCount >= total) return null;
-
-  return (
-    <div className="k-onboard">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <h3 className="k-onboard__title">Get started with Kartavya</h3>
-          <p className="k-onboard__sub">{doneCount} of {total} steps complete · <span style={{ fontFamily: 'var(--font-hindi)' }}>{doneCount}/{total} चरण पूर्ण</span></p>
-        </div>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => { localStorage.setItem(storageKey, '1'); setDismissed(true); }}>
-          Dismiss
-        </button>
-      </div>
-      <div className="k-onboard__progress">
-        <div className="k-onboard__progress-fill" style={{ width: `${(doneCount / total) * 100}%` }} />
-      </div>
-      {steps.map(s => (
-        <div key={s.key} className="k-onboard__step" onClick={() => navigate(s.route)}>
-          <div className={`k-onboard__check ${done[s.key] ? 'k-onboard__check--done' : ''}`}>
-            {done[s.key] ? '✓' : ''}
-          </div>
-          <div>
-            <div className={`k-onboard__step-label ${done[s.key] ? 'k-onboard__step-label--done' : ''}`}>
-              {s.label} <span style={{ fontFamily: 'var(--font-hindi)', fontSize: 12, color: 'var(--ink-faint)' }}>{s.hi}</span>
-            </div>
-            <div className="k-onboard__step-hint">{s.hint}</div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function vikramDate(now) {
-  // The year is right to within a couple of weeks a year, which is honest enough
-  // for a decorative date line. The MONTH was not: it was a naive +1 offset from
-  // the Gregorian month, so the named month was wrong for most of any given
-  // month. Vikram Samvat months follow a lunar calendar and do not align to
-  // Gregorian boundaries at all.
-  //
-  // Showing a specific Hindu month name that is wrong is worse than showing no
-  // month, especially to the audience most likely to notice. Year only, until
-  // there is a real panchang source.
-  const year = now.getFullYear() + 56 + (now.getMonth() >= 3 ? 1 : 0);
-  return { year };
-}
-
-// ── Main component ────────────────────────────────────────────────────────────
-export default function DashboardPage({ teams = [] }) {
+export default function TodayPage({ teams = [] }) {
   const navigate  = useNavigate();
   const user      = currentUser();
   const firstName = (user?.full_name || user?.name || 'there').split(' ')[0];
+  const myId      = user?.user_id;
 
-  const now    = new Date();
-  const dayIdx = (now.getDay() + 6) % 7;
-  const { year: vikYear } = vikramDate(now);
+  const now       = new Date();
+  const todayIdx  = mondayIndex(now);
+  const weekDates = useMemo(() => weekDatesFor(), []);
+  const { today, tomorrow, weekEnd, weekAgo } = useMemo(() => dayWindow(), []);
 
-  const weekDates = useMemo(() => {
-    const base = new Date(); base.setHours(0,0,0,0);
-    const idx  = (base.getDay() + 6) % 7;
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(base); d.setDate(base.getDate() - idx + i); return d;
-    });
-  }, []);
-
-  // ── State ──────────────────────────────────────────────────────────────────
   const [loading,  setLoading]  = useState(true);
   const [tasks,    setTasks]    = useState([]);
   const [activity, setActivity] = useState([]);
   const [verse,    setVerse]    = useState(null);
-  const [teamId,   setTeamId]   = useState('');
   const [finStats, setFinStats] = useState(null);
 
-  // ── Fetch tasks ────────────────────────────────────────────────────────────
   useEffect(() => {
     setLoading(true);
     Promise.all([
       api.get('/tasks'),
       api.get('/verse-of-the-day').catch(() => null),
+      // Not gated client-side: there is no module/grant registry in the bundle.
+      // A viewer without a Ganit grant gets a 403 and the KPI never renders.
       api.get('/v1/ganit/stats').catch(() => null),
     ]).then(([tRes, vRes, fRes]) => {
       setTasks(Array.isArray(tRes.data) ? tRes.data : []);
@@ -137,314 +70,185 @@ export default function DashboardPage({ teams = [] }) {
     }).catch(logger.error).finally(() => setLoading(false));
   }, []);
 
-  // ── Fetch activity across all teams ────────────────────────────────────────
   useEffect(() => {
     if (!teams?.length) return;
-    setTeamId(teams[0]?.team_id);
     api.get('/activity/feed', { params: { limit: 6 } })
        .then(r => setActivity(r.data || []))
        .catch(() => {});
   }, [teams]);
 
-  // ── Derived ────────────────────────────────────────────────────────────────
-  const { today, tomorrow, weekEnd, weekAgo } = useMemo(() => {
-    const t = new Date(); t.setHours(0,0,0,0);
-    const tom = new Date(t); tom.setDate(t.getDate()+1);
-    const we  = new Date(t); we.setDate(t.getDate()+7);
-    const wa  = new Date(t); wa.setDate(t.getDate()-7);
-    return { today: t, tomorrow: tom, weekEnd: we, weekAgo: wa };
-  }, []);
+  const derived = useMemo(() => {
+    const safe = Array.isArray(tasks) ? tasks : [];
+    const isOpen = t => t.status !== 'done';
+    const dueOn  = (t, from, to) => t.due_at && new Date(t.due_at) >= from && new Date(t.due_at) < to;
 
-  const myId = user?.user_id;
-  const {
-    myPlate, openTasks, openProjectCount, dueToday, overdue, completedWeek, inProgress, inReview, upcoming,
-  } = useMemo(() => {
-    const safeTasks = Array.isArray(tasks) ? tasks : [];
-    // Was: created_by_user_id === myId || user_id === myId || assigned. That put
-    // work you created and handed to someone else on YOUR plate, so for a
-    // manager the list degraded into "everything I have ever touched".
-    // Your plate is what is assigned to you.
-    const myTasks   = safeTasks.filter(t => t.assignee_user_ids?.includes(myId));
-    const open      = safeTasks.filter(t => t.status !== 'done');
+    // YOUR plate is what is ASSIGNED to you. Staging also matched
+    // created_by_user_id and user_id, so work you created and handed to someone
+    // else sat here too — for a manager the list became "everything I have ever
+    // touched". Delegated work is its own section below, not this one.
+    const mine     = safe.filter(t => t.assignee_user_ids?.includes(myId));
+    const myOpen   = mine.filter(isOpen);
+    // Created by me, open, and assigned to somebody else (or nobody).
+    const waiting  = safe.filter(t =>
+      isOpen(t) &&
+      t.created_by_user_id === myId &&
+      !t.assignee_user_ids?.includes(myId));
+
+    const open = safe.filter(isOpen);
+
     return {
-      myPlate:       myTasks.filter(t => t.status !== 'done').slice(0, 6),
-      openTasks:     open,
-      // `|| 1` turned zero into one, so a brand-new org with nothing in it was
-      // told its open tasks span one project.
+      myOpen,
+      myPlate:  myOpen.slice(0, 6),
+      waiting:  waiting.slice(0, 5),
+      waitingTotal: waiting.length,
+      openTotal: open.length,
+      // No `|| 1`. It turned zero into one, so a brand-new org with nothing in
+      // it was told its open tasks span one project.
       openProjectCount: new Set(open.map(t => t.team_id).filter(Boolean)).size,
-      dueToday:      safeTasks.filter(t => t.due_at && new Date(t.due_at) >= today && new Date(t.due_at) < tomorrow),
-      overdue:       safeTasks.filter(t => t.due_at && new Date(t.due_at) < today && t.status !== 'done'),
-      // Was updated_at: a task finished two months ago but edited yesterday
-      // counted as done this week, and the completion rate below inherited the
-      // error. completed_at is the real signal — DueChip already uses it.
-      completedWeek: safeTasks.filter(t => t.status === 'done' && t.completed_at && new Date(t.completed_at) >= weekAgo),
-      inProgress:    safeTasks.filter(t => t.status === 'in_progress'),
-      inReview:      safeTasks.filter(t => t.status === 'in_review'),
-      upcoming:      safeTasks
-        .filter(t => t.due_at && new Date(t.due_at) >= today && new Date(t.due_at) <= weekEnd && t.status !== 'done')
-        .sort((a,b) => new Date(a.due_at) - new Date(b.due_at)).slice(0, 6),
+      dueToday:  safe.filter(t => dueOn(t, today, tomorrow)),
+      overdue:   safe.filter(t => t.due_at && new Date(t.due_at) < today && isOpen(t)),
+      myDueToday: myOpen.filter(t => dueOn(t, today, tomorrow)).length,
+      myOverdue:  myOpen.filter(t => t.due_at && new Date(t.due_at) < today).length,
+      // completed_at, not updated_at. A task finished two months ago but edited
+      // yesterday counted as done this week, and the completion rate inherited
+      // the error. DueChip already reads completed_at.
+      completedWeek: safe.filter(t =>
+        t.status === 'done' && t.completed_at && new Date(t.completed_at) >= weekAgo).length,
+      upcoming: safe
+        .filter(t => t.due_at && new Date(t.due_at) >= today && new Date(t.due_at) <= weekEnd && isOpen(t))
+        .sort((a, b) => new Date(a.due_at) - new Date(b.due_at))
+        .slice(0, 6),
+      statusCounts: safe.reduce((a, t) => { a[t.status] = (a[t.status] || 0) + 1; return a; }, {}),
     };
   }, [tasks, myId, today, tomorrow, weekEnd, weekAgo]);
 
-  // Status breakdown
-  const statusOrder = ['todo','in_progress','in_review','done'];
-  const statusCounts = tasks.reduce((a, t) => { a[t.status] = (a[t.status]||0)+1; return a; }, {});
-  const totalTasks   = tasks.length || 1;
-  const doneCount    = statusCounts.done || 0;
-  const donePct      = Math.round((doneCount / totalTasks) * 100);
-
-  // Task dots on week strip
   const dotsByDay = useMemo(() => {
     const map = {};
-    tasks.forEach(t => {
-      if (!t.due_at) return;
+    for (const t of tasks) {
+      if (!t.due_at) continue;
       const key = new Date(t.due_at).toDateString();
-      map[key] = (map[key]||0)+1;
-    });
+      map[key] = (map[key] || 0) + 1;
+    }
     return map;
   }, [tasks]);
 
-  // Date line for Hero
-  const DAYS_HI = ['रविवार','सोमवार','मंगलवार','बुधवार','गुरुवार','शुक्रवार','शनिवार'];
   const dateLine = [
     { label: now.toLocaleDateString('en-IN', { weekday: 'long' }).toUpperCase() },
-    { label: DAYS_HI[now.getDay()], hindi: true },
+    { label: DAYS_HI_SUN[now.getDay()], hindi: true },
     { label: now.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) },
-    { label: `विक्रम संवत् ${vikYear}`, hindi: true },
+    // Year only — the month was a naive +1 offset from the Gregorian month and
+    // wrong for most of any given month. See lib/vikram.js.
+    { label: vikramLabel(now), hindi: true },
   ];
 
-  const ledeCopy = loading ? null : (
+  // Scoped to the reader: "You have" was counting the whole org's due-today and
+  // overdue tasks, and its open count read `myPlate.length` — the SLICED list —
+  // so anyone with seven or more open tasks was told they had six.
+  const ledeCopy = loading ? null : derived.myOpen.length === 0 ? (
     <>
-      You have <b>{myPlate.length} open task{myPlate.length !== 1 ? 's' : ''}</b>
-      {dueToday.length > 0 && <>, <b>{dueToday.length} due today</b></>}
-      {overdue.length > 0   && <>, <b style={{ color: 'var(--danger)' }}>{overdue.length} running late</b></>}.
+      <b>Nothing is assigned to you right now.</b>{' '}
+      {derived.openTotal > 0
+        ? <>The team has {derived.openTotal} open task{derived.openTotal !== 1 ? 's' : ''} between them.</>
+        : <>The board is clear.</>}
+      {' '}<span className="hi-mute">करणीयं कुरु —</span> <em>Do what must be done.</em>
+    </>
+  ) : (
+    <>
+      You have <b>{derived.myOpen.length} open task{derived.myOpen.length !== 1 ? 's' : ''}</b>
+      {derived.myDueToday > 0 && <>, <b>{derived.myDueToday} due today</b></>}
+      {derived.myOverdue > 0 && <>, <b className="k-today__late">{derived.myOverdue} running late</b></>}.
       {' '}<span className="hi-mute">करणीयं कुरु —</span> <em>Do what must be done.</em>
     </>
   );
 
+  const openTask = () => navigate('/tasks');
+
   return (
     <div className="k-screen">
-      {/* Hero */}
       <Hero
         name={firstName}
         dateLine={dateLine}
         lede={ledeCopy}
         weekDates={weekDates}
         dotsByDay={dotsByDay}
-        todayIdx={dayIdx}
+        todayIdx={todayIdx}
       />
 
-      {/* Onboarding checklist — shown for new orgs */}
-      {!loading && <OnboardingChecklist tasks={tasks} teams={teams} navigate={navigate} />}
+      {/* The onboarding checklist is NOT rendered here. §5 asks to reconcile the
+          two implementations; neither was dead code — `AppShell` mounts
+          `components/OnboardingChecklist.jsx` on every route while this page
+          declared a second, different one inline, so a new user saw two
+          checklists with different steps and different storage keys at once.
+          The AppShell one survives: it derives all four of its steps from the
+          API, this one hardcoded three of five to `false` and could never
+          finish. Its duplicate `.k-onboard` CSS block was also overriding the
+          floating card's own rules. */}
 
-      {/* Hero KPI — "How's my business?" */}
-      {finStats && (
-        <div className="k-hero-kpi">
-          <div className="k-hero-kpi__main">
-            <div className="k-hero-kpi__label">RECEIVABLES <span className="hi-mute">प्राप्य</span></div>
-            <div className="k-hero-kpi__value">₹{Number(finStats.total_outstanding || 0).toLocaleString('en-IN')}</div>
-            <div className="k-hero-kpi__sub">{finStats.unpaid_count || 0} unpaid invoice{(finStats.unpaid_count || 0) !== 1 ? 's' : ''}</div>
-          </div>
-          <div className="k-hero-kpi__secondary">
-            <div className="k-hero-kpi__card">
-              <div className="k-hero-kpi__card-val" style={{ color: 'var(--ok)' }}>₹{Number(finStats.total_collected || 0).toLocaleString('en-IN')}</div>
-              <div className="k-hero-kpi__card-lbl">Collected <span className="hi-mute">वसूला</span></div>
-            </div>
-            <div className="k-hero-kpi__card">
-              <div className="k-hero-kpi__card-val" style={{ color: 'var(--danger)' }}>{finStats.overdue_count || 0}</div>
-              <div className="k-hero-kpi__card-lbl">Overdue <span className="hi-mute">विलंबित</span></div>
-            </div>
-            <div className="k-hero-kpi__card">
-              <div className="k-hero-kpi__card-val">{finStats.total_invoices || 0}</div>
-              <div className="k-hero-kpi__card-lbl">Total invoices <span className="hi-mute">कुल चालान</span></div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ReceivablesKPI stats={finStats} />
 
-      {/* Stat row */}
-      {loading ? (
-        <SkeletonCardGrid count={4} lines={2} />
-      ) : (
-        <div className="k-stats">
-          <StatTile variant="blue"  label="OPEN TASKS"          sanskrit="खुला"      value={openTasks.length}     sub={`across ${openProjectCount} project${openProjectCount !== 1 ? 's' : ''}`} />
-          <StatTile variant="teal"  label="DUE TODAY"           sanskrit="आज"        value={dueToday.length}      sub={`${dueToday.filter(t=>t.priority==='high'||t.priority==='urgent').length} high priority`} />
-          <StatTile variant="amber" label="OVERDUE"             sanskrit="विलंबित"   value={overdue.length}       sub={overdue.length > 0 ? 'needs attention' : 'all on track'} />
-          <StatTile variant="red"   label="DONE THIS WEEK"      sanskrit="इस सप्ताह" value={completedWeek.length} sub={completedWeek.length > 0 ? `${Math.round((completedWeek.length/(tasks.length||1))*100)}% completion rate` : 'keep going'} />
-        </div>
-      )}
+      {loading ? <TodaySkeleton /> : (
+        <>
+          <StatRow
+            open={derived.openTotal}
+            projectCount={derived.openProjectCount}
+            dueToday={derived.dueToday.length}
+            dueTodayHigh={derived.dueToday.filter(t => t.priority === 'high' || t.priority === 'urgent').length}
+            overdue={derived.overdue.length}
+            completedWeek={derived.completedWeek}
+            completionRate={tasks.length ? Math.round((derived.completedWeek / tasks.length) * 100) : 0}
+          />
 
-      {/* Quick actions */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
-        {[
-          // Was four emoji — ✏️ 🧾 👤 ⏱️ — which render differently on every
-          // platform, in a product whose iconography is otherwise a consistent
-          // 16px stroke set. navIcons is that set.
-          { label: '+ New Task',     icon: ICONS.tasks,      action: () => navigate('/tasks') },
-          { label: 'Create Invoice', icon: ICONS.ganit,      action: () => navigate('/ganit') },
-          { label: 'Add Contact',    icon: ICONS.graha,      action: () => navigate('/graha') },
-          { label: 'Log Time',       icon: ICONS.time,       action: () => navigate('/time') },
-        ].map(q => (
-          <button key={q.label} className="k-btn k-btn--ghost" onClick={q.action}
-            style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--rule-soft)' }}>
-            <span>{q.icon}</span> {q.label}
-          </button>
-        ))}
-      </div>
+          <QuickActions onNavigate={navigate} />
 
-      {/* Two-column body */}
-      {!loading && (
-        <section className="k-twocol">
-          {/* LEFT column */}
-          <div className="k-col k-col--main">
-            {/* On your plate */}
-            <Card
-              title="On your plate"
-              sanskrit="आपके हाथ में"
-              right={<button className="k-link" onClick={() => navigate('/tasks')}>View all →</button>}
-              noPad
-            >
-              {myPlate.length === 0 ? (
-                <div style={{ padding: '20px 24px', color: 'var(--ink-3)', fontStyle: 'italic', fontFamily: 'var(--font-display)' }}>
-                  Nothing assigned to you right now.
-                </div>
-              ) : myPlate.map((t, i) => {
-                const assignees = (t.assignee_names || []).map((name, j) => ({
-                  name, color: AVATAR_COLORS[j % AVATAR_COLORS.length],
-                }));
-                return (
-                  <button key={t.task_id} className="k-taskrow" onClick={() => navigate('/tasks')}>
-                    <PriorityDot priority={t.priority} />
-                    {/* Was KAR-{i+100}, fabricated from the MAP INDEX: the third row was
-                        KAR-102 until something above it closed, at which point a
-                        different task became KAR-102. Two lists could show the same
-                        id for different tasks, and an id a user quoted in a message
-                        referred to nothing. Same form as the drawer and the board. */}
-                    <span className="k-taskrow__id">#{t.task_id?.slice(-6) || '—'}</span>
-                    <span className="k-taskrow__title">{t.title}</span>
-                    {t.team_name && <ProjectTag name={t.team_name} dense />}
-                    <DueChip date={t.due_at} status={t.status} completedAt={t.completed_at} />
-                    <AvatarStack users={assignees} size={20} max={3} />
-                  </button>
-                );
-              })}
-            </Card>
-
-            {/* Status breakdown */}
-            <Card title="Project status" sanskrit="स्थिति विवरण" right={<button className="k-link" onClick={() => navigate('/projects')}>Open projects →</button>}>
-              <div className="k-stackbar">
-                {statusOrder.map(s => {
-                  const count = statusCounts[s] || 0;
-                  if (!count) return null;
-                  return (
-                    <div key={s} className="k-stackbar__seg"
-                      style={{ flex: count, background: STATUS_COLORS[s] }}
-                      title={`${STATUS_LABELS[s]}: ${count}`}
-                    />
-                  );
-                })}
-              </div>
-              <div className="k-statuslegend">
-                {statusOrder.map(s => (
-                  <div key={s} className="k-statuslegend__row">
-                    <span className="k-statuslegend__dot" style={{ background: STATUS_COLORS[s] }} />
-                    <span className="k-statuslegend__lbl">{STATUS_LABELS[s]}</span>
-                    <span className="k-statuslegend__hi">{STATUS_HI[s]}</span>
-                    <span className="k-statuslegend__count">{statusCounts[s] || 0}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="k-meter">
-                <div className="k-meter__bar">
-                  <div className="k-meter__fill" style={{ width: donePct + '%' }} />
-                </div>
-                <div className="k-meter__lbl">
-                  {donePct}% complete · <span className="hi-mute">{donePct}% सम्पन्न</span>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {/* RIGHT column */}
-          <div className="k-col k-col--side">
-            {/* Upcoming */}
-            <Card title="Upcoming this week" sanskrit="आगामी सप्ताह">
-              <div className="k-upcoming">
-                {upcoming.length === 0 ? (
-                  <div style={{ color: 'var(--ink-3)', fontStyle: 'italic', fontSize: 13 }}>Nothing due this week.</div>
-                ) : upcoming.map(t => {
-                  const assignees = (t.assignee_names || []).map((name, j) => ({ name, color: AVATAR_COLORS[j % AVATAR_COLORS.length] }));
-                  return (
-                    <button key={t.task_id} className="k-upcoming__row" onClick={() => navigate('/tasks')}>
-                      <DueChip date={t.due_at} flush status={t.status} completedAt={t.completed_at} />
-                      <div className="k-upcoming__body">
-                        <div className="k-upcoming__title">{t.title}</div>
-                        {t.team_name && <div className="k-upcoming__meta"><ProjectTag name={t.team_name} dense /></div>}
-                      </div>
-                      <AvatarStack users={assignees} size={18} max={2} />
-                    </button>
-                  );
-                })}
-              </div>
-            </Card>
-
-            {/* Recent activity */}
-            <Card title="Team pulse" sanskrit="दल की गतिविधि" right={<button className="k-link" onClick={() => navigate('/activity')}>All activity →</button>}>
-              <div className="k-activity">
-                {activity.length === 0 ? (
-                  <div style={{ color: 'var(--ink-3)', fontStyle: 'italic', fontSize: 13 }}>No recent activity.</div>
-                ) : activity.slice(0,6).map((a, i) => {
-                  const initials = userInitials(a.actor_name || a.actor || '');
-                  const color    = AVATAR_COLORS[i % AVATAR_COLORS.length];
-                  return (
-                    <div key={a.event_id || i} className="k-activity__row">
-                      <span className="k-avatar" style={{ width: 22, height: 22, fontSize: 9, background: color, flexShrink: 0 }}>
-                        {initials}
-                      </span>
-                      <div className="k-activity__body">
-                        <div className="k-activity__line">
-                          <b>{(a.actor_name || a.actor || 'Someone').split(' ')[0]}</b>{' '}
-                          <span className="k-mute">{a.verb || a.type || 'updated'}</span>{' '}
-                          <span className="k-activity__what">{a.subject_title || a.task_title || ''}</span>
-                        </div>
-                        <div className="k-activity__when">{relTime(a.created_at || a.at)}</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-
-            {/* Verse of the day */}
-            {verse ? (
-              <Citation
-                sanskrit={verse.sanskrit}
-                english={verse.english}
-                source={verse.ref || 'Bhagavad Gītā'}
+          <section className="k-twocol">
+            <div className="k-col k-col--main">
+              <TaskListCard
+                title="On your plate"
+                sanskrit="आपके हाथ में"
+                tasks={derived.myPlate}
+                linkLabel="View all →"
+                onLink={openTask}
+                onOpenTask={openTask}
+                emptyTitle={{ en: 'Nothing assigned to you', hi: 'आपके लिए कुछ नहीं' }}
+                emptyBody="Tasks appear here as soon as someone assigns one to you."
               />
-            ) : (
-              <Citation
-                sanskrit="कर्मण्येवाधिकारस्ते मा फलेषु कदाचन"
-                english="You have a right to action alone, never to its fruits."
-                source="Bhagavad Gītā 2.47"
-              />
-            )}
-          </div>
-        </section>
-      )}
 
-      {loading && (
-        <SkeletonRegion label="Loading dashboard…" className="k-twocol">
-          <div className="k-col k-col--main">
-            <SkeletonCard lines={5} />
-            <SkeletonCard lines={4} />
-          </div>
-          <div className="k-col k-col--side">
-            <SkeletonCard lines={3} showAvatar />
-            <SkeletonCard lines={3} showAvatar />
-            <SkeletonCard lines={2} />
-          </div>
-        </SkeletonRegion>
+              {/* New section. This is where the tasks that were polluting "On
+                  your plate" belong — created by you, being done by someone
+                  else. Hidden entirely when you have delegated nothing, so it
+                  costs nothing to an individual contributor. */}
+              {derived.waitingTotal > 0 && (
+                <TaskListCard
+                  title="Waiting on others"
+                  sanskrit="अन्य पर निर्भर"
+                  tasks={derived.waiting}
+                  illustration="teams"
+                  linkLabel={derived.waitingTotal > derived.waiting.length ? 'View all →' : undefined}
+                  onLink={openTask}
+                  onOpenTask={openTask}
+                  emptyTitle={{ en: 'Nothing delegated', hi: 'कुछ सौंपा नहीं' }}
+                  emptyBody="Work you create and assign to someone else shows up here."
+                />
+              )}
+
+              <ProjectStatus
+                counts={derived.statusCounts}
+                total={tasks.length}
+                onOpenProjects={() => navigate('/projects')}
+              />
+            </div>
+
+            <div className="k-col k-col--side">
+              <UpcomingWeek tasks={derived.upcoming} onOpenTask={openTask} />
+              <TeamPulse activity={activity} onOpenActivity={() => navigate('/activity')} />
+              <Citation
+                sanskrit={verse?.sanskrit || 'कर्मण्येवाधिकारस्ते मा फलेषु कदाचन'}
+                english={verse?.english || 'You have a right to action alone, never to its fruits.'}
+                source={verse?.ref || 'Bhagavad Gītā 2.47'}
+              />
+            </div>
+          </section>
+        </>
       )}
     </div>
   );
