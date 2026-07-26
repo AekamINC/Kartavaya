@@ -1,0 +1,614 @@
+/* sanvaad.css — Sanvaad (channels) and Varta (WhatsApp).
+ *
+ * From `design-handover/06-sanvaad-varta.md` §1. Every value is a token from
+ * `00-tokens.md`; the only literals are the two WhatsApp conventions (§9
+ * "genuinely fixed literals"), and even those are read through `--tick-read`
+ * and `--wa-green` rather than restated — with one exception noted at
+ * `.wa__tick--read`.
+ *
+ * The old page was a fourth token vocabulary: `--border`, `--err`, `--ink-2/3/4`,
+ * `--bg-soft`, `--k-deep`, `--k-deep-bg`. The map 06 gives is applied throughout:
+ *   --border    → --outline-variant     --err      → --danger
+ *   --ink-4     → --on-surface-faint    --ink-3    → --on-surface-3
+ *   --ink-2     → --on-surface-2        --ink      → --on-surface
+ *   --bg-soft   → --s-low               --k-deep   → --primary
+ *   --k-deep-bg → --primary-container
+ */
+
+/* The Devanagari apposition — 24-bilingual-devanagari.md: `--font-indic` on any
+ * label that follows the user's language, one step down in size and weight so
+ * the recognised word keeps the hierarchy (01-navigation.md). */
+.sv__hi {
+  font-family: var(--font-indic);
+  font-size: .85em;
+  font-weight: 400;
+  color: var(--on-surface-3);
+}
+.tabs__b.on .sv__hi, .sv__lt .sv__hi { color: inherit; }
+
+/* ── Three-pane shell ────────────────────────────────────────────────────── */
+
+/* 06 §1 gives `height: calc(100vh - var(--topbar-h) - 46px)`. `--topbar-h` is
+   declared nowhere in this tree, and an unresolved var() drops the whole
+   declaration — the exact failure `check-tokens.mjs` exists to catch. The
+   clamp is the same intent without claiming a global token this module does
+   not own: never shorter than a usable conversation, never taller than the
+   viewport minus the page header and tab bar. */
+.sv {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  height: clamp(420px, calc(100vh - 250px), 900px);
+  height: clamp(420px, calc(100dvh - 250px), 900px);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface);
+}
+.sv--thread { grid-template-columns: 264px minmax(0, 1fr) 330px; }
+
+/* `min-height: 0` on both flex children is what lets the log scroll instead of
+   stretching the grid. Without it the log grows to content height and the whole
+   page scrolls — which is what made the old autoscroll so violent. */
+.sv__list {
+  display: flex;
+  flex-direction: column;
+  background: var(--s-low);
+  border-right: 1px solid var(--outline-variant);
+  min-height: 0;
+}
+.sv__chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+
+/* 06 §5: the same centred wrapper cannot hold both the empty state and the
+   live chat. Under `align-items: center` a percentage height resolves against a
+   stretched-then-centred box, so the chat pane does not fill its column. Two
+   containers, not one. */
+.sv__blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  min-width: 0;
+  padding: var(--sp-5);
+}
+
+/* ── Channel list ────────────────────────────────────────────────────────── */
+
+.sv__lhd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+.sv__lt { font-size: var(--t-body-sm); font-weight: 700; color: var(--on-surface); }
+.sv__lsearch { padding: 8px 13px; border-bottom: 1px solid var(--outline-variant); flex-shrink: 0; }
+.sv__lnew {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 13px;
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+.sv__lnew-row { display: flex; gap: 6px; }
+.sv__scroll { flex: 1; overflow-y: auto; min-height: 0; }
+.sv__sec {
+  padding: 12px 13px 4px;
+  font-size: var(--t-label-sm);
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+.sv__none { padding: 14px; font-size: var(--t-label); color: var(--on-surface-3); }
+
+.ch {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 13px;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  color: var(--on-surface);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.ch:hover { background: var(--s-container); }
+.ch.on { background: var(--primary-container); border-left-color: var(--primary); }
+.ch.on .ch__n, .ch.on .ch__last { color: var(--on-primary-container); }
+.ch:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.ch__ic { width: 17px; flex-shrink: 0; color: var(--on-surface-faint); margin-top: 1px; }
+.ch__txt { min-width: 0; flex: 1; }
+/* `white-space: nowrap` matters more than it looks: a slug like `#gst-filing-q2`
+   breaks at the hyphens and wraps to two lines otherwise. */
+.ch__n {
+  font-size: var(--t-body-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ch.unread .ch__n { font-weight: 700; }
+.ch__last {
+  font-size: 11.5px;
+  color: var(--on-surface-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.ch__badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-family: var(--font-mono);
+  font-size: var(--t-label-sm);
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+/* ── Chat header ─────────────────────────────────────────────────────────── */
+
+.sv__hd {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+.sv__hd-n { font-size: var(--t-title); font-weight: 700; color: var(--on-surface); }
+.sv__hd-d {
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sv__hd-act { margin-left: auto; display: flex; align-items: center; gap: var(--sp-1); flex-shrink: 0; }
+
+/* ── Message log ─────────────────────────────────────────────────────────── */
+
+/* The pill is a sibling of the scroll port, not a child of it: an
+   `position: absolute` element inside an `overflow-y: auto` box is positioned
+   against the scrollable content, so it scrolls away exactly when it is needed. */
+.sv__logwrap { position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.sv__log { flex: 1; overflow-y: auto; min-height: 0; padding: 12px 0; }
+.sv__sep {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 10px 18px 6px;
+  font-size: var(--t-label-sm);
+  font-weight: 600;
+  color: var(--on-surface-3);
+}
+.sv__sep::before, .sv__sep::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--outline-variant);
+}
+.sv__newline {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 8px 18px 4px;
+  font-size: var(--t-label-sm);
+  font-weight: 700;
+  color: var(--danger);
+}
+.sv__newline::before, .sv__newline::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--danger) 45%, transparent);
+}
+
+.msg { display: flex; gap: 10px; padding: 3px 18px; position: relative; }
+.msg:hover { background: var(--s-lowest); }
+/* Consecutive-message grouping, which the old page did not have: a burst of
+   five messages from one person cost five avatars and five names. Keep the
+   avatar slot for alignment, hide it with `visibility` so nothing shifts. */
+.msg--cont { padding-top: 1px; }
+.msg--cont .msg__av { visibility: hidden; }
+.msg__av { flex-shrink: 0; }
+.msg__c { min-width: 0; flex: 1; }
+.msg__hd { display: flex; align-items: baseline; gap: 8px; }
+.msg__who { font-size: var(--t-body-sm); font-weight: 700; color: var(--on-surface); }
+.msg__when {
+  font-size: 10.5px;
+  color: var(--on-surface-faint);
+  font-variant-numeric: tabular-nums;
+}
+.msg__b {
+  font-size: var(--t-body-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  text-wrap: pretty;
+  color: var(--on-surface);
+  overflow-wrap: anywhere;
+}
+.msg__gone { color: var(--on-surface-faint); font-style: italic; }
+
+/* Hover actions float in a raised tray rather than reserving a row per message.
+   The old page rendered six always-present buttons at `opacity: .4` under every
+   message — six focusable targets per message for a keyboard user. */
+.msg__act {
+  position: absolute;
+  top: -10px;
+  right: 14px;
+  display: flex;
+  gap: 1px;
+  padding: 2px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  box-shadow: var(--shadow-2);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+  z-index: 2;
+}
+.msg:hover .msg__act, .msg:focus-within .msg__act { opacity: 1; }
+.msg__actb {
+  display: grid;
+  place-items: center;
+  min-width: 26px;
+  height: 24px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--on-surface-2);
+  font: inherit;
+  font-size: var(--t-body-sm);
+  cursor: pointer;
+}
+.msg__actb:hover { background: var(--s-container); color: var(--on-surface); }
+
+.msg__thr {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+  padding: 2px 7px 2px 4px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--primary-text);
+  font: inherit;
+  font-size: var(--t-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+.msg__thr:hover { background: var(--primary-container); color: var(--on-primary-container); }
+
+/* ── Reaction chips ──────────────────────────────────────────────────────── */
+
+.rx { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.rx__c {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  background: var(--s-container);
+  border: 1px solid transparent;
+  color: var(--on-surface-2);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard);
+}
+/* `.mine` is the state the old page could not express: it kept counts only, so
+   clicking an existing chip gave no clue whether it would add or remove. */
+.rx__c.mine {
+  background: var(--primary-container);
+  border-color: var(--primary);
+  color: var(--on-primary-container);
+}
+.rx__c b { font-size: 10.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ── Jump to latest ──────────────────────────────────────────────────────── */
+
+.sv__jump {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+  color: var(--on-surface-2);
+  font: inherit;
+  font-size: var(--t-label);
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 3;
+  animation: svJump var(--dur-base) var(--ease-enter);
+}
+.sv__jump:hover { background: var(--s-container); color: var(--on-surface); }
+@keyframes svJump {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ── Composer ────────────────────────────────────────────────────────────── */
+
+.cmp {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 11px 18px;
+  border-top: 1px solid var(--outline-variant);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.cmp__ta {
+  flex: 1;
+  min-height: 38px;
+  max-height: 180px;
+  resize: none;
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--outline-variant);
+  background: var(--s-lowest);
+  color: var(--on-surface);
+  font: inherit;
+  font-size: var(--t-body-sm);
+  line-height: 1.5;
+}
+.cmp__ta::placeholder { color: var(--on-surface-faint); }
+.cmp__ta:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+/* `background: var(--primary)` — NOT `var(--k-grad)`. That variable is written
+   at runtime by applyPrefs and resolves to nothing on first paint, which cost
+   the mobile composer its visible send button once already. */
+.cmp__send {
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--on-primary);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.cmp__send:hover:not(:disabled) { background: var(--primary-hover); }
+.cmp__send:disabled { background: var(--s-high); color: var(--on-surface-faint); cursor: default; }
+
+.cmp__reply {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 7px 18px;
+  border-top: 1px solid var(--outline-variant);
+  background: var(--s-low);
+  font-size: var(--t-label);
+  color: var(--on-surface-2);
+  flex-shrink: 0;
+}
+.cmp__reply-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* One icon button for the module's chrome. `margin-left: auto` is a property of
+   the SLOT, not of the button — baking it into the button class put the chat
+   header's back arrow at the right-hand end of the header. */
+.svbtn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--on-surface-3);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.svbtn:hover { background: var(--s-container); color: var(--on-surface); }
+.cmp__reply > .svbtn, .sv__thread-hd > .svbtn { margin-left: auto; }
+
+/* Emoji picker — the five quick reactions are content, not chrome, so they stay
+   as emoji (06 §Plus). Everything that was emoji-as-interface is an SVG now. */
+.emo {
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+.emo__b {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.emo__b:hover { background: var(--s-container); }
+
+/* ── Thread panel ────────────────────────────────────────────────────────── */
+
+/* The replies were unreachable: the old page posted `parent_message_id`,
+   incremented `thread_count`, and clicking "3 replies" only re-set the reply
+   target. `GET /messaging/messages/:id/thread` already existed server-side. */
+.sv__thread {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--outline-variant);
+  background: var(--s-low);
+}
+.sv__thread-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+.sv__thread-t { font-size: var(--t-body-sm); font-weight: 700; color: var(--on-surface); }
+.sv__thread-n { font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.sv__thread-root {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+
+/* ── Varta · WhatsApp ────────────────────────────────────────────────────── */
+
+.wa { display: flex; flex-direction: column; min-height: 0; min-width: 0; height: 100%; }
+.sv__chat > .wa { flex: 1; }
+.wa__log { flex: 1; overflow-y: auto; min-height: 0; padding: 14px 18px; display: flex; flex-direction: column; }
+.wa__b {
+  max-width: 70%;
+  padding: 8px 13px;
+  border-radius: 12px;
+  font-size: var(--t-body-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-bottom: 6px;
+}
+.wa__b--in {
+  background: var(--s-container);
+  color: var(--on-surface);
+  border-bottom-left-radius: 3px;
+  align-self: flex-start;
+}
+/* 06 §1 wrote `background: var(--primary); color: var(--on-primary)`, but
+   `00-tokens.md` §9 measures the read tick against `--primary-container` and is
+   the token source of record. It also has to be: `--tick-read` clears 3:1 on
+   `--primary-container` in both themes and on `--primary` in neither
+   (2.31:1 light). The container is also the correct M3 role for a tonal bubble. */
+.wa__b--out {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  border-bottom-right-radius: 3px;
+  align-self: flex-end;
+}
+.wa__m {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+  font-size: 9.5px;
+  margin-top: 4px;
+  opacity: .72;
+  font-variant-numeric: tabular-nums;
+}
+.wa__tick { width: 14px; height: 10px; flex-shrink: 0; }
+/* `delivered` and `read` were both '✓✓' — the read receipt, the entire point of
+   the second tick, carried no information. The distinction is COLOUR. */
+.wa__tick--read { color: var(--tick-read); }
+/* `00-tokens.md` §9 gives --tick-read two values — #1E88C7 light, #4FC3F7 dark —
+   because a pale blue on the pale mint light bubble measures 1.59:1. The landed
+   token block in kartavaya-design.css declares only the dark one. Corrected here
+   until that file carries both; that file is not this module's to edit. */
+[data-theme="light"] .wa__tick--read { color: #1E88C7; }
+.wa__fail { color: var(--danger); }
+
+/* Meta rejects free-form text outside a 24-hour window from the customer's last
+   inbound message — only approved templates go through. The old composer offered
+   a plain text field regardless, so the send failed and surfaced as a generic
+   error toast. */
+.wa__win {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  font-size: 11.5px;
+  background: var(--warn-container);
+  color: var(--on-warn-container);
+  border-top: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  flex-shrink: 0;
+}
+.wa__win--open {
+  background: var(--s-low);
+  color: var(--on-surface-3);
+  border-top-color: var(--outline-variant);
+}
+.wa__win-t { min-width: 0; }
+
+.wa__tpl { display: flex; flex-direction: column; gap: 6px; padding: 10px 18px; border-top: 1px solid var(--outline-variant); background: var(--s-low); flex-shrink: 0; }
+.wa__tpl-l { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3); }
+.wa__tpl-row { display: flex; gap: 6px; align-items: flex-end; }
+.wa__tpl-prev {
+  padding: 8px 11px;
+  border-radius: var(--r-sm);
+  background: var(--s-lowest);
+  border: 1px solid var(--outline-variant);
+  font-size: var(--t-label);
+  line-height: 1.5;
+  color: var(--on-surface-2);
+  white-space: pre-wrap;
+  max-height: 96px;
+  overflow-y: auto;
+}
+.wa__none { padding: 10px 18px; font-size: var(--t-label); color: var(--on-surface-3); }
+
+/* Varta sub-surfaces that are lists rather than chat */
+.wa__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-4); }
+.wa__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--outline-variant);
+}
+.wa__row-m { min-width: 0; }
+.wa__row-t { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); }
+.wa__row-s { font-size: var(--t-label); color: var(--on-surface-3); margin-top: 2px; }
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+/* Below 900px the three-pane grid cannot hold a 264px rail, a message log and a
+   330px thread panel. The list becomes a first screen and the thread panel
+   overlays the chat rather than competing with it for width. */
+@media (max-width: 900px) {
+  .sv, .sv--thread { grid-template-columns: minmax(0, 1fr); }
+  .sv__list { border-right: 0; border-bottom: 1px solid var(--outline-variant); max-height: 42%; }
+  .sv[data-pane="chat"] .sv__list { display: none; }
+  .sv[data-pane="list"] .sv__chat { display: none; }
+  .sv__thread {
+    position: absolute;
+    inset: 0;
+    border-left: 0;
+    z-index: 4;
+  }
+  .sv { position: relative; }
+  .msg, .sv__hd, .cmp, .wa__log { padding-left: 12px; padding-right: 12px; }
+  .wa__b { max-width: 84%; }
+}

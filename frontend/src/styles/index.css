@@ -9,6 +9,9 @@
 @import './dark-theme.css';
 @import './components.css';
 @import './module.css';
+@import './drawer.css';
 @import './animations.css';
 @import './mobile-responsive.css';
 @import './generate-report.css';
+@import './sanvaad.css';
+@import './boards.css';
