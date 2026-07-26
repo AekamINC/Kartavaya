@@ -23,11 +23,8 @@ One file per route. Each page is lazy-imported in `App.js`.
 | `NotificationsSettingsPage.js` | `/settings/notifications` | All authed | `GET /api/notifications` |
 | `AdminPage.jsx` | `/admin` | Admin only | `GET /api/admin/*` |
 | `ClientProjectsPage.jsx` | `/client`, `/client/projects` | Client role | `GET /api/client/projects` |
-| `ClientBoardPage.jsx` | `/client/project/:projectId` | Client role | delegates to `ClientPagesImpl` |
-| `ClientPagesImpl.jsx` | *(implementation)* | Client role | `GET /api/client/tasks`, `GET /api/client/approvals` |
-| `ClientPages.jsx` | *(re-export barrel)* | — | — |
-| `ClientPortal.jsx` | `/client/legacy` | Client role | legacy fallback |
-| `ClientPortalPage.jsx` | *(unused — safe to delete)* | — | — |
+| `ClientBoardPage.jsx` | `/client/project/:projectId` | Client role | re-exports from `ClientPages.jsx` |
+| `ClientPages.jsx` | *(implementation — `ClientProjectsPage.jsx` and `ClientBoardPage.jsx` re-export from it)* | Client role | — |
 
 ## Rules
 
@@ -53,5 +50,4 @@ One file per route. Each page is lazy-imported in `App.js`.
 | `TemplatesPage.jsx` | `backend/routers/templates.py` |
 | `DashboardPage.jsx` | `backend/routers/dashboards.py` |
 | `LoginPage.jsx` | `lib/auth.js`, `backend/auth_router.py` |
-| `ClientPagesImpl.jsx` | `backend/server.py` client routes, `backend/approvals_router.py` |
 | Adding a new page | `App.js` lazy import + route, `components/layout/Sidebar.jsx` nav link |

@@ -55,7 +55,6 @@ const CategoriesPage        = lazy(() => import('./pages/CategoriesPage'));
 const AdminPage             = lazy(() => import('./pages/AdminPage'));
 const ClientProjectsPage    = lazy(() => import('./pages/ClientProjectsPage'));
 const ClientBoardPage       = lazy(() => import('./pages/ClientBoardPage'));
-const ClientPortal          = lazy(() => import('./pages/ClientPortal'));
 const InboxPage             = lazy(() => import('./pages/InboxPage'));
 const BillingPage           = lazy(() => import('./pages/BillingPage'));
 const AdminBillingPage      = lazy(() => import('./pages/AdminBillingPage'));
@@ -176,7 +175,13 @@ function AppRouter() {
         </Route>
 
         {/* Legacy client portal (direct access, own Protected wrapper) */}
-        <Route path="/client/legacy" element={<Protected><ClientPortal /></Protected>} />
+        {/* /client/legacy retired. It rendered a dark portal from an earlier
+            design era — hardcoded K.dark surfaces and #8aa5be copy, a fourth
+            token vocabulary alongside the k-* CSS, Tailwind and the drawer's
+            --ink set — so a client landing there saw a different product from
+            the one their accountant was describing on the phone. Redirected
+            rather than removed, so an emailed link still arrives somewhere. */}
+        <Route path="/client/legacy" element={<Navigate to="/client" replace />} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
