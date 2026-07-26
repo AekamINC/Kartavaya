@@ -967,10 +967,22 @@ async def list_approvals(
     pool = await get_pool()
     await _verify_client_access(pool, str(client_id), org_id)
 
+    # Verifying the CLIENT and then reading by CONTENT id alone is not a scope.
+    # `content_id` is a separate path parameter, so a caller could pair their own
+    # client with another org's content id and read that org's review history —
+    # who reviewed it, when, and the reviewer's notes verbatim.
+    #
+    # `hub_content_approvals` has no org_id; the tenant path is
+    # content_item_id -> hub_content_items.client_id -> hub_clients.org_id, and
+    # the client half is already proved above. The sibling write path
+    # (`review_content`) has always scoped its UPDATE with `AND client_id=`;
+    # only this read was missing it.
     rows = await pool.fetch(
-        "SELECT * FROM staging.hub_content_approvals "
-        "WHERE content_item_id=$1 ORDER BY created_at DESC",
-        content_id,
+        "SELECT a.* FROM staging.hub_content_approvals a "
+        "JOIN staging.hub_content_items ci ON ci.id = a.content_item_id "
+        "WHERE a.content_item_id=$1 AND ci.client_id=$2::uuid "
+        "ORDER BY a.created_at DESC",
+        content_id, str(client_id),
     )
     return {"data": [dict(r) for r in rows]}
 

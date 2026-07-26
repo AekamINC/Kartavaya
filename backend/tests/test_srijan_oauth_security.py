@@ -359,6 +359,39 @@ async def test_publish_authority_uses_named_role_sets_not_literals():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 4b · Child tables with no org_id must scope through their parent
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def test_content_approvals_scope_through_the_content_item(
+    api_client, mock_pool, app, as_admin, org_a,
+):
+    """`hub_content_approvals` has no org_id. Proving the CLIENT and then reading
+    by CONTENT id alone is not a scope — client and content arrive as separate
+    path parameters, so a caller could pair their own client with another org's
+    content id and read that org's reviewer names and notes.
+    """
+    from routers.hub import _hub_gate
+
+    app.dependency_overrides[_hub_gate] = lambda: None
+    mock_pool.fetch.return_value = []
+    mock_pool.fetchrow.return_value = {"id": CLIENT_A, "org_id": ORG_A}
+
+    other_content = "f1000000-0000-0000-0000-0000000000ff"
+    resp = await api_client.get(
+        f"/api/v1/hub/clients/{CLIENT_A}/content/{other_content}/approvals"
+    )
+    assert resp.status_code == 200
+
+    sql, *args = mock_pool.fetch.call_args[0]
+    assert "staging.hub_content_items" in sql, (
+        "approvals read did not join through to something that carries a tenant"
+    )
+    assert "ci.client_id=$2::uuid" in sql
+    assert args[1] == CLIENT_A
+    app.dependency_overrides.pop(_hub_gate, None)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 5 · The token read in the ad sync is scoped, and its arity is right
 # ══════════════════════════════════════════════════════════════════════════════
 
