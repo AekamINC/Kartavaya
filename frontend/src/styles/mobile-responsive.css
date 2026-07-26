@@ -3,11 +3,11 @@
  *
  * ── WHERE THIS FILE SITS IN THE CASCADE. Read this before adding a rule.
  *
- * `styles/index.css` imports this file EIGHTH of thirteen, and `App.jsx`
+ * `styles/index.css` imports this file SEVENTH of twelve, and `App.jsx`
  * imports the barrel BEFORE kartavaya-design.css, editorial.css and
  * settings.css. Measured load order in the running app:
  *
- *   tokens · layout · modern-components · dark-theme · components · module ·
+ *   tokens · layout · dark-theme · components · module ·
  *   drawer · animations · [THIS FILE] · generate-report · sanvaad · palette ·
  *   boards · kartavaya-design · editorial · settings · (lazy page CSS)
  *

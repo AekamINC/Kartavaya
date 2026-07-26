@@ -6,7 +6,6 @@ Global CSS files. All imported at the top of `App.js` in this order:
 import './App.css';              // legacy — being phased out
 import './lib/tokens.css';       // design tokens (CSS vars) — must be first
 import './styles/layout.css';
-import './styles/modern-components.css';
 import './styles/dark-theme.css';
 import './styles/animations.css';
 import './styles/mobile-responsive.css';
@@ -20,7 +19,6 @@ because all other files reference its `var(--)` values.
 | File | Purpose | Touch when… |
 |---|---|---|
 | `layout.css` | Page grid, sidebar width, content area, scroll behaviour | Changing the overall page structure or sidebar dimensions |
-| `modern-components.css` | Shared component-level styles (cards, inputs, dropdowns) that apply globally | Adding a globally-styled component pattern |
 | `dark-theme.css` | Dark mode overrides via `[data-theme="dark"]` selector | Adding a new token that needs a dark-mode value |
 | `animations.css` | Keyframe animations and transition utilities (`fade-in`, `slide-up`, etc.) | Adding or changing a shared animation |
 | `mobile-responsive.css` | Media query overrides for `md` (768px) and below | Fixing mobile layout issues |
