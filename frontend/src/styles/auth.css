@@ -1,0 +1,503 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   auth.css — 12-auth-onboarding.md
+
+   Imported from components/layout/AuthShell.jsx and pages/onboarding/, NOT
+   from styles/index.css. Every value here resolves to a token from
+   00-tokens.md; the auth surface was the last one on the cold-blue system and
+   nothing in this file reintroduces a literal that cannot follow the theme.
+
+   The shell grid itself (.au, .au__brand, .au__mesh, .au__form, .au__box and
+   the 900px breakpoint) already matches 12 §1 byte for byte in
+   styles/settings.css — commit 884e11a put it there. Redeclaring it here would
+   be two definitions of one layout that drift. This file adds only what 12 §5
+   still asks for on top of it: the watermark, the rotating module line, the M3
+   tonal field, the strength meter and the onboarding wizard.
+
+   NAMING DEVIATION, deliberate: 12 §1 specs the tonal field as `.fld` /
+   `.fld__i` / `.fld__l` / `.fld__e`. `.fld` and `.fld__l` are ALREADY TAKEN by
+   components.css:45-46 — a stacked wrapper with an uppercase 11px label — and
+   two rules named `.fld__l` would fight over every auth label. The auth field
+   is `.aufld*` here. Declarations are otherwise the ones 12 §1 gives.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Brand panel: watermark ──────────────────────────────────────────────
+   12 §1. The drift is 40s — slow enough to be felt rather than seen. It is not
+   a --dur-* token, so it cannot be scaled by --ix without collapsing to a 40ms
+   strobe at the "none" setting; the OS setting switches it off outright. */
+.au__wm {
+  position: absolute; right: -4%; bottom: -6%;
+  font-family: var(--font-hindi);
+  font-size: clamp(170px, 20vw, 300px);
+  line-height: .8; color: #fff; opacity: .045;
+  letter-spacing: -.03em; white-space: nowrap; pointer-events: none;
+  animation: auWmDrift 40s var(--ease-standard) infinite alternate;
+}
+@keyframes auWmDrift { to { transform: translate3d(-14px, -10px, 0) rotate(-1.2deg); } }
+@media (prefers-reduced-motion: reduce) { .au__wm { animation: none; } }
+
+/* Everything in the panel sits above the mesh and the watermark. */
+.au__top, .au__mid, .au__rot, .au__dots { position: relative; z-index: 2; }
+
+.au__top { display: flex; align-items: center; gap: 12px; }
+.au__mark { flex-shrink: 0; border-radius: var(--r-sm); display: block; }
+.au__wordmark {
+  font-family: var(--font-display); font-size: 20px; font-weight: 500;
+  color: #fff; letter-spacing: .004em; line-height: 1.1;
+}
+.au__by {
+  font-size: 8.5px; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--side-fg-faint); font-weight: 600; margin-top: 3px;
+}
+
+/* ── Brand panel: rotating module line ───────────────────────────────────
+   12 §2 — "BrandPanel · mesh · watermark · rotating module line". One panel
+   across login, invite, forgot and reset, so the left half never changes shape
+   while the right half does. */
+.au__rot {
+  padding: 15px 17px; border-radius: var(--r-lg);
+  background: rgba(255, 255, 255, .055);
+  border: 1px solid var(--side-rule);
+  animation: auRotIn var(--dur-slow) var(--ease-emph);
+}
+@keyframes auRotIn { from { opacity: 0; transform: translateY(7px); } }
+.au__rot-k {
+  font-size: 8.5px; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--primary-vivid); font-weight: 700; margin-bottom: 9px;
+}
+.au__rot-t { display: flex; align-items: baseline; gap: 9px; margin-bottom: 7px; }
+.au__rot-hi { font-family: var(--font-hindi); font-size: 21px; color: #fff; }
+.au__rot-en {
+  font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--side-fg-faint); font-weight: 600;
+}
+.au__rot-l {
+  font-size: 12.5px; line-height: 1.62; color: var(--side-fg-mute);
+  margin: 0; text-wrap: pretty;
+}
+.au__rot-f {
+  margin-top: 10px; padding-top: 9px;
+  border-top: 1px solid var(--side-rule);
+  font-size: 10.5px; color: var(--side-fg-faint);
+}
+.au__dots { display: flex; gap: 6px; }
+/* Not `.au__dot` — that is the 4px "Powered by" separator in settings.css. */
+.au__dotb {
+  width: 22px; height: 3px; border-radius: var(--r-pill);
+  background: var(--side-rule); border: 0; padding: 0; cursor: pointer;
+  transition: background var(--dur-base) var(--ease-emph);
+}
+.au__dotb:hover { background: var(--side-fg-mute); }
+.au__dotb.on { background: var(--primary-vivid); }
+
+/* ── Form pane heading ───────────────────────────────────────────────────── */
+.au__h { margin-bottom: 22px; }
+.au__kick {
+  font-size: 10px; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--primary-text); font-weight: 700; margin-bottom: 9px;
+}
+.au__h1 {
+  font-family: var(--font-display); font-size: clamp(25px, 2.6vw, 31px);
+  font-weight: 400; line-height: 1.2; letter-spacing: -.024em;
+  margin: 0; color: var(--on-surface);
+}
+.au__em { font-style: italic; color: var(--primary-text); }
+/* On the brand panel the ground is rgb(--side-ink), near-black in both themes.
+   --primary-text is the LIGHT-mode text teal (#046B64) and sits at ~2.2:1 there
+   — it is measured against --bg in 00 §12, not against the sidebar ink. The
+   vivid accent is the one that reads on that panel. */
+.au__brand .au__em { color: var(--primary-vivid); }
+.au__hi {
+  font-family: var(--font-indic); font-size: .62em;
+  color: var(--on-surface-3); margin-left: 11px; font-style: normal;
+}
+.au__lede {
+  font-size: 13px; color: var(--on-surface-3); line-height: 1.6;
+  margin: 11px 0 0; text-wrap: pretty;
+}
+
+/* ── Banner ──────────────────────────────────────────────────────────────
+   12: "Errors surface only as toasts — no inline field validation anywhere in
+   the flow. A wrong password produces a toast in the corner while the field
+   that caused it looks fine." The banner is where a server-side rejection
+   lands; the toast stays for network failure, which is not about a field. */
+.au__banner {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 11px 13px; border-radius: var(--r-sm);
+  font-size: 12.5px; line-height: 1.5; margin-bottom: 16px;
+  animation: auBannerIn var(--dur-base) var(--ease-emph);
+}
+@keyframes auBannerIn { from { opacity: 0; transform: translateY(-4px); } }
+.au__banner svg { flex-shrink: 0; margin-top: 1px; }
+.au__banner--err  { background: var(--danger-container); color: var(--on-danger-container); }
+.au__banner--ok   { background: var(--ok-container);     color: var(--on-ok-container); }
+.au__banner--info { background: var(--s-container);      color: var(--on-surface-2); }
+
+/* ── Fields ──────────────────────────────────────────────────────────────── */
+.au__fields { display: flex; flex-direction: column; gap: 14px; }
+
+/* 12 §1, M3 tonal field. The label SCALES rather than changing font-size, so
+   the transition is compositor-only. `:not(:placeholder-shown)` is why every
+   input carries placeholder=" " — without it the label never floats for a
+   pre-filled field, which is exactly the accept-invite case. */
+.aufld { position: relative; }
+.aufld__i {
+  width: 100%; height: 54px; padding: 21px 14px 7px;
+  border: 0; border-bottom: 1px solid var(--outline);
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: var(--s-container);
+  font: inherit; font-size: 14.5px; font-family: var(--font-ui);
+  color: var(--on-surface);
+  transition: background var(--dur-fast), border-color var(--dur-fast);
+}
+.aufld__i:hover { background: var(--s-high); }
+.aufld__i:focus {
+  outline: none; border-bottom: 2px solid var(--primary);
+  padding-bottom: 6px; background: var(--s-high);
+}
+.aufld__l {
+  position: absolute; left: 14px; top: 17px;
+  font-size: 14.5px; color: var(--on-surface-3);
+  pointer-events: none; transform-origin: left top;
+  transition: transform var(--dur-fast) var(--ease-standard), color var(--dur-fast);
+}
+.aufld__i:focus ~ .aufld__l,
+.aufld__i:not(:placeholder-shown) ~ .aufld__l {
+  transform: translateY(-11px) scale(.74); color: var(--primary-text);
+}
+.aufld__i[aria-invalid="true"] { border-bottom-color: var(--danger); }
+.aufld__i[aria-invalid="true"] ~ .aufld__l { color: var(--danger); }
+.aufld__e {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 11.5px; line-height: 1.45; color: var(--danger); margin-top: 5px;
+  animation: auFldE var(--dur-base) var(--ease-emph);
+}
+.aufld__e svg { flex-shrink: 0; margin-top: 1px; }
+@keyframes auFldE { from { opacity: 0; transform: translateY(-3px); } }
+.aufld__hint { display: block; font-size: 11px; color: var(--on-surface-3); margin-top: 5px; line-height: 1.45; }
+
+/* The reveal control sits inside the field box, so it must clear the padding
+   the floating label needs above it. */
+.aufld__eye {
+  position: absolute; right: 8px; top: 14px;
+  width: 28px; height: 28px; display: grid; place-items: center;
+  border: 0; background: none; padding: 0; cursor: pointer;
+  border-radius: var(--r-xs); color: var(--on-surface-3);
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.aufld__eye:hover { background: var(--s-highest); color: var(--on-surface); }
+.aufld--eye .aufld__i { padding-right: 46px; }
+
+/* Live confirm match — AUTH-SPEC "green tick / red cross". */
+.aufld__mark { position: absolute; right: 44px; top: 18px; display: inline-flex; }
+.aufld__mark--ok { color: var(--ok); }
+.aufld__mark--no { color: var(--danger); }
+
+/* ── Strength meter (12 §1) ───────────────────────────────────────────────
+   Four segments, and the label states what is MISSING rather than scoring the
+   user. #A6A44A is 12 §1's own literal for the third rung; it is not a token
+   and is not invented here. `border-radius: 2px` in 12 §1 is replaced by
+   --r-pill because 00 §3 forbids a hard-coded radius outright, and on a 3px
+   bar the two render identically. */
+.stg { display: flex; gap: 3px; margin-top: 8px; }
+.stg__b {
+  flex: 1; height: 3px; border-radius: var(--r-pill);
+  background: var(--s-high);
+  transition: background var(--dur-base) var(--ease-standard);
+}
+.stg__b.on1 { background: var(--danger); }
+.stg__b.on2 { background: var(--warn); }
+.stg__b.on3 { background: #A6A44A; }
+.stg__b.on4 { background: var(--ok); }
+.stg__t { font-size: 11px; color: var(--on-surface-3); margin-top: 5px; }
+.stg__miss { color: var(--on-surface-2); }
+
+/* ── Actions and links ───────────────────────────────────────────────────── */
+.au__actions { margin-top: 20px; display: flex; flex-direction: column; gap: 12px; }
+.au__row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-top: 12px;
+}
+.au__link {
+  border: 0; background: none; padding: 0; cursor: pointer;
+  font: inherit; font-size: 12.5px; font-weight: 600;
+  color: var(--primary-text); text-align: left;
+}
+.au__link:hover { text-decoration: underline; }
+.au__link--mute { color: var(--on-surface-3); font-weight: 500; }
+.au__note { text-align: center; font-size: 12px; color: var(--on-surface-3); margin: 18px 0 0; line-height: 1.6; }
+
+/* 44px hit area on every auth link, per AUTH-SPEC's mobile note. */
+@media (max-width: 900px) {
+  .au__link { min-height: 44px; display: inline-flex; align-items: center; }
+}
+
+.au__btn {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  width: 100%; min-height: 46px; padding: 12px 18px;
+  border: 0; border-radius: var(--r-sm); cursor: pointer;
+  font-family: var(--font-ui); font-size: 13.5px; font-weight: 600;
+  background: var(--primary); color: var(--on-primary);
+  transition: background var(--dur-fast), transform var(--dur-fast) var(--ease-spring);
+}
+.au__btn:hover { background: var(--primary-hover); }
+.au__btn:active { transform: scale(.99); }
+.au__btn:disabled { opacity: .5; pointer-events: none; }
+.au__spin {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--on-primary) 34%, transparent);
+  border-top-color: var(--on-primary);
+  animation: auSpin .7s linear infinite; flex-shrink: 0;
+}
+@keyframes auSpin { to { transform: rotate(360deg); } }
+
+.au__check {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--on-surface-2); cursor: pointer;
+}
+.au__check input { position: absolute; opacity: 0; width: 0; height: 0; }
+.au__checkb {
+  width: 17px; height: 17px; border-radius: var(--r-xs);
+  border: 1.5px solid var(--outline); display: grid; place-items: center;
+  color: transparent; flex-shrink: 0;
+  transition: background var(--dur-fast), border-color var(--dur-fast);
+}
+.au__check input:checked + .au__checkb {
+  background: var(--primary); border-color: var(--primary); color: var(--on-primary);
+}
+.au__check input:focus-visible + .au__checkb {
+  outline: 2px solid var(--primary); outline-offset: 2px;
+}
+
+/* AUTH-SPEC: invalid-credentials shakes the form. Transform only. */
+.au__box.is-shake { animation: auShake 420ms cubic-bezier(.36, .07, .19, .97); }
+@keyframes auShake {
+  10%, 90% { transform: translateX(-1px); }
+  20%, 80% { transform: translateX(2px); }
+  30%, 50%, 70% { transform: translateX(-4px); }
+  40%, 60% { transform: translateX(4px); }
+}
+@media (prefers-reduced-motion: reduce) { .au__box.is-shake { animation: none; } }
+
+/* NOT DEFINED HERE, deliberately: the "what you are accepting" block — org,
+   inviter, role and grants — that 12 §4 wants on the accept-invite screen.
+   It needs `GET /auth/invite/:token`, which 12 §4 itself lists as NEW and which
+   does not exist in backend/auth_router.py. Shipping the CSS for a panel that
+   can never be populated is how dead rules accumulate. It goes in with the
+   endpoint.
+
+   ═══════════════════════════════════════════════════════════════════════════
+   Onboarding wizard — 12 §1 and §2
+   ═══════════════════════════════════════════════════════════════════════════ */
+.ob {
+  position: relative; min-height: 100vh; background: var(--bg);
+  padding: clamp(24px, 5vw, 56px) clamp(20px, 5vw, 44px);
+  overflow: hidden;
+}
+.ob__wm {
+  position: absolute; right: -3%; bottom: -8%;
+  font-family: var(--font-hindi); font-size: clamp(160px, 22vw, 320px);
+  line-height: .8; color: var(--on-surface);
+  opacity: .035; pointer-events: none; user-select: none;
+}
+.ob__inner { position: relative; z-index: 1; width: 100%; max-width: 880px; }
+
+/* Step rail — 12 §1 verbatim. On a phone only the current step keeps its
+   label; five labels on a 393px rail truncate to nonsense. */
+.ob__rail { display: flex; align-items: center; gap: 0; margin-bottom: 34px; list-style: none; padding: 0; }
+.ob__st { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ob__n {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 11.5px; font-weight: 700;
+  background: var(--s-container); color: var(--on-surface-3);
+  transition: background var(--dur-base), color var(--dur-base);
+}
+.ob__st.on .ob__n { background: var(--primary); color: var(--on-primary); }
+.ob__st.done .ob__n { background: var(--ok); color: #fff; }
+.ob__lb { font-size: 12px; color: var(--on-surface-3); }
+.ob__st.on .ob__lb { color: var(--on-surface); font-weight: 600; }
+.ob__line { flex: 1; height: 1px; background: var(--outline-variant); margin: 0 11px; min-width: 14px; }
+.ob__st.done + .ob__line { background: var(--ok); }
+@media (max-width: 720px) {
+  .ob__lb { display: none; }
+  .ob__st.on .ob__lb { display: block; }
+}
+
+/* Direction-aware step transition — 12 §1. transform/opacity only: a pane
+   holding a twelve-card module grid is expensive to relayout. */
+.ob__pane { animation: obIn var(--dur-slow) var(--ease-emph); }
+.ob__pane.back { animation: obBack var(--dur-slow) var(--ease-emph); }
+@keyframes obIn   { from { opacity: 0; transform: translateX(22px); } }
+@keyframes obBack { from { opacity: 0; transform: translateX(-22px); } }
+
+.ob__head { margin-bottom: 22px; }
+.ob__h1 {
+  font-family: var(--font-display); font-size: clamp(28px, 3.4vw, 40px);
+  font-weight: 400; line-height: 1.14; letter-spacing: -.03em;
+  margin: 0 0 10px; color: var(--on-surface);
+}
+.ob__h2 {
+  font-family: var(--font-display); font-size: clamp(21px, 2.4vw, 27px);
+  font-weight: 400; line-height: 1.22; letter-spacing: -.024em;
+  margin: 0 0 8px; color: var(--on-surface);
+}
+.ob__em { font-style: italic; color: var(--primary-text); }
+.ob__hi { font-family: var(--font-indic); font-size: 14px; color: var(--on-surface-3); margin: 0 0 12px; }
+.ob__sub, .ob__lede {
+  font-size: 13px; line-height: 1.65; color: var(--on-surface-3);
+  margin: 0; max-width: 62ch; text-wrap: pretty;
+}
+.ob__lede { font-size: 14px; margin-bottom: 22px; }
+.ob__mid { text-align: left; max-width: 56ch; }
+.ob__fine { font-size: 11.5px; color: var(--on-surface-3); margin-top: 14px; }
+.ob__fields { display: flex; flex-direction: column; gap: 16px; max-width: 420px; }
+.ob__muted { color: var(--on-surface-3); font-size: 11.5px; }
+.ob__err { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--danger); }
+.ob__cta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 24px; }
+
+/* Module grid */
+.ob__mods {
+  display: grid; gap: 10px; margin-bottom: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+}
+.ob__mod {
+  display: flex; flex-direction: column; gap: 6px; text-align: left;
+  padding: 13px 14px; cursor: pointer;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-md);
+  background: var(--surface); color: var(--on-surface);
+  transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+.ob__mod:hover { background: var(--s-low); }
+.ob__mod.on { border-color: var(--primary); background: var(--primary-container); color: var(--on-primary-container); }
+.ob__mod.on.sens { border-color: var(--danger); }
+.ob__mod-t { display: flex; align-items: baseline; gap: 8px; }
+.ob__mod-hi { font-family: var(--font-hindi); font-size: 15px; font-weight: 500; }
+.ob__mod-en { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--on-surface-3); font-weight: 700; }
+.ob__mod.on .ob__mod-en { color: inherit; opacity: .74; }
+.ob__mod-d { font-size: 11.5px; line-height: 1.5; color: var(--on-surface-3); }
+.ob__mod.on .ob__mod-d { color: inherit; opacity: .82; }
+.ob__mod-f { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+.ob__lock {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  font-weight: 700; color: var(--danger);
+}
+.ob__check {
+  width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--outline); color: transparent;
+  transition: background var(--dur-fast), border-color var(--dur-fast);
+}
+.ob__check.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+
+.ob__bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--on-surface-2);
+  padding: 10px 0; border-top: 1px solid var(--outline-variant);
+}
+.ob__note {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 12px; line-height: 1.55; margin-top: 12px;
+  padding: 11px 13px; border-radius: var(--r-sm);
+  background: var(--s-container); color: var(--on-surface-2);
+}
+.ob__note svg { flex-shrink: 0; margin-top: 1px; }
+
+/* Invite step */
+.ob__invite { margin-bottom: 16px; }
+.ob__inviterow { display: flex; gap: 9px; align-items: flex-start; }
+.ob__list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.ob__row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: var(--r-sm);
+  background: var(--surface); border: 1px solid var(--outline-variant);
+}
+.ob__row-e { flex: 1; min-width: 0; font-size: 13px; color: var(--on-surface); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ob__x {
+  width: 28px; height: 28px; flex-shrink: 0; cursor: pointer;
+  display: grid; place-items: center; border: 0; background: none;
+  border-radius: var(--r-xs); color: var(--on-surface-3);
+}
+.ob__x:hover { background: var(--s-container); color: var(--danger); }
+.ob__empty {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 24px; margin-bottom: 14px; text-align: center;
+  border: 1px dashed var(--outline-variant); border-radius: var(--r-md);
+}
+.ob__empty-t { font-size: 13.5px; font-weight: 600; color: var(--on-surface); }
+.ob__empty-d { font-size: 12px; color: var(--on-surface-3); line-height: 1.55; }
+
+/* Template step */
+.ob__tpls { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(248px, 1fr)); }
+.ob__tpl {
+  display: flex; flex-direction: column; gap: 7px; text-align: left;
+  padding: 13px 14px; cursor: pointer;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-md);
+  background: var(--surface); color: var(--on-surface);
+  transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+.ob__tpl:hover { background: var(--s-low); }
+.ob__tpl.on { border-color: var(--primary); background: var(--primary-container); color: var(--on-primary-container); }
+.ob__tpl-h { display: flex; align-items: center; gap: 8px; }
+.ob__tpl-n { font-size: 13.5px; font-weight: 600; }
+.ob__tpl-hi { font-family: var(--font-hindi); font-size: 12px; color: var(--on-surface-3); }
+.ob__tpl.on .ob__tpl-hi { color: inherit; opacity: .74; }
+.ob__tpl-d { font-size: 11.5px; line-height: 1.5; color: var(--on-surface-3); }
+.ob__tpl.on .ob__tpl-d { color: inherit; opacity: .82; }
+.ob__tpl-cols { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.ob__tpl-col {
+  font-size: 10px; letter-spacing: .04em; padding: 2px 6px;
+  border-radius: var(--r-xs); background: var(--s-container); color: var(--on-surface-2);
+}
+.ob__tpl.on .ob__tpl-col { background: rgba(255, 255, 255, .28); color: inherit; }
+
+/* Footer */
+.ob__foot {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 28px; padding-top: 18px;
+  border-top: 1px solid var(--outline-variant);
+}
+.ob__save { flex: 1; min-width: 0; font-size: 11.5px; color: var(--on-surface-3); display: inline-flex; align-items: center; gap: 6px; }
+.ob__save svg { flex-shrink: 0; color: var(--ok); }
+/* The wizard's primary action is a button in a row, not a full-width block. */
+.ob__next { width: auto; min-width: 156px; }
+
+/* ── Done / skipped summary (12 §1 "Skip state") ─────────────────────────
+   Skipping shows a neutral dash, not a checkmark, and the three summary rows
+   switch to a dashed pending state. Claiming setup is complete when it was
+   skipped is a lie the user discovers on the empty dashboard. */
+.ob__done {
+  width: 54px; height: 54px; border-radius: 50%;
+  display: grid; place-items: center; margin-bottom: 18px;
+  background: var(--ok-container); color: var(--on-ok-container);
+}
+.obs__dash {
+  width: 34px; height: 34px; border-radius: 50%;
+  background: var(--s-container); color: var(--on-surface-3);
+  display: grid; place-items: center; font-size: 17px;
+  margin-bottom: 18px;
+}
+.ob__summary { display: flex; flex-direction: column; gap: 8px; margin: 22px 0; }
+.obs__r {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 13px; border-radius: var(--r-sm);
+  background: var(--surface); border: 1px solid var(--outline-variant);
+}
+.obs__r--pend { color: var(--on-surface-3); }
+.obs__ic { flex-shrink: 0; display: grid; place-items: center; color: var(--ok); }
+.obs__r--pend .obs__ic {
+  border: 1px dashed var(--outline); border-radius: 50%; padding: 3px; color: var(--on-surface-3);
+}
+.obs__t { display: block; font-size: 13px; font-weight: 600; color: var(--on-surface); }
+.obs__r--pend .obs__t { color: var(--on-surface-2); font-weight: 500; }
+.obs__d { display: block; font-size: 11.5px; line-height: 1.5; color: var(--on-surface-3); margin-top: 2px; }
+
+.ob__tips { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); margin-top: 26px; }
+.ob__tip {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 13px 14px; border-radius: var(--r-md);
+  background: var(--s-low); border: 1px solid var(--outline-variant);
+}
+.ob__tip-t { font-size: 12.5px; font-weight: 600; color: var(--on-surface); }
+.ob__tip-d { font-size: 11.5px; line-height: 1.5; color: var(--on-surface-3); }
