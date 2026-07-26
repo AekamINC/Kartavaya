@@ -91,6 +91,23 @@ levels by index locally. I re-read every `_require(` in `vetana.py`: `APPROVER` 
 `approve_run`, `revert_run` and `disburse_payslip`, and nothing in the file reduces a set to a
 "strongest" level, which would have destroyed the separation. Test added — see §6.
 
+### Sibling agent's claim: "`level_satisfies` has zero call sites in the entire backend — separated duty is defined and enforced nowhere"
+
+**TRUE of `staging`. STALE the moment this branch exists — this branch is the thing that wires
+it.** Recording it because it was relayed to me as confirmed, and acting on it would have meant
+deleting the work I was sent to verify.
+
+On `origin/staging`, `grep -rn "level_satisfies" backend --include=*.py` returns only the
+definition. On this branch it returns the definition, `any_level_satisfies` calling it, and
+seventeen router call sites — nine in `vetana.py`, eight in `manav.py` — every one reached
+through `_can(levels, ...)` → `any_level_satisfies` → `level_satisfies`. Neither router
+compares levels by index anywhere.
+
+Enforcement is proven end-to-end through HTTP, not by reading the grep:
+`test_admin_does_not_satisfy_approver_in_vetana` holds `{admin}`, calls approve / revert /
+disburse, and gets 403 with "approver" in the message — and its converse holds `{approver}`
+and gets through. If `level_satisfies` were unwired, the first of those would return 200.
+
 ### Claim: `role_tiers.py` is the only place roles are defined
 
 **HELD for the diff.** The salvage commit introduces **zero** new hardcoded role strings, and
@@ -232,9 +249,13 @@ The three the brief asked for, by name:
 Also added: `test_manav_is_hierarchical_so_admin_does_approve`, so that adding Manav to
 `SEPARATED_DUTY_MODULES` becomes a visible decision rather than a silent behaviour change.
 
-**Result: 323 passed, 0 failed.** Both gates green — `check-tokens: 279 declared, 229
-referenced, 0 missing`; `check-classes: 2096 selectors defined, 1416 classes used, 0 missing a
-rule`.
+**Result, rebased onto `origin/staging` at `9a6b803`: 372 passed, 0 failed.** Both gates run
+from `frontend/` and exit 0 — `check-tokens: 339 declared, 233 referenced, 0 missing`;
+`check-classes: 2114 selectors defined, 1440 classes used, 0 missing a rule`.
+
+(Branch base checked per the coordinator's warning: `git merge-base --is-ancestor origin/main
+HEAD` is false. This branch descends from `staging`, and `design-handover/`,
+`design-reference/` and `frontend/scripts/check-*.mjs` are all present.)
 
 ---
 
