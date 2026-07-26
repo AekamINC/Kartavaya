@@ -1,24 +1,39 @@
 import React from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import MentionTextarea from '../MentionTextarea';
-import { lbl } from './constants';
+import Lbl from './DrawerLabel';
+import { formatDate, formatTime } from '../../lib/timeFormat';
 
 /**
- * DrawerComments — threaded comment list with inline edit/delete, plus add-comment input.
+ * DrawerComments — a FLAT comment list with inline edit and delete.
+ *
+ * Flat, not threaded. The docstring here used to say "threaded comment list"
+ * and there is no `parent_comment_id` anywhere in the schema, the API or this
+ * component (03 §5, bug 3). A wrong docstring on a small file is how the next
+ * person loses an afternoon looking for the nesting; threading is a data-model
+ * change, so the comment is corrected rather than the code.
  */
+
 /**
  * Highlight mentions, matching how the backend resolves them.
  *
- * The old renderer was `body.split(/(@[\w.-]+)/g)`, which disagreed with the
- * picker at both ends. MentionTextarea inserts the member's full display name,
- * so "@Keval Shah" was bolded as "@Keval" with " Shah" left as plain text —
- * the visible tell that the inserter and the parsers disagree. The same regex
- * also bolded the domain of any pasted email address: "contact user@example.com"
- * rendered "@example.com" as a mention of nobody.
+ * 03 §5 quotes this file as splitting on `/(@[\w.-]+)/g` and calls it bug 1.
+ * That line is no longer here — it was replaced before this batch, and the
+ * replacement is the careful version below. What REMAINS true of the finding is
+ * the part underneath the quote: nothing is stored. Mentions are still resolved
+ * from the body text at render time, so renaming a user still breaks every past
+ * mention of them, and the body alone still cannot tell the backend who to
+ * notify. Fixing that is a schema change — the comment needs
+ * `mentions: [{user_id, offset, length}]` on it and `POST /v1/tasks/:id/comments`
+ * needs to accept them — and neither the schema nor the API is in this batch's
+ * scope. Recorded rather than half-done.
  *
- * Member display names are matched first, longest first, so a member called
- * "Keval" cannot shadow "Keval Shah". Bare handles still highlight, but only
- * when not preceded by a word character — which is what excludes email domains.
+ * The version that IS here: member display names matched first, longest first,
+ * so a member called "Keval" cannot shadow "Keval Shah" — MentionTextarea
+ * inserts the full display name, so a `[\w.-]+` match stopped at the space and
+ * bolded "@Keval" with " Shah" left as plain text. Bare handles still
+ * highlight, but only when not preceded by a word character, which is what
+ * excludes the domain of a pasted email address.
  */
 export function renderMentions(body, members = []) {
   if (!body) return body;
@@ -40,11 +55,23 @@ export function renderMentions(body, members = []) {
   while ((m = re.exec(body)) !== null) {
     const start = m.index + m[1].length;
     if (start > last) out.push(body.slice(last, start));
-    out.push(<strong key={start} style={{ color: 'var(--k-primary)' }}>{m[2]}</strong>);
+    out.push(<strong key={start} className="dr__cm-m">{m[2]}</strong>);
     last = start + m[2].length;
   }
   if (last < body.length) out.push(body.slice(last));
   return out;
+}
+
+/**
+ * `new Date(x).toLocaleString()` — 03 §5 bug 2, and it HELD: the timestamp
+ * ignored the user's 12h/24h preference while `lib/timeFormat.js` existed and
+ * `DueChip` already used it, so somebody who set 24-hour time still read
+ * 12-hour comments. It also printed the browser's locale, which meant the same
+ * comment rendered `26/07/2026` on one machine and `7/26/2026` on the next.
+ */
+function commentStamp(iso) {
+  if (!iso) return '';
+  return `${formatDate(iso)}, ${formatTime(iso)}`;
 }
 
 export default function DrawerComments({
@@ -55,48 +82,32 @@ export default function DrawerComments({
 }) {
   return (
     <div>
-      <span style={{ ...lbl, marginBottom: 10 }}>
-        Comments{' '}
-        <span style={{ fontFamily: 'var(--font-hindi)', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-faint)', fontWeight: 400 }}>
-          &#x091F;&#x093F;&#x092A;&#x094D;&#x092A;&#x0923;&#x093F;&#x092F;&#x093E;&#x0901;
-        </span>
-      </span>
+      <Lbl hi="टिप्पणियाँ">Comments</Lbl>
 
-      {comments.length === 0 && (
-        <p style={{ color: 'var(--ink-3)', fontSize: 13, marginBottom: 12 }}>No comments yet.</p>
-      )}
+      {comments.length === 0 && <p className="dr__empty">No comments yet.</p>}
 
       {comments.map(c => (
-        <div key={c.comment_id} style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: '50%',
-            background: 'color-mix(in srgb, var(--k-primary) 15%, var(--surface))',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 11, fontWeight: 700, color: 'var(--k-primary)', flexShrink: 0,
-          }}>
+        <div key={c.comment_id} className="dr__cm">
+          <span className="dr__cm-av" aria-hidden="true">
             {c.user_name?.[0]?.toUpperCase() || '?'}
-          </div>
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontWeight: 600, fontSize: 13 }}>{c.user_name}</span>{' '}
-              <span style={{ color: 'var(--ink-3)', fontSize: 11 }}>
-                {new Date(c.created_at).toLocaleString()}
-              </span>
+          </span>
+          <div className="dr__cm-c">
+            <div className="dr__cm-h">
+              <span className="dr__cm-who">{c.user_name}</span>
+              <time className="dr__cm-when" dateTime={c.created_at}>{commentStamp(c.created_at)}</time>
               {(c.user_id === me?.user_id || isSystemAdmin) && editingComment !== c.comment_id && (
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-                  <button
-                    onClick={() => startEditComment(c)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', padding: 2, display: 'flex' }}
-                    title="Edit"
-                  >
+                /* Revealed on hover AND :focus-within. A hover-only reveal is
+                   unreachable by keyboard, which the always-visible version
+                   this replaces at least did not break. */
+                <div className="dr__cm-act">
+                  <button type="button" className="dr__ico" title="Edit"
+                    aria-label={`Edit comment by ${c.user_name}`}
+                    onClick={() => startEditComment(c)}>
                     <Pencil size={11} />
                   </button>
-                  <button
-                    onClick={() => deleteComment(c.comment_id)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', padding: 2, display: 'flex' }}
-                    title="Delete"
-                    aria-label="Delete comment"
-                  >
+                  <button type="button" className="dr__ico dr__ico--danger" title="Delete"
+                    aria-label={`Delete comment by ${c.user_name}`}
+                    onClick={() => deleteComment(c.comment_id)}>
                     <Trash2 size={11} />
                   </button>
                 </div>
@@ -104,46 +115,43 @@ export default function DrawerComments({
             </div>
 
             {editingComment === c.comment_id ? (
-              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div className="dr__cm-edit">
                 <textarea
+                  className="dr__ta"
+                  aria-label="Edit comment"
                   value={editBody}
                   onChange={e => setEditBody(e.target.value)}
                   rows={3}
-                  className="k-input"
-                  style={{ width: '100%', resize: 'vertical', fontSize: 13 }}
                 />
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button onClick={() => startEditComment(null)} className="k-btn k-btn--ghost k-btn--sm">
+                <div className="dr__ap-acts">
+                  <button type="button" className="btn btn--ghost btn--sm" onClick={() => startEditComment(null)}>
                     Cancel
                   </button>
-                  <button
-                    onClick={() => saveEditComment(c.comment_id)}
-                    className="k-btn k-btn--primary k-btn--sm"
-                    disabled={!editBody.trim()}
-                  >
+                  <button type="button" className="btn btn--fill btn--sm"
+                    onClick={() => saveEditComment(c.comment_id)} disabled={!editBody.trim()}>
                     Save
                   </button>
                 </div>
               </div>
             ) : (
-              <p style={{ margin: '4px 0 0', fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-                {renderMentions(c.body, mentionMembers)}
-              </p>
+              <p className="dr__cm-b">{renderMentions(c.body, mentionMembers)}</p>
             )}
           </div>
         </div>
       ))}
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+      <div className="dr__cm-new">
         <MentionTextarea
           value={comment}
           onChange={setComment}
           onSubmit={postComment}
           members={mentionMembers}
-          placeholder="Add a comment&hellip; type @ to mention"
+          placeholder="Add a comment… type @ to mention"
           rows={2}
         />
-        <button onClick={postComment} className="k-btn k-btn--primary k-btn--sm">Send</button>
+        <button type="button" className="btn btn--fill btn--sm" onClick={postComment} disabled={!comment.trim()}>
+          Send
+        </button>
       </div>
     </div>
   );

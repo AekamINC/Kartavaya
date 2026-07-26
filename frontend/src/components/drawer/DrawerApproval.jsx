@@ -1,15 +1,31 @@
 import React from 'react';
-import { APPROVAL_STATUS_LABEL, APPROVAL_STATUS_COLOR } from './constants';
-import { mixAlpha } from '../../lib/statusColors';
+import StatusChip from '../ui/StatusChip';
+import Lbl from './DrawerLabel';
 
 /**
- * DrawerApproval — approval status badge plus all action panels:
- * request, admin approve (with optional client forwarding), admin reject,
+ * DrawerApproval — the approval state and every panel that acts on it:
+ * request, admin approve (with optional forwarding to a client), admin reject,
  * client approve/reject.
+ *
+ * Two things changed and one deliberately did not.
+ *
+ *  · The state badge is `ui/StatusChip`, so the label and the colour come from
+ *    `lib/statusColors.js` (03 §5). It used to build its own pill from
+ *    `APPROVAL_STATUS_COLOR` with `mixAlpha(c, 9)` behind `color: c` — a chip
+ *    tinted with its own foreground can never reach 4.5:1, because deepening
+ *    the tint moves the background toward the text (00 §11). StatusChip puts
+ *    the colour in a dot and leaves the text on the surface.
+ *  · Both Reject buttons are `.btn--danger`, which is outlined. They used to be
+ *    `.k-btn--ghost` with `color: var(--k-danger)` patched on at the call site,
+ *    which is the ad-hoc destructive styling 02 §1 exists to end.
+ *
+ * What did not change: who may do what. Gating still comes from the
+ * `isOwnerAdmin` / `isClient` props the drawer resolves, because moving it to
+ * per-module grants means reading the RBAC context, and that belongs with the
+ * RBAC batch rather than as a side effect of a restyle.
  */
 export default function DrawerApproval({
   task,
-  isApprovalColumn,
   isOwnerAdmin, isClient,
   showApprovePanel,  setShowApprovePanel,
   showRequestPanel,  setShowRequestPanel,
@@ -23,114 +39,82 @@ export default function DrawerApproval({
   approveTask,       rejectTask,
   clientApproveTask, clientRejectTask,
 }) {
-  const statusColor = APPROVAL_STATUS_COLOR[task.approval_status] || 'var(--on-surface-3)';
-
   return (
-    <div style={{
-      marginBottom: 20, padding: '14px 16px',
-      background: 'var(--bg-soft)', border: '1px solid var(--rule)',
-      borderRadius: 'var(--r-md)',
-    }}>
-      {/* Label + status badge */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: task.approval_status ? 10 : 0 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
-          Approval{' '}
-          <span style={{ fontFamily: 'var(--font-hindi)', textTransform: 'none', letterSpacing: 0, fontWeight: 400, fontSize: 12 }}>
-            &#x0905;&#x0928;&#x0941;&#x092E;&#x094B;&#x0926;&#x0928;
-          </span>
-        </span>
-        {task.approval_status && (
-          <span style={{
-            fontSize: 11, fontWeight: 600, padding: '2px 9px', borderRadius: 99,
-            color: statusColor,
-            background: mixAlpha(statusColor, 9),
-            border: `1px solid ${mixAlpha(statusColor, 25)}`,
-          }}>
-            {APPROVAL_STATUS_LABEL[task.approval_status] || task.approval_status}
-          </span>
-        )}
+    <div className="dr__ap">
+      <div className="dr__ap-head">
+        <Lbl hi="अनुमोदन">Approval</Lbl>
+        {task.approval_status && <StatusChip approvalStatus={task.approval_status} />}
       </div>
 
-      {/* Request approval (no active approval) */}
+      {/* No approval yet */}
       {!task.approval_status && !showRequestPanel && (
-        <button
-          className="k-btn k-btn--ghost k-btn--sm"
-          onClick={() => setShowRequestPanel(true)}
-          style={{ marginTop: 4, fontSize: 12 }}
-        >
-          &#8594; Send for Approval
-        </button>
+        <div className="dr__ap-acts">
+          <button type="button" className="btn btn--out btn--sm" onClick={() => setShowRequestPanel(true)}>
+            Send for approval
+          </button>
+        </div>
+      )}
+
+      {/* Previously rejected — offer a resend */}
+      {task.approval_status === 'rejected' && !showRequestPanel && (
+        <div className="dr__ap-acts">
+          <button type="button" className="btn btn--out btn--sm" onClick={() => setShowRequestPanel(true)}>
+            Re-send for approval
+          </button>
+        </div>
       )}
 
       {showRequestPanel && (
-        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="dr__ap-panel">
           <textarea
+            className="dr__ta dr__ta--flat"
+            aria-label="Notes for the approver"
+            placeholder="Notes for the approver (optional)…"
+            rows={2}
             value={requestNotes}
             onChange={e => setRequestNotes(e.target.value)}
-            placeholder="Notes for the approver (optional)&hellip;"
-            rows={2}
-            className="k-input"
-            style={{ width: '100%', resize: 'none', boxSizing: 'border-box', fontSize: 12 }}
           />
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => setShowRequestPanel(false)}>Cancel</button>
-            <button className="k-btn k-btn--primary k-btn--sm" onClick={requestApproval} disabled={approvalLoading}>
-              {approvalLoading ? '…' : '→ Send for Approval'}
+          <div className="dr__ap-acts">
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowRequestPanel(false)}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn--fill btn--sm" onClick={requestApproval} disabled={approvalLoading}>
+              {approvalLoading ? 'Sending…' : 'Send for approval'}
             </button>
           </div>
         </div>
       )}
 
-      {/* Re-send if previously rejected */}
-      {task.approval_status === 'rejected' && !showRequestPanel && (
-        <button
-          className="k-btn k-btn--ghost k-btn--sm"
-          onClick={() => setShowRequestPanel(true)}
-          style={{ marginTop: 6, fontSize: 12 }}
-        >
-          &#8594; Re-send for Approval
-        </button>
-      )}
-
-      {/* Admin: approve / reject when pending */}
+      {/* Admin: decide a pending request */}
       {isOwnerAdmin && task.approval_status === 'pending' && !showApprovePanel && !showRejectInput && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-          <button className="k-btn k-btn--primary k-btn--sm" onClick={openApprovePanel}>&#10004; Approve</button>
-          <button
-            className="k-btn k-btn--ghost k-btn--sm"
-            onClick={() => setShowRejectInput(true)}
-            style={{ color: 'var(--k-danger)' }}
-          >
-            &#10005; Reject
-          </button>
+        <div className="dr__ap-acts">
+          <button type="button" className="btn btn--fill btn--sm" onClick={openApprovePanel}>Approve</button>
+          <button type="button" className="btn btn--danger btn--sm" onClick={() => setShowRejectInput(true)}>Reject</button>
         </div>
       )}
 
-      {/* Admin: approve panel with optional client forwarding */}
       {showApprovePanel && (
-        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="dr__ap-panel">
           <textarea
+            className="dr__ta dr__ta--flat"
+            aria-label="Approval notes"
+            placeholder="Notes (optional)…"
+            rows={2}
             value={approvalNotes}
             onChange={e => setApprovalNotes(e.target.value)}
-            placeholder="Notes (optional)&hellip;"
-            rows={2}
-            className="k-input"
-            style={{ width: '100%', resize: 'none', boxSizing: 'border-box', fontSize: 12 }}
           />
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', marginBottom: 5 }}>
-              Send to client for approval?
-            </div>
+            <div className="dr__ap-sub" id="dr-fwd-lbl">Send to client for approval?</div>
             {clientList.length === 0 ? (
-              <div style={{ fontSize: 11, color: 'var(--ink-3)', fontStyle: 'italic' }}>No clients on this project.</div>
+              <div className="dr__ap-none">No clients on this project.</div>
             ) : (
               <select
+                className="inp"
+                aria-labelledby="dr-fwd-lbl"
                 value={clientUserId}
                 onChange={e => setClientUserId(e.target.value)}
-                className="k-input"
-                style={{ width: '100%', fontSize: 12, boxSizing: 'border-box' }}
               >
-                <option value="">&ndash; Skip, mark as Done &ndash;</option>
+                <option value="">— Skip, mark as done —</option>
                 {clientList.map(c => (
                   <option key={c.user_id} value={c.user_id}>
                     {c.display_name}{c.email ? ` (${c.email})` : ''}
@@ -139,85 +123,77 @@ export default function DrawerApproval({
               </select>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => setShowApprovePanel(false)}>Cancel</button>
-            <button className="k-btn k-btn--primary k-btn--sm" onClick={approveTask} disabled={approvalLoading}>
-              {approvalLoading ? '…' : clientUserId ? '✔ Approve & Send to Client' : '✔ Approve & Done'}
+          <div className="dr__ap-acts">
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowApprovePanel(false)}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn--fill btn--sm" onClick={approveTask} disabled={approvalLoading}>
+              {approvalLoading ? 'Working…' : clientUserId ? 'Approve & send to client' : 'Approve & done'}
             </button>
           </div>
         </div>
       )}
 
-      {/* Admin: reject panel */}
+      {/* Admin: reject */}
       {showRejectInput && isOwnerAdmin && task.approval_status === 'pending' && (
-        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="dr__ap-panel">
           <textarea
+            className="dr__ta dr__ta--flat"
+            aria-label="Reason for rejection"
+            placeholder="Reason for rejection (required)…"
+            rows={2}
             value={rejectNote}
             onChange={e => setRejectNote(e.target.value)}
-            placeholder="Reason for rejection (required)&hellip;"
-            rows={2}
-            className="k-input"
-            style={{ width: '100%', resize: 'none', boxSizing: 'border-box', fontSize: 12 }}
           />
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => setShowRejectInput(false)}>Cancel</button>
-            <button
-              className="k-btn k-btn--ghost k-btn--sm"
-              onClick={rejectTask}
-              disabled={approvalLoading || !rejectNote.trim()}
-              style={{ color: 'var(--k-danger)', borderColor: 'var(--k-danger)' }}
-            >
-              {approvalLoading ? '…' : '✕ Reject'}
+          <div className="dr__ap-acts">
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowRejectInput(false)}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn--danger btn--sm" onClick={rejectTask}
+              disabled={approvalLoading || !rejectNote.trim()}>
+              {approvalLoading ? 'Working…' : 'Reject'}
             </button>
           </div>
         </div>
       )}
 
-      {/* Client: approve / reject when pending_client */}
+      {/* Client: decide */}
       {isClient && task.approval_status === 'pending_client' && !showRejectInput && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-          <button className="k-btn k-btn--primary k-btn--sm" onClick={clientApproveTask} disabled={approvalLoading}>
-            {approvalLoading ? '…' : '✔ Approve'}
+        <div className="dr__ap-acts">
+          <button type="button" className="btn btn--fill btn--sm" onClick={clientApproveTask} disabled={approvalLoading}>
+            {approvalLoading ? 'Working…' : 'Approve'}
           </button>
-          <button
-            className="k-btn k-btn--ghost k-btn--sm"
-            onClick={() => setShowRejectInput(true)}
-            style={{ color: 'var(--k-danger)' }}
-          >
-            ✕ Reject
+          <button type="button" className="btn btn--danger btn--sm" onClick={() => setShowRejectInput(true)}>
+            Reject
           </button>
         </div>
       )}
 
       {isClient && task.approval_status === 'pending_client' && showRejectInput && (
-        <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="dr__ap-panel">
           <textarea
+            className="dr__ta dr__ta--flat"
+            aria-label="Reason for rejection"
+            placeholder="Reason for rejection (required)…"
+            rows={2}
             value={rejectNote}
             onChange={e => setRejectNote(e.target.value)}
-            placeholder="Reason for rejection (required)&hellip;"
-            rows={2}
-            className="k-input"
-            style={{ width: '100%', resize: 'none', boxSizing: 'border-box', fontSize: 12 }}
           />
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => setShowRejectInput(false)}>Cancel</button>
-            <button
-              className="k-btn k-btn--ghost k-btn--sm"
-              onClick={clientRejectTask}
-              disabled={approvalLoading || !rejectNote.trim()}
-              style={{ color: 'var(--k-danger)', borderColor: 'var(--k-danger)' }}
-            >
-              {approvalLoading ? '…' : '✕ Reject'}
+          <div className="dr__ap-acts">
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowRejectInput(false)}>
+              Cancel
+            </button>
+            <button type="button" className="btn btn--danger btn--sm" onClick={clientRejectTask}
+              disabled={approvalLoading || !rejectNote.trim()}>
+              {approvalLoading ? 'Working…' : 'Reject'}
             </button>
           </div>
         </div>
       )}
 
-      {/* Internal users: waiting message while client reviews */}
+      {/* Internal users, while the client reviews */}
       {!isClient && task.approval_status === 'pending_client' && (
-        <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: '8px 0 0' }}>
-          Approval request sent to client. Waiting for their response.
-        </p>
+        <p className="dr__ap-wait">Approval request sent to the client. Waiting for their response.</p>
       )}
     </div>
   );

@@ -1,0 +1,420 @@
+/* drawer.css — the task drawer · 03-task-drawer.md
+ *
+ * THE FINDING THAT GOVERNS THIS FILE. The drawer was a THIRD token vocabulary.
+ * `02-common-components.md` documents two systems — Tailwind utilities in
+ * `ui/*.js` and the `k-*` editorial classes — and the drawer was neither of
+ * them: it ran on `--ink`, `--ink-2`, `--ink-3`, `--ink-faint`, `--rule`,
+ * `--rule-soft`, `--rule-strong`, `--bg-soft`, `--side-active`, `--k-primary`
+ * and `--k-danger`, written mostly as INLINE STYLE OBJECTS in JSX. An inline
+ * style object cannot be themed, cannot be overridden per-surface and does not
+ * respond to the density setting — it is a class in everything but name.
+ *
+ * The migration, applied throughout this file (03 §"The finding"):
+ *   --ink → --on-surface · --ink-2 → --on-surface-2 · --ink-3 → --on-surface-3
+ *   --ink-faint → --on-surface-faint · --rule → --outline-variant
+ *   --rule-soft → color-mix(--outline-variant 60%) · --rule-strong → --outline
+ *   --bg-soft → --s-low · --side-active → --primary-container
+ *   --k-primary → --primary · --k-danger → --danger
+ *
+ * Two rules from `00-tokens.md` that this file obeys everywhere:
+ *   · `--primary` is a FILL (4.04:1 on --bg). Primary-coloured TEXT is
+ *     `--primary-text` (5.2:1). Every "link-ish" colour below is the latter.
+ *   · Never hard-code a radius. A literal `border-radius: 8px` breaks the
+ *     Sharp and Pill settings in exactly that one place.
+ */
+
+/* ── 1 · Shell ────────────────────────────────────────────────────────────
+   Width is min(720px, 78vw). The 78% of the catalogue demo is right
+   proportionally but must cap, or the drawer becomes 1500px on a wide monitor
+   and the list behind it is unreadable.
+
+   Z-INDEX follows the ladder in 26 §4 — 200 drawer · 340 picker and menu ·
+   420 modal · 520 toast · 620 mobile sheet — not the 60/59 written into
+   03 §1, which predates the ladder. The subtask picker sat at a hardcoded 300
+   over a drawer at 101; that only worked because nobody had opened a menu on
+   top of a modal.
+
+   The entrance is `--dur-slow` per the keyframe table in 26 §6, not the
+   `--dur-base` in 03 §1: a drawer crosses the screen, and 26 is the file that
+   states the concrete values. The exit is one step faster and travels less —
+   entering is the system responding to you and can afford to be gracious;
+   leaving is a thing getting out of your way. */
+.dr {
+  position: fixed; z-index: 200; top: 0; right: 0; bottom: 0;
+  width: min(720px, 78vw);
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--outline-variant);
+  box-shadow: var(--shadow-4);
+  animation: dmDrawerIn var(--dur-slow) var(--ease-emph-in) both;
+}
+.dr.is-closing { animation: dmDrawerOut var(--dur-base) var(--ease-exit) forwards; }
+
+.dr__scrim {
+  position: fixed; inset: 0; z-index: 199;
+  background: var(--scrim);
+  animation: dmFade var(--dur-base) var(--ease-enter) both;
+}
+/* dmFade has no transform at all — a scrim that also moves reads as a second
+   object arriving. */
+.dr__scrim.is-closing { animation: dmFadeOut var(--dur-fast) var(--ease-exit) forwards; }
+
+.dr__head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+.dr__body { flex: 1; overflow-y: auto; padding: 16px 18px 24px; }
+
+.dr__crumb { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; color: var(--on-surface-2); }
+.dr__crumb-p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--on-surface-3); }
+/* 00 §11 names `.bar__crumb-sep` as a legitimate `--on-surface-disabled` user,
+   but that token is not declared in kartavaya-design.css — which this file does
+   not own. `--on-surface-3` until it is. */
+.dr__crumb-sep { color: var(--on-surface-3); }
+/* The scrolled-title collapse. maxWidth 200 kept verbatim from staging — it is
+   the reason a long title does not push the header actions off the panel. */
+.dr__crumb-t {
+  max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 13px; font-weight: 600; color: var(--on-surface);
+}
+.dr__acts { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.dr__save { font-size: 11px; color: var(--on-surface-3); margin-right: 2px; }
+
+.dr__ico {
+  display: grid; place-items: center; flex: none;
+  width: 28px; height: 28px; padding: 0;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: none; color: var(--on-surface-3); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.dr__ico:hover { background: var(--s-container); color: var(--on-surface); }
+.dr__ico:disabled { opacity: .42; pointer-events: none; }
+.dr__ico--danger { color: var(--danger); }
+.dr__ico--danger:hover { background: var(--danger-container); color: var(--danger); }
+
+/* ── 2 · Title and section labels ─────────────────────────────────────────
+   22px --font-display at 500. It saves on blur, only if changed — that
+   behaviour is correct and survives the rewrite. Enter commits, Escape
+   reverts; blur alone means a keyboard user has to Tab away to save. */
+.dr__titlerow { display: flex; align-items: baseline; gap: 10px; padding: 14px 18px 4px; }
+.dr__title {
+  font-family: var(--font-display); font-size: 22px; font-weight: 500;
+  letter-spacing: -.012em; line-height: 1.25;
+  width: 100%; min-width: 0; padding: 7px 9px;
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  background: transparent; color: var(--on-surface); text-align: left;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+.dr__title:hover { background: var(--s-container); }
+.dr__title:focus, .dr__title--edit {
+  background: var(--s-lowest); border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+  outline: none;
+}
+.dr__id { flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--on-surface-faint); }
+
+/* `.dr__lbl` replaces the `lbl` INLINE STYLE OBJECT exported from
+   drawer/constants.js. Same six declarations, themed, overridable, and
+   density-aware. */
+.dr__lbl {
+  display: block;
+  font-size: 10px; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--on-surface-3);
+  margin-bottom: 5px;
+}
+.dr__lbl-hi {
+  font-family: var(--font-indic); font-size: 12px;
+  letter-spacing: 0; text-transform: none; font-weight: 400;
+  color: var(--on-surface-faint);
+}
+.dr__sec { margin-bottom: var(--sp-5); }
+.dr__empty { font-size: 13px; color: var(--on-surface-3); margin: 0 0 var(--sp-3); }
+
+/* ── 3 · Status pipeline ──────────────────────────────────────────────────
+   Replaces the static status badge in the breadcrumb.
+
+   The chevron is a CSS TRIANGLE FROM BORDER WIDTHS, not an SVG or a
+   clip-path — it inherits the stage's colour through `border-left-color` in
+   three states, so the arrow always matches the segment behind it. 13px
+   top/bottom against a stage of 8px 12px padding gives a 26px notch on a
+   ~33px stage; if you change stage padding, change the 13. */
+.dr__pipe { display: flex; align-items: stretch; width: 100%; }
+.dr__pipe-wrap { padding: 0 18px 10px; }
+.dr__stage {
+  --c: var(--on-surface-3);
+  position: relative; flex: 1; min-width: 74px;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 8px 12px; border: 0;
+  font: inherit; font-size: 11.5px; font-weight: 600;
+  background: var(--s-low); color: var(--on-surface-3); cursor: pointer;
+  transition: background var(--dur-instant) var(--ease-standard), color var(--dur-instant) var(--ease-standard);
+}
+.dr__stage:first-child { border-radius: var(--r-pill) 0 0 var(--r-pill); }
+.dr__stage:last-child  { border-radius: 0 var(--r-pill) var(--r-pill) 0; }
+.dr__stage:hover:not(.on) { background: var(--s-container); color: var(--on-surface-2); }
+/* A read-only pipeline is still a pipeline, not a disabled control: dimming it
+   to .42 would make the stage the task is actually in unreadable. */
+.dr__stage[disabled] { opacity: 1; cursor: default; }
+.dr__stage:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.dr__stage.past { background: color-mix(in srgb, var(--c) 15%, var(--surface)); color: var(--c); }
+.dr__stage.on   { background: var(--c); color: #fff; z-index: 3; }
+.dr__stage:not(:last-child)::after {
+  content: ''; position: absolute; right: 0; top: 50%;
+  transform: translate(50%, -50%); z-index: 4;
+  width: 0; height: 0;
+  border-top: 13px solid transparent;
+  border-bottom: 13px solid transparent;
+  border-left: 8px solid var(--s-low);
+}
+.dr__stage.on:not(:last-child)::after   { border-left-color: var(--c); }
+.dr__stage.past:not(:last-child)::after { border-left-color: color-mix(in srgb, var(--c) 15%, var(--surface)); }
+.dr__stage:hover:not(.on):not(:last-child)::after { border-left-color: var(--s-container); }
+.dr__stage-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── 4 · Meta row ─────────────────────────────────────────────────────────
+   Label above the control, always. A beside-label column must be sized for the
+   longest string in it, and every label here is an English/Devanagari pair of
+   unpredictable width (26 §3). */
+.dr__props {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--sp-3) var(--sp-5);
+  padding: 12px 18px 16px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+/* The same grid, used again for custom fields inside the scrolling body where
+   the gutter and the rule below it would be wrong. */
+.dr__props--flush { padding: 0; border-bottom: 0; }
+.dr__prop { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dr__prop-hint { font-size: 11px; color: var(--on-surface-3); }
+
+/* ── 5 · Description ──────────────────────────────────────────────────── */
+.dr__ta {
+  width: 100%; padding: 10px 12px; resize: vertical;
+  background: var(--s-low); border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  font: inherit; font-size: 13px; line-height: 1.65; color: var(--on-surface);
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard);
+}
+.dr__ta:focus { border-color: var(--primary); background: var(--s-lowest); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent); }
+.dr__ta::placeholder { color: var(--on-surface-3); opacity: 1; }
+.dr__ta--flat { resize: none; }
+/* idle → saving → saved → error, from useAutosave. Reserve the width so the
+   row does not reflow as the word changes. */
+.dr__auto { display: inline-block; min-width: 8ch; margin-left: 8px; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--on-surface-faint); }
+.dr__auto--error { color: var(--danger); }
+
+/* ── 6 · Subtasks ─────────────────────────────────────────────────────── */
+.dr__st-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: 8px; }
+.dr__st-head .dr__lbl { margin-bottom: 0; }
+/* Progress meter above the list — new, not in staging. */
+.dr__st-bar { flex: 1; min-width: 60px; height: 3px; border-radius: var(--r-pill); background: var(--s-high); overflow: hidden; }
+.dr__st-bar i { display: block; height: 100%; background: var(--primary); transition: width var(--dur-slow) var(--ease-emph-in); }
+.dr__st-n { flex: none; font-family: var(--font-mono); font-size: 10.5px; color: var(--on-surface-3); }
+
+.dr__st-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.dr__st {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  background: var(--s-low); border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+}
+/* The checkmark inside the box is 10px at stroke-width 3 — at 10px a 2px
+   stroke reads as grey rather than white. */
+.dr__st-box {
+  width: 16px; height: 16px; padding: 0; flex-shrink: 0;
+  display: grid; place-items: center;
+  border: 2px solid var(--on-surface-3); border-radius: var(--r-xs);
+  background: none; color: #fff; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+.dr__st-box.on { background: var(--primary); border-color: var(--primary); }
+.dr__st-t { flex: 1; min-width: 0; font-size: 13px; color: var(--on-surface); }
+.dr__st.done .dr__st-t { color: var(--on-surface-3); text-decoration: line-through; }
+
+/* The assignee control is `ui/Picker.jsx` — 26 §4 replaces all four
+   hand-written drawer pickers with it, which is what gives this one Escape,
+   arrow keys, collision-aware placement and a mobile sheet. The pill dress from
+   03 §1 is applied to the shared trigger rather than re-implemented.
+
+   The `2px 8px 2px 3px` asymmetry in 03 §1 existed to optically centre a 16px
+   avatar against the text. There is no avatar in this pill any more — see the
+   note in DrawerSubtasks.jsx — so the padding is symmetric; reproducing the
+   asymmetry without the thing it compensated for would push the label right. */
+.dr__st-as { flex: none; }
+.dr__st-as .pk__tr {
+  height: 22px; gap: 4px; padding: 2px 8px;
+  border-color: var(--outline-variant); border-radius: var(--r-pill);
+  background: var(--primary-container); color: var(--on-primary-container);
+  font-size: 11px; font-weight: 500;
+}
+.dr__st-as .pk__lbl { max-width: 88px; }
+.dr__st-as .pk__tr:hover { background: color-mix(in srgb, var(--primary-container) 78%, var(--primary)); }
+.dr__st-as--none .pk__tr { background: var(--s-low); color: var(--on-surface-3); }
+.dr__st-as--none .pk__tr:hover { background: var(--s-container); color: var(--on-surface-2); }
+
+.dr__st-del { flex: none; width: 20px; height: 20px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-xs); background: none; color: var(--on-surface-3); cursor: pointer; }
+.dr__st-del:hover { background: var(--danger-container); color: var(--danger); }
+.dr__st-add { display: flex; gap: 8px; }
+.dr__st-add .inp { flex: 1; }
+
+/* ── 7 · Comments ─────────────────────────────────────────────────────── */
+.dr__cm { display: flex; gap: 10px; margin-bottom: 14px; }
+.dr__cm-av {
+  width: 28px; height: 28px; flex-shrink: 0;
+  display: grid; place-items: center; border-radius: 50%;
+  background: color-mix(in srgb, var(--primary) 15%, var(--surface));
+  color: var(--primary-text); font-size: 11px; font-weight: 700;
+}
+.dr__cm-c { flex: 1; min-width: 0; }
+.dr__cm-h { display: flex; align-items: center; gap: 6px; }
+.dr__cm-who { font-size: 13px; font-weight: 600; color: var(--on-surface); }
+.dr__cm-when { font-size: 11px; color: var(--on-surface-3); }
+/* white-space: pre-wrap preserves the line breaks a user typed. */
+.dr__cm-b { margin: 4px 0 0; font-size: 13px; line-height: 1.55; white-space: pre-wrap; color: var(--on-surface); }
+.dr__cm-m { color: var(--primary-text); font-weight: 600; }
+/* Revealed on hover AND on :focus-within — a hover-only reveal is unreachable
+   by keyboard, which staging's always-visible version at least did not break. */
+.dr__cm-act { margin-left: auto; display: flex; gap: 4px; opacity: 0; transition: opacity var(--dur-fast) var(--ease-standard); }
+.dr__cm:hover .dr__cm-act, .dr__cm:focus-within .dr__cm-act { opacity: 1; }
+.dr__cm-edit { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+.dr__cm-new { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
+
+/* ── 8 · Time entries ─────────────────────────────────────────────────── */
+.dr__tm {
+  display: flex; align-items: center; gap: 12px; margin-bottom: var(--sp-5);
+  padding: 12px 16px;
+  background: var(--s-low); border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+}
+/* tabular-nums on the running timer is mandatory — without it the digits
+   change width every second and the whole row jitters. */
+.dr__tm-el { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; color: var(--on-surface); }
+.dr__tm-ic { flex: none; color: var(--on-surface-3); }
+.dr__tm-log { display: flex; gap: 8px; align-items: center; margin-bottom: var(--sp-5); }
+.dr__tm-log .inp { flex: 1; min-width: 0; }
+/* After the rule above, and at the same specificity, so it wins. `.inp` carries
+   width:100%, which in a flex row makes every field claim the whole strip. */
+.dr__tm-log .dr__tm-min { flex: 0 0 74px; }
+.dr__tm-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 9px 0; font-size: 13px;
+  border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent);
+}
+.dr__tm-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--on-surface-2); }
+.dr__tm-desc.is-empty { color: var(--on-surface-3); }
+.dr__tm-r { display: flex; align-items: center; gap: 10px; flex: none; }
+.dr__tm-min-v { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--on-surface); }
+.dr__tm-total { padding-top: 10px; text-align: right; font-size: 13px; font-weight: 600; color: var(--on-surface-2); }
+
+/* ── 9 · Approval ─────────────────────────────────────────────────────── */
+.dr__ap {
+  margin-bottom: var(--sp-5); padding: 14px 16px;
+  background: var(--s-low); border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+}
+.dr__ap-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dr__ap-head .dr__lbl { margin-bottom: 0; }
+.dr__ap-panel { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.dr__ap-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.dr__ap-sub { font-size: 11px; font-weight: 600; color: var(--on-surface-3); margin-bottom: 5px; }
+.dr__ap-none { font-size: 11px; color: var(--on-surface-3); }
+.dr__ap-wait { margin: 8px 0 0; font-size: 12px; color: var(--on-surface-3); }
+
+/* ── 10 · Attachments ─────────────────────────────────────────────────────
+   The drop zone spec from MOTION-SPEC §6: the border and the tint are the whole
+   affordance, and both are the accent, so a dragged file reads as landing
+   somewhere rather than as an error. */
+.dr__files { position: relative; }
+.dr__att-hd { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.dr__att-n { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--on-surface-3); }
+.dr__att-lim { font-size: 10px; line-height: 1.6; color: var(--on-surface-3); margin-bottom: 10px; }
+.dr__dz {
+  display: block; width: 100%;
+  padding: 28px 20px; text-align: center; cursor: pointer;
+  border: 1.5px dashed var(--outline); border-radius: var(--r-md);
+  background: transparent; color: inherit; font: inherit;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+.dr__dz:hover { border-color: var(--primary); }
+.dr__dz-t { font-size: 13px; font-weight: 600; color: var(--on-surface-2); margin: 8px 0 4px; }
+.dr__dz-d { font-size: 11px; line-height: 1.6; color: var(--on-surface-3); }
+.dr__dz-ic { color: var(--on-surface-3); }
+.dr__drop {
+  position: absolute; inset: 0; z-index: 50;
+  display: grid; place-items: center; pointer-events: none;
+  border: 2px dashed var(--primary); border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+  color: var(--primary-text); font-size: 13px; font-weight: 600;
+  animation: dmFade var(--dur-fast) var(--ease-enter) both;
+}
+.dr__drop-in { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.dr__up { padding: 12px 0; }
+.dr__up-h { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; color: var(--on-surface-3); }
+.dr__up-n { font-size: 10px; color: var(--on-surface-3); margin-top: 5px; }
+
+.dr__att-list { display: flex; flex-direction: column; gap: 6px; }
+.dr__att { border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--s-lowest); overflow: hidden; font-size: 13px; }
+.dr__att-thumb { display: block; width: 100%; padding: 0; border: 0; border-bottom: 1px solid var(--outline-variant); background: var(--s-low); cursor: pointer; }
+.dr__att-thumb img, .dr__att-thumb video { display: block; width: 100%; max-height: 180px; object-fit: cover; }
+.dr__att-vid { position: relative; display: grid; place-items: center; min-height: 100px; background: var(--ink-fixed); }
+.dr__att-play { position: absolute; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: var(--s-lowest); color: var(--primary-text); }
+.dr__att-doc { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 16px; background: var(--s-low); color: var(--primary-text); font-size: 12px; font-weight: 600; }
+.dr__att-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+.dr__att-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--on-surface-2); text-decoration: none; }
+.dr__att-name:hover { color: var(--on-surface); text-decoration: underline; }
+/* Private is a warning-toned chip on its own container, never `--warn` text on
+   a tint of itself — a chip tinted with its own foreground hue can never reach
+   4.5:1 (00 §11). */
+.dr__att-priv { flex: none; padding: 1px 6px; border-radius: var(--r-xs); background: var(--warn-container); color: var(--on-warn-container); font-size: 10px; font-weight: 700; }
+.dr__att-ic { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--r-xs); background: none; color: var(--on-surface-3); cursor: pointer; }
+.dr__att-ic:hover { background: var(--s-container); color: var(--on-surface); }
+.dr__att-ic--on { background: var(--warn-container); color: var(--on-warn-container); }
+.dr__att-ic--danger:hover { background: var(--danger-container); color: var(--danger); }
+.dr__att-more { display: flex; gap: 6px; margin-top: 2px; }
+.dr__att-add { display: flex; align-items: center; gap: 6px; padding: 7px 12px; border: 1.5px dashed var(--outline); border-radius: var(--r-sm); background: transparent; color: var(--on-surface-3); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.dr__att-add:hover { border-color: var(--primary); color: var(--on-surface-2); }
+
+/* Visibility menu — its rows are the Menu primitive's, so only the header and
+   the row layout live here. */
+.dr__vis { display: flex; flex-direction: column; gap: 1px; }
+.dr__vis-h { padding: 2px 6px 6px; font-size: 11px; font-weight: 700; color: var(--on-surface-3); }
+.dr__vis-r { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--on-surface); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.dr__vis-r:hover { background: var(--s-low); }
+.dr__vis-r.on { background: var(--primary-container); color: var(--on-primary-container); }
+.dr__vis-n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Lightbox. `--ink-fixed` is one of the genuinely fixed literals in 00 §9 —
+   lightbox chrome does not flip with the theme, because the media it frames
+   does not either. */
+.dr__lb { position: fixed; inset: 0; z-index: 620; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; background: color-mix(in srgb, var(--ink-fixed) 88%, transparent); animation: dmFade var(--dur-base) var(--ease-enter) both; }
+.dr__lb-x { position: absolute; top: 16px; right: 16px; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: var(--r-sm); background: var(--s-lowest); color: var(--on-surface); cursor: pointer; }
+.dr__lb-x:hover { background: var(--s-container); }
+.dr__lb-img { max-width: 90vw; max-height: 85vh; border-radius: var(--r-md); object-fit: contain; }
+.dr__lb-doc { position: relative; width: 90vw; height: 82vh; border-radius: var(--r-md); overflow: hidden; background: var(--s-lowest); }
+.dr__lb-doc object, .dr__lb-doc iframe { width: 100%; height: 100%; border: 0; }
+.dr__lb-fall { max-width: 360px; padding: 32px; text-align: center; border-radius: var(--r-lg); background: var(--surface); color: var(--on-surface); }
+.dr__lb-fall-t { font-size: 14px; margin-bottom: 8px; }
+.dr__lb-fall-d { font-size: 12px; color: var(--on-surface-3); margin-bottom: 16px; }
+
+/* ── 11 · Loading skeleton ────────────────────────────────────────────────
+   Shaped like the content, not grey rectangles (26 §9): a skeleton whose shape
+   does not match what loads produces a visible jump, which is worse than a
+   spinner. */
+.dr__skel { display: flex; flex-direction: column; gap: 14px; }
+.dr__skel i { display: block; height: 14px; border-radius: var(--r-xs); background: var(--s-container); }
+.dr__skel-t { height: 28px !important; width: 65%; }
+
+/* ── 12 · Mobile ──────────────────────────────────────────────────────────
+   Below 768px the drawer is the full width of the viewport. A 78vw panel on a
+   390px phone leaves an 86px strip of unusable board behind it. */
+@media (max-width: 767px) {
+  .dr { width: 100%; border-left: 0; }
+  .dr__props { grid-template-columns: 1fr; }
+  .dr__titlerow { padding: 12px 14px 4px; }
+  .dr__pipe-wrap { padding: 0 14px 10px; }
+  .dr__body { padding: 14px 14px 24px; }
+  .dr__stage { min-width: 0; padding: 8px 6px; font-size: 11px; }
+}

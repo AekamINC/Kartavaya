@@ -1,30 +1,48 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useDismiss } from '../hooks/useDismiss';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import ConfirmDialog from './ui/ConfirmDialog';
 import FocusTrap from './ui/FocusTrap';
-import { StatusBar } from './ui/StatusBar';
-import { Tabs } from './ui/Tabs';
 import FieldRenderer from './fields/FieldRenderer';
 import ActivityList from './ActivityList';
 import { useToast } from './ui/toast';
 import { logger } from '../lib/utils';
 
 import DrawerHeader      from './drawer/DrawerHeader';
+import DrawerTitle       from './drawer/DrawerTitle';
+import StatusPipeline    from './drawer/StatusPipeline';
 import DrawerMeta        from './drawer/DrawerMeta';
+import DrawerTabs        from './drawer/DrawerTabs';
 import DrawerSubtasks    from './drawer/DrawerSubtasks';
 import DrawerComments    from './drawer/DrawerComments';
 import DrawerAttachments from './drawer/DrawerAttachments';
 import DrawerTimeEntries from './drawer/DrawerTimeEntries';
 import DrawerApproval    from './drawer/DrawerApproval';
-import BrandKit          from './BrandKit';
-import { lbl }           from './drawer/constants';
+import Lbl               from './drawer/DrawerLabel';
+import useAutosave       from './drawer/useAutosave';
+
+/**
+ * TaskDrawer — ORCHESTRATION ONLY (03 §5).
+ *
+ * It owns the task's data and the requests that change it. Everything that
+ * draws is a component under `drawer/`: `StatusPipeline`, `DrawerTitle` and
+ * `DrawerTabs` came out of here, and the autosave timer moved to
+ * `useAutosave`.
+ *
+ * The exit animation is the reason `open` is not simply `if (!open) return
+ * null`. A drawer that unmounts instantly never plays `dmDrawerOut`, and 26 §6
+ * is explicit that the exit is a step faster than the entrance rather than
+ * absent. `requestClose` sets `.is-closing`, waits one `--dur-base`, and then
+ * calls the parent's `onClose`; under `prefers-reduced-motion` it closes
+ * immediately, because a 200ms stall with no animation to justify it is just
+ * lag.
+ */
 
 const MAX_FILES    = 10;
 const MAX_MB       = 25;
 const MAX_MB_VIDEO = 50;
 const VIDEO_EXT    = /\.(mov|mp4|webm|avi|mkv|m4v|3gp|3gpp|flv|wmv|asf|ogv|ts|mts|m2ts)$/i;
+const EXIT_MS      = 220;   // --dur-base
 
 export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers = [] }) {
   const me = currentUser();
@@ -43,17 +61,12 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   const [scrolled,     setScrolled]   = useState(false);
   const bodyRef = useRef(null);
   const [saving,       setSaving]     = useState(false);
+  const [closing,      setClosing]    = useState(false);
   const [deletingTask, setDeletingTask] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
-  const [assigneeOpen, setAssigneeOpen] = useState(false);
-  const assigneeRef = useRef(null);
-  const fileRef     = useRef(null);
-  const videoRef    = useRef(null);
-
-  // ── Collapse title on scroll ──────────────────────────────────────────────
-  const handleBodyScroll = useCallback(() => {
-    setScrolled((bodyRef.current?.scrollTop ?? 0) > 32);
-  }, []);
+  const closeTimer = useRef(null);
+  const fileRef    = useRef(null);
+  const videoRef   = useRef(null);
 
   // ── Comments ──────────────────────────────────────────────────────────────
   const [comments,       setComments]       = useState([]);
@@ -91,25 +104,38 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   const [showRequestPanel, setShowRequestPanel] = useState(false);
   const [showRejectInput,  setShowRejectInput]  = useState(false);
 
-  // Dismissal for the assignee dropdown. This handler lived here rather than in
-  // the component that renders the dropdown, which is why it drifted from the
-  // other three copies; all four now share one hook, and all four gain Escape.
-  useDismiss(assigneeOpen, assigneeRef, useCallback(() => setAssigneeOpen(false), []));
+  const handleBodyScroll = useCallback(() => {
+    setScrolled((bodyRef.current?.scrollTop ?? 0) > 32);
+  }, []);
 
-  // ── Load task on open ─────────────────────────────────────────────────────
   const mentionSource = teamMembers.length > 0 ? teamMembers : members;
   const mentionMembers = mentionSource.map(m => ({
     user_id:      m.user_id,
     display_name: m.display_name || m.full_name || m.email || 'Unknown',
   }));
 
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
+
+  const requestClose = useCallback(() => {
+    if (typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+      onClose();
+      return;
+    }
+    setClosing(true);
+    clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => { setClosing(false); onClose(); }, EXIT_MS);
+  }, [onClose]);
+
+  // ── Load task on open ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!open || !taskId) return;
     setScrolled(false);
+    setClosing(false);
     if (bodyRef.current) bodyRef.current.scrollTop = 0;
     setTask(null); setFields([]); setFValues({});
     setComments([]); setActivity([]); setEntries([]); setTimer(null); setAttachments([]);
-    setMembers([]); setAssigneeOpen(false); setActLoad(false);
+    setMembers([]); setActLoad(false);
 
     api.get('/categories').then(r => setCategories(Array.isArray(r.data) ? r.data : [])).catch(() => {});
 
@@ -146,7 +172,6 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
     }).catch(logger.error);
   }, [open, taskId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-
   // ── Core task actions ─────────────────────────────────────────────────────
   const saveTask = useCallback(async patch => {
     setSaving(true);
@@ -154,9 +179,27 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
       const res = await api.put(`/tasks/${taskId}`, patch);
       setTask(res.data);
       onSaved?.(res.data);
-    } catch (e) { logger.error('Save failed', e); }
+      return res.data;
+    } catch (e) { logger.error('Save failed', e); throw e; }
     finally { setSaving(false); }
   }, [taskId, onSaved]);
+
+  /**
+   * The description autosaves on a 800ms debounce and flushes on blur.
+   * It used to save on blur ONLY, which loses the edit entirely if the drawer
+   * is closed with the field still focused — the scrim swallows the click, the
+   * component unmounts, and no blur ever fires.
+   */
+  // The unchanged-check belongs HERE, not at the keystroke. Guarding `schedule`
+  // instead leaves a stale intermediate value queued when the user types and
+  // then undoes back to the original — the queue would still flush the middle
+  // of the edit on blur.
+  const descSave = useCallback(v => {
+    if ((v || '') === (task?.description || '')) return undefined;
+    return saveTask({ description: v });
+  }, [saveTask, task]);
+  const desc = useAutosave(descSave);
+  useEffect(() => { desc.reset(); }, [taskId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveReminders = useCallback(async (reminders) => {
     setSaving(true);
@@ -178,13 +221,16 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
     catch (e) { logger.error('Field save failed', e); }
   }, [taskId]);
 
-  const toggleAssignee = useCallback(async uid => {
-    const current = task?.assignee_user_ids || [];
-    const next = current.includes(uid) ? current.filter(x => x !== uid) : [...current, uid];
+  /**
+   * The multi Picker hands back the whole list, so this replaces the old
+   * one-id-at-a-time toggle. Same optimistic update, one fewer round trip when
+   * two people are added in a row.
+   */
+  const setAssignees = useCallback(async next => {
     setTask(t => ({ ...t, assignee_user_ids: next }));
     try { await api.put(`/tasks/${taskId}`, { assignee_user_ids: next }); }
     catch (e) { logger.error(e); }
-  }, [task, taskId]);
+  }, [taskId]);
 
   const onColumnChange = useCallback(async colId => {
     try {
@@ -499,182 +545,177 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
 
   if (!open) return null;
 
+  const stages = columns
+    .filter(c => !(c.name || '').toLowerCase().includes('approval'))
+    .map(c => ({ value: c.column_id, label: c.name }));
+
+  const details = task && (
+    <>
+      <div className="dr__sec">
+        <Lbl hi="विवरण">
+          Description
+        </Lbl>
+        <textarea
+          className="dr__ta"
+          aria-label="Task description"
+          placeholder="Add a description…"
+          rows={5}
+          value={draft.description || ''}
+          onChange={e => {
+            const v = e.target.value;
+            setDraft(d => ({ ...d, description: v }));
+            desc.schedule(v);
+          }}
+          onBlur={desc.flush}
+        />
+        <span className={`dr__auto${desc.status === 'error' ? ' dr__auto--error' : ''}`} role="status">
+          {desc.status === 'saving' ? 'Saving…' : desc.status === 'saved' ? 'Saved' : desc.status === 'error' ? 'Not saved' : ''}
+        </span>
+      </div>
+
+      <DrawerSubtasks
+        task={task} members={members}
+        newSubtask={newSubtask} setNewSubtask={setNewSubtask}
+        addingSubtask={addingSubtask}
+        addSubtask={addSubtask} toggleSubtask={toggleSubtask}
+        deleteSubtask={deleteSubtask} updateSubtaskAssignee={updateSubtaskAssignee}
+      />
+
+      {fields.length > 0 && (
+        <div className="dr__sec">
+          <Lbl>Custom fields</Lbl>
+          <div className="dr__props dr__props--flush">
+            {fields.map(f => (
+              <div className="dr__prop" key={f.field_id}>
+                <Lbl>{f.name}</Lbl>
+                <FieldRenderer field={f} value={fValues[f.field_id] ?? null} onChange={v => saveFieldValue(f.field_id, v)} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {task.team_id && (
+        <DrawerApproval
+          task={task}
+          isOwnerAdmin={isOwnerAdmin} isClient={isClient}
+          showApprovePanel={showApprovePanel}   setShowApprovePanel={setShowApprovePanel}
+          showRequestPanel={showRequestPanel}   setShowRequestPanel={setShowRequestPanel}
+          showRejectInput={showRejectInput}     setShowRejectInput={setShowRejectInput}
+          approvalLoading={approvalLoading}
+          approvalNotes={approvalNotes}         setApprovalNotes={setApprovalNotes}
+          requestNotes={requestNotes}           setRequestNotes={setRequestNotes}
+          rejectNote={rejectNote}               setRejectNote={setRejectNote}
+          clientList={clientList}               clientUserId={clientUserId} setClientUserId={setClientUserId}
+          requestApproval={requestApproval}     openApprovePanel={openApprovePanel}
+          approveTask={approveTask}             rejectTask={rejectTask}
+          clientApproveTask={clientApproveTask} clientRejectTask={clientRejectTask}
+        />
+      )}
+    </>
+  );
+
   return (
     <>
-      <div className="k-dr-scrim" role="presentation" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div
+        className={`dr__scrim${closing ? ' is-closing' : ''}`}
+        role="presentation"
+        onClick={e => e.target === e.currentTarget && requestClose()}
+      >
         {/* The drawer was the last overlay with no focus trap — modal,
             ConfirmDialog and CommandPalette all have one. Tab walked straight
             out of the open drawer into the board behind the scrim, and closing
             dropped focus at <body> instead of returning it to the card that
             opened it. Trap wraps the panel, not the scrim. */}
         <FocusTrap active>
-        <div
-          className={`k-dr${scrolled ? ' is-scrolled' : ''}`}
-          role="dialog"
-          aria-modal="true"
-          aria-label={task?.title ? `Task: ${task.title}` : 'Task details'}
-        >
+          <div
+            className={`dr${closing ? ' is-closing' : ''}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label={task?.title ? `Task: ${task.title}` : 'Task details'}
+            /* Escape closes the drawer. `useDismiss` stops Escape at the
+               document in the capture phase while a picker or a menu is open,
+               so this handler never sees it — closing two layers on one
+               keypress is the usual bug here. */
+            onKeyDown={e => { if (e.key === 'Escape') requestClose(); }}
+          >
+            <DrawerHeader
+              task={task} draft={draft} saving={saving}
+              canDeleteTask={canDeleteTask} deletingTask={deletingTask}
+              onClose={requestClose} onDeleteTask={handleDeleteTask}
+              onArchiveTask={!isClient ? handleArchiveTask : undefined}
+              onUnarchiveTask={!isClient ? handleUnarchiveTask : undefined}
+              scrolled={scrolled}
+            />
 
-          <DrawerHeader
-            task={task} draft={draft} setDraft={setDraft} saving={saving}
-            canDeleteTask={canDeleteTask} deletingTask={deletingTask}
-            onClose={onClose} onDeleteTask={handleDeleteTask} saveTask={saveTask}
-            onArchiveTask={!isClient ? handleArchiveTask : undefined}
-            onUnarchiveTask={!isClient ? handleUnarchiveTask : undefined}
-            scrolled={scrolled}
-          />
+            <DrawerTitle task={task} draft={draft} setDraft={setDraft} saveTask={saveTask} />
 
-          {/* Odoo-style status pipeline bar */}
-          {task && columns.length > 0 && (
-            <div style={{ padding: '0 16px 8px' }}>
-              <StatusBar
-                stages={columns
-                  .filter(c => !(c.name || '').toLowerCase().includes('approval'))
-                  .map(c => ({ value: c.column_id, label: c.name }))}
-                current={task.column_id}
-                onStageClick={colId => onColumnChange(colId)}
-              />
-            </div>
-          )}
-
-          <DrawerMeta
-            task={task} draft={draft} setDraft={setDraft} saveTask={saveTask}
-            saveReminders={saveReminders}
-            onColumnChange={onColumnChange}
-            columns={columns} members={members} categories={categories}
-            assigneeOpen={assigneeOpen} setAssigneeOpen={setAssigneeOpen}
-            assigneeRef={assigneeRef} toggleAssignee={toggleAssignee}
-          />
-
-          {/* Tabbed body — Odoo notebook-style */}
-          <div className="k-dr__body" ref={bodyRef} onScroll={handleBodyScroll}>
-
-            {!task && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {[65, 40, 80, 40].map((w, i) => (
-                  <div key={i} style={{ height: 14, background: 'var(--rule-soft)', borderRadius: 4, width: `${w}%` }} />
-                ))}
+            {task && stages.length > 0 && (
+              <div className="dr__pipe-wrap">
+                <StatusPipeline stages={stages} current={task.column_id} onStageClick={onColumnChange} />
               </div>
             )}
 
-            {task && (
-              <Tabs
-                defaultTab="details"
-                tabs={[
-                  {
-                    value: 'details', label: 'Details', count: (task.subtasks?.length || 0) + fields.length,
-                    content: (
-                      <>
-                        {/* ── Description ── */}
-                        <div style={{ marginBottom: 20 }}>
-                          <span style={lbl}>
-                            Description{' '}
-                            <span style={{ fontFamily: 'var(--font-hindi)', fontSize: 12, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-faint)', fontWeight: 400 }}>
-                              &#x0935;&#x093F;&#x0935;&#x0930;&#x0923;
-                            </span>
-                          </span>
-                          <textarea
-                            className="k-input"
-                            value={draft.description || ''}
-                            onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
-                            onBlur={() => draft.description !== task.description && saveTask({ description: draft.description })}
-                            rows={5}
-                            style={{ width: '100%', resize: 'vertical', lineHeight: 1.65, fontSize: 13 }}
-                            placeholder="Add a description&hellip;"
-                          />
-                        </div>
+            <DrawerMeta
+              task={task} draft={draft} setDraft={setDraft} saveTask={saveTask}
+              saveReminders={saveReminders}
+              onColumnChange={onColumnChange}
+              columns={columns} members={members} categories={categories}
+              assignees={task?.assignee_user_ids || []} setAssignees={setAssignees}
+            />
 
-                        {/* ── Subtasks ── */}
-                        <DrawerSubtasks
-                          task={task} members={members}
-                          newSubtask={newSubtask} setNewSubtask={setNewSubtask}
-                          addingSubtask={addingSubtask}
-                          addSubtask={addSubtask} toggleSubtask={toggleSubtask}
-                          deleteSubtask={deleteSubtask} updateSubtaskAssignee={updateSubtaskAssignee}
-                        />
+            <div className="dr__body" ref={bodyRef} onScroll={handleBodyScroll}>
+              {!task && (
+                <div className="dr__skel">
+                  <i style={{ width: '65%' }} />
+                  <i style={{ width: '40%' }} />
+                  <i style={{ width: '80%' }} />
+                  <i style={{ width: '40%' }} />
+                </div>
+              )}
 
-                        {/* ── Custom fields ── */}
-                        {fields.length > 0 && (
-                          <div style={{ marginBottom: 20 }}>
-                            <span style={lbl}>Custom Fields</span>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(180px,1fr))', gap: 12 }}>
-                              {fields.map(f => (
-                                <div key={f.field_id}>
-                                  <span style={lbl}>{f.name}</span>
-                                  <FieldRenderer field={f} value={fValues[f.field_id] ?? null} onChange={v => saveFieldValue(f.field_id, v)} />
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* ── Approval ── */}
-                        {task.team_id && (
-                          <DrawerApproval
-                            task={task}
-                            isOwnerAdmin={isOwnerAdmin} isClient={isClient}
-                            showApprovePanel={showApprovePanel}   setShowApprovePanel={setShowApprovePanel}
-                            showRequestPanel={showRequestPanel}   setShowRequestPanel={setShowRequestPanel}
-                            showRejectInput={showRejectInput}     setShowRejectInput={setShowRejectInput}
-                            approvalLoading={approvalLoading}
-                            approvalNotes={approvalNotes}         setApprovalNotes={setApprovalNotes}
-                            requestNotes={requestNotes}           setRequestNotes={setRequestNotes}
-                            rejectNote={rejectNote}               setRejectNote={setRejectNote}
-                            clientList={clientList}               clientUserId={clientUserId} setClientUserId={setClientUserId}
-                            requestApproval={requestApproval}     openApprovePanel={openApprovePanel}
-                            approveTask={approveTask}             rejectTask={rejectTask}
-                            clientApproveTask={clientApproveTask} clientRejectTask={clientRejectTask}
-                          />
-                        )}
-                      </>
-                    ),
-                  },
-                  {
-                    value: 'comments', label: 'Comments', count: comments.length,
-                    content: (
-                      <DrawerComments
-                        comments={comments} comment={comment} setComment={setComment}
-                        postComment={postComment} deleteComment={deleteComment}
-                        editingComment={editingComment} editBody={editBody} setEditBody={setEditBody}
-                        startEditComment={startEditComment} saveEditComment={saveEditComment}
-                        me={me} isSystemAdmin={isSystemAdmin} mentionMembers={mentionMembers}
-                      />
-                    ),
-                  },
-                  {
-                    value: 'files', label: 'Files', count: attachments.length,
-                    content: (
-                      <DrawerAttachments
-                        attachments={attachments} uploading={uploading} uploadProgress={uploadProgress}
-                        fileRef={fileRef} videoRef={videoRef} handleFileChange={handleFileChange}
-                        removeAttachment={removeAttachment}
-                        onPrivacyChange={handlePrivacyChange}
-                        members={members}
-                        currentUserId={me?.user_id}
-                      />
-                    ),
-                  },
-                  ...(!isClient ? [{
-                    value: 'time', label: 'Time', count: entries.length,
-                    content: (
-                      <DrawerTimeEntries
-                        timer={timer} entries={entries}
-                        manualMin={manualMin} setManualMin={setManualMin}
-                        manualDesc={manualDesc} setManualDesc={setManualDesc}
-                        startTimer={startTimer} stopTimer={stopTimer}
-                        addManual={addManual} deleteEntry={deleteEntry}
-                      />
-                    ),
-                  }] : []),
-                  {
-                    value: 'activity', label: 'Activity', count: activity.length,
-                    content: <ActivityList events={activity} loading={actLoad} />,
-                  },
-                ]}
-              />
-            )}
+              {task && (
+                <DrawerTabs
+                  showTime={!isClient}
+                  detailsCount={(task.subtasks?.length || 0) + fields.length}
+                  details={details}
+                  commentCount={comments.length}
+                  comments={
+                    <DrawerComments
+                      comments={comments} comment={comment} setComment={setComment}
+                      postComment={postComment} deleteComment={deleteComment}
+                      editingComment={editingComment} editBody={editBody} setEditBody={setEditBody}
+                      startEditComment={startEditComment} saveEditComment={saveEditComment}
+                      me={me} isSystemAdmin={isSystemAdmin} mentionMembers={mentionMembers}
+                    />
+                  }
+                  fileCount={attachments.length}
+                  files={
+                    <DrawerAttachments
+                      attachments={attachments} uploading={uploading} uploadProgress={uploadProgress}
+                      fileRef={fileRef} videoRef={videoRef} handleFileChange={handleFileChange}
+                      removeAttachment={removeAttachment}
+                      onPrivacyChange={handlePrivacyChange}
+                      members={members}
+                      currentUserId={me?.user_id}
+                    />
+                  }
+                  timeCount={entries.length}
+                  time={
+                    <DrawerTimeEntries
+                      timer={timer} entries={entries}
+                      manualMin={manualMin} setManualMin={setManualMin}
+                      manualDesc={manualDesc} setManualDesc={setManualDesc}
+                      startTimer={startTimer} stopTimer={stopTimer}
+                      addManual={addManual} deleteEntry={deleteEntry}
+                    />
+                  }
+                  activityCount={activity.length}
+                  activity={<ActivityList events={activity} loading={actLoad} />}
+                />
+              )}
+            </div>
           </div>
-        </div>
         </FocusTrap>
       </div>
 
