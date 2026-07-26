@@ -156,6 +156,8 @@ def inject_pool(mock_pool):
     db._pool = original
 
 
+# ── Rate limiter ──────────────────────────────────────────────────────────────
+
 @pytest.fixture(autouse=True)
 def reset_rate_limits():
     """Clear both rate limiters before every test.

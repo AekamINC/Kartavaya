@@ -240,6 +240,14 @@ PLATFORM_ROLE_PRECEDENCE: tuple[str, ...] = (
 )
 
 
+#: Tier 2 — the org roles that run an organisation. This file had constants for
+#: Tier 1 and Tier 4 but none for Tier 2, so `require_org_role("org_owner",
+#: "org_admin")` stayed written out by hand at every call site — the exact habit
+#: this module exists to end, one tier lower down. Named here so the HR PII gate
+#: reads from the same place as everything else.
+ORG_ADMIN_ROLES: tuple[str, ...] = ("org_owner", "org_admin")
+
+
 def strongest(roles: list[str] | tuple[str, ...] | None) -> str | None:
     """The most privileged platform role from a set, or None."""
     if not roles:
@@ -425,15 +433,36 @@ async def held_module_levels(
     if org_role:
         levels.add(ADMIN)
 
-    rows = await pool.fetch(
-        "SELECT role FROM staging.org_member_modules "
-        "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
-        user_id, org_id, module_code,
-    )
-    for row in rows:
-        granted = row["role"]
-        if granted in LEVELS:
-            levels.add(granted)
+    # `org_member_modules.role` is added by PROPOSED_066 §1, which is PROPOSED —
+    # the highest APPLIED migration in backend/migrations is 061. Until it runs,
+    # this SELECT raises UndefinedColumnError, and because this function is on
+    # the path of EVERY Manav and Vetana request that would be a total outage of
+    # both modules rather than a refusal.
+    #
+    # So the missing column degrades to "a grant row exists, at the default
+    # level" — which is exactly the value PROPOSED_066 gives the column
+    # (`DEFAULT 'viewer'`), so behaviour does not change when the migration
+    # lands. It is not a bypass: org_owner/org_admin and god mode reach `admin`
+    # through the two queries above and never touch this one.
+    import asyncpg
+
+    try:
+        rows = await pool.fetch(
+            "SELECT role FROM staging.org_member_modules "
+            "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
+            user_id, org_id, module_code,
+        )
+        for row in rows:
+            granted = row["role"]
+            if granted in LEVELS:
+                levels.add(granted)
+    except asyncpg.UndefinedColumnError:
+        if await pool.fetchval(
+            "SELECT 1 FROM staging.org_member_modules "
+            "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
+            user_id, org_id, module_code,
+        ):
+            levels.add(DEFAULT_GRANT_LEVEL)
 
     return frozenset(levels)
 
