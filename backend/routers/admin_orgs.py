@@ -21,6 +21,8 @@ from services.storage import create_org_bucket, verify_r2_credentials, clear_org
 from middleware.role_tiers import (
     ALL_PLATFORM_ROLES, GOD_MODE_ROLES, MANAGER_ROLES, STAFF_ROLES,
     FINANCE_CONSOLE_ROLES, SUPERUSER_ONLY_ROLES,
+    ALL_MODULES as ROLE_TIER_MODULES,
+    SENSITIVE_MODULES,
 )
 
 # Who may open the platform console. Reaching the console is not the same as
@@ -675,7 +677,11 @@ async def add_member(
 
     # Module grants: if explicit list provided, use it;
     # otherwise auto-grant non-sensitive modules that are enabled for this org
-    SENSITIVE = {"vetana", "ganit", "manav"}
+    # Was a retyped `{"vetana", "ganit", "manav"}`. Identical to
+    # role_tiers.SENSITIVE_MODULES today, which is exactly why it was worth
+    # importing: two copies that agree are one edit away from disagreeing, and
+    # the direction this one fails in is auto-granting payroll.
+    SENSITIVE = SENSITIVE_MODULES
     target_uid = target["user_id"]
 
     if body.module_grants:
@@ -809,10 +815,22 @@ async def revoke_role(
 
 # ── Module Management ──────────────────────────────────────
 
-ALL_MODULES = [
-    "graha", "ganit", "manav", "vikray", "vetana",
-    "dristi", "prachar", "srijan",
-]
+# The list used to be retyped here, and held EIGHT codes where role_tiers holds
+# twelve. `org_members.py` had the identical bug and was fixed the same way in
+# 40124fb. The consequence here was concrete: `POST /{org_id}/modules/{code}`
+# and its DELETE both validate against this name, so switching Sanvaad, Varta,
+# eSign or Pahchan on for a customer returned `400 Unknown module` from the
+# platform console — four modules unreachable through the only UI that reaches
+# them.
+#
+# `sanvaad` is added on top of role_tiers' twelve rather than replacing
+# `samvada`, because THESE endpoints write `staging.module_subscriptions`, and
+# that table spells the module `sanvaad` — verified live, it holds `sanvaad` and
+# never `samvada`. Importing role_tiers' spelling alone would swap one 400 for
+# another and reject the exact code the live data uses. Both spellings are
+# accepted until `PROPOSED_069_sanvaad_spelling.sql` converges them; that file
+# names this line as one of the places the workaround disappears from.
+ALL_MODULES = frozenset(ROLE_TIER_MODULES) | {"sanvaad"}
 
 
 @router.post("/{org_id}/modules/{module_code}")
@@ -822,7 +840,10 @@ async def enable_module(
     user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     if module_code not in ALL_MODULES:
-        raise HTTPException(400, f"Unknown module: {module_code}. Valid: {', '.join(ALL_MODULES)}")
+        # sorted() because ALL_MODULES is a frozenset now — an unsorted join
+        # gives the same request a differently-ordered error message on every
+        # process, which is miserable to search for in a log.
+        raise HTTPException(400, f"Unknown module: {module_code}. Valid: {', '.join(sorted(ALL_MODULES))}")
     pool = await get_pool()
     org = await pool.fetchval("SELECT id FROM staging.organisations WHERE id=$1::uuid", org_id)
     if not org:
