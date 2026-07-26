@@ -138,7 +138,7 @@ export default function ThreadPanel({ channelId, root, me, meId, meName, onClose
       <Composer
         onSend={send}
         label="Reply in thread"
-        placeholder="Reply…  उत्तर दें"
+        placeholder="Reply…"
       />
     </aside>
   );

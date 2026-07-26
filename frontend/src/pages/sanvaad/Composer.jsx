@@ -17,6 +17,26 @@ import { QUICK } from './Message';
 /** `.cmp__ta` caps at 180px; keep the two numbers in one place. */
 const MAX_H = 180;
 
+/**
+ * English only, deliberately. `24-bilingual-devanagari.md` closes with an
+ * explicit "No" list — "validation messages, error text, empty-state
+ * explanations, tooltips, form field labels, table column headers" — and a
+ * placeholder is the label of the field it sits in. The rule there is that
+ * Devanagari is "a recognition cue on things the user already knows the meaning
+ * of"; "Write a message…" is an instruction, not a name the reader already
+ * recognises, so the second script buys nothing.
+ *
+ * The structural half matters more than the editorial half. A placeholder is a
+ * plain string attribute, so the Devanagari inside one can never carry `lang`
+ * or `--font-indic` — the two things `24` requires of every Indic run. Without
+ * `lang` a screen reader speaks Devanagari with the English voice; without
+ * `--font-indic` an EN+GU user gets Devanagari where Gujarati was chosen. Every
+ * other Indic string in this module (`.sv__hi`, `EmptyState`'s `{en, hi}`
+ * title) is a nested element for exactly that reason. A placeholder cannot be,
+ * so it does not get one.
+ */
+const DEFAULT_PLACEHOLDER = 'Write a message…';
+
 export default function Composer({
   onSend, disabled, placeholder, replyTo, onCancelReply, emoji = false, label = 'Message',
 }) {
@@ -111,7 +131,7 @@ export default function Composer({
           className="cmp__ta"
           rows={1}
           aria-label={label}
-          placeholder={placeholder || 'Write a message…  संदेश लिखें'}
+          placeholder={placeholder || DEFAULT_PLACEHOLDER}
           value={text}
           disabled={disabled}
           onChange={e => setText(e.target.value)}

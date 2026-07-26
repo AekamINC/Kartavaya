@@ -76,7 +76,7 @@ export default function ChatPane({
         disabled={!!error}
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
-        placeholder={threadOpen ? 'Write in the channel…' : 'Write a message…  संदेश लिखें'}
+        placeholder={threadOpen ? 'Write in the channel…' : 'Write a message…'}
       />
     </div>
   );
