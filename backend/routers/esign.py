@@ -421,10 +421,19 @@ async def verify_otp(token: str, body: OTPVerify, request: Request):
         current["first_at"] = datetime.now(timezone.utc)
     attempts[otp_attempts_key] = current
 
-    if body.otp != signer["otp_code"]:
+    # Constant-time. A 6-digit OTP is a 10^6 space and `!=` short-circuits at the
+    # first differing digit, so failure timing narrows it a digit at a time.
+    # `services/esign_service.py:140` — the Ganit signing path, same OTP, same
+    # length — already uses compare_digest; this path did not.
+    from utils import secret_matches
+
+    if not secret_matches(body.otp, signer["otp_code"]):
         client_ip = request.client.host if request.client else "unknown"
+        # The entered value is NOT recorded. It is a credential guess, and on a
+        # mistyped digit it is very close to the real one; an audit row saying an
+        # attempt failed is the fact worth keeping.
         await _audit(pool, signer["document_id"], signer["id"], "otp_failed",
-                     signer["email"], client_ip, None, {"entered": body.otp})
+                     signer["email"], client_ip, None)
         raise HTTPException(400, "Invalid OTP")
 
     await pool.execute(
