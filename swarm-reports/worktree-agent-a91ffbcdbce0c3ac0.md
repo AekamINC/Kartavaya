@@ -1,11 +1,18 @@
 # Finance & Operations Backend Audit — ganit, vikray, prachar, dristi
 
-Agent branch: `worktree-agent-a91ffbcdbce0c3ac0`
-Base: `staging`
+Agent branch: `rescue/a91ffbcdbce0c3ac0` (was `worktree-agent-a91ffbcdbce0c3ac0`; rescued after the
+spend-limit stop, rebased on `staging`)
 Scope: `backend/routers/ganit.py`, `vikray.py`, `prachar.py`, `prachar_ads.py`, `dristi.py`
 Out of scope (other agents): `manav.py`, `vetana.py`, `graha.py`, `me.py`, `org_*.py`, approvals, messaging.
 
-Suite: **409 passed**, 0 failed. Gates: `check-tokens` 0 missing, `check-classes` 0 missing (run from `frontend/`, not repo root).
+Suite: **419 passed**, 0 failed. Gates: `check-tokens` and `check-classes` both **exit 0**,
+run from `frontend/` with unpiped exit codes.
+
+> Gate note, per coordination §2: I initially ran the gates from the repo root through
+> `| tail`, which reports **`tail`'s** status, not node's. That is the trap three agents
+> fell into. From the root these scripts `process.exit(1)` — a **loud failure, not a
+> silent pass**. The passing result above is from `frontend/` with the exit code read
+> directly.
 
 ---
 
@@ -63,42 +70,62 @@ every grant (`org_member_modules.role`), returned to the UI, and read by nothing
 `require_module()` checks only that a grant *row exists*: a `viewer` and an
 `admin` reached identical endpoints.
 
-It could not have been enforced as the schema stood. Two standing rules collide:
+### The blocking contradiction — FLAGGED, NOT RESOLVED
 
-- `PROPOSED_065`: *"Vetana, Ganit and Manav must have NO per-member grant row at
-  all. Access is a function of the org role."*
-- `role_tiers`: in ganit/vetana, only an explicit **approver** grant approves.
+This is coordination §5, and I reached it independently from the ganit side. It
+needs the **owner**, not an agent:
 
-`org_member_modules` is forbidden for ganit; `user_roles` carries only
-org_owner / org_admin / org_member. **There is no row anyone can write that means
-"may approve in Ganit."** Separated duty was not merely unenforced — it had
-nowhere to live.
+- `RBAC-SPEC.md:65` / `PROPOSED_065` — *"Sensitive modules are role-derived, not
+  granted. Vetana, Ganit and Manav have no per-member grant row at all."* A grant
+  row naming a sensitive module is invalid input.
+- The Tier-4 model — a grant row **carrying a level** is precisely how `approver`
+  is held.
 
-### What I did
+Both cannot be true. `org_member_modules` is forbidden for ganit; `user_roles`
+carries only org_owner / org_admin / org_member. **There is no row anyone can
+write today that means "may approve in Ganit."** Separated duty is not merely
+unenforced — it is not representable.
 
-- `backend/middleware/module_levels.py` — the missing consumer. `require_level()`
-  and `held_level()`.
-- `backend/migrations/PROPOSED_074_module_approvers.sql` — `staging.org_module_approvers`,
-  the missing noun. Depth only, never reach; own audit columns; partial-unique so
-  revoked rows are retained. **Not applied.**
-- Applied `require_level("ganit", APPROVER)` to the two actions that are not
+**I have not resolved this, and deliberately so.** Enforcement built against the
+wrong horn is worse than the current gap, because it would *look* enforced.
+
+### What I shipped — dormant by construction
+
+- `backend/middleware/module_levels.py` — the missing consumer for
+  `level_satisfies()`: `require_level()` and `held_level()`.
+- `require_level("ganit", APPROVER)` applied to the two actions that are not
   bookkeeping: **cancel invoice** (voids a tax document) and **vendor bill
   payment** (money leaves the company).
-- The resolver **probes for the table and self-activates**. Absent → org_owner /
-  org_admin keep today's access, nothing breaks on deploy. Present → only an
-  explicit approver row approves, and *platform_admin is refused too* — Aekam
-  support must never release a customer's money.
+- **Live behaviour today is unchanged.** The resolver probes for an approver
+  table; absent, it falls back to exactly the access org_owner / org_admin have
+  now. Nothing is revoked by this deploy.
+
+### PROPOSED_074 is ONE CANDIDATE, not the answer
+
+`backend/migrations/PROPOSED_074_module_approvers.sql` sketches
+`staging.org_module_approvers` — a separate table that would sidestep the
+contradiction by holding approver as **depth only, never reach**, so
+`RBAC-SPEC.md:65` keeps its "no per-member grant row" rule intact while approver
+gets a home. Own audit columns; partial-unique so revoked rows are retained.
+
+**It is a proposal for the owner to accept, reshape or reject.** I am not
+asserting it is the right horn. If the owner instead decides Tier-4 wins and
+sensitive modules *do* take levelled grant rows, then 074 should be discarded and
+the enforcement re-pointed at `org_member_modules.role` — a small change to
+`held_level()`, because the guard was written against the question, not the table.
+
+> **If 074 is ever applied, it must not be applied without its seed.** Between
+> `CREATE TABLE` and the first `INSERT`, no one in any org can cancel an invoice
+> or pay a vendor bill — the resolver self-activates on the table's existence.
+> Seeding options and verification queries are in the migration header.
 
 ### What I deliberately did NOT do
 
 Ordinary ganit writes are **not** raised to `editor`. `DEFAULT_GRANT_LEVEL` is
 `viewer` and existing rows predate the level column, so enforcing editor today
 would revoke ordinary bookkeeping from real users with no migration to restore
-it. That tightening needs a grant-level backfill first. **Open work.**
-
-> **PROPOSED_074 must not be applied without its seed.** Between `CREATE TABLE`
-> and the first `INSERT`, no one in any org can cancel an invoice or pay a vendor
-> bill. Seeding options and verification queries are in the migration header.
+it. That tightening needs a grant-level backfill first — and it needs the
+contradiction settled. **Open work.**
 
 ---
 
@@ -110,15 +137,22 @@ Roles: **PO** platform_owner/admin · **PM** platform_manager · **PS** platform
 
 `ganit` is sensitive: PM and PS are refused by `require_module` and PO's pass is audited.
 
+> **Enforcement as it IS, today, on this branch:** module *levels* are enforced
+> nowhere that changes an outcome. `require_module` still checks only that a grant
+> row exists. In ganit, `admin` satisfying `approver` is **not** hypothetical — it
+> is the live behaviour, and my two guards fall back to permitting it because the
+> approver table does not exist. The "After" column below marks what changes on
+> deploy versus what waits on the owner's decision (§2).
+
 ### ganit — 52 endpoints
 
-| Endpoints | Before | After | Note |
+| Endpoints | Before | After (live now) | Once separated duty is settled |
 |---|---|---|---|
-| 48 reads/writes (products, invoices, expenses, contracts, recurring, vendors, bank, stats) | PO, OO/OA, OM+g | **unchanged** | no legitimate user loses access |
-| `POST /invoices/{id}/cancel` | PO, OO/OA, OM+g | PO/OO/OA today → **explicit approver only** once 074 applies | separated duty |
-| `POST /vendor-bills/{id}/payments` | PO, OO/OA, OM+g | same as above | separated duty |
-| `GET /invoices/{id}/pdf` | all of the above | same roles, **409 if org has no GSTIN** and doc is a tax document | §4 |
-| `POST /invoices/from-time-entries` | *nobody — 500 on every call* | PO, OO/OA, OM+g | was dead; now works and is org-scoped |
+| 48 reads/writes (products, invoices, expenses, contracts, recurring, vendors, bank, stats) | PO, OO/OA, OM+g | **unchanged** | editor tightening — open work |
+| `POST /invoices/{id}/cancel` | PO, OO/OA, OM+g | **unchanged** — guard present but falls back | explicit approver only; PO refused too |
+| `POST /vendor-bills/{id}/payments` | PO, OO/OA, OM+g | **unchanged** — same fallback | same |
+| `GET /invoices/{id}/pdf` | all of the above | same roles, **409 if org has no GSTIN** and doc is a tax document | — |
+| `POST /invoices/from-time-entries` | *nobody — 500 on every call* | PO, OO/OA, OM+g | — |
 | 4 × `/sign/{token}` | **public, by design** | unchanged | token-bearer e-sign flow, correct |
 
 ### vikray — 16 endpoints
@@ -223,41 +257,78 @@ handler rather than the query and is easy to delete by accident.
 
 ## 6. Document data — what the design needs vs what ganit returns
 
-### `Tax Invoice.html`
+A sibling left all four documents to me. Field-by-field, against the rendered
+design files in `design-reference/Kartavaya Redesign/docs/`.
+
+### `Tax Invoice.html` — closest to complete
 
 **Supplier block: fully supplied.** `download_invoice_pdf` selects name, gstin,
 pan, billing_address, logo_url/key, email, phone, website, bank_details,
-invoice_note — exactly the shape the design's `ORGS` fixture mirrors.
+invoice_note — the shape the design's `ORGS` fixture mirrors.
 
-**Missing from the backend entirely:**
+**FIXED this pass — a field that existed and was never read:**
+
+| Field | Was | Now |
+|---|---|---|
+| **Authorised signatory** + designation, and the **Rule 46** declaration | `organisations.authorized_signatory_name` / `_designation` have existed since the org-profile migration; `download_invoice_pdf` never selected them and the renderer had no block. **Every invoice the product has produced was missing its signature block.** | selected, rendered, and marked `Authorised signatory not set` when blank |
+
+**Still missing — needs a schema addition (not proposed here; the document-pass
+agent owns rendering and should shape the columns):**
 
 | Field the design renders | Backend status |
 |---|---|
 | **Reverse charge** (Yes/No) | not in model or table |
-| **Rounding** line (₹0.20) | not computed or stored; `_compute_invoice` does not round to the rupee |
-| **e-Invoice: IRN, Ack no., Ack date** | absent — no column, no endpoint |
-| **Shipped to** (address + contact name/phone) | absent from `ganit_invoices` (vikray orders have `shipping_address`; ganit does not) |
-| **Authorised signatory** name + designation | not stored |
-| **State code** ("· State code 27") | derivable from GSTIN — now available via `gstin.state_code()`, not yet surfaced |
-| Line-item **sub-description** (e.g. "42 hours @ ₹2,380/hr") | `LineItem` has no such field |
+| **Rounding** line (₹0.20) | not computed or stored; `_compute_invoice` never rounds to the rupee |
+| **e-Invoice: IRN, Ack no., Ack date** | absent — no column, no endpoint, no IRP integration |
+| **Shipped to** (address + contact name/phone) | absent from `ganit_invoices`; `vikray_orders` has `shipping_address`, ganit does not |
+| Line-item **sub-description** ("42 hours @ ₹2,380/hr") | `LineItem` has no such field |
+| **State code** ("· State code 27") | derivable — `gstin.state_code()` exists now, not yet surfaced |
 | Aggregate **CGST/SGST rate label** ("@ 9%") | per-line `gst_rate` stored; aggregate half-rate not derived |
-| "12 days overdue" | derivable from `due_date`; not returned |
+| "12 days overdue" badge | derivable from `due_date`; not returned |
 
-### `GSTR-3B Summary.html` and `TDS Challan.html`
+### `Statement of Account.html` — no endpoint, but the data exists
 
-**No backend at all.** Zero endpoints, zero tables, zero fields — `grep -i
-"gstr|tds|challan"` across `backend/` returns nothing. Both documents need a
-data layer built from scratch: GSTR-3B needs outward/inward supply aggregation by
-nature of supply, ITC eligibility split and a cash/ITC payment table; TDS Challan
-needs per-section (194C/194J/194I/194H/192B) deduction aggregation, TAN, BSR code
-and CIN. **Not started — sizeable, and out of reach in this pass.**
+Ganit has `/payables-summary` (vendor side, with ageing buckets) and **nothing on
+the receivables side**. Everything needed is already in the tables — this is a
+missing *endpoint*, not missing data:
 
-### `Statement of Account.html`
+| Design element | Source available today |
+|---|---|
+| Opening / closing balance, running ledger | `ganit_invoices` + `ganit_payments`, interleaved by date |
+| Debit rows (INV-…) | `ganit_invoices` |
+| Credit rows (RCPT-…) | `ganit_payments` — **but payments have no document number**; the design shows `RCPT-914`. `next_doc_number` has no `ganit_payments` entry |
+| Ageing (current / 1–30 / 31–60 / 61–90 / 90+) | same CASE expression as `payables_summary`, pointed at receivables |
+| MSME §43B(h) 45-day threshold date | derivable from `invoice_date`; **the MSME registration flag is not stored** |
+| UPI QR | `organisations.bank_details.upi_id` exists; QR generation does not |
 
-**No receivables endpoint.** Ganit has `/payables-summary` (vendor side, with
-ageing) but nothing that produces a per-contact running-balance ledger:
-opening balance, interleaved invoices and receipts, closing balance, ageing
-buckets, and the MSME §43B(h) 45-day threshold date. **Not started.**
+**Not built.** Closest to reachable of the three gaps.
+
+### `GSTR-3B Summary.html` — no backend
+
+Zero endpoints, zero tables (`grep -i "gstr"` across `backend/` returns nothing).
+Needs: outward supplies split by nature (taxable / zero-rated / nil-exempt /
+reverse-charge inward / non-GST), ITC split into available / reversed (rule 42-43)
+/ ineligible (§17(5)), and a 6.1 payment table splitting tax paid via ITC vs cash.
+`ganit_invoices` and `ganit_vendor_bills` could feed the supply side; **nothing
+models ITC eligibility or reconciliation against GSTR-2B**, which the design shows
+prominently ("59 matched in 2B", "Two purchase invoices excluded — HSN missing").
+
+### `TDS Challan.html` — no backend, and a missing org field
+
+Zero endpoints, zero tables. Needs per-section aggregation (194C contractors,
+194J professional, 194I(b) rent, 194H commission, 192B salary).
+
+- **192B salary TDS partially exists** — `vetana_payroll_runs.total_tds` and
+  per-employee TDS in `vetana.py:350`. The design itself says it is "computed in
+  Vetana", so the join is intended.
+- **194C / 194J / 194I / 194H do not exist anywhere.** Vendor bills carry GST, not
+  TDS — there is no deduction section, rate or amount on `ganit_vendor_bills`.
+- **`organisations` has no `TAN` column.** A TDS challan cannot be issued without
+  it (verified: only `gstin` and `pan` exist).
+- BSR code, challan serial, tender date, CIN — all absent.
+
+**Not started.** This is the largest of the four gaps and needs an owner decision
+on scope before any schema is proposed.
 
 ---
 
@@ -281,30 +352,64 @@ Proposal, in order of confidence:
 3. Devanagari currently renders via `fonts-noto` (Noto Sans Devanagari), so the
    bilingual text is legible today — it is the wrong *face*, not missing glyphs.
 
-**This is a fidelity failure on statutory documents and it is still open.**
+Matches coordination §6: font stacks are fixed, **vendoring the real TTFs is still
+open and needs a human on the Dockerfile**. A Tax Invoice in DejaVu is a fidelity
+failure on a statutory document.
 
 ---
 
-## 8. Not finished / handed on
+## 8. Upstream of my work, and unowned — bears directly on §5
 
+My cross-tenant fixes all sit **downstream** of two holes that coordination §6
+lists as unowned. Neither is in my files, and both partly undo what §5 achieves:
+
+- **`org_resolver.py:31-40`** — four zero-reach platform roles can resolve **any**
+  org via the `X-Org-Id` header. `get_org_id` is the dependency every one of my 128
+  endpoints derives `org_id` from. If the wrong caller can choose the org, my
+  per-query scoping is scoping to an org they should never have reached.
+- **`roles.py:74`** — hardcodes `role_code = 'platform_admin'`, excluding
+  `platform_owner`: the exact lockout `role_tiers.py:115-121` warns about.
+
+I did not touch either — they belong to whoever owns `middleware/`. Flagging
+because a reader of §5 could otherwise conclude the finance modules are
+tenant-safe end to end. They are safe *given a correct `org_id`*.
+
+---
+
+## 9. Not finished / handed on
+
+- **The RBAC contradiction (§2)** — owner decision. Everything else about
+  separated duty waits on it.
 - **Editor-level enforcement** on ordinary ganit writes — needs a grant-level
-  backfill migration first (§2).
-- **PROPOSED_074 seeding** — decision and apply are the owner's.
-- **GSTR-3B, TDS Challan, Statement of Account** data layers — not started (§6).
+  backfill, and the contradiction settled first.
+- **PROPOSED_074** — a candidate, not a decision. Must not be applied unseeded.
+- **GSTR-3B and TDS Challan** data layers — not started; TDS additionally needs a
+  `TAN` column on `organisations` and TDS sections on vendor bills (§6).
+- **Statement of Account** endpoint — data exists, endpoint does not; also needs a
+  receipt document number and an MSME registration flag (§6).
+- **Remaining invoice fields** (reverse charge, rounding, IRN/Ack, ship-to,
+  line sub-description) — need a schema addition; I did not propose one because
+  the document-pass agent owns rendering and should shape the columns.
 - **Newsreader / Tiro TTF vendoring** + Dockerfile edit — needs approval (§7).
-- **`esign_service.py` broken email import** — one-line fix, another agent's file (§5.8).
-- **Invoice document fields** (reverse charge, rounding, IRN/Ack, ship-to,
-  signatory) — need a schema addition; I did not propose one because the
-  document-pass agent owns the rendering side and should shape the columns.
-- **`_compute_invoice` rounding**: `ganit` splits CGST/SGST as
-  `round(gst/2, 2)` twice, `generate_recurring_invoice` uses
-  `half, total - half`. On odd amounts these disagree by a paisa. Not fixed —
-  changing tax arithmetic mid-run without the owner's sign-off is not a call I
-  should make unilaterally.
+- **`esign_service.py:66,114` broken email import** — one-line fix, another
+  agent's file, and it silently breaks ganit's send-for-signature (§5.8).
+- **`_compute_invoice` rounding**: ganit splits CGST/SGST as `round(gst/2, 2)`
+  twice; `generate_recurring_invoice` uses `half, total - half`. On odd amounts
+  they disagree by a paisa. **Not fixed** — changing tax arithmetic without the
+  owner's sign-off is not a call I should make.
+
+### Note on coordination §8
+
+The known-failing `test_ganit.py::test_create_invoice_success` is **fixed on this
+branch**, at the root cause the coordinator identified: `conftest.make_pool()`
+left `conn_mock.fetchval` a bare MagicMock, so `next_doc_number` awaited a
+non-awaitable. Two lines in `conftest.py`. It was a harness gap that read like a
+product bug — worth fixing rather than routing around, since it silences any
+future test that creates an invoice, order or payslip.
 
 ---
 
-## 9. Files changed
+## 10. Files changed
 
 | File | Change |
 |---|---|

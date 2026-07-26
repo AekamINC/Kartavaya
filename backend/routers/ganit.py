@@ -495,9 +495,13 @@ async def download_invoice_pdf(
     if not row:
         raise HTTPException(404, "Invoice not found")
 
+    # `authorized_signatory_name` / `_designation` have existed on organisations
+    # since the org-profile migration and were simply never selected, so the
+    # signature block the Tax Invoice design specifies rendered as nothing at all.
     org = await pool.fetchrow(
         "SELECT name, gstin, pan, billing_address, logo_url, logo_key, email, phone, website, "
-        "bank_details, invoice_note FROM staging.organisations WHERE id=$1::uuid",
+        "bank_details, invoice_note, authorized_signatory_name, "
+        "authorized_signatory_designation FROM staging.organisations WHERE id=$1::uuid",
         org_id,
     )
 
