@@ -271,3 +271,159 @@ async def test_create_holiday(api_client, mock_pool, as_admin, with_org_id):
         "date": "2026-10-20",
     })
     assert resp.status_code == 200
+
+
+# ── Employee PII masking ─────────────────────────────────────────
+# `manav_employees` carries Aadhaar, PAN and bank details on the same row as the
+# name, and the module gate grants on membership with no role level — so a module
+# viewer reaches the detail endpoint. These tests pin the two properties that
+# keep that safe: the detail endpoint never emits a full identifier, and the full
+# values live behind a separate gate.
+
+EMPLOYEE_ROW_WITH_PII = {
+    **EMPLOYEE_ROW,
+    "aadhaar": "123456789012",
+    "pan": "ABCDE1234F",
+    "bank_details": {
+        "account_number": "50100123456789",
+        "ifsc": "HDFC0001234",
+        "bank_name": "HDFC Bank",
+        "account_name": "Priya Sharma",
+    },
+}
+
+
+async def test_get_employee_masks_identity_documents(
+    api_client, mock_pool, as_admin, with_org_id
+):
+    """The detail endpoint must never return a full Aadhaar, PAN or account
+    number, whatever the caller's role."""
+    mock_pool.fetchrow.return_value = EMPLOYEE_ROW_WITH_PII
+    mock_pool.fetch.return_value = []
+    resp = await api_client.get(
+        "/api/v1/manav/employees/e0000000-0000-0000-0000-000000000001",
+    )
+    assert resp.status_code == 200
+    emp = resp.json()["employee"]
+
+    assert emp["aadhaar"] != "123456789012"
+    assert emp["pan"] != "ABCDE1234F"
+    assert emp["bank_details"]["account_number"] != "50100123456789"
+
+    # Last four survive so HR can confirm which document is on file.
+    assert emp["aadhaar"].endswith("9012")
+    assert emp["pan"].endswith("234F")
+    assert emp["bank_details"]["account_number"].endswith("6789")
+    assert emp["_pii_masked"] is True
+
+    # Public routing data is not secret and stays legible.
+    assert emp["bank_details"]["ifsc"] == "HDFC0001234"
+
+    # Nothing anywhere in the payload leaks the raw values.
+    body = resp.text
+    assert "123456789012" not in body
+    assert "ABCDE1234F" not in body
+    assert "50100123456789" not in body
+
+
+async def test_get_employee_masking_handles_missing_documents(
+    api_client, mock_pool, as_admin, with_org_id
+):
+    """Absent is not the same as hidden — empty stays empty so the UI can tell
+    "not on file" from "masked"."""
+    mock_pool.fetchrow.return_value = {
+        **EMPLOYEE_ROW, "aadhaar": None, "pan": "", "bank_details": None,
+    }
+    mock_pool.fetch.return_value = []
+    resp = await api_client.get(
+        "/api/v1/manav/employees/e0000000-0000-0000-0000-000000000001",
+    )
+    assert resp.status_code == 200
+    emp = resp.json()["employee"]
+    assert emp["aadhaar"] is None
+    assert emp["pan"] == ""
+    assert emp["bank_details"] is None
+
+
+async def test_sensitive_endpoint_returns_full_values_when_authorised(
+    app, api_client, mock_pool, as_admin, with_org_id
+):
+    from routers.manav import _pii_gate
+    app.dependency_overrides[_pii_gate] = lambda: None
+    try:
+        mock_pool.fetchrow.return_value = {
+            "id": EMPLOYEE_ROW["id"], "name": "Priya Sharma",
+            "employee_code": "EMP001",
+            "aadhaar": "123456789012", "pan": "ABCDE1234F",
+            "bank_details": {"account_number": "50100123456789"},
+        }
+        resp = await api_client.get(
+            "/api/v1/manav/employees/e0000000-0000-0000-0000-000000000001/sensitive",
+        )
+        assert resp.status_code == 200
+        emp = resp.json()["employee"]
+        assert emp["aadhaar"] == "123456789012"
+        assert emp["pan"] == "ABCDE1234F"
+        # The caller is told the read was recorded.
+        assert resp.json()["audited"] is True
+    finally:
+        app.dependency_overrides.pop(_pii_gate, None)
+
+
+async def test_sensitive_endpoint_404_for_other_org(
+    app, api_client, mock_pool, as_admin, with_org_id
+):
+    from routers.manav import _pii_gate
+    app.dependency_overrides[_pii_gate] = lambda: None
+    try:
+        mock_pool.fetchrow.return_value = None
+        resp = await api_client.get(
+            "/api/v1/manav/employees/e0000000-0000-0000-0000-000000000001/sensitive",
+        )
+        assert resp.status_code == 404
+    finally:
+        app.dependency_overrides.pop(_pii_gate, None)
+
+
+# ── Masking helpers ──────────────────────────────────────────────
+
+def test_mask_tail_keeps_last_four():
+    from routers.manav import _mask_tail
+    assert _mask_tail("123456789012", 4) == "••••••••9012"
+
+
+def test_mask_tail_groups_aadhaar():
+    from routers.manav import _mask_tail
+    assert _mask_tail("123456789012", 4, group=4) == "•••• •••• 9012"
+
+
+def test_mask_tail_short_value_fully_masked():
+    """A value shorter than the reveal window must not become the reveal."""
+    from routers.manav import _mask_tail
+    assert _mask_tail("123", 4) == "•••"
+
+
+def test_mask_tail_passes_through_empty():
+    from routers.manav import _mask_tail
+    assert _mask_tail(None) is None
+    assert _mask_tail("") == ""
+
+
+def test_mask_bank_masks_only_the_account_number():
+    from routers.manav import _mask_bank
+    out = _mask_bank({
+        "account_number": "50100123456789",
+        "ifsc": "HDFC0001234",
+        "bank_name": "HDFC Bank",
+    })
+    assert out["account_number"].endswith("6789")
+    assert "50100123456789" not in out["account_number"]
+    assert out["ifsc"] == "HDFC0001234"
+    assert out["bank_name"] == "HDFC Bank"
+
+
+def test_mask_bank_does_not_mutate_input():
+    from routers.manav import _mask_bank
+    original = {"account_number": "50100123456789"}
+    _mask_bank(original)
+    assert original["account_number"] == "50100123456789"

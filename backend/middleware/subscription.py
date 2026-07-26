@@ -31,7 +31,23 @@ def require_module(module_code: str):
 
         pool = await get_pool()
 
-        # Platform staff (account_manager+) bypass per-user module check
+        # Platform staff (account_manager+) bypass per-user module check.
+        #
+        # This bypass is SILENT and unaudited, which conflicts with the standing
+        # rule that support access is never silent. It is left silent here
+        # deliberately: this dependency guards every module endpoint, so writing
+        # an audit row per request would be high-volume, and whether to accept
+        # that volume is a product decision, not one to make inside a middleware.
+        #
+        # What is closed: the endpoints that expose an identity document do not
+        # rely on this gate alone. `manav.get_employee_sensitive` audits every
+        # read with severity=warn and records `via: platform_bypass` when the
+        # caller arrived through this branch. Any future endpoint returning
+        # Aadhaar, PAN or bank details must do the same — module membership is
+        # not authority to read an identity document.
+        #
+        # Open question for the owner: `account_manager` is a commercial role.
+        # It currently reaches every module in every org, including HR records.
         if user:
             is_platform = await pool.fetchval(
                 "SELECT 1 FROM staging.user_roles "

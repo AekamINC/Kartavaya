@@ -7,20 +7,91 @@ from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
-from middleware.roles import is_org_admin
+from middleware.roles import is_org_admin, is_platform_staff, require_org_role
 from middleware.subscription import require_module
+from services.audit import emit as audit
 
 router = APIRouter(prefix="/api/v1/manav", tags=["manav-hrms"])
 
 _gate = require_module("manav")
 
+# Reading an identity document needs more than module membership. Declared here
+# rather than inline so tests can override it, same as `_gate`.
+_pii_gate = require_org_role("org_owner", "org_admin")
+
 from datetime import time as _dt_time
+
+# ── Employee PII ──────────────────────────────────────────────────────────────
+# `manav_employees` holds an identity kit: Aadhaar number, PAN, and bank
+# details on the same row as the name. `require_module("manav")` grants on
+# module membership with no role level, so a module *viewer* passes it — which
+# means the full row must never be reachable through the ordinary detail
+# endpoint. Two rules, both enforced below:
+#
+#   1. The detail endpoint selects an explicit column list and masks what it
+#      returns. It never emits a full Aadhaar, PAN or account number.
+#   2. Full values come only from GET /employees/{id}/sensitive, which requires
+#      an org owner or admin and writes an audit row on every single read.
+#
+# `SELECT *` is banned on this table for exactly this reason: a column added
+# later would start leaking the day it was added, with no code change to review.
+
+# Everything on the row that is NOT part of the identity kit. Kept as one
+# string so the detail and list endpoints cannot drift apart silently.
+_EMP_SAFE_COLS = (
+    "id, org_id, user_id, employee_code, name, email, phone, department, "
+    "designation, date_of_joining, date_of_birth, gender, blood_group, "
+    "emergency_contact, address, uan, esi_number, employment_type, status, "
+    "reporting_to, shift, created_by, is_active, created_at, updated_at, "
+    "hourly_rate"
+)
+
+_SENSITIVE_COLS = ("aadhaar", "pan", "bank_details")
+
+
+def _mask_tail(value: Optional[str], keep: int = 4, group: Optional[int] = None) -> Optional[str]:
+    """Mask all but the last `keep` characters. None and '' pass through
+    untouched so the UI can still distinguish "not on file" from "hidden"."""
+    if not value:
+        return value
+    s = str(value).strip()
+    if len(s) <= keep:
+        return "•" * len(s)
+    masked = "•" * (len(s) - keep) + s[-keep:]
+    if group:
+        return " ".join(masked[i:i + group] for i in range(0, len(masked), group))
+    return masked
+
+
+def _mask_bank(details: Optional[dict]) -> Optional[dict]:
+    """Mask the account number only. IFSC, bank and branch are public routing
+    information, and the account holder's name is already on the row."""
+    if not details:
+        return details
+    out = dict(details)
+    if out.get("account_number"):
+        out["account_number"] = _mask_tail(out["account_number"], 4)
+    return out
+
+
+def _mask_employee_pii(row: dict) -> dict:
+    """Return a copy carrying masked identifiers. Aadhaar is grouped 4-4-4
+    because that is how it is printed and how people check it."""
+    out = dict(row)
+    if "aadhaar" in out:
+        out["aadhaar"] = _mask_tail(out["aadhaar"], 4, group=4)
+    if "pan" in out:
+        out["pan"] = _mask_tail(out["pan"], 4)
+    if "bank_details" in out:
+        out["bank_details"] = _mask_bank(out["bank_details"])
+    out["_pii_masked"] = True
+    return out
 
 
 def _parse_date(s: str) -> date:
@@ -260,8 +331,12 @@ async def get_employee(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # Explicit column list, never SELECT *. The identity-kit columns are fetched
+    # separately and masked, so a column added to the table later cannot start
+    # leaking without someone editing this list.
     row = await pool.fetchrow(
-        "SELECT * FROM staging.manav_employees "
+        f"SELECT {_EMP_SAFE_COLS}, aadhaar, pan, bank_details "
+        "FROM staging.manav_employees "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(employee_id), org_id,
     )
@@ -275,7 +350,55 @@ async def get_employee(
         "WHERE lb.employee_id=$1::uuid AND lb.year=EXTRACT(YEAR FROM CURRENT_DATE)::int",
         str(employee_id),
     )
-    return {"employee": dict(row), "leave_balances": [dict(lb) for lb in leave_balances]}
+    return {
+        "employee": _mask_employee_pii(dict(row)),
+        "leave_balances": [dict(lb) for lb in leave_balances],
+    }
+
+
+@router.get("/employees/{employee_id}/sensitive")
+async def get_employee_sensitive(
+    employee_id: UUID,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+    _r=Depends(_pii_gate),
+):
+    """Full Aadhaar, PAN and bank account for one employee.
+
+    Separate from the detail endpoint on purpose: module membership is not
+    sufficient authority to read an identity document, so this requires an org
+    owner or admin. Every read is audited, including reads by platform staff —
+    `require_org_role` passes them unconditionally, so without the audit row
+    below their access would be silent, which the project's standing rule
+    forbids.
+    """
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT id, name, employee_code, aadhaar, pan, bank_details "
+        "FROM staging.manav_employees "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(employee_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Employee not found")
+
+    via_platform = await is_platform_staff(user["user_id"])
+    audit(
+        "manav.employee_pii_revealed",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="manav_employee",
+        resource_id=str(employee_id),
+        detail={
+            "fields": list(_SENSITIVE_COLS),
+            "via": "platform_bypass" if via_platform else "org_admin",
+        },
+        severity="warn",
+    )
+    return {"employee": dict(row), "audited": True}
 
 
 @router.patch("/employees/{employee_id}")

@@ -15,6 +15,11 @@ export default function EmployeesTab({ onUpdate }) {
   const [editEmp, setEditEmp] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [editSaving, setEditSaving] = useState(false);
+  // Aadhaar, PAN and the bank account arrive masked. Full values come from a
+  // separate endpoint that only org owners/admins may call, and every read of
+  // it is written to the audit log — so this stays null until asked for.
+  const [pii, setPii] = useState(null);
+  const [piiLoading, setPiiLoading] = useState(false);
   const [form, setForm] = useState({
     name: '', email: '', phone: '', employee_code: '', department: '', designation: '',
     date_of_joining: '', date_of_birth: '', gender: '', employment_type: 'full_time',
@@ -54,7 +59,23 @@ export default function EmployeesTab({ onUpdate }) {
     try {
       const r = await api.get(`/v1/manav/employees/${id}`);
       setDetail(r.data);
+      setPii(null);   // never carry a revealed value across employees
     } catch { pushToast({ title: 'Failed to load employee', type: 'error' }); }
+  }
+
+  async function revealPii(id) {
+    setPiiLoading(true);
+    try {
+      const r = await api.get(`/v1/manav/employees/${id}/sensitive`);
+      setPii(r.data.employee);
+    } catch (err) {
+      pushToast({
+        title: err.response?.status === 403
+          ? 'Only an org owner or admin can view identity documents'
+          : (err.response?.data?.detail || 'Could not reveal details'),
+        type: 'error',
+      });
+    } finally { setPiiLoading(false); }
   }
 
   function startEditEmp(emp) {
@@ -131,12 +152,39 @@ export default function EmployeesTab({ onUpdate }) {
             <div><strong>Joining:</strong> {emp.date_of_joining || '—'}</div>
             <div><strong>DOB:</strong> {emp.date_of_birth || '—'}</div>
             <div><strong>Gender:</strong> {emp.gender || '—'}</div>
-            <div><strong>PAN:</strong> {emp.pan || '—'}</div>
-            <div><strong>Aadhaar:</strong> {emp.aadhaar || '—'}</div>
+            <div><strong>PAN:</strong> {(pii ? pii.pan : emp.pan) || '—'}</div>
+            <div><strong>Aadhaar:</strong> {(pii ? pii.aadhaar : emp.aadhaar) || '—'}</div>
             <div><strong>UAN:</strong> {emp.uan || '—'}</div>
             <div><strong>Shift:</strong> {emp.shift}</div>
             <div><strong>Blood Group:</strong> {emp.blood_group || '—'}</div>
           </div>
+
+          {(emp.pan || emp.aadhaar) && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--rule-soft)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              {pii ? (
+                <>
+                  <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+                    Identity documents shown in full. This access was logged.
+                  </span>
+                  <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => setPii(null)}>Hide</button>
+                </>
+              ) : (
+                <>
+                  <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
+                    Identity documents are masked. Revealing them is recorded in the audit log.
+                  </span>
+                  <button
+                    className="k-btn k-btn--ghost"
+                    style={{ fontSize: 12 }}
+                    disabled={piiLoading}
+                    onClick={() => revealPii(emp.id)}
+                  >
+                    {piiLoading ? 'Revealing…' : 'Reveal'}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {detail.leave_balances?.length > 0 && (
