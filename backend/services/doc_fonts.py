@@ -49,55 +49,83 @@ import functools
 import html
 from pathlib import Path
 
-# ── The vendored face ────────────────────────────────────────────────────────
+# ── The vendored faces ───────────────────────────────────────────────────────
+# Refreshed by `backend/scripts/vendor_document_fonts.py`, which documents how
+# each file was produced. Newsreader ships upstream only as a variable font; the
+# three faces here are pinned static instances, because selecting a weight off a
+# variable axis is renderer-dependent and a face that silently renders at the
+# wrong weight is the same defect as the DejaVu fallback it replaces.
 DEVANAGARI_FAMILY = "Tiro Devanagari Hindi"
 DEVANAGARI_WEIGHT = 400  # the only weight Tiro has; see module docstring
+DISPLAY_FAMILY = "Newsreader"
 
 _ASSETS = Path(__file__).resolve().parent.parent / "assets" / "fonts"
 DEVANAGARI_FILE = _ASSETS / "TiroDevanagariHindi-Regular.ttf"
 
-# Fallbacks, in order. Noto Sans Devanagari is what `fonts-noto` provides in the
-# Docker image; the generic `serif` is a last resort that at least lets
-# fontconfig try rather than emitting notdef immediately.
+# (file, family, weight, style)
+_FACES = (
+    (DEVANAGARI_FILE, DEVANAGARI_FAMILY, DEVANAGARI_WEIGHT, "normal"),
+    (_ASSETS / "Newsreader-Regular.ttf", DISPLAY_FAMILY, 400, "normal"),
+    (_ASSETS / "Newsreader-SemiBold.ttf", DISPLAY_FAMILY, 600, "normal"),
+    (_ASSETS / "Newsreader-Italic.ttf", DISPLAY_FAMILY, 400, "italic"),
+)
+
+# Fallbacks, in order. Noto is what `fonts-noto` provides in the Docker image;
+# the generic is a last resort that at least lets fontconfig try rather than
+# emitting notdef immediately. The vendored family is named first so it wins.
 DEVANAGARI_STACK = f'"{DEVANAGARI_FAMILY}", "Noto Sans Devanagari", serif'
+DISPLAY_STACK = f'{DISPLAY_FAMILY}, "Noto Serif", Georgia, "DejaVu Serif", serif'
 
 
-@functools.lru_cache(maxsize=1)
-def has_devanagari_font() -> bool:
-    """True when the vendored face is present and non-empty."""
+def _face_present(path: Path) -> bool:
     try:
-        return DEVANAGARI_FILE.is_file() and DEVANAGARI_FILE.stat().st_size > 0
+        return path.is_file() and path.stat().st_size > 0
     except OSError:
         return False
 
 
 @functools.lru_cache(maxsize=1)
-def font_face_css() -> str:
-    """The `@font-face` block for the vendored Devanagari face.
+def has_devanagari_font() -> bool:
+    """True when the vendored Devanagari face is present and non-empty."""
+    return _face_present(DEVANAGARI_FILE)
 
-    Returns an empty string when the file is absent — the stack then falls
-    through to whatever the image provides, and `deva_span()` degrades.
+
+@functools.lru_cache(maxsize=1)
+def font_face_css() -> str:
+    """`@font-face` declarations for every vendored face that is present.
+
+    A `file://` src rather than a family name, so resolution does not depend on
+    fontconfig finding anything — and no network request at render time, which
+    `base_url=None` forbids anyway. A face whose file is missing is simply not
+    declared; its stack then degrades onto Noto rather than failing.
     """
-    if not has_devanagari_font():
-        return ""
-    return (
-        "@font-face{"
-        f'font-family:"{DEVANAGARI_FAMILY}";'
-        f'src:url("{DEVANAGARI_FILE.as_uri()}") format("truetype");'
-        f"font-weight:{DEVANAGARI_WEIGHT};"
-        "font-style:normal;"
-        "font-display:block;"
-        "}"
+    blocks = []
+    for path, family, weight, style in _FACES:
+        if not _face_present(path):
+            continue
+        blocks.append(
+            "@font-face{"
+            f'font-family:"{family}";'
+            f'src:url("{path.as_uri()}") format("truetype");'
+            f"font-weight:{weight};"
+            f"font-style:{style};"
+            "font-display:block;"
+            "}"
+        )
+
+    if has_devanagari_font():
         # Every Devanagari run in a generated document goes through this class.
-        # The three declarations are the conjunct-safety contract, not styling:
-        # the family, weight 400 (no synthetic bold), and no tracking.
-        ".deva{"
-        f"font-family:{DEVANAGARI_STACK};"
-        f"font-weight:{DEVANAGARI_WEIGHT};"
-        "letter-spacing:normal;"
-        "font-synthesis:none;"
-        "}"
-    )
+        # The declarations are the conjunct-safety contract, not styling: the
+        # family, weight 400 (no synthetic bold), and no tracking.
+        blocks.append(
+            ".deva{"
+            f"font-family:{DEVANAGARI_STACK};"
+            f"font-weight:{DEVANAGARI_WEIGHT};"
+            "letter-spacing:normal;"
+            "font-synthesis:none;"
+            "}"
+        )
+    return "".join(blocks)
 
 
 def deva_span(text: str, fallback: str = "") -> str:

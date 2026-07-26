@@ -11,6 +11,8 @@ import html
 import io
 from datetime import datetime, timezone
 
+from services.doc_fonts import font_face_css
+
 # ── Design tokens ──────────────────────────────────────────────────────────────
 _BG       = "#F6F3EC"
 _BG_SOFT  = "#F0ECDF"
@@ -594,7 +596,11 @@ def _build_html(data: dict, team_name: str, period_from: str, period_to: str) ->
 
     # ── CSS ────────────────────────────────────────────────────────────────────
     css = f"""
-/* system fonts only — no external requests from WeasyPrint */
+/* Vendored faces, declared by file:// URL — still no external request from
+   WeasyPrint (base_url=None), and no dependence on fontconfig finding anything.
+   This is what makes the spec families named first in the stacks above actually
+   resolve instead of falling through to DejaVu. See services/doc_fonts.py. */
+{font_face_css()}
 
 *{{ box-sizing:border-box; margin:0; padding:0; }}
 body{{ background:{_BG}; font-family:{_FONT_UI}; color:{_INK}; -webkit-print-color-adjust:exact; print-color-adjust:exact; }}

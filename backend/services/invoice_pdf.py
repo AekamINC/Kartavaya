@@ -16,7 +16,7 @@ import base64
 import html
 import logging
 
-from services.doc_fonts import deva_span, font_face_css, group_indian
+from services.doc_fonts import DISPLAY_STACK, deva_span, font_face_css, group_indian
 from services.doc_validation import DocumentCheck, validate_tax_invoice
 
 _INK      = "#1A2230"
@@ -30,9 +30,17 @@ _TEAL     = "#05b7aa"
 _DEEP     = "#0082c6"
 _DANGER   = "#C0392B"
 
-_FONT_DISP = 'Georgia, "Times New Roman", serif'
-_FONT_UI   = '"Helvetica Neue", Arial, sans-serif'
-_FONT_MONO = '"Courier New", monospace'
+# Font stacks. The spec family is named FIRST, then a chain that degrades onto
+# faces the render image actually ships.
+#
+# Georgia, Times New Roman, Helvetica Neue, Arial and Courier New — what these
+# stacks named before — are installed in NO build of this image. Every name
+# missed and each stack fell through to its generic, so every invoice PDF was
+# silently DejaVu. Newsreader is now vendored (`services/doc_fonts.py`) and
+# declared with `@font-face`, so the first name resolves; the rest is fallback.
+_FONT_DISP = DISPLAY_STACK
+_FONT_UI   = 'Inter, "Noto Sans", "Helvetica Neue", Arial, "DejaVu Sans", sans-serif'
+_FONT_MONO = '"JetBrains Mono", "Noto Sans Mono", "DejaVu Sans Mono", "Courier New", monospace'
 
 _CURRENCY_SYMBOLS = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£", "AED": "AED ", "SGD": "S$"}
 

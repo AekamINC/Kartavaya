@@ -12,7 +12,7 @@ import base64
 import html
 import logging
 
-from services.doc_fonts import deva_span, font_face_css, group_indian
+from services.doc_fonts import DISPLAY_STACK, deva_span, font_face_css, group_indian
 from services.doc_validation import DocumentCheck, validate_payslip
 from services.invoice_pdf import amount_in_words_inr
 
@@ -26,9 +26,11 @@ _SURFACE  = "#FCFAF5"
 _TEAL     = "#05b7aa"
 _DEEP     = "#0082c6"
 
-_FONT_DISP = 'Georgia, "Times New Roman", serif'
-_FONT_UI   = '"Helvetica Neue", Arial, sans-serif'
-_FONT_MONO = '"Courier New", monospace'
+# See `invoice_pdf.py` for why these stacks changed: the previous names were
+# installed in no build of this image, so every payslip PDF rendered in DejaVu.
+_FONT_DISP = DISPLAY_STACK
+_FONT_UI   = 'Inter, "Noto Sans", "Helvetica Neue", Arial, "DejaVu Sans", sans-serif'
+_FONT_MONO = '"JetBrains Mono", "Noto Sans Mono", "DejaVu Sans Mono", "Courier New", monospace'
 
 log = logging.getLogger(__name__)
 

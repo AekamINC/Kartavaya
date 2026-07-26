@@ -452,6 +452,79 @@ class TestDevanagariFont:
             )
 
 
+class TestDisplayFace:
+    """Newsreader — the `--doc-font-display` serif in brand.css.
+
+    Every PDF this product generates used to render in DejaVu: the stacks named
+    Georgia / Times New Roman / Helvetica Neue, none of which the image installs,
+    so each fell through to its generic. Vendoring the real face is the fix, and
+    these assertions are what stop it regressing.
+    """
+
+    FACES = {
+        "Newsreader-Regular.ttf": (400, False),
+        "Newsreader-SemiBold.ttf": (600, False),
+        "Newsreader-Italic.ttf": (400, True),
+    }
+
+    def test_all_three_instances_are_vendored(self):
+        for name in self.FACES:
+            path = DEVANAGARI_FILE.parent / name
+            assert path.is_file(), f"missing vendored face {name}"
+            assert path.stat().st_size > 50_000
+
+    def test_licence_ships_with_the_family(self):
+        assert (DEVANAGARI_FILE.parent / "OFL-Newsreader.txt").is_file()
+
+    @pytest.mark.parametrize("name", sorted(FACES))
+    def test_instances_are_static_not_variable(self, name):
+        """Upstream publishes Newsreader only as a variable font. Selecting a
+        weight off an axis is renderer-dependent; a face that silently renders at
+        the wrong weight is the same defect as the DejaVu fallback, one level
+        subtler. So the axes are pinned and `fvar` must be gone."""
+        _data, tables = _read_sfnt(DEVANAGARI_FILE.parent / name)
+        assert "fvar" not in tables, f"{name} is still a variable font"
+
+    @pytest.mark.parametrize("name,expected", sorted(FACES.items()))
+    def test_instances_carry_the_weight_and_style_they_claim(self, name, expected):
+        weight, italic = expected
+        data, tables = _read_sfnt(DEVANAGARI_FILE.parent / name)
+        os2_off = tables["OS/2"][0]
+        us_weight = struct.unpack(">H", data[os2_off + 4:os2_off + 6])[0]
+        fs_selection = struct.unpack(">H", data[os2_off + 62:os2_off + 64])[0]
+        assert us_weight == weight, f"{name} reports weight {us_weight}"
+        assert bool(fs_selection & 0x01) is italic, f"{name} italic bit is wrong"
+
+    def test_font_face_declares_every_present_face(self):
+        css = font_face_css()
+        assert css.count("@font-face") == 4  # Tiro + three Newsreader instances
+        for name in self.FACES:
+            assert (DEVANAGARI_FILE.parent / name).as_uri() in css
+
+    def test_display_stack_names_the_vendored_family_first(self):
+        from services.doc_fonts import DISPLAY_STACK
+        assert DISPLAY_STACK.startswith("Newsreader")
+        # and still degrades rather than dead-ending
+        assert "serif" in DISPLAY_STACK
+
+    def test_no_generated_pdf_names_an_uninstalled_face_first(self):
+        """Georgia / Times New Roman / Helvetica Neue / Courier New are in no
+        build of this image. Naming one FIRST is the bug that made every PDF
+        DejaVu."""
+        never_first = ("Georgia", '"Times New Roman"', '"Helvetica Neue"', '"Courier New"', "Arial")
+        services = Path(__file__).resolve().parent.parent / "services"
+        for module in ("invoice_pdf", "payslip_pdf", "report_generator"):
+            src = (services / f"{module}.py").read_text(encoding="utf-8")
+            for line in src.splitlines():
+                m = re.match(r"\s*_FONT_\w+\s*=\s*['\"](.+)['\"]\s*$", line)
+                if not m:
+                    continue
+                first = m.group(1).split(",")[0].strip()
+                assert not any(first.strip('"') == n.strip('"') for n in never_first), (
+                    f"{module}.py names an uninstalled face first: {line.strip()}"
+                )
+
+
 class TestDevanagariCss:
     def test_font_face_points_at_the_vendored_file(self):
         css = font_face_css()
