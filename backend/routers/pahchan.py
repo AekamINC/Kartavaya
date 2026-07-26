@@ -35,7 +35,7 @@ from pydantic import BaseModel, Field
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
-from middleware.roles import require_org_role, is_org_admin
+from middleware.roles import require_org_role
 from middleware.subscription import require_module
 from services.audit import emit as audit
 from services import storage
@@ -46,6 +46,40 @@ _gate = require_module("pahchan")
 # Reviewing someone else's attendance, and reading the photographs attached to
 # it, is not something module membership alone should permit.
 _review_gate = require_org_role("org_owner", "org_admin")
+
+# Platform roles that may read another person's biometric data. Exactly one, and
+# it is the same set `_review_gate` admits.
+#
+# This is deliberately NOT `is_org_admin`, which returns True for eight platform
+# role codes — platform_staff, platform_support, account_manager, account_finance,
+# platform_manager, srijan_admin among them. Those are commercial and support
+# roles. 07 §7 is explicit that the platform sees "the count of Pahchan users per
+# organisation. Nothing else. No names, no photographs, no locations, no times",
+# so a billing role must not be able to resolve an employee's face, and the check
+# that guards a face has to be the narrowest one in the module rather than the
+# widest. `platform_admin` alone is god mode, held by three people, and removing
+# it would lock support out of every org.
+_BIOMETRIC_PLATFORM_ROLES = ("platform_admin",)
+
+
+async def _may_view_others_biometrics(pool, user_id: str, org_id: str) -> bool:
+    """
+    Whether this caller may read a reference photograph belonging to someone else.
+
+    Mirrors `_review_gate` rather than reusing it, because the answer depends on
+    WHOSE record is being read — a FastAPI dependency cannot see the path param,
+    and the self case must stay open (07 §9 puts the employee's own reference pair
+    on their Me tab). Same breadth, checked inline.
+    """
+    return bool(
+        await pool.fetchval(
+            "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND ("
+            "  (org_id IS NULL AND role_code = ANY($3::text[]))"
+            "  OR (org_id=$2::uuid AND role_code IN ('org_owner','org_admin'))"
+            ")",
+            user_id, org_id, list(_BIOMETRIC_PLATFORM_ROLES),
+        )
+    )
 
 # 07 §1: front camera, in-app, retake limit 3. Enforced on the client; the server
 # only sees the result. Kept here as the reason the size ceiling is small.
@@ -581,10 +615,13 @@ async def get_enrollment(
         # Not their own record, so this needs the reviewer gate. Checked inline
         # rather than as a dependency because the answer depends on whose record
         # it is, which a dependency cannot see.
-        # is_org_admin already returns True for platform staff, so it is the
-        # whole check — adding is_platform_staff beside it would read as if one
-        # did not cover the other.
-        if not await is_org_admin(user["user_id"], org_id):
+        #
+        # This used to call `is_org_admin`, which passes eight platform role codes
+        # including account_finance and platform_support. That made the enrollment
+        # read the WIDEST-gated biometric surface in the module while /register and
+        # /punches/{id}/photo were the narrowest, and it contradicted 07 §7. See
+        # `_may_view_others_biometrics`.
+        if not await _may_view_others_biometrics(pool, user["user_id"], org_id):
             raise HTTPException(403, "Only an org admin can view another employee's reference photos")
 
     rows = await pool.fetch(
@@ -603,6 +640,72 @@ async def get_enrollment(
         "complete": len(approved) >= 2,
         "pending_approval": len(photos) - len(approved),
     }
+
+
+@router.get("/enrollment/photos/{photo_id}/url")
+async def enrollment_photo_url(
+    photo_id: UUID,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """
+    Mint a short-lived signed URL for ONE reference photograph.
+
+    Without this the module does not verify anything. 07 §3 makes human comparison
+    the only verification mechanism in v1 — the reviewer looks at the punch selfie
+    beside both references and decides. The register returns `reference_keys`, but
+    a key is inert by design (§4: "never a URL in any payload"), so with nothing to
+    exchange a key for, the two reference slots stayed empty and the reviewer was
+    confirming against blank boxes. §3 names that outcome exactly: a reviewer who
+    cannot compare "confirms everything without looking, which is worse than no
+    review, because it manufactures a record of verification that did not happen."
+
+    The same gap made HR approve enrollment photos sight-unseen, which is the act
+    of vouching that a face belongs to a person.
+
+    Per image, on demand, and audited — the same discipline as the punch photo
+    endpoint, because a reference photograph is the more sensitive of the two: it
+    is the identity baseline, and it outlives any single punch.
+
+    Self-access is deliberate (§9): the Me tab shows employees their own reference
+    pair, because "someone whose face is photographed twice a day should be able to
+    see what is held and for how long without asking".
+    """
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT object_key, employee_id FROM staging.pahchan_enrollment_photos "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(photo_id), org_id,
+    )
+    if not row:
+        # Also the retention case: a reference photo is deleted outright at
+        # employment + the grace window, so a missing row is expected rather than
+        # an error worth alarming anyone about.
+        raise HTTPException(404, "No reference photo on file")
+
+    caller = await _employee_for(pool, org_id, user["user_id"])
+    is_self = caller and str(caller["id"]) == str(row["employee_id"])
+    if not is_self:
+        if not await _may_view_others_biometrics(pool, user["user_id"], org_id):
+            raise HTTPException(403, "Only an org admin can view another employee's reference photos")
+
+    url = await storage.sign_key(org_id, row["object_key"])
+    if not url:
+        raise HTTPException(503, "Could not sign the photo URL")
+
+    audit(
+        "pahchan.reference_photo_viewed",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="pahchan_enrollment_photo",
+        resource_id=str(photo_id),
+        detail={"employee_id": str(row["employee_id"]), "self": bool(is_self)},
+        severity="warn",
+    )
+    return {"url": url}
 
 
 @router.post("/enrollment", status_code=201)
@@ -637,7 +740,12 @@ async def enroll_photo(
         if not is_self:
             raise HTTPException(403, "A self-capture can only enroll your own record")
     else:
-        if not await is_org_admin(user["user_id"], org_id):
+        # Same narrow gate as the read. Attaching a reference photo to someone
+        # else's record is the attack this module's whole verification model rests
+        # on not being possible — "anyone with module access could put their own
+        # face on a colleague's record and then punch as them". A commercial
+        # platform role must not be able to do it either.
+        if not await _may_view_others_biometrics(pool, user["user_id"], org_id):
             raise HTTPException(403, "Only an org admin can upload a reference photo for someone else")
 
     # The employee must belong to this org. Without this an admin could attach a
