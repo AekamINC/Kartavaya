@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useDismiss } from '../hooks/useDismiss';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
+import { navContext } from '../components/layout/navConfig';
 import { useToast } from '../components/ui/toast';
 import TaskDrawer  from '../components/TaskDrawer';
 import NewTaskModal from '../components/NewTaskModal';
@@ -64,7 +65,19 @@ function ColumnsPopover({ visible, onToggle, onClose }) {
 export default function TasksListPage() {
   const { pushToast } = useToast();
   const user     = currentUser();
-  const isClient = user?.role === 'client';
+  // The SAME predicate as the route guard, not a second spelling of it.
+  //
+  // `Protected.jsx` confines `navContext().isClient` — `role === 'client'` AND
+  // no org membership — to `/client/*`, so a portal client can never render
+  // this page. This file used bare `role === 'client'`, which is a WIDER set:
+  // it also catches staff who happen to carry the client flag alongside an org
+  // role. The guard deliberately does not confine those people, so they reached
+  // this page AND took the client branch below — fetching `/client/tasks`,
+  // which is `List[ClientTaskOut]` (camelCase `taskId`, three-value `state`, no
+  // `status`/`user_id`/`assignee_user_ids`/`due_at`) into a renderer that reads
+  // every one of those keys. Two predicates, one guard: the mismatch was the
+  // whole bug.
+  const isClient = navContext(user).isClient;
 
   const [tasks,        setTasks]        = useState([]);
   const [teams,        setTeams]        = useState([]);
@@ -102,18 +115,23 @@ export default function TasksListPage() {
   const load = useCallback(async (archived = false) => {
     setLoading(true);
     try {
-      const endpoint = isClient
-        ? '/client/tasks'
-        : `/tasks${archived ? '?archived=true' : ''}`;
-      const reqs = [
-        api.get(endpoint),
-        isClient ? api.get('/client/projects') : api.get('/teams'),
-      ];
-      if (!isClient) reqs.push(api.get('/categories'));
-      const [tRes, pRes, cRes] = await Promise.all(reqs);
+      // Staff endpoints only. This page reads `status`, `user_id`,
+      // `assignee_user_ids`, `due_at` and `task_id` off every row — the
+      // internal `TaskOut` shape. It used to fall back to `/client/tasks` and
+      // `/client/projects`, which return the deliberately reduced
+      // `ClientTaskOut` / `ClientProjectOut` allow-lists and carry none of
+      // those keys, so that branch could only ever render broken rows. It is
+      // gone rather than repaired: a portal client cannot reach this page at
+      // all (`Protected.jsx` allow-list), and their own screens are
+      // `pages/client/`.
+      const [tRes, pRes, cRes] = await Promise.all([
+        api.get(`/tasks${archived ? '?archived=true' : ''}`),
+        api.get('/teams'),
+        api.get('/categories'),
+      ]);
       setTasks(Array.isArray(tRes.data) ? tRes.data : []);
       setTeams((Array.isArray(pRes.data) ? pRes.data : []).map(t => ({ team_id: t.team_id, name: t.name })));
-      if (cRes) setCategories(Array.isArray(cRes.data) ? cRes.data : []);
+      setCategories(Array.isArray(cRes.data) ? cRes.data : []);
     } catch (_) { pushToast({ type: 'error', title: 'Could not load tasks' }); }
     finally { setLoading(false); }
   }, [isClient, pushToast]);

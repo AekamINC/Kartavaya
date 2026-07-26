@@ -6,6 +6,7 @@ import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api }          from '../lib/api';
 import { currentUser }  from '../lib/auth';
+import { navContext }   from '../components/layout/navConfig';
 const KanbanView   = lazy(() => import('../components/views/KanbanView'));
 const TableView    = lazy(() => import('../components/views/TableView'));
 const CalendarView = lazy(() => import('../components/views/CalendarView'));
@@ -31,7 +32,11 @@ import NewTaskModal from '../components/NewTaskModal';
 export default function BoardsPage() {
   const navigate  = useNavigate();
   const me        = currentUser();
-  const isClient  = me?.role === 'client';
+  // The SAME predicate as the route guard — see the note in `TasksListPage`.
+  // A portal client cannot reach `/boards` at all, and every other request on
+  // this page (`/teams/:id`, `/tasks`, `/projects/:id/columns`) is a staff
+  // endpoint, so the client branch could only ever half-load.
+  const isClient  = navContext(me).isClient;
 
   const [projects,    setProjects]    = useState([]);
   const [activeId,    setActiveId]    = useState(null);
@@ -64,9 +69,15 @@ export default function BoardsPage() {
   // outlive the request.
   const [projectsError, setProjectsError] = useState(null);
   const loadProjects = useCallback(() => {
-    const endpoint = isClient ? '/client/projects' : '/teams';
     setProjectsError(null);
-    api.get(endpoint).then(r => {
+    // `/teams`, not a `/client/projects` fallback. A portal client cannot reach
+    // `/boards` at all (`Protected.jsx` is an allow-list on
+    // `navContext().isClient`), and every other request on this page —
+    // `/teams/:id`, `/tasks`, `/projects/:id/columns` — is a staff endpoint, so
+    // the client branch could only ever half-load. `/client/projects` is also
+    // `ClientProjectOut` now, which carries `projectId`, not the `team_id` this
+    // page reads.
+    api.get('/teams').then(r => {
       const list = Array.isArray(r.data) ? r.data : [];
       setProjects(list);
       if (list.length) setActiveId(prev => prev || list[0].team_id);
@@ -76,7 +87,9 @@ export default function BoardsPage() {
       setProjectsError(e);
       setLoading(false);
     });
-  }, [isClient]);
+    // No deps: the endpoint is fixed now that the `/client/projects` fallback
+    // is gone, so this identity is stable and the effect below runs once.
+  }, []);
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
 

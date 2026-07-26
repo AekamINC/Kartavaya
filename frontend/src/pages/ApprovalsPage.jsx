@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
+import { navContext } from '../components/layout/navConfig';
 import { useToast } from '../components/ui/toast';
 import { PageHeader, StatTile, DueChip, PriorityDot } from '../components/editorial';
 import { relTime } from '../lib/utils';
@@ -33,13 +34,24 @@ export default function ApprovalsPage() {
   const [stats, setStats] = useState(null);
   const [drawerTaskId, setDrawerTaskId] = useState(null);
   const user     = currentUser();
-  const isClient = user?.role === 'client';
+  // The SAME predicate as the route guard. `Protected.jsx` confines
+  // `navContext().isClient` to `/client/*`, so a portal client never renders
+  // this page; bare `role === 'client'` was a wider set that also caught staff
+  // carrying the client flag beside an org role — people the guard
+  // deliberately does not confine. They reached this page and took the client
+  // branch, fetching `/client/approvals`, which is `List[ClientApprovalOut]`
+  // (camelCase `approvalId`/`requestedBy`/`requestedAt`, and no status field at
+  // all) into rows that read `approval_id`, `approval_status`,
+  // `requested_by_name`, `task_title` and `request_data`.
+  const isClient = navContext(user).isClient;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const endpoint = isClient ? '/client/approvals' : '/approvals/pending';
-      const r = await api.get(endpoint);
+      // Staff endpoint only — see the note on `isClient`. A portal client's
+      // approvals screen is `pages/client/ClientApprovals.jsx`, which reads the
+      // client shape through `clientShape.js`.
+      const r = await api.get('/approvals/pending');
       setRequests(Array.isArray(r.data) ? r.data : []);
       if (!isClient) {
         api.get('/approvals/history').then(h => setHistory(Array.isArray(h.data) ? h.data : [])).catch(() => {});

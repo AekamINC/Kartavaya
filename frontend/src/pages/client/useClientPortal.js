@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { currentUser } from '../../lib/auth';
 import { errorKind } from '../../components/ui';
-import { toClientApprovals, toClientTasks, toFirm } from './clientShape';
+import { toClientApprovals, toClientProjects, toClientTasks, toFirm } from './clientShape';
 
 const EMPTY_FIRM = { name: '', logoUrl: '' };
 
@@ -53,10 +53,11 @@ export default function useClientPortal() {
 
       setTasks(shaped);
       setApprovals(toClientApprovals(apprRes.data, byId));
-      setProjects(
-        (Array.isArray(projRes.data) ? projRes.data : [])
-          .map(p => ({ projectId: p.team_id, name: p.name || 'Project' })),
-      );
+      // Through `clientShape` like everything else, rather than mapped inline:
+      // the module's thesis is that there is ONE place that decides which keys
+      // of a client payload the portal reads, and a second mapping here is
+      // exactly the drift it exists to prevent.
+      setProjects(toClientProjects(projRes.data));
       setFirm(firmRes.data ? toFirm(firmRes.data) : EMPTY_FIRM);
       setFailure(null);
     } catch (err) {

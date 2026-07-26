@@ -660,6 +660,18 @@ class ClientApprovalOut(BaseModel):
     # No `files` here on purpose: the portal already joins an approval to its
     # task by `taskId` and reads the files off that, so duplicating them would
     # mean two places to get attachment filtering right instead of one.
+
+class ClientProjectOut(BaseModel):
+    """A project as its client sees it: the name they recognise, and an id.
+
+    `/client/projects` used to return `dict(r)` over `SELECT t.*`, so every
+    column of `teams` crossed to an external browser — `created_by` (an internal
+    user id), `org_id` (tenancy internals), `brand_settings`, `deleted_at`. The
+    portal read exactly two of them. This is those two.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+    project_id:str=Field(alias="projectId")
+    name:str
 class DashboardSummaryOut(BaseModel):
     todo:int; in_progress:int; done:int; overdue:int; due_24h:int
 class PushSubscriptionIn(BaseModel):
@@ -1075,11 +1087,19 @@ async def client_tasks(pool=Depends(get_db),user=Depends(require_user)):
         out.append(_to_client_task(task, uid))
     return out
 
-@api_router.get("/client/projects")
+@api_router.get("/client/projects", response_model=List[ClientProjectOut])
 async def client_projects(pool=Depends(get_db),user=Depends(require_user)):
-    """Return all projects the authenticated client user is assigned to, including org-level access."""
+    """Return the projects this client is on, in the client shape.
+
+    The SELECT was `t.*` and the return was `[dict(r) for r in rows]`, so the
+    whole `teams` row reached an external browser: `created_by`, `org_id`,
+    `brand_settings`, `deleted_at` and the rest. The portal used `team_id` and
+    `name`. Those are now the only two columns read and the only two that
+    cross — the same allow-list argument as `ClientTaskOut`, applied to the one
+    client endpoint that had been left on a raw row.
+    """
     rows=await pool.fetch("""
-        SELECT DISTINCT ON (t.team_id) t.*
+        SELECT DISTINCT ON (t.team_id) t.team_id, t.name, t.created_at
         FROM teams t
         WHERE t.deleted_at IS NULL AND (
             EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1)
@@ -1092,7 +1112,7 @@ async def client_projects(pool=Depends(get_db),user=Depends(require_user)):
         )
         ORDER BY t.team_id, t.created_at DESC
     """,user["user_id"])
-    return [dict(r) for r in rows]
+    return [ClientProjectOut(project_id=r["team_id"], name=r["name"] or "Project") for r in rows]
 
 @api_router.get("/client/approvals", response_model=List[ClientApprovalOut])
 async def client_approvals(pool=Depends(get_db), user=Depends(require_user)):
@@ -1232,6 +1252,11 @@ async def client_request_task(payload:TaskCreate,pool=Depends(get_db),user=Depen
     is the client's own, so those fields are empty on the way out; it was a shape
     violation, and the shape is what stops the next field added to `TaskOut` from
     crossing to an external party without anyone deciding that it should.
+
+    What did cross was the firm's own internals rather than another client's
+    data: `column_id` and `sort_order` (the board structure), `approval_id`, and
+    the raw `status='requested'` and `priority` — the triage vocabulary 19's
+    never-see list names.
     """
     if user.get("role") != "client":
         raise HTTPException(403, "Only client users can submit task requests")
@@ -1295,6 +1320,8 @@ async def client_request_task(payload:TaskCreate,pool=Depends(get_db),user=Depen
                     logger.warning("approval request email failed: %s", email_err)
     except Exception as notif_err:
         logger.warning("approval request notification failed: %s", notif_err)
+    # Same reducer as `/client/tasks`, so a request the client just submitted
+    # comes back in exactly the shape the list will hand them a moment later.
     task = row_to_task(row)
     # Filter before re-signing, as at `/client/tasks`. The caller created this
     # row a few lines above, so the filter is a no-op today — it is here so the

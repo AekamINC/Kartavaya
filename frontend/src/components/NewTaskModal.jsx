@@ -28,6 +28,8 @@ import { mixAlpha } from '../lib/statusColors';
 
 import { currentUser } from '../lib/auth';
 
+import { navContext } from './layout/navConfig';
+
 import ReminderPicker, { DEFAULT_REMINDERS } from './ReminderPicker';
 
 
@@ -48,7 +50,14 @@ const PRIORITY_DOTS = {
 
 export default function NewTaskModal({ open, onClose, onCreated, defaultProjectId = '', defaultDueAt = '', defaultColumnId = null }) {
 
-  const isClient = currentUser()?.role === 'client';
+  // The SAME predicate as the route guard. This modal is only ever mounted by
+  // staff screens (`BoardsPage`, `TasksListPage`, the board views), all of
+  // which a portal client is redirected away from; bare `role === 'client'`
+  // also caught staff carrying the client flag beside an org role, and sent
+  // their task straight to `/client/tasks/request` — an approval queue they do
+  // not belong in. A portal client asks for work through
+  // `pages/client/RequestWork.jsx`.
+  const isClient = navContext(currentUser()).isClient;
 
   const [title,       setTitle]       = useState('');
 

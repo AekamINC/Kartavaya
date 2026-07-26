@@ -169,19 +169,25 @@ function AppRouter() {
         <Route path="/client/projects"           element={<Protected><ClientProjectsPage /></Protected>} />
         <Route path="/client/project/:projectId" element={<Protected><ClientBoardPage /></Protected>} />
 
-        {/* 19 names `/client/approvals` and `/client/files` as routes. The
-            screens exist and are reachable — `ClientPages.jsx` carries the view
-            in the query string (`/client?view=approvals`) because it could not
-            edit this file — but the paths 19 names resolved to nothing, so any
-            link written against the spec 404'd into the staff dashboard.
+        {/* 19 · Shell names these two as routes, and they are routes now.
 
-            These are redirects rather than route entries because making them
-            real needs a `view` prop on `ClientProjectsPage`, which is outside
-            this change's ownership; the exact edit is in the report. Both
-            spellings now work and one canonical URL survives in the address
-            bar, which is what a bookmark and a back button need. */}
-        <Route path="/client/approvals" element={<Navigate to="/client?view=approvals" replace />} />
-        <Route path="/client/files"     element={<Navigate to="/client?view=files" replace />} />
+            They were `<Navigate>` redirects to `/client?view=…` on the theory
+            that making them real "needs a `view` prop on
+            `ClientProjectsPage`". It does not: `viewFromLocation`
+            (`ClientPages.jsx:64`) already resolves the view from the PATHNAME
+            first and falls back to `?view=` only when the path carries none —
+            it was built for exactly this. `client/__tests__/smoke.test.jsx:122`
+            already mounts all three paths on the same element and asserts each
+            renders its own view.
+
+            The redirect also cost the thing 19 cares about: the canonical URL.
+            A client who bookmarked `/client/approvals` — the link in their
+            email — landed on `/client?view=approvals`, so the address bar no
+            longer matched what they saved, and the nav's `aria-current` had to
+            be derived from a query string. Both spellings still work; the path
+            form is now the one that survives. */}
+        <Route path="/client/approvals" element={<Protected><ClientProjectsPage /></Protected>} />
+        <Route path="/client/files"     element={<Protected><ClientProjectsPage /></Protected>} />
 
         {/* Protected shell — all child routes inherit auth + layout */}
         <Route path="/" element={<Protected><AppShell /></Protected>}>

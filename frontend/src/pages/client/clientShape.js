@@ -365,6 +365,28 @@ export function stampLabel(iso) {
   });
 }
 
+/**
+ * The projects a client is on.
+ *
+ * `/client/projects` used to be the one client endpoint still returning a raw
+ * row — `SELECT t.*` over `teams`, serialised with `dict(r)`, so `created_by`,
+ * `org_id`, `brand_settings` and `deleted_at` all reached the browser for the
+ * sake of two fields. It is `List[ClientProjectOut]` now (server.py), an
+ * allow-list of exactly `projectId` and `name`.
+ *
+ * Read in both wire shapes for the same reason as the tasks above: the API and
+ * this bundle deploy separately, and a rollback of either half must not empty
+ * the project picker that `RequestWork` needs in order to submit anything.
+ */
+export function toClientProjects(rows) {
+  return (Array.isArray(rows) ? rows : [])
+    .map(p => ({
+      projectId: p?.projectId || p?.team_id || null,
+      name: p?.name || 'Project',
+    }))
+    .filter(p => p.projectId);
+}
+
 /** The firm's identity, from /v1/org/profile. Nothing else on that row travels. */
 export function toFirm(raw) {
   return {
