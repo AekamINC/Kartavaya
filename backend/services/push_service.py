@@ -6,9 +6,37 @@ send_push(pool, *, recipient_id, kind, title, body, task_id=None, data=None, is_
 
 fan_out_push(pool, *, recipient_ids, kind, title, body, task_id, is_mine_for)
     Calls send_push concurrently; is_mine_for is a set of user_ids who "own" the event.
+
+prefs_allow(pool, user_id, kind, is_mine=True)
+    The preference gate on its own, with no delivery attached. Exists so the
+    OTHER push path can consult preferences too — see "The second path" below.
+
+normalise_prefs() / normalise_window()
+    Validation for the PUT that writes this table. The endpoint currently writes
+    whatever JSON it is handed; these make that safe. See each docstring.
+
+
+The second path
+───────────────
+`send_push()` below is preference-aware. It is NOT the only way a push leaves
+this system. `server.py:create_notification()` writes the in-app row and then
+fires `send_web_push()` and `send_expo_push()` directly — neither of which takes
+a `kind` or reads `notification_prefs` at all. Everything raised that way
+(`status_changed`, `done`, `reminder`) ignores the user's settings completely.
+
+The preference for those kinds is not missing from the vocabulary — it is right
+there in DEFAULT_PREFS and the UI renders a switch for it. It is simply never
+consulted on that path, which is worse than a missing switch: the user sets it,
+sees it save, and still gets the notification.
+
+`prefs_allow()` is the fix, and it lives here because this is where the gate
+belongs. The change needed at the call site is reported, not made — `server.py`
+is owned elsewhere.
 """
 import asyncio
+import json
 import logging
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -25,6 +53,27 @@ MODE_ALWAYS    = "always"
 MODE_MINE_ONLY = "mine_only"
 MODE_PROJECT   = "project"
 
+#: The only modes that mean anything. A stored value outside this set is a
+#: corrupted preference, not a new feature.
+VALID_MODES: frozenset[str] = frozenset({MODE_OFF, MODE_ALWAYS, MODE_MINE_ONLY, MODE_PROJECT})
+
+#: The delivery vocabulary, and the default for each kind.
+#:
+#: `reminder` is new here. It is not a re-labelling of an existing kind — it is
+#: the one kind that genuinely had NO entry while still firing push
+#: (`routers/task_reminders.py`, which calls send_web_push/send_expo_push
+#: directly). Adding it changes no behaviour today, because reminders do not
+#: route through send_push(); it makes the switch exist so that the call-site
+#: fix reported alongside this file has something to read.
+#:
+#: Default `always`: a reminder is something the user explicitly asked for by
+#: setting it on a task. Defaulting an opt-in to off would discard a request the
+#: user already made.
+#:
+#: NOTE: `server.py` carries a byte-identical copy of this dict minus
+#: `reminder`. Two copies of a vocabulary is how they drift. The GET endpoint
+#: merges against ITS copy, so a kind added only here is enforced but invisible
+#: in the UI. Reported — server.py should import this name instead.
 DEFAULT_PREFS = {
     "mention":          "always",
     "approval_request": "always",
@@ -35,28 +84,87 @@ DEFAULT_PREFS = {
     "status_changed":   "project",
     "done":             "project",
     "created":          "off",
+    "reminder":         "always",
 }
 
+DEFAULT_QUIET_START = "22:00"
+DEFAULT_QUIET_END   = "07:00"
 
-def _in_quiet_hours(quiet_start: str, quiet_end: str) -> bool:
-    """Return True if current IST time falls within quiet window (handles midnight wrap)."""
-    now_ist = datetime.now(IST)
+#: Strict HH:MM, 00:00–23:59. Anything else is not a time.
+_HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+
+def _parse_hhmm(value) -> Optional[int]:
+    """Minutes since midnight, or None if `value` is not a valid HH:MM string.
+
+    Returns None rather than raising. The caller that matters is inside
+    send_push()'s broad `except Exception`, where a raise does not surface as an
+    error — it silently swallows the notification. A malformed quiet_start would
+    therefore have disabled ALL push for that user, permanently and invisibly.
+    """
+    if not isinstance(value, str):
+        return None
+    m = _HHMM.match(value.strip())
+    if not m:
+        return None
+    return int(m.group(1)) * 60 + int(m.group(2))
+
+
+def _in_quiet_hours(quiet_start: str, quiet_end: str, *, now=None) -> bool:
+    """True if `now` (IST) falls inside the quiet window.
+
+    Half-open, [start, end): a window ending at 07:00 is over AT 07:00, so a
+    07:00 reminder is delivered. Without that, a window and the alarm at its
+    edge disagree by one minute forever.
+
+    Three cases:
+
+      start <  end   plain daytime window, 09:00–17:00.
+      start >  end   WRAPS MIDNIGHT, 22:00–07:00. Quiet from 22:00 to 23:59 and
+                     again from 00:00 to 06:59 — one window, two arcs of the
+                     clock, which is why it cannot be a single comparison.
+      start == end   ZERO-LENGTH. Read as "no quiet hours", never as "always
+                     quiet". Both readings are defensible from the data alone,
+                     so the tie is broken on consequence: reading it as all-day
+                     silences every notification a user gets, indefinitely, with
+                     no error and nothing on screen to explain it. Reading it as
+                     off costs an unwanted buzz the user can fix in one click.
+
+    A window that does not parse is treated as NO quiet hours, for the same
+    reason: never let bad data mute someone silently.
+
+    `now` is injectable so the wrap can be tested at a fixed clock instead of
+    whenever the suite happens to run.
+    """
+    start = _parse_hhmm(quiet_start)
+    end   = _parse_hhmm(quiet_end)
+
+    if start is None or end is None:
+        logger.warning(
+            "notification_prefs: unusable quiet window (%r, %r) — treating as no quiet hours",
+            quiet_start, quiet_end,
+        )
+        return False
+
+    if start == end:
+        return False
+
+    now_ist = now or datetime.now(IST)
     now_t = now_ist.hour * 60 + now_ist.minute
 
-    def _parse(s: str) -> int:
-        h, m = s.split(":")
-        return int(h) * 60 + int(m)
-
-    start = _parse(quiet_start)
-    end   = _parse(quiet_end)
-
-    if start <= end:          # e.g. 09:00–17:00
+    if start < end:           # e.g. 09:00–17:00
         return start <= now_t < end
-    else:                     # wraps midnight e.g. 22:00–07:00
-        return now_t >= start or now_t < end
+    return now_t >= start or now_t < end   # wraps midnight, e.g. 22:00–07:00
 
 
 def _mode_allows(mode: str, is_mine: bool) -> bool:
+    """Does this mode permit delivery for an event that is/isn't the user's own?
+
+    An unrecognised mode is NOT treated as `always`. The caller resolves it to
+    the kind's documented default first (see `_resolve_mode`), so corruption
+    degrades to the designed behaviour for that kind rather than to the loudest
+    one.
+    """
     if mode == MODE_OFF:
         return False
     if mode == MODE_ALWAYS:
@@ -66,6 +174,110 @@ def _mode_allows(mode: str, is_mine: bool) -> bool:
     if mode == MODE_PROJECT:
         return True   # project-level events are always relevant
     return True
+
+
+def _coerce_prefs(raw) -> dict:
+    """A prefs dict from whatever the driver handed back.
+
+    `db.py` registers a jsonb codec but SKIPS IT when the connection is behind
+    PgBouncer, logging a warning and carrying on (db.py:41). So this column
+    arrives as a dict most of the time and as a raw JSON string some of the
+    time. The old code called `.get()` on it unconditionally; on the string path
+    that raises AttributeError inside the broad `except`, and the push vanishes
+    with a log line that names the wrong cause. `server.py`'s GET already guards
+    this exact case — this is the same guard on the delivery side.
+    """
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, (str, bytes)):
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+    return {}
+
+
+def _resolve_mode(prefs: dict, kind: str) -> str:
+    """The effective mode for `kind`: the user's value if it is a real mode,
+    otherwise this kind's documented default, otherwise `always`."""
+    mode = prefs.get(kind)
+    if isinstance(mode, str) and mode in VALID_MODES:
+        return mode
+    if mode is not None:
+        logger.warning("notification_prefs: unknown mode %r for kind %r — using default", mode, kind)
+    return DEFAULT_PREFS.get(kind, MODE_ALWAYS)
+
+
+# ── Validation for the write path ────────────────────────────────────────────
+
+def normalise_prefs(raw) -> dict:
+    """Keep only known kinds with valid modes.
+
+    The PUT endpoint currently stores `body.get("prefs", {})` verbatim: any key,
+    any value, any depth, straight into jsonb. That is how a mode becomes the
+    string "Off" or a nested object, and every read of it afterwards has to
+    guess. Unknown keys are dropped rather than rejected so that a client one
+    version ahead does not 400 the whole save.
+    """
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        k: v for k, v in raw.items()
+        if k in DEFAULT_PREFS and isinstance(v, str) and v in VALID_MODES
+    }
+
+
+def normalise_window(start, end, *, current=None) -> tuple[str, str]:
+    """Return a valid (quiet_start, quiet_end), falling back per field.
+
+    `current` is the pair already stored. It is the whole point of this
+    function: the PUT reads `body.get("quiet_start", "22:00")`, so a request
+    that omits the field does not leave it alone — IT RESETS IT TO THE DEFAULT.
+    A client that sends only `{"prefs": {...}}` to flip one switch silently
+    overwrites a customised overnight window with 22:00–07:00, reporting
+    success. Passing the stored pair as `current` makes the omitted field mean
+    "unchanged", which is what every caller already assumes it means.
+    """
+    cur_start, cur_end = current or (DEFAULT_QUIET_START, DEFAULT_QUIET_END)
+    ok_start = start if _parse_hhmm(start) is not None else (
+        cur_start if _parse_hhmm(cur_start) is not None else DEFAULT_QUIET_START
+    )
+    ok_end = end if _parse_hhmm(end) is not None else (
+        cur_end if _parse_hhmm(cur_end) is not None else DEFAULT_QUIET_END
+    )
+    return ok_start, ok_end
+
+
+# ── The preference gate, usable without sending ──────────────────────────────
+
+async def prefs_allow(pool, user_id: str, kind: str, *, is_mine: bool = True) -> bool:
+    """True if this user's preferences permit a push of `kind` right now.
+
+    Split out of send_push so the other delivery path can ask the same question.
+    Fails OPEN on a database error: a notification the user did not ask to
+    silence is a smaller harm than losing an approval request because the prefs
+    lookup timed out.
+    """
+    try:
+        row = await pool.fetchrow(
+            "SELECT prefs, quiet_start, quiet_end FROM notification_prefs WHERE user_id=$1",
+            user_id,
+        )
+    except Exception as exc:
+        logger.warning("prefs_allow: lookup failed for %s: %s — allowing", user_id, exc)
+        return True
+
+    if row:
+        prefs       = _coerce_prefs(row["prefs"])
+        quiet_start = row["quiet_start"] or DEFAULT_QUIET_START
+        quiet_end   = row["quiet_end"]   or DEFAULT_QUIET_END
+    else:
+        prefs, quiet_start, quiet_end = {}, DEFAULT_QUIET_START, DEFAULT_QUIET_END
+
+    if not _mode_allows(_resolve_mode(prefs, kind), is_mine):
+        return False
+    return not _in_quiet_hours(quiet_start, quiet_end)
 
 
 async def send_push(
@@ -87,25 +299,7 @@ async def send_push(
         return
 
     try:
-        prefs_row = await pool.fetchrow(
-            "SELECT prefs, quiet_start, quiet_end FROM notification_prefs WHERE user_id=$1",
-            recipient_id,
-        )
-        if prefs_row:
-            prefs       = prefs_row["prefs"] or {}
-            quiet_start = prefs_row["quiet_start"] or "22:00"
-            quiet_end   = prefs_row["quiet_end"]   or "07:00"
-        else:
-            prefs       = {}
-            quiet_start = "22:00"
-            quiet_end   = "07:00"
-
-        mode = prefs.get(kind, DEFAULT_PREFS.get(kind, MODE_ALWAYS))
-
-        if not _mode_allows(mode, is_mine):
-            return
-
-        if _in_quiet_hours(quiet_start, quiet_end):
+        if not await prefs_allow(pool, recipient_id, kind, is_mine=is_mine):
             return
 
         token_rows = await pool.fetch(
