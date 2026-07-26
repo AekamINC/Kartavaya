@@ -3610,9 +3610,18 @@ select.k-formpanel__input { appearance: none;
   border-radius: 50%;
   animation: spin .7s linear infinite;
 }
-@media (prefers-reduced-motion: reduce) {
-  .k-spinner { animation: none; border-top-color: var(--primary); opacity: .7; }
-}
+/* NO reduced-motion stop here, deliberately — this used to set
+   `animation: none` and it was the only spinner in the build that did.
+   animations.css §9 sets the policy and gives the reason: a loading indicator
+   is FUNCTIONAL motion, and freezing it removes the only feedback a slow
+   request has while reading as a hung UI. `.spin`, `.gr__spin` and
+   `.prg--ind .prg__f` all keep turning under reduce; four spinners with three
+   behaviours was the actual defect.
+   The duration stays a fixed .7s and is NOT routed through `--ix`.
+   16-animations.md:44 gives `calc(.7s * var(--ix))` as its worked example,
+   and the same file sets --ix to .001 under reduce — that is a 0.7ms spinner,
+   the ~500-1250Hz strobe measured and removed elsewhere in this run. The spec
+   mandates the bug; do not follow it here. */
 
 /* Hero date — the Gregorian half of the meta line, paired with
    .k-hero__samvat above. Inherits the uppercase treatment from .k-hero__meta;

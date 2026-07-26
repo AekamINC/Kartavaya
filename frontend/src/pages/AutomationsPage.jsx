@@ -371,7 +371,13 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
                   >
                     {isTesting ? (
                       <>
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'spin 1s linear infinite' }}><circle cx="8" cy="8" r="6" strokeDasharray="28" strokeDashoffset="10"/></svg>
+                        {/* `.spin`, not a bespoke SVG with an inline
+                            `animation:`. An inline style is invisible to every
+                            stylesheet rule — including the reduced-motion
+                            block — so this was the one loop in the build that
+                            no CSS could reach, and it duplicated a spinner the
+                            design system already owns. */}
+                        <span className="spin" aria-hidden="true" />
                         Running…
                       </>
                     ) : (
