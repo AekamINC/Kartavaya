@@ -252,11 +252,17 @@ third reason previously given there was indeed wrong.
 - `edit`, `delete`, both reaction endpoints and `get_thread` all scope by
   `org_id`.
 
-**The hole I found and fixed** — `get_thread` checked the **org** and not the
-**channel**. Any member of the org could read the replies inside a **private
-channel they had never joined**, given only a message id. It was the one read
-path in the router gated differently from `list_messages`. Fixed in `31fc4a9`
-with the same test, order and 404/403 split as `list_messages`.
+**The hole I found** — `get_thread` checked the **org** and not the **channel**.
+Any member of the org could read the replies inside a **private channel they had
+never joined**, given only a message id. It was the one read path in the router
+gated differently from `list_messages`.
+
+**Independently found and better fixed by another agent**, which my rebase
+collided with. Theirs extracts `_assert_channel_access` (`messaging.py:24-47`)
+and applies it to the **thread and both reaction endpoints**; mine was inline
+and covered `get_thread` only. **I dropped mine and took theirs** — same rule in
+one place beats the same rule in three. Two agents reaching the same hole from
+different directions is worth noting as corroboration that it was real.
 
 `mark_read` is not org-scoped, which is harmless: its `UPDATE` is keyed on
 `(channel_id, user_id)` and can only ever touch the caller's own membership row.
