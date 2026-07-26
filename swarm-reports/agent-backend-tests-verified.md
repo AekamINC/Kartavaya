@@ -576,3 +576,118 @@ branch.
   still untested.
 - **`services/payslip_pdf.py`** — no HTML-level tests, only the shared
   amount-in-words helper.
+
+---
+---
+
+# SUPERSEDED: the separated-duty gap is CLOSED
+
+Everything above describing separated duty as unenforced was true when written
+and is now **out of date**. Recorded rather than deleted, because the sequence is
+the point.
+
+## What happened
+
+While I was stopped, a sibling landed `middleware/module_levels.py` — the missing
+consumer. `level_satisfies` now has production callers, and `routers/vetana.py`
+and `routers/manav.py` resolve a Tier-4 level set once per request, checking it
+through `any_level_satisfies(...)` rather than comparing ladder indices at the
+call site.
+
+The sibling also resolved the `RBAC-SPEC.md:65` vs Tier-4 contradiction that
+`_COORDINATION.md` §5 flagged as owner-only, and resolved it well: an approver
+grant lives in a NEW narrow table (`staging.org_module_approvers`, PROPOSED_074)
+rather than in `org_member_modules`, because an approver grant is not module
+reach — it is a second, separately-revocable authority. Enforcement is gated on
+the migration existing, so applying it is the cutover and no org is locked out
+mid-flight.
+
+## My characterisation tests did their job
+
+Section 3 of `test_module_grant_enforcement.py` asserted that `level_satisfies`
+had zero call sites, and `test_separated_duty_routes.py` marked the route
+behaviour `xfail(strict=True)`. Both fired the moment enforcement landed — a hard
+failure with a message naming the new files and saying what to do next.
+
+That is the entire case for `strict=True` over `strict=False`, made in practice
+rather than in argument. `strict=False` would have flipped to a silent pass and
+told nobody the world had changed.
+
+**All xfail markers are now gone.** They were replaced with tests of the thing
+that exists, which is what those tests instructed.
+
+## What the tests assert now
+
+`test_separated_duty_routes.py` proves the machinery refuses admin at the
+approver rung **today**, by demanding `APPROVER` explicitly rather than waiting
+on the migration — with the contrast that an explicit approver grant is admitted,
+and that one person may hold both authorities but only through two separate
+grants.
+
+It deliberately does **not** assert `_RELEASE_LEVEL == APPROVER`.
+`routers/vetana.py` holds that constant at `ADMIN` because
+`staging.org_member_modules` contains zero rows: demanding `APPROVER` today would
+not narrow the set of people who can approve a payroll run, it would empty it,
+and payroll would stop company-wide. `PROPOSED_071` backfills the rung to each
+org's owner first. A test demanding that flip is a test demanding an outage, and
+I did not write one.
+
+`test_module_grant_enforcement.py` §3 is inverted: it now pins that `held_level`
+selects `role` rather than `SELECT 1`, and that an unknown or legacy grant value
+reads as the **weakest** level. Failing upward there would hand full control to
+every pre-column row at once — silent and total, so it earns its own test.
+
+## Other corrections to the sections above
+
+- **`roles.py:74` is fixed.** `_COORDINATION.md` §6 listed it unowned. The
+  god-mode probe now reads `GOD_MODE_ROLES` instead of the bare string
+  `'platform_admin'`, which had excluded `platform_owner` — the exact lockout
+  `role_tiers.py` warns about. My bypass test matched the old literal and went
+  stale; it now routes on the parameterised query and additionally asserts the
+  probe carries the whole god-mode set.
+- **`/admin/usage` moved to `FINANCE_CONSOLE_ROLES`.** Correct: it sums supplier
+  cost against billed amount per org across every org, which is our own P&L, not
+  run triage. On the operating set every `platform_staff` holder could read the
+  margin on every customer. My test now pins the narrowing itself, not just the
+  new constant.
+- **`GET /employees/{id}` now self-scopes**, returning 404 rather than 403 for a
+  colleague's row when the caller has no grant — 403 would confirm the employee
+  exists in that org. Added a test for it.
+- **The conftest `fetchval` fix**: a sibling landed an equivalent on staging
+  (fresh `AsyncMock`s rather than my aliases). I took **theirs** in the rebase.
+  Both fix `_COORDINATION.md` §8; theirs is already integrated with sibling tests
+  I cannot see, and my aliasing was a refinement whose benefit here was
+  hypothetical. §8 can be struck either way.
+
+## One transient failure, not chased
+
+Immediately after one rebase,
+`test_client_portal.py::TestClientTasksShape::test_returns_client_shape_not_task_out`
+(a sibling's) failed once. It passed alone, passed paired with each of my files,
+and has passed in every full-suite run since — five consecutive clean runs. Most
+likely stale `__pycache__` from the pre-rebase tree. **I am not claiming it is
+fixed**, only that I could not reproduce it; worth a second pair of eyes if it
+recurs.
+
+## Final numbers
+
+```
+986 passed, 0 failed, 0 xfailed     (cd backend && python -m pytest)
+check-tokens.mjs    339 declared, 233 referenced, 0 missing
+check-classes.mjs   2114 selectors, 1437 classes used, 0 missing a rule
+```
+
+Started at 265 passed + 1 failed, with 318 never-executed tests on a salvage
+branch.
+
+## Still open
+
+- **`PROPOSED_071` then flip `_RELEASE_LEVEL` to `APPROVER`.** One migration, one
+  line. The tests are written and keep passing across the change.
+- **`org_resolver.py:31-40`** — `_COORDINATION.md` §6 lists it unowned: four
+  zero-reach roles can resolve any org via `X-Org-Id`, upstream of every route
+  guard. Untested by me and, as far as I can see, still unowned.
+- **`GET /approvals/by-token/{token}`** — unauthenticated external surface, still
+  untested.
+- **`services/payslip_pdf.py`** — no HTML-level tests, only the shared
+  amount-in-words helper it imports.
