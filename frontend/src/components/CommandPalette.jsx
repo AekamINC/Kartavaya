@@ -29,7 +29,10 @@ const NAV_ITEMS = [
   { id: 'prachar', label: 'Marketing', hi: 'प्रचार', section: 'Navigate', route: '/prachar', keywords: 'marketing campaigns prachar' },
   { id: 'esign', label: 'E-Sign', hi: 'प्रमाण', section: 'Navigate', route: '/esign', keywords: 'esign documents signatures' },
   { id: 'srijan', label: 'Srijan', hi: 'सृजन', section: 'Navigate', route: '/hub/org', keywords: 'srijan content ai generate' },
-  { id: 'scrapers', label: 'Data Tools', hi: 'डेटा टूल्स', section: 'Navigate', route: '/hub/org', keywords: 'scrapers data tools leads' },
+  // Was also '/hub/org', identical to Srijan above — picking "Data Tools" and
+  // landing on Srijan is the kind of thing that stops a user trusting the
+  // palette. Data Tools live as tabs inside Srijan, so it deep-links there.
+  { id: 'scrapers', label: 'Data Tools', hi: 'डेटा टूल्स', section: 'Navigate', route: '/hub/org?tab=scrapers', keywords: 'scrapers data tools leads' },
   { id: 'categories', label: 'Categories', hi: 'वर्ग', section: 'Navigate', route: '/settings/categories', keywords: 'settings categories tags' },
   { id: 'notifications', label: 'Notifications', hi: 'सूचना', section: 'Navigate', route: '/settings/notifications', keywords: 'settings notifications' },
   { id: 'customize', label: 'Customize', hi: 'सजावट', section: 'Navigate', route: '/settings/customize', keywords: 'settings customize theme' },
@@ -45,16 +48,44 @@ const ACTION_ITEMS = [
 
 const ALL_ITEMS = [...ACTION_ITEMS, ...NAV_ITEMS];
 
-function fuzzyMatch(query, item) {
-  const q = query.toLowerCase();
-  const haystack = `${item.label} ${item.hi} ${item.keywords}`.toLowerCase();
-  if (!q) return 3;
-  if (haystack.includes(q)) return 2;
-  let qi = 0;
-  for (let i = 0; i < haystack.length && qi < q.length; i++) {
-    if (haystack[i] === q[qi]) qi++;
+/**
+ * Score by WHERE the match lands and HOW early — never rank a subsequence hit
+ * above a substring hit.
+ *
+ * The previous version ran one subsequence test over a 40-character
+ * concatenation of label + hi + keywords, so almost any three-letter query
+ * matched almost everything: type "ate" and most of the 30 items scored 1, then
+ * sorted in source order because the comparator had nothing to break ties with.
+ * The list barely changed as you typed, which reads as "search is broken".
+ */
+export function fuzzyMatch(query, item) {
+  const q = query.trim().toLowerCase();
+  if (!q) return 100;
+
+  const label = (item.label || '').toLowerCase();
+  const hi = (item.hi || '').toLowerCase();
+  const keywords = (item.keywords || '').toLowerCase();
+
+  if (label.startsWith(q)) return 90 - Math.min(label.length - q.length, 20);
+  if (hi.startsWith(q)) return 88;
+
+  const at = label.indexOf(q);
+  if (at > -1) {
+    // Word-boundary hits beat mid-word ones: "inv" should find "New Invoice"
+    // before it finds anything merely containing "inv".
+    const boundary = at === 0 || label[at - 1] === ' ';
+    return (boundary ? 75 : 60) - Math.min(at, 15);
   }
-  return qi === q.length ? 1 : 0;
+  if (hi.includes(q)) return 55;
+  if (keywords.includes(q)) return 40;
+
+  // Subsequence, last resort, and only over the label — running it across the
+  // keyword blob is what made everything match.
+  let qi = 0;
+  for (let i = 0; i < label.length && qi < q.length; i++) {
+    if (label[i] === q[qi]) qi++;
+  }
+  return qi === q.length ? 10 : 0;
 }
 
 export default function CommandPalette({ open, onClose, onNewTask }) {
@@ -108,9 +139,18 @@ export default function CommandPalette({ open, onClose, onNewTask }) {
     }
   }, [results, activeIdx, execute, onClose]);
 
+  // scrollIntoView — even with block:'nearest' — can scroll ANCESTOR containers,
+  // which is the same call that made Sanvaad's scrollback unreadable. The list
+  // is a known height with known rows, so scroll it directly and touch nothing
+  // outside it.
   useEffect(() => {
-    const el = listRef.current?.children[activeIdx];
-    el?.scrollIntoView({ block: 'nearest' });
+    const el = listRef.current;
+    const row = el?.children[activeIdx];
+    if (!el || !row) return;
+    const top = row.offsetTop;
+    const bottom = top + row.offsetHeight;
+    if (top < el.scrollTop) el.scrollTop = top;
+    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight;
   }, [activeIdx]);
 
   if (!open) return null;
