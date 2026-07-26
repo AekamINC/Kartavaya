@@ -1,0 +1,298 @@
+/* boards.css — board, table and the toolbar the six views share.
+ * `design-handover/04-boards-table-views.md` §1. Tokens from `00-tokens.md`.
+ *
+ * Three resolutions worth stating, because 04 was written before 02 and 26
+ * landed and they overlap:
+ *
+ *   · **`.tb` is `.tbl`.** 04 specs a table root `.tb` with `.tb__wrap`,
+ *     `.tb__sort` and sticky `th`. `ui/Table.jsx` already ships exactly that
+ *     object as `.tbl` in `components.css`, including the three-state sort and
+ *     the reserved-width SVG chevron that 04 asks for by name. Two names for
+ *     one table is how the radius mismatch got shipped (02, the finding that
+ *     governs it), so the table view composes `ui/Table.jsx` and this file adds
+ *     only what the primitive has no opinion on: group rows, resize grips and
+ *     the sticky bulk bar. Those keep 04's `.tb__*` names.
+ *   · **`.tb__cb` is `.cbx`.** 04 hand-rolls a checkbox with an indeterminate
+ *     dash. 26 §5 specs `.cbx` with `.mixed` and `aria-checked="mixed"`, and
+ *     `ui/Checkbox.jsx` ships it. 04's own note — "the visual dash alone is not
+ *     the state" — is the argument for the component, not against it.
+ *   · **`.bc__av` is `.av` / `.avstack`.** 04 asks for `.bc__av + .bc__av
+ *     { margin-left: -8px }` to replace an index conditional. `.avstack > * + *`
+ *     in `components.css` is that selector, already written, with the ring in
+ *     the parent's background colour that a bare overlap misses.
+ */
+
+/* ── 1 · Board ────────────────────────────────────────────────────────────
+   The drop target highlights the COLUMN, not a gap between cards. A card-level
+   insertion indicator is more precise than anyone needs on a kanban board and
+   costs a hit-test per pointermove. */
+.bd { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 10px; }
+
+.bd__col {
+  width: 288px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px; border-radius: var(--r-md);
+  background: var(--s-low); border: 1px solid transparent;
+  transition: background var(--dur-base) var(--ease-standard), border-color var(--dur-base) var(--ease-standard);
+}
+.bd__col.over {
+  background: color-mix(in srgb, var(--primary) 7%, var(--s-low));
+  border-color: color-mix(in srgb, var(--primary) 34%, transparent);
+}
+
+.bd__ch { display: flex; align-items: center; gap: 8px; padding: 2px 4px 8px; }
+.bd__cdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--c); }
+.bd__cn { font-size: 13px; font-weight: 800; letter-spacing: -.005em; color: var(--on-surface); }
+.bd__cn-hi { font-family: var(--font-indic); font-size: 11px; font-weight: 400; color: var(--on-surface-3); margin-left: 5px; }
+.bd__cc { font-family: var(--font-mono); font-size: 11px; color: var(--on-surface-faint); margin-left: auto; }
+.bd__cx {
+  display: grid; place-items: center; width: 20px; height: 20px; flex: none;
+  border: 0; background: none; border-radius: var(--r-xs);
+  color: var(--on-surface-faint); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.bd__cx:hover { background: var(--s-container); color: var(--on-surface-2); }
+.bd__cname { flex: 1; min-width: 0; }
+
+/* min-height keeps an empty column a legal drop target — a zero-height list
+   cannot be dragged into, which is the one case a board most needs to allow. */
+.bd__list { display: flex; flex-direction: column; gap: 8px; min-height: 34px; }
+
+.bd__add {
+  width: 100%; padding: 7px 0;
+  background: transparent; border: 1px dashed var(--outline-variant);
+  border-radius: var(--r-sm); color: var(--on-surface-3);
+  font: inherit; font-size: 12.5px; cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.bd__add:hover { border-color: var(--outline); color: var(--on-surface); }
+
+.bd__newcol {
+  width: 240px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px; border-radius: var(--r-md);
+}
+.bd__newbtn {
+  width: 100%; min-height: 84px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  background: transparent; border: 1px dashed var(--outline-variant);
+  border-radius: var(--r-md); color: var(--on-surface-3);
+  font: inherit; font-size: 12.5px; cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.bd__newbtn:hover { border-color: var(--primary); color: var(--on-surface); }
+.bd__form { display: flex; flex-direction: column; gap: 8px; }
+.bd__formrow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--on-surface-3); }
+.bd__chk { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.bd__swatch { width: 28px; height: 28px; padding: 0; border: 0; background: none; cursor: pointer; }
+
+/* ── 2 · Card ─────────────────────────────────────────────────────────────
+   `rotate(2deg)` on lift is staging's value and it is a good one. */
+.bc {
+  display: flex; flex-direction: column; gap: 7px;
+  width: 100%; padding: 11px 12px;
+  border-radius: var(--r-sm); background: var(--surface);
+  border: 1px solid var(--outline-variant); box-shadow: var(--shadow-1);
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+  transition: box-shadow var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard);
+}
+.bc:hover { box-shadow: var(--shadow-2); }
+.bc.drag { transform: rotate(2deg) scale(1.02); box-shadow: var(--shadow-4); cursor: grabbing; }
+
+.bc__top { display: flex; align-items: center; gap: 7px; }
+.bc__pdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--c); }
+.bc__id { font-family: var(--font-mono); font-size: 10px; color: var(--on-surface-faint); }
+.bc__prio { margin-left: auto; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--c); }
+.bc__t { font-size: 13px; line-height: 1.4; font-weight: 500; text-wrap: pretty; color: var(--on-surface); }
+.bc__foot { display: flex; align-items: center; gap: 9px; font-size: 11px; color: var(--on-surface-3); }
+.bc__meta { display: inline-flex; align-items: center; gap: 9px; font-family: var(--font-mono); }
+.bc__meta > span { display: inline-flex; align-items: center; gap: 4px; }
+.bc__people { margin-left: auto; }
+
+/* Staging hardcoded #d97706 / #fef3c7 / #fbbf24 — three light-mode literals
+   that stay pale yellow on a dark board. --warn and --warn-container flip. */
+.bc__appr {
+  font-size: 10.5px; font-weight: 600; padding: 1px 7px;
+  border-radius: var(--r-pill);
+  color: var(--warn); background: var(--warn-container);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+}
+
+.bc__ghost {
+  border: 1px dashed var(--outline);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  border-radius: var(--r-sm);
+  min-height: 52px;
+}
+
+/* ── 3 · Table ────────────────────────────────────────────────────────────
+   `table-layout: fixed` is what makes the resize grips mean anything: without
+   it the browser re-derives every column width from content on each render and
+   a dragged grip snaps back the moment a cell changes. */
+.tbv { position: relative; }
+.tbv .tbl { table-layout: fixed; }
+.tbv .tbl tbody tr { cursor: pointer; transition: background var(--dur-fast) var(--ease-standard); }
+.tbv .tbl td { overflow: hidden; }
+
+/* `.tbl th` is already `position: sticky; top: 0`, and on its own that does
+   nothing here: `.tbl__wrap` sets `overflow-x: auto`, which makes it a scroll
+   container in BOTH axes, so the header sticks to a box that never scrolls
+   vertically while the PAGE scrolls past it. Bounding the wrap gives the sticky
+   header a scrollport to stick to. */
+.tbv .tbl__wrap { max-height: calc(100vh - 280px); }
+.tbv .tbl th { z-index: 2; }
+
+/* The empty state is a full illustration inside a `<td colSpan>`, so it must
+   escape the row height and the ellipsis clipping the data cells want. */
+.tb__empty { height: auto; overflow: visible; }
+
+.tb__grip { position: absolute; right: 0; top: 0; bottom: 0; width: 7px; cursor: col-resize; }
+.tb__grip:hover, .tb__grip.on { background: color-mix(in srgb, var(--primary) 40%, transparent); }
+
+.tb__grp td {
+  height: auto; padding: 8px 12px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--on-surface-3); background: var(--s-low);
+}
+.tb__grpn { margin-left: 6px; font-family: var(--font-mono); font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--on-surface-faint); }
+
+.tb__sel { width: 40px; }
+.tb__ttl { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tb__ttl > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb__att { display: inline-flex; align-items: center; gap: 3px; flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--on-surface-3); }
+.tb__col { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--on-surface-2); white-space: nowrap; }
+.tb__coldot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--c); }
+.tb__prio { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--c); white-space: nowrap; }
+.tb__none { color: var(--on-surface-faint); }
+
+/* Field visibility, inside a Popover. A checkbox list, so the panel must stay
+   open across picks — which is why it is a Popover and not a Menu. */
+.tb__fields { display: flex; flex-direction: column; gap: 2px; min-width: 180px; }
+.tb__field {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 5px 6px; border: 0; border-radius: var(--r-sm);
+  background: none; font: inherit; font-size: 13px; text-align: left;
+  color: var(--on-surface-2); cursor: pointer;
+}
+.tb__field:hover { background: var(--s-container); color: var(--on-surface); }
+
+/* The bulk bar is sticky to the bottom of the scroll container, so it is
+   readable at any scroll position without covering the row it describes. */
+.tbv .tbl__bulk {
+  position: sticky; bottom: 0; z-index: 3;
+  margin: 0; border: 0; border-top: 1px solid var(--outline-variant); border-radius: 0;
+  background: rgba(var(--glass-tint), .94);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  animation: dmSheetIn var(--dur-base) var(--ease-emph-in);
+}
+/* Windows gets no glass — 00 §6. */
+[data-platform="win"] .tbv .tbl__bulk { background: var(--s-low); -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* ── 4 · Filter builder ───────────────────────────────────────────────────
+   field → operator → value, one row per clause. */
+.fb { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.fb__row {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 4px 3px 9px;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-pill);
+  background: var(--s-low); font-size: 12.5px; color: var(--on-surface-2);
+}
+.fb__sel { border: 0; background: none; font: inherit; color: inherit; cursor: pointer; padding: 0 2px; max-width: 12ch; }
+.fb__in { width: 11ch; border: 0; background: none; font: inherit; color: var(--on-surface); outline: none; }
+.fb__x {
+  display: grid; place-items: center; width: 18px; height: 18px; flex: none;
+  border: 0; background: none; border-radius: 50%;
+  color: var(--on-surface-3); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.fb__x:hover { background: var(--s-container); color: var(--on-surface); }
+
+/* ── 5 · View toolbar ─────────────────────────────────────────────────────
+   Board, Table, Calendar, Timeline, Workload and Priority all need a view
+   switch, a filter and a group control, and today each carries its own. The
+   segmented control itself is `.k-segctrl`, which already exists — this is the
+   row it sits in and the trailing controls beside it. */
+.vtb { display: flex; flex-direction: column; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+.vtb__bar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.vtb__scroll { overflow-x: auto; max-width: 100%; }
+.vtb__end { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+.vtb__lbl { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3); }
+.vtb__group { display: inline-flex; align-items: center; gap: 6px; }
+.vtb__count { font-family: var(--font-mono); font-size: 12px; color: var(--on-surface-3); white-space: nowrap; }
+.vtb__ico { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ── 6 · Grouped task list ────────────────────────────────────────────────
+   MyTasks, Priority and Workload are the same object — a collapsible group of
+   task rows — written three times, each with its own inline styles, its own
+   retired hexes and its own inline hover mutation. `.tg*` is that object once.
+   `--c` per group carries the urgency colour to the rule, the title and the
+   dot without a variant class per bucket. `.mt*` is the summary strip above
+   it, which only MyTasks has. */
+.mt { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+.mt__sum {
+  display: flex; align-items: center; gap: var(--sp-6); flex-wrap: wrap;
+  padding: 14px 20px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--outline-variant);
+}
+.mt__me { display: flex; align-items: center; gap: 10px; }
+.mt__name { font-size: 14px; font-weight: 600; color: var(--on-surface); }
+.mt__kicker { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-3); }
+.mt__rule { width: 1px; height: 32px; background: var(--outline-variant); }
+.mt__stat { text-align: center; min-width: 52px; }
+.mt__n { display: block; font-family: var(--font-display); font-size: 22px; font-weight: 400; line-height: 1; color: var(--on-surface); }
+.mt__l { display: block; margin-top: 2px; font-size: 10px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-3); }
+
+.tg {
+  border-radius: var(--r-md); overflow: hidden;
+  background: var(--surface); border: 1px solid var(--outline-variant);
+  border-left: 4px solid var(--c);
+}
+.tg__h {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 11px 18px; border: 0; background: none;
+  font: inherit; text-align: left; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.tg__h:hover { background: var(--s-low); }
+.tg__t { font-family: var(--font-display); font-size: 15px; font-weight: 500; color: var(--c); }
+.tg__s { font-family: var(--font-indic); font-size: 12px; color: var(--on-surface-3); }
+.tg__c {
+  padding: 1px 7px; border-radius: var(--r-pill);
+  background: var(--s-container); color: var(--on-surface-2);
+  font-family: var(--font-mono); font-size: 11px;
+}
+.tg__x { margin-left: auto; color: var(--on-surface-3); transition: transform var(--dur-fast) var(--ease-standard); }
+.tg__h[aria-expanded="false"] .tg__x { transform: rotate(-90deg); }
+.tg__warn { font-size: 11px; font-weight: 600; color: var(--danger); }
+.tg__empty {
+  padding: 14px 20px; border-top: 1px solid var(--outline-variant);
+  font-family: var(--font-display); font-style: italic; font-size: 13px; color: var(--on-surface-3);
+}
+
+.tg__row {
+  display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 11px 20px; border: 0; border-top: 1px solid var(--outline-variant);
+  background: none; font: inherit; text-align: left; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.tg__row:hover { background: var(--s-low); }
+.tg__pdot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--c); }
+.tg__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; font-weight: 500; color: var(--on-surface); }
+.tg__att { display: inline-flex; align-items: center; gap: 3px; flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--on-surface-3); }
+
+/* ── 7 · Workload ─────────────────────────────────────────────────────────
+   The bar is deliberately NOT `.prg`: that is progress toward a goal, and a
+   workload is a share of the busiest person's load, which has no goal. */
+.wl__h { gap: 16px; padding: 14px 20px; }
+.wl__who { flex: 1; min-width: 0; }
+.wl__name { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 600; color: var(--on-surface); }
+.wl__bar { display: block; height: 5px; border-radius: var(--r-pill); background: var(--s-container); overflow: hidden; }
+.wl__fill { display: block; height: 100%; border-radius: var(--r-pill); background: var(--c); transition: width var(--dur-slow) var(--ease-standard); }
+.wl__row { padding-left: 76px; }
+
+@media (max-width: 768px) {
+  .bd__col { width: 82vw; }
+  .vtb__end { margin-left: 0; width: 100%; }
+}
