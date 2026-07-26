@@ -174,9 +174,17 @@ async def test_the_admin_console_is_not_reachable_by_a_tenant(
 async def test_the_admin_console_guard_admits_only_platform_roles(
     api_client, mock_pool, as_member, org_a,
 ):
-    """And the guard asks for the operations set, which is where the console
-    roles are decided — not a bare string at the call site."""
-    from middleware.role_tiers import OPERATIONS_CONSOLE_ROLES
+    """And the guard asks for a named set from `role_tiers`, not a bare string
+    at the call site.
+
+    `/admin/usage` is on the FINANCE set, not the operations set. It sums our
+    supplier cost against what we billed, per org, across every org — that is
+    Aekam's own P&L, not run triage. On the operating set every `platform_staff`
+    holder could read the margin on every customer.
+    """
+    from middleware.role_tiers import (
+        FINANCE_CONSOLE_ROLES, OPERATIONS_CONSOLE_ROLES,
+    )
     seen = {}
 
     async def _fetchval(query, *args):
@@ -187,5 +195,9 @@ async def test_the_admin_console_guard_admits_only_platform_roles(
     mock_pool.fetchval.side_effect = _fetchval
     await api_client.get("/api/v1/scrapers/admin/usage")
 
-    assert set(seen["roles"]) == set(OPERATIONS_CONSOLE_ROLES)
+    assert set(seen["roles"]) == set(FINANCE_CONSOLE_ROLES)
+    # Never locked out of the console — the standing role_tiers invariant.
     assert "platform_owner" in seen["roles"]
+    # The narrowing is the point: staff run triage, they do not read the margin.
+    assert "platform_staff" in OPERATIONS_CONSOLE_ROLES
+    assert "platform_staff" not in seen["roles"]

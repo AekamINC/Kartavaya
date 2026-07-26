@@ -167,9 +167,19 @@ async def test_an_org_admin_may_read_it_and_the_read_is_recorded(
 async def test_a_platform_bypass_is_recorded_as_a_bypass(
     api_client, mock_pool, as_member, org_a, bypass_module_gate, monkeypatch,
 ):
-    """`require_org_role` waves platform_admin through with no org row at all.
-    The audit row has to say so, or a support read is indistinguishable from the
-    customer's own admin reading their own employee."""
+    """`require_org_role` waves god mode through with no org row at all. The
+    audit row has to say so, or a support read is indistinguishable from the
+    customer's own admin reading their own employee.
+
+    The god-mode probe reads `GOD_MODE_ROLES` rather than the bare string
+    `'platform_admin'` it used to. That literal excluded `platform_owner` — the
+    exact lockout `role_tiers.py` warns about, invisible today only because every
+    god-mode account still holds a legacy `platform_admin` row. This routes on
+    the parameterised query, so it follows the fix rather than pinning the
+    string that had the bug in it.
+    """
+    from middleware.role_tiers import GOD_MODE_ROLES
+
     recorded = []
     monkeypatch.setattr(
         "routers.manav.audit",
@@ -179,8 +189,12 @@ async def test_a_platform_bypass_is_recorded_as_a_bypass(
         "routers.manav.is_platform_staff", lambda uid: _true()
     )
 
+    probed = {}
+
     async def _fetchval(query, *args):
-        if "role_code = 'platform_admin'" in query:
+        # The platform probe: org_id IS NULL, no org-scoped predicate.
+        if "org_id IS NULL" in query and "org_id=$2::uuid" not in query:
+            probed["roles"] = args[-1]
             return 1
         return None
 
@@ -191,6 +205,11 @@ async def test_a_platform_bypass_is_recorded_as_a_bypass(
 
     assert resp.status_code == 200
     assert recorded[0][1]["detail"]["via"] == "platform_bypass"
+
+    # And the probe asked for the whole god-mode set, so renaming the legacy
+    # rows cannot lock every god-mode account out of every org at once.
+    assert set(probed["roles"]) == set(GOD_MODE_ROLES)
+    assert "platform_owner" in probed["roles"]
 
 
 async def _true():
