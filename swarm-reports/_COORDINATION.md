@@ -85,8 +85,35 @@ historical, not functional. At eventual merge time the rule is: **take staging.*
 | `PROPOSED_069_org_security.sql` | org-endpoints (renumbered) |
 | `PROPOSED_070_sanvaad_spelling.sql` | org-endpoints (renumbered) |
 | `074` | claimed by the ganit/vikray agent |
+| `PROPOSED_075_module_grant_composite_key.sql` | migrations agent — **on staging** |
 
-**Take `071` next.** Survey `git branch -r` first anyway — proposals are landing live.
+**Take `071` next** (`071`, `072`, `073` are free; `076+` are free). Survey
+`git branch -r` first anyway — proposals are landing live.
+
+### ⚠️ `056` COLLIDES AND NOBODY OWNS IT
+
+`backend/migrations/` on staging contains **both**:
+
+- `056_publish_platforms_expansion.sql` — **APPLIED** (verified against the live schema)
+- `PROPOSED_056_task_comment_client_visibility.sql` — an unapplied proposal
+
+Anyone applying in numeric order sees `056` twice and may apply one and skip the
+other silently. This is the same defect as the `067` collision, which was caught
+only because two agents happened to be looking. **Recommended fix: rename the
+proposal to `PROPOSED_071_task_comment_client_visibility.sql`.** Grep for the old
+filename in SQL *and* Python first — the org-endpoints renumber found 11
+self-references, three of them inside runtime HTTP 503 response bodies.
+
+Not done by me: renaming another agent's in-flight file mid-run is how `067`
+happened. Whoever owns task-comment visibility, or the last agent standing,
+should take it.
+
+### Gaps that are NOT missing files
+
+`003`–`006`, `054`, `062` have never existed on any ref. `README.md` lists
+`003`–`006` as "pending" from `V2_PLAN.md §4`. Do not go looking for them, and do
+not reuse the numbers — `README.md`'s own rule is "never re-number", and the two
+renumbers this run were forced by collisions, not preference.
 
 When renumbering a run of files, **rename highest-first**. Renaming in file order makes
 `067→068` overwrite the branch's own `068`, and `git mv` reports success while the file
@@ -110,6 +137,51 @@ only checks that a grant row *exists*, never its level.
 
 Both cannot be true. Building enforcement against the wrong one is **worse than the
 current gap**, because it would look enforced. Do not guess — flag it.
+
+**Sharpened by the migrations agent — the spec contradicts ITSELF, ten lines apart,
+and one branch of it is provably unimplementable:**
+
+- `RBAC-SPEC.md:56-58` gives Vetana, Ganit and Manav a full four-level ladder with
+  named per-level capabilities. The Vetana Approver cell reads *"Approve payroll,
+  release payments"*; Ganit's reads *"Approve entries, close periods"*.
+- `RBAC-SPEC.md:65`, immediately below, says those same three modules have **no
+  per-member grant row at all**.
+
+So the spec defines four levels for exactly the three modules it then says cannot
+carry a level. **The kill shot is the code block at `:67`:**
+
+```
+SENS_BY_ROLE = { org_owner: 'admin', org_admin: 'admin', manager: 'none',
+                 member: 'none', client: 'none' }
+```
+
+**There is no `approver` value anywhere in it.** Under the role-derived model the
+strongest thing anyone can hold on Vetana or Ganit is `admin` — and
+`role_tiers.level_satisfies` says admin does NOT satisfy approver in those two
+modules. Follow `:65` literally and **nobody in any org can ever approve a payroll
+run or close a period.** Not a gap in enforcement: an unreachable state by
+construction.
+
+That is why `PROPOSED_074` had to invent a separate `org_module_approvers` table —
+it is the only way to hold an approver once `:65` forbids the grant row. `074` and
+`PROPOSED_075` are therefore **alternatives, not complements**; applying both leaves
+two places to look for one fact. The fork:
+
+| If the owner picks | Then | And |
+|---|---|---|
+| `:65` role-derived | `074` required | `075` is pointless — vetana/ganit are the ONLY separated-duty modules |
+| Tier-4 grant rows (live today; `065`'s CHECK is NOT applied) | `075` required and sufficient | `074` adds a second reach story and a per-process probe that latches |
+
+**Do not resolve this by picking one in code.** Whichever loses, its file must be
+DELETED, not left in `backend/migrations/` for someone to apply later by reading
+numbers. Full analysis in `swarm-reports/worktree-agent-a54bd25b975919175.md` §4-5
+and `PROPOSED_075` §5.
+
+Third divergence, same area, already settled and worth not re-litigating:
+`RBAC-SPEC.md:69` says a new grant defaults to `admin`. The live column defaults to
+`viewer` and `role_tiers.DEFAULT_GRANT_LEVEL = VIEWER`. `PROPOSED_066` overrode the
+spec deliberately and documented why — a default of admin means every grant is full
+control and the four levels never get used. **The build is right; the spec is wrong.**
 
 ## 6. Confirmed live defects worth knowing
 
