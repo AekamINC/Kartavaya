@@ -53,6 +53,28 @@ export const SvIcons = {
   alert: <svg width="13" height="13" viewBox="0 0 20 20" {...s} strokeWidth="1.7"><path d="M10 3.4l7 12.2H3l7-12.2z" /><path d="M10 8v3.2M10 13.6v.1" /></svg>,
   /** The 24-hour window — `ScreensVarta.jsx`'s `SI.clock2`. */
   clock: <svg width="13" height="13" viewBox="0 0 20 20" {...s} strokeWidth="1.7"><circle cx="10" cy="10" r="7.2" /><path d="M10 6.2V10l2.6 1.8" /></svg>,
+  /**
+   * The hover tray's "More" — `ScreensSanvaad.jsx:157` uses `I.dots`, which
+   * `Chrome.jsx:30` draws as three FILLED circles on a vertical axis in a
+   * `0 0 20 20` box. `navIcons.jsx` has a `more`, but it is three horizontal
+   * RULES (a burger), which reads as a nav drawer rather than a row overflow —
+   * so this is the design's glyph, not that one.
+   */
+  dots: (
+    <svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+      <circle cx="10" cy="4.5" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="10" cy="15.5" r="1.5" />
+    </svg>
+  ),
+  /** Edit, in the message overflow menu. */
+  pencil: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><path d="M11 2.5l2.5 2.5-8 8H3v-2.5z" /><path d="M9.5 4l2.5 2.5" /></svg>,
+  /** Delete, in the message overflow menu and on the tombstone. */
+  trash: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" /><path d="M7 7v4M9 7v4" /></svg>,
+  /**
+   * The read receipt. `ScreensSanvaad.jsx:14`'s `SI.eye` is a `0 0 20 20`
+   * stroke eye; `navIcons.jsx`'s is the same shape in `0 0 16 16`, so that one
+   * is reused rather than redrawn.
+   */
+  eye: ICONS.eye,
   /** Back, on the mobile two-pane swap. */
   back: ICONS.chevL,
   close: ICONS.close,

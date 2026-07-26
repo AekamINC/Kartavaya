@@ -285,7 +285,56 @@
   color: var(--on-surface);
   overflow-wrap: anywhere;
 }
-.msg__gone { color: var(--on-surface-3); font-style: italic; }
+/* The tombstone — `ScreensSanvaad.jsx:118` + `app.css:439`. A deleted message
+   collapses to ONE full-width row: no avatar column, no name, no separate
+   timestamp, because none of them belong to a message that is gone. The build
+   rendered "Message deleted" inside the ordinary body, so a tombstone still
+   cost the whole two-column grid. */
+.msg--gone { padding-top: 5px; padding-bottom: 5px; }
+.msg__tomb {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--t-label);
+  font-style: italic;
+  color: var(--on-surface-3);
+}
+.msg__tomb svg { flex-shrink: 0; }
+
+/* "(edited)", appended to the body — `app.css:432`. */
+.msg__ed {
+  margin-left: 6px;
+  font-size: var(--t-label-sm);
+  font-style: normal;
+  color: var(--on-surface-3);
+}
+
+/* Inline edit. The textarea borrows `.cmp__ta` so an edit box and the composer
+   are the same control at the same size; only the surrounding row is new. */
+.msg__edit { margin-top: 3px; }
+.msg__edit-ta { display: block; width: 100%; max-height: 180px; }
+.msg__edit-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  flex-wrap: wrap;
+}
+.msg__edit-hint { font-size: var(--t-label-sm); color: var(--on-surface-3); }
+
+/* The read receipt — `app.css:458`. */
+.seen {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+}
+.seen .ch__ic { width: 14px; margin-top: 0; }
+
+/* Scrollback control, pinned above the oldest message held. */
+.sv__older { display: flex; justify-content: center; padding: 4px 18px 10px; }
 
 /* The gutter timestamp. Grouping hides the avatar, the name AND the time, so a
    burst of five messages carried one timestamp between them and there was no
@@ -371,6 +420,14 @@
   cursor: pointer;
 }
 .msg__thr:hover { background: var(--primary-container); color: var(--on-primary-container); }
+/* `.thrl__t` in `app.css:457` — "Last reply 20m ago", one step down and in the
+   muted colour so the reply COUNT stays the thing the eye lands on. */
+.msg__thr-t {
+  font-size: var(--t-label-sm);
+  font-weight: 400;
+  color: var(--on-surface-3);
+}
+.msg__thr:hover .msg__thr-t { color: inherit; }
 
 /* ── Reaction chips ──────────────────────────────────────────────────────── */
 

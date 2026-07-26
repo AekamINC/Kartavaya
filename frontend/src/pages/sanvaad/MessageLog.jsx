@@ -26,6 +26,7 @@ export function DayLabel({ iso }) {
 
 export default function MessageLog({
   messages, loading, meId, meName, lastReadAt, onReact, onOpenThread, onReply, emptyTitle, emptyBody,
+  onEdit, onDelete, onLoadOlder, hasOlder = false, loadingOlder = false,
 }) {
   // A cheap signature, so a re-render that changes nothing about the messages
   // does not re-run the scroll decision.
@@ -48,6 +49,18 @@ export default function MessageLog({
     <div className="sv__logwrap">
       <div className="sv__log" ref={logRef}>
         {loading && <SkeletonChat rows={5} />}
+
+        {/* Scrollback. The control sits at the TOP of the log rather than
+            firing on scroll: an infinite loader that prepends rows fights the
+            near-bottom autoscroll in `useStickyScroll`, and a reader who has
+            scrolled up to find something is already looking at this end. */}
+        {!loading && messages.length > 0 && hasOlder && onLoadOlder && (
+          <div className="sv__older">
+            <button type="button" className="btn btn--out btn--sm" onClick={onLoadOlder} disabled={loadingOlder}>
+              {loadingOlder ? 'Loading…' : 'Load earlier messages'}
+            </button>
+          </div>
+        )}
 
         {!loading && messages.length === 0 && (
           <EmptyState
@@ -91,6 +104,8 @@ export default function MessageLog({
                 onReact={onReact}
                 onOpenThread={onOpenThread}
                 onReply={onReply}
+                onEdit={onEdit}
+                onDelete={onDelete}
               />
             </React.Fragment>
           );

@@ -12,7 +12,9 @@ export default function ChatPane({
   channel, me, meId, meName, onOpenThread, onSent, onBack, threadOpen,
 }) {
   const { pushToast } = useToast();
-  const { messages, loading, error, send, react } = useChannelMessages(channel.id, meId, me);
+  const {
+    messages, loading, error, send, react, edit, remove, loadOlder, more, older,
+  } = useChannelMessages(channel.id, meId, me);
   const [replyTo, setReplyTo] = useState(null);
 
   // Captured once per channel: the divider must mark where the reader was when
@@ -27,6 +29,27 @@ export default function ChatPane({
       onSent?.();
     } catch (e) {
       pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to send' });
+      throw e;
+    }
+  };
+
+  // Both surface the server's own reason rather than a generic failure — the
+  // router answers 403 "Can only edit your own messages" and 404 "Message not
+  // found", and either is more use than "Something went wrong".
+  const editMsg = async (msg, content) => {
+    try {
+      return await edit(msg, content);
+    } catch (e) {
+      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to save the edit' });
+      throw e;
+    }
+  };
+
+  const deleteMsg = async (msg) => {
+    try {
+      await remove(msg);
+    } catch (e) {
+      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to delete the message' });
       throw e;
     }
   };
@@ -66,6 +89,11 @@ export default function ChatPane({
           onReact={react}
           onOpenThread={onOpenThread}
           onReply={setReplyTo}
+          onEdit={editMsg}
+          onDelete={deleteMsg}
+          onLoadOlder={loadOlder}
+          hasOlder={more}
+          loadingOlder={older}
           emptyBody={`Nothing has been said in ${name || 'this channel'} yet. Everyone in it will see what you write.`}
         />
       )}

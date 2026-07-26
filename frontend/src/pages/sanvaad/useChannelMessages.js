@@ -32,10 +32,19 @@ import { mergeById, parseReactions, toggleReactionLocal } from './messageUtils';
 
 const POLL_MS = 5000;
 
+/** `list_messages` caps at `Query(50, le=100)`; a short page means no more. */
+const PAGE = 50;
+
 export function useChannelMessages(channelId, meId, me = null) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Scrollback. `list_messages` has always accepted `?before=<message_id>` and
+  // no client had ever sent it, so only the newest 50 messages in a channel
+  // were reachable — everything older was on the server and unreadable through
+  // the UI. `more` starts true and is cleared by the first short page.
+  const [more, setMore] = useState(true);
+  const [older, setOlder] = useState(false);
   const first = useRef(true);
 
   // The server returns newest-first (`ORDER BY created_at DESC LIMIT 50`), so
@@ -52,6 +61,7 @@ export function useChannelMessages(channelId, meId, me = null) {
     setLoading(true);
     setError(null);
     setMessages([]);
+    setMore(true);
 
     const load = async () => {
       try {
@@ -60,6 +70,7 @@ export function useChannelMessages(channelId, meId, me = null) {
         // Merge, never assign — an optimistic send that landed between the
         // request and the response must survive.
         setMessages(prev => mergeById(prev, page));
+        if (first.current && page.length < PAGE) setMore(false);
         setError(null);
       } catch (e) {
         if (!dead && first.current) setError(e);
@@ -117,6 +128,67 @@ export function useChannelMessages(channelId, meId, me = null) {
   }, [channelId, me]);
 
   /**
+   * Scrollback. `?before=` is a MESSAGE ID, not a timestamp — `list_messages`
+   * resolves it with a sub-select on `created_at` — so the cursor is the oldest
+   * row currently held, which is `messages[0]` because the page is reversed on
+   * arrival.
+   *
+   * The poll only ever re-reads the NEWEST page and merges, so an older page
+   * pulled in here is never discarded by the next tick; `mergeById` keeps both.
+   */
+  const loadOlder = useCallback(async () => {
+    const oldest = messages[0];
+    if (!oldest || older || !more) return;
+    setOlder(true);
+    try {
+      const r = await api.get(`/messaging/channels/${channelId}/messages`, {
+        params: { before: oldest.id, limit: PAGE },
+      });
+      const page = (Array.isArray(r.data) ? r.data : []).slice().reverse();
+      if (page.length < PAGE) setMore(false);
+      if (page.length) setMessages(prev => mergeById(page, prev));
+    } catch {
+      // A failed page is not a failed channel: the log the reader already has
+      // stays on screen and the control stays available to try again.
+    } finally {
+      setOlder(false);
+    }
+  }, [channelId, messages, older, more]);
+
+  /**
+   * `PATCH /messaging/messages/:id` and `DELETE /messaging/messages/:id` have
+   * existed since migration 058 and NO client had ever called either one, so
+   * `is_edited` and `is_deleted` were columns the UI could render but never
+   * produce. `MESSAGING-ATTENDANCE-SPEC.md:24` requires both.
+   *
+   * The server owns authorship ("Can only edit your own messages", 403) and the
+   * menu that reaches these is already gated on `sender_id === meId`; the check
+   * exists in both places on purpose, because the client-side one is a
+   * courtesy and the server-side one is the rule.
+   */
+  const edit = useCallback(async (msg, content) => {
+    const r = await api.patch(`/messaging/messages/${msg.id}`, { content });
+    // `edit_message` returns the bare row — no `sender_name`, no `reactions`,
+    // no `thread_count`, because those are joins only `list_messages` performs.
+    // Merging it raw would blank all three until the next poll, so only the
+    // three fields the edit actually changed are taken.
+    patch(msg.id, {
+      content: r.data?.content ?? content,
+      is_edited: true,
+      updated_at: r.data?.updated_at,
+    });
+    return r.data;
+  }, [patch]);
+
+  const remove = useCallback(async (msg) => {
+    await api.delete(`/messaging/messages/${msg.id}`);
+    // `list_messages` filters `is_deleted = FALSE`, so the next poll drops the
+    // row entirely. Until then the tombstone is what the deleter sees, which is
+    // the acknowledgement that the delete landed.
+    patch(msg.id, { is_deleted: true });
+  }, [patch]);
+
+  /**
    * `06` §7: "One emoji reaction costs a full history refetch. react() ends with
    * loadMessages(). Update the single message from the mutation response."
    *
@@ -143,7 +215,7 @@ export function useChannelMessages(channelId, meId, me = null) {
     }
   }, [meId, patch]);
 
-  return { messages, loading, error, send, react, patch };
+  return { messages, loading, error, send, react, patch, edit, remove, loadOlder, more, older };
 }
 
 export default useChannelMessages;
