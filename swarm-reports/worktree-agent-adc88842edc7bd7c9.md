@@ -10,6 +10,10 @@ Governing spec: `design-reference/Kartavaya Redesign/Auth Emails.html`,
 > Written incrementally. Every line was confirmed at the time it was written.
 > **No email was sent at any point.** The preview harness renders to disk and
 > imports nothing from the send path — see §7.
+>
+> **Status: complete.** Interrupted once by the account spend limit; work was
+> rescued from `rescue/adc88842edc7bd7c9`, rebased onto `origin/staging`, and
+> finished. Sections 8–12 were written after that resume.
 
 ---
 
@@ -482,10 +486,189 @@ python backend/scripts/preview_emails.py
 
 ---
 
-## 8 · What I changed
+## 8 · Items handed to me by siblings — one HELD, one STALE
 
-Filled in as work lands — see the commit log on this branch.
+### E-14 — The decision email hardcoded `"The reviewer"` — **HELD** — *fixed*
 
-## 9 · What I could not finish
+`email_service.py:1336` (pre-fix) passed the string literal `"The reviewer"` as
+`reviewer_name` into `send_approval_decision_email`. Every approve/reject email in
+the product therefore read *"The reviewer has approved your task"*.
 
-Filled in at the end.
+The information was not missing — it was discarded. Every handler
+(`approvals_router.py:604`, `:632`, and seven more) writes the decider to
+`tasks.approved_by` immediately **before** calling `send_approval_notification`.
+
+Fixed by resolving it in the dispatcher from `tasks.approved_by` rather than
+threading a new argument through nine call sites — fewer edits, and it cannot be
+forgotten by a tenth caller added later. The literal survives as the fallback,
+because a slightly generic decision email beats one that fails on an empty join.
+
+### E-15 — `type='request'` has an email path and it IS styled — **STALE (for email)**
+
+The claim was "notification `type='request'` is not one of the eight specified
+kinds; if it has an email path, it is unstyled." The conditional resolves, but not
+the way the claim expects:
+
+- It **does** have an email path — `send_approval_notification_email` branches on
+  `notification_type == "request"` (`email_service.py:1331`).
+- That branch calls `send_approval_request_email`, which is **inventory row 4** —
+  one of the seven templates that *does* have a designed version
+  (`Email System.html` artboard 3, `EmailApprovalRequest`). Verified by rendering:
+  it emits the full designed shell.
+
+So on the email surface there is nothing to fix. `type='request'` being absent
+from the in-app notification centre's eight kinds is real, but it is a
+notification-centre finding, not an email one — `_notify` writes
+`notifications.type='request'` at `approvals_router.py:117` and the **email** is
+correctly styled. Flagging so the sibling who owns that surface is not waiting on
+me.
+
+---
+
+## 9 · Test-suite send safety — **verified for email specifically**
+
+The coordinator asked me to confirm the `OUTBOUND_MODE` fix holds for email,
+since my surface touches send code most. It does, with one caveat that was mine
+to fix.
+
+**The conftest fix is real and correctly placed.** `backend/tests/conftest.py:39`:
+
+```python
+os.environ["OUTBOUND_MODE"] = "dry"
+```
+
+Three things make it load-bearing rather than decorative, all verified:
+1. It is `os.environ[...]`, **not** `setdefault` — a developer with `live` in
+   their shell cannot silently defeat it.
+2. It sits **above** the app imports. `outbound.MODE` is read once at import time
+   (`outbound.py:34`), so ordering is the whole game.
+3. There is a tripwire asserting it (`tests/test_push_prefs.py:49`).
+
+**The caveat, which was the more dangerous half:** `suppressed()` only protects
+senders that *call* it. Two email senders did not — see E-01. So on staging the
+guard was genuinely in force for 33 of 35 paths and genuinely absent for the two
+that carry payslips and scheduled reports. Both are now closed
+(`email_service.py:926`, `employee_email.py:183`). The conftest fix and the
+bypass fix are complementary; neither alone was sufficient.
+
+**No email was sent at any point in this work.** The preview harness additionally
+refuses to run if a provider client exists (§7), so rendering cannot become
+delivery even with the flags wrong.
+
+---
+
+## 10 · Bilingual / Devanagari — plainly stated
+
+**The design files DO address it.** This is not a spec gap. `Auth Emails.html:282`:
+
+> "Module names carry Devanagari, so the Hindi webfont must be declared with a
+> serif fallback — most clients will render the fallback and that is fine."
+
+The spec has already accepted that Tiro will not load in most mail clients and
+designed for the fallback. That is the correct call — see E-11: Gmail,
+Outlook.com and Yahoo all strip `<link>`, so a webfont is not available to be
+chosen. **There is no webfont option to weigh; there is only the fallback.**
+
+What I found wrong was the *implementation*, not the spec. The shipping stack was
+`'Tiro Devanagari Hindi', 'Noto Serif Devanagari', 'Newsreader', Georgia, serif`
+— in which the two webfonts never load, and `Newsreader` and `Georgia` have
+**zero Devanagari coverage**, so the string falls through to the bare generic and
+the client picks whatever it likes. On a stock Windows install that is a UI sans,
+not a serif. See §6 for the corrected stack and why each face is named.
+
+**The one place the spec is silent, and my decision:** it says nothing about
+`letter-spacing` or `text-transform` in email. `24-bilingual-devanagari.md:146`
+and `:153` forbid both on Devanagari at the app layer, and 16 email templates
+were violating both (E-16). I applied the app rule to email rather than inventing
+an email-specific convention.
+
+### E-16 — 16 templates tracked and uppercased Devanagari — **HELD** — *fixed*
+
+`_base()` rendered the eyebrow label with
+`letter-spacing:0.22em; text-transform:uppercase`, and 16 senders pass a kicker
+shaped `LATIN · देवनागरी`:
+
+`"NEW TASK · कार्य"`, `"COMMENT · टिप्पणी"`, `"MENTION · उल्लेख"`,
+`"REMINDER · स्मरण"`, `"APPROVED · स्वीकृत"`, `"STATUS UPDATE · स्थिति"`,
+`"PASSWORD RESET · पासवर्ड रीसेट"`, `"LEAVE · अवकाश"`, `"EXPENSE · व्यय"`,
+`"ANNOUNCEMENT · घोषणा"`, `"SHIFT · पारी"`, `"ASSET · संपत्ति"`, `"LOAN · ऋण"`,
+`"PAYSLIP · वेतन पर्ची"`, `"PERFORMANCE · प्रदर्शन"`, `"VERIFICATION · सत्यापन"`.
+
+`24-bilingual-devanagari.md:146` — *"Never set letter-spacing on Devanagari.
+Tracking breaks conjunct ligatures — क्ष and ज्ञ render as separate glyphs with a
+gap."* And `:153` — *"Also never `text-transform: uppercase`, since Devanagari
+and Gujarati are unicase, so it does nothing to them while the Latin beside them
+changes, breaking the pair."*
+
+`पासवर्ड`, `प्रदर्शन`, `स्वीकृत` and `हस्ताक्षर` all carry conjuncts (`स्व`, `प्र`, `र्ड`, `स्त`).
+
+Fixed in `_kicker_html()`: the label is split on its separator, the Latin run
+keeps tracking and uppercase, the Devanagari run gets `lang="hi"`,
+`letter-spacing:normal` and `text-transform:none`. **All 16 fixed without
+touching a call site.** The preview harness asserts the rule on every render, so
+it cannot regress silently.
+
+Worth noting: the report builder's champion callout already did this correctly
+(`letter-spacing:0; text-transform:none` on `champ_hi`), so the constraint was
+known — it just was not applied at the shell.
+
+---
+
+## 11 · What I changed
+
+Five commits on this branch.
+
+| Area | Change |
+|---|---|
+| `backend/scripts/build_email_tokens.py` | **New.** Resolves `tokens.css` + `email-styles.css` to literal hex, records provenance per constant, gates 17 contrast pairs at build time, `--check` for CI. |
+| `backend/email_tokens.py` | **New, generated.** The literals every template now reads. |
+| `backend/email_service.py` | Shell rebuilt to `Auth Emails.html`: 600px, 14px radius, `role="presentation"`, Georgia display, no webfont `<link>`, flat `#04837A` button, brand lockup, complete dark-mode block, mobile stack. `kicker`/`headline`/`sanskrit` escaped centrally. `_kicker_html`, `_quote_block`, `_notice`, `_fallback_url` added. Kill-switch guard on `send_report_email`. Three subjects CRLF-stripped. Legacy palette swept. |
+| `backend/services/employee_email.py` | 9 unescaped `lede` interpolations fixed; announcement body escaped; kill-switch guard on the payslip attachment branch. |
+| `backend/approvals_router.py` | Reviewer name resolved from `tasks.approved_by`. |
+| `backend/routers/esign.py` | Both builders converted to the shared shell. |
+| `backend/services/reminder_service.py` | Converted; two injections fixed; wrong brand/domain/teal removed. |
+| `backend/scripts/preview_emails.py` | **New.** 29-template renderer + escaping/bilingual/client-compat audit. |
+| `.gitignore` | Rendered previews excluded. |
+
+**Verification:** 29/29 templates pass the audit. Both frontend gates green
+(`check-tokens`: 0 missing; `check-classes`: 0 missing). `build_email_tokens.py
+--check` clean. All touched modules import. No lockfile touched, no DB write, no
+migration, no email sent.
+
+---
+
+## 12 · What I could not finish
+
+**E-08 — the eight `await send_email(...)` sites are still broken.** `send_email`
+is sync and returns `bool`; `await True` raises `TypeError`, caught by a bare
+`except` at every site. Those eight emails have never sent. I deliberately did
+not fix them: making them work *starts delivering mail that currently does not go
+out*, which is a behaviour change rather than a design conversion, and doing that
+on an unreviewed branch on a surface where the standing rule is "never send a
+real email" is the wrong trade. Needs its own change with a human deciding
+whether each should send at all. Sites listed in §2D and E-08.
+
+**§2D — two dead imports of a module that does not exist.**
+`routers/dristi.py:625` and `services/esign_service.py:71`/`:115` import
+`services.email_service`. Scheduled-report "run now" and Ganit contract signing
+report success and mail nobody. Same reasoning as E-08 — fixing the import turns
+on delivery.
+
+**Marketing/campaign HTML is org-authored and unconverted** (inventory 26–29).
+`prachar.py`, `campaign_sender.py`, `sequence_step_executor.py` and
+`automation_engine.py` send HTML composed by the customer. It is not ours to
+restyle, and the design files do not spec a campaign wrapper. Left alone
+deliberately; flagging that no sanitisation is applied to it either, which is a
+policy question (an org emailing its own contacts) rather than a bug.
+
+**The support-access email is specced but not wired.** `Auth Emails.html` #support
+is a complete fourth auth template with a violet platform keyline, and **no
+backend sender exists for it**. I built the shell support (`accent` parameter,
+`PLATFORM_VIOLET` token) and render it in the harness as `04-support-access` so
+the gap is visible, but wiring it needs the platform-support request flow, which
+is another agent's surface.
+
+**Not visually diffed against the spec by a human.** I verified geometry, type,
+colour and structure programmatically and rendered all 29, but nobody has looked
+at them in a real client. `Litmus`-style cross-client testing is the obvious next
+step and I could not do it from here.
