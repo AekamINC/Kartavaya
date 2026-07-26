@@ -251,13 +251,18 @@ async def test_platform_admin_reaches_a_sensitive_module_but_is_audited(
 async def test_non_sensitive_module_bypass_stays_silent(mock_pool, monkeypatch):
     """Deliberate: this gate gates ~400 endpoints and a row per request is a
     product decision, not a middleware one. Asserted so that changing it is a
-    choice rather than an accident."""
+    choice rather than an accident.
+
+    Uses platform_staff rather than account_manager. account_manager was the
+    example when this was written; the owner has since superseded it with
+    platform_manager / platform_staff, and it now reaches nothing at all — see
+    test_account_manager_reaches_nothing below."""
     emitted = []
     monkeypatch.setattr(
         "middleware.subscription.audit",
         lambda action, request=None, **kw: emitted.append(action),
     )
-    _pool_with_platform_role(mock_pool, "account_manager")
+    _pool_with_platform_role(mock_pool, "platform_staff")
 
     await _run_gate("graha")
 
@@ -272,9 +277,17 @@ async def test_pahchan_is_treated_as_sensitive():
 
 
 async def test_account_manager_is_not_an_operational_platform_role():
-    from middleware.subscription import OPERATIONAL_PLATFORM_ROLES
-    assert "account_manager" not in OPERATIONAL_PLATFORM_ROLES
-    assert "platform_admin" in OPERATIONAL_PLATFORM_ROLES
+    """account_manager is superseded by platform_manager and now reaches NOTHING.
+
+    It is kept in the enum only so existing rows stay readable while the data
+    migrates. A commercial role — create orgs, toggle modules, chase invoices —
+    has no business in a customer's salary register."""
+    from middleware.role_tiers import modules_for, is_god_mode
+    assert modules_for("account_manager") == frozenset()
+    assert not is_god_mode("account_manager")
+    # God mode reaches everything, under either spelling.
+    assert is_god_mode("platform_admin") and is_god_mode("platform_owner")
+    assert len(modules_for("platform_owner")) == 12
 
 
 # ── require_org_role: the unconditional platform pass ─────────────

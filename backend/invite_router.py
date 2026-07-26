@@ -13,8 +13,19 @@ from pydantic import BaseModel, EmailStr
 
 from db import get_pool
 from middleware.roles import require_platform_role
+from middleware.role_tiers import (
+    GOD_MODE_ROLES, MANAGER_ROLES, STAFF_ROLES,
+)
 
-_require_admin = require_platform_role("platform_admin", "account_manager")
+# Who may open the platform console. Reaching the console is not the same as
+# reading what is in it — role_tiers.can_reach_module still decides that per
+# module, so a platform_staff who opens an org sees the operating set and not
+# its payroll.
+CONSOLE_ROLES = GOD_MODE_ROLES + MANAGER_ROLES + STAFF_ROLES + ("account_manager",)
+CONSOLE_ROLES_WITH_FINANCE = CONSOLE_ROLES + ("account_finance",)
+
+
+_require_admin = require_platform_role(*CONSOLE_ROLES)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 

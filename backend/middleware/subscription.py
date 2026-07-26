@@ -12,6 +12,9 @@ from fastapi import Depends, HTTPException, Request
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from services.audit import emit as audit
+from middleware.role_tiers import (
+    ALL_PLATFORM_ROLES, PLATFORM_ROLE_PRECEDENCE, can_reach_module, is_god_mode,
+)
 
 _cache: dict = {}
 _CACHE_TTL = timedelta(minutes=5)
@@ -25,16 +28,17 @@ BUNDLED_MODULES = {"srijan", "esign"}
 # HR file it attaches to, and the standing constraints already single it out.
 SENSITIVE_MODULES = {"vetana", "ganit", "manav", "pahchan"}
 
-# Platform roles that may cross into a customer's *operational* data.
-# `account_manager` is deliberately absent: it is a commercial role — create
-# orgs, toggle modules, chase invoices — and PLAN_ROLES §2.1 grants it no
-# customer data at all. It previously bypassed this gate for every module in
-# every org, which meant whoever ran the commercial side could read any
-# customer's payroll, Aadhaar and attendance without leaving a trace.
-OPERATIONAL_PLATFORM_ROLES = ("platform_admin",)
-
-# Roles that may bypass the per-user grant check on a non-sensitive module.
-SUPPORT_PLATFORM_ROLES = ("platform_admin", "account_manager")
+# Which modules each platform role may reach now lives in ONE file. It used to be
+# hardcoded tuples here and in four other modules; adding a role meant finding
+# every one, and a missed call site fails silently in whichever direction is
+# wrong. See middleware/role_tiers.py.
+#
+# `account_manager` grants nothing on its own: it is a commercial role — create
+# orgs, toggle modules, chase invoices — and it previously bypassed this gate for
+# every module in every org, so whoever ran the commercial side could read any
+# customer's payroll, Aadhaar and attendance without leaving a trace. It is
+# superseded by platform_manager and kept only so existing rows stay readable.
+SUPPORT_PLATFORM_ROLES = ALL_PLATFORM_ROLES
 
 
 def require_module(module_code: str):
@@ -72,13 +76,21 @@ def require_module(module_code: str):
                 "SELECT role_code FROM staging.user_roles "
                 "WHERE user_id=$1 AND org_id IS NULL "
                 "AND role_code = ANY($2::text[]) "
-                "ORDER BY (role_code = 'platform_admin') DESC LIMIT 1",
-                user.get("user_id"), list(SUPPORT_PLATFORM_ROLES),
+                "ORDER BY array_position($2::text[], role_code) LIMIT 1",
+                user.get("user_id"), list(PLATFORM_ROLE_PRECEDENCE),
             )
             if platform_role:
+                # What this role may reach is a single lookup now, so the answer
+                # cannot differ between this gate and any other.
+                if not can_reach_module(platform_role, module_code):
+                    raise HTTPException(
+                        403,
+                        f"The {platform_role} role cannot access the {module_code} "
+                        f"module.",
+                    )
                 if module_code not in SENSITIVE_MODULES:
                     return
-                if platform_role in OPERATIONAL_PLATFORM_ROLES:
+                if is_god_mode(platform_role):
                     audit(
                         "platform.sensitive_module_access",
                         request,

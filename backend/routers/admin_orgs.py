@@ -18,6 +18,17 @@ from middleware.roles import require_platform_role
 from services.provider_costs import get_all_provider_costs
 from services.forex import get_usd_inr, get_usd_inr_sync
 from services.storage import create_org_bucket, verify_r2_credentials, clear_org_r2_cache
+from middleware.role_tiers import (
+    ALL_PLATFORM_ROLES, GOD_MODE_ROLES, MANAGER_ROLES, STAFF_ROLES,
+)
+
+# Who may open the platform console. Reaching the console is not the same as
+# reading what is in it — role_tiers.can_reach_module still decides that per
+# module, so a platform_staff who opens an org sees the operating set and not
+# its payroll.
+CONSOLE_ROLES = GOD_MODE_ROLES + MANAGER_ROLES + STAFF_ROLES + ("account_manager",)
+CONSOLE_ROLES_WITH_FINANCE = CONSOLE_ROLES + ("account_finance",)
+
 
 router = APIRouter(prefix="/api/v1/admin/orgs", tags=["admin-orgs"])
 
@@ -73,7 +84,7 @@ class RoleAssign(BaseModel):
 @router.post("")
 async def create_org(
     body: OrgCreate,
-    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     """Create a new org, link to a team, set owner, assign plan."""
     pool = await get_pool()
@@ -185,7 +196,7 @@ async def create_org(
 @router.get("")
 async def list_orgs(
     count_only: int = 0,
-    user=Depends(require_platform_role("platform_admin", "account_manager", "account_finance")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES_WITH_FINANCE)),
 ):
     """List all orgs with plan and owner info.
 
@@ -481,7 +492,7 @@ async def provider_costs(
 @router.get("/{org_id}")
 async def get_org(
     org_id: str,
-    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     """Get org details including members and roles."""
     pool = await get_pool()
@@ -553,7 +564,7 @@ async def deactivate_org(
 async def update_org_settings(
     org_id: str,
     body: dict,
-    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     """Update org markup, monthly credits, and/or monthly price."""
     pool = await get_pool()
@@ -610,7 +621,7 @@ async def update_org_settings(
 async def add_member(
     org_id: str,
     body: OrgMemberAdd,
-    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     """Add a user to an org with specified roles."""
     pool = await get_pool()
@@ -705,7 +716,7 @@ async def add_member(
 async def remove_member(
     org_id: str,
     user_id: str,
-    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     pool = await get_pool()
     await pool.execute(
@@ -760,7 +771,7 @@ async def assign_role(
     if not target:
         raise HTTPException(404, "User not found")
 
-    platform_roles = {"platform_admin", "account_manager", "account_finance", "developer", "srijan_admin"}
+    platform_roles = set(ALL_PLATFORM_ROLES) | {"developer"}
     org_roles = {"org_admin", "org_member"}
 
     if body.role_code in platform_roles:
@@ -807,7 +818,7 @@ ALL_MODULES = [
 async def enable_module(
     org_id: str,
     module_code: str,
-    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     if module_code not in ALL_MODULES:
         raise HTTPException(400, f"Unknown module: {module_code}. Valid: {', '.join(ALL_MODULES)}")
@@ -831,7 +842,7 @@ async def enable_module(
 async def disable_module(
     org_id: str,
     module_code: str,
-    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     if module_code not in ALL_MODULES:
         raise HTTPException(400, f"Unknown module: {module_code}")
@@ -860,7 +871,7 @@ async def set_member_modules(
     org_id: str,
     target_user_id: str,
     body: ModuleGrantBody,
-    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     """Replace a member's module grants with the given list."""
     pool = await get_pool()
@@ -893,7 +904,7 @@ async def set_member_modules(
 async def get_member_modules(
     org_id: str,
     target_user_id: str,
-    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     """Get a member's module grants."""
     pool = await get_pool()
@@ -910,7 +921,7 @@ async def get_member_modules(
 @router.post("/r2/verify")
 async def verify_r2(
     body: R2Credentials,
-    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     """Test R2 credentials before assigning to an org."""
     result = await verify_r2_credentials(
@@ -959,7 +970,7 @@ async def set_org_r2(
 @router.get("/{org_id}/storage")
 async def get_storage_usage(
     org_id: str,
-    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     """Get org storage usage and R2 cost estimate."""
     pool = await get_pool()
@@ -993,7 +1004,7 @@ async def get_storage_usage(
 async def org_cost_breakdown(
     org_id: str,
     period: str = "30d",
-    user=Depends(require_platform_role("platform_admin", "account_manager", "account_finance")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES_WITH_FINANCE)),
 ):
     """Per-org cost breakdown: AI by provider+model, scraper by type, daily trend."""
     pool = await get_pool()
@@ -1146,7 +1157,7 @@ async def org_cost_breakdown(
 async def admin_org_cost_report_pdf(
     org_id: str,
     period: str = "30d",
-    user=Depends(require_platform_role("platform_admin", "account_manager", "account_finance")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES_WITH_FINANCE)),
 ):
     """Admin generates client cost report PDF for any org."""
     from fastapi.responses import Response
@@ -1240,7 +1251,7 @@ async def admin_org_cost_report_pdf(
 async def admin_topup_credits(
     org_id: str,
     body: dict,
-    user=Depends(require_platform_role("platform_admin", "account_manager")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
     """Aekam tops up org credits. Preset or custom amount."""
     pool = await get_pool()
@@ -1283,7 +1294,7 @@ async def admin_credit_usage(
     org_id: str,
     start_date: str = None,
     end_date: str = None,
-    user=Depends(require_platform_role("platform_admin", "account_manager", "account_finance")),
+    user=Depends(require_platform_role(*CONSOLE_ROLES_WITH_FINANCE)),
 ):
     """Credit usage report for an org. Date range filter."""
     pool = await get_pool()

@@ -6,6 +6,7 @@ Orgs must be created by a platform admin — no auto-creation.
 from fastapi import Depends, HTTPException, Request
 from db import get_pool
 from auth_router import require_user
+from middleware.role_tiers import ALL_PLATFORM_ROLES
 
 
 async def get_org_id(request: Request, user=Depends(require_user)):
@@ -32,8 +33,8 @@ async def get_org_id(request: Request, user=Depends(require_user)):
             is_platform = await pool.fetchval(
                 "SELECT 1 FROM staging.user_roles "
                 "WHERE user_id=$1 AND org_id IS NULL "
-                "AND role_code IN ('platform_admin','account_manager')",
-                user["user_id"],
+                "AND role_code = ANY($2::text[])",
+                user["user_id"], list(ALL_PLATFORM_ROLES),
             )
             if not is_platform:
                 raise HTTPException(403, "You do not belong to this organisation")

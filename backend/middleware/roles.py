@@ -14,6 +14,7 @@ from fastapi import Depends, HTTPException
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
+from middleware.role_tiers import ALL_PLATFORM_ROLES
 
 
 def require_role(*allowed_roles: str):
@@ -105,8 +106,8 @@ async def is_platform_staff(user_id: str) -> bool:
     return bool(await pool.fetchval(
         "SELECT 1 FROM staging.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL "
-        "AND role_code IN ('platform_admin','account_manager')",
-        user_id,
+        "AND role_code = ANY($2::text[])",
+        user_id, list(ALL_PLATFORM_ROLES),
     ))
 
 
@@ -129,14 +130,14 @@ async def is_org_admin(user_id: str, org_id: str | None = None) -> bool:
     if org_id:
         return bool(await pool.fetchval(
             "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND ("
-            "  (org_id IS NULL AND role_code IN ('platform_admin','account_manager'))"
+            "  (org_id IS NULL AND role_code = ANY('{platform_owner,platform_admin,platform_manager,platform_staff,account_manager,account_finance,srijan_admin,platform_support}'::text[]))"
             "  OR (org_id=$2::uuid AND role_code IN ('org_owner','org_admin'))"
             ")",
             user_id, org_id,
         ))
     return bool(await pool.fetchval(
         "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND ("
-        "  (org_id IS NULL AND role_code IN ('platform_admin','account_manager'))"
+        "  (org_id IS NULL AND role_code = ANY('{platform_owner,platform_admin,platform_manager,platform_staff,account_manager,account_finance,srijan_admin,platform_support}'::text[]))"
         "  OR (org_id IS NOT NULL AND role_code IN ('org_owner','org_admin'))"
         ")",
         user_id,
