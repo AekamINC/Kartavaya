@@ -37,7 +37,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import { Hero, Citation } from '../components/editorial';
-import { SkeletonText } from '../components/ui';
+import { SkeletonText, ErrorState, errorKind } from '../components/ui';
 import { logger } from '../lib/utils';
 import { DAYS_HI_SUN, mondayIndex, weekDates as weekDatesFor, dayWindow } from '../lib/dates';
 import { vikramLabel } from '../lib/vikram';
@@ -72,9 +72,18 @@ export default function TodayPage({ teams = [] }) {
   const [activity, setActivity] = useState([]);
   const [verse,    setVerse]    = useState(null);
   const [finStats, setFinStats] = useState(null);
+  // A FAILED LOAD IS NOT AN EMPTY BOARD. `/tasks` rejecting used to land in a
+  // bare `.catch(logger.error)`, so `tasks` stayed `[]` and the page rendered
+  // its zero state in full confidence: four stat tiles reading 0, "Nothing is
+  // assigned to you right now", and — the one that makes it a real problem —
+  // "The board is clear." The user is told their work is done when what
+  // actually happened is that the request failed. Every other state on this
+  // page was handled; this was the one that lied.
+  const [error, setError] = useState(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true);
+    setError(null);
     Promise.all([
       api.get('/tasks'),
       api.get('/verse-of-the-day').catch(() => null),
@@ -85,8 +94,18 @@ export default function TodayPage({ teams = [] }) {
       setTasks(Array.isArray(tRes.data) ? tRes.data : []);
       if (vRes) setVerse(vRes.data);
       if (fRes?.data) setFinStats(fRes.data);
-    }).catch(logger.error).finally(() => setLoading(false));
+    }).catch(err => {
+      // Only `/tasks` can reach here — the other two swallow their own
+      // rejections above precisely so a missing verse or an ungranted Ganit
+      // never reads as a broken dashboard. So the failure is unambiguous and
+      // `errorKind` can classify it honestly: offline vs 403 vs 404 vs 5xx,
+      // rather than one "Something went wrong".
+      logger.error(err);
+      setError(err);
+    }).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   // Not gated on `teams.length` any more. The gate was the client guessing at a
   // server rule and getting it wrong in one direction: `/activity/feed` derives
@@ -219,6 +238,10 @@ export default function TodayPage({ teams = [] }) {
   // its real line box and the swap moves nothing at all.
   const ledeCopy = loading ? (
     <SkeletonText width="48%" height={14} style={{ display: 'inline-block' }} />
+  ) : error ? (
+    // Says nothing about the work, because nothing about the work is known.
+    // The counts below are absent for the same reason.
+    <>We couldn’t load your tasks just now, so the numbers below are missing rather than zero.</>
   ) : derived.myOpen.length === 0 ? (
     <>
       <b>Nothing is assigned to you right now.</b>{' '}
@@ -265,7 +288,15 @@ export default function TodayPage({ teams = [] }) {
 
       <ReceivablesKPI stats={finStats} />
 
-      {loading ? <TodaySkeleton /> : (
+      {/* ReceivablesKPI stays mounted above: it has its own source and its own
+          null guard, so a task failure must not blank a figure that loaded. */}
+      {loading ? <TodaySkeleton /> : error ? (
+        <ErrorState
+          kind={errorKind(error)}
+          grant="access to this workspace"
+          onRetry={load}
+        />
+      ) : (
         <>
           <StatRow
             open={derived.openTotal}
