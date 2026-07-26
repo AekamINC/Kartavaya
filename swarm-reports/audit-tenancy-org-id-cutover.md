@@ -302,18 +302,16 @@ Correct by design. The note: these are the only endpoints where **token entropy 
 
 Six proposals, each with a rollback. **None executes. None has been run.** `staging` and `public` live in the same Supabase project as production, so every one is a proposal for a human to schedule.
 
-Numbered from **071** (the next free number per coordination; highest existing `PROPOSED_*` across all branches is 074 with a known 067 collision being renumbered — 071–076 verified unused at time of writing).
+**Numbered 076–081.** `_COORDINATION.md` says "take 071 next", but by the time I resumed, `PROPOSED_071_vetana_approver_backfill.sql` had been created on another ref, and the same doc *also* recommends 071 for the unowned `056` rename — a latent double-claim. 074 and 075 are taken (`module_approvers`, `module_grant_composite_key`). **076–081 were verified unused across all refs** (`git log --all --diff-filter=A -- '*PROPOSED_*'`) and leave 072–073 free for whoever takes the `056` renumber.
 
 | Phase | File | What it does | Reversible |
 |---|---|---|---|
-| 1 | `PROPOSED_071_org_id_add_nullable.sql` | Add `org_id uuid NULL` + indexes to 21 `public` tables | Yes — `DROP COLUMN` |
-| 2 | `PROPOSED_072_org_id_backfill.sql` | Backfill from the join path, in dependency order | Yes — `SET org_id = NULL` |
-| 3 | `PROPOSED_073_org_id_verify.sql` | **Read-only.** Reconciliation counts; no DDL, no DML | N/A |
-| 4 | `PROPOSED_074_org_id_constrain.sql` | `CHECK … NOT VALID` then `VALIDATE` — never bare `SET NOT NULL` | Yes — `DROP CONSTRAINT` |
-| 5 | `PROPOSED_075_team_members_retire.sql` | Rename (never drop) `public.team_members` | Yes — rename back |
-| 6 | `PROPOSED_076_rls_enable.sql` | GUC-based policies + `FORCE RLS`, gated on Phase 4 | Yes — `DROP POLICY` / `NO FORCE` |
-
-*(File numbering note: 074 collides with an existing `PROPOSED_074_module_approvers.sql` on another branch. Resolved at write time — see the actual filenames committed alongside this report.)*
+| 1 | `PROPOSED_076_org_id_add_nullable.sql` | Add `org_id uuid NULL` + 20 indexes to 20 `public` tables | Yes — `DROP COLUMN` |
+| 2 | `PROPOSED_077_org_id_backfill.sql` | Backfill from the join path, in dependency order | Yes — `SET org_id = NULL` |
+| 3 | `PROPOSED_078_org_id_verify.sql` | **Read-only.** 6 reconciliation queries; no DDL, no DML | N/A |
+| 4 | `PROPOSED_079_org_id_constrain.sql` | `CHECK … NOT VALID` then `VALIDATE` — never bare `SET NOT NULL` | Yes — `DROP CONSTRAINT` |
+| 5 | `PROPOSED_080_team_members_retire.sql` | Rename (never drop) `public.team_members` | Yes — rename back |
+| 6 | `PROPOSED_081_rls_enable.sql` | GUC wiring + policies + `FORCE RLS` | Yes — `NO FORCE` |
 
 ### 5.1 Lock duration — the honest answer
 
@@ -360,6 +358,10 @@ The residue splits into two categories needing different decisions — **neither
 | 4 — constrain | **Medium-High.** First phase that can reject writes. Any insert path without `org_id` starts failing. | `DROP CONSTRAINT` restores service in one statement. Run Phase 3 immediately before. |
 | 5 — retire `team_members` | **High — do not schedule yet.** §6. | Rename is instantly reversible; the 64 call sites are not. |
 | 6 — enable RLS | **High.** First phase where a mistake denies service broadly. Must not run before the GUC is wired (§5.4). | `NO FORCE ROW LEVEL SECURITY` restores in one statement per table. |
+
+**One ordering constraint that is easy to miss and expensive to get wrong.** No backend code currently sets `public.*.org_id` on insert — the column does not exist in the application's world. A constraint added before the application writes the column fails every task creation, comment and notification immediately. The sequence is: 076 → 077 → 078 → **ship the application change that populates `org_id` on insert** → re-run 077 to catch rows created in between → 078 again → only then 079. `PROPOSED_079` states this in its header.
+
+**And one in Phase 6 that is worse.** `set_config('app.current_org_id', $1, true)` — the third argument must be `true` (transaction-local). With `false` the setting persists on the pooled connection and the next request to borrow it inherits the previous request's org. `db.py` creates an asyncpg pool with `min_size=3, max_size=15`, so connections are reused constantly. That single boolean is the difference between RLS preventing cross-tenant reads and RLS *causing* them.
 
 ### 5.4 The phase that matters most, and is not schema work
 
