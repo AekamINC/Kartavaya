@@ -6,11 +6,12 @@ Scope: `backend/routers/graha.py`, `hub.py`, `hub_chat.py`, `hub_publish.py`,
 `scrapers.py`; `backend/services/social_publisher.py`, `ai_router.py`,
 `ad_insights.py` (token reader only), `middleware/role_tiers.py`.
 
-**Gates: both green.** `check-tokens` 279 declared / 0 missing;
-`check-classes` 2096 selectors / 0 missing a rule.
-**Backend suite: 285 passed, 1 pre-existing failure** (`test_ganit.py::
-test_create_invoice_success` — verified failing on clean `origin/staging`,
-not caused by this branch; ganit is another agent's territory).
+**Gates: both green, run from `frontend/` with the exit code unmasked.**
+`check-tokens` 339 declared / 0 missing (exit 0);
+`check-classes` 2114 selectors / 0 missing a rule (exit 0).
+**Backend suite: 411 passed, 1 pre-existing failure** (`test_ganit.py::
+test_create_invoice_success` — verified failing on clean `origin/staging` before
+`_COORDINATION.md` §8 confirmed it; not caused by this branch).
 
 ---
 
@@ -241,16 +242,24 @@ a shared util rather than copy-pasted a third time.
 `org_owner` — the org's **most** privileged role could not undo a merge its own
 admin could perform. Now `require_org_role(*ORG_MANAGEMENT_ROLES)`.
 
-### FINDING-10 — LOW — `require_org_role` will lock out god mode on migration day
+### FINDING-10 — LOW — `require_org_role` would lock out god mode on migration day · FIXED
 
-`middleware/roles.py` passes platform staff by testing
+`middleware/roles.py` passed platform staff by testing
 `role_code = 'platform_admin'` as a bare literal. `role_tiers.py` documents
 exactly this trap: the day the data migration renames those rows to
 `platform_owner`, every god-mode account loses org access at once.
-`GOD_MODE_ROLES` exists for it. **Not fixed** — `roles.py` is shared middleware
-that several agents are editing this run, and a rebase conflict there costs more
-than the fix is worth today (the failure is dormant until the rename). One-line
-change, flagged for whoever owns middleware.
+
+Initially left alone as shared middleware. `_COORDINATION.md` §6 subsequently
+confirmed it **unowned**, so it is now fixed — the probe reads `GOD_MODE_ROLES`.
+Behaviour is identical today (no `platform_owner` rows exist yet) and the
+lockout cannot happen later.
+
+Two existing tests in `test_rbac_isolation.py` asserted on the **literal SQL
+string** rather than the behaviour, so they failed on a change that preserved
+their intent exactly. Rewritten to assert the probed role *set* — platform_admin
+still passes, account_manager still does not — plus a new test covering the
+`platform_owner` case. Over-specified tests that pin an implementation detail
+are worth correcting rather than working around.
 
 ---
 
@@ -425,6 +434,50 @@ Re-reading before claiming caught several things that would have been wrong:
    Anthropic/OpenAI references in the entire backend.
 
 ---
+
+## 6b. Reconciliation against `_COORDINATION.md`
+
+Re-read after the spend-limit stop. Where it touches my scope:
+
+- **§2 — "the gate scripts DO exit 1 from the root; three agents wrongly
+  reported a silent pass."** I was briefly one of them. My root invocation
+  printed `src/styles not found` and I recorded `EXIT=0` — that was `tail`'s
+  exit status in a pipeline, exactly as diagnosed. **My actual gate runs were
+  done from `frontend/` and passed properly**, both then and again now. The
+  scripts are correct; I did not touch them.
+- **§5 — Tier 4 is enforced nowhere; `level_satisfies` has zero call sites; the
+  sensitive-module contradiction is unresolved; "do not guess."** My reachability
+  table (§3) records enforcement **as it is**, not as `role_tiers.py` describes
+  it. FINDING-5 does **not** guess at the Tier-4 model: it deliberately does not
+  read `org_member_modules.role` (which does not exist) and gates on the org role
+  instead. The contradiction §5 describes is specifically about **sensitive
+  modules** having no grant row — **Srijan is not one**, it is in
+  `HIERARCHICAL_MODULES` and does use grant rows, and RBAC-SPEC is unambiguous
+  that publishing is admin-level. So there is no contradiction to guess at here,
+  only a missing column, and the fix is a documented coarser stand-in rather than
+  something that "looks enforced".
+- **§6 — `roles.py:74` unowned.** That is my FINDING-10; now fixed.
+- **§6 — `org_resolver.py:31-40` lets four zero-reach roles resolve ANY org via
+  `X-Org-Id`, unowned.** I read it and **deliberately did not touch it.** It is
+  upstream of every route guard in the product, and the correct narrowing depends
+  on which non-`require_module` surfaces `account_finance` needs org context for
+  (billing, subscriptions) — knowledge I do not have. Narrowing it wrongly breaks
+  every module at once. Applying §5's own "do not guess" principle. **Practical
+  impact on my scope is nil**: all 160 routes in Srijan and Graha sit behind
+  `require_module`, which routes platform roles through
+  `role_tiers.can_reach_module`, and that returns `frozenset()` for all four of
+  those roles.
+- **§8 — the ganit test failure is pre-existing.** Independently confirmed here
+  against clean `origin/staging` before the coordination doc said so.
+- **§9 — "rendering a customer's own invoice amounts is fine; publishing OUR
+  prices is not."** This is precisely the line FINDING-6 draws: `cost_per_run`,
+  `margin_pct` and `cost_usd` are ours and are now removed; `billed_inr` and
+  `credits_charged` are the customer's own figures and stay.
+
+**Rebase note:** a sibling had independently made the same `cost_usd` removal in
+`scrapers.py`, so the only rebase conflict was two comments describing the same
+fix. Resolved toward staging's wording (it cites `11-platform-admin.md` §1),
+keeping one line of mine about the margin-inference angle.
 
 ## 7. Process notes
 
