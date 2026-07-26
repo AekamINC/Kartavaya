@@ -102,6 +102,18 @@ const mapPalette = (p: Record<GeneratedTokenName, string>) => ({
   // `error` fill with `onError`.
   onError:            p.onDanger,
   onErrorContainer:   p.onDangerContainer,
+  // `onSuccess` completes the pair that `onError` already had. --on-ok landed on
+  // the web after this map was first written, and the generator picked it up on
+  // the next run — which is the whole point of generating rather than
+  // transcribing.
+  //
+  // Without it, text on a solid `success` fill had to borrow
+  // `onSuccessContainer`, which is the ink meant for the PALE container, not the
+  // saturated fill. Measured: onSuccessContainer on the success fill is 2.37:1
+  // light and 1.42:1 dark — both illegible. onSuccess is 5.85:1 and 7.75:1.
+  // Pair a solid `success` with `onSuccess`; pair `successBg` with
+  // `onSuccessContainer`.
+  onSuccess:          p.onOk,
   onSuccessContainer: p.onOkContainer,
   onApprovalContainer: p.onWarnContainer,
   // Text that is present but not actionable. Distinct from `ink4`: onSurfaceFaint

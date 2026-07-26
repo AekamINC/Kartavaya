@@ -39,8 +39,16 @@ should be deleted, not merged.
 
 Ran the generator against the committed output: **zero diff**, both before and after
 rebasing across 59 commits of staging. In that window `check-tokens` went from 279
-declared tokens to 339 and the mobile palette did not move — the mapped tokens
-genuinely did not change. That is the strongest evidence available that the pipe works.
+declared tokens to 339 and the mobile palette did not move — the mapped tokens genuinely
+did not change. That is the strongest evidence available that the pipe works.
+
+Then, on the final rebase, it **earned its keep**: staging had added `--on-ok`, and the
+generator picked it up unprompted (134 → 135). Under the old transcribed regime that
+token would simply never have reached mobile. Completed the mapping with
+`onSuccess: p.onOk` — the twin `onError` already had. Measured why it matters: without
+it, text on a solid `success` fill had to borrow `onSuccessContainer`, the ink meant for
+the *pale* container, which is **2.37:1 light and 1.42:1 dark** on the saturated fill.
+`onSuccess` is 5.85:1 and 7.75:1.
 
 It reads nine stylesheets in `App.jsx` cascade order, brace-matches every `:root` /
 `[data-theme="dark"]` block rather than regex-matching the first, resolves whole-value
@@ -490,10 +498,13 @@ item.**
 
 | Gate | Result |
 |---|---|
-| `cd frontend && node scripts/check-tokens.mjs` | 339 declared, 233 referenced, 0 missing — **PASS** |
-| `cd frontend && node scripts/check-classes.mjs` | 2114 selectors, 1437 classes, 0 missing — **PASS** |
+| `cd frontend && node scripts/check-tokens.mjs` | 340 declared, 234 referenced, 0 missing — **PASS** |
+| `cd frontend && node scripts/check-classes.mjs` | 2120 selectors, 1443 classes, 0 missing — **PASS** |
 | `cd mobile && npx tsc --noEmit` | **PASS** |
-| `cd mobile && node scripts/gen-tokens.mjs` | 134/134, app.json assertion passes — **PASS** |
+| `cd mobile && node scripts/gen-tokens.mjs` | 135/135, app.json assertion passes — **PASS** |
+
+Run at the final rebase point, on top of `origin/staging` with 81 commits of other
+agents' work beneath.
 
 Both frontend gates must be run **from `frontend/`**. Per `_COORDINATION.md` §2 a root
 invocation is a loud `process.exit(1)`, not a silent pass — I hit that exit myself and
