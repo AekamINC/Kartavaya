@@ -141,8 +141,19 @@
    Devanagari: a generic mid-list does not capture the script, so Latin stays
    in the user's chosen UI face. */
 .au__sub { font-family: var(--font-ui), var(--font-hindi); }
+/* --font-hindi, NOT --font-indic. `hi` on <Head> is a FIXED decorative string —
+   प्रवेश / स्वागत / कोई बात नहीं / नया पासवर्ड are hardcoded in LoginPage.jsx and
+   never follow the language setting, so they must not be wired to the token that
+   does. The reference agrees: design-reference/Kartavaya Redesign/auth.css:58
+   `.au-h__hi { font-family: var(--font-hindi); font-size: .62em; … }`.
+   24-bilingual-devanagari.md §"Which token, where" asks for --font-indic on
+   anything that follows the user's language and --font-hindi on fixed glyphs;
+   this is the second case. Measured: --font-indic under EN+GU tries Noto Sans
+   Gujarati first, which has ZERO Devanagari coverage — it only lands on Tiro
+   today because CustomizePanel.jsx:294 appends the Devanagari stack as a safety
+   net. Naming the right token here does not depend on that net holding. */
 .au__hi {
-  font-family: var(--font-indic); font-size: .62em;
+  font-family: var(--font-hindi); font-size: .62em;
   color: var(--on-surface-3); margin-left: 11px; font-style: normal;
 }
 .au__lede {
@@ -435,7 +446,13 @@
   margin: 0 0 8px; color: var(--on-surface);
 }
 .ob__em { font-style: italic; color: var(--primary-text); }
-.ob__hi { font-family: var(--font-indic); font-size: 14px; color: var(--on-surface-3); margin: 0 0 12px; }
+/* --font-hindi and 15px, per design-reference/…/onboarding.css:40
+   `.ob-hi { font-family: var(--font-hindi); font-size: 15px; … }`. Same reason as
+   .au__hi: StepProfile renders "कर्तव्य में आपका स्वागत है" and StepDone renders
+   "सब तैयार है" / "बाद में कर लेंगे" — all hardcoded, none language-following.
+   The margin stays bottom-side because this line sits ABOVE the sub in our DOM
+   order, where the reference puts it below. */
+.ob__hi { font-family: var(--font-hindi); font-size: 15px; color: var(--on-surface-3); margin: 0 0 12px; }
 .ob__sub, .ob__lede {
   font-size: 13px; line-height: 1.65; color: var(--on-surface-3);
   margin: 0; max-width: 62ch; text-wrap: pretty;
@@ -464,7 +481,20 @@
 .ob__mod.on { border-color: var(--primary); background: var(--primary-container); color: var(--on-primary-container); }
 .ob__mod.on.sens { border-color: var(--danger); }
 .ob__mod-t { display: flex; align-items: baseline; gap: 8px; }
-.ob__mod-hi { font-family: var(--font-hindi); font-size: 15px; font-weight: 500; }
+/* font-weight 400, NOT 500. Tiro Devanagari Hindi ships a SINGLE weight —
+   enumerating document.fonts returns six registered faces for the family and
+   every one carries weight:"400". Asking for 500 therefore gets a synthesised
+   bold: Chrome smears the outline, which thickens the शिरोरेखा and fills in the
+   counters of the र्त and व्य conjuncts. It is invisible to a width test —
+   400/500/700 all measure 620.40px at 60px, because synthetic emboldening does
+   not change advance metrics — which is how it survived this long.
+   The reference sets it explicitly for exactly this reason, and it is the only
+   `b` in the file that is given a weight at all:
+   design-reference/…/onboarding.css:65
+   `.ob-mod__t b { font-family: var(--font-hindi); font-size: 17px; font-weight: 400; line-height: 1.35 }`
+   Size and line-height brought to the reference with it — at 400 the glyph reads
+   lighter, and 15px was already under-set against the 10.5px Latin beside it. */
+.ob__mod-hi { font-family: var(--font-hindi); font-size: 17px; font-weight: 400; line-height: 1.35; }
 .ob__mod-en { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--on-surface-3); font-weight: 700; }
 .ob__mod.on .ob__mod-en { color: inherit; opacity: .74; }
 .ob__mod-d { font-size: 11.5px; line-height: 1.5; color: var(--on-surface-3); }

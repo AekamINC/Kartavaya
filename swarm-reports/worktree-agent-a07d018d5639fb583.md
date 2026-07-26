@@ -113,3 +113,105 @@ descriptor is the authoritative signal.
 synthesised. Occurrences found and fixed are listed in §2.
 
 ---
+
+## 2 · Fixes made, each backed by the reference source
+
+Compared our `auth.css` against the reference `auth.css` / `onboarding.css` line
+by line rather than reasoning about what the rule ought to be.
+
+### 2a · `.ob__mod-hi` was faux-bold — FIXED
+
+| | our `auth.css` (before) | reference `onboarding.css:65` |
+|---|---|---|
+| font-family | `--font-hindi` | `--font-hindi` |
+| font-size | 15px | **17px** |
+| font-weight | **500** | **400** |
+| line-height | — | **1.35** |
+
+The reference writes this rule against a `<b>` element — which defaults to bold —
+and explicitly resets `font-weight: 400`. It is the only `b` in that file given a
+weight at all, i.e. the reference author hit this exact problem and fixed it.
+
+Confirmed live: computed `font-weight: 500` on the rendered `.ob__mod-hi`, on a
+family whose every registered face is weight 400. Now 400 / 17px / 1.35.
+
+**This was the only faux-bold occurrence on the whole surface** — verified by
+reading computed style on all eight Devanagari elements, §2d.
+
+### 2b · `.au__hi` and `.ob__hi` were on the language-following token — FIXED
+
+Both render **hardcoded** Devanagari that never switches with the language
+setting (`प्रवेश`, `स्वागत`, `कोई बात नहीं`, `नया पासवर्ड` in `LoginPage.jsx`;
+`कर्तव्य में आपका स्वागत है`, `सब तैयार है`, `बाद में कर लेंगे` in the onboarding
+steps). Both were on `--font-indic`. The reference uses `--font-hindi`:
+
+- `auth.css:58` → `.au-h__hi { font-family: var(--font-hindi); font-size: .62em; … }`
+- `onboarding.css:40` → `.ob-hi { font-family: var(--font-hindi); font-size: 15px; … }`
+
+`.ob__hi` also took the reference's 15px (was 14px).
+
+**Today this is a no-op in pixels — and I verified that rather than assuming it.**
+Another agent already patched `--font-indic` at the token level
+(`CustomizePanel.jsx:294`) so the EN+GU value appends the Devanagari stack.
+Measured at 60px, string `कर्तव्य में आपका स्वागत है`:
+
+| stack | width |
+|---|---|
+| EN+GU `--font-indic`, **patched** | **568.99px** |
+| `--font-hindi` | **568.99px** |
+| EN+GU `--font-indic`, **unpatched** (`'Noto Sans Gujarati','Shruti',sans-serif`) | **610.17px** |
+
+Pure-Devanagari control (spaces removed, since Noto Sans Gujarati *does* cover the
+space and would mask a partial failure): 506.59px both. That patch is real and it
+works — **7.2% breakage avoided**.
+
+The change is therefore about naming the correct token, not correcting a visible
+break: a fixed glyph should not depend on a runtime safety net in the
+customization panel continuing to hold.
+
+### 2c · Spec defects in the reference itself — recorded, not silently followed
+
+1. **The reference contains the `.au__sub` bug that started this.** Reference
+   `auth.css:24` is
+   `.au-brand__p { font-size:13px; line-height:1.68; color:var(--side-fg-mute); … }`
+   — **no `font-family`** — and `Auth.jsx:56` puts the mixed Devanagari+Latin
+   string in it. The original defect was inherited from the design source, and our
+   `font-family: var(--font-ui), var(--font-hindi)` goes *beyond* the reference.
+   §1a says the fix is correct. The reference should adopt it.
+2. **The reference sets negative tracking on Devanagari.** Reference
+   `auth.css:13` `.au-brand__wm { … letter-spacing:-.03em }` on `कर्तव्य`, which
+   `24-bilingual-devanagari.md` forbids outright ("Never set `letter-spacing` on
+   Devanagari. Tracking breaks conjunct ligatures"). Our `lang="hi"` +
+   `editorial.css:2456` reset is the correct mitigation; the reference rule is the
+   defect.
+3. **The reference puts text on `--on-surface-faint`.** `onboarding.css:66`
+   `.ob-mod__t i { … color: var(--on-surface-faint) }` — that token is NON-TEXT
+   ONLY. Our `.ob__mod-en` already uses `--on-surface-3`; deviation kept.
+
+### 2d · Live cascade audit — all eight Devanagari elements
+
+Real CSS files served and loaded in the real `App.jsx` import order, real DOM
+shapes copied from the components, values read with `getComputedStyle`:
+
+```
+.au__wm      w=400 ls=normal fam=Tiro Devanagari Hindi size=207.2px
+.au__sub     w=400 ls=normal fam=Inter                 size=13px
+.au__rot-hi  w=400 ls=normal fam=Tiro Devanagari Hindi size=21px
+.au__hi      w=400 ls=normal fam=Tiro Devanagari Hindi size=16.7px
+.ob__wm      w=400 ls=normal fam=Tiro Devanagari Hindi size=227.92px
+.ob__hi      w=400 ls=normal fam=Tiro Devanagari Hindi size=15px
+.ob__mod-hi  w=400 ls=normal fam=Tiro Devanagari Hindi size=17px
+.ob__tpl-hi  w=400 ls=normal fam=Tiro Devanagari Hindi size=12px
+violations: []
+```
+
+`.au__sub` resolving to Inter first is correct — Latin leads, Devanagari falls
+through to Tiro, proven by width in §1a.
+
+`.au__wm` computed `letter-spacing: normal` **confirms CLAIM 2's fix on the live
+cascade**, not merely by reading the CSS.
+
+Gates green after these changes: tokens 279 declared / 229 referenced / 0 missing;
+classes 2096 defined / 1416 used / 0 missing a rule.
+
+---
