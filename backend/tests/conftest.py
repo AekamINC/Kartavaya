@@ -29,6 +29,15 @@ os.environ.setdefault("JWT_SECRET", "test-secret-minimum-32-chars-long-xxxx")
 os.environ.setdefault("REPORT_DISPATCH_SECRET", "test-dispatch-secret-min-32-xxxx")
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost/test")
 
+# NOT setdefault, and not negotiable: the test suite must never be able to send.
+# `outbound.MODE` is read ONCE at import time and defaults to "live", so without
+# this line every sender's `suppressed()` gate returns False for the whole run.
+# Nothing then stands between a test and a real Expo push, SES email or social
+# post except whichever mock happens to return an empty list first — a mock that
+# returns one plausible row turns a unit test into a real delivery. This must be
+# set before `outbound` is imported, which is why it lives above the app imports.
+os.environ["OUTBOUND_MODE"] = "dry"
+
 # Add backend/ and backend/tests/ to sys.path so imports work
 _BACKEND = os.path.join(os.path.dirname(__file__), "..")
 _TESTS = os.path.dirname(__file__)

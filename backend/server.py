@@ -87,6 +87,7 @@ from routers.scheduler      import router as scheduler_router
 from routers.messaging      import router as messaging_router
 from routers.whatsapp       import router as whatsapp_router
 from routers.pahchan        import router as pahchan_router
+from routers.me             import router as me_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -2849,6 +2850,7 @@ app.include_router(scheduler_router)
 app.include_router(messaging_router)
 app.include_router(whatsapp_router)
 app.include_router(pahchan_router)
+app.include_router(me_router)
 
 # ── Local file storage (dev only) ────────────────────────────────────────────
 _local_storage = os.getenv("LOCAL_STORAGE_PATH")
