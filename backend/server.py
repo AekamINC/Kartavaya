@@ -844,21 +844,24 @@ async def root():
     """Return a simple health-check payload confirming the API is running."""
     return {"message":"Kartavaya API v2","by":"Aekam Inc","status":"ok"}
 
-@api_router.get("/auth/me")
-async def me(user=Depends(require_user)):
-    """Return the authenticated user's profile."""
-    return {"user_id":user["user_id"],"email":user["email"],"name":user.get("full_name") or user["name"],
-            "full_name":user.get("full_name") or user["name"],"role":user.get("role","member"),
-            "position":user.get("position"),"company_name":user.get("company_name"),
-            "member_role":user.get("member_role"),"picture":user.get("avatar"),
-            "receives_approval_emails":user.get("receives_approval_emails",True)}
-
-@api_router.post("/auth/logout")
-async def logout():
-    """Invalidate the current session — clear httpOnly cookie."""
-    resp = JSONResponse(content={"ok": True})
-    resp.delete_cookie(key="session_token", httponly=True, secure=True, samesite="lax", path="/")
-    return resp
+# `/auth/me` and `/auth/logout` were ALSO defined here, on `api_router`, and both
+# were shadowed — `auth_router` mounts at line ~3005 and `api_router` at ~3009, so
+# the first match won and these never served a request.
+#
+# Removed rather than left, because they were only ever one line from serving. The
+# two implementations were not variants of each other:
+#
+#   · `auth_router`'s `/me` reads `staging.user_roles` and returns `platform_roles`
+#     and `module_grants`. The nav is built from those — `navConfig.js:126` names
+#     `auth_router.py::_module_grants` by hand. The version here returned a flat
+#     profile with neither, so had the mount order ever been reordered the whole
+#     RBAC-driven nav would have silently emptied, with no error anywhere.
+#   · `auth_router`'s `/logout` honours `_COOKIE_SECURE` and `_COOKIE_DOMAIN`. This
+#     one hardcoded `secure=True` and passed no domain, so it could not reliably
+#     clear a cookie it had not set the same way.
+#
+# Two handlers on one path is not a duplicate to tidy later; it is a behaviour
+# change waiting on an unrelated edit to `include_router` ordering.
 
 
 # ── Mobile: push tokens ───────────────────────────────────────────────────────
