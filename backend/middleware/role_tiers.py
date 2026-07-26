@@ -10,7 +10,12 @@ call site does not error, it just refuses access, or grants it.
 
 Owner's decision, 2026-07-26:
 
-    platform_owner    god mode. Four people. Every module, every org.
+    platform_owner    god mode. THREE people. Every module, every org.
+                      `RBAC-SPEC.md:18` names them individually; that list is
+                      authoritative and this comment is not. Counted here
+                      because an audit that expects a fourth either hunts for
+                      an account that should not exist or accepts one that
+                      does.
     platform_manager  CRUD on every module EXCEPT HR and Payroll.
     platform_staff    CRUD on the operating set — CRM, sales, marketing, Srijan
                       (including authoring skills and publishing), analytics,
@@ -18,8 +23,8 @@ Owner's decision, 2026-07-26:
 
 `platform_admin` is kept as a LEGACY ALIAS of `platform_owner`, not removed.
 The database still holds `platform_admin` rows and the CHECK constraint still
-admits it; dropping it before the data migrates would lock out all four god-mode
-accounts at once. It is retired by deleting rows, not by deleting code.
+admits it; dropping it before the data migrates would lock out every god-mode
+account at once. It is retired by deleting rows, not by deleting code.
 
 `account_manager` is superseded by `platform_manager`. It is kept readable for
 the same reason and grants nothing on its own — see COMMERCIAL_ONLY_ROLES.
@@ -147,9 +152,9 @@ def is_god_mode(platform_role: str | None) -> bool:
 #
 #   · `require_platform_role("platform_admin")` locks out `platform_owner`. Today
 #     that is invisible, because every god-mode account still holds the legacy
-#     `platform_admin` row. It becomes a total lockout of all four accounts on
-#     the day those rows are renamed — which is exactly the migration this model
-#     was designed for.
+#     `platform_admin` row. It becomes a total lockout of every god-mode account
+#     on the day those rows are renamed — which is exactly the migration this
+#     model was designed for.
 #   · `require_platform_role("platform_admin", "account_manager")` omits
 #     `platform_manager`, the role that SUPERSEDES `account_manager`. The
 #     successor reached strictly less than the role it replaced.
