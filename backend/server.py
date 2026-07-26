@@ -2579,6 +2579,33 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
                 if d.get(f) is None and old.get(f) is not None:
                     d[f] = old[f]
             merged.append(d)
+
+        # An attachments write is wholesale — whatever list arrives replaces the
+        # column. But the caller was SHOWN a filtered list: `_filter_private_attachments`
+        # removes private files they may not see. So their client round-trips a list
+        # with those files missing, and saving any unrelated edit — a title, a
+        # priority — silently destroyed a colleague's private attachment.
+        #
+        # Nothing surfaced it. The deleter never saw the file, and the owner only
+        # finds out when they go looking for it.
+        #
+        # Re-attach exactly what this caller could not have seen, and only when they
+        # did not send it back. A file they CAN see and omitted is a real deletion and
+        # is left alone. Predicate mirrors `_filter_private_attachments`; keep them
+        # in step.
+        _uid = user["user_id"]
+        _privileged = (existing["created_by_user_id"] == _uid) or await is_org_admin(_uid)
+        _sent = {d.get("key") for d in merged if d.get("key")}
+        for _key, _old in prior.items():
+            if _key in _sent:
+                continue
+            _could_see = (
+                not _old.get("is_private")
+                or _privileged
+                or _uid in (_old.get("visible_to") or [])
+            )
+            if not _could_see:
+                merged.append(_old)
         data["attachments"] = merged
     for k in ["attachments","custom_fields","subtasks"]:
         if k in data and data[k] is not None:
