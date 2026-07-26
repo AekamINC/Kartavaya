@@ -38,10 +38,28 @@ _BAD_BD   = "#D9CECA"
 _CHAMP_BG = "#ECF8F7"   # mix(teal 10%, surface)
 _CHAMP_BD = "#93D9D5"   # mix(teal 30%, rule)
 
-_FONT_DISP  = 'Georgia, "Times New Roman", serif'
-_FONT_UI    = '"Helvetica Neue", Arial, sans-serif'
-_FONT_HINDI = '"Noto Serif Devanagari", "Noto Sans Devanagari", "Lohit Devanagari", serif'
-_FONT_MONO  = '"Courier New", monospace'
+# Font stacks. The spec family is named FIRST, then a chain that degrades onto
+# fonts the render image actually ships.
+#
+# `design-reference/Kartavaya Redesign/docs/brand.css` and `Report PDF.html` both
+# specify Newsreader / Inter / Tiro Devanagari Hindi / JetBrains Mono.
+#
+# What the previous stacks named — Helvetica Neue, Arial, Georgia, Times New
+# Roman, Courier New — is not installed in `backend/Dockerfile`, which brings in
+# `fonts-dejavu-core` and `fonts-noto` and nothing else. So every one of those
+# names missed and each stack silently resolved to its generic, i.e. the whole
+# report rendered in DejaVu. Naming Noto explicitly makes the fallback a decision
+# rather than an accident, and naming the spec faces first means the PDF becomes
+# pixel-correct the moment they are installed, with no code change.
+#
+# Newsreader and Tiro are not in Debian; installing them needs vendored TTFs or a
+# webfont step at build time. Recorded as a deployment task rather than guessed
+# at here — WeasyPrint runs with base_url=None and makes no network request at
+# render time, which is deliberate and should stay that way.
+_FONT_DISP  = 'Newsreader, "Noto Serif", Georgia, "DejaVu Serif", serif'
+_FONT_UI    = 'Inter, "Noto Sans", "Helvetica Neue", Arial, "DejaVu Sans", sans-serif'
+_FONT_HINDI = '"Tiro Devanagari Hindi", "Noto Serif Devanagari", "Noto Sans Devanagari", serif'
+_FONT_MONO  = '"JetBrains Mono", "Noto Sans Mono", "DejaVu Sans Mono", "Courier New", monospace'
 
 _MEMBER_COLORS = ["#0082c6","#f59e0b","#05b7aa","#8b5cf6","#10b981","#ec4899","#ef4444","#6366f1"]
 
