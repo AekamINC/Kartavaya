@@ -14,8 +14,6 @@ import { AVATAR_COLORS, relTime, userInitials, logger } from '../lib/utils';
 import { STATUS_COLORS, STATUS_LABELS } from '../components/drawer/constants';
 import { SkeletonCardGrid, SkeletonCard, SkeletonRegion } from '../components/ui/Skeleton';
 
-const VIKRAM_MONTHS = ['Chaitra','Vaishākha','Jyēṣṭha','Āṣāḍha','Śrāvaṇa','Bhādra',
-  'Āśvina','Kārtika','Mārgaśīrṣa','Pauṣa','Māgha','Phālguna'];
 const STATUS_HI = { todo:'कार्य', in_progress:'चालू', in_review:'समीक्षा', done:'सम्पन्न', requested:'अनुरोध' };
 
 const ONBOARD_STEPS = [
@@ -31,18 +29,27 @@ function OnboardingChecklist({ tasks, teams, navigate }) {
   const [dismissed, setDismissed] = useState(() => localStorage.getItem(storageKey) === '1');
   if (dismissed) return null;
 
-  const done = {
-    logo: false,
-    team: (teams || []).length > 1,
-    project: (teams || []).length > 0,
-    contact: false,
-    invoice: false,
-  };
+  // The checklist could never complete. `logo`, `contact` and `invoice` were
+  // hardcoded false, so doneCount maxed at 2 of 5 and the self-dismissing
+  // branch below was unreachable — a user who uploaded a logo, added a contact
+  // and sent an invoice still saw "2 of 5 steps complete" forever, with three
+  // ticks they could not earn. (`team` was also inferred from having more than
+  // one PROJECT, which is a different fact from having invited anyone.)
+  //
+  // Only steps with a real signal are shown, so the list is honest and can
+  // finish. Restoring the other three needs GET /v1/me/onboarding returning
+  // {logo, team, project, contact, invoice} from org.logo_url,
+  // org.member_count, boards, graha.contact_count and ganit.invoice_count —
+  // and it should read the onboarding wizard's completion too, since a user who
+  // finished that has already done several of these.
   const taskCount = Array.isArray(tasks) ? tasks.length : 0;
-  if (taskCount > 0) done.project = true;
+  const done = {
+    project: (teams || []).length > 0 || taskCount > 0,
+  };
 
+  const steps = ONBOARD_STEPS.filter(st => st.key in done);
   const doneCount = Object.values(done).filter(Boolean).length;
-  const total = ONBOARD_STEPS.length;
+  const total = steps.length;
   if (doneCount >= total) return null;
 
   return (
@@ -59,7 +66,7 @@ function OnboardingChecklist({ tasks, teams, navigate }) {
       <div className="k-onboard__progress">
         <div className="k-onboard__progress-fill" style={{ width: `${(doneCount / total) * 100}%` }} />
       </div>
-      {ONBOARD_STEPS.map(s => (
+      {steps.map(s => (
         <div key={s.key} className="k-onboard__step" onClick={() => navigate(s.route)}>
           <div className={`k-onboard__check ${done[s.key] ? 'k-onboard__check--done' : ''}`}>
             {done[s.key] ? '✓' : ''}
@@ -77,9 +84,17 @@ function OnboardingChecklist({ tasks, teams, navigate }) {
 }
 
 function vikramDate(now) {
-  const year  = now.getFullYear() + 56 + (now.getMonth() >= 3 ? 1 : 0);
-  const month = VIKRAM_MONTHS[(now.getMonth() + 1) % 12];
-  return { year, month };
+  // The year is right to within a couple of weeks a year, which is honest enough
+  // for a decorative date line. The MONTH was not: it was a naive +1 offset from
+  // the Gregorian month, so the named month was wrong for most of any given
+  // month. Vikram Samvat months follow a lunar calendar and do not align to
+  // Gregorian boundaries at all.
+  //
+  // Showing a specific Hindu month name that is wrong is worse than showing no
+  // month, especially to the audience most likely to notice. Year only, until
+  // there is a real panchang source.
+  const year = now.getFullYear() + 56 + (now.getMonth() >= 3 ? 1 : 0);
+  return { year };
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -90,7 +105,7 @@ export default function DashboardPage({ teams = [] }) {
 
   const now    = new Date();
   const dayIdx = (now.getDay() + 6) % 7;
-  const { year: vikYear, month: vikMonth } = vikramDate(now);
+  const { year: vikYear } = vikramDate(now);
 
   const weekDates = useMemo(() => {
     const base = new Date(); base.setHours(0,0,0,0);
@@ -145,15 +160,24 @@ export default function DashboardPage({ teams = [] }) {
     myPlate, openTasks, openProjectCount, dueToday, overdue, completedWeek, inProgress, inReview, upcoming,
   } = useMemo(() => {
     const safeTasks = Array.isArray(tasks) ? tasks : [];
-    const myTasks   = safeTasks.filter(t => t.created_by_user_id === myId || t.user_id === myId || t.assignee_user_ids?.includes(myId));
+    // Was: created_by_user_id === myId || user_id === myId || assigned. That put
+    // work you created and handed to someone else on YOUR plate, so for a
+    // manager the list degraded into "everything I have ever touched".
+    // Your plate is what is assigned to you.
+    const myTasks   = safeTasks.filter(t => t.assignee_user_ids?.includes(myId));
     const open      = safeTasks.filter(t => t.status !== 'done');
     return {
       myPlate:       myTasks.filter(t => t.status !== 'done').slice(0, 6),
       openTasks:     open,
-      openProjectCount: new Set(open.map(t => t.team_id).filter(Boolean)).size || 1,
+      // `|| 1` turned zero into one, so a brand-new org with nothing in it was
+      // told its open tasks span one project.
+      openProjectCount: new Set(open.map(t => t.team_id).filter(Boolean)).size,
       dueToday:      safeTasks.filter(t => t.due_at && new Date(t.due_at) >= today && new Date(t.due_at) < tomorrow),
       overdue:       safeTasks.filter(t => t.due_at && new Date(t.due_at) < today && t.status !== 'done'),
-      completedWeek: safeTasks.filter(t => t.status === 'done' && t.updated_at && new Date(t.updated_at) >= weekAgo),
+      // Was updated_at: a task finished two months ago but edited yesterday
+      // counted as done this week, and the completion rate below inherited the
+      // error. completed_at is the real signal — DueChip already uses it.
+      completedWeek: safeTasks.filter(t => t.status === 'done' && t.completed_at && new Date(t.completed_at) >= weekAgo),
       inProgress:    safeTasks.filter(t => t.status === 'in_progress'),
       inReview:      safeTasks.filter(t => t.status === 'in_review'),
       upcoming:      safeTasks
@@ -253,10 +277,13 @@ export default function DashboardPage({ teams = [] }) {
       {/* Quick actions */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
         {[
-          { label: '+ New Task', icon: '✏️', action: () => navigate('/tasks') },
-          { label: 'Create Invoice', icon: '🧾', action: () => navigate('/ganit') },
-          { label: 'Add Contact', icon: '👤', action: () => navigate('/graha') },
-          { label: 'Log Time', icon: '⏱️', action: () => navigate('/time') },
+          // Was four emoji — ✏️ 🧾 👤 ⏱️ — which render differently on every
+          // platform, in a product whose iconography is otherwise a consistent
+          // 16px stroke set. navIcons is that set.
+          { label: '+ New Task',     icon: ICONS.tasks,      action: () => navigate('/tasks') },
+          { label: 'Create Invoice', icon: ICONS.ganit,      action: () => navigate('/ganit') },
+          { label: 'Add Contact',    icon: ICONS.graha,      action: () => navigate('/graha') },
+          { label: 'Log Time',       icon: ICONS.time,       action: () => navigate('/time') },
         ].map(q => (
           <button key={q.label} className="k-btn k-btn--ghost" onClick={q.action}
             style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--rule-soft)' }}>
@@ -288,7 +315,12 @@ export default function DashboardPage({ teams = [] }) {
                 return (
                   <button key={t.task_id} className="k-taskrow" onClick={() => navigate('/tasks')}>
                     <PriorityDot priority={t.priority} />
-                    <span className="k-taskrow__id">KAR-{String(i+100)}</span>
+                    {/* Was KAR-{i+100}, fabricated from the MAP INDEX: the third row was
+                        KAR-102 until something above it closed, at which point a
+                        different task became KAR-102. Two lists could show the same
+                        id for different tasks, and an id a user quoted in a message
+                        referred to nothing. Same form as the drawer and the board. */}
+                    <span className="k-taskrow__id">#{t.task_id?.slice(-6) || '—'}</span>
                     <span className="k-taskrow__title">{t.title}</span>
                     {t.team_name && <ProjectTag name={t.team_name} dense />}
                     <DueChip date={t.due_at} status={t.status} completedAt={t.completed_at} />
