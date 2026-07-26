@@ -37,12 +37,42 @@ export const KINDS = {
 /**
  * The `type` strings the backend actually writes, mapped to the eight.
  *
- * `server.py` emits `assigned`, `mention`, `comment`, `approval_request`,
- * `approved`, `rejected`, `reminder`, `status_changed`, `done` and `created`.
- * The last four have no kind here and must not be given one — see the warning
- * above. They render with the neutral dot and their own title, which is the
- * honest outcome: the row still says what happened, it just does not claim a
- * category the preference table cannot switch off.
+ * ENUMERATED FROM THE WRITERS, NOT FROM THIS FILE. Every `INSERT INTO
+ * notifications` in the backend, and the literal it puts in the `type` column:
+ *
+ *   backend/server.py                        approval_request, approved,
+ *                                            rejected, comment, assigned,
+ *                                            status_changed, done, reminder
+ *   backend/approvals_router.py              approval_request (was `request`),
+ *                                            approved, rejected
+ *   backend/routers/task_reminders.py        reminder
+ *   backend/services/mentions.py             mention
+ *   backend/services/agents/deadline_agent   deadline_warning,
+ *                                            deadline_escalation
+ *   backend/services/agents/workload_agent   workload_warning
+ *   backend/services/automation_engine.py    automation
+ *
+ * Three of those had NO branch here and fell to the neutral dot:
+ *
+ *   · `request` — what `approvals_router._notify` wrote until it was corrected
+ *     to `approval_request`. It is the notification a reviewer gets when someone
+ *     asks for their decision, and it was not only painted neutral: `matchesTab`
+ *     filters the Approvals tab on the KIND, so every approval request raised
+ *     through `POST /tasks/{id}/request-approval` was missing from the tab whose
+ *     entire job is to list them. The backend now writes `approval_request`;
+ *     this row is what keeps the rows already in the table rendering.
+ *   · `deadline_warning` / `deadline_escalation` — the deadline agent's
+ *     approaching-due and overdue warnings. Semantically identical to
+ *     `reminder`, which already maps to `due`. The substring table never caught
+ *     them because neither string contains "due" or "remind".
+ *
+ * `workload_warning` and `automation` are LEFT UNMAPPED ON PURPOSE. Neither is
+ * one of the eight and inventing a ninth is exactly what the warning above
+ * forbids — a kind with no row in the `09` preference table is a kind the user
+ * cannot switch off. `status_changed`, `done` and `created` are unmapped for the
+ * same reason. They render with the neutral dot and their own title, which is
+ * the honest outcome: the row still says what happened, it just does not claim
+ * a category the preference table cannot switch off.
  */
 const EXACT = {
   assigned: 'assigned',
@@ -53,12 +83,15 @@ const EXACT = {
   comment: 'comment',
   approval: 'approval',
   approval_request: 'approval',
+  request: 'approval',
   requested: 'approval',
   approved: 'approved',
   rejected: 'rejected',
   reminder: 'due',
   due: 'due',
   due_soon: 'due',
+  deadline_warning: 'due',
+  deadline_escalation: 'due',
   support: 'support',
   support_access: 'support',
 };
@@ -77,6 +110,10 @@ const FUZZY = [
   ['comment', 'comment'],
   ['remind', 'due'],
   ['due', 'due'],
+  // `deadline_warning` and `deadline_escalation` are in EXACT above; this stem
+  // catches any further `deadline_*` the agent grows. It sits AFTER the others
+  // so it cannot shadow a more specific stem.
+  ['deadline', 'due'],
   ['support', 'support'],
 ];
 

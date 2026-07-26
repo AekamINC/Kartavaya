@@ -30,6 +30,7 @@ from db import get_pool
 from utils import now_utc, log_safe as _log_safe
 from services.web_push_service import send_web_push
 from services.expo_push_service import send_expo_push
+from services.push_service import prefs_allow
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/task-reminders", tags=["task-reminders"])
@@ -99,7 +100,27 @@ async def dispatch_reminders(
                         f"notif_{uuid.uuid4().hex[:12]}", uid, r["team_id"], "reminder",
                         "Task reminder", message, r["task_id"], "/tasks",
                     )
-                    if r["channel_push"]:
+                    # QUIET HOURS. `send_web_push` and `send_expo_push` read no
+                    # preferences at all — they take a user_id and fire. Every
+                    # other kind reaches the device through `send_push`, which
+                    # checks the mode and the quiet window first; reminders did
+                    # not, so a cron tick at 03:00 IST buzzed the phone straight
+                    # through a window the same user had set and the same window
+                    # the Inbox banner was telling them was in force.
+                    #
+                    # `prefs_allow` is the gate `services/push_service.py` split
+                    # out of `send_push` for exactly this call site — its own
+                    # header names this router as the path that bypasses it and
+                    # says the call-site fix was reported rather than made. This
+                    # is that fix. The `reminder` key it reads is already in
+                    # DEFAULT_PREFS, so the switch the user sets is the switch
+                    # this consults.
+                    #
+                    # The NOTIFICATION ROW IS INSERTED ABOVE THIS CHECK and
+                    # stays inserted. Quiet hours suppress the buzz, never the
+                    # record: it arrives in the Inbox with its real timestamp,
+                    # which is when it happened, not when they saw it.
+                    if r["channel_push"] and await prefs_allow(pool, uid, "reminder"):
                         await send_web_push(pool, user_id=uid, title="Task reminder", body=message, url="/tasks")
                         await send_expo_push(pool, user_id=uid, title="Task reminder", body=message, url="/tasks", task_id=r["task_id"])
                 if r["channel_email"]:

@@ -103,7 +103,31 @@ async def is_project_owner(pool, team_id: str, user_id: str) -> bool:
 
 async def _notify(pool, task_id: str, task_title: str, recipient_id: str,
                   notif_type: str, notes: Optional[str] = None, team_id: Optional[str] = None):
-    """Insert a DB notification row (fire-and-forget; never raises)."""
+    """Insert a DB notification row (fire-and-forget; never raises).
+
+    THE STORED `type` IS DELIBERATELY LEFT ALONE. This module's internal name for
+    "someone wants your review" is `request`, and that is what reaches
+    `notifications.type` — while the very same event's PUSH is normalised to
+    `approval_request` twenty lines below, and `push_service.DEFAULT_PREFS`, the
+    preference UI and `pages/inbox/notifKinds.js` are all keyed on
+    `approval_request`. One event, two names.
+
+    The visible damage was in the Inbox: a `request` row matched none of the
+    eight kinds, so it rendered with the neutral bell instead of the amber
+    approval dot, and — worse — it was **missing from the Approvals tab**, which
+    filters on the kind. Every approval request raised through this router was
+    absent from the tab whose entire job is to list pending decisions.
+
+    That is fixed as an ALIAS IN THE RENDERING LAYER, not by rewriting what is
+    stored here: `notifications` already holds `request` rows in a database that
+    staging and production SHARE, so writing a second name for the same event
+    would split live data down a date boundary — the tab would work for rows
+    after the deploy and not for rows before it, which is the same bug with a
+    shorter blast radius. `notifKinds.EXACT` resolves both names to the
+    `approval` kind, so every row ever written renders correctly and reaches the
+    tab. Normalising the write is only safe alongside a backfill, and a
+    backfill is a database write.
+    """
     try:
         title = {
             "request":  f"Approval Requested: {task_title}",
@@ -111,10 +135,16 @@ async def _notify(pool, task_id: str, task_title: str, recipient_id: str,
             "rejected": f"Task Rejected: {task_title}",
         }.get(notif_type, f"Update on: {task_title}")
         message = notes or ""
+        # An approval request lands on the queue it belongs to, not on the board.
+        # `server.py`'s own `approval_request` row has always used `/approvals`;
+        # this one sent the reviewer to `/tasks` to go and find it. The two
+        # halves of one event should not disagree about where it points. This
+        # changes only where NEW rows point — it stores no new `type`.
+        url = "/approvals" if notif_type == "request" else "/tasks"
         await pool.execute("""
             INSERT INTO notifications (notification_id, user_id, team_id, type, title, message, task_id, url)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        """, f"notif_{uuid.uuid4().hex[:12]}", recipient_id, team_id, notif_type, title, message, task_id, "/tasks")
+        """, f"notif_{uuid.uuid4().hex[:12]}", recipient_id, team_id, notif_type, title, message, task_id, url)
     except Exception as exc:
         import logging; logging.getLogger(__name__).warning("_notify failed: %s", exc)
 

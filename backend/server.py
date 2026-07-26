@@ -2780,10 +2780,50 @@ async def move_task(task_id:str,payload:TaskMoveIn,pool=Depends(get_db),user=Dep
 # ── Notifications ─────────────────────────────────────────────────
 
 @api_router.get("/notifications",response_model=List[NotificationOut])
-async def list_notifications(unread_only:bool=False,pool=Depends(get_db),user=Depends(require_user)):
-    """Return up to 200 notifications for the authenticated user, optionally filtering to unread only."""
-    sql="SELECT * FROM notifications WHERE user_id=$1"+(" AND read_at IS NULL" if unread_only else "")+" ORDER BY created_at DESC LIMIT 200"
-    return [NotificationOut(**dict(r)) for r in await pool.fetch(sql,user["user_id"])]
+async def list_notifications(
+    unread_only: bool = False,
+    limit: int = 200,
+    before: Optional[str] = None,
+    before_id: Optional[str] = None,
+    pool=Depends(get_db),
+    user=Depends(require_user),
+):
+    """Return one page of the authenticated user's notifications, newest first.
+
+    KEYSET, NOT OFFSET. `before` / `before_id` are the `created_at` and
+    `notification_id` of the last row the caller already has. Offset paging is
+    wrong for this table specifically: rows are inserted at the head while the
+    user reads, so `OFFSET 40` after a new arrival re-serves a row the caller
+    already rendered and skips one it never saw. A keyset cursor is anchored to
+    a row, so an insert above it changes nothing about the page below it.
+
+    The tiebreaker is not decoration. `_notify_status_changed` and the reminder
+    dispatch both insert a row per recipient inside one loop, so a batch shares
+    a `created_at` to the microsecond; ordering on that column alone leaves the
+    order inside a batch undefined and a cursor sitting mid-batch can drop or
+    repeat its neighbours. `(created_at, notification_id)` is unique because
+    `notification_id` is the primary key.
+
+    `limit` defaults to 200 — the cap this endpoint has always applied — so every
+    existing caller (the mobile client, which sends no paging params at all) is
+    served exactly what it was before.
+    """
+    limit = max(1, min(int(limit or 200), 200))
+    where = ["user_id=$1"]
+    args = [user["user_id"]]
+    if unread_only:
+        where.append("read_at IS NULL")
+    cursor_at = parse_dt(before)
+    if cursor_at and before_id:
+        args.extend([cursor_at, before_id])
+        where.append(f"(created_at, notification_id) < (${len(args)-1}, ${len(args)})")
+    args.append(limit)
+    sql = (
+        "SELECT * FROM notifications WHERE " + " AND ".join(where)
+        + " ORDER BY created_at DESC, notification_id DESC"
+        + f" LIMIT ${len(args)}"
+    )
+    return [NotificationOut(**dict(r)) for r in await pool.fetch(sql, *args)]
 
 @api_router.post("/notifications/mark-read")
 async def mark_read(payload:MarkReadIn,pool=Depends(get_db),user=Depends(require_user)):
