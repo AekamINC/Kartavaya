@@ -26,7 +26,7 @@ are named by 19 as its prerequisites).
 | 2 | `ApprovalsPage.jsx` ~41 still on the OLD client shape | **HELD** (live for one user class) |
 | 3 | `client/__tests__/smoke.test.jsx` ~76-77 still on the OLD shape | **STALE** |
 | 4 | `clientShape.js` normalisers are now redundant | **STALE** — deliberately dual-shape |
-| 5 | `POST /client/tasks/request` returns internal `TaskOut` | **HELD** |
+| 5 | `POST /client/tasks/request` returns internal `TaskOut` | **HELD** (also fixed concurrently by a sibling agent — see below) |
 | 6 | Route guard was a 7-path DENY-list, reportedly fixed to an allow-list | **STALE** (already fixed) |
 | 7 | Client API returned every comment; gated by unapplied `PROPOSED_056` | **STALE** — safe without it |
 
@@ -213,6 +213,24 @@ two prose comments in source, no `api.get`. The client shape carries the task
 `description` and nothing else prose-shaped (`_to_client_task`, server.py:953).
 
 So the portal is safe without the migration on both counts. No change needed.
+
+---
+
+### Convergence note on §5
+
+A sibling agent fixed `POST /client/tasks/request` concurrently, and staging
+carried their version by the time I rebased to merge. We reached the same
+verdict independently — the claim HELD, and it was a shape violation rather
+than a live third-party leak. **Their implementation is strictly better and is
+the one that survives:** they also run `_filter_private_attachments` and
+`_refresh_task_attachments` before reducing, in the same order as
+`/client/tasks`, so the attachment URLs on the returned row are freshly signed.
+Mine reduced the row directly. I resolved the conflict in their favour and kept
+one paragraph of my docstring naming the specific fields that used to cross
+(`column_id`, `sort_order`, `approval_id`, raw `status`/`priority`).
+
+Two independent confirmations of the same finding is worth more than either
+alone; recording it so the next reader does not treat it as one agent's opinion.
 
 ---
 
