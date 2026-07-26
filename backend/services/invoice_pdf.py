@@ -50,9 +50,29 @@ def _three_digit_words(n: int) -> str:
 
 
 def amount_in_words_inr(amount: float) -> str:
-    """Indian numbering (lakh/crore) amount-in-words, e.g. 'Rupees Two Lakh Thirty Four Thousand Only'."""
-    rupees = int(round(amount))
-    paise = int(round((amount - rupees) * 100))
+    """Indian numbering (lakh/crore) amount-in-words, e.g. 'Rupees Two Lakh Thirty Four Thousand Only'.
+
+    The split is done ONCE, in paise, and then divided. The obvious form —
+    `rupees = int(round(amount))` followed by `paise = round((amount - rupees) *
+    100)` — rounds the rupees to NEAREST rather than truncating, so any amount
+    whose paise part is half a rupee or more rounds the rupees UP and leaves the
+    paise NEGATIVE. That produced three separate failures on a field GST
+    requires on the face of every tax invoice:
+
+        1234.56   -> IndexError, crashing PDF generation outright
+        999.99    -> "Rupees One Thousand and Nineteen Paise Only"
+        250000.80 -> "Rupees Two Lakh Fifty Thousand One and  Paise Only"
+
+    Two of those are silent: a wrong amount in words on a document that has the
+    right amount in figures, which is exactly the discrepancy the words exist to
+    catch. `services/payslip_pdf.py` shares this function, so the same crash
+    applied to any net pay ending in 50 paise or more.
+    """
+    # Negative totals are legitimate on a credit note; divmod on a negative
+    # would otherwise borrow and report the complement.
+    sign = "Minus " if amount < 0 else ""
+    total_paise = int(round(abs(amount) * 100))
+    rupees, paise = divmod(total_paise, 100)
     if rupees == 0 and paise == 0:
         return "Rupees Zero Only"
 
@@ -71,7 +91,7 @@ def amount_in_words_inr(amount: float) -> str:
     if hundred:
         parts.append(_three_digit_words(hundred))
 
-    words = "Rupees " + " ".join(parts) if parts else "Rupees Zero"
+    words = sign + ("Rupees " + " ".join(parts) if parts else "Rupees Zero")
     if paise:
         words += f" and {_two_digit_words(paise)} Paise"
     return words + " Only"
