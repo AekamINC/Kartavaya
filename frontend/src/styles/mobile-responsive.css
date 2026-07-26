@@ -1,249 +1,143 @@
-/**
- * Mobile-First Responsive Enhancements
- * Touch-optimized, gesture-friendly, performance-focused
+/* mobile-responsive.css — phone and tablet adaptations for the web app.
+ * (The React Native app is a separate target — see 17-mobile-app.md.)
+ *
+ * REWRITTEN, because the previous version was almost entirely dead. It was
+ * authored against a class vocabulary this app does not use — .layout-sidebar,
+ * .layout-main, .layout-header, .table-container, .kanban-container,
+ * .stat-card, .input-modern — while the app renders .k-sidebar, .k-main,
+ * .k-card, .k-input, .k-board. 26 of its 31 class selectors matched nothing in
+ * any rendered markup, and the handful that did matched by coincidence.
+ *
+ * So none of it applied: hit targets were never enlarged, tables never gained
+ * horizontal scroll, and inputs never got the 16px that stops iOS zooming the
+ * viewport on focus. The one rule that did fire was a bare
+ * `button, a { min-width: 44px }`, which is worse than nothing — it puts a
+ * 44px floor under every inline text link, so a link inside a sentence
+ * stretches the line it sits in.
+ *
+ * Navigation is deliberately NOT here. The sidebar overlay, its scrim and the
+ * burger live in editorial.css and AppShell.jsx, and they are already correct:
+ * the media query hides the sidebar SLOT (.k-app__sidebar), not .k-sidebar
+ * itself, so the second copy rendered inside the mobile drawer survives.
+ * Hiding .k-sidebar directly is exactly what makes a burger open an empty
+ * scrim.
+ *
+ * Breakpoints, three only — each extra one is another combination nobody
+ * tests:
+ *   ≥1280      sidebar + content side by side
+ *   ≤1279      board scrolls horizontally (in editorial.css)
+ *   ≤1023      sidebar leaves the flow, burger appears (in editorial.css)
+ *   ≤767       phone: single column, sheets, 44px targets
  */
 
-/* Touch Targets - Minimum 44x44px */
-@media (max-width: 767px) {
-  button,
-  a,
-  input[type="button"],
-  input[type="submit"],
-  .btn,
-  .badge {
-    min-height: 44px;
+/* ── Touch targets ────────────────────────────────────────────────────────
+   44px minimum on things that are actually buttons. Keyed on pointer type as
+   well as width, because a touch laptop has the same thumb at 1400px. */
+@media (max-width: 767px), (hover: none) and (pointer: coarse) {
+  .k-iconbtn {
     min-width: 44px;
+    min-height: 44px;
   }
-
-  .kanban-column .task-card {
-    padding: 16px !important;
-    margin-bottom: 12px !important;
-  }
-
-  .nav-item {
-    padding: 14px 16px !important;
+  .k-btn,
+  .k-btn--sm {
+    min-height: 40px;
   }
 }
 
-/* Mobile Typography */
 @media (max-width: 767px) {
-  .page-title {
-    font-size: 20px !important;
-    line-height: 1.3;
-  }
-
-  .page-subtitle {
-    font-size: 13px !important;
-  }
-
-  .stat-card__value {
-    font-size: 32px !important;
-  }
-
-  body {
-    font-size: 15px;
-    line-height: 1.6;
-  }
-}
-
-/* Mobile Navigation */
-@media (max-width: 1023px) {
-  .layout-sidebar {
-    position: fixed;
-    left: 0;
-    top: 0;
-    width: 280px;
-    height: 100vh;
-    z-index: 50;
-    transform: translateX(-100%);
-    transition: transform calc(0.3s * var(--ix)) ease;
-  }
-
-  .layout-sidebar.open {
-    transform: translateX(0);
-  }
-
-  .layout-main {
-    grid-column: 1 / -1;
-  }
-
-  .layout-header {
-    grid-column: 1 / -1;
-  }
-}
-
-/* Mobile Cards & Lists */
-@media (max-width: 767px) {
-  .elevated-card,
-  .stat-card,
-  .glass-card {
-    padding: 16px !important;
-    border-radius: 16px !important;
-  }
-
-  .section-spacing {
-    margin-bottom: 20px !important;
-  }
-
-  .grid-2,
-  .grid-3,
-  .grid-4,
-  .split-layout {
-    grid-template-columns: 1fr !important;
-    gap: 16px !important;
-  }
-
-  .card-grid {
-    grid-template-columns: 1fr !important;
-  }
-}
-
-/* Mobile Tables */
-@media (max-width: 1023px) {
-  .table-container {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .table-container table {
-    min-width: 800px;
-  }
-}
-
-/* Mobile Kanban */
-@media (max-width: 1023px) {
-  .kanban-container {
-    padding: 0 16px 16px;
-    -webkit-overflow-scrolling: touch;
-    scroll-snap-type: x mandatory;
-  }
-
-  .kanban-column {
-    flex: 0 0 85vw;
-    scroll-snap-align: start;
-  }
-}
-
-/* Mobile Forms */
-@media (max-width: 767px) {
-  .input-modern,
+  /* ── Forms ──────────────────────────────────────────────────────────────
+     16px is not a taste decision. Safari on iOS zooms the viewport when a
+     focused field's font-size is under 16px and does not zoom back out, so
+     the user is left on a page scrolled sideways with no obvious way back. */
+  .k-input,
+  .k-select,
+  textarea.k-input,
   input[type="text"],
   input[type="email"],
   input[type="password"],
   input[type="search"],
+  input[type="tel"],
+  input[type="number"],
+  input[type="date"],
+  input[type="datetime-local"],
   select,
   textarea {
-    font-size: 16px !important;
-    padding: 14px 16px !important;
+    font-size: 16px;
   }
 
-  .form-grid {
-    grid-template-columns: 1fr !important;
-  }
-}
+  /* ── Layout ───────────────────────────────────────────────────────────── */
+  .k-content { padding: 16px; }
+  .k-card    { padding: 16px; }
 
-/* Mobile Pagination */
-@media (max-width: 767px) {
-  .pagination-controls {
+  /* Two 160px tiles on a 360px screen leaves neither wide enough for its own
+     number, so stat rows go to one column. */
+  .k-stats {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .k-twocol { grid-template-columns: 1fr; }
+
+  /* ── Tables scroll; they do not reflow ──────────────────────────────────
+     A table restacked as cards loses column alignment, which is the only
+     reason it was a table. Horizontal scroll keeps the comparison intact. */
+  .k-tablewrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .k-tablewrap > table { min-width: 640px; }
+
+  /* ── Page header ──────────────────────────────────────────────────────── */
+  .k-pageh {
     flex-direction: column;
+    align-items: flex-start;
     gap: 12px;
-    align-items: stretch !important;
+  }
+  .k-pageh__h1    { font-size: 26px; }
+  .k-pageh__right { width: 100%; }
+
+  /* ── Board ────────────────────────────────────────────────────────────
+     The ≤1280 rule in editorial.css already switches .k-board to a scrolling
+     flex row with snap. On a phone the column widens to nearly full bleed:
+     280px on a 360px screen shows a column and a stripe, which reads as a
+     layout error rather than an affordance. 85vw leaves a deliberate sliver
+     of the next column, which is what says "this scrolls". */
+  .k-bcol { flex: 0 0 85vw; }
+
+  /* ── Dialogs become sheets ────────────────────────────────────────────
+     A 620px dialog centred on a 393px screen is a full-screen modal with a
+     sliver of scrim down each side. It looks dismissible by tapping beside
+     it, and there is nowhere to tap. */
+  .modal__scrim {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .modal__panel {
+    max-width: none;
+    max-height: 92vh;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
   }
 
-  .pagination-controls > * {
-    width: 100%;
-    justify-content: center;
+  /* ── Settings rows ────────────────────────────────────────────────────
+     Keeping label and control on one line at 360px squeezes the control to
+     nothing, which hits the segmented controls hardest. */
+  .sr {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
   }
+  .sr__c { width: 100%; }
+  .seg   { width: 100%; }
+  .seg__b { flex: 1; text-align: center; }
+  .sbg   { grid-template-columns: 1fr; }
+  .acc   { grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); }
 }
 
-/* Safe Areas */
-@supports (padding: env(safe-area-inset-top)) {
-  .layout-header {
-    padding-top: env(safe-area-inset-top);
-  }
-
-  .layout-sidebar {
-    padding-top: env(safe-area-inset-top);
-  }
-}
-
-/* Gestures & Interactions */
-@media (max-width: 767px) {
-  body {
-    overscroll-behavior-y: contain;
-  }
-
-  * {
-    -webkit-tap-highlight-color: rgba(0, 130, 198, 0.2);
-  }
-
-  html {
-    scroll-behavior: smooth;
-  }
-
-  .kanban-column,
-  .card-grid,
-  .table-container {
-    -webkit-user-select: none;
-    user-select: none;
-  }
-}
-
-/* Performance Optimizations */
-@media (max-width: 767px) {
-  .layout-sidebar,
-  .kanban-column {
-    transform: translateZ(0);
-    will-change: transform;
-  }
-
-  .animate-fadeIn,
-  .animate-slideInLeft,
-  .stagger-item {
-    animation-duration: calc(0.2s * var(--ix)) !important;
-  }
-
-  @media (hover: none) {
-    .hover-lift:hover {
-      transform: none !important;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
-    }
-  }
-}
-
-/* Landscape Mobile */
-@media (max-width: 767px) and (orientation: landscape) {
-  .page-header {
-    margin-bottom: 16px !important;
-  }
-
-  .section-spacing {
-    margin-bottom: 16px !important;
-  }
-
-  .stat-card {
-    padding: 16px !important;
-  }
-
-  .stat-card__value {
-    font-size: 28px !important;
-  }
-}
-
-/* Accessibility */
-@media (max-width: 767px) {
-  *:focus-visible {
-    outline: 3px solid var(--brand-blue);
-    outline-offset: 2px;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: calc(0.01ms * var(--ix)) !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: calc(0.01ms * var(--ix)) !important;
-    }
-  }
+/* ── Landscape phones ─────────────────────────────────────────────────────
+   Vertical space is the scarce axis, so trim vertical padding rather than
+   reflowing anything — a reflow here would fight the ≤767 rules above. */
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 500px) {
+  .k-content    { padding: 10px 16px; }
+  .modal__panel { max-height: 96vh; }
 }
