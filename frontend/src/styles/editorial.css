@@ -2057,15 +2057,38 @@ input, textarea, select { font-family: inherit; color: inherit; }
 [data-language="gu"] .k-en,
 [data-language="gu"] .k-wday__en { display: none !important; }
 
-/* Gujarati modes — use Gujarati font for indic labels */
-[data-language="gu"] .k-sidebar__hi-mute,
-[data-language="gu"] .k-sidebar__section-hi,
-[data-language="gu"] .k-crumb__hi,
-[data-language="gu"] .k-pageh__sans,
+/* Gujarati modes — Gujarati font ONLY where the text is actually Gujarati.
+   Sidebar item and section labels genuinely swap script: Sidebar.jsx picks
+   `gu` over `hi` when the language is gu or en+gu.
+
+   .k-crumb__hi and .k-pageh__sans were in this list and must not be. Neither
+   ever holds Gujarati — the breadcrumb is a hardcoded कर्तव्य, and
+   PageHeader's `sanskrit` prop is a fixed Sanskrit term (सजावट, संगठन,
+   प्रमाण). Forcing a Gujarati face onto Devanagari is the same per-glyph
+   fallback failure as the reverse, just less obvious: the font has no
+   Devanagari coverage, so every glyph silently resolves through the fallback
+   chain and the word loses its conjuncts.
+
+   These use --font-indic rather than a literal so the Line height and font
+   controls still reach them, and so there is one place to change the face. */
+[data-language="gu"]    .k-sidebar__hi-mute,
+[data-language="gu"]    .k-sidebar__section-hi,
 [data-language="en+gu"] .k-sidebar__hi-mute,
-[data-language="en+gu"] .k-sidebar__section-hi,
-[data-language="en+gu"] .k-crumb__hi,
-[data-language="en+gu"] .k-pageh__sans { font-family: 'Noto Sans Gujarati', sans-serif !important; }
+[data-language="en+gu"] .k-sidebar__section-hi { font-family: var(--font-indic); }
+
+/* ── Devanagari metrics ───────────────────────────────────────────────────
+   Devanagari hangs a headline (शिरोरेखा) above the baseline and drops
+   conjuncts below it, so at Latin leading the matras on one line collide with
+   the conjuncts on the next. Gujarati needs less because it has no headline.
+   Both derive from --line-height-base so the Line height control still
+   applies. */
+[lang="hi"], [lang="sa"] { line-height: calc(var(--line-height-base, 1.5) * 1.18); }
+[lang="gu"]              { line-height: calc(var(--line-height-base, 1.5) * 1.12); }
+
+/* Never track Devanagari. Letter-spacing breaks conjunct ligatures — क्ष and
+   ज्ञ split into separate glyphs with a gap. The negative tracking on display
+   type has to stay scoped to Latin. */
+[lang="hi"], [lang="sa"], [lang="gu"] { letter-spacing: 0 !important; }
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
 @media (max-width: 1100px) {
