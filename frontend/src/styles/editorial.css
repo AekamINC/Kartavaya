@@ -3256,14 +3256,21 @@ select.k-formpanel__input { appearance: none;
   flex-shrink: 0; margin-right: 8px;
 }
 .trp__name { font-weight: 500; color: var(--ink); }
+/* --primary-text, not --k-primary. --k-primary aliases --primary-vivid
+   (#05B7AA), a fixed brand literal that does NOT flip by theme and measures
+   2.19:1 on --bg / 2.35:1 on --surface — worse as body text than the retired
+   --on-surface-faint literal ever was. It reads fine everywhere else it is used
+   because every other `color:` call site paints it on the near-black sidebar or
+   auth panel; these two are table cells on a page surface. --primary-text is
+   5.56:1 light / 11.06:1 dark. The --ref tint keeps its vivid hue. */
 .trp__task {
-  font-weight: 500; color: var(--k-primary);
+  font-weight: 500; color: var(--primary-text);
   max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .trp__ref {
   font-family: var(--font-mono); font-size: 11px; font-weight: 700;
   background: color-mix(in srgb, var(--k-primary) 10%, transparent);
-  color: var(--k-primary);
+  color: var(--primary-text);
   padding: 2px 6px; border-radius: 4px; margin-right: 6px;
 }
 .trp__note {

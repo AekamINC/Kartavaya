@@ -340,6 +340,9 @@ for (const theme of ['light', 'dark']) {
 const FOREGROUNDS = [
   '--on-surface', '--on-surface-2', '--on-surface-3', '--on-surface-faint',
   '--on-surface-disabled', '--primary', '--primary-text', '--primary-hover',
+  // A fixed brand literal that does NOT flip by theme, so it is measured in
+  // both. It reaches `color:` in editorial.css via the --k-primary alias.
+  '--primary-vivid',
   '--secondary', '--tertiary', '--ok', '--warn', '--danger', '--outline',
   '--st-todo', '--st-in-progress', '--st-in-review', '--pr-medium',
   '--m-graha', '--m-ganit', '--m-manav', '--m-vikray', '--m-vetana',

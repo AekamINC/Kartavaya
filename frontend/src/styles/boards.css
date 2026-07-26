@@ -187,8 +187,12 @@
 }
 .bc__tick svg { width: 11px; height: 11px; }
 .bc:hover .bc__tick, .bc__tick:focus-visible { opacity: 1; }
-.bc__tick:hover, .bc__tick:focus-visible { background: var(--ok); border-color: var(--ok); color: #fff; }
-.bc__tick.on { opacity: 1; background: var(--ok); border-color: var(--ok); color: #fff; }
+/* --on-ok, not #fff. --ok is a FILL that inverts hard: #14743A in light takes
+   white at 5.85:1, but #5BD98A in dark is a light mint where white measures
+   1.79:1 — below even the 3:1 floor this tick needs as a non-text control. A
+   hardcoded #fff cannot follow a token that flips. */
+.bc__tick:hover, .bc__tick:focus-visible { background: var(--ok); border-color: var(--ok); color: var(--on-ok); }
+.bc__tick.on { opacity: 1; background: var(--ok); border-color: var(--ok); color: var(--on-ok); }
 @media (hover: none) { .bc__tick { opacity: 1; } }
 
 .bc__top { display: flex; align-items: center; gap: 7px; }

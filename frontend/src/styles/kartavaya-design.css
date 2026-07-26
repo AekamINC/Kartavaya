@@ -216,6 +216,13 @@
   --on-warn-container:   #4A2D00;
   --on-danger-container: #5C1109;
   --on-danger:           #FFFFFF;
+  /* --on-ok exists for exactly the reason the comment above gives for
+     --on-danger, and was missed because --ok as a FILL is rarer than --danger.
+     It is not rare enough: the board card's completion tick paints white on
+     var(--ok), which is #14743A in light (5.85:1, fine) and #5BD98A in dark —
+     a light mint, where white measures 1.79:1 and fails even the 3:1 floor for
+     a non-text control. A fill that inverts needs an ink that inverts with it. */
+  --on-ok:               #FFFFFF;
 
   --scrim:      rgba(28, 26, 20, .34);
   --glass-tint: 250, 247, 240;
@@ -284,6 +291,9 @@
   --on-warn-container:   #FBE3BE;
   --on-danger-container: #FBDAD5;
   --on-danger:           #2A0A06;
+  /* Reuses the light theme's --on-ok-container green rather than inventing a
+     third dark green: on --ok #5BD98A it measures 8.34:1. */
+  --on-ok:               #06341A;
 
   --scrim:      rgba(0, 0, 0, .58);
   --glass-tint: 18, 21, 26;
