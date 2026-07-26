@@ -77,8 +77,15 @@ async def test_thread_replies_404_for_other_org(api_client, as_member, with_org_
 
 @pytest.mark.anyio
 async def test_thread_replies_returned_for_own_org(api_client, as_member, with_org_id, mock_pool):
-    """Thread replies succeed when the parent message is in the user's org."""
-    mock_pool.fetchrow = AsyncMock(return_value={"channel_id": CHANNEL_ID})
+    """Thread replies succeed when the parent message is in the user's org.
+
+    Two fetchrows now: the parent message, then the channel — reading a thread
+    requires access to the channel it hangs off, not just org membership.
+    """
+    mock_pool.fetchrow = AsyncMock(side_effect=[
+        {"channel_id": CHANNEL_ID},   # parent message, in this org
+        {"type": "public"},           # channel is public -> readable
+    ])
     mock_pool.fetch = AsyncMock(return_value=[])
     r = await api_client.get(f"/api/v1/messaging/messages/{MESSAGE_ID}/thread")
     assert r.status_code == 200
@@ -164,7 +171,10 @@ async def test_remove_reaction_404_for_other_org_message(api_client, as_member, 
 
 @pytest.mark.anyio
 async def test_add_reaction_succeeds_own_org(api_client, as_member, with_org_id, mock_pool):
-    mock_pool.fetchrow = AsyncMock(return_value={"id": MESSAGE_ID})
+    mock_pool.fetchrow = AsyncMock(side_effect=[
+        {"channel_id": CHANNEL_ID},   # message, in this org
+        {"type": "public"},           # channel is public -> reactable
+    ])
     mock_pool.execute = AsyncMock()
     r = await api_client.post(
         f"/api/v1/messaging/messages/{MESSAGE_ID}/reactions",

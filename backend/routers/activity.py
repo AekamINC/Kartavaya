@@ -9,9 +9,36 @@ import json
 
 from auth_router import require_user
 from db import get_pool
-from middleware.roles import is_platform_staff
+from middleware.role_tiers import PLATFORM_ROLE_PRECEDENCE, is_god_mode, modules_for
 
 logger = logging.getLogger(__name__)
+
+
+async def _platform_reach(pool, user_id: str) -> tuple[bool, bool]:
+    """(may_bypass_membership, sees_every_org) for this caller's platform role.
+
+    `is_platform_staff` used to answer the first half of this on its own, but it
+    tests membership of ALL_PLATFORM_ROLES — which includes the three
+    COMMERCIAL_ONLY_ROLES and `platform_support`. `role_tiers.modules_for()`
+    gives every one of those `frozenset()`: they reach no operational module at
+    all, and `platform_support` is documented as granting nothing until its
+    approval flow exists. An activity feed is a customer's operational record,
+    so the set that may cross into one is the set with operational reach — god
+    mode, manager and staff — not "holds any platform row".
+
+    Only god mode sees across org boundaries. Manager and staff are defined over
+    a customer's modules, which means one customer at a time.
+    """
+    role = await pool.fetchval(
+        "SELECT role_code FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id IS NULL "
+        "AND role_code = ANY($2::text[]) "
+        "ORDER BY array_position($2::text[], role_code) LIMIT 1",
+        user_id, list(PLATFORM_ROLE_PRECEDENCE),
+    )
+    if not role or not modules_for(role):
+        return False, False
+    return True, is_god_mode(role)
 
 
 def _normalize(rows):
@@ -42,7 +69,8 @@ async def team_activity(
     user=Depends(require_user),
 ):
     """Return paginated activity events for a team, with optional actor and type filters."""
-    if not await is_platform_staff(user["user_id"]):
+    may_bypass, _ = await _platform_reach(pool, user["user_id"])
+    if not may_bypass:
         try:
             access = await pool.fetchrow(
                 """
@@ -95,14 +123,21 @@ async def feed_activity(
 ):
     """Return paginated activity events across all teams the user belongs to."""
     try:
-        if await is_platform_staff(user["user_id"]):
+        may_bypass, sees_every_org = await _platform_reach(pool, user["user_id"])
+        if may_bypass:
             org_row = await pool.fetchrow(
                 "SELECT org_id FROM staging.user_roles WHERE user_id=$1 AND org_id IS NOT NULL LIMIT 1", user["user_id"])
             if org_row and org_row["org_id"]:
                 team_ids = [r["team_id"] for r in await pool.fetch(
                     "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org_row["org_id"])]
-            else:
+            elif sees_every_org:
                 team_ids = [r["team_id"] for r in await pool.fetch("SELECT team_id FROM teams WHERE deleted_at IS NULL")]
+            else:
+                # Manager/staff with no org row have no customer context to be
+                # in. The old code fell through to EVERY team in EVERY org here,
+                # which is the widest read in this file and was reached by the
+                # weakest role that gets past the bypass.
+                team_ids = []
         else:
             rows = await pool.fetch(
                 """
@@ -151,7 +186,8 @@ async def task_activity(
 ):
     """Return all activity events for a specific task, newest first."""
     # Enforce task visibility: caller must belong to the task's project
-    if not await is_platform_staff(user["user_id"]):
+    may_bypass, _ = await _platform_reach(pool, user["user_id"])
+    if not may_bypass:
         task_team = await pool.fetchrow(
             "SELECT team_id FROM tasks WHERE task_id=$1", task_id
         )

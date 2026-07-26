@@ -21,6 +21,52 @@ router = APIRouter(prefix="/api/v1/messaging", tags=["samvada-messaging"])
 _gate = require_module("samvada")
 
 
+async def _assert_channel_access(pool, channel_id, org_id: str, user_id: str) -> None:
+    """Caller may read this channel: it is in their org, and they are a member
+    of it or it is public.
+
+    `list_messages` already enforced exactly this before returning message
+    bodies. The thread and reaction endpoints checked only that the message was
+    in the caller's org, so any org member could read the replies under a DM or
+    a private channel — and react to them — by passing the message id. Same
+    rule, one place, so the three cannot drift apart again.
+    """
+    ch = await pool.fetchrow(
+        "SELECT type FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
+        channel_id, org_id,
+    )
+    if not ch:
+        raise HTTPException(404, "Channel not found")
+    if ch["type"] == "public":
+        return
+    mem = await pool.fetchrow(
+        "SELECT 1 FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
+        channel_id, user_id,
+    )
+    if not mem:
+        raise HTTPException(403, "Not a member of this channel")
+
+
+async def _assert_same_org(pool, target_user_id: str, org_id: str) -> None:
+    """The user being added to a channel must belong to this org.
+
+    Without this, `user_id` is an unvalidated caller-supplied identifier and a
+    membership row could be written joining a channel in one org to a user in
+    another. The org filter on every read meant that user could not actually
+    read anything, so this was a cross-tenant WRITE rather than a leak — but it
+    puts a foreign user in the member list and the member count, and it is the
+    kind of row that becomes a leak the moment a query forgets its org filter.
+    """
+    ok = await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id=$2::uuid "
+        "AND role_code IN ('org_owner','org_admin','org_member')",
+        target_user_id, org_id,
+    )
+    if not ok:
+        raise HTTPException(404, "User is not a member of this organisation")
+
+
 # ── Pydantic Models ──────────────────────────────────────────
 
 class ChannelCreate(BaseModel):
@@ -152,6 +198,7 @@ async def find_or_create_dm(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    await _assert_same_org(pool, target_user_id, org_id)
     existing = await pool.fetchrow("""
         SELECT c.* FROM staging.samvada_channels c
         WHERE c.org_id = $1::uuid AND c.type = 'dm'
@@ -226,6 +273,7 @@ async def add_member(
     if not mem:
         raise HTTPException(403, "Only channel members can add others")
 
+    await _assert_same_org(pool, user_id, org_id)
     await pool.execute("""
         INSERT INTO staging.samvada_channel_members (channel_id, user_id)
         VALUES ($1::uuid, $2) ON CONFLICT DO NOTHING
@@ -427,6 +475,7 @@ async def get_thread(
     )
     if not parent:
         raise HTTPException(404, "Message not found")
+    await _assert_channel_access(pool, parent["channel_id"], org_id, user["user_id"])
     rows = await pool.fetch("""
         SELECT m.*, u.full_name AS sender_name, u.avatar_url AS sender_avatar
         FROM staging.samvada_messages m
@@ -449,11 +498,12 @@ async def add_reaction(
 ):
     pool = await get_pool()
     msg = await pool.fetchrow(
-        "SELECT 1 FROM staging.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT channel_id FROM staging.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
     )
     if not msg:
         raise HTTPException(404, "Message not found")
+    await _assert_channel_access(pool, msg["channel_id"], org_id, user["user_id"])
     await pool.execute("""
         INSERT INTO staging.samvada_message_reactions (message_id, user_id, emoji)
         VALUES ($1::uuid, $2, $3) ON CONFLICT DO NOTHING

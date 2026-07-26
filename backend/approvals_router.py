@@ -27,7 +27,7 @@ def _bg_push(coro, label: str = "push"):
 
 from auth_router import require_user, JWT_SECRET as _JWT_SECRET
 from db import get_pool
-from utils import SQL_USER_ROLE as _SQL_USER_ROLE
+from middleware.roles import is_org_admin
 
 _JWT_ALG = "HS256"
 
@@ -231,8 +231,9 @@ async def approve_task(task_id: str, payload: ApprovalRequest,
         raise HTTPException(400, "Cannot approve personal tasks")
 
     if not await is_project_owner(pool, task["team_id"], user["user_id"]):
-        user_data = await pool.fetchrow(_SQL_USER_ROLE, user["user_id"])
-        if not user_data or user_data["role"] != "admin":
+        # `users.role` is a legacy column that authorisation no longer reads —
+        # staging.user_roles is the single source of truth. See middleware/roles.py.
+        if not await is_org_admin(user["user_id"]):
             raise HTTPException(403, "Only project owner or admin can approve")
 
     all_cols = await pool.fetch(
@@ -279,8 +280,7 @@ async def reject_task(task_id: str, payload: ApprovalRequest,
         raise HTTPException(400, "Cannot reject personal tasks")
 
     if not await is_project_owner(pool, task["team_id"], user["user_id"]):
-        user_data = await pool.fetchrow(_SQL_USER_ROLE, user["user_id"])
-        if not user_data or user_data["role"] != "admin":
+        if not await is_org_admin(user["user_id"]):
             raise HTTPException(403, "Only project owner or admin can reject")
 
     if not payload.notes or not payload.notes.strip():
@@ -399,7 +399,12 @@ async def client_approve_task(task_id: str, payload: ApprovalRequest,
     task   = await get_task_with_permission(pool, task_id, user["user_id"])
     # Only explicit task_clients entries may approve — not general project members.
     # Admins retain override access to unblock stuck approvals.
-    if user.get("role") != "admin":
+    #
+    # `user.get("role")` read the role off the JWT, so a token minted while the
+    # holder was an admin kept the override for the life of that token, and the
+    # value could not be scoped to an org at all. is_org_admin reads
+    # staging.user_roles at request time.
+    if not await is_org_admin(user["user_id"]):
         access = await pool.fetchrow(
             "SELECT 1 FROM task_clients WHERE task_id=$1 AND user_id=$2",
             task_id, user["user_id"]
@@ -607,7 +612,7 @@ async def client_reject_task(task_id: str, payload: ApprovalRequest,
                               pool=Depends(get_pool), user=Depends(require_user)):
     """Allow an authenticated client user to reject a pending_client task with a reason."""
     task   = await get_task_with_permission(pool, task_id, user["user_id"])
-    if user.get("role") != "admin":
+    if not await is_org_admin(user["user_id"]):
         access = await pool.fetchrow(
             "SELECT 1 FROM task_clients WHERE task_id=$1 AND user_id=$2",
             task_id, user["user_id"]
