@@ -187,18 +187,68 @@ async def test_org_wide_reads_refuse_a_caller_with_no_grant(
     assert resp.status_code == 403
 
 
-@pytest.mark.parametrize("path", [
+ORG_WIDE_READS = [
     "/api/v1/vetana/payroll/runs",
     "/api/v1/vetana/dashboard",
     "/api/v1/vetana/statutory-summary",
-])
-async def test_org_wide_reads_admit_a_viewer_grant(
+]
+
+
+@pytest.mark.parametrize("path", ORG_WIDE_READS)
+async def test_a_viewer_grant_does_not_open_the_register(
     api_client, mock_pool, as_member, org_a, levels, path,
 ):
-    """Reading the register is what a Vetana grant is FOR. This is a deliberate
-    widening from the pre-Tier-4 code, which gated these on the org role because
-    a grant carried no level to test."""
+    """RBAC-SPEC.md: "**Viewer on Vetana is scoped to self**, not to the org. It
+    is the only module where viewer means 'my own record'."
+
+    So viewer and no-grant land in the same place on Vetana, which is the one
+    module where that is the right answer and not a bug. The bar for anyone
+    else's pay is `editor` — "prepare payroll runs" in the same matrix.
+    """
     levels(VIEWER)
+    mock_pool.fetch.return_value = []
+    mock_pool.fetchrow.return_value = None
+    resp = await api_client.get(path)
+    assert resp.status_code == 403
+
+
+@pytest.mark.parametrize("path", ORG_WIDE_READS)
+async def test_org_wide_reads_admit_an_editor_grant(
+    api_client, mock_pool, as_member, org_a, levels, path,
+):
+    levels(EDITOR)
+    mock_pool.fetch.return_value = []
+    mock_pool.fetchrow.return_value = None
+    resp = await api_client.get(path)
+    assert resp.status_code == 200
+
+
+@pytest.mark.parametrize("path", ORG_WIDE_READS)
+async def test_org_wide_reads_still_admit_an_org_admin(
+    api_client, mock_pool, as_member, org_a, levels, path,
+):
+    """The narrowing above must not lock out anyone who could reach these
+    before. org_owner and org_admin resolve to `admin`, and Vetana's separation
+    only blocks admin at the APPROVER rung — admin still satisfies editor."""
+    levels(ADMIN)
+    mock_pool.fetch.return_value = []
+    mock_pool.fetchrow.return_value = None
+    resp = await api_client.get(path)
+    assert resp.status_code == 200
+
+
+@pytest.mark.parametrize("path", ORG_WIDE_READS)
+async def test_org_wide_reads_admit_an_approver(
+    api_client, mock_pool, as_member, org_a, levels, path,
+):
+    """The separation is one-directional and this is the direction it does NOT
+    run in. RBAC-SPEC defines the rung as "`approver` — everything editor can,
+    plus approve/reject workflows", so approver climbs down to editor freely;
+    what it must not do is let ADMIN climb UP to approver. Asserted because the
+    obvious over-correction — making the two rungs mutually exclusive — would
+    leave an approver unable to see the run they are approving.
+    """
+    levels(APPROVER)
     mock_pool.fetch.return_value = []
     mock_pool.fetchrow.return_value = None
     resp = await api_client.get(path)
@@ -372,7 +422,7 @@ async def test_own_payslip_json_is_masked_too(
 async def test_statutory_summary_masks_pan_and_uan(
     api_client, mock_pool, as_member, org_a, levels,
 ):
-    levels(VIEWER)
+    levels(EDITOR)
     mock_pool.fetch.return_value = [{
         "payslip_number": "PS-001",
         "employee_name": "Priya Sharma",

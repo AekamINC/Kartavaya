@@ -20,7 +20,7 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import is_platform_staff
 from middleware.role_tiers import (
-    ADMIN, APPROVER, VIEWER, any_level_satisfies, require_module_or_self,
+    ADMIN, APPROVER, EDITOR, any_level_satisfies, require_module_or_self,
 )
 from services.audit import emit as audit
 from services.pii import mask_bank, mask_tail
@@ -37,7 +37,28 @@ _gate = require_module_or_self(MODULE)
 
 # ── Who may see what in payroll ───────────────────────────────────────────────
 #
-# Two rules, and they are the whole file.
+# Three rules, and they are the whole file.
+#
+# 0 · VIEWER ON VETANA IS SCOPED TO SELF — IT IS NOT A KEY TO THE REGISTER
+#
+#     RBAC-SPEC.md says it twice, and the second time in as many words:
+#
+#       "Vetana (Payroll) | Viewer: **View own payslips**"
+#       "**Viewer on Vetana is scoped to self**, not to the org. It is the only
+#        module where viewer means 'my own record'."
+#
+#     So the bar for reading ANOTHER person's pay — the register, the runs, the
+#     dashboard, the statutory summary, a colleague's structure or loan — is
+#     `editor`, the level the same matrix defines as "prepare payroll runs".
+#     Viewer and no-grant land in the same place here, which is the one module
+#     where that is the correct answer rather than a bug.
+#
+#     This is deliberately NOT how the rest of the file's ladder reads, and it
+#     is deliberately NOT `viewer`. An earlier pass set these to `viewer` on the
+#     reasoning that a grant must mean more than no grant; the spec had already
+#     answered that, and on the most sensitive table in the product the spec's
+#     answer is also the safe one. Nobody is locked out by it: org_owner and
+#     org_admin resolve to `admin`, and admin satisfies editor.
 #
 # 1 · SELF SCOPE, NO GRANT (role_tiers.SELF_SCOPED_MODULES)
 #
@@ -214,7 +235,7 @@ async def list_structures(
     # A salary structure is what someone is paid. Reading anyone else's is a
     # grant; with no grant the filter narrows to the caller's own row, and if
     # they have no employee row it narrows to nothing.
-    if not _can(levels, VIEWER):
+    if not _can(levels, EDITOR):
         own = await _own_employee_id(pool, user, org_id)
         if not own:
             return {"data": []}
@@ -287,7 +308,7 @@ async def get_structure(
     # Someone else's structure is someone else's salary. 404 rather than 403 so
     # the response does not confirm that a structure exists for that person.
     if out.pop("employee_user_id", None) != user["user_id"]:
-        if not _can(levels, VIEWER):
+        if not _can(levels, EDITOR):
             raise HTTPException(404, "Salary structure not found")
     return out
 
@@ -676,7 +697,7 @@ async def list_runs(
     # is the right bar now that a grant carries a level; before Tier 4 landed a
     # grant was levelless and this had to be gated on the org role instead.
     # There is no self-scoped view of an org-wide total, so no fallback here.
-    _require(levels, VIEWER)
+    _require(levels, EDITOR)
     rows = await pool.fetch(
         "SELECT * FROM staging.vetana_payroll_runs "
         "WHERE org_id=$1::uuid ORDER BY month DESC",
@@ -694,7 +715,7 @@ async def get_run(
 ):
     pool = await get_pool()
     # Returns every payslip in the run — the entire org's pay in one response.
-    _require(levels, VIEWER)
+    _require(levels, EDITOR)
     run = await pool.fetchrow(
         "SELECT * FROM staging.vetana_payroll_runs "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -821,7 +842,7 @@ async def list_payslips(
 
     # No grant → own payslips only, which is what SELF_SCOPED_MODULES promises
     # every employee without one. A grant at viewer or above reads the register.
-    if not _can(levels, VIEWER):
+    if not _can(levels, EDITOR):
         own = await _own_employee_id(pool, user, org_id)
         if not own:
             return {"data": []}
@@ -868,7 +889,7 @@ async def get_payslip(
     # pulls the identity columns off that very table. Own payslip or not, the
     # JSON is masked; the PDF is where an employee gets their real figures.
     if out.pop("employee_user_id", None) != user["user_id"]:
-        if not _can(levels, VIEWER):
+        if not _can(levels, EDITOR):
             raise HTTPException(404, "Payslip not found")
     return _mask_payslip_row(out)
 
@@ -1022,7 +1043,7 @@ async def dashboard(
     # YTD gross, net and a per-department salary split. Org-level financials —
     # a read, so viewer, but there is no own-row version of an org total and no
     # self-scoped fallback.
-    _require(levels, VIEWER)
+    _require(levels, EDITOR)
     latest_run = await pool.fetchrow(
         "SELECT * FROM staging.vetana_payroll_runs "
         "WHERE org_id=$1::uuid ORDER BY month DESC LIMIT 1",
@@ -1073,7 +1094,7 @@ async def statutory_summary(
     # UAN. A read of the register, so viewer — and PAN and UAN stay masked at
     # every level: nothing here needs the full number on screen, and the figures
     # are what the filing is for.
-    _require(levels, VIEWER)
+    _require(levels, EDITOR)
     if not month:
         month = f"{date.today().year}-{date.today().month:02d}"
     rows = await pool.fetch(
@@ -1126,7 +1147,7 @@ async def list_loans(
 
     # A loan against salary is a personal financial record. Same rule as the
     # payslip: your own with no grant, anyone else's needs one.
-    if not _can(levels, VIEWER):
+    if not _can(levels, EDITOR):
         own = await _own_employee_id(pool, user, org_id)
         if not own:
             return {"data": []}
