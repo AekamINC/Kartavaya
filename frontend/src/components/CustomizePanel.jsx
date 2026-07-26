@@ -171,6 +171,13 @@ export function applyPrefs(prefs) {
   root.style.setProperty('--ix-user',
     prefs.anim === 'none' ? '.001' : prefs.anim === 'reduced' ? '.5' : '1');
 
+  // Distance is a separate scale from time: at 'none' the right travel is 0,
+  // where the right duration is .001 rather than 0 (a zero-duration animation
+  // never fires animationend, so any handler that unmounts on exit-complete
+  // leaks its node).
+  root.style.setProperty('--motion-scale',
+    prefs.anim === 'none' ? '0' : prefs.anim === 'reduced' ? '.5' : '1');
+
   // NOTE: the block that set --bg / --surface / --ink / --rule per theme as
   // inline styles is deliberately gone (00 §11). Those live in CSS under
   // [data-theme]; as inline styles they outranked the stylesheet, so the new

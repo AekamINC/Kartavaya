@@ -27,6 +27,12 @@
   --line-height-base: 1.5;    /* user: 1.3 | 1.5 | 1.7 */
   --ix-user:          1;      /* motion scale: 1 | .5 | .001 */
   --ix:               var(--ix-user);   /* never written directly — see §5 */
+  /* Distance, not time. A spring at anim:reduced should TRAVEL less, not just
+     travel the same distance faster — the second still throws the same amount
+     of movement at someone who asked for less of it. Kept separate from --ix
+     because at anim:none the right distance is 0, while the right duration is
+     .001 rather than 0 (see §5). */
+  --motion-scale:     var(--ix-user);
 }
 
 /* ── 2 · Type (§2) ──────────────────────────────────────────────────────── */
@@ -100,7 +106,14 @@
   --ease-spring:      cubic-bezier(.34, 1.36, .64, 1);
   --ease-spring-soft: cubic-bezier(.32, 1.14, .68, 1);
 }
-@media (prefers-reduced-motion: reduce) { :root { --ix: .001 } }
+/* The OS setting wins over the user's own preference, because --ix is a
+   media-query-overridable custom property while --ix-user is written as an
+   inline style on the root. Writing --ix directly from applyPrefs would
+   outrank this rule and let an in-app setting silently defeat an accessibility
+   setting the user made at the system level. */
+@media (prefers-reduced-motion: reduce) {
+  :root { --ix: .001; --motion-scale: 0 }
+}
 
 /* ── 6 · Translucency (§6) ──────────────────────────────────────────────── */
 :root {
@@ -461,7 +474,7 @@ body {
   border: none;
   cursor: pointer;
   text-align: left;
-  transition: background .12s, color .12s;
+  transition: background calc(.12s * var(--ix)), color calc(.12s * var(--ix));
   position: relative;
 }
 .k-sidebar__item:hover {
@@ -543,7 +556,7 @@ body {
   border: none;
   cursor: pointer;
   color: rgba(255,255,255,.42);
-  transition: color .12s, background .12s;
+  transition: color calc(.12s * var(--ix)), background calc(.12s * var(--ix));
   flex-shrink: 0;
 }
 .k-sidebar__foot-btn:hover {
@@ -618,7 +631,7 @@ body {
   border: 1px solid var(--rule);
   border-radius: 99px;
   color: var(--ink-3);
-  transition: border-color .15s, background .15s;
+  transition: border-color calc(.15s * var(--ix)), background calc(.15s * var(--ix));
 }
 .k-topbar__search:focus-within {
   border-color: color-mix(in srgb, var(--k-primary) 50%, var(--rule));
@@ -666,7 +679,7 @@ body {
   border: 1px solid transparent;
   color: var(--ink-3);
   cursor: pointer;
-  transition: color .12s, background .12s, border-color .12s;
+  transition: color calc(.12s * var(--ix)), background calc(.12s * var(--ix)), border-color calc(.12s * var(--ix));
   position: relative;
 }
 .k-iconbtn:hover {
@@ -697,7 +710,7 @@ body {
   font-family: var(--font-ui);
   border: none;
   cursor: pointer;
-  transition: background .12s, box-shadow .12s, transform .08s;
+  transition: background calc(.12s * var(--ix)), box-shadow calc(.12s * var(--ix)), transform calc(.08s * var(--ix));
 }
 .k-btn:active { transform: translateY(1px); }
 
@@ -865,7 +878,7 @@ body {
   padding: 8px 4px;
   border-radius: var(--r-md);
   cursor: pointer;
-  transition: background .12s;
+  transition: background calc(.12s * var(--ix));
 }
 .k-wday:hover { background: var(--bg-soft); }
 .k-wday.is-today {
@@ -942,7 +955,7 @@ body {
   height: 100%;
   background: var(--k-grad);
   border-radius: 99px;
-  transition: width .6s cubic-bezier(.25,.8,.25,1);
+  transition: width calc(.6s * var(--ix)) cubic-bezier(.25,.8,.25,1);
 }
 
 /* ── Task table ─────────────────────────────────────────────────────────── */
@@ -965,7 +978,7 @@ body {
 }
 .k-trow {
   border-bottom: 1px dashed var(--rule-soft);
-  transition: background .1s;
+  transition: background calc(.1s * var(--ix));
   cursor: pointer;
 }
 .k-trow:hover { background: var(--surface); }
@@ -1050,7 +1063,7 @@ body {
   border-radius: var(--r-md);
   padding: 14px 14px 12px;
   cursor: pointer;
-  transition: box-shadow .12s, transform .1s;
+  transition: box-shadow calc(.12s * var(--ix)), transform calc(.1s * var(--ix));
 }
 .k-kcard:hover {
   box-shadow: var(--shadow-md);
@@ -1085,7 +1098,7 @@ body {
   border-radius: var(--r-lg);
   padding: 20px;
   cursor: pointer;
-  transition: box-shadow .12s, transform .1s;
+  transition: box-shadow calc(.12s * var(--ix)), transform calc(.1s * var(--ix));
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1111,7 +1124,7 @@ body {
 .k-projcard__progress-fill {
   height: 100%;
   border-radius: 99px;
-  transition: width .5s cubic-bezier(.25,.8,.25,1);
+  transition: width calc(.5s * var(--ix)) cubic-bezier(.25,.8,.25,1);
 }
 
 /* ── Team cards ─────────────────────────────────────────────────────────── */
@@ -1203,7 +1216,7 @@ body {
   font-size: 13.5px;
   color: var(--ink);
   outline: none;
-  transition: border-color .15s, background .15s;
+  transition: border-color calc(.15s * var(--ix)), background calc(.15s * var(--ix));
   font-family: inherit;
 }
 .k-input:focus {

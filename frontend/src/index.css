@@ -8,8 +8,8 @@
 @keyframes slideInR { from{transform:translateX(100%)} to{transform:none} }
 @keyframes pulse    { 0%,100%{opacity:0.5} 50%{opacity:1} }
 
-.anim-fade  { animation:fadeIn   0.18s ease-out; }
-.anim-slide { animation:slideInR 0.22s cubic-bezier(.25,.8,.25,1); }
+.anim-fade  { animation:fadeIn   calc(0.18s * var(--ix)) ease-out; }
+.anim-slide { animation:slideInR calc(0.22s * var(--ix)) cubic-bezier(.25,.8,.25,1); }
 /* padding/margin/border are part of the pattern, not decoration: without them
    an inherited padding or border can render a visible sliver of a region that
    is supposed to be screen-reader-only. The toast live regions rely on this. */

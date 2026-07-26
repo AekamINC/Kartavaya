@@ -56,7 +56,7 @@
     height: 100vh;
     z-index: 50;
     transform: translateX(-100%);
-    transition: transform 0.3s ease;
+    transition: transform calc(0.3s * var(--ix)) ease;
   }
 
   .layout-sidebar.open {
@@ -200,7 +200,7 @@
   .animate-fadeIn,
   .animate-slideInLeft,
   .stagger-item {
-    animation-duration: 0.2s !important;
+    animation-duration: calc(0.2s * var(--ix)) !important;
   }
 
   @media (hover: none) {
@@ -241,9 +241,9 @@
     *,
     *::before,
     *::after {
-      animation-duration: 0.01ms !important;
+      animation-duration: calc(0.01ms * var(--ix)) !important;
       animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
+      transition-duration: calc(0.01ms * var(--ix)) !important;
     }
   }
 }
