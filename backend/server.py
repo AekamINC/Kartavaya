@@ -144,7 +144,41 @@ if _SENTRY_DSN:
         environment=os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "production")),
     )
 
-app = FastAPI(title="Kartavaya API v2", description="Team task management by Aekam Inc")
+# ── Interactive API docs: on everywhere except production ────────────────────
+#
+# /docs and /openapi.json were reachable on production WITH NO CREDENTIAL,
+# serving 116 endpoint paths and 54 data schemas — including the whole
+# /api/admin/* surface, request and response shapes, and every field name.
+#
+# That is not itself a vulnerability: the endpoints behind it still require auth.
+# It is reconnaissance. It hands anyone the complete map of what to attack, which
+# fields exist on a payslip, and which admin routes to try first — for a product
+# holding payroll and bank details.
+#
+# Staging KEEPS them: they are how the API gets exercised by hand, and staging is
+# the environment that exists to be poked at. The switch is an explicit env var
+# rather than a code change, so it can be turned on for an hour to debug
+# production and back off again without a deploy.
+# os.environ.get(k, default) returns "" for a var that is SET BUT EMPTY, not the
+# default — and an empty ENVIRONMENT is easy to end up with in a Railway config.
+# Read naively, "" != "production" and the docs come back on in production. This
+# has to fail CLOSED, so empty is treated as unset.
+def _env(name: str, default: str = "") -> str:
+    return (os.environ.get(name) or "").strip() or default
+
+_ENVIRONMENT = _env("ENVIRONMENT") or _env("RAILWAY_ENVIRONMENT") or "production"
+_EXPOSE_DOCS = _env("EXPOSE_API_DOCS").lower() in ("1", "true", "yes")
+_DOCS_ON = _EXPOSE_DOCS or _ENVIRONMENT != "production"
+
+app = FastAPI(
+    title="Kartavaya API v2",
+    description="Team task management by Aekam Inc",
+    # None removes the route entirely — a 404, not a 401. An authenticated docs
+    # page would still confirm the path exists.
+    docs_url="/docs" if _DOCS_ON else None,
+    redoc_url="/redoc" if _DOCS_ON else None,
+    openapi_url="/openapi.json" if _DOCS_ON else None,
+)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
