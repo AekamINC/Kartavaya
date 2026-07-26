@@ -16,6 +16,7 @@ import { MMKV } from 'react-native-mmkv';
 import { useAuth } from './useAuth';
 import { navigationRef } from '../nav/navigationRef';
 import { apiClient } from '../api/client';
+import { BRAND } from '../theme/tokens';
 
 const storage = new MMKV({ id: 'push_tokens' });
 const DEVICE_ID_KEY = 'push_device_id';
@@ -61,13 +62,19 @@ async function registerForPushNotificationsAsync(): Promise<string | null> {
 
     if (finalStatus !== 'granted') return null;
 
-    // Android requires a notification channel
+    // Android requires a notification channel.
+    //
+    // `lightColor` was '#0082C6' — the brand blue that 00 §9 retired. It is the
+    // notification LED and the accent Android tints the small icon with, and it
+    // already disagreed with app.json's expo-notifications `color: '#05b7aa'`,
+    // so the same notification arrived blue-lit and teal-iconed. Taking it from
+    // BRAND means the two cannot drift again.
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
         name: 'Default',
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#0082C6',
+        lightColor: BRAND.teal,
       });
     }
 

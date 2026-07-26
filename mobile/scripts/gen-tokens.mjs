@@ -126,8 +126,20 @@ function resolve(all, value, depth = 0) {
   return resolve(all, all[m[1]], depth + 1);
 }
 
-/** RN understands #hex, rgb() and rgba(). Not color-mix, not gradients, not lengths. */
-const isColour = (v) => /^#[0-9a-f]{3,8}$/i.test(v) || /^rgba?\(/i.test(v);
+/**
+ * RN understands #hex, rgb() and rgba(). Not color-mix, not gradients, not lengths.
+ *
+ * The `var(` test is not redundant with resolve(). resolve() only follows a value
+ * that is ENTIRELY `var(--x)`; a var() nested inside a function is left alone.
+ * `--side-bg: rgb(var(--side-ink))` — the channel-triple pattern, where the token
+ * holds `28 26 20` rather than a colour — therefore reached this filter with its
+ * var() intact, matched `^rgba?\(`, and was emitted as
+ * `sideBg: 'rgb(var(--side-ink))'`. React Native cannot parse that: the style is
+ * dropped and the element renders transparent, silently. It is not a colour, so
+ * it is filtered out here alongside color-mix(), rather than shipped as one.
+ */
+const isColour = (v) =>
+  !/\bvar\(/i.test(v) && (/^#[0-9a-f]{3,8}$/i.test(v) || /^rgba?\(/i.test(v));
 
 function palette(raw) {
   const out = {};
