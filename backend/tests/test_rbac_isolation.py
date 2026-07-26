@@ -17,6 +17,8 @@ data?".
 
 import pytest
 
+from middleware.role_tiers import SUPPORT_ROLES
+
 ORG_A = "00000000-0000-0000-0000-00000000000a"
 FOREIGN_CLIENT = "c0000000-0000-0000-0000-0000000000ff"
 FOREIGN_SEQ = "50000000-0000-0000-0000-0000000000ff"
@@ -368,3 +370,73 @@ async def test_require_org_role_probes_for_platform_owner_too(mock_pool):
     )
     assert "platform_admin" in seen["roles"], "legacy rows must keep working"
     assert set(seen["roles"]) == set(GOD_MODE_ROLES)
+
+
+# ── platform_support: the approval gate that had no code behind it ──
+
+
+class _Req:
+    """Minimal stand-in for a Request carrying only an X-Org-Id header."""
+
+    def __init__(self, org_id):
+        self.headers = {"x-org-id": org_id}
+
+        class _S:
+            pass
+
+        self.state = _S()
+
+
+@pytest.mark.parametrize("role", list(SUPPORT_ROLES))
+async def test_platform_support_cannot_resolve_an_arbitrary_org(mock_pool, role):
+    """RBAC-SPEC.md:19 — support is "Zero by default. Needs org-admin approval…
+    Full audit trail in platform_support_sessions". That table does not exist,
+    so there is no approval to consult and the honest answer is no org.
+
+    Before this, `get_org_id` tested membership against ALL_PLATFORM_ROLES, which
+    includes platform_support — so support put any org's UUID in a header and
+    received that org's context. It is upstream of every route guard, so it
+    reached every route that takes get_org_id without a module gate.
+    """
+    from fastapi import HTTPException
+
+    from middleware.org_resolver import get_org_id
+
+    async def _fetchval(sql, *args):
+        if "org_id=$2::uuid" in sql:
+            return None                      # not a member of the org
+        if "org_id IS NULL" in sql:
+            allowed = list(args[1]) if len(args) > 1 else []
+            return role if role in allowed else None
+        return None
+
+    mock_pool.fetchval.side_effect = _fetchval
+
+    with pytest.raises(HTTPException) as exc:
+        await get_org_id(_Req(ORG_A), user={"user_id": "user_support"})
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize("role", ["account_finance", "account_manager", "srijan_admin"])
+async def test_the_other_cross_org_roles_still_resolve(mock_pool, role):
+    """The narrowing must be support-only. account_finance and account_manager
+    run cross-org billing through this very header — `/v1/subscription/admin/*`
+    resolves the org this way — and srijan_admin configures AI per org. Blocking
+    them would break billing, which is not what the spec asks for."""
+    from middleware.org_resolver import get_org_id
+
+    async def _fetchval(sql, *args):
+        if "org_id=$2::uuid" in sql:
+            return None
+        if "org_id IS NULL" in sql:
+            allowed = list(args[1]) if len(args) > 1 else []
+            return role if role in allowed else None
+        return None
+
+    async def _fetchrow(sql, *args):
+        return {"id": ORG_A}
+
+    mock_pool.fetchval.side_effect = _fetchval
+    mock_pool.fetchrow.side_effect = _fetchrow
+
+    assert await get_org_id(_Req(ORG_A), user={"user_id": "user_x"}) == ORG_A
