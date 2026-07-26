@@ -239,3 +239,57 @@
 [data-sidebar-bg="accent"] .k-sidebar__item.is-active {
   background: rgba(255,255,255,.22); color: #fff;
 }
+
+/* ── Auth shell (12-auth-onboarding.md §1) ────────────────────────────────
+   The sign-in flow was the last screen on the old cold-blue system, with
+   #f4fafd / #d0e8f5 / #0a1628 baked in as literals — so the first screen a
+   user ever saw could not follow their theme. */
+.au {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.06fr) minmax(0, .94fr);
+}
+.au__brand {
+  position: relative; overflow: hidden; padding: 44px;
+  display: flex; flex-direction: column; justify-content: space-between;
+  background: rgb(var(--side-ink)); color: var(--side-fg);
+}
+.au__mesh {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(48% 42% at 22% 18%, color-mix(in srgb, var(--primary-vivid) 26%, transparent), transparent 70%),
+    radial-gradient(42% 38% at 78% 74%, color-mix(in srgb, var(--tertiary) 20%, transparent), transparent 72%);
+}
+.au__title {
+  font-family: var(--font-display); font-size: 30px; font-weight: 500;
+  line-height: 1.25; margin: 0 0 12px; letter-spacing: -.02em; color: #fff;
+}
+.au__sub { font-size: 13px; line-height: 1.7; color: var(--side-fg); opacity: .72; margin: 0; }
+.au__features {
+  position: relative; list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.au__features li { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--side-fg); opacity: .72; }
+.au__dash { width: 20px; height: 2px; border-radius: 2px; background: var(--primary-vivid); flex-shrink: 0; }
+.au__form {
+  display: flex; align-items: center; justify-content: center;
+  padding: 44px; background: var(--bg);
+}
+.au__box { width: 100%; max-width: 392px; }
+.au__foot {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding-top: 18px; margin-top: 18px;
+  border-top: 1px solid var(--outline-variant);
+  font-size: 9px; letter-spacing: .25em; text-transform: uppercase;
+  color: var(--on-surface-3); font-weight: 700;
+}
+.au__dot { width: 4px; height: 4px; border-radius: 50%; background: var(--primary); }
+.au__aekam { color: var(--primary); font-weight: 800; }
+
+/* Hidden, not stacked: a tall decorative panel above the form on a phone means
+   scrolling past marketing to reach a password field. */
+@media (max-width: 900px) {
+  .au { grid-template-columns: 1fr; }
+  .au__brand { display: none; }
+  .au__form { padding: 28px 20px; }
+}

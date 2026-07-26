@@ -1,7 +1,7 @@
 ﻿import React, { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../components/ui/toast';
-import AuthShell, { authInput, authLabel, authBtn } from '../components/layout/AuthShell';
+import AuthShell, { authInput, authLabel, authBtn, authFieldErr } from '../components/layout/AuthShell';
 import { K } from '../lib/brand';
 import { apiLogin, apiAcceptInvite, apiForgotPassword, apiResetPassword } from '../lib/auth';
 
@@ -19,7 +19,10 @@ function EyeIcon({ open }) {
   );
 }
 
-function PasswordInput({ name, value, onChange, placeholder, required = true }) {
+// ...rest so id and aria-* reach the input. Without it the component silently
+// swallowed anything not in its parameter list, which is how a field ends up
+// with a visible error message that no screen reader ever announces.
+function PasswordInput({ name, value, onChange, placeholder, required = true, ...rest }) {
   const [show, setShow] = useState(false);
   return (
     <div style={{ position: 'relative' }}>
@@ -31,6 +34,7 @@ function PasswordInput({ name, value, onChange, placeholder, required = true }) 
         required={required}
         placeholder={placeholder}
         style={{ ...authInput, paddingRight: 44 }}
+        {...rest}
       />
       <button
         type="button"
@@ -111,18 +115,31 @@ export function AcceptInvitePage() {
   const token           = searchParams.get('token') || '';
   const [form, setForm] = useState({ name: '', password: '', confirm: '' });
   const [loading, setLoading] = useState(false);
-  const set = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  const [fieldErr, setFieldErr] = useState({});
+  // Clear a field's error the moment it is edited. Leaving a stale "too short"
+  // under a field the user has already fixed is worse than showing nothing.
+  const set = (e) => {
+    const { name, value } = e.target;
+    setForm((f) => ({ ...f, [name]: value }));
+    setFieldErr(prev => (prev[name] ? { ...prev, [name]: null } : prev));
+  };
 
   if (!token) return (
     <AuthShell title="Invalid link" sub="This invite link is missing a token.">
-      <p style={{ color: '#e74c3c', fontSize: 14 }}>No invite token found. Please ask your admin for a new link.</p>
+      <p style={{ color: 'var(--danger)', fontSize: 14 }}>No invite token found. Please ask your admin for a new link.</p>
     </AuthShell>
   );
 
   const submit = async (e) => {
     e.preventDefault();
-    if (form.password !== form.confirm) { pushToast({ type: 'error', title: "Passwords don't match" }); return; }
-    if (form.password.length < 8) { pushToast({ type: 'error', title: 'Password too short', message: 'Minimum 8 characters.' }); return; }
+    // Both are client-side checks about a field that is on screen. A toast in
+    // the corner is the wrong place for them: it reports the problem somewhere
+    // other than where the problem is, and then disappears on a timer.
+    const errs = {};
+    if (form.password.length < 8) errs.password = 'At least 8 characters.';
+    if (form.password !== form.confirm) errs.confirm = 'Passwords don’t match.';
+    if (Object.keys(errs).length) { setFieldErr(errs); return; }
+    setFieldErr({});
     setLoading(true);
     try {
       const data = await apiAcceptInvite(token, form.name, form.password);
@@ -157,11 +174,19 @@ export function AcceptInvitePage() {
         </div>
         <div style={{ marginBottom: 14 }}>
           <label style={authLabel}>Password</label>
-          <PasswordInput name="password" value={form.password} onChange={set} placeholder="At least 8 characters" />
+          <PasswordInput id="password" name="password" value={form.password} onChange={set}
+            placeholder="At least 8 characters"
+            aria-invalid={!!fieldErr.password}
+            aria-describedby={fieldErr.password ? 'err-password' : undefined} />
+          {fieldErr.password && <div id="err-password" style={authFieldErr}>{fieldErr.password}</div>}
         </div>
         <div style={{ marginBottom: 20 }}>
           <label style={authLabel}>Confirm password</label>
-          <PasswordInput name="confirm" value={form.confirm} onChange={set} placeholder="••••••••••" />
+          <PasswordInput id="confirm" name="confirm" value={form.confirm} onChange={set}
+            placeholder="••••••••••"
+            aria-invalid={!!fieldErr.confirm}
+            aria-describedby={fieldErr.confirm ? 'err-confirm' : undefined} />
+          {fieldErr.confirm && <div id="err-confirm" style={authFieldErr}>{fieldErr.confirm}</div>}
         </div>
         <button type="submit" disabled={loading} style={{ ...authBtn, opacity: loading ? 0.7 : 1 }}>
           {loading ? 'Activating…' : 'Activate Account'}
@@ -244,11 +269,16 @@ export function ResetPasswordPage() {
   const token = searchParams.get('token') || '';
   const [form, setForm]   = useState({ password: '', confirm: '' });
   const [loading, setLoading] = useState(false);
-  const set = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
+  const [fieldErr, setFieldErr] = useState({});
+  const set = (e) => {
+    const { name, value } = e.target;
+    setForm(f => ({ ...f, [name]: value }));
+    setFieldErr(prev => (prev[name] ? { ...prev, [name]: null } : prev));
+  };
 
   if (!token) return (
     <AuthShell title="Invalid link" sub="This reset link is missing a token.">
-      <p style={{ color: '#e74c3c', fontSize: 14, marginBottom: 16 }}>No reset token found.</p>
+      <p style={{ color: 'var(--danger)', fontSize: 14, marginBottom: 16 }}>No reset token found.</p>
       <span onClick={() => navigate('/forgot-password')} style={{ color: K.blue, fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
         Request a new reset link →
       </span>
@@ -257,8 +287,14 @@ export function ResetPasswordPage() {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (form.password !== form.confirm) { pushToast({ type: 'error', title: "Passwords don't match" }); return; }
-    if (form.password.length < 8) { pushToast({ type: 'error', title: 'Password too short', message: 'Minimum 8 characters.' }); return; }
+    // Both are client-side checks about a field that is on screen. A toast in
+    // the corner is the wrong place for them: it reports the problem somewhere
+    // other than where the problem is, and then disappears on a timer.
+    const errs = {};
+    if (form.password.length < 8) errs.password = 'At least 8 characters.';
+    if (form.password !== form.confirm) errs.confirm = 'Passwords don’t match.';
+    if (Object.keys(errs).length) { setFieldErr(errs); return; }
+    setFieldErr({});
     setLoading(true);
     try {
       const data = await apiResetPassword(token, form.password);
@@ -283,11 +319,19 @@ export function ResetPasswordPage() {
       <form onSubmit={submit}>
         <div style={{ marginBottom: 14 }}>
           <label style={authLabel}>New password</label>
-          <PasswordInput name="password" value={form.password} onChange={set} placeholder="At least 8 characters" />
+          <PasswordInput id="password" name="password" value={form.password} onChange={set}
+            placeholder="At least 8 characters"
+            aria-invalid={!!fieldErr.password}
+            aria-describedby={fieldErr.password ? 'err-password' : undefined} />
+          {fieldErr.password && <div id="err-password" style={authFieldErr}>{fieldErr.password}</div>}
         </div>
         <div style={{ marginBottom: 20 }}>
           <label style={authLabel}>Confirm password</label>
-          <PasswordInput name="confirm" value={form.confirm} onChange={set} placeholder="••••••••••" />
+          <PasswordInput id="confirm" name="confirm" value={form.confirm} onChange={set}
+            placeholder="••••••••••"
+            aria-invalid={!!fieldErr.confirm}
+            aria-describedby={fieldErr.confirm ? 'err-confirm' : undefined} />
+          {fieldErr.confirm && <div id="err-confirm" style={authFieldErr}>{fieldErr.confirm}</div>}
         </div>
         <button type="submit" disabled={loading} style={{ ...authBtn, opacity: loading ? 0.7 : 1 }}>
           {loading ? 'Updating…' : 'Update password'}
