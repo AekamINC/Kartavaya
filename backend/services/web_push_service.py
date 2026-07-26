@@ -48,8 +48,25 @@ async def save_subscription(pool, user_id: str, subscription: dict) -> None:
     )
 
 
-async def remove_subscription(pool, endpoint: str) -> None:
-    await pool.execute("DELETE FROM push_web_subscriptions WHERE endpoint=$1", endpoint)
+async def remove_subscription(pool, endpoint: str, user_id: str | None = None) -> None:
+    """Delete a web-push subscription, scoped to its owner when one is known.
+
+    `user_id` is optional ONLY so that an internal caller pruning a subscription
+    the push service itself rejected (410 Gone) can still do so without a user
+    in hand. Every caller that acts on a request from a browser MUST pass it.
+
+    Without the scope this deletes by endpoint alone, and the endpoint arrives in
+    a request body: any authenticated user could unsubscribe any other user's
+    browser by supplying their endpoint, silently stopping their notifications
+    with no error on either side.
+    """
+    if user_id is None:
+        await pool.execute("DELETE FROM push_web_subscriptions WHERE endpoint=$1", endpoint)
+        return
+    await pool.execute(
+        "DELETE FROM push_web_subscriptions WHERE endpoint=$1 AND user_id=$2",
+        endpoint, user_id,
+    )
 
 
 async def send_web_push(pool, *, user_id: str, title: str, body: str, url: str = "/") -> None:
@@ -97,7 +114,9 @@ async def send_web_push(pool, *, user_id: str, title: str, body: str, url: str =
             logger.warning("web push error for %s: %s", user_id, exc)
 
     for ep in stale:
-        await remove_subscription(pool, ep)
+        # These rows were just read back under this same user_id, so scoping the
+        # delete costs nothing and keeps the unscoped branch unreachable here.
+        await remove_subscription(pool, ep, user_id)
 
 
 async def fan_out_web_push(

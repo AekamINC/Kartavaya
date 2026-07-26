@@ -249,6 +249,48 @@ def normalise_window(start, end, *, current=None) -> tuple[str, str]:
     return ok_start, ok_end
 
 
+#: The window stored for "quiet hours are switched OFF". Any equal pair means
+#: off (see `_in_quiet_hours`); this is the one written deliberately.
+WINDOW_OFF = ("00:00", "00:00")
+
+
+def dnd_enabled(quiet_start, quiet_end) -> bool:
+    """Is a quiet-hours window actually in force?
+
+    The designed control (`09-customization.md`, and `SetCustomize.jsx`'s
+    `SSwitch on={p.dnd}`) is a BOOLEAN switch above the two time fields, and
+    `21-notifications-inbox.md`'s `inDND()` returns early on `!prefs.dnd`. The
+    `notification_prefs` table has no such column — only `quiet_start` and
+    `quiet_end` — so without this the designed switch has nothing to bind to and
+    a frontend would have to invent local state for it.
+
+    No migration is needed to represent it, because a zero-length window already
+    means "no quiet hours" everywhere in this module. `dnd` is therefore derived,
+    not stored: equal (or unparseable) bounds are off, anything else is on.
+    """
+    s, e = _parse_hhmm(quiet_start), _parse_hhmm(quiet_end)
+    return s is not None and e is not None and s != e
+
+
+def encode_window(dnd: bool, start, end, *, current=None) -> tuple[str, str]:
+    """The (quiet_start, quiet_end) to store for a given `dnd` switch position.
+
+    Switching DND off must not discard the user's window — they will switch it
+    back on and expect their hours to still be there. But there is nowhere to
+    keep it, so an off switch writes WINDOW_OFF and the times return to the
+    default next time. Stated here rather than discovered later; a `dnd` column
+    is the real fix and belongs in a migration, not in application code.
+    """
+    if not dnd:
+        return WINDOW_OFF
+    s, e = normalise_window(start, end, current=current)
+    if not dnd_enabled(s, e):
+        # "On" with a zero-length window is a contradiction: honouring it
+        # literally would silence nothing while the UI shows DND active.
+        return DEFAULT_QUIET_START, DEFAULT_QUIET_END
+    return s, e
+
+
 # ── The preference gate, usable without sending ──────────────────────────────
 
 async def prefs_allow(pool, user_id: str, kind: str, *, is_mine: bool = True) -> bool:

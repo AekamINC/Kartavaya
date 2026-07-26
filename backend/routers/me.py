@@ -109,6 +109,18 @@ def _missing_table(exc: Exception) -> bool:
     return isinstance(exc, asyncpg.exceptions.UndefinedTableError)
 
 
+def _already_open(exc: Exception) -> bool:
+    """Did the one-open-request-per-kind unique index reject this INSERT?
+
+    PROPOSED_067 puts a partial unique index on (user_id, kind) WHERE status IN
+    ('pending','processing'). The read-then-insert above is not atomic, so two
+    near-simultaneous clicks both see no existing row and both insert; the index
+    correctly rejects the second. Without this the loser of that race gets a 500
+    for doing exactly what the endpoint documents as safe.
+    """
+    return isinstance(exc, asyncpg.exceptions.UniqueViolationError)
+
+
 def _pending_migration() -> HTTPException:
     """503, not 500.
 
@@ -322,6 +334,17 @@ async def request_export(request: Request, user=Depends(require_user)):
     except Exception as exc:
         if _missing_table(exc):
             raise _pending_migration()
+        if _already_open(exc):
+            # Lost the double-click race. The user's request IS recorded — by
+            # the other insert — so report that rather than an error.
+            return {
+                "request_id": None,
+                "status": "pending",
+                "requested_at": None,
+                "already_open": True,
+                "automated_delivery": False,
+                "note": "You already have an export request in progress.",
+            }
         raise
 
     audit("me.export_requested", request, user_id=uid,
@@ -424,6 +447,17 @@ async def request_deletion(
     except Exception as exc:
         if _missing_table(exc):
             raise _pending_migration()
+        if _already_open(exc):
+            # Lost the double-click race; the other insert recorded it.
+            return {
+                "request_id": None,
+                "status": "pending",
+                "requested_at": None,
+                "scheduled_for": None,
+                "already_open": True,
+                "cancellable": True,
+                "note": "You already have a deletion request pending.",
+            }
         raise
 
     audit("me.deletion_requested", request, user_id=uid,

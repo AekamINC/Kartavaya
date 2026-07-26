@@ -798,36 +798,99 @@ async def unregister_push_token(device_id:str,pool=Depends(get_db),user=Depends(
 
 # ── Mobile: notification prefs ────────────────────────────────────────────────
 
-DEFAULT_PREFS = {
-    "mention":          "always",
-    "approval_request": "always",
-    "approved":         "always",
-    "rejected":         "always",
-    "assigned":         "always",
-    "comment":          "mine_only",
-    "status_changed":   "project",
-    "done":             "project",
-    "created":          "off",
-}
+# The vocabulary lives in push_service, which is what actually enforces it.
+# This module used to carry a byte-identical copy, which had already drifted:
+# push_service gained a `reminder` kind that this copy did not have, so the
+# switch was enforced on delivery and invisible in the UI. One definition.
+from services.push_service import (        # noqa: E402
+    DEFAULT_PREFS,
+    DEFAULT_QUIET_START,
+    DEFAULT_QUIET_END,
+    dnd_enabled,
+    encode_window,
+    normalise_prefs,
+)
 
 @api_router.get("/me/notification_prefs")
 async def get_notification_prefs(pool=Depends(get_db),user=Depends(require_user)):
     """Return the authenticated user's notification preferences merged with defaults."""
     row = await pool.fetchrow("SELECT prefs, quiet_start, quiet_end FROM notification_prefs WHERE user_id=$1", user["user_id"])
     if not row:
-        return {"prefs": DEFAULT_PREFS, "quiet_start": "22:00", "quiet_end": "07:00"}
+        return {
+            "prefs": DEFAULT_PREFS,
+            "quiet_start": DEFAULT_QUIET_START,
+            "quiet_end": DEFAULT_QUIET_END,
+            "dnd": dnd_enabled(DEFAULT_QUIET_START, DEFAULT_QUIET_END),
+        }
     import json as _json
     prefs = row["prefs"] if isinstance(row["prefs"], dict) else _json.loads(row["prefs"] or "{}")
-    merged = {**DEFAULT_PREFS, **prefs}
-    return {"prefs": merged, "quiet_start": row["quiet_start"], "quiet_end": row["quiet_end"]}
+    # Drop stored junk before merging, so the UI is never handed a mode it has
+    # no switch position for. Same normalisation the delivery side applies.
+    merged = {**DEFAULT_PREFS, **normalise_prefs(prefs)}
+    q_start = row["quiet_start"] or DEFAULT_QUIET_START
+    q_end   = row["quiet_end"] or DEFAULT_QUIET_END
+    on = dnd_enabled(q_start, q_end)
+    return {
+        "prefs": merged,
+        # Kept for the mobile client, which reads these two names today.
+        "quiet_start": q_start,
+        "quiet_end": q_end,
+        # `dnd` is what the designed switch binds to (09-customization.md,
+        # SetCustomize.jsx). Derived, not stored — see push_service.dnd_enabled.
+        # When off, the times are the defaults to show in the disabled fields
+        # rather than the 00:00/00:00 that encodes "off", which would read as a
+        # real window the user never chose.
+        "dnd": on,
+        "dnd_from": q_start if on else DEFAULT_QUIET_START,
+        "dnd_to":   q_end if on else DEFAULT_QUIET_END,
+    }
 
 @api_router.put("/me/notification_prefs")
 async def set_notification_prefs(body:dict,pool=Depends(get_db),user=Depends(require_user)):
-    """Save notification preferences and quiet-hours window for the authenticated user."""
+    """Save notification preferences and quiet-hours window for the authenticated user.
+
+    Two things this used to get wrong.
+
+    It stored `body["prefs"]` verbatim — any key, any value, any depth, straight
+    into jsonb — so a mode could become "Off" or a nested object and every later
+    read had to guess. `normalise_prefs` keeps known kinds with valid modes and
+    drops the rest, rather than 400ing a client that is one version ahead.
+
+    And it read `body.get("quiet_start", "22:00")`, so a request that OMITTED the
+    field did not leave it alone, it reset it to the default. A client sending
+    only `{"prefs": {...}}` to flip one switch silently overwrote a customised
+    overnight window and reported success. Passing the stored pair as `current`
+    makes an omitted field mean "unchanged", which is what callers already
+    assume it means.
+    """
     import json as _json
-    prefs       = body.get("prefs", {})
-    quiet_start = body.get("quiet_start", "22:00")
-    quiet_end   = body.get("quiet_end",   "07:00")
+    current = await pool.fetchrow(
+        "SELECT quiet_start, quiet_end FROM notification_prefs WHERE user_id=$1",
+        user["user_id"],
+    )
+    # NULL columns must read as the defaults, not as a zero-length window —
+    # otherwise a row with NULL quiet hours would be taken as "DND off" and a
+    # save that never mentioned DND would silently switch it off.
+    cur_pair = (
+        (current["quiet_start"] or DEFAULT_QUIET_START,
+         current["quiet_end"] or DEFAULT_QUIET_END)
+        if current else None
+    )
+
+    # `dnd` is the designed switch; `dnd_from`/`dnd_to` are its fields. The older
+    # `quiet_start`/`quiet_end` names stay accepted so the mobile client keeps
+    # working. Omitting `dnd` entirely means "leave the switch where it is".
+    start = body.get("dnd_from", body.get("quiet_start"))
+    end   = body.get("dnd_to",   body.get("quiet_end"))
+    if "dnd" in body:
+        quiet_start, quiet_end = encode_window(
+            bool(body["dnd"]), start, end, current=cur_pair,
+        )
+    else:
+        quiet_start, quiet_end = encode_window(
+            dnd_enabled(*cur_pair) if cur_pair else True, start, end, current=cur_pair,
+        )
+    prefs = normalise_prefs(body.get("prefs", {}))
     await pool.execute("""
         INSERT INTO notification_prefs (user_id, prefs, quiet_start, quiet_end)
         VALUES ($1, $2::jsonb, $3, $4)
@@ -2801,10 +2864,17 @@ async def subscribe_push(payload: PushSubscriptionIn, user=Depends(require_user)
 
 @api_router.post("/push/unsubscribe")
 async def unsubscribe_push(payload: PushSubscriptionIn, user=Depends(require_user)):
+    """Unsubscribe one of the CALLER'S OWN browser push registrations.
+
+    The endpoint arrives in the request body, so it must be scoped to the caller.
+    Unscoped, this deleted by endpoint alone and any authenticated user could
+    silence any other user's browser notifications by supplying their endpoint —
+    the victim would see no error, their notifications would just stop.
+    """
     pool = await get_pool()
     endpoint = (payload.model_dump() or {}).get("endpoint", "")
     if endpoint:
-        await wp_remove_subscription(pool, endpoint)
+        await wp_remove_subscription(pool, endpoint, user["user_id"])
     return {"ok": True}
 
 

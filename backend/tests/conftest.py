@@ -148,6 +148,33 @@ def inject_pool(mock_pool):
     db._pool = original
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limits():
+    """Clear both rate limiters before every test.
+
+    `server.global_write_rate_limit` counts POST/PUT/PATCH/DELETE per client IP
+    in a module-level dict, 120 per wall-clock minute, and nothing resets it
+    between tests. Every test shares one IP under ASGITransport, so the whole
+    suite draws on a single budget: pass/fail depended on how many writes the
+    run happened to make in the same minute. Adding tests anywhere pushed
+    unrelated files over the edge and the 429 surfaced in whichever test ran
+    last, which is a bad afternoon for whoever has to find it.
+
+    Cleared per test so a test's outcome depends only on that test.
+    """
+    import server
+    server._write_rate_buckets.clear()
+    try:
+        limiter = server.app.state.limiter
+        limiter.reset()
+    except Exception:
+        # slowapi's in-memory storage exposes reset(); a backend that does not
+        # is not worth failing a test over.
+        pass
+    yield
+    server._write_rate_buckets.clear()
+
+
 # ── FastAPI app + ASGI client ─────────────────────────────────────────────────
 
 @pytest.fixture(scope="session")
