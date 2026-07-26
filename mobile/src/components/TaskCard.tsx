@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native
 import { Ionicons } from '@expo/vector-icons';
 import { format, isToday, isPast, isTomorrow } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
-import { PRIORITY_COLOR, projectColor } from '../theme/tokens';
+import { PRIORITY_COLOR, projectColor, AVATAR_COLORS } from '../theme/tokens';
 import { a11yButton } from './a11y';
 import type { Task } from '../api/types';
 
@@ -102,7 +102,7 @@ function TaskCardInner({ task, onPress, showProject = true, syncing = false }: T
 
         {(task as any).has_mention && (
           <View style={[s.chip, {
-            backgroundColor: IS_ANDROID ? t.secondaryContainer : 'rgba(0,130,198,0.14)',
+            backgroundColor: IS_ANDROID ? t.secondaryContainer : 'rgba(4,131,122,0.14)',
             paddingHorizontal: IS_ANDROID ? 8 : 5,
           }]}>
             <Ionicons name="at" size={12} color={IS_ANDROID ? t.onSecondaryContainer : '#0066A3'} />
@@ -134,7 +134,6 @@ function TaskCardInner({ task, onPress, showProject = true, syncing = false }: T
   );
 }
 
-const AVATAR_COLORS = ['#0082c6','#05b7aa','#8b5cf6','#f59e0b','#ec4899','#6366f1','#10b981'];
 
 function areEqual(prev: TaskCardProps, next: TaskCardProps): boolean {
   const p = prev.task; const n = next.task;

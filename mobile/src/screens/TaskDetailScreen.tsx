@@ -20,7 +20,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useAuth } from '../hooks/useAuth';
 import { tasksApi } from '../api/tasks';
 import { projectsApi } from '../api/projects';
-import { PRIORITY_COLOR } from '../theme/tokens';
+import { PRIORITY_COLOR, BRAND_GRADIENT_2 } from '../theme/tokens';
 import type { Task, Comment, TeamMember, Priority, Subtask, Attachment } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
 
@@ -675,7 +675,7 @@ export default function TaskDetailScreen() {
               }}
               style={[s.sendBtn, { opacity: commentText.trim() ? 1 : 0.4 }]}
             >
-              <LinearGradient colors={['#0082c6', '#05b7aa']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.sendGrad}>
+              <LinearGradient colors={BRAND_GRADIENT_2} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.sendGrad}>
                 <Ionicons name="send" size={14} color="#fff" />
               </LinearGradient>
             </TouchableOpacity>

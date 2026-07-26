@@ -14,6 +14,7 @@ import { apiLogout, getCachedUser } from '../api/auth';
 import { useTheme } from '../theme/ThemeProvider';
 import type { Task, Comment } from '../api/types';
 import type { User } from '../api/types';
+import { BRAND_GRADIENT_2 } from '../theme/tokens';
 
 interface Props {
   onLogout?: () => void;
@@ -96,7 +97,7 @@ export default function ClientPortalScreen({ onLogout }: Props) {
           multiline
         />
         <TouchableOpacity onPress={postComment}>
-          <LinearGradient colors={['#0082c6', '#05b7aa']} style={s.sendBtn}>
+          <LinearGradient colors={BRAND_GRADIENT_2} style={s.sendBtn}>
             <Text style={{ color: '#fff', fontWeight: '800' }}>Post</Text>
           </LinearGradient>
         </TouchableOpacity>
@@ -107,7 +108,7 @@ export default function ClientPortalScreen({ onLogout }: Props) {
   return (
     <View style={[s.root, { backgroundColor: t.bg }]}>
       <View style={[s.header, { backgroundColor: t.surface, borderBottomColor: t.outline }]}>
-        <LinearGradient colors={['#0082c6', '#05b7aa']} style={s.logo}>
+        <LinearGradient colors={BRAND_GRADIENT_2} style={s.logo}>
           <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>◆</Text>
         </LinearGradient>
         <View style={{ flex: 1 }}>

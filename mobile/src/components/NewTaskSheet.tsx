@@ -21,6 +21,7 @@ import { enqueueMutation } from '../offline/mutationQueue';
 import NetInfo from '@react-native-community/netinfo';
 import { templatesApi } from '../api/templates';
 import type { TeamMember, TaskTemplate } from '../api/types';
+import { AVATAR_COLORS } from '../theme/tokens';
 
 const MAX_ATTACHMENTS = 5;
 const MAX_MB = 5;
@@ -33,7 +34,7 @@ interface Props {
 const PRIORITY = [
   { key: 'urgent', label: 'Urgent', color: '#C0392B' },
   { key: 'high',   label: 'High',   color: '#B06A00' },
-  { key: 'medium', label: 'Medium', color: '#0082c6' },
+  { key: 'medium', label: 'Medium', color: '#3E5C8A' },
   { key: 'low',    label: 'Low',    color: '#7D8BA6' },
 ] as const;
 
@@ -326,7 +327,7 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
                     if (!name || !uid) return null;
                     const checked = assignees.includes(uid);
                     const initials = name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase();
-                    const avatarColors = ['#0082c6','#05b7aa','#8b5cf6','#ec4899','#f59e0b','#10b981','#6366f1'];
+                    const avatarColors = AVATAR_COLORS;
                     const bg = avatarColors[i % avatarColors.length];
                     return (
                       <TouchableOpacity

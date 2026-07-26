@@ -19,14 +19,15 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useNotifications } from '../context/NotificationContext';
 import { navigationRef } from '../nav/navigationRef';
 import type { Notification, NotifKind } from '../api/types';
+import { AVATAR_COLORS } from '../theme/tokens';
 
 // ── Tone → icon + colours (mirrors M_NOTIF_TONE_STYLES from mobile-shared.jsx) ──
 const TONE: Record<string, { icon: string; fg: string; bg: string }> = {
-  mention:  { icon: 'at',                   fg: '#0082c6', bg: 'rgba(0,130,198,0.16)' },
+  mention:  { icon: 'at',                   fg: '#04837A', bg: 'rgba(4,131,122,0.16)' },
   approval: { icon: 'shield-checkmark',      fg: '#B06A00', bg: 'rgba(255,159,10,0.18)' },
   assigned: { icon: 'person',               fg: '#6750A4', bg: 'rgba(167,139,250,0.18)' },
   comment:  { icon: 'chatbubble',           fg: '#0A7A6E', bg: 'rgba(5,183,170,0.16)' },
-  status:   { icon: 'layers',               fg: '#0082c6', bg: 'rgba(0,130,198,0.14)' },
+  status:   { icon: 'layers',               fg: '#3E5C8A', bg: 'rgba(62,92,138,0.14)' },
   success:  { icon: 'checkmark-circle',     fg: '#0A7A6E', bg: 'rgba(5,183,170,0.18)' },
   danger:   { icon: 'flag',                 fg: '#C0392B', bg: 'rgba(192,57,43,0.14)' },
   neutral:  { icon: 'layers',               fg: '#6E7B91', bg: 'rgba(60,60,67,0.10)' },
@@ -44,7 +45,9 @@ const KIND_TONE: Record<NotifKind, string> = {
   created:          'neutral',
 };
 
-const AVATAR_COLORS = ['#0082c6','#05b7aa','#8b5cf6','#ec4899','#f59e0b','#10b981','#6366f1'];
+// AVATAR_COLORS now comes from theme/tokens — this file kept a private copy that
+// led with the retired #0082c6, so the same user had two different avatar
+// colours depending on which surface rendered them.
 const AUTO_DISMISS_MS = 5000;
 
 function initials(name: string) {

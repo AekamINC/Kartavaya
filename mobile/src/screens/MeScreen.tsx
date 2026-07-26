@@ -149,7 +149,7 @@ export default function MeScreen() {
 
   const displayName = user?.name ?? user?.full_name ?? '—';
   const initials    = user ? userInitials(user.name ?? user.full_name ?? '?') : '?';
-  const bgColor     = user ? avatarColor(user.user_id) : '#0082c6';
+  const bgColor     = user ? avatarColor(user.user_id) : '#04837A';
 
   // Badge colors for notif kind icons
   function badgeBg(tone: string): string {

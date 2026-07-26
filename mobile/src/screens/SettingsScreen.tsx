@@ -164,7 +164,7 @@ export default function SettingsScreen() {
   ];
 
   const initials = user ? userInitials(user.name ?? user.full_name ?? '?') : '?';
-  const bgColor  = user ? avatarColor(user.user_id) : '#0082c6';
+  const bgColor  = user ? avatarColor(user.user_id) : '#04837A';
 
   return (
     <ScrollView style={[s.root, { backgroundColor: t.bg }]} contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>

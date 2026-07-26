@@ -3,14 +3,28 @@ import type { GeneratedTokenName } from './palette.generated';
 
 export type ColorScheme = 'light' | 'dark';
 
+/**
+ * Brand gradients. #0082c6 and #03a1b6 were the retired brand blue and its
+ * midpoint (00 §9); the ramp is the deep → mid → vivid teal stops, matching
+ * --k-grad on the web.
+ *
+ * Both arities exist because LinearGradient's `colors` prop is tuple-typed and
+ * eleven call sites wanted two stops rather than three. Without a canonical
+ * two-stop pair each of them wrote `['#0082c6', '#05b7aa']` by hand, which is
+ * how the retired blue outlived its own removal.
+ */
 const brand = {
-  // #0082c6 and #03a1b6 were the retired brand blue and its midpoint (00 §9).
-  // The ramp is now the deep → mid → vivid teal stops, matching --k-grad.
-  gradient: ['#026B64', '#04837A', '#05b7aa'] as string[],
-  teal:     '#05b7aa',
-  blue:     '#04837A',
-  mid:      '#04837A',
+  gradient:  ['#026B64', '#04837A', '#05b7aa'] as [string, string, string],
+  gradient2: ['#04837A', '#05b7aa'] as [string, string],
+  teal: '#05b7aa',
+  blue: '#04837A',
+  mid:  '#04837A',
 };
+
+/** For call sites that only need the ramp and not the whole theme. */
+export const BRAND = brand;
+export const BRAND_GRADIENT = brand.gradient;
+export const BRAND_GRADIENT_2 = brand.gradient2;
 
 /**
  * The palette is DERIVED, not transcribed.
@@ -110,27 +124,86 @@ const dark = {
 export type Tokens = typeof light;
 export const tokens: Record<ColorScheme, Tokens> = { light, dark };
 
-// Priority colours — same both themes
-export const PRIORITY_COLOR: Record<string, string> = {
-  urgent:  '#dc2626',
-  high:    '#ef4444',
-  medium:  '#f59e0b',
-  low:     '#22c55e',
+/**
+ * Priority, status and approval colours, from the generated palette.
+ *
+ * These were four and four arbitrary hexes — #dc2626, #ef4444, #f59e0b, #22c55e
+ * and so on — which is the ninth independent status map the product had, and it
+ * disagreed with all the others. 00 §9 defines --pr-*, --st-* and --ap-* for
+ * exactly this, and half of them alias --ok / --warn / --danger, which is why one
+ * contrast fix propagated to every chip on the web and none of it reached here.
+ *
+ * They FLIP with the theme (00 §9), so these are functions of the scheme rather
+ * than constants. The old comment claimed priority was "same both themes"; that
+ * was the bug, not the design — a red that reads on cream is not the red that
+ * reads on near-black.
+ */
+const priorityFor = (p: typeof lightPalette | typeof darkPalette): Record<string, string> => ({
+  urgent: p.prUrgent,
+  high:   p.prHigh,
+  medium: p.prMedium,
+  low:    p.prLow,
+});
+
+const approvalFor = (p: typeof lightPalette | typeof darkPalette): Record<string, string> => ({
+  pending:        p.apPending,
+  // Kept a different hue from `pending` deliberately. 00 §9: "waiting on us"
+  // versus "waiting on the client" is the distinction the approval flow exists
+  // to communicate, and a draft that aliased them made the two byte-identical.
+  pending_client: p.apPendingClient,
+  approved:       p.apApproved,
+  rejected:       p.apRejected,
+});
+
+const statusFor = (p: typeof lightPalette | typeof darkPalette): Record<string, string> => ({
+  todo:        p.stTodo,
+  in_progress: p.stInProgress,
+  in_review:   p.stInReview,
+  requested:   p.stRequested,
+  done:        p.stDone,
+  rejected:    p.stRejected,
+});
+
+export const PRIORITY_COLORS: Record<ColorScheme, Record<string, string>> = {
+  light: priorityFor(lightPalette),
+  dark:  priorityFor(darkPalette),
+};
+export const APPROVAL_COLORS: Record<ColorScheme, Record<string, string>> = {
+  light: approvalFor(lightPalette),
+  dark:  approvalFor(darkPalette),
+};
+export const STATUS_COLORS: Record<ColorScheme, Record<string, string>> = {
+  light: statusFor(lightPalette),
+  dark:  statusFor(darkPalette),
 };
 
-// Approval status colours
-export const APPROVAL_COLOR: Record<string, string> = {
-  pending:        '#d97706',
-  pending_client: '#7c3aed',
-  approved:       '#16a34a',
-  rejected:       '#dc2626',
-};
+/**
+ * Light-mode maps, kept so the existing call sites compile unchanged.
+ *
+ * @deprecated Read PRIORITY_COLORS[scheme] / APPROVAL_COLORS[scheme] instead.
+ * These two ignore the theme, so a dark-mode chip gets the light-mode hue — the
+ * defect they used to have with arbitrary hexes, now merely narrower. Every
+ * consumer already calls useTheme() and has `scheme` to hand.
+ */
+export const PRIORITY_COLOR: Record<string, string> = PRIORITY_COLORS.light;
+export const APPROVAL_COLOR: Record<string, string> = APPROVAL_COLORS.light;
 
-// Deterministic project colour from team_id
+/**
+ * Deterministic project colour from team_id.
+ *
+ * These are identity colours, not semantic ones — they exist to tell two
+ * projects apart at a glance, so they are deliberately a wide spread of hues
+ * rather than accent derivatives, and they do not flip with the theme (a project
+ * that is violet must stay violet in both, or the mapping stops being learnable).
+ *
+ * #0082c6 has been replaced. It led both this list and AVATAR_COLORS, so the
+ * first project and the first user in every org were painted the brand blue that
+ * 00 §9 retired — the most visible possible place for it to survive.
+ */
 const PROJECT_PALETTE = [
-  '#0082c6','#05b7aa','#8b5cf6','#ec4899',
-  '#f59e0b','#10b981','#6366f1','#ef4444',
-  '#14b8a6','#f97316',
+  '#05b7aa','#8b5cf6','#ec4899','#f59e0b',
+  '#10b981','#6366f1','#ef4444','#14b8a6',
+  '#f97316','#3E5C8A',
 ];
 export function projectColor(teamId: string, override?: string | null): string {
   if (override) return override;
@@ -139,9 +212,16 @@ export function projectColor(teamId: string, override?: string | null): string {
   return PROJECT_PALETTE[Math.abs(hash) % PROJECT_PALETTE.length];
 }
 
-// Avatar initials colours
+/**
+ * Avatar initials colours. Identity, like PROJECT_PALETTE — stable across themes
+ * so a colleague's avatar does not change colour when the user switches to dark.
+ * `#0082c6` dropped for the same reason it was dropped there.
+ *
+ * Three components each kept a private copy of this array, all of them starting
+ * with the retired blue. They now import this one.
+ */
 export const AVATAR_COLORS = [
-  '#0082c6','#05b7aa','#8b5cf6','#ec4899','#f59e0b','#10b981','#6366f1',
+  '#05b7aa','#8b5cf6','#ec4899','#f59e0b','#10b981','#6366f1','#3E5C8A',
 ];
 export function userInitials(name: string): string {
   const parts = (name || '').trim().split(' ');

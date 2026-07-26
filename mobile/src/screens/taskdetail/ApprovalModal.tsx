@@ -6,6 +6,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../theme/ThemeProvider';
 import { s } from './styles';
+import { BRAND_GRADIENT_2 } from '../../theme/tokens';
 
 interface Props {
   visible:   boolean;
@@ -29,7 +30,7 @@ export function ApprovalModal({ visible, action, onClose, onConfirm }: Props) {
 
   const GRAD: [string, string] = (action === 'reject' || action === 'client_reject')
     ? ['#ef4444', '#dc2626']
-    : ['#0082c6', '#05b7aa'];
+    : BRAND_GRADIENT_2;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>

@@ -9,23 +9,24 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
 import { KIcon } from '../components/icons/KIcon';
+import { BRAND_GRADIENT } from '../theme/tokens';
 
 // LoginScreen does not use ThemeProvider tokens — it always renders the dark
 // branded gradient regardless of system theme preference.
 const C = {
   dark:    '#020d1a',
   navy:    '#040f1e',
-  blue:    '#0082c6',
+  blue:    '#04837A',
   teal:    '#05b7aa',
-  mid:     '#03a1b6',
+  mid:     '#026B64',
   muted:   '#8aa5be',
   card:    '#0b1829',
-  border:  'rgba(0,130,198,0.25)',
-  borderF: 'rgba(0,130,198,0.7)',
+  border:  'rgba(4,131,122,0.25)',
+  borderF: 'rgba(4,131,122,0.7)',
   inputBg: 'rgba(255,255,255,0.05)',
   error:   '#ff6b6b',
 };
-const GRAD:  [string,string,string] = ['#0082c6','#03a1b6','#05b7aa'];
+const GRAD: [string, string, string] = BRAND_GRADIENT;
 const BG:    [string,string,string] = [C.dark, C.navy, '#060e1e'];
 
 export default function LoginScreen() {
@@ -172,7 +173,7 @@ const s = StyleSheet.create({
   input:       { backgroundColor: C.inputBg, borderRadius: 11, borderWidth: 1, borderColor: C.border, paddingHorizontal: 14, paddingVertical: 13, color: '#fff', fontSize: 14 },
   pwWrap:      { flexDirection: 'row', alignItems: 'center', backgroundColor: C.inputBg, borderRadius: 11, borderWidth: 1, borderColor: C.border, paddingHorizontal: 14, paddingVertical: 13 },
   eyeBtn:      { paddingLeft: 8 },
-  btn:         { borderRadius: 12, paddingVertical: 15, alignItems: 'center', shadowColor: '#0082c6', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10, elevation: 6 },
+  btn:         { borderRadius: 12, paddingVertical: 15, alignItems: 'center', shadowColor: '#04837A', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10, elevation: 6 },
   btnText:     { color: '#fff', fontSize: 13, fontWeight: '900', letterSpacing: 3 },
   note:        { color: C.muted, fontSize: 11, textAlign: 'center', marginTop: 20, lineHeight: 18 },
   powered:     { color: 'rgba(255,255,255,0.18)', fontSize: 10, textAlign: 'center', marginTop: 36, letterSpacing: 2 },

@@ -16,6 +16,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { BRAND_GRADIENT } from '../../theme/tokens';
 
 interface KIconProps {
   size?:   number;
@@ -28,7 +29,7 @@ export function KIcon({ size = 80, radius = 24 }: KIconProps) {
 
   return (
     <LinearGradient
-      colors={['#0082c6', '#03a1b6', '#05b7aa']}
+      colors={BRAND_GRADIENT}
       start={{ x: 0.14, y: 0 }}
       end={{   x: 0.86, y: 1 }}
       style={[s.wrap, { width: size, height: size, borderRadius: radius }]}
@@ -79,7 +80,7 @@ const s = StyleSheet.create({
     alignItems:      'center',
     justifyContent:  'center',
     overflow:        'hidden',
-    shadowColor:     '#0082c6',
+    shadowColor: '#04837A',
     shadowOffset:    { width: 0, height: 8 },
     shadowOpacity:   0.45,
     shadowRadius:    16,

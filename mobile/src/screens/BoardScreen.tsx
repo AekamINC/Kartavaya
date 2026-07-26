@@ -14,7 +14,7 @@ import { format, isToday, isPast } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
 import { tasksApi } from '../api/tasks';
 import { projectsApi } from '../api/projects';
-import { PRIORITY_COLOR, projectColor } from '../theme/tokens';
+import { PRIORITY_COLOR, projectColor, AVATAR_COLORS, BRAND_GRADIENT_2 } from '../theme/tokens';
 import type { Task, ProjectColumn, TeamMember, Project } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
 
@@ -69,7 +69,8 @@ function ProjectPicker({
 }
 
 // ── Board card ────────────────────────────────────────────────────────────────
-const BC_AVATAR_COLORS = ['#0082c6','#05b7aa','#8b5cf6','#f59e0b','#ec4899'];
+// Was a fifth private copy of the avatar palette, led by the retired blue.
+const BC_AVATAR_COLORS = AVATAR_COLORS;
 const IS_ANDROID = Platform.OS === 'android';
 
 function BoardCard({ task, col, onPress }: { task: Task; col?: ProjectColumn; onPress: () => void }) {
@@ -233,7 +234,7 @@ function NewTaskModal({ visible, columns, projectId, onClose, onCreated, t }: {
               <Text style={[s.cancelText, { color: t.ink3 }]}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={create} disabled={!title.trim() || saving} style={{ flex: 1 }}>
-              <LinearGradient colors={['#0082c6','#05b7aa']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              <LinearGradient colors={BRAND_GRADIENT_2} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                 style={[s.createBtn, (!title.trim() || saving) && { opacity: 0.5 }]}>
                 {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.createText}>Create Task</Text>}
               </LinearGradient>
@@ -417,10 +418,10 @@ export default function BoardScreen() {
             <TouchableOpacity style={[s.schedRow, { backgroundColor: t.surface, borderColor: t.outline }]}
               onPress={() => openTask(item.task_id)} activeOpacity={0.75}>
               <View style={s.schedDate}>
-                <Text style={[s.schedDay, { color: isLate ? '#ef4444' : (col?.color ?? '#0082c6') }]}>{format(d, 'd')}</Text>
+                <Text style={[s.schedDay, { color: isLate ? '#B42318' : (col?.color ?? '#04837A') }]}>{format(d, 'd')}</Text>
                 <Text style={[s.schedMon, { color: t.ink3 }]}>{format(d, 'MMM')}</Text>
               </View>
-              <View style={[s.schedBar, { backgroundColor: col?.color ?? '#0082c6' }]} />
+              <View style={[s.schedBar, { backgroundColor: col?.color ?? '#04837A' }]} />
               <View style={{ flex: 1, gap: 2 }}>
                 <Text style={[s.listTitle, { color: t.ink }]} numberOfLines={1}>{item.title}</Text>
                 <Text style={{ color: col?.color ?? t.ink3, fontSize: 10, fontWeight: '700' }}>{col?.name ?? '—'}</Text>
@@ -444,7 +445,7 @@ export default function BoardScreen() {
               <Text style={[s.trackerCount, { color: t.ink }]}>{count}</Text>
             </View>
             <View style={[s.trackerTrack, { backgroundColor: t.outline }]}>
-              <LinearGradient colors={['#0082c6','#05b7aa']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              <LinearGradient colors={BRAND_GRADIENT_2} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                 style={[s.trackerBar, { width: `${pct * 100}%` as any }]} />
             </View>
           </View>

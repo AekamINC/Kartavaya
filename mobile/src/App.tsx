@@ -19,6 +19,7 @@ import { NotificationProvider } from './context/NotificationContext';
 import { NotificationBannerContainer } from './components/NotificationBanner';
 import { restoreToken } from './api/auth';
 import RootStack from './nav/RootStack';
+import { BRAND } from './theme/tokens';
 
 // Restore JWT from MMKV into axios headers before any component mounts
 restoreToken();
@@ -37,16 +38,16 @@ function OfflineBanner({ message, kind, onRetry, onClear }: BannerProps) {
   const bg =
     kind === 'error'   ? 'rgba(186,26,26,0.92)'   :
     kind === 'warn'    ? 'rgba(255,159,10,0.14)'   :
-    kind === 'syncing' ? 'rgba(0,130,198,0.12)'    :
-                         'rgba(0,130,198,0.12)';
+    kind === 'syncing' ? 'rgba(4,131,122,0.12)'    :
+                         'rgba(4,131,122,0.12)';
   const textColor =
     kind === 'error'   ? '#fff'     :
     kind === 'warn'    ? '#92400e'  :
-                         '#0082c6';
+                         BRAND.blue;
   const borderColor =
     kind === 'error'   ? 'rgba(186,26,26,0.3)'   :
     kind === 'warn'    ? 'rgba(255,159,10,0.35)'  :
-                         'rgba(0,130,198,0.3)';
+                         'rgba(4,131,122,0.3)';
 
   const iconName =
     kind === 'error'   ? 'alert-circle-outline'  :
@@ -83,7 +84,7 @@ export function Splash() {
     <View style={s.splash}>
       <Text style={s.splashBrand}>Kartavaya</Text>
       <Text style={s.splashSub}>BY AEKAM INC</Text>
-      <ActivityIndicator color="#0082c6" size="large" style={{ marginTop: 32 }} />
+      <ActivityIndicator color={BRAND.blue} size="large" style={{ marginTop: 32 }} />
     </View>
   );
 }
