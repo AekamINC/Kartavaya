@@ -1,707 +1,843 @@
-﻿/**
- * AdminPage.jsx — k-* design system.
- * Invite form: Full Name, Email, Account Type, Role title, Client Approval toggle.
- * User list: inline role select + Edit slide-over + Remove.
+/**
+ * AdminPage — the platform console index at `/admin`. 11-platform-admin.md.
+ *
+ * ── 11's line-level surprise, and the correction ─────────────────────────────
+ *
+ * 11 §5 says of this file: "Platform half moves to /admin/*; project-level user
+ * management to org/TabMembers.jsx. **Not read in full**." Read in full, that
+ * prescription inverts.
+ *
+ * There is no project-level half. `GET /api/admin/users` is
+ *
+ *     SELECT … FROM users ORDER BY created_at DESC        invite_router.py:86
+ *
+ * with no org filter and no team filter, behind
+ * `require_platform_role(*CONSOLE_ROLES)` — every account on the platform,
+ * gated on a Tier-1 role. `/admin/invites` and `/admin/teams` are the same
+ * shape. So this file was never a member list that leaked onto the console; it
+ * IS the `/admin/users` screen 11 §2 asks for ("all users, slide-over detail,
+ * platform role assignment"), sitting under the wrong name.
+ *
+ * It is therefore kept and completed rather than dismantled. The one piece that
+ * genuinely did not belong has gone: `<BrandKit mode="manage" />` writes to
+ * `PUT /settings`, which is the OPERATOR's own workspace. Editing your own
+ * brand colours from a violet surface headed "Aekam platform" is precisely the
+ * confusion 11 §1 introduces the violet to prevent. It belongs in org settings
+ * (`10-org-settings.md`), where ProjectsPage already uses the same component.
+ *
+ * Platform role assignment arrives here from `AdminOrgsPage.jsx`, where it had
+ * been filed under organisations despite granting access to the console rather
+ * than to any org — and where its dropdown was two roles out of date.
+ *
+ * ── Why four tabs and not four routes ────────────────────────────────────────
+ *
+ * 11 §2 wants `/admin/dashboard`, `/admin/users`, `/admin/support`,
+ * `/admin/settings`. `App.jsx` and `components/admin/adminNav.js` define four
+ * admin routes and both are outside this batch's ownership, so the surfaces
+ * that have no route live as tabs under the one route they can reach. Splitting
+ * them is a routing change, not a rewrite of this file.
  */
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from '../lib/api';
-import { useToast } from '../components/ui/toast';
-import { PageHeader, StatTile } from '../components/editorial';
-import ConfirmDialog from '../components/ui/ConfirmDialog';
-import BrandKit from '../components/BrandKit';
+import {
+  Button, Card, CardHead, CardBody, Field, Input, Select, Toggle, Tag, Tabs,
+  Modal, ConfirmDialog, EmptyState, ErrorState, errorKind, SkeletonPage,
+  Table, TableHead, TableBody, Row, Cell, HeadCell,
+  Avatar, StatTile, useToast,
+} from '../components/ui';
+import { currentUser } from '../lib/auth';
+import SlideOver from './admin/SlideOver';
+import { ASSIGNABLE_ROLES, PLATFORM_ROLES, roleMeta, roleColor, isGodMode } from './admin/platformRoles';
+import '../styles/admin.css';
 
-const ROLE_COLORS = { admin: '#0082c6', member: '#6E7B91', client: '#ec4899', owner: '#8b5cf6' };
-const AVATARS     = ['#0082c6','#05b7aa','#8b5cf6','#ec4899','#f59e0b','#10b981'];
+const EMPTY_INVITE = { full_name: '', email: '', role: 'member', member_role: '', receives_approval_emails: true };
 
-const EMPTY_INVITE = {
-  full_name: '', email: '', role: 'member',
-  member_role: '', receives_approval_emails: true,
+const ACCOUNT_TYPES = [
+  { value: 'member', label: 'Member' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'client', label: 'Client' },
+];
+
+const fmtDate = d => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+
+/* Account type is not a platform role and never was. It is coloured from the
+   semantic set rather than from a private map of hexes — the previous one was
+   the eighth such map, and it painted `admin` in the retired brand blue. */
+const ACCOUNT_TONE = {
+  admin: 'var(--warn)',
+  client: 'var(--st-in-review)',
+  member: 'var(--on-surface-3)',
+  owner: 'var(--danger)',
 };
 
-const EMPTY_EDIT = {
-  full_name: '', role: 'member', member_role: '',
-  company_name: '', receives_approval_emails: true,
-};
+/* ── Password reset ────────────────────────────────────────────────────────── */
 
-// ── Small components ──────────────────────────────────────────────────────────
+function ResetLinkButton({ userId, size = 'sm' }) {
+  const { pushToast } = useToast();
+  const [state, setState] = useState('idle');
 
-function RolePill({ role }) {
-  const color = ROLE_COLORS[role] || '#6E7B91';
-  return (
-    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em',
-      padding: '2px 8px', borderRadius: 99, background: `${color}18`, color, flexShrink: 0, whiteSpace: 'nowrap' }}>
-      {role}
-    </span>
-  );
-}
-
-function UserAvatar({ user, index, size = 40 }) {
-  const name = user.full_name || user.name || user.email || '?';
-  if (user.avatar) return <img src={user.avatar} alt="" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />;
-  return (
-    <div style={{ width: size, height: size, borderRadius: '50%', background: AVATARS[index % AVATARS.length],
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontFamily: 'var(--font-display)', fontSize: size * 0.375, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-      {name[0].toUpperCase()}
-    </div>
-  );
-}
-
-function Toggle({ checked, onChange, label }) {
-  return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
-      <div onClick={() => onChange(!checked)}
-        style={{ width: 40, height: 22, borderRadius: 11, background: checked ? 'var(--k-primary)' : 'var(--rule-soft)',
-          position: 'relative', transition: 'background .2s', flexShrink: 0, cursor: 'pointer' }}>
-        <div style={{ position: 'absolute', top: 3, left: checked ? 21 : 3, width: 16, height: 16,
-          borderRadius: '50%', background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
-      </div>
-      <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>{label}</span>
-    </label>
-  );
-}
-
-// ── Delete user modal ─────────────────────────────────────────────────────────
-
-function DeleteUserModal({ user, otherUsers, onConfirm, onClose }) {
-  const [reassignTo, setReassignTo] = useState('');
-  const [deleting,   setDeleting]   = useState(false);
-
-  const userName = user.full_name || user.name || user.email;
-
-  const handleConfirm = async () => {
-    setDeleting(true);
-    await onConfirm(user, reassignTo || null);
-    setDeleting(false);
-  };
-
-  return (
-    <div
-      style={{ position: 'fixed', inset: 0, zIndex: 500, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
-      onClick={e => e.target === e.currentTarget && onClose()}
-    >
-      <div role="dialog" aria-modal="true" aria-label="Remove user" style={{ background: 'var(--surface)', borderRadius: 'var(--r-lg)', width: '100%', maxWidth: 460, boxShadow: '0 24px 64px rgba(0,0,0,0.35)', overflow: 'hidden' }}>
-
-        {/* Red header */}
-        <div style={{ background: 'linear-gradient(135deg, #b91c1c 0%, #dc2626 100%)', padding: '22px 24px 20px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth="1.8"><path d="M6 6h8M8 6V5h4v1M9 10v4M11 10v4M5 6l1 11h8l1-11"/></svg>
-            </div>
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', marginBottom: 2 }}>REMOVE USER · उपयोगकर्ता हटाएं</div>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 400, color: '#fff' }}>
-                Remove <em>{userName}</em>?
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Body */}
-        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-          <p style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6, margin: 0 }}>
-            All tasks, comments, and time entries created by <strong>{userName}</strong> will be reassigned to the person you choose below, or unassigned if left blank.
-          </p>
-
-          <div>
-            <label style={{ display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 6 }}>
-              REASSIGN WORK TO · कार्य सौंपें
-            </label>
-            <select
-              className="k-input"
-              style={{ width: '100%' }}
-              value={reassignTo}
-              onChange={e => setReassignTo(e.target.value)}
-            >
-              <option value="">— Leave unassigned —</option>
-              {otherUsers.map(u => (
-                <option key={u.user_id} value={u.user_id}>
-                  {u.full_name || u.name || u.email}{u.member_role ? ` · ${u.member_role}` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 12, color: '#b91c1c' }}>
-            ⚠ This action is permanent and cannot be undone.
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div style={{ padding: '14px 24px 20px', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-          <button className="k-btn k-btn--ghost k-btn--sm" onClick={onClose} disabled={deleting}>Cancel</button>
-          <button
-            onClick={handleConfirm}
-            disabled={deleting}
-            style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer', opacity: deleting ? 0.6 : 1 }}
-          >
-            {deleting ? 'Removing…' : `Remove ${userName.split(' ')[0]}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Reset link button (used inside EditSlideOver) ─────────────────────────────
-
-function ResetLinkButton({ userId, pushToast, compact = false }) {
-  const [sending, setSending] = useState(false);
-  const [sent,    setSent]    = useState(false);
-
-  const send = async (e) => {
-    e.stopPropagation();
-    setSending(true);
+  const send = async () => {
+    setState('sending');
     try {
       await api.post(`/admin/users/${userId}/send-reset-link`);
-      setSent(true);
-      pushToast({ type: 'success', title: 'Reset link sent', message: 'User will receive a password reset email.' });
-      setTimeout(() => setSent(false), 4000);
+      setState('sent');
+      pushToast({ type: 'success', title: 'Reset link sent', message: 'They will receive a password reset email.' });
+      setTimeout(() => setState('idle'), 4000);
     } catch {
-      pushToast({ type: 'error', title: 'Could not send reset link' });
-    } finally { setSending(false); }
+      setState('idle');
+      pushToast({ type: 'error', title: 'Could not send the reset link' });
+    }
   };
 
-  if (compact) {
-    return (
-      <button
-        onClick={send}
-        disabled={sending || sent}
-        title={sent ? 'Reset link sent!' : 'Send password reset link'}
-        className="k-iconbtn"
-        style={{ color: sent ? '#10b981' : 'var(--ink-3)', opacity: sending ? 0.5 : 1 }}
-      >
-        {sent
-          ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-          : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-        }
-      </button>
-    );
-  }
-
   return (
-    <button
-      onClick={send}
-      disabled={sending || sent}
-      style={{ width: '100%', background: 'none', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)',
-        padding: '8px 14px', fontSize: 12, fontWeight: 600, color: sent ? '#10b981' : 'var(--k-primary)',
-        cursor: sending || sent ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-    >
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
-      </svg>
-      {sent ? 'Reset link sent ✓' : sending ? 'Sending…' : 'Send password reset link'}
-    </button>
+    <Button variant="out" size={size} disabled={state !== 'idle'} onClick={send}>
+      {state === 'sent' ? 'Link sent' : state === 'sending' ? 'Sending…' : 'Send reset link'}
+    </Button>
   );
 }
 
-// ── Edit slide-over ───────────────────────────────────────────────────────────
+/* ── Edit ──────────────────────────────────────────────────────────────────── */
 
-function EditSlideOver({ user, onClose, onSaved, pushToast }) {
-  const [form, setForm] = useState({
-    full_name:                user.full_name || '',
-    role:                     user.role || 'member',
-    member_role:              user.member_role || '',
-    company_name:             user.company_name || '',
+function EditUserPanel({ user, onClose, onSaved }) {
+  const { pushToast } = useToast();
+  const [form, setForm] = useState(() => ({
+    full_name: user.full_name || '',
+    role: user.role || 'member',
+    member_role: user.member_role || '',
+    company_name: user.company_name || '',
     receives_approval_emails: user.receives_approval_emails !== false,
-  });
+  }));
   const [saving, setSaving] = useState(false);
-  const panelRef = useRef();
-
-  // Close on backdrop click
-  const handleBackdrop = (e) => { if (e.target === e.currentTarget) onClose(); };
 
   const save = async () => {
     setSaving(true);
     try {
       const res = await api.patch(`/admin/users/${user.user_id}`, {
-        full_name:                form.full_name.trim() || null,
-        role:                     form.role,
-        member_role:              form.member_role.trim() || null,
-        company_name:             form.company_name.trim() || null,
+        full_name: form.full_name.trim() || null,
+        role: form.role,
+        member_role: form.member_role.trim() || null,
+        company_name: form.company_name.trim() || null,
         receives_approval_emails: form.receives_approval_emails,
       });
       pushToast({ type: 'success', title: 'User updated' });
       onSaved(res.data);
       onClose();
-    } catch (err) {
-      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Could not save' });
+    } catch (e) {
+      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not save' });
     } finally { setSaving(false); }
   };
 
-  const labelSt = { fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5, display: 'block' };
-
   return (
-    <div onClick={handleBackdrop} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(5,14,26,.45)', display: 'flex', justifyContent: 'flex-end' }}>
-      <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Edit user" style={{ width: 420, maxWidth: '90vw', height: '100%', background: 'var(--surface)', display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 40px rgba(0,0,0,.18)' }}>
-        {/* Header */}
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--rule-soft)', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <UserAvatar user={user} index={0} size={36} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>
-              {user.full_name || user.name || 'Edit User'}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{user.email}</div>
+    <SlideOver
+      open
+      onClose={onClose}
+      title={user.full_name || user.email}
+      subtitle={user.email}
+      footer={(
+        <>
+          <Button variant="fill" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save changes'}</Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <span className="apg__spacer" />
+          <ResetLinkButton userId={user.user_id} />
+        </>
+      )}
+    >
+      <div className="adm-form">
+        <Field label="Full name" htmlFor="eu-name">
+          {p => <Input {...p} value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} />}
+        </Field>
+        <Field label="Account type" htmlFor="eu-role">
+          {p => (
+            <Select {...p} value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+              {ACCOUNT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </Select>
+          )}
+        </Field>
+        <Field label="Job title" htmlFor="eu-title">
+          {p => <Input {...p} value={form.member_role} onChange={e => setForm(f => ({ ...f, member_role: e.target.value }))} placeholder="Audit manager" />}
+        </Field>
+        <Field label="Company" htmlFor="eu-company">
+          {p => <Input {...p} value={form.company_name} onChange={e => setForm(f => ({ ...f, company_name: e.target.value }))} />}
+        </Field>
+      </div>
+
+      {form.role === 'client' && (
+        <div className="fld">
+          <span className="fld__l">Client approval emails</span>
+          <div className="adm-actions">
+            <Toggle
+              checked={form.receives_approval_emails}
+              label="Receives client approval emails"
+              onChange={v => setForm(f => ({ ...f, receives_approval_emails: v }))}
+            />
+            <span className="adm-kv__v">{form.receives_approval_emails ? 'On' : 'Off'}</span>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 20, lineHeight: 1, padding: 4 }}>✕</button>
+          <span className="fld__hint">Emailed whenever a task or project needs their sign-off.</span>
         </div>
+      )}
 
-        {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-
-            <div>
-              <label style={labelSt}>Full Name</label>
-              <input className="k-input" value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} placeholder="Jane Doe" />
-            </div>
-
-            <div>
-              <label style={labelSt}>Account Type</label>
-              <select className="k-select" style={{ width: '100%' }} value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
-                <option value="member">Member</option>
-                <option value="admin">Admin</option>
-                <option value="client">Client</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={labelSt}>Job Title / Role</label>
-              <input className="k-input" value={form.member_role} onChange={e => setForm(f => ({ ...f, member_role: e.target.value }))} placeholder="e.g. Product Manager, Designer" />
-            </div>
-
-            <div>
-              <label style={labelSt}>Company</label>
-              <input className="k-input" value={form.company_name} onChange={e => setForm(f => ({ ...f, company_name: e.target.value }))} placeholder="e.g. Aekam Inc" />
-            </div>
-
-            {/* Client approval — only for client account type */}
-            {form.role === 'client' && (
-              <div style={{ padding: '14px 16px', background: 'var(--bg-soft)', borderRadius: 10, border: '1px solid var(--rule-soft)' }}>
-                <Toggle
-                  checked={form.receives_approval_emails}
-                  onChange={v => setForm(f => ({ ...f, receives_approval_emails: v }))}
-                  label="Receives client approval emails"
-                />
-                <p style={{ fontSize: 11, color: 'var(--ink-faint)', marginTop: 8, marginBottom: 0 }}>
-                  When enabled, this client will receive email notifications whenever a task or project requires their approval.
-                </p>
-              </div>
-            )}
-
-            <div style={{ padding: '12px 14px', background: 'var(--bg-soft)', borderRadius: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ink-faint)', marginBottom: 4 }}>Email (immutable)</div>
-              <div style={{ fontSize: 13, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>{user.email}</div>
-            </div>
-          </div>
+      <div className="adm-kv">
+        <div>
+          <div className="adm-kv__k">Email (immutable)</div>
+          <div className="adm-kv__v is-mono">{user.email}</div>
         </div>
-
-        {/* Footer */}
-        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--rule-soft)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button className="k-btn k-btn--primary" style={{ flex: 1 }} onClick={save} disabled={saving}>
-              {saving ? 'Saving…' : 'Save changes'}
-            </button>
-            <button className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
-          </div>
-          <ResetLinkButton userId={user.user_id} pushToast={pushToast} />
+        <div>
+          <div className="adm-kv__k">User ID</div>
+          <div className="adm-kv__v is-mono">{user.user_id}</div>
+        </div>
+        <div>
+          <div className="adm-kv__k">Provider</div>
+          <div className="adm-kv__v">{user.provider || 'local'}</div>
+        </div>
+        <div>
+          <div className="adm-kv__k">Joined</div>
+          <div className="adm-kv__v">{fmtDate(user.created_at)}</div>
         </div>
       </div>
-    </div>
+    </SlideOver>
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+/* ── Remove ────────────────────────────────────────────────────────────────── */
+
+/**
+ * Removal needs a choice — who inherits their work — so it is a Modal rather
+ * than a ConfirmDialog. It keeps ConfirmDialog's rule for the irreversible
+ * case anyway: the name has to be typed.
+ */
+function RemoveUserModal({ user, others, onClose, onRemoved }) {
+  const { pushToast } = useToast();
+  const [reassign, setReassign] = useState('');
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const name = user.full_name || user.name || user.email;
+  const ready = typed.trim() === name;
+
+  const remove = async () => {
+    setBusy(true);
+    try {
+      await api.delete(`/admin/users/${user.user_id}${reassign ? `?reassign_to=${reassign}` : ''}`);
+      pushToast({ type: 'success', title: `${name} removed` });
+      onRemoved(user.user_id);
+      onClose();
+    } catch (e) {
+      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not remove the user' });
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Modal
+      open
+      onOpenChange={onClose}
+      size="sm"
+      title={`Remove ${name}`}
+      footer={(
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="fill" disabled={!ready || busy} onClick={remove}>
+            {busy ? 'Removing…' : 'Remove permanently'}
+          </Button>
+        </>
+      )}
+    >
+      <p className="apg__lede">
+        Tasks, comments and time entries created by <b>{name}</b> move to whoever you pick
+        below, or become unassigned if you leave it blank. This cannot be undone.
+      </p>
+      <div className="adm-form adm-form--tight">
+        <Field label="Reassign their work to" htmlFor="ru-reassign">
+          {p => (
+            <Select {...p} value={reassign} onChange={e => setReassign(e.target.value)}>
+              <option value="">Leave unassigned</option>
+              {others.map(u => (
+                <option key={u.user_id} value={u.user_id}>
+                  {u.full_name || u.name || u.email}{u.member_role ? ` · ${u.member_role}` : ''}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <Field label={`Type "${name}" to confirm`} htmlFor="ru-typed">
+          {p => <Input {...p} value={typed} onChange={e => setTyped(e.target.value)} autoComplete="off" />}
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Platform roles ────────────────────────────────────────────────────────── */
+
+function PlatformRolesPanel() {
+  const { pushToast } = useToast();
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('platform_staff');
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(null);
+
+  const me = currentUser();
+  const mayAssign = isGodMode(me?.platform_roles);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    return api.get('/v1/admin/orgs/roles/platform')
+      .then(r => setRows(Array.isArray(r.data) ? r.data : []))
+      .catch(() => pushToast({ type: 'error', title: 'Could not load platform roles' }))
+      .finally(() => setLoading(false));
+  }, [pushToast]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const assign = async () => {
+    if (!email.trim()) return;
+    setBusy(true);
+    try {
+      const found = await api.get(`/v1/admin/orgs/users/search?email=${encodeURIComponent(email.trim())}`);
+      const userId = found.data?.user_id;
+      if (!userId) { pushToast({ type: 'error', title: 'No account with that email' }); return; }
+      await api.post('/v1/admin/orgs/roles/assign', { user_id: userId, role_code: code });
+      pushToast({ type: 'success', title: `${roleMeta(code).label} granted to ${email.trim()}` });
+      setEmail('');
+      await load();
+    } catch (e) {
+      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not assign the role' });
+    } finally { setBusy(false); }
+  };
+
+  const grouped = useMemo(() => Object.values(rows.reduce((acc, r) => {
+    if (!acc[r.user_id]) acc[r.user_id] = { ...r, codes: [] };
+    acc[r.user_id].codes.push({ id: r.id, code: r.role_code });
+    return acc;
+  }, {})), [rows]);
+
+  const selected = roleMeta(code);
+
+  return (
+    <>
+      <div className="apg__sec">
+        <Card>
+          <CardHead title="Who holds a platform role" sanskrit="भूमिकाएँ" actions={<span className="apg__secn">{grouped.length}</span>} />
+          <CardBody flush>
+            {loading ? <SkeletonPage /> : grouped.length === 0 ? (
+              <EmptyState
+                title={{ en: 'Nobody holds a platform role', hi: 'कोई भूमिका नहीं' }}
+                description="Platform roles reach across every customer organisation. They are granted here and nowhere else."
+              />
+            ) : (
+              <Table>
+                <TableHead>
+                  <HeadCell>Person</HeadCell>
+                  <HeadCell>Roles</HeadCell>
+                  <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
+                </TableHead>
+                <TableBody>
+                  {grouped.map(u => (
+                    <Row key={u.user_id}>
+                      <Cell>
+                        <span className="adm-name">
+                          <span className="adm-name__c">
+                            <b>{u.full_name || u.email}</b>
+                            <i>{u.email}</i>
+                          </span>
+                        </span>
+                      </Cell>
+                      <Cell>
+                        <span className="adm-actions">
+                          {u.codes.map(c => {
+                            const meta = roleMeta(c.code);
+                            return (
+                              <Tag key={c.id} color={roleColor(c.code)} title={meta.blurb}>
+                                {meta.label}
+                              </Tag>
+                            );
+                          })}
+                        </span>
+                      </Cell>
+                      <Cell>
+                        <span className="adm-actions">
+                          {u.codes.map(c => (
+                            <Button
+                              key={c.id}
+                              size="sm"
+                              variant="danger"
+                              disabled={!mayAssign}
+                              onClick={() => setConfirm({
+                                title: 'Revoke platform role',
+                                message: `${u.email} loses ${roleMeta(c.code).label} across every organisation.`,
+                                confirmLabel: 'Revoke',
+                                onConfirm: async () => {
+                                  try {
+                                    await api.delete(`/v1/admin/orgs/roles/${c.id}`);
+                                    pushToast({ type: 'success', title: 'Role revoked' });
+                                    await load();
+                                  } catch (e) {
+                                    pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not revoke' });
+                                  }
+                                },
+                              })}
+                            >
+                              Revoke {roleMeta(c.code).label}
+                            </Button>
+                          ))}
+                        </span>
+                      </Cell>
+                    </Row>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardHead title="Grant a platform role" />
+          <CardBody>
+            <div className="adm-form">
+              <Field label="Aekam colleague" htmlFor="pr-email" hint="They must already have an account.">
+                {p => (
+                  <Input
+                    {...p} type="email" value={email} placeholder="name@aekam.com"
+                    onChange={e => setEmail(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') assign(); }}
+                  />
+                )}
+              </Field>
+              <Field label="Role" htmlFor="pr-role" hint={selected.blurb}>
+                {p => (
+                  <Select {...p} value={code} onChange={e => setCode(e.target.value)}>
+                    {/* Legacy codes are revoke-only. `account_manager` is
+                        superseded and reaches nothing; offering it was how an
+                        operator granted access that silently did not work. */}
+                    {ASSIGNABLE_ROLES.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
+                  </Select>
+                )}
+              </Field>
+            </div>
+            <div className="adm-actions">
+              <Button variant="fill" disabled={!mayAssign || busy || !email.trim()} onClick={assign}>
+                {busy ? 'Granting…' : 'Grant role'}
+              </Button>
+              {!mayAssign && <span className="apg__secn">Platform owner only.</span>}
+            </div>
+
+            <div className="apg__sec">
+              <div className="apg__sech"><h3 className="apg__sect">What each role reaches</h3></div>
+              <div className="adm-kv">
+                {PLATFORM_ROLES.map(r => (
+                  <div key={r.code}>
+                    <div className="adm-kv__k">
+                      {r.label}
+                      <span className="apg__hi" lang="hi" aria-hidden="true">{r.hi}</span>
+                    </div>
+                    <div className="adm-kv__v">{r.blurb}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
+
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+    </>
+  );
+}
+
+/* ── Page ──────────────────────────────────────────────────────────────────── */
 
 export default function AdminPage() {
   const { pushToast } = useToast();
-  const [users,     setUsers]     = useState([]);
-  const [invites,   setInvites]   = useState([]);
-  const [teams,     setTeams]     = useState([]);
-  const [teamFilter, setTeamFilter] = useState('');
-  const [copiedFolder, setCopiedFolder] = useState(null);
-  const [invite,      setInvite]      = useState(EMPTY_INVITE);
-  const [sending,     setSending]     = useState(false);
-  const [copiedId,    setCopiedId]    = useState(null);
-  const [editUser,    setEditUser]    = useState(null);   // user being edited
-  const [deleteTarget, setDeleteTarget] = useState(null); // user pending deletion
-  const [confirmState, setConfirmState] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [invites, setInvites] = useState([]);
+  const [teams, setTeams] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
 
-  const me = useMemo(() => {
-    try { return JSON.parse(localStorage.getItem('Kartavaya_user') || 'null'); } catch { return null; }
+  const [q, setQ] = useState('');
+  const [teamQ, setTeamQ] = useState('');
+  const [invite, setInvite] = useState(EMPTY_INVITE);
+  const [sending, setSending] = useState(false);
+  const [copied, setCopied] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [removing, setRemoving] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+
+  const me = currentUser();
+
+  const load = useCallback(() => {
+    setLoading(true);
+    return Promise.all([
+      api.get('/admin/users').then(r => setUsers(Array.isArray(r.data) ? r.data : [])),
+      api.get('/admin/invites').then(r => setInvites(Array.isArray(r.data) ? r.data : [])).catch(() => {}),
+      api.get('/admin/teams').then(r => setTeams(Array.isArray(r.data) ? r.data : [])).catch(() => {}),
+    ])
+      .then(() => setErr(null))
+      .catch(setErr)
+      .finally(() => setLoading(false));
   }, []);
 
-  const load = () => Promise.all([
-    api.get('/admin/users').then(r => setUsers(Array.isArray(r.data) ? r.data : [])).catch(() => {}),
-    api.get('/admin/invites').then(r => setInvites(Array.isArray(r.data) ? r.data : [])).catch(() => {}),
-    api.get('/admin/teams').then(r => setTeams(Array.isArray(r.data) ? r.data : [])).catch(() => {}),
-  ]);
+  useEffect(() => { load(); }, [load]);
 
-  useEffect(() => { load(); }, []);
+  const pending = useMemo(
+    () => invites.filter(i => !i.accepted_at && new Date(i.expires_at) > new Date()),
+    [invites],
+  );
 
-  // ── Invite ────────────────────────────────────────────────────────────────
+  const shownUsers = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return users;
+    return users.filter(u => [u.full_name, u.name, u.email, u.company_name, u.member_role]
+      .some(f => String(f || '').toLowerCase().includes(needle)));
+  }, [users, q]);
+
+  const shownTeams = useMemo(() => {
+    const needle = teamQ.trim().toLowerCase();
+    if (!needle) return teams;
+    return teams.filter(t => `${t.name} ${t.team_id}`.toLowerCase().includes(needle));
+  }, [teams, teamQ]);
+
+  const roleCounts = useMemo(
+    () => users.reduce((acc, u) => { acc[u.role] = (acc[u.role] || 0) + 1; return acc; }, {}),
+    [users],
+  );
+
+  const copy = (text, key) => {
+    navigator.clipboard?.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(''), 2000);
+  };
 
   const sendInvite = async () => {
     if (!invite.email.trim()) return;
     setSending(true);
     try {
       await api.post('/admin/invites', {
-        email:                    invite.email.trim(),
-        full_name:                invite.full_name.trim() || undefined,
-        role:                     invite.role,
-        member_role:              invite.member_role.trim() || undefined,
+        email: invite.email.trim(),
+        full_name: invite.full_name.trim() || undefined,
+        role: invite.role,
+        member_role: invite.member_role.trim() || undefined,
         receives_approval_emails: invite.receives_approval_emails,
       });
-      pushToast({ type: 'success', title: 'Invite sent — copy the link below' });
+      pushToast({ type: 'success', title: 'Invite sent', message: 'Copy the link below if the email is slow.' });
       setInvite(EMPTY_INVITE);
-      load();
-    } catch (err) {
-      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Could not send invite' });
+      await load();
+    } catch (e) {
+      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not send the invite' });
     } finally { setSending(false); }
   };
 
-  // ── Invite actions ────────────────────────────────────────────────────────
+  if (loading && users.length === 0) return <SkeletonPage withStats withTable />;
+  if (err && users.length === 0) {
+    return <ErrorState kind={errorKind(err)} grant="platform access to the console" onRetry={load} />;
+  }
 
-  const copyLink = (link, id) => {
-    navigator.clipboard.writeText(link);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  };
-
-  const copyFolder = (folder, id) => {
-    navigator.clipboard.writeText(folder);
-    setCopiedFolder(id);
-    setTimeout(() => setCopiedFolder(null), 2000);
-  };
-
-  const revokeInvite = (id) => {
-    setConfirmState({
-      message: 'Revoke this invite? The link will stop working immediately.',
-      confirmLabel: 'Revoke',
-      onConfirm: async () => {
-        try {
-          await api.delete(`/admin/invites/${id}`);
-          setInvites(prev => prev.filter(i => i.invite_id !== id));
-          pushToast({ type: 'success', title: 'Invite revoked' });
-        } catch (_) {
-          pushToast({ type: 'error', title: 'Could not revoke invite' }); load();
-        }
-      },
-    });
-  };
-
-  // ── User actions ──────────────────────────────────────────────────────────
-
-  const removeUser = (u) => {
-    if (u.user_id === me?.user_id) { pushToast({ type: 'error', title: 'You cannot remove yourself' }); return; }
-    setDeleteTarget(u);
-  };
-
-  const confirmDeleteUser = async (u, reassignTo) => {
-    try {
-      const params = reassignTo ? `?reassign_to=${reassignTo}` : '';
-      await api.delete(`/admin/users/${u.user_id}${params}`);
-      setUsers(prev => prev.filter(x => x.user_id !== u.user_id));
-      setDeleteTarget(null);
-      pushToast({ type: 'success', title: `${u.full_name || u.email} removed` });
-    } catch (e) {
-      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not remove user' });
-    }
-  };
-
-  const handleUserSaved = (updated) => {
-    setUsers(prev => prev.map(u => u.user_id === updated.user_id ? updated : u));
-  };
-
-  // ── Derived ───────────────────────────────────────────────────────────────
-
-  const pendingInvites  = invites.filter(i => !i.accepted_at && new Date(i.expires_at) > new Date());
-  const roleCounts      = users.reduce((acc, u) => { acc[u.role] = (acc[u.role] || 0) + 1; return acc; }, {});
-  const filteredTeams   = teamFilter.trim()
-    ? teams.filter(t =>
-        t.name.toLowerCase().includes(teamFilter.toLowerCase()) ||
-        t.team_id.toLowerCase().includes(teamFilter.toLowerCase()))
-    : teams;
-
-  const labelSt = { fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 5, display: 'block' };
-
-  return (
-    <div className="k-screen">
-      {/* Edit slide-over */}
-      {editUser && (
-        <EditSlideOver
-          user={editUser}
-          onClose={() => setEditUser(null)}
-          onSaved={handleUserSaved}
-          pushToast={pushToast}
-        />
-      )}
-
-      {/* Delete user modal */}
-      {deleteTarget && (
-        <DeleteUserModal
-          user={deleteTarget}
-          otherUsers={users.filter(u => u.user_id !== deleteTarget.user_id && u.user_id !== me?.user_id)}
-          onConfirm={confirmDeleteUser}
-          onClose={() => setDeleteTarget(null)}
-        />
-      )}
-
-      <PageHeader kicker="SETTINGS · ADMIN" title="Admin" sanskrit="प्रशासन" lede="Workspace members, invites, and account settings." />
-
-      {/* Stats strip */}
-      <div className="k-stats">
-        <StatTile variant="blue"  label="TOTAL"   sanskrit="सदस्य"   value={users.length}            sub="workspace users" />
-        <StatTile variant="teal"  label="MEMBERS"  sanskrit="सहयोगी"  value={roleCounts['member'] || 0} sub="active" />
-        <StatTile variant="amber" label="PENDING"  sanskrit="लंबित"   value={pendingInvites.length}    sub="invites" />
-        <StatTile variant="red"   label="CLIENTS"  sanskrit="ग्राहक"  value={roleCounts['client'] || 0} sub="portal access" />
+  const overviewTab = (
+    <div className="apg__sec">
+      <div className="apg__grid">
+        <StatTile label="Accounts" sanskrit="खाते" value={users.length} sub="across the platform" />
+        <StatTile label="Members" sanskrit="सदस्य" value={roleCounts.member || 0} />
+        <StatTile label="Clients" sanskrit="ग्राहक" value={roleCounts.client || 0} sub="portal access" />
+        <StatTile label="Pending invites" sanskrit="लंबित" value={pending.length} variant={pending.length ? 'warn' : 'neutral'} />
       </div>
 
-      {/* ── Invite form ── */}
-      <div className="k-card" style={{ marginBottom: 'var(--sp-5)' }}>
-        <div className="k-card__head">
-          <span className="k-card__title">New Invite</span>
-          <span className="k-card__sans">आमंत्रण</span>
-        </div>
+      <Card>
+        <CardHead
+          title="R2 folder map"
+          sanskrit="फ़ोल्डर"
+          actions={(
+            <Input
+              aria-label="Search projects"
+              placeholder="Project or team_id…"
+              value={teamQ}
+              onChange={e => setTeamQ(e.target.value)}
+            />
+          )}
+        />
+        <CardBody flush>
+          <p className="apg__lede" style={{ padding: '0 var(--pad-card)' }}>
+            Attachments live under <code>projects/&#123;team_id&#125;/</code>. This is the
+            lookup from a folder nobody can read to the project it belongs to.
+          </p>
+          {shownTeams.length === 0 ? (
+            <EmptyState
+              title={{ en: teams.length ? 'No project matches' : 'No projects yet', hi: 'कुछ नहीं' }}
+              description={teams.length ? 'Clear the search to see every folder.' : 'Folders appear as projects are created.'}
+            />
+          ) : (
+            <Table>
+              <TableHead>
+                <HeadCell>Project</HeadCell>
+                <HeadCell>Folder</HeadCell>
+                <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
+              </TableHead>
+              <TableBody>
+                {shownTeams.map(t => (
+                  <Row key={t.team_id}>
+                    <Cell>{t.name}</Cell>
+                    <Cell><span className="adm-kv__v is-mono">{t.r2_folder}</span></Cell>
+                    <Cell>
+                      <Button size="sm" variant="ghost" onClick={() => copy(t.r2_folder, t.team_id)}>
+                        {copied === t.team_id ? 'Copied' : 'Copy path'}
+                      </Button>
+                    </Cell>
+                  </Row>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardBody>
+      </Card>
+    </div>
+  );
 
-        {/* Row 1: Full Name | Email | Account Type */}
-        <div style={{ display: 'grid', gap: 10, gridTemplateColumns: '35% 40% 25%', marginBottom: 10 }}>
-          <div>
-            <label style={labelSt}>Full Name</label>
-            <input className="k-input" value={invite.full_name}
-              onChange={e => setInvite(f => ({ ...f, full_name: e.target.value }))}
-              placeholder="Jane Doe" />
-          </div>
-          <div>
-            <label style={labelSt}>Email Address</label>
-            <input className="k-input" type="email" value={invite.email}
-              onChange={e => setInvite(f => ({ ...f, email: e.target.value }))}
-              onKeyDown={e => e.key === 'Enter' && sendInvite()}
-              placeholder="jane@company.com" />
-          </div>
-          <div>
-            <label style={labelSt}>Account Type</label>
-            <select className="k-select" style={{ width: '100%' }} value={invite.role}
-              onChange={e => setInvite(f => ({ ...f, role: e.target.value }))}>
-              <option value="member">Member</option>
-              <option value="admin">Admin</option>
-              <option value="client">Client</option>
-            </select>
-          </div>
-        </div>
+  const usersTab = (
+    <div className="apg__sec">
+      <div className="apg__tools">
+        <Input
+          aria-label="Search accounts"
+          placeholder="Name, email or company…"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+        />
+        <span className="apg__spacer" />
+        <span className="apg__secn">{shownUsers.length} of {users.length}</span>
+      </div>
 
-        {/* Row 2: Job Title | Client Approval (conditional) | Send button */}
-        <div style={{ display: 'grid', gap: 10, gridTemplateColumns: '35% 1fr auto', alignItems: 'end' }}>
-          <div>
-            <label style={labelSt}>Job Title / Role</label>
-            <input className="k-input" value={invite.member_role}
-              onChange={e => setInvite(f => ({ ...f, member_role: e.target.value }))}
-              placeholder="e.g. Project Stakeholder" />
+      <Card>
+        <CardBody flush>
+          {shownUsers.length === 0 ? (
+            <EmptyState
+              title={{ en: 'No account matches', hi: 'कोई खाता नहीं' }}
+              description="A filtered list reaching zero is not an empty one — clear the search."
+              action="Clear search"
+              onAction={() => setQ('')}
+            />
+          ) : (
+            <Table className="adm-rows">
+              <TableHead>
+                <HeadCell>Person</HeadCell>
+                <HeadCell>Account type</HeadCell>
+                <HeadCell>Company</HeadCell>
+                <HeadCell>Joined</HeadCell>
+                <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
+              </TableHead>
+              <TableBody>
+                {shownUsers.map(u => {
+                  const isSelf = u.user_id === me?.user_id;
+                  const name = u.full_name || u.name || u.email;
+                  return (
+                    <Row key={u.user_id} onClick={() => setEditing(u)}>
+                      <Cell>
+                        <span className="adm-name">
+                          <Avatar name={name} src={u.avatar} size={28} />
+                          <span className="adm-name__c">
+                            <b>{name}{isSelf ? ' (you)' : ''}</b>
+                            <i>{u.email}{u.member_role ? ` · ${u.member_role}` : ''}</i>
+                          </span>
+                        </span>
+                      </Cell>
+                      <Cell><Tag color={ACCOUNT_TONE[u.role] || ACCOUNT_TONE.member}>{u.role}</Tag></Cell>
+                      <Cell>{u.company_name || '—'}</Cell>
+                      <Cell>{fmtDate(u.created_at)}</Cell>
+                      <Cell>
+                        <span className="adm-actions" onClick={e => e.stopPropagation()} role="presentation">
+                          <Button size="sm" variant="out" onClick={() => setEditing(u)}>Edit</Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            disabled={isSelf}
+                            title={isSelf ? 'You cannot remove yourself' : undefined}
+                            onClick={() => setRemoving(u)}
+                          >
+                            Remove
+                          </Button>
+                        </span>
+                      </Cell>
+                    </Row>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardBody>
+      </Card>
+    </div>
+  );
+
+  const invitesTab = (
+    <div className="apg__sec">
+      <Card>
+        <CardHead title="Invite someone" sanskrit="आमंत्रण" />
+        <CardBody>
+          {/* Invite-only. There is no open signup — START-HERE, decision 1. */}
+          <div className="adm-form">
+            <Field label="Full name" htmlFor="iv-name">
+              {p => <Input {...p} value={invite.full_name} onChange={e => setInvite(f => ({ ...f, full_name: e.target.value }))} placeholder="Priya Shah" />}
+            </Field>
+            <Field label="Email" htmlFor="iv-email">
+              {p => (
+                <Input
+                  {...p} type="email" value={invite.email}
+                  onChange={e => setInvite(f => ({ ...f, email: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') sendInvite(); }}
+                  placeholder="priya@acme.in"
+                />
+              )}
+            </Field>
+            <Field label="Account type" htmlFor="iv-role">
+              {p => (
+                <Select {...p} value={invite.role} onChange={e => setInvite(f => ({ ...f, role: e.target.value }))}>
+                  {ACCOUNT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                </Select>
+              )}
+            </Field>
+            <Field label="Job title" htmlFor="iv-title">
+              {p => <Input {...p} value={invite.member_role} onChange={e => setInvite(f => ({ ...f, member_role: e.target.value }))} placeholder="Project stakeholder" />}
+            </Field>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', paddingBottom: 2 }}>
-            {invite.role === 'client' ? (
-              <div style={{ padding: '10px 14px', background: 'var(--bg-soft)', borderRadius: 10, border: '1px solid var(--rule-soft)', width: '100%' }}>
+          {invite.role === 'client' && (
+            <div className="fld">
+              <span className="fld__l">Client approval emails</span>
+              <div className="adm-actions">
                 <Toggle
                   checked={invite.receives_approval_emails}
+                  label="Receives client approval emails"
                   onChange={v => setInvite(f => ({ ...f, receives_approval_emails: v }))}
-                  label={`Client Approval Emails: ${invite.receives_approval_emails ? 'Yes' : 'No'}`}
                 />
-              </div>
-            ) : (
-              <div style={{ fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic', paddingLeft: 4 }}>
-                Client Approval toggle available when Account Type = Client
-              </div>
-            )}
-          </div>
-
-          <button className="k-btn k-btn--primary" onClick={sendInvite}
-            disabled={sending || !invite.email.trim()} style={{ height: 38 }}>
-            {sending ? 'Sending…' : 'Send Invite'}
-          </button>
-        </div>
-      </div>
-
-      {/* ── Pending invites ── */}
-      <div className="k-card" style={{ padding: 0, overflow: 'hidden', marginBottom: 'var(--sp-5)' }}>
-        <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--rule-soft)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>Pending Invites</span>
-          <span style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--bg-soft)', borderRadius: 99, padding: '2px 8px' }}>
-            {pendingInvites.length} pending
-          </span>
-        </div>
-
-        {pendingInvites.length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13, fontStyle: 'italic' }}>
-            No pending invites
-          </div>
-        ) : pendingInvites.map(inv => {
-          const daysLeft = Math.ceil((new Date(inv.expires_at) - new Date()) / 86_400_000);
-          return (
-            <div key={inv.invite_id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px', borderBottom: '1px dashed var(--rule-soft)' }}>
-              <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'rgba(5,183,170,.12)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>✉</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
-                  {inv.full_name || inv.email}
-                </div>
-                {inv.full_name && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{inv.email}</div>}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
-                  <RolePill role={inv.role} />
-                  {inv.member_role && (
-                    <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{inv.member_role}</span>
-                  )}
-                  {inv.role === 'client' && (
-                    <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 99,
-                      background: inv.receives_approval_emails ? 'rgba(5,183,170,.12)' : 'var(--bg-soft)',
-                      color: inv.receives_approval_emails ? 'var(--k-primary)' : 'var(--ink-faint)' }}>
-                      {inv.receives_approval_emails ? '✓ Approval emails on' : 'Approval emails off'}
-                    </span>
-                  )}
-                  <span style={{ fontSize: 11, color: daysLeft <= 1 ? 'var(--danger)' : 'var(--ink-faint)' }}>
-                    Expires in {daysLeft}d
-                  </span>
-                  {inv.invited_by_name && (
-                    <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>· by {inv.invited_by_name}</span>
-                  )}
-                </div>
-              </div>
-              <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => copyLink(inv.invite_link, inv.invite_id)}>
-                {copiedId === inv.invite_id ? '✓ Copied!' : 'Copy link'}
-              </button>
-              <button className="k-btn k-btn--ghost k-btn--sm" style={{ color: 'var(--danger)', borderColor: 'transparent' }}
-                onClick={() => revokeInvite(inv.invite_id)}>
-                Revoke
-              </button>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ── All Users ── */}
-      <div className="k-card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--rule-soft)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>All Users</span>
-          <span style={{ fontSize: 11, color: 'var(--ink-3)', background: 'var(--bg-soft)', borderRadius: 99, padding: '2px 8px' }}>{users.length} total</span>
-        </div>
-
-        {users.map((u, i) => {
-          const isSelf      = u.user_id === me?.user_id;
-          const displayName = u.full_name || u.name || u.email || '?';
-          const joined      = u.created_at
-            ? new Date(u.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
-            : null;
-
-          return (
-            <div key={u.user_id} style={{ padding: '16px 20px', borderBottom: '1px dashed var(--rule-soft)' }}>
-              {/* Top row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <UserAvatar user={u} index={i} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {displayName}
-                    {isSelf && <span style={{ fontSize: 11, color: 'var(--ink-faint)', fontWeight: 400 }}>(you)</span>}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                    {u.email}
-                    {u.member_role && <span style={{ color: 'var(--ink-faint)' }}> · {u.member_role}</span>}
-                    {u.company_name && <span style={{ color: 'var(--ink-faint)' }}> @ {u.company_name}</span>}
-                  </div>
-                </div>
-                <RolePill role={u.role} />
-
-                {/* Edit button */}
-                <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => setEditUser(u)} title="Edit user">
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M11 2l3 3-9 9H2v-3L11 2z"/></svg>
-                  Edit
-                </button>
-
-                {/* Reset password */}
-                <ResetLinkButton userId={u.user_id} pushToast={pushToast} compact />
-
-                {/* Remove button */}
-                <button className="k-iconbtn" style={{ color: 'var(--danger)', opacity: isSelf ? 0.3 : 1 }}
-                  onClick={() => removeUser(u)} disabled={isSelf} title="Remove user" aria-label="Remove user">
-                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 4h10M5 4V3h6v1M6 7v5M10 7v5M4 4l1 9h6l1-9"/></svg>
-                </button>
-              </div>
-
-              {/* Detail strip — always visible */}
-              <div style={{ marginTop: 10, marginLeft: 52, display: 'flex', flexWrap: 'wrap', gap: '6px 20px',
-                padding: '10px 14px', background: 'var(--bg-soft)', borderRadius: 8 }}>
-                {[
-                  { label: 'User ID',          value: u.user_id,     mono: true },
-                  { label: 'Provider',         value: u.provider || 'local' },
-                  { label: 'Position',         value: u.position },
-                  { label: 'Company',          value: u.company_name },
-                  { label: 'Job title',        value: u.member_role },
-                  { label: 'Approval emails',  value: u.role === 'client' ? (u.receives_approval_emails !== false ? 'Yes' : 'No') : null },
-                  { label: 'Joined',           value: joined },
-                ].map(f => !f.value ? null : (
-                  <div key={f.label}>
-                    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-faint)', marginBottom: 2 }}>{f.label}</div>
-                    <div style={{ fontSize: 11, color: 'var(--ink-2)', fontFamily: f.mono ? 'var(--font-mono)' : 'inherit', wordBreak: 'break-all' }}>{f.value}</div>
-                  </div>
-                ))}
+                <span className="adm-kv__v">{invite.receives_approval_emails ? 'On' : 'Off'}</span>
               </div>
             </div>
-          );
-        })}
-      </div>
-      {/* ── Brand Colors ── */}
-      <div className="k-card" style={{ marginTop: 'var(--sp-5)' }}>
-        <div className="k-card__head">
-          <div className="k-card__titles">
-            <h3 className="k-card__title">Brand Colors</h3>
-            <span className="k-card__sans">ब्रांड रंग</span>
+          )}
+
+          <div className="adm-actions">
+            <Button variant="fill" disabled={sending || !invite.email.trim()} onClick={sendInvite}>
+              {sending ? 'Sending…' : 'Send invite'}
+            </Button>
           </div>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHead title="Pending invites" actions={<span className="apg__secn">{pending.length}</span>} />
+        <CardBody flush>
+          {pending.length === 0 ? (
+            <EmptyState
+              icon="check"
+              tone="ok"
+              title={{ en: 'Nothing is waiting', hi: 'कुछ लंबित नहीं' }}
+              description="Every invite sent has been accepted or has expired."
+            />
+          ) : (
+            <Table>
+              <TableHead>
+                <HeadCell>Invited</HeadCell>
+                <HeadCell>Account type</HeadCell>
+                <HeadCell>Expires</HeadCell>
+                <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
+              </TableHead>
+              <TableBody>
+                {pending.map(iv => {
+                  const days = Math.ceil((new Date(iv.expires_at) - new Date()) / 86400000);
+                  return (
+                    <Row key={iv.invite_id}>
+                      <Cell>
+                        <span className="adm-name">
+                          <span className="adm-name__c">
+                            <b>{iv.full_name || iv.email}</b>
+                            <i>{iv.full_name ? iv.email : ''}{iv.invited_by_name ? ` · by ${iv.invited_by_name}` : ''}</i>
+                          </span>
+                        </span>
+                      </Cell>
+                      <Cell><Tag color={ACCOUNT_TONE[iv.role] || ACCOUNT_TONE.member}>{iv.role}</Tag></Cell>
+                      <Cell>
+                        <Tag color={days <= 1 ? 'var(--danger)' : 'var(--on-surface-3)'}>
+                          {days <= 0 ? 'today' : `${days}d`}
+                        </Tag>
+                      </Cell>
+                      <Cell>
+                        <span className="adm-actions">
+                          <Button size="sm" variant="ghost" onClick={() => copy(iv.invite_link, iv.invite_id)}>
+                            {copied === iv.invite_id ? 'Copied' : 'Copy link'}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() => setConfirm({
+                              title: 'Revoke invite',
+                              message: `The link sent to ${iv.email} stops working immediately.`,
+                              confirmLabel: 'Revoke',
+                              onConfirm: async () => {
+                                try {
+                                  await api.delete(`/admin/invites/${iv.invite_id}`);
+                                  setInvites(prev => prev.filter(x => x.invite_id !== iv.invite_id));
+                                  pushToast({ type: 'success', title: 'Invite revoked' });
+                                } catch {
+                                  pushToast({ type: 'error', title: 'Could not revoke the invite' });
+                                  load();
+                                }
+                              },
+                            })}
+                          >
+                            Revoke
+                          </Button>
+                        </span>
+                      </Cell>
+                    </Row>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardBody>
+      </Card>
+    </div>
+  );
+
+  return (
+    <div className="apg">
+      <header className="apg__head">
+        <div className="apg__titles">
+          <h1 className="apg__t">
+            Platform
+            <span className="apg__hi" lang="hi" aria-hidden="true">प्रशासन</span>
+          </h1>
+          <p className="apg__lede">
+            Accounts, invites and platform roles — every one of these reaches across
+            organisations, and every one of them is audited.
+          </p>
         </div>
-        <div className="k-card__body">
-          <div style={{ fontSize: 13, color: 'var(--ink-3)', marginBottom: 16, lineHeight: 1.5 }}>
-            Save your workspace's hex colors with names. These appear as a reference palette everywhere in the app — templates, task drawers, project settings.
-          </div>
-          <BrandKit mode="manage" />
-        </div>
-      </div>
+      </header>
 
-      {/* ── R2 Folder Map ── */}
-      <div className="k-card" style={{ padding: 0, overflow: 'hidden', marginTop: 'var(--sp-5)' }}>
-        <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--rule-soft)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <div>
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>R2 Folder Map</span>
-            <span style={{ fontSize: 11, color: 'var(--ink-3)', marginLeft: 8 }}>परियोजना फ़ोल्डर</span>
-          </div>
-          <input
-            className="k-input"
-            style={{ maxWidth: 220 }}
-            placeholder="Search project or team_id…"
-            value={teamFilter}
-            onChange={e => setTeamFilter(e.target.value)}
-          />
-        </div>
+      <Tabs
+        tabs={[
+          { value: 'overview', label: 'Overview', content: overviewTab },
+          { value: 'users', label: 'Accounts', count: users.length, content: usersTab },
+          { value: 'invites', label: 'Invites', count: pending.length, content: invitesTab },
+          { value: 'roles', label: 'Platform roles', content: <PlatformRolesPanel /> },
+        ]}
+      />
 
-        <p style={{ margin: 0, padding: '10px 20px', fontSize: 12, color: 'var(--ink-3)', borderBottom: '1px dashed var(--rule-soft)' }}>
-          Cloudflare R2 stores each project's attachments under <code style={{ fontFamily: 'var(--font-mono)' }}>projects/&#123;team_id&#125;/</code> — use this table to identify which folder belongs to which project.
-        </p>
+      {editing && (
+        <EditUserPanel
+          user={editing}
+          onClose={() => setEditing(null)}
+          onSaved={updated => setUsers(prev => prev.map(u => (u.user_id === updated.user_id ? updated : u)))}
+        />
+      )}
 
-        {filteredTeams.length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-faint)', fontSize: 13, fontStyle: 'italic' }}>
-            {teams.length === 0 ? 'No projects yet' : 'No projects match your search'}
-          </div>
-        ) : filteredTeams.map(t => (
-          <div key={t.team_id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: '1px dashed var(--rule-soft)' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>{t.name}</div>
-              <div style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>{t.r2_folder}</div>
-            </div>
-            <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => copyFolder(t.r2_folder, t.team_id)}>
-              {copiedFolder === t.team_id ? '✓ Copied!' : 'Copy path'}
-            </button>
-          </div>
-        ))}
-      </div>
+      {removing && (
+        <RemoveUserModal
+          user={removing}
+          others={users.filter(u => u.user_id !== removing.user_id && u.user_id !== me?.user_id)}
+          onClose={() => setRemoving(null)}
+          onRemoved={id => setUsers(prev => prev.filter(u => u.user_id !== id))}
+        />
+      )}
 
-      <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
   );
 }

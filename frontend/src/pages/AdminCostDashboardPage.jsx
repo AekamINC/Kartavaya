@@ -1,462 +1,566 @@
 /**
- * AdminCostDashboardPage.jsx — Platform admin: cost analytics across all orgs.
- * Shows both Aekam actual cost (USD) and client-charged amount (INR with markup).
+ * AdminCostDashboardPage — per-model, per-org, margin, trend.
+ * 11-platform-admin.md §1 "Margin, and where it may appear" and §5.
+ *
+ * 11 §5: "Keep period + currency selectors. Add margin with visible FX and
+ * markup, per-org profitability, trend."
+ *
+ *  · **Period — held.** Four periods, kept.
+ *  · **Currency — stale as written.** There was no currency selector to keep;
+ *    the page rendered USD and INR side by side in fixed columns. One is added,
+ *    and it is a DISPLAY control: `/platform-analytics` and `/cost-summary`
+ *    already return both figures plus the rate, so switching does not refetch
+ *    and cannot show a number converted at a different rate from the one
+ *    printed beside it.
+ *  · **Margin — held.** It was a bare `margin_inr` in a green cell with nothing
+ *    to check it against. Every margin figure now shows its derivation through
+ *    `MarginCell`: metered USD × the FX rate used × the org's markup = the INR
+ *    charged. 11: "A margin number with no visible derivation is unauditable,
+ *    and this is the number the business runs on."
+ *  · **Per-org profitability — held.** `/cost-summary` returns cost and charge
+ *    but no margin, so margin is derived here from the same `usd_to_inr` the
+ *    platform view reports rather than from a second rate lookup.
+ *
+ * ── The containment rule ─────────────────────────────────────────────────────
+ *
+ * 11 §1: platform cost, margin and markup "do not belong in any tenant
+ * response, export, PDF or support-agent view… A CSS-level or component-level
+ * guard is not sufficient." `canSeeCost` below mirrors the server guard so an
+ * operator who will be refused is told rather than shown four spinners and a
+ * 403; `MarginCell` refuses to paint outside the platform surface. Neither is
+ * the enforcement — the serializer is, and it is still outstanding.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../lib/api';
-import { useToast } from '../components/ui/toast';
-import { PageHeader, StatTile } from '../components/editorial';
-import { TabBar, Section, DataTable, Td, BackButton, Shimmer } from '../components/editorial';
+import {
+  Button, Card, CardHead, CardBody, Tabs,
+  EmptyState, ErrorState, errorKind, SkeletonPage,
+  Table, TableHead, TableBody, Row, Cell, HeadCell,
+  StatTile, useToast,
+} from '../components/ui';
+import { currentUser } from '../lib/auth';
+import { inr } from '../lib/inr';
+import MarginCell from './admin/MarginCell';
+import { canSeeCost } from './admin/platformRoles';
+import '../styles/admin.css';
 
 const PERIODS = [
-  { code: '7d', label: '7 days' },
-  { code: '30d', label: '30 days' },
-  { code: '90d', label: '90 days' },
-  { code: 'ytd', label: 'YTD' },
+  { id: '7d', label: '7 days' },
+  { id: '30d', label: '30 days' },
+  { id: '90d', label: '90 days' },
+  { id: 'ytd', label: 'YTD' },
 ];
 
-function fmtUSD(v) { return `$${(v || 0).toFixed(4)}`; }
-function fmtUSD2(v) { return `$${(v || 0).toFixed(2)}`; }
-function fmtINR(v) { return `₹${(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
-function fmtNum(v) { return (v || 0).toLocaleString('en-IN'); }
-function fmtDate(d) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-function fmtPct(v) { return `${((v || 0) * 100).toFixed(0)}%`; }
+const CURRENCIES = [
+  { id: 'inr', label: '₹ INR' },
+  { id: 'usd', label: '$ USD' },
+];
 
-function DualCost({ usd, inr, charged }) {
-  return (
-    <div style={{ lineHeight: 1.4 }}>
-      <div style={{ fontWeight: 600 }}>{fmtINR(charged)}</div>
-      <div style={{ fontSize: 10, color: 'var(--ink-3)' }}>{fmtUSD2(usd)} · ₹{(inr || 0).toFixed(2)}</div>
-    </div>
-  );
-}
+const usd = (v, dp = 2) => `$${(Number(v) || 0).toFixed(dp)}`;
+const count = v => (Number(v) || 0).toLocaleString('en-IN');
+const pct = v => `${Math.round((Number(v) || 0) * 100)}%`;
+const fmtDate = d => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
-function PeriodSelector({ value, onChange }) {
+function Segmented({ label, options, value, onChange }) {
   return (
-    <div style={{ display: 'flex', gap: 4 }}>
-      {PERIODS.map(p => (
-        <button key={p.code} className={`k-btn k-btn--sm ${value === p.code ? 'k-btn--primary' : 'k-btn--ghost'}`}
-          onClick={() => onChange(p.code)}>
-          {p.label}
+    <div className="adm-seg" role="group" aria-label={label}>
+      {options.map(o => (
+        <button
+          key={o.id}
+          type="button"
+          aria-pressed={value === o.id}
+          className={value === o.id ? 'on' : undefined}
+          onClick={() => onChange(o.id)}
+        >
+          {o.label}
         </button>
       ))}
     </div>
   );
 }
 
-// ── Tab: Platform Overview ─────────────────────────────────
+/* ── Platform ──────────────────────────────────────────────────────────────── */
 
-function PlatformOverview({ period }) {
+function PlatformView({ period, currency }) {
   const { pushToast } = useToast();
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
 
-  useEffect(() => {
-    setLoading(true);
-    api.get(`/v1/admin/orgs/platform-analytics?period=${period}`)
-      .then(r => setData(r.data))
-      .catch(() => pushToast({ type: 'error', title: 'Could not load platform analytics' }))
-      .finally(() => setLoading(false));
-  }, [period]);
+  const load = useCallback(() => api
+    .get(`/v1/admin/orgs/platform-analytics?period=${period}`)
+    .then(r => { setData(r.data); setErr(null); })
+    .catch(e => { setErr(e); pushToast({ type: 'error', title: 'Could not load platform analytics' }); }),
+  [period, pushToast]);
 
-  if (loading) return <Shimmer lines={8} />;
-  if (!data) return null;
+  useEffect(() => { setData(null); load(); }, [load]);
 
-  const tc = data.total_cost || {};
-  const ac = data.ai_cost || {};
-  const sc = data.scraper_cost || {};
+  if (err) return <ErrorState kind={errorKind(err)} grant="finance access to platform cost" onRetry={load} />;
+  if (!data) return <SkeletonPage withStats withTable />;
+
+  const fx = data.usd_to_inr;
+  const markup = data.default_markup_pct ?? data.markup_pct;
+  const money = currency === 'usd'
+    ? { total: usd(data.total_cost?.usd), ai: usd(data.ai_cost?.usd), scr: usd(data.scraper_cost?.usd) }
+    : { total: inr(data.total_cost?.inr, { decimals: 2 }), ai: inr(data.ai_cost?.inr, { decimals: 2 }), scr: inr(data.scraper_cost?.inr, { decimals: 2 }) };
 
   return (
-    <>
-      <div className="k-stats">
-        <StatTile label="Total Orgs" value={fmtNum(data.total_orgs)} />
-        <StatTile label="Total Users" value={fmtNum(data.total_users)} />
-        <StatTile label="Usage Revenue" value={fmtINR(data.total_revenue_inr)} />
-        <StatTile label="Aekam Cost" value={fmtINR(data.total_cost_inr)} />
-        <StatTile label="Margin" value={fmtINR(data.margin_inr)} />
-        <StatTile label="Total AI Calls" value={fmtNum(data.total_ai_calls)} />
+    <div className="apg__sec">
+      <div className="apg__grid">
+        <StatTile label="Organisations" sanskrit="संस्थाएँ" value={count(data.total_orgs)} />
+        <StatTile label="Users" sanskrit="सदस्य" value={count(data.total_users)} />
+        <StatTile label="Usage revenue" value={inr(data.total_revenue_inr)} variant="ok" />
+        <StatTile label="Aekam cost" value={inr(data.total_cost_inr)} />
+        <StatTile label="AI calls" value={count(data.total_ai_calls)} />
       </div>
 
-      <Section title={`Cost Summary · Default Markup ${fmtPct(data.default_markup_pct || data.markup_pct)} · Live Rate ₹${data.usd_to_inr ? data.usd_to_inr.toFixed(2) : '—'}/USD`}>
-        <DataTable columns={['Category', 'Aekam Cost (USD)', 'Aekam Cost (INR)', 'Client Charge (INR)']}>
-          <tr>
-            <Td bold>AI Services</Td>
-            <Td mono>{fmtUSD2(ac.usd)}</Td>
-            <Td mono>{fmtINR(ac.inr)}</Td>
-            <Td mono bold style={{ color: 'var(--k-primary)' }}>{fmtINR(ac.charged_inr)}</Td>
-          </tr>
-          <tr>
-            <Td bold>Scraper / Data</Td>
-            <Td mono>{fmtUSD2(sc.usd)}</Td>
-            <Td mono>{fmtINR(sc.inr)}</Td>
-            <Td mono bold style={{ color: 'var(--k-primary)' }}>{fmtINR(sc.charged_inr)}</Td>
-          </tr>
-          <tr style={{ borderTop: '2px solid var(--rule)' }}>
-            <Td bold>Total</Td>
-            <Td mono bold>{fmtUSD2(tc.usd)}</Td>
-            <Td mono bold>{fmtINR(tc.inr)}</Td>
-            <Td mono bold style={{ color: 'var(--k-primary)', fontSize: 14 }}>{fmtINR(tc.charged_inr)}</Td>
-          </tr>
-        </DataTable>
-      </Section>
+      <Card>
+        <CardHead
+          title="Margin"
+          sanskrit="लाभ"
+          actions={<span className="apg__secn">rate ₹{fx ? Number(fx).toFixed(2) : '—'}/USD · markup {pct(markup)}</span>}
+        />
+        <CardBody>
+          {/* The one number the business runs on, with its working beside it. */}
+          <MarginCell
+            marginInr={data.margin_inr}
+            costUsd={data.total_cost?.usd}
+            fxRate={fx}
+            markupPct={markup}
+            chargedInr={data.total_cost?.charged_inr}
+          />
+        </CardBody>
+      </Card>
 
-      <Section title="Cost by Provider">
-        <DataTable columns={['Provider', 'Cost (USD)', 'Charge (INR)', 'Calls']}>
-          {(data.ai_cost_by_provider || []).map((r, i) => (
-            <tr key={i}>
-              <Td>{r.provider}</Td>
-              <Td mono>{fmtUSD(r.cost_usd)}</Td>
-              <Td mono>{fmtINR(r.cost?.charged_inr)}</Td>
-              <Td mono>{fmtNum(r.call_count)}</Td>
-            </tr>
-          ))}
-          {(data.ai_cost_by_provider || []).length === 0 && (
-            <tr><Td colSpan={4} style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>No AI usage in this period.</Td></tr>
-          )}
-        </DataTable>
-      </Section>
+      <Card>
+        <CardHead title="Cost by category" actions={<span className="apg__secn">{money.total}</span>} />
+        <CardBody flush>
+          <Table>
+            <TableHead>
+              <HeadCell>Category</HeadCell>
+              <HeadCell num>Aekam cost</HeadCell>
+              <HeadCell num>Client charge</HeadCell>
+            </TableHead>
+            <TableBody>
+              <Row>
+                <Cell>AI services</Cell>
+                <Cell num>{money.ai}</Cell>
+                <Cell num>{inr(data.ai_cost?.charged_inr, { decimals: 2 })}</Cell>
+              </Row>
+              <Row>
+                <Cell>Scraper and data</Cell>
+                <Cell num>{money.scr}</Cell>
+                <Cell num>{inr(data.scraper_cost?.charged_inr, { decimals: 2 })}</Cell>
+              </Row>
+              <Row>
+                <Cell><b>Total</b></Cell>
+                <Cell num><b>{money.total}</b></Cell>
+                <Cell num><b>{inr(data.total_cost?.charged_inr, { decimals: 2 })}</b></Cell>
+              </Row>
+            </TableBody>
+          </Table>
+        </CardBody>
+      </Card>
 
-      <Section title="Top Spenders">
-        <DataTable columns={['Organisation', 'Markup', 'Aekam Cost (USD)', 'Client Charge (INR)', 'Margin (INR)', 'AI', 'Scraper']}>
-          {(data.top_orgs_by_spend || []).map((r, i) => (
-            <tr key={i}>
-              <Td bold>{r.org_name}</Td>
-              <Td mono>{fmtPct(r.markup_pct)}</Td>
-              <Td mono>{fmtUSD2(r.total_cost_usd)}</Td>
-              <Td mono bold style={{ color: 'var(--k-primary)' }}>{fmtINR(r.charged_inr)}</Td>
-              <Td mono style={{ color: '#10b981', fontWeight: 600 }}>{fmtINR(r.margin_inr)}</Td>
-              <Td mono>{fmtUSD2(r.ai_cost_usd)}</Td>
-              <Td mono>{fmtUSD2(r.scraper_cost_usd)}</Td>
-            </tr>
-          ))}
-          {(data.top_orgs_by_spend || []).length === 0 && (
-            <tr><Td colSpan={7} style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>No spend data in this period.</Td></tr>
+      <Card>
+        <CardHead title="By provider" />
+        <CardBody flush>
+          {(data.ai_cost_by_provider || []).length === 0 ? (
+            <EmptyState title={{ en: 'No AI usage in this period', hi: 'कोई उपयोग नहीं' }} description="Nothing has been metered yet in the selected window." />
+          ) : (
+            <Table>
+              <TableHead>
+                <HeadCell>Provider</HeadCell>
+                <HeadCell num>Cost</HeadCell>
+                <HeadCell num>Charged</HeadCell>
+                <HeadCell num>Calls</HeadCell>
+              </TableHead>
+              <TableBody>
+                {data.ai_cost_by_provider.map(r => (
+                  <Row key={r.provider}>
+                    <Cell>{r.provider}</Cell>
+                    <Cell num>{currency === 'usd' ? usd(r.cost_usd, 4) : inr(r.cost?.inr, { decimals: 2 })}</Cell>
+                    <Cell num>{inr(r.cost?.charged_inr, { decimals: 2 })}</Cell>
+                    <Cell num>{count(r.call_count)}</Cell>
+                  </Row>
+                ))}
+              </TableBody>
+            </Table>
           )}
-        </DataTable>
-      </Section>
-    </>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHead title="Most profitable organisations" sanskrit="लाभप्रदता" />
+        <CardBody flush>
+          {(data.top_orgs_by_spend || []).length === 0 ? (
+            <EmptyState title={{ en: 'No spend in this period', hi: 'कोई व्यय नहीं' }} description="Per-org profitability appears once metered usage lands." />
+          ) : (
+            <Table>
+              <TableHead>
+                <HeadCell>Organisation</HeadCell>
+                <HeadCell num>Markup</HeadCell>
+                <HeadCell num>Cost</HeadCell>
+                <HeadCell num>Charged</HeadCell>
+                <HeadCell num>Margin</HeadCell>
+              </TableHead>
+              <TableBody>
+                {data.top_orgs_by_spend.map(r => (
+                  <Row key={r.org_id || r.org_name}>
+                    <Cell>{r.org_name}</Cell>
+                    <Cell num>{pct(r.markup_pct)}</Cell>
+                    <Cell num>{currency === 'usd' ? usd(r.total_cost_usd) : inr((Number(r.total_cost_usd) || 0) * (Number(fx) || 0), { decimals: 2 })}</Cell>
+                    <Cell num>{inr(r.charged_inr, { decimals: 2 })}</Cell>
+                    <Cell num>
+                      <MarginCell
+                        row
+                        marginInr={r.margin_inr}
+                        costUsd={r.total_cost_usd}
+                        fxRate={fx}
+                        markupPct={r.markup_pct}
+                        chargedInr={r.charged_inr}
+                      />
+                    </Cell>
+                  </Row>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardBody>
+      </Card>
+    </div>
   );
 }
 
-// ── Tab: All Orgs ──────────────────────────────────────────
+/* ── All orgs ──────────────────────────────────────────────────────────────── */
 
-function AllOrgs({ period, onSelectOrg }) {
+function OrgsView({ period, currency, fx, onSelect }) {
   const { pushToast } = useToast();
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState(null);
 
-  useEffect(() => {
-    setLoading(true);
-    api.get(`/v1/admin/orgs/cost-summary?period=${period}`)
-      .then(r => setData(r.data.data || r.data || []))
-      .catch(() => pushToast({ type: 'error', title: 'Could not load cost summary' }))
-      .finally(() => setLoading(false));
-  }, [period]);
+  const load = useCallback(() => api
+    .get(`/v1/admin/orgs/cost-summary?period=${period}`)
+    .then(r => { setRows(r.data?.data || r.data || []); setErr(null); })
+    .catch(e => { setErr(e); pushToast({ type: 'error', title: 'Could not load the cost summary' }); }),
+  [period, pushToast]);
 
-  if (loading) return <Shimmer lines={10} />;
+  useEffect(() => { setRows(null); load(); }, [load]);
+
+  /* `/cost-summary` returns cost and charge but no margin. It is derived here
+     from the SAME rate the platform view reports, rather than from a second
+     lookup that could resolve a minute later and disagree by a rupee. */
+  const withMargin = useMemo(() => (rows || []).map(r => {
+    const costInr = (Number(r.total_cost_usd) || 0) * (Number(fx) || 0);
+    return { ...r, margin_inr: (Number(r.charged_inr) || 0) - costInr, cost_inr: costInr };
+  }), [rows, fx]);
+
+  if (err) return <ErrorState kind={errorKind(err)} grant="finance access to platform cost" onRetry={load} />;
+  if (!rows) return <SkeletonPage withTable />;
+  if (rows.length === 0) {
+    return <EmptyState title={{ en: 'No organisation has metered usage', hi: 'कोई उपयोग नहीं' }} description="Nothing has been billed against a provider in this window." />;
+  }
 
   return (
-    <Section title="All Organisations">
-      <DataTable columns={['Org Name', 'Plan', 'Markup', 'Cost (USD)', 'Charge (INR)', 'AI Calls', 'Last Active']}>
-        {data.map(r => (
-          <tr key={r.org_id} onClick={() => onSelectOrg(r.org_id, r.org_name)}
-            style={{ cursor: 'pointer' }}
-            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-soft)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-            <Td bold>{r.org_name}</Td>
-            <Td>{r.plan_name || 'Free'}</Td>
-            <Td mono>{r.markup_pct != null ? `${Math.round(r.markup_pct * 100)}%` : '30%'}</Td>
-            <Td mono>{fmtUSD2(r.total_cost_usd)}</Td>
-            <Td mono bold style={{ color: 'var(--k-primary)' }}>{fmtINR(r.charged_inr)}</Td>
-            <Td mono>{fmtNum(r.ai_calls)}</Td>
-            <Td>{fmtDate(r.last_active)}</Td>
-          </tr>
-        ))}
-        {data.length === 0 && (
-          <tr><Td colSpan={7} style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>No organisations found.</Td></tr>
-        )}
-      </DataTable>
-    </Section>
-  );
-}
-
-// ── Tab: Org Detail ────────────────────────────────────────
-
-function OrgDetail({ orgId, orgName, period, onBack }) {
-  const { pushToast } = useToast();
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [dlLoading, setDlLoading] = useState(false);
-  const [editMarkup, setEditMarkup] = useState(null);
-  const [editCredits, setEditCredits] = useState(null);
-  const [editPrice, setEditPrice] = useState(null);
-  const [savingMarkup, setSavingMarkup] = useState(false);
-
-  useEffect(() => {
-    setLoading(true);
-    api.get(`/v1/admin/orgs/${orgId}/cost-breakdown?period=${period}`)
-      .then(r => setData(r.data))
-      .catch(() => pushToast({ type: 'error', title: 'Could not load cost breakdown' }))
-      .finally(() => setLoading(false));
-  }, [orgId, period]);
-
-  if (loading) return <><BackButton onClick={onBack} /><Shimmer lines={8} /></>;
-  if (!data) return <BackButton onClick={onBack} />;
-
-  const maxDayCost = Math.max(
-    ...(data.daily_trend || []).map(d => d.ai_cost + d.scraper_cost),
-    0.01
-  );
-
-  const t = data.total || {};
-  const a = data.ai || {};
-  const s = data.scraper || {};
-
-  return (
-    <>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-        <BackButton onClick={onBack} label="Back to All Orgs" />
-        <button className="k-btn k-btn--sm k-btn--ghost"
-          disabled={dlLoading}
-          onClick={async () => {
-            setDlLoading(true);
-            try {
-              const res = await api.get(`/v1/admin/orgs/${orgId}/cost-report-pdf?period=${period}`, { responseType: 'blob' });
-              const url = URL.createObjectURL(res.data);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = `CostReport-${orgName}-${period}.pdf`;
-              a.click();
-              URL.revokeObjectURL(url);
-            } catch { pushToast({ type: 'error', title: 'PDF generation failed' }); }
-            finally { setDlLoading(false); }
-          }}>
-          {dlLoading ? 'Generating…' : '↓ Download Client Report'}
-        </button>
-      </div>
-
-      <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 600, color: 'var(--ink)', margin: '8px 0 16px' }}>
-        {orgName || 'Organisation'} — Cost Breakdown
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, margin: '0 0 12px', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Markup</span>
-          <input className="k-input" type="number" min="0" max="100" step="1"
-            style={{ width: 56, textAlign: 'center' }}
-            value={editMarkup != null ? editMarkup : Math.round((data.markup_pct || 0.3) * 100)}
-            onChange={e => setEditMarkup(Number(e.target.value))} />
-          <span style={{ fontSize: 13, color: 'var(--ink-3)' }}>%</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Monthly Credits</span>
-          <input className="k-input" type="number" min="0" step="50"
-            style={{ width: 80, textAlign: 'center' }}
-            value={editCredits != null ? editCredits : (data.monthly_credits || 0)}
-            onChange={e => setEditCredits(Number(e.target.value))} />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Monthly Price ₹</span>
-          <input className="k-input" type="number" min="0" step="500"
-            style={{ width: 90, textAlign: 'center' }}
-            value={editPrice != null ? editPrice : (data.monthly_price || 0)}
-            onChange={e => setEditPrice(Number(e.target.value))} />
-        </div>
-        {(editMarkup != null || editCredits != null || editPrice != null) && (
-          <button className="k-btn k-btn--sm k-btn--primary" disabled={savingMarkup}
-            onClick={async () => {
-              setSavingMarkup(true);
-              try {
-                const patch = {};
-                if (editMarkup != null) patch.markup_pct = editMarkup / 100;
-                if (editCredits != null) patch.monthly_credits = editCredits;
-                if (editPrice != null) patch.monthly_price = editPrice;
-                const res = await api.patch(`/v1/admin/orgs/${orgId}/settings`, patch);
-                pushToast({ type: 'success', title: 'Settings updated' });
-                setData(d => ({ ...d, markup_pct: res.data.markup_pct, monthly_credits: res.data.monthly_credits, monthly_price: res.data.monthly_price }));
-                setEditMarkup(null); setEditCredits(null); setEditPrice(null);
-              } catch { pushToast({ type: 'error', title: 'Failed to update settings' }); }
-              finally { setSavingMarkup(false); }
-            }}>
-            {savingMarkup ? 'Saving…' : 'Save'}
-          </button>
-        )}
-        <span style={{ fontSize: 12, color: 'var(--ink-faint)', marginLeft: 'auto' }}>
-          Live Rate: ₹{data.usd_to_inr ? data.usd_to_inr.toFixed(2) : '—'}/USD
-        </span>
-      </div>
-
-      <Section title={`Summary · Markup ${fmtPct(data.markup_pct)} · Live Rate ₹${data.usd_to_inr ? data.usd_to_inr.toFixed(2) : '—'}/USD`}>
-        <DataTable columns={['Category', 'Aekam Cost (USD)', 'Aekam Cost (INR)', 'Client Charge (INR)']}>
-          <tr>
-            <Td bold>AI Services</Td>
-            <Td mono>{fmtUSD2(a.usd)}</Td>
-            <Td mono>{fmtINR(a.inr)}</Td>
-            <Td mono bold style={{ color: 'var(--k-primary)' }}>{fmtINR(a.charged_inr)}</Td>
-          </tr>
-          <tr>
-            <Td bold>Scraper / Data</Td>
-            <Td mono>{fmtUSD2(s.usd)}</Td>
-            <Td mono>{fmtINR(s.inr)}</Td>
-            <Td mono bold style={{ color: 'var(--k-primary)' }}>{fmtINR(s.charged_inr)}</Td>
-          </tr>
-          <tr style={{ borderTop: '2px solid var(--rule)' }}>
-            <Td bold>Total</Td>
-            <Td mono bold>{fmtUSD2(t.usd)}</Td>
-            <Td mono bold>{fmtINR(t.inr)}</Td>
-            <Td mono bold style={{ color: 'var(--k-primary)', fontSize: 14 }}>{fmtINR(t.charged_inr)}</Td>
-          </tr>
-        </DataTable>
-      </Section>
-
-      <Section title="Credits">
-        <div className="k-stats" style={{ marginBottom: 16 }}>
-          <StatTile label="Current Balance" value={fmtNum(data.org_credits_balance)} />
-          <StatTile label="Used This Period" value={fmtNum(data.credits_used_period)} />
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink-2)' }}>Top Up:</span>
-          {[100, 200, 500, 1000].map(amt => (
-            <button key={amt} className="k-btn k-btn--sm k-btn--ghost"
-              onClick={async () => {
-                try {
-                  const res = await api.post(`/v1/admin/orgs/${orgId}/credits/topup`, { amount: amt });
-                  pushToast({ type: 'success', title: `+${amt} credits added. Balance: ${res.data.balance}` });
-                  setData(d => ({ ...d, org_credits_balance: res.data.balance }));
-                } catch (e) { pushToast({ type: 'error', title: e?.response?.data?.detail || 'Top-up failed' }); }
-              }}>
-              +{amt}
-            </button>
-          ))}
-          <input className="k-input" type="number" min="1" placeholder="Custom"
-            style={{ width: 80, fontSize: 12 }}
-            onKeyDown={async e => {
-              if (e.key === 'Enter' && e.target.value > 0) {
-                try {
-                  const res = await api.post(`/v1/admin/orgs/${orgId}/credits/topup`, { amount: Number(e.target.value) });
-                  pushToast({ type: 'success', title: `+${e.target.value} credits. Balance: ${res.data.balance}` });
-                  setData(d => ({ ...d, org_credits_balance: res.data.balance }));
-                  e.target.value = '';
-                } catch (err) { pushToast({ type: 'error', title: err?.response?.data?.detail || 'Top-up failed' }); }
-              }
-            }} />
-          <span style={{ fontSize: 11, color: 'var(--ink-faint)' }}>Enter + press Enter</span>
-        </div>
-      </Section>
-
-      {(data.per_client || []).length > 0 && (
-        <Section title="Per-Client Breakdown">
-          <DataTable columns={['Client', 'AI Cost (USD)', 'Client Charge (INR)', 'AI Calls']}>
-            {data.per_client.map((r, i) => (
-              <tr key={i}>
-                <Td bold>{r.client_name}</Td>
-                <Td mono>{fmtUSD(r.ai_cost_usd)}</Td>
-                <Td mono bold style={{ color: 'var(--k-primary)' }}>{fmtINR(r.ai_cost?.charged_inr)}</Td>
-                <Td mono>{fmtNum(r.ai_calls)}</Td>
-              </tr>
+    <Card>
+      <CardBody flush>
+        <Table className="adm-rows">
+          <TableHead>
+            <HeadCell>Organisation</HeadCell>
+            <HeadCell>Plan</HeadCell>
+            <HeadCell num>Markup</HeadCell>
+            <HeadCell num>Cost</HeadCell>
+            <HeadCell num>Charged</HeadCell>
+            <HeadCell num>Margin</HeadCell>
+            <HeadCell num>AI calls</HeadCell>
+            <HeadCell>Last active</HeadCell>
+          </TableHead>
+          <TableBody>
+            {withMargin.map(r => (
+              <Row
+                key={r.org_id}
+                tabIndex={0}
+                onClick={() => onSelect(r)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(r); } }}
+              >
+                <Cell><b>{r.org_name}</b></Cell>
+                <Cell>{r.plan_name || 'Free'}</Cell>
+                <Cell num>{r.markup_pct != null ? pct(r.markup_pct) : '—'}</Cell>
+                <Cell num>{currency === 'usd' ? usd(r.total_cost_usd) : inr(r.cost_inr, { decimals: 2 })}</Cell>
+                <Cell num>{inr(r.charged_inr, { decimals: 2 })}</Cell>
+                <Cell num>
+                  <MarginCell
+                    row
+                    marginInr={r.margin_inr}
+                    costUsd={r.total_cost_usd}
+                    fxRate={fx}
+                    markupPct={r.markup_pct}
+                    chargedInr={r.charged_inr}
+                  />
+                </Cell>
+                <Cell num>{count(r.ai_calls)}</Cell>
+                <Cell>{fmtDate(r.last_active)}</Cell>
+              </Row>
             ))}
-          </DataTable>
-        </Section>
-      )}
-
-      <Section title="AI Costs by Model">
-        <DataTable columns={['Provider', 'Model', 'Cost (USD)', 'Charge (INR)', 'Calls', 'Tokens']}>
-          {(data.ai_costs || []).map((r, i) => (
-            <tr key={i}>
-              <Td>{r.provider}</Td>
-              <Td mono>{r.model}</Td>
-              <Td mono>{fmtUSD(r.cost_usd)}</Td>
-              <Td mono>{fmtINR(r.cost?.charged_inr)}</Td>
-              <Td mono>{fmtNum(r.call_count)}</Td>
-              <Td mono style={{ fontSize: 10 }}>{fmtNum(r.prompt_tokens)} / {fmtNum(r.completion_tokens)}</Td>
-            </tr>
-          ))}
-          {(data.ai_costs || []).length === 0 && (
-            <tr><Td colSpan={6} style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>No AI usage in this period.</Td></tr>
-          )}
-        </DataTable>
-      </Section>
-
-      <Section title="Scraper Costs">
-        <DataTable columns={['Scraper', 'Cost (USD)', 'Charge (INR)', 'Billed (INR)', 'Runs']}>
-          {(data.scraper_costs || []).map((r, i) => (
-            <tr key={i}>
-              <Td>{r.scraper_id}</Td>
-              <Td mono>{fmtUSD(r.cost_usd)}</Td>
-              <Td mono>{fmtINR(r.cost?.charged_inr)}</Td>
-              <Td mono>{fmtINR(r.billed_inr)}</Td>
-              <Td mono>{fmtNum(r.run_count)}</Td>
-            </tr>
-          ))}
-          {(data.scraper_costs || []).length === 0 && (
-            <tr><Td colSpan={5} style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>No scraper usage in this period.</Td></tr>
-          )}
-        </DataTable>
-      </Section>
-
-      <Section title="Daily Trend">
-        <div style={{ overflowX: 'auto' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, minHeight: 120, padding: '8px 0' }}>
-            {(data.daily_trend || []).map((d, i) => {
-              const aiH = (d.ai_cost / maxDayCost) * 100;
-              const scH = (d.scraper_cost / maxDayCost) * 100;
-              const dayLabel = new Date(d.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
-              return (
-                <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, minWidth: 18, maxWidth: 40 }}
-                  title={`${dayLabel}\nAI: ${fmtUSD2(d.ai_cost)}\nScraper: ${fmtUSD2(d.scraper_cost)}`}>
-                  <div style={{ width: '80%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                    <div style={{ height: Math.max(aiH, 1), background: 'var(--k-primary)', borderRadius: '3px 3px 0 0', opacity: 0.8 }} />
-                    <div style={{ height: Math.max(scH, 0.5), background: '#f59e0b', borderRadius: '0 0 3px 3px', opacity: 0.8 }} />
-                  </div>
-                  {(data.daily_trend || []).length <= 31 && (
-                    <div style={{ fontSize: 8, color: 'var(--ink-faint)', marginTop: 4, transform: 'rotate(-45deg)', whiteSpace: 'nowrap' }}>
-                      {dayLabel}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--ink-3)', marginTop: 8 }}>
-            <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: 'var(--k-primary)', marginRight: 4, verticalAlign: 'middle' }} /> AI Cost</span>
-            <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: '#f59e0b', marginRight: 4, verticalAlign: 'middle' }} /> Scraper Cost</span>
-          </div>
-        </div>
-      </Section>
-    </>
+          </TableBody>
+        </Table>
+      </CardBody>
+    </Card>
   );
 }
 
-// ── Main Page ──────────────────────────────────────────────
+/* ── One org ───────────────────────────────────────────────────────────────── */
 
-const TABS = ['Platform Overview', 'All Orgs'];
-const TAB_KEY = { 'Platform Overview': 'overview', 'All Orgs': 'orgs' };
+function OrgView({ org, period, currency, onBack }) {
+  const { pushToast } = useToast();
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [dl, setDl] = useState(false);
+
+  const load = useCallback(() => api
+    .get(`/v1/admin/orgs/${org.org_id}/cost-breakdown?period=${period}`)
+    .then(r => { setData(r.data); setErr(null); })
+    .catch(e => { setErr(e); pushToast({ type: 'error', title: 'Could not load the breakdown' }); }),
+  [org.org_id, period, pushToast]);
+
+  useEffect(() => { setData(null); load(); }, [load]);
+
+  const download = async () => {
+    setDl(true);
+    try {
+      const res = await api.get(`/v1/admin/orgs/${org.org_id}/cost-report-pdf?period=${period}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `CostReport-${org.org_name}-${period}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      pushToast({ type: 'error', title: 'The report did not generate' });
+    } finally { setDl(false); }
+  };
+
+  const trend = data?.daily_trend || [];
+  const peak = Math.max(...trend.map(d => (d.ai_cost || 0) + (d.scraper_cost || 0)), 0.01);
+
+  return (
+    <div className="apg__sec">
+      <div className="apg__tools">
+        <Button variant="ghost" size="sm" onClick={onBack}>← All organisations</Button>
+        <span className="apg__spacer" />
+        <Button variant="out" size="sm" disabled={dl || !data} onClick={download}>
+          {dl ? 'Generating…' : 'Download client report'}
+        </Button>
+      </div>
+
+      <header className="apg__head">
+        <div className="apg__titles">
+          <h2 className="apg__t">{org.org_name}</h2>
+          <p className="apg__lede">
+            {/* The report the customer receives is the CHARGED column only. The
+                cost and margin columns on this page are the ones 11 §1 forbids
+                from reaching any tenant surface. */}
+            Aekam cost and margin are on this screen only. The downloadable report shows
+            the charged figures.
+          </p>
+        </div>
+      </header>
+
+      {err && <ErrorState kind={errorKind(err)} grant="finance access to platform cost" onRetry={load} />}
+      {!err && !data && <SkeletonPage withStats withTable />}
+
+      {!err && data && (
+        <>
+          <div className="apg__grid">
+            <StatTile label="Credit balance" value={count(data.org_credits_balance)} />
+            <StatTile label="Used this period" value={count(data.credits_used_period)} />
+            <StatTile label="Monthly credits" value={count(data.monthly_credits)} />
+            <StatTile label="Monthly price" value={inr(data.monthly_price)} />
+          </div>
+
+          <Card>
+            <CardHead
+              title="Margin"
+              actions={<span className="apg__secn">rate ₹{data.usd_to_inr ? Number(data.usd_to_inr).toFixed(2) : '—'}/USD · markup {pct(data.markup_pct)}</span>}
+            />
+            <CardBody>
+              <MarginCell
+                marginInr={(Number(data.total?.charged_inr) || 0) - (Number(data.total?.inr) || 0)}
+                costUsd={data.total?.usd}
+                fxRate={data.usd_to_inr}
+                markupPct={data.markup_pct}
+                chargedInr={data.total?.charged_inr}
+              />
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHead title="By model" />
+            <CardBody flush>
+              {(data.ai_costs || []).length === 0 ? (
+                <EmptyState title={{ en: 'No AI usage in this period', hi: 'कोई उपयोग नहीं' }} description="Per-model cost appears once a call is metered." />
+              ) : (
+                <Table>
+                  <TableHead>
+                    <HeadCell>Provider</HeadCell>
+                    <HeadCell>Model</HeadCell>
+                    <HeadCell num>Cost</HeadCell>
+                    <HeadCell num>Charged</HeadCell>
+                    <HeadCell num>Calls</HeadCell>
+                    <HeadCell num>Tokens in / out</HeadCell>
+                  </TableHead>
+                  <TableBody>
+                    {data.ai_costs.map((r, i) => (
+                      <Row key={`${r.provider}-${r.model}-${i}`}>
+                        <Cell>{r.provider}</Cell>
+                        <Cell><span className="adm-kv__v is-mono">{r.model}</span></Cell>
+                        <Cell num>{currency === 'usd' ? usd(r.cost_usd, 4) : inr(r.cost?.inr, { decimals: 2 })}</Cell>
+                        <Cell num>{inr(r.cost?.charged_inr, { decimals: 2 })}</Cell>
+                        <Cell num>{count(r.call_count)}</Cell>
+                        <Cell num>{count(r.prompt_tokens)} / {count(r.completion_tokens)}</Cell>
+                      </Row>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardBody>
+          </Card>
+
+          {(data.scraper_costs || []).length > 0 && (
+            <Card>
+              <CardHead title="Scrapers" />
+              <CardBody flush>
+                <Table>
+                  <TableHead>
+                    <HeadCell>Scraper</HeadCell>
+                    <HeadCell num>Cost</HeadCell>
+                    <HeadCell num>Charged</HeadCell>
+                    <HeadCell num>Billed</HeadCell>
+                    <HeadCell num>Runs</HeadCell>
+                  </TableHead>
+                  <TableBody>
+                    {data.scraper_costs.map((r, i) => (
+                      <Row key={`${r.scraper_id}-${i}`}>
+                        <Cell><span className="adm-kv__v is-mono">{r.scraper_id}</span></Cell>
+                        <Cell num>{currency === 'usd' ? usd(r.cost_usd, 4) : inr(r.cost?.inr, { decimals: 2 })}</Cell>
+                        <Cell num>{inr(r.cost?.charged_inr, { decimals: 2 })}</Cell>
+                        <Cell num>{inr(r.billed_inr, { decimals: 2 })}</Cell>
+                        <Cell num>{count(r.run_count)}</Cell>
+                      </Row>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardBody>
+            </Card>
+          )}
+
+          <Card>
+            <CardHead title="Daily trend" actions={<span className="apg__secn">{trend.length} days</span>} />
+            <CardBody>
+              {trend.length === 0 ? (
+                <EmptyState title={{ en: 'No daily activity', hi: 'कोई गतिविधि नहीं' }} description="A trend needs at least one metered day." />
+              ) : (
+                <>
+                  <div className="adm-trend">
+                    {trend.map(d => {
+                      const ai = ((d.ai_cost || 0) / peak) * 100;
+                      const sc = ((d.scraper_cost || 0) / peak) * 100;
+                      const label = new Date(d.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+                      return (
+                        <div
+                          className="adm-trend__c"
+                          key={d.date}
+                          title={`${label} · AI ${usd(d.ai_cost)} · scraper ${usd(d.scraper_cost)}`}
+                        >
+                          <span className="adm-trend__a" style={{ height: `${Math.max(ai, 1)}%` }} />
+                          <span className="adm-trend__b" style={{ height: `${Math.max(sc, 0.5)}%` }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="adm-legend">
+                    <span><i className="adm-trend__a" />AI</span>
+                    <span><i className="adm-trend__b" />Scraper</span>
+                  </div>
+                </>
+              )}
+            </CardBody>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ── Page ──────────────────────────────────────────────────────────────────── */
 
 export default function AdminCostDashboardPage() {
-  const [tab, setTab] = useState('Platform Overview');
   const [period, setPeriod] = useState('30d');
-  const [selectedOrg, setSelectedOrg] = useState(null);
+  const [currency, setCurrency] = useState('inr');
+  const [selected, setSelected] = useState(null);
+  const [fx, setFx] = useState(null);
+
+  const me = currentUser();
+  const allowed = canSeeCost(me?.platform_roles);
+
+  /* One rate for the whole screen, fetched once per period. Two views deriving
+     margin from two lookups is how the same org shows two margins. */
+  useEffect(() => {
+    if (!allowed) return undefined;
+    let live = true;
+    api.get(`/v1/admin/orgs/platform-analytics?period=${period}`)
+      .then(r => { if (live) setFx(r.data?.usd_to_inr ?? null); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [period, allowed]);
+
+  const header = (
+    <header className="apg__head">
+      <div className="apg__titles">
+        <h1 className="apg__t">
+          Cost
+          <span className="apg__hi" lang="hi" aria-hidden="true">लागत</span>
+        </h1>
+        <p className="apg__lede">
+          What Aekam pays, what the customer is charged, and the difference — with the
+          rate and the markup that produced it.
+        </p>
+      </div>
+      <div className="apg__acts">
+        <Segmented label="Period" options={PERIODS} value={period} onChange={setPeriod} />
+        <Segmented label="Currency" options={CURRENCIES} value={currency} onChange={setCurrency} />
+      </div>
+    </header>
+  );
+
+  /* The server guards /platform-analytics, /cost-summary and /provider-costs on
+     ("platform_admin", "account_finance"). Saying so beats four spinners
+     resolving into four 403 toasts. */
+  if (!allowed) {
+    return (
+      <div className="apg">
+        {header}
+        <ErrorState kind="denied" grant="platform owner or account/finance access" />
+      </div>
+    );
+  }
 
   return (
-    <div className="k-screen">
-      <PageHeader kicker="ADMIN · COSTS" title="Cost Dashboard" sanskrit="लागत" lede="Platform-wide cost analytics — Aekam actual vs client-charged amounts." />
+    <div className="apg">
+      {header}
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--sp-4)', flexWrap: 'wrap', gap: 12 }}>
-        {!selectedOrg && <TabBar tabs={TABS} active={tab} onChange={setTab} />}
-        {selectedOrg && <div />}
-        <PeriodSelector value={period} onChange={setPeriod} />
-      </div>
-
-      {selectedOrg ? (
-        <OrgDetail orgId={selectedOrg.id} orgName={selectedOrg.name} period={period}
-          onBack={() => setSelectedOrg(null)} />
-      ) : TAB_KEY[tab] === 'overview' ? (
-        <PlatformOverview period={period} />
+      {selected ? (
+        <OrgView org={selected} period={period} currency={currency} onBack={() => setSelected(null)} />
       ) : (
-        <AllOrgs period={period} onSelectOrg={(id, name) => setSelectedOrg({ id, name })} />
+        <Tabs
+          tabs={[
+            { value: 'platform', label: 'Platform', content: <PlatformView period={period} currency={currency} /> },
+            {
+              value: 'orgs',
+              label: 'By organisation',
+              content: <OrgsView period={period} currency={currency} fx={fx} onSelect={setSelected} />,
+            },
+          ]}
+        />
       )}
     </div>
   );

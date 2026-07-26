@@ -1,408 +1,447 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * AdminBillingPage — the Aekam billing console. 11-platform-admin.md.
+ *
+ * ── 11's headline finding, and what actually fixed it ────────────────────────
+ *
+ * "`/admin/billing` is not a platform page. Every call it makes is org-scoped…
+ * No `org_id` anywhere. So a page titled 'Billing Administration', reached from
+ * the platform admin link, can only change the plan of and raise invoices
+ * against the org the operator is logged into."
+ *
+ * Confirmed: `subscription.py` resolves the org from `Depends(get_org_id)` on
+ * set-plan, create-invoice, current, invoices and usage. And the single
+ * exception 11 names is real — `/admin/invoices/overdue` returns `org_name`
+ * across every org while taking no org itself, so the operator could read
+ * another company's overdue invoice and record its payment against their own.
+ *
+ * 11 concludes this needs new `/v1/admin/orgs/:orgId/…` endpoints. It does not:
+ * `middleware/org_resolver.py` already reads an `X-Org-Id` header first and
+ * already lets platform staff resolve to any org through it. The scope was
+ * never missing from the server, only from the caller. See `admin/orgScope.js`.
+ *
+ * So this page now has ONE tenant scope, stated at the top, sticky, and applied
+ * to every write. Acting on another org's overdue invoice moves the scope to
+ * that org first — visibly — rather than silently posting into the wrong one.
+ *
+ * ── The other defects, and their status ──────────────────────────────────────
+ *
+ *  · Five local primitives (Card, Badge, Input, Select, Btn) — HELD, deleted,
+ *    now `components/ui`.
+ *  · The `${c}18` hex-alpha hack, `#ef4444` / `#f59e0b` inline, `⚠` in a card
+ *    title — HELD, all gone. Status colour comes from `lib/statusColors.js`.
+ *  · `line_items` array with a one-line form — HELD, see `InvoiceBuilder`.
+ *  · Payment has no date — STALE, it was already sent. No amount — HELD, and it
+ *    is a backend gap; see `PaymentForm`.
+ *  · "Upgrade to Professional or higher… there is no Professional plan" —
+ *    STALE. The string on the branch reads "Upgrade to Growth or Scale", which
+ *    matches the free/starter/growth/scale catalogue.
+ *  · "--surface-1, --ink-1, --k-primary-ghost are defined NOWHERE" — STALE.
+ *    All three are declared in `styles/kartavaya-design.css`, and the file
+ *    carried a comment saying they had already been remapped.
+ */
+import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
-import { useToast } from '../components/ui/toast';
-import { PageHeader, StatTile } from '../components/editorial';
+import {
+  Button, Card, CardHead, CardBody, Field, Input, Select, Tag, Tabs,
+  EmptyState, ErrorState, errorKind, SkeletonPage,
+  Table, TableHead, TableBody, Row, Cell, HeadCell,
+  StatTile, useToast,
+} from '../components/ui';
+import { BILLING_COLORS, BILLING_LABELS } from '../lib/statusColors';
+import { inr } from '../lib/inr';
+import { scoped, readScope, writeScope } from './admin/orgScope';
+import InvoiceBuilder from './admin/InvoiceBuilder';
+import PaymentForm from './admin/PaymentForm';
+import '../styles/admin.css';
 
-const STATUS_COLORS = {
-  active: '#10b981', pending: '#f59e0b', paid: '#10b981',
-  overdue: '#ef4444', cancelled: '#ef4444',
-};
+const billingTone = s => BILLING_COLORS[s] || 'var(--on-surface-3)';
+const billingLabel = s => BILLING_LABELS[s] || s || '—';
 
-function Badge({ status }) {
-  const c = STATUS_COLORS[status] || '#6E7B91';
-  return (
-    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em',
-      padding: '2px 10px', borderRadius: 99, background: `${c}18`, color: c }}>
-      {status}
-    </span>
-  );
-}
-
-/* NOTE: --surface-1, --ink-1 and --k-primary-ghost were used throughout this
-   file and are defined NOWHERE in src/. An undefined custom property is invalid
-   at computed-value time, so every Card here rendered with no background, its
-   title colour inherited, and the active module tab had no highlight at all.
-   Mapped onto the real tokens. Same class of defect as the undefined --ink-4. */
-function Card({ title, children, style }) {
-  return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--rule-soft)',
-      borderRadius: 12, padding: 24, ...style }}>
-      {title && <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>{title}</h3>}
-      {children}
-    </div>
-  );
-}
-
-function Input({ label, value, onChange, type = 'text', ...rest }) {
-  return (
-    <label style={{ display: 'block', marginBottom: 14 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', display: 'block', marginBottom: 4 }}>{label}</span>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)}
-        style={{ width: '100%', padding: '8px 12px', fontSize: 13, border: '1px solid var(--rule-soft)',
-          borderRadius: 8, background: 'var(--surface)', color: 'var(--ink)', boxSizing: 'border-box' }}
-        {...rest} />
-    </label>
-  );
-}
-
-function Select({ label, value, onChange, options }) {
-  return (
-    <label style={{ display: 'block', marginBottom: 14 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', display: 'block', marginBottom: 4 }}>{label}</span>
-      <select value={value} onChange={e => onChange(e.target.value)}
-        style={{ width: '100%', padding: '8px 12px', fontSize: 13, border: '1px solid var(--rule-soft)',
-          borderRadius: 8, background: 'var(--surface)', color: 'var(--ink)' }}>
-        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      </select>
-    </label>
-  );
-}
-
-function Btn({ children, onClick, variant = 'primary', disabled, style: s }) {
-  const base = { padding: '8px 20px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: 'none',
-    cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, transition: 'all .15s' };
-  const styles = variant === 'primary'
-    ? { ...base, background: 'var(--k-primary)', color: '#fff' }
-    : { ...base, background: 'var(--surface-2)', color: 'var(--ink)', border: '1px solid var(--rule-soft)' };
-  return <button onClick={onClick} disabled={disabled} style={{ ...styles, ...s }}>{children}</button>;
-}
+const fmtDate = d => (d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
 export default function AdminBillingPage() {
   const { pushToast } = useToast();
-  const [tab, setTab] = useState('overview');
-  const [plans, setPlans] = useState([]);
-  const [availableModules, setAvailableModules] = useState([]);
+
+  const [orgs, setOrgs] = useState([]);
+  const [orgId, setOrgId] = useState(() => readScope());
   const [sub, setSub] = useState(null);
   const [activeModules, setActiveModules] = useState([]);
+  const [plans, setPlans] = useState([]);
+  const [catalogModules, setCatalogModules] = useState([]);
   const [invoices, setInvoices] = useState([]);
-  const [overdue, setOverdue] = useState([]);
   const [usage, setUsage] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [overdue, setOverdue] = useState([]);
 
-  // Invoice form
-  const [invForm, setInvForm] = useState({ period_start: '', period_end: '', due_date: '', description: '', amount: '' });
-  // Payment form
-  const [payForm, setPayForm] = useState({ invoiceId: null, method: '', reference: '', paidAt: '' });
-  // Plan change
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [busy, setBusy] = useState('');
+  const [payTarget, setPayTarget] = useState(null);
   const [planForm, setPlanForm] = useState({ plan_code: '', billing_cycle: 'monthly' });
 
-  useEffect(() => { load(); }, []);
+  const org = orgs.find(o => o.id === orgId) || null;
 
-  async function load() {
-    try {
-      const [cur, inv, usg, catalog, od] = await Promise.all([
-        api.get('/v1/subscription/current'),
-        api.get('/v1/subscription/invoices'),
-        api.get('/v1/subscription/usage'),
-        api.get('/v1/subscription/plans'),
-        api.get('/v1/subscription/admin/invoices/overdue').catch(() => ({ data: { data: [] } })),
-      ]);
-      setSub(cur.data.subscription);
-      setActiveModules(cur.data.active_modules || []);
-      setInvoices(inv.data.data || []);
-      setUsage(usg.data);
-      setPlans(catalog.data.plans || []);
-      setAvailableModules(catalog.data.modules || []);
-      setOverdue(od.data.data || []);
-      if (cur.data.subscription?.plan_code) setPlanForm(f => ({ ...f, plan_code: cur.data.subscription.plan_code }));
-    } catch (e) {
-      pushToast({ title: 'Failed to load billing data', type: 'error' });
-    } finally {
-      setLoading(false);
+  /* Cross-org, and deliberately unscoped: the overdue list is the one endpoint
+     that is genuinely platform-wide. */
+  const loadPlatform = useCallback(async () => {
+    const [orgRes, catalog, od] = await Promise.all([
+      api.get('/v1/admin/orgs'),
+      api.get('/v1/subscription/plans').catch(() => ({ data: {} })),
+      api.get('/v1/subscription/admin/invoices/overdue').catch(() => ({ data: { data: [] } })),
+    ]);
+    setOrgs(orgRes.data?.data || []);
+    setPlans(catalog.data?.plans || []);
+    setCatalogModules(catalog.data?.modules || []);
+    setOverdue(od.data?.data || []);
+  }, []);
+
+  /* Everything below carries the org. Without the header these five calls
+     resolve to the OPERATOR's org, which is the whole finding. */
+  const loadOrg = useCallback(async (id) => {
+    if (!id) {
+      setSub(null); setActiveModules([]); setInvoices([]); setUsage(null);
+      return;
     }
-  }
+    const [cur, inv, usg] = await Promise.all([
+      api.get('/v1/subscription/current', scoped(id)),
+      api.get('/v1/subscription/invoices', scoped(id)),
+      api.get('/v1/subscription/usage', scoped(id)).catch(() => ({ data: null })),
+    ]);
+    setSub(cur.data?.subscription || null);
+    setActiveModules(cur.data?.active_modules || []);
+    setInvoices(inv.data?.data || []);
+    setUsage(usg.data || null);
+    setPlanForm(f => ({ ...f, plan_code: cur.data?.subscription?.plan_code || '' }));
+  }, []);
 
-  async function handleSetPlan() {
-    if (!sub) return pushToast({ title: 'No subscription found', type: 'error' });
+  useEffect(() => {
+    let live = true;
+    setLoading(true);
+    loadPlatform()
+      .then(() => (live ? undefined : null))
+      .catch(e => { if (live) setErr(e); })
+      .finally(() => { if (live) setLoading(false); });
+    return () => { live = false; };
+  }, [loadPlatform]);
+
+  useEffect(() => {
+    let live = true;
+    writeScope(orgId);
+    loadOrg(orgId).catch(e => { if (live) pushToast({ type: 'error', title: 'Could not load this organisation', message: e?.response?.data?.detail }); });
+    return () => { live = false; };
+  }, [orgId, loadOrg, pushToast]);
+
+  const refresh = () => Promise.all([loadPlatform(), loadOrg(orgId)]).catch(() => {});
+
+  const guard = (fn) => async (...args) => {
+    if (!orgId) { pushToast({ type: 'error', title: 'Choose an organisation first' }); return; }
+    await fn(...args);
+  };
+
+  const setPlan = guard(async () => {
+    setBusy('plan');
     try {
-      await api.post('/v1/subscription/admin/set-plan', {
-        plan_code: planForm.plan_code, billing_cycle: planForm.billing_cycle,
-      });
-      pushToast({ title: `Plan changed to ${planForm.plan_code}` });
-      load();
+      await api.post('/v1/subscription/admin/set-plan', planForm, scoped(orgId));
+      pushToast({ type: 'success', title: `${org?.name || 'Organisation'} moved to ${planForm.plan_code}` });
+      await refresh();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to change plan', type: 'error' });
-    }
-  }
+      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not change the plan' });
+    } finally { setBusy(''); }
+  });
 
-  async function handleActivateModule(code) {
+  const toggleModule = guard(async (code, on) => {
+    setBusy(code);
     try {
-      await api.post('/v1/subscription/modules/activate', { module_code: code });
-      pushToast({ title: `Module "${code}" activated` });
-      load();
+      await api.post(`/v1/subscription/modules/${on ? 'deactivate' : 'activate'}`, { module_code: code }, scoped(orgId));
+      pushToast({ type: 'success', title: `${code} ${on ? 'deactivated' : 'activated'}` });
+      await refresh();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to activate module', type: 'error' });
-    }
-  }
+      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Module change failed' });
+    } finally { setBusy(''); }
+  });
 
-  async function handleDeactivateModule(code) {
+  const createInvoice = guard(async (body) => {
+    setBusy('invoice');
     try {
-      await api.post('/v1/subscription/modules/deactivate', { module_code: code });
-      pushToast({ title: `Module "${code}" deactivated` });
-      load();
+      const { gst_treatment: _t, ...payload } = body;
+      const res = await api.post('/v1/subscription/admin/invoices', payload, scoped(orgId));
+      pushToast({ type: 'success', title: `Invoice ${res.data?.invoice_number || ''} created for ${org?.name || 'the organisation'}` });
+      await refresh();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to deactivate module', type: 'error' });
-    }
-  }
+      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not create the invoice' });
+    } finally { setBusy(''); }
+  });
 
-  async function handleCreateInvoice() {
-    if (!sub) return;
+  const recordPayment = async (body) => {
+    if (!payTarget) return;
+    setBusy('payment');
     try {
-      await api.post('/v1/subscription/admin/invoices', {
-        period_start: invForm.period_start,
-        period_end: invForm.period_end,
-        due_date: invForm.due_date,
-        line_items: [{ description: invForm.description, amount: parseFloat(invForm.amount) || 0 }],
-      });
-      pushToast({ title: 'Invoice created' });
-      setInvForm({ period_start: '', period_end: '', due_date: '', description: '', amount: '' });
-      load();
+      await api.patch(`/v1/subscription/admin/invoices/${payTarget.id}/record-payment`, body, scoped(payTarget.org_id || orgId));
+      pushToast({ type: 'success', title: `${payTarget.invoice_number} marked paid` });
+      setPayTarget(null);
+      await refresh();
     } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to create invoice', type: 'error' });
-    }
-  }
+      pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not record the payment' });
+    } finally { setBusy(''); }
+  };
 
-  async function handleRecordPayment() {
-    if (!payForm.invoiceId) return;
-    try {
-      // paid_at was never sent, so a payment received last Tuesday was recorded
-      // as today. The backend has accepted it all along —
-      // RecordPayment.paid_at is Optional[datetime] and the handler already does
-      // `body.paid_at or now()`. This was a frontend-only gap.
-      await api.patch(`/v1/subscription/admin/invoices/${payForm.invoiceId}/record-payment`, {
-        payment_method: payForm.method,
-        payment_reference: payForm.reference,
-        paid_at: payForm.paidAt ? new Date(payForm.paidAt).toISOString() : null,
-      });
-      pushToast({ title: 'Payment recorded' });
-      setPayForm({ invoiceId: null, method: '', reference: '', paidAt: '' });
-      load();
-    } catch (e) {
-      pushToast({ title: e.response?.data?.detail || 'Failed to record payment', type: 'error' });
-    }
-  }
+  /* The combination 11 called out — a cross-org list beside single-tenant
+     actions — is closed by moving the scope BEFORE opening the payment form,
+     so the bar at the top names the org the write will land on. */
+  const payOverdue = (invoice) => {
+    if (invoice.org_id && invoice.org_id !== orgId) setOrgId(invoice.org_id);
+    setPayTarget(invoice);
+  };
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center', color: 'var(--ink-3)' }}>Loading…</div>;
+  if (loading) return <SkeletonPage withStats withTable />;
+  if (err) return <ErrorState kind={errorKind(err)} grant="finance access to the platform console" onRetry={refresh} />;
 
-  const tabs = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'modules', label: 'Modules' },
-    { id: 'invoices', label: 'Invoices' },
-    { id: 'plan', label: 'Change Plan' },
-  ];
-
-  return (
-    <div style={{ padding: '0 0 48px' }}>
-      <PageHeader kicker="ADMIN" title="Billing Administration" sanskrit="शुल्क प्रशासन" lede="Manage subscriptions, modules, invoices, and payments" />
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 28, borderBottom: '1px solid var(--rule-soft)', paddingBottom: 0 }}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ padding: '10px 20px', fontSize: 13, fontWeight: 600, border: 'none', background: 'none',
-              color: tab === t.id ? 'var(--k-primary)' : 'var(--ink-3)', cursor: 'pointer',
-              borderBottom: tab === t.id ? '2px solid var(--k-primary)' : '2px solid transparent',
-              marginBottom: -1 }}>
-            {t.label}
-          </button>
+  const scopeBar = (
+    <div className="osc">
+      <span className="osc__l">Acting on</span>
+      <Select
+        aria-label="Organisation this page acts on"
+        value={orgId}
+        onChange={e => { setPayTarget(null); setOrgId(e.target.value); }}
+      >
+        <option value="">— Choose an organisation —</option>
+        {orgs.map(o => (
+          <option key={o.id} value={o.id}>{o.name}{o.is_active ? '' : ' (suspended)'}</option>
         ))}
+      </Select>
+      {org
+        ? <span className="osc__v">{org.plan_name || org.plan_code || 'No plan'} · {org.owner_email || 'no owner'}</span>
+        : <span className="osc__none">Nothing is scoped — reads and writes below are disabled.</span>}
+    </div>
+  );
+
+  const overviewTab = (
+    <div className="apg__sec">
+      <div className="apg__grid">
+        <StatTile label="Plan" sanskrit="योजना" value={sub?.plan_name || (orgId ? 'Free' : '—')} />
+        <StatTile label="Seats used" sanskrit="सदस्य" value={usage?.user_count ?? '—'} />
+        <StatTile label="Active modules" value={activeModules.length} />
+        <StatTile label="Overdue, all orgs" value={overdue.length} variant={overdue.length ? 'danger' : 'neutral'} sub="platform-wide" />
       </div>
 
-      {/* Overview */}
-      {tab === 'overview' && (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
-            <StatTile label="Plan" value={sub?.plan_name || 'Free'} />
-            <StatTile label="Users" value={usage?.user_count || 0} />
-            <StatTile label="Active Modules" value={activeModules.length} />
-            <StatTile label="Overdue Invoices" value={overdue.length} />
-          </div>
+      <Card>
+        <CardHead title="Overdue across every organisation" sanskrit="बकाया" />
+        <CardBody flush>
+          {overdue.length === 0 ? (
+            <EmptyState
+              icon="check"
+              tone="ok"
+              title={{ en: 'Nothing is overdue', hi: 'कुछ बकाया नहीं' }}
+              description="Every raised invoice is inside its due date."
+            />
+          ) : (
+            <Table>
+              <TableHead>
+                <HeadCell>Invoice</HeadCell>
+                <HeadCell>Organisation</HeadCell>
+                <HeadCell num>Total</HeadCell>
+                <HeadCell>Due</HeadCell>
+                <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
+              </TableHead>
+              <TableBody>
+                {overdue.map(iv => (
+                  <Row key={iv.id} on={iv.org_id === orgId}>
+                    <Cell><span className="adm-kv__v is-mono">{iv.invoice_number}</span></Cell>
+                    <Cell>{iv.org_name}</Cell>
+                    <Cell num>{inr(iv.total || 0)}</Cell>
+                    <Cell><Tag color="var(--danger)">{fmtDate(iv.due_date)}</Tag></Cell>
+                    <Cell>
+                      <Button size="sm" variant="out" onClick={() => payOverdue(iv)}>
+                        Record payment
+                      </Button>
+                    </Cell>
+                  </Row>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardBody>
+      </Card>
+    </div>
+  );
 
-          {overdue.length > 0 && (
-            <Card title="⚠ Overdue Invoices" style={{ marginBottom: 24, borderColor: '#ef4444' }}>
-              {overdue.map(inv => (
-                <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  padding: '8px 0', borderBottom: '1px solid var(--rule-soft)' }}>
-                  <div>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{inv.invoice_number}</span>
-                    <span style={{ marginLeft: 12, color: 'var(--ink-3)', fontSize: 12 }}>{inv.org_name}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>₹{inv.total?.toLocaleString('en-IN')}</span>
-                    <span style={{ fontSize: 11, color: '#ef4444' }}>Due: {inv.due_date}</span>
-                    <Btn variant="ghost" onClick={() => { setPayForm({ invoiceId: inv.id, method: '', reference: '' }); setTab('invoices'); }}>
-                      Record Payment
-                    </Btn>
-                  </div>
+  const modulesTab = (
+    <div className="apg__sec">
+      {!orgId && <p className="osc__none">Choose an organisation to see what it has switched on.</p>}
+      <div className="apg__grid">
+        {catalogModules.map(m => {
+          const on = activeModules.includes(m.code);
+          return (
+            <Card key={m.code} variant={on ? undefined : 'flat'}>
+              <CardHead title={m.name || m.code} />
+              <CardBody>
+                <p className="apg__lede">{m.description || ''}</p>
+                <p className="adm-kv__v">{inr(m.price_per_user_monthly || 0)} per user / month</p>
+                {m.requires_module?.length > 0 && (
+                  <p className="adm-kv__v">Requires {m.requires_module.join(', ')}</p>
+                )}
+                <div className="adm-actions">
+                  <Button
+                    variant={on ? 'danger' : 'fill'}
+                    size="sm"
+                    disabled={!orgId || busy === m.code}
+                    onClick={() => toggleModule(m.code, on)}
+                  >
+                    {busy === m.code ? '…' : on ? 'Deactivate' : 'Activate'}
+                  </Button>
                 </div>
-              ))}
+              </CardBody>
             </Card>
-          )}
-        </>
+          );
+        })}
+      </div>
+      {/* 11 flagged this string as naming a "Professional" tier that does not
+          exist. On the branch it already reads Growth / Scale, which matches the
+          free / starter / growth / scale catalogue. Reported as stale, not
+          "fixed". */}
+      {(!sub || sub.plan_code === 'free') && orgId && (
+        <p className="inb__note">Add-on modules need Growth or Scale. This organisation is on Free.</p>
       )}
+    </div>
+  );
 
-      {/* Modules */}
-      {tab === 'modules' && (
-        <Card title="Module Marketplace">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
-            {availableModules.map(m => {
-              const isActive = activeModules.includes(m.code);
-              return (
-                <div key={m.code} style={{ border: '1px solid var(--rule-soft)', borderRadius: 10, padding: 16,
-                  background: isActive ? 'color-mix(in srgb, var(--k-primary) 12%, transparent)' : 'transparent' }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>
-                    {m.name || m.code.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 8 }}>{m.description || ''}</div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--k-primary)', marginBottom: 12 }}>
-                    ₹{m.price_per_user_monthly}/user/mo
-                  </div>
-                  {m.requires_module?.length > 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 8 }}>
-                      Requires: {m.requires_module.join(', ')}
-                    </div>
-                  )}
-                  {isActive ? (
-                    <Btn variant="ghost" onClick={() => handleDeactivateModule(m.code)}
-                      style={{ color: '#ef4444', borderColor: '#ef4444' }}>
-                      Deactivate
-                    </Btn>
-                  ) : (
-                    <Btn onClick={() => handleActivateModule(m.code)}>Activate</Btn>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {(sub?.plan_code === 'free' || !sub) && (
-            <p style={{ fontSize: 12, color: '#f59e0b', marginTop: 16, fontWeight: 600 }}>
-              Upgrade to Growth or Scale to enable add-on modules.
-            </p>
-          )}
+  const invoicesTab = (
+    <div className="apg__sec">
+      <Card>
+        <CardHead title="Raise an invoice" sanskrit="बीजक" />
+        <CardBody><InvoiceBuilder org={org} busy={busy === 'invoice'} onCreate={createInvoice} /></CardBody>
+      </Card>
+
+      {payTarget && (
+        <Card>
+          <CardHead title={`Record payment · ${payTarget.invoice_number}`} />
+          <CardBody>
+            <PaymentForm
+              invoice={payTarget}
+              busy={busy === 'payment'}
+              onConfirm={recordPayment}
+              onCancel={() => setPayTarget(null)}
+            />
+          </CardBody>
         </Card>
       )}
 
-      {/* Invoices */}
-      {tab === 'invoices' && (
-        <>
-          {/* Create invoice form */}
-          <Card title="Create Invoice" style={{ marginBottom: 24 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-              <Input label="Period Start" type="date" value={invForm.period_start}
-                onChange={v => setInvForm(f => ({ ...f, period_start: v }))} />
-              <Input label="Period End" type="date" value={invForm.period_end}
-                onChange={v => setInvForm(f => ({ ...f, period_end: v }))} />
-              <Input label="Due Date" type="date" value={invForm.due_date}
-                onChange={v => setInvForm(f => ({ ...f, due_date: v }))} />
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
-              <Input label="Description" value={invForm.description}
-                onChange={v => setInvForm(f => ({ ...f, description: v }))} />
-              <Input label="Amount (₹)" type="number" value={invForm.amount}
-                onChange={v => setInvForm(f => ({ ...f, amount: v }))} />
-            </div>
-            <p style={{ fontSize: 11, color: 'var(--ink-3)', margin: '0 0 12px' }}>GST (18%) will be calculated automatically.</p>
-            <Btn onClick={handleCreateInvoice}
-              disabled={!invForm.period_start || !invForm.amount}>
-              Create Invoice
-            </Btn>
-          </Card>
-
-          {/* Record payment */}
-          {payForm.invoiceId && (
-            <Card title="Record Payment" style={{ marginBottom: 24, borderColor: 'var(--k-primary)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <Select label="Payment Method" value={payForm.method}
-                  onChange={v => setPayForm(f => ({ ...f, method: v }))}
-                  options={[
-                    { value: '', label: 'Select method…' },
-                    { value: 'bank_transfer', label: 'Bank Transfer (NEFT/RTGS/UPI)' },
-                    { value: 'cheque', label: 'Cheque' },
-                    { value: 'cash', label: 'Cash' },
-                    { value: 'other', label: 'Other' },
-                  ]} />
-                <Input label="Date received" type="date" value={payForm.paidAt}
-                  onChange={v => setPayForm(f => ({ ...f, paidAt: v }))} />
-                <Input label="Payment Reference / UTR" value={payForm.reference}
-                  onChange={v => setPayForm(f => ({ ...f, reference: v }))} />
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <Btn onClick={handleRecordPayment} disabled={!payForm.method || !payForm.reference}>
-                  Confirm Payment
-                </Btn>
-                <Btn variant="ghost" onClick={() => setPayForm({ invoiceId: null, method: '', reference: '' })}>
-                  Cancel
-                </Btn>
-              </div>
-            </Card>
+      <Card>
+        <CardHead
+          title="Invoices"
+          actions={<span className="apg__secn">{invoices.length}</span>}
+        />
+        <CardBody flush>
+          {!orgId ? (
+            <EmptyState
+              title={{ en: 'No organisation scoped', hi: 'कोई संस्था नहीं' }}
+              description="Invoices are per organisation. Choose one above."
+            />
+          ) : invoices.length === 0 ? (
+            <EmptyState
+              title={{ en: 'No invoices yet', hi: 'कोई बीजक नहीं' }}
+              description="Raising one above is what puts the first row here."
+            />
+          ) : (
+            <Table>
+              <TableHead>
+                <HeadCell>Invoice</HeadCell>
+                <HeadCell>Period</HeadCell>
+                <HeadCell num>Subtotal</HeadCell>
+                <HeadCell num>GST</HeadCell>
+                <HeadCell num>Total</HeadCell>
+                <HeadCell>Status</HeadCell>
+                <HeadCell>Due</HeadCell>
+                <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
+              </TableHead>
+              <TableBody>
+                {invoices.map(iv => (
+                  <Row key={iv.id}>
+                    <Cell><span className="adm-kv__v is-mono">{iv.invoice_number}</span></Cell>
+                    <Cell>{fmtDate(iv.period_start)} → {fmtDate(iv.period_end)}</Cell>
+                    <Cell num>{inr(iv.subtotal || 0)}</Cell>
+                    <Cell num>{inr(iv.gst || 0)}</Cell>
+                    <Cell num>{inr(iv.total || 0)}</Cell>
+                    <Cell><Tag color={billingTone(iv.payment_status)}>{billingLabel(iv.payment_status)}</Tag></Cell>
+                    <Cell>{fmtDate(iv.due_date)}</Cell>
+                    <Cell>
+                      {iv.payment_status === 'pending' && (
+                        <Button size="sm" variant="out" onClick={() => setPayTarget(iv)}>Record payment</Button>
+                      )}
+                    </Cell>
+                  </Row>
+                ))}
+              </TableBody>
+            </Table>
           )}
+        </CardBody>
+      </Card>
+    </div>
+  );
 
-          {/* Invoice list */}
-          <Card title="All Invoices">
-            {invoices.length === 0 ? (
-              <p style={{ color: 'var(--ink-3)', fontSize: 13 }}>No invoices yet.</p>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                    {['Invoice #', 'Period', 'Subtotal', 'GST', 'Total', 'Status', 'Due', ''].map(h => (
-                      <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600,
-                        color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoices.map(inv => (
-                    <tr key={inv.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                      <td style={{ padding: '10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{inv.invoice_number}</td>
-                      <td style={{ padding: '10px', fontSize: 12 }}>{inv.period_start} → {inv.period_end}</td>
-                      <td style={{ padding: '10px' }}>₹{inv.subtotal?.toLocaleString('en-IN')}</td>
-                      <td style={{ padding: '10px' }}>₹{inv.gst?.toLocaleString('en-IN')}</td>
-                      <td style={{ padding: '10px', fontWeight: 600 }}>₹{inv.total?.toLocaleString('en-IN')}</td>
-                      <td style={{ padding: '10px' }}><Badge status={inv.payment_status} /></td>
-                      <td style={{ padding: '10px', fontSize: 12 }}>{inv.due_date}</td>
-                      <td style={{ padding: '10px' }}>
-                        {inv.payment_status === 'pending' && (
-                          <Btn variant="ghost" style={{ fontSize: 11, padding: '4px 10px' }}
-                            onClick={() => setPayForm({ invoiceId: inv.id, method: '', reference: '' })}>
-                            Record Payment
-                          </Btn>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+  const planTab = (
+    <Card>
+      <CardHead title="Change plan" sanskrit="योजना बदलें" />
+      <CardBody>
+        <div className="adm-form">
+          <Field label="Plan" htmlFor="plan-code">
+            {p => (
+              <Select {...p} value={planForm.plan_code} onChange={e => setPlanForm(f => ({ ...f, plan_code: e.target.value }))}>
+                <option value="">— Select —</option>
+                {plans.map(pl => (
+                  <option key={pl.code} value={pl.code}>{pl.name} — {inr(pl.price_monthly || 0)}/mo</option>
+                ))}
+              </Select>
             )}
-          </Card>
-        </>
-      )}
+          </Field>
+          <Field label="Billing cycle" htmlFor="plan-cycle">
+            {p => (
+              <Select {...p} value={planForm.billing_cycle} onChange={e => setPlanForm(f => ({ ...f, billing_cycle: e.target.value }))}>
+                <option value="monthly">Monthly</option>
+                <option value="annual">Annual</option>
+              </Select>
+            )}
+          </Field>
+        </div>
+        {planForm.plan_code === 'free' && (
+          <p className="inb__note">Moving to Free deactivates every add-on module on this organisation.</p>
+        )}
+        <div className="adm-actions">
+          <Button
+            variant="fill"
+            disabled={!orgId || !planForm.plan_code || planForm.plan_code === sub?.plan_code || busy === 'plan'}
+            onClick={setPlan}
+          >
+            {busy === 'plan' ? 'Applying…' : `Apply to ${org?.name || 'the organisation'}`}
+          </Button>
+        </div>
+      </CardBody>
+    </Card>
+  );
 
-      {/* Change Plan */}
-      {tab === 'plan' && (
-        <Card title="Change Organisation Plan">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxWidth: 500 }}>
-            <Select label="Plan" value={planForm.plan_code}
-              onChange={v => setPlanForm(f => ({ ...f, plan_code: v }))}
-              options={plans.map(p => ({ value: p.code, label: `${p.name} — ₹${p.price_monthly}/mo` }))} />
-            <Select label="Billing Cycle" value={planForm.billing_cycle}
-              onChange={v => setPlanForm(f => ({ ...f, billing_cycle: v }))}
-              options={[
-                { value: 'monthly', label: 'Monthly' },
-                { value: 'annual', label: 'Annual' },
-              ]} />
-          </div>
-          {planForm.plan_code === 'free' && (
-            <p style={{ fontSize: 12, color: '#f59e0b', fontWeight: 600, margin: '12px 0 0' }}>
-              Downgrading to Free will deactivate all add-on modules.
-            </p>
-          )}
-          <Btn onClick={handleSetPlan} style={{ marginTop: 16 }}
-            disabled={planForm.plan_code === sub?.plan_code}>
-            Apply Plan Change
-          </Btn>
-        </Card>
-      )}
+  return (
+    <div className="apg">
+      <header className="apg__head">
+        <div className="apg__titles">
+          <h1 className="apg__t">
+            Billing
+            <span className="apg__hi" lang="hi" aria-hidden="true">शुल्क</span>
+          </h1>
+          <p className="apg__lede">
+            Plans, modules, invoices and payments — for the organisation named below, not for yours.
+          </p>
+        </div>
+      </header>
+
+      {scopeBar}
+
+      <Tabs
+        tabs={[
+          { value: 'overview', label: 'Overview', content: overviewTab },
+          { value: 'modules', label: 'Modules', count: activeModules.length, content: modulesTab },
+          { value: 'invoices', label: 'Invoices', count: invoices.length, content: invoicesTab },
+          { value: 'plan', label: 'Plan', content: planTab },
+        ]}
+      />
     </div>
   );
 }

@@ -1,0 +1,236 @@
+/* admin.css — the Aekam platform console, pages only.
+ *
+ * 11-platform-admin.md. Imported from the four /admin/* page components, NOT
+ * from styles/index.css: the console is four lazy routes and no tenant user
+ * ever reaches them, so its CSS should not sit in the barrel every tenant
+ * downloads.
+ *
+ * THE SHELL IS NOT HERE. `.adm`, `.adm__side`, `.adm__bar`, `.adm__body` and
+ * the violet --primary remap live in editorial.css and belong to
+ * 01-navigation.md. This file styles what renders inside `<Outlet/>`.
+ *
+ * DEVIATION FROM 11 §1, stated rather than smuggled: 11 specifies a `.aot`
+ * cross-org table with its own sticky header, uppercase label row, mono numeric
+ * column and hover. `.tbl` in components.css (02 §1) already carries every one
+ * of those rules, measured — sticky `th`, `--t-label` uppercase, `.tbl__num`
+ * mono + tabular-nums, `tbody tr:hover`. Shipping `.aot` would make it the
+ * NINTH table implementation in this codebase, which is the exact defect class
+ * 02 exists to close. So the console uses `.tbl`, and this file adds only the
+ * two things `.tbl` genuinely lacks: a clickable-row affordance and the
+ * suspended-org treatment.
+ */
+
+/* ── Page scaffolding ──────────────────────────────────────────────────────
+ * The shell's bar already carries the crumb, so a second full PageHeader here
+ * would state the page name twice, 40px apart. The page title is one line.
+ */
+.apg { display: flex; flex-direction: column; gap: var(--gap-section); min-width: 0; }
+
+.apg__head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-4); flex-wrap: wrap; }
+.apg__titles { min-width: 0; }
+.apg__t {
+  margin: 0; font-family: var(--font-display); font-size: var(--t-headline);
+  font-weight: var(--t-headline-w); letter-spacing: -.02em; line-height: 1.14;
+  color: var(--on-surface);
+}
+/* Inline, same baseline — 02 §1: the Devanagari is an apposition, not a
+   subtitle. Stacking it says something different about the relationship. */
+.apg__hi { margin-left: 10px; font-family: var(--font-indic); font-size: var(--t-title); color: var(--primary-text); }
+.apg__lede { margin: 6px 0 0; font-size: var(--t-body-sm); color: var(--on-surface-3); max-width: 68ch; text-wrap: pretty; }
+.apg__acts { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+.apg__tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.apg__tools .inp { width: auto; min-width: 200px; }
+.apg__spacer { flex: 1 1 auto; }
+
+.apg__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--sp-4); }
+
+/* Section inside a page — a heading with a rule, no card chrome. Cards inside
+   cards inside a console is three borders to read one number through. */
+.apg__sec { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.apg__sech { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.apg__sect {
+  margin: 0; font-family: var(--font-display); font-size: var(--t-title-lg);
+  font-weight: var(--t-title-lg-w); letter-spacing: -.01em; color: var(--on-surface);
+}
+.apg__secn { font-size: var(--t-label); color: var(--on-surface-3); font-family: var(--font-mono); }
+
+/* ── Cross-org table — the two rules .tbl does not already have ───────────── */
+.adm-rows tbody tr { cursor: pointer; }
+
+/* A suspended org still appears in the list, because hiding it is how an
+   operator concludes the record was deleted. It reads as withdrawn: dimmed,
+   with a danger keyline on the leading cell. */
+.adm-sus { opacity: .62; }
+.adm-sus td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+
+.adm-name { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.adm-name b { font-weight: 600; color: var(--on-surface); }
+.adm-name i { font-style: normal; font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.adm-name__c { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+
+/* ── Org scope bar ─────────────────────────────────────────────────────────
+ * 11's headline finding: every /v1/subscription/admin/* call resolves the org
+ * from the CALLER, so a page titled "Billing Administration" could only ever
+ * bill the operator's own org. It is fixed by sending X-Org-Id, which
+ * middleware/org_resolver.py already honours for platform staff — but a header
+ * is invisible, and an invisible tenant scope on a page that raises invoices is
+ * worse than no scope at all. This bar is the header made visible, and it is
+ * sticky because the answer to "whose invoice am I about to raise" must not be
+ * something you scroll away from.
+ */
+.osc {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+  padding: var(--sp-3) var(--pad-card);
+  border: 1px solid var(--outline-variant); border-radius: var(--r-md);
+  background: var(--s-container);
+  box-shadow: inset 3px 0 0 var(--pf-keyline);
+}
+.osc__l { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--on-surface-3); }
+.osc__v { font-family: var(--font-display); font-size: var(--t-title); color: var(--on-surface); }
+.osc__none { font-size: var(--t-body-sm); color: var(--warn); }
+.osc .inp { width: auto; min-width: 240px; }
+
+/* ── Invoice builder — 11 §1 ───────────────────────────────────────────────
+ * line_items is already an array on the server (InvoiceCreate.line_items:
+ * list[dict]); the form built exactly one. Four columns: description, qty,
+ * amount, remove.
+ */
+.inb { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.inb__hd, .inb__r { display: grid; grid-template-columns: minmax(0, 1fr) 76px 110px 34px; gap: var(--sp-2); align-items: center; }
+.inb__hd {
+  font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--on-surface-3); padding-bottom: 2px;
+}
+.inb__x { display: grid; place-items: center; width: 32px; height: 32px; border: 0; background: none; border-radius: var(--r-sm); color: var(--on-surface-3); cursor: pointer; }
+.inb__x:hover { background: var(--danger-container); color: var(--danger); }
+.inb__x[disabled] { opacity: .42; pointer-events: none; }
+
+.inb__sum {
+  margin-top: var(--sp-3); padding-top: var(--sp-3);
+  border-top: 1px solid var(--outline-variant);
+  display: flex; flex-direction: column; gap: 5px; align-items: flex-end;
+  font-size: var(--t-body-sm);
+}
+.inb__row { display: flex; align-items: baseline; gap: var(--sp-4); }
+.inb__row span { color: var(--on-surface-3); }
+.inb__row b { font-weight: 600; font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--on-surface); }
+.inb__gst { font-size: var(--t-label); color: var(--on-surface-3); }
+.inb__tot b { font-family: var(--font-display); font-size: var(--t-title-lg); font-weight: 400; letter-spacing: -.02em; }
+
+/* A note the operator has to be able to read, not a tooltip. The GST split is
+   computed and shown; the column it persists into is one number. Saying so on
+   the form is cheaper than a support call about a mismatched invoice. */
+.inb__note {
+  padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm);
+  background: var(--warn-container); color: var(--on-warn-container);
+  font-size: var(--t-label); line-height: 1.5;
+}
+
+/* ── Margin — 11 §1 ────────────────────────────────────────────────────────
+ * "A margin number with no visible derivation is unauditable, and this is the
+ * number the business runs on." `.mgn__d` shows the working: metered USD, the
+ * FX rate used, the org's markup, the INR charged.
+ */
+.mgn { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+.mgn__v { font-family: var(--font-display); font-size: var(--t-title-lg); letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--on-surface); }
+.mgn__v.is-loss { color: var(--danger); }
+.mgn__d { font-size: var(--t-label-sm); color: var(--on-surface-3); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.mgn--row { flex-direction: row; align-items: baseline; gap: var(--sp-2); }
+.mgn--row .mgn__v { font-size: var(--t-body); }
+
+/* ── Right-side detail panel ───────────────────────────────────────────────
+ * Neither Modal (centred) nor Sheet (bottom, mobile) is a right-side panel, and
+ * both admin pages hand-rolled one with inline styles. One implementation,
+ * focus-trapped by the same <FocusTrap> Modal and ConfirmDialog use.
+ */
+.aso__scrim { position: fixed; inset: 0; z-index: 420; background: var(--scrim); border: 0; }
+.aso {
+  position: fixed; inset: 0 0 0 auto; z-index: 421;
+  width: min(560px, 96vw); display: flex; flex-direction: column;
+  background: var(--surface); border-left: 1px solid var(--outline-variant);
+  box-shadow: var(--shadow-4);
+  animation: admSlideIn var(--dur-base) var(--ease-emph) both;
+}
+@keyframes admSlideIn { from { transform: translateX(24px); opacity: 0 } to { transform: none; opacity: 1 } }
+
+.aso__head {
+  flex: none; display: flex; align-items: flex-start; gap: var(--sp-3);
+  padding: var(--pad-card); border-bottom: 1px solid var(--outline-variant);
+}
+.aso__titles { flex: 1; min-width: 0; }
+.aso__t { margin: 0; font-family: var(--font-display); font-size: var(--t-title-lg); font-weight: var(--t-title-lg-w); letter-spacing: -.01em; color: var(--on-surface); }
+.aso__sub { margin: 3px 0 0; font-size: var(--t-body-sm); color: var(--on-surface-3); }
+.aso__x { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border: 0; background: none; border-radius: var(--r-sm); color: var(--on-surface-3); cursor: pointer; }
+.aso__x:hover { background: var(--s-container); color: var(--on-surface); }
+
+.aso__body { flex: 1; min-height: 0; overflow-y: auto; padding: var(--pad-card); display: flex; flex-direction: column; gap: var(--sp-6); }
+.aso__foot { flex: none; display: flex; gap: var(--sp-2); padding: var(--sp-3) var(--pad-card); border-top: 1px solid var(--outline-variant); }
+
+/* ── Key/value grid ───────────────────────────────────────────────────────── */
+.adm-kv { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-3) var(--sp-4); }
+.adm-kv__k { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--on-surface-3); margin-bottom: 2px; }
+.adm-kv__v { font-size: var(--t-body-sm); color: var(--on-surface-2); overflow-wrap: anywhere; }
+.adm-kv__v.is-mono { font-family: var(--font-mono); font-size: var(--t-label); }
+
+/* ── Module toggle grid ───────────────────────────────────────────────────── */
+.adm-mods { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--sp-2); }
+.adm-mod {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: 8px 11px; border-radius: var(--r-sm);
+  border: 1px solid var(--outline-variant); background: transparent;
+  font-size: var(--t-body-sm); color: var(--on-surface-2); text-align: left; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
+}
+.adm-mod:hover { background: var(--s-container); }
+.adm-mod.on { border-color: transparent; background: var(--primary-container); color: var(--on-primary-container); font-weight: 600; }
+/* Sensitive modules default to no access BY ROLE (START-HERE, decision 2), so
+   the affordance has to say which ones those are before it is clicked. */
+.adm-mod.is-sensitive.on { background: var(--warn-container); color: var(--on-warn-container); }
+.adm-mod__s { margin-left: auto; font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .06em; color: var(--warn); }
+
+/* ── Trend bars ───────────────────────────────────────────────────────────── */
+.adm-trend { display: flex; align-items: flex-end; gap: 2px; min-height: 110px; overflow-x: auto; padding-bottom: var(--sp-1); }
+.adm-trend__c { flex: 1 1 0; min-width: 8px; display: flex; flex-direction: column; justify-content: flex-end; height: 110px; }
+.adm-trend__a { background: var(--primary); border-radius: var(--r-xs) var(--r-xs) 0 0; }
+.adm-trend__b { background: var(--tertiary); border-radius: 0 0 var(--r-xs) var(--r-xs); }
+.adm-legend { display: flex; gap: var(--sp-4); margin-top: var(--sp-2); font-size: var(--t-label); color: var(--on-surface-3); }
+.adm-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.adm-legend i { width: 10px; height: 10px; border-radius: var(--r-xs); }
+
+/* ── Segmented period / currency control ──────────────────────────────────── */
+.adm-seg { display: inline-flex; padding: 2px; border: 1px solid var(--outline-variant); border-radius: var(--r-sm); background: var(--s-low); }
+.adm-seg button {
+  border: 0; background: none; padding: 5px 11px; border-radius: var(--r-xs);
+  font: inherit; font-size: var(--t-body-sm); color: var(--on-surface-3); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.adm-seg button:hover { color: var(--on-surface); }
+.adm-seg button.on { background: var(--surface); color: var(--on-surface); font-weight: 600; box-shadow: var(--shadow-1); }
+
+/* ── Inline form rows ─────────────────────────────────────────────────────── */
+.adm-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--sp-4); align-items: start; }
+.adm-form--tight { gap: var(--sp-3); }
+.adm-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
+
+/* The danger zone is separated by a rule and a label, not by a red button
+   floating among the ordinary ones. Deleting an org and transferring ownership
+   moved OFF org_owner onto Aekam platform staff, so this block is the only
+   place in the product they exist. */
+.adm-danger {
+  border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--outline-variant));
+  border-radius: var(--r-md); padding: var(--pad-card);
+  display: flex; flex-direction: column; gap: var(--sp-3);
+}
+.adm-danger__t { font-size: var(--t-label); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--danger); }
+.adm-danger__d { font-size: var(--t-body-sm); color: var(--on-surface-3); line-height: var(--line-height-base); margin: 0; }
+
+/* ── Mobile ───────────────────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .apg__head { align-items: flex-start; }
+  .osc { position: static; }
+  .osc .inp, .apg__tools .inp { min-width: 0; width: 100%; }
+  .inb__hd, .inb__r { grid-template-columns: minmax(0, 1fr) 60px 88px 30px; gap: var(--sp-1); }
+  .aso { width: 100%; }
+}
