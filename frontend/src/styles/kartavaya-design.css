@@ -282,6 +282,40 @@
   --bg-soft:   var(--s-low);
   --surface-2: var(--s-lowest);
 
+  /* ── Undefined-token rescue ──────────────────────────────────────────────
+     A sweep for `var(--x)` with no definition and no fallback found 227 broken
+     uses across 13 names. An undefined custom property is invalid at
+     computed-value time, so none of these were "wrong colour" — they were
+     nothing: backgrounds transparent, colours inherited, fonts falling back to
+     the default family.
+
+       --surface-1              151   card/panel background
+       --surface-0               26   recessed background
+       --ink-1                   25   primary text
+       --bg-raised                9
+       --k-primary-ghost          5   active/selected tint
+       --err --mono --ink3 --k-bg-2 --k-fg --bg-2 --bg-1
+       --color-muted-foreground
+
+     Two of these (--ink-4 earlier, and --surface-1/--ink-1/--k-primary-ghost in
+     AdminBillingPage) were each found by accident while working on something
+     else, which is what prompted sweeping for the whole class. Aliased here
+     rather than edited across 227 sites: one place to correct, one place to
+     delete once the call sites migrate. */
+  --surface-1: var(--surface);
+  --surface-0: var(--s-low);
+  --bg-raised: var(--s-low);
+  --bg-1:      var(--s-low);
+  --bg-2:      var(--s-container);
+  --ink-1:     var(--on-surface);
+  --ink3:      var(--on-surface-3);   /* typo of --ink-3, 1 use */
+  --err:       var(--danger);
+  --mono:      var(--font-mono);
+  --k-fg:      var(--on-surface);
+  --k-bg-2:    var(--s-container);
+  --k-primary-ghost: color-mix(in srgb, var(--k-primary) 12%, transparent);
+  --color-muted-foreground: var(--on-surface-3);
+
   --rule:        var(--outline-variant);
   --rule-soft:   var(--outline-variant);
   --rule-strong: var(--outline);
