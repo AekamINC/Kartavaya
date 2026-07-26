@@ -1,26 +1,23 @@
 import React, { useState } from 'react';
-import {
-  View, TouchableOpacity, StyleSheet, Platform,
-} from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
 import { linking } from './linking';
 import { navigationRef } from './navigationRef';
+import BottomBar from './BottomBar';
 
 // ── Screens ──────────────────────────────────────────────────────────────────
-// Phase-1 stubs; replaced in Phase 2
 import TodayScreen       from '../screens/TodayScreen';
+import TasksScreen       from '../screens/TasksScreen';
+import MessagesScreen    from '../screens/MessagesScreen';
+import MoreScreen        from '../screens/MoreScreen';
 import SettingsScreen    from '../screens/SettingsScreen';
-
-import InboxScreen      from '../screens/InboxScreen';
-import MeScreen         from '../screens/MeScreen';
-import TaskDetailScreen from '../screens/TaskDetailScreen';
-import BoardScreen      from '../screens/BoardScreen';
-import LoginScreen      from '../screens/LoginScreen';
+import InboxScreen       from '../screens/InboxScreen';
+import MeScreen          from '../screens/MeScreen';
+import TaskDetailScreen  from '../screens/TaskDetailScreen';
+import BoardScreen       from '../screens/BoardScreen';
+import LoginScreen       from '../screens/LoginScreen';
 import ClientPortalScreen from '../screens/ClientPortalScreen';
 import { useAuth } from '../hooks/useAuth';
 import { useNotifications } from '../context/NotificationContext';
@@ -32,109 +29,119 @@ export type RootStackParamList = {
   Main:         undefined;
   TaskDetail:   { taskId: string };
   Board:        { projectId?: string; projectName?: string } | undefined;
+  Inbox:        undefined;
   Settings:     undefined;
   Login:        undefined;
   Client:       undefined;
 };
 
+/**
+ * Today · Tasks · ＋ · Messages · More, per 17-mobile-app.md. Messages takes the
+ * fourth slot because messaging is the highest-frequency mobile action; Inbox
+ * moves under More and keeps its badge there.
+ *
+ * `Create` is a stub. Its tab press opens the sheet instead of navigating,
+ * because the ＋ is an action and pushing a screen for it breaks the back stack —
+ * Android hardware back would pop to a screen the user never chose to visit.
+ */
 export type MainTabParamList = {
-  Today:  undefined;
-  Boards: undefined;
-  Add:    undefined;   // centre pill — no screen, triggers sheet
-  Inbox:  undefined;
-  Me:     undefined;
+  Today:    undefined;
+  Tasks:    undefined;
+  Create:   undefined;
+  Messages: undefined;
+  More:     undefined;
+};
+
+/**
+ * The attendance-only shell (07-pahchan.md §9, 17 §attendance-only shell).
+ *
+ * Some employees' entire relationship with Kartavaya is clocking in. A driver or
+ * a site worker does not need five tabs, a board or an inbox.
+ *
+ * Not a second app and not a stripped build: same account, same permissions,
+ * same API. A user promoted out of an attendance-only role gets the full shell
+ * on next sign-in with no migration and no reinstall — which is only true
+ * because the shell is chosen from the ROLE, never from a build flag or a
+ * per-device setting. A flag becomes a variant nobody tests.
+ */
+export type PahchanTabParamList = {
+  Clock: undefined;
+  Me:    undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab   = createBottomTabNavigator<MainTabParamList>();
+const PahchanTab = createBottomTabNavigator<PahchanTabParamList>();
 
-// ── Centre "+" tab button ─────────────────────────────────────────────────────
-function AddButton({ onPress }: { onPress: () => void }) {
-  return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={s.addWrap}>
-      <LinearGradient
-        colors={['#0082c6', '#03a1b6', '#05b7aa']}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-        style={s.addPill}
-      >
-        <Ionicons name="add" size={26} color="#fff" />
-      </LinearGradient>
-    </TouchableOpacity>
-  );
-}
+/**
+ * Never rendered. `Create` exists only so the ＋ occupies a tab slot; BottomBar
+ * intercepts its press and opens the sheet. Returning null rather than pointing
+ * at a real screen means an accidental navigation shows nothing instead of a
+ * duplicate Today.
+ */
+const CreateStub = () => null;
 
 // ── Main tabs ─────────────────────────────────────────────────────────────────
 function MainTabs() {
-  const { t }      = useTheme();
   const { unread } = useNotifications();
   const [showNewTask, setShowNewTask] = useState(false);
 
   return (
     <>
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarStyle: Platform.OS === 'ios' ? {
-          // iOS: Liquid Glass — translucent with blur
-          position:          'absolute',
-          backgroundColor:   t.tabBg,
-          borderTopColor:    'rgba(60,60,67,0.18)',
-          borderTopWidth:    0.5,
-          height:            84,
-          paddingBottom:     24,
-          paddingTop:        8,
-        } : {
-          // Android: M3 surface
-          backgroundColor: t.surface,
-          borderTopColor:  t.outline,
-          borderTopWidth:  1,
-          height:          64,
-          paddingBottom:   8,
-          paddingTop:      8,
-          elevation:       4,
-        },
-        tabBarBackground: Platform.OS === 'ios' ? () => (
-          // Expo doesn't support native blur for tab bar; use semi-transparent surface
-          // For real blur: use @react-native-community/blur or expo-blur
-          <View style={{
-            flex: 1,
-            backgroundColor: t.tabBg,
-          }} />
-        ) : undefined,
-        tabBarActiveTintColor:   t.primary,
-        tabBarInactiveTintColor: t.ink3,
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '700', marginTop: 2 },
-        tabBarIcon: ({ focused, color }) => {
-          if (route.name === 'Add') return null; // custom button handles this
-          const map: Record<string, [string, string]> = {
-            Today:  ['today',               'today-outline'],
-            Boards: ['grid',                'grid-outline'],
-            Inbox:  ['notifications',       'notifications-outline'],
-            Me:     ['person-circle',       'person-circle-outline'],
-          };
-          const [active, inactive] = map[route.name] || ['circle', 'circle-outline'];
-          return <Ionicons name={(focused ? active : inactive) as any} size={22} color={color} />;
-        },
-      })}
-    >
-      <Tab.Screen name="Today"  component={TodayScreen}  options={{ title: 'Today' }} />
-      <Tab.Screen name="Boards" component={BoardScreen} options={{ title: 'Boards' }} />
-      <Tab.Screen
-        name="Add"
-        component={TodayScreen}   // never actually rendered
-        options={{
-          title: '',
-          tabBarButton: (props) => (
-            <AddButton onPress={() => setShowNewTask(true)} />
-          ),
-        }}
-      />
-      <Tab.Screen name="Inbox" component={InboxScreen} options={{ title: 'Inbox', tabBarBadge: unread > 0 ? (unread > 99 ? '99+' : unread) : undefined }} />
-      <Tab.Screen name="Me"    component={MeScreen}    options={{ title: 'Me' }} />
-    </Tab.Navigator>
-    <NewTaskSheet visible={showNewTask} onClose={() => setShowNewTask(false)} />
+      <Tab.Navigator
+        screenOptions={{ headerShown: false }}
+        tabBar={(props) => (
+          <BottomBar
+            {...props}
+            actionRoute="Create"
+            onAction={() => setShowNewTask(true)}
+            badges={{ More: unread }}
+          />
+        )}
+      >
+        <Tab.Screen name="Today"    component={TodayScreen} />
+        <Tab.Screen name="Tasks"    component={TasksScreen} />
+        <Tab.Screen name="Create"   component={CreateStub} />
+        <Tab.Screen name="Messages" component={MessagesScreen} />
+        <Tab.Screen name="More"     component={MoreScreen} />
+      </Tab.Navigator>
+      <NewTaskSheet visible={showNewTask} onClose={() => setShowNewTask(false)} />
     </>
   );
+}
+
+/**
+ * Attendance-only shell: Clock · Me, no More, no ＋.
+ *
+ * `Me` here is NOT a reduced Settings. 07 §9 is specific: it carries the
+ * employee's own reference pair, their register, and the retention promise in
+ * plain words — three things the full shell buries under More → Settings, and
+ * the only three this user needs.
+ */
+function PahchanTabs() {
+  return (
+    <PahchanTab.Navigator
+      screenOptions={{ headerShown: false }}
+      tabBar={(props) => <BottomBar {...props} />}
+    >
+      {/* Clock points at Today until PahchanScreen lands. The shell and its
+          role selection are the structural half and ship first; the capture
+          screen needs expo-camera, which is not yet a dependency. */}
+      <PahchanTab.Screen name="Clock" component={TodayScreen} />
+      <PahchanTab.Screen name="Me"    component={MeScreen} />
+    </PahchanTab.Navigator>
+  );
+}
+
+/**
+ * Which shell this user gets. Read from the role, never from a flag.
+ *
+ * Deliberately a denylist-free positive check: only a role that is exactly
+ * attendance-only gets the reduced shell, so a new role added later defaults to
+ * the full app rather than silently losing tabs.
+ */
+function isAttendanceOnly(role?: string | null): boolean {
+  return role === 'attendance' || role === 'pahchan_only';
 }
 
 // ── Root navigator ─────────────────────────────────────────────────────────────
@@ -167,10 +174,16 @@ export default function RootStack() {
           <Stack.Screen name="Client">{() => <ClientPortalScreen onLogout={logout} />}</Stack.Screen>
         ) : (
           <>
-            <Stack.Screen name="Main"       component={MainTabs} />
+            <Stack.Screen
+              name="Main"
+              component={isAttendanceOnly(user.role) ? PahchanTabs : MainTabs}
+            />
             <Stack.Screen name="TaskDetail" component={TaskDetailScreen}
               options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="Board"     component={BoardScreen} />
+            {/* Inbox lost its tab to Messages and is reached from More. It stays
+                a stack screen so its deep link and its badge still work. */}
+            <Stack.Screen name="Inbox"     component={InboxScreen} />
             <Stack.Screen name="Settings"  component={SettingsScreen} />
           </>
         )}
@@ -178,24 +191,3 @@ export default function RootStack() {
     </NavigationContainer>
   );
 }
-
-const s = StyleSheet.create({
-  addWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -18,
-  },
-  addPill: {
-    width:        56,
-    height:       56,
-    borderRadius: 28,
-    alignItems:   'center',
-    justifyContent: 'center',
-    shadowColor:  '#0082c6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius:  8,
-    elevation:    8,
-  },
-});
