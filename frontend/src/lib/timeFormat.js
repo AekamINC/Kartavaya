@@ -40,3 +40,34 @@ export function formatDueDateTime(iso) {
   const datePart = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
   return hasTimeComponent(iso) ? `${datePart}, ${formatTime(iso)}` : datePart;
 }
+
+/** "16 Jun 2026" — a plain calendar date, for invoice due dates and the like. */
+export function formatDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+/**
+ * A billing period as "Jul 2026", or "Jul – Sep 2026" when it spans months.
+ *
+ * Invoice rows printed the raw ISO pair ("2026-07-01 → 2026-07-31"), which is
+ * three times the width of the useful information and reads as a database
+ * value rather than a statement period.
+ */
+export function formatPeriod(startIso, endIso) {
+  if (!startIso && !endIso) return '—';
+  const s = new Date(startIso || endIso);
+  const e = new Date(endIso || startIso);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) {
+    return [startIso, endIso].filter(Boolean).join(' → ');
+  }
+  const month = d => d.toLocaleDateString('en-IN', { month: 'short' });
+  if (s.getFullYear() === e.getFullYear()) {
+    return month(s) === month(e)
+      ? `${month(s)} ${s.getFullYear()}`
+      : `${month(s)} – ${month(e)} ${s.getFullYear()}`;
+  }
+  return `${month(s)} ${s.getFullYear()} – ${month(e)} ${e.getFullYear()}`;
+}
