@@ -107,3 +107,6 @@ android-sdk/ frontend/node_modules/.cache/default-development/0.pack
 
 # Local DB snapshots — contain user and org IDs, never committed
 .backups/
+
+# Rendered email previews — the harness is committed, its output is not.
+backend/scripts/_email_preview/

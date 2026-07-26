@@ -172,23 +172,51 @@ def _subject_for_type(reminder_type: str) -> str:
         "task_due": "Task due soon",
         "meeting_upcoming": "Upcoming meeting reminder",
         "quote_expiry": "Quote expiring soon",
-    }.get(reminder_type, "Kartavya Reminder")
+    }.get(reminder_type, "Kartavaya reminder")
+
+
+# The Devanagari cue for each reminder kind. Fixed decorative glyphs, so
+# `--font-hindi`, never `--font-indic` — under an EN+GU preference that resolves
+# to Noto Sans Gujarati, which has zero Devanagari coverage.
+_HINDI_FOR_TYPE = {
+    "invoice_overdue":  "बकाया चालान",
+    "follow_up_due":    "अनुवर्तन",
+    "approval_pending": "अनुमोदन प्रतीक्षित",
+    "task_due":         "समयसीमा",
+    "meeting_upcoming": "आगामी बैठक",
+    "quote_expiry":     "प्रस्ताव समाप्ति",
+}
 
 
 def _build_reminder_html(rem: dict) -> str:
-    name = rem.get("full_name") or "there"
-    return f"""
-    <div style="font-family: Inter, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px;">
-        <h2 style="color: #1AB8B0; margin-bottom: 16px;">
-            {_subject_for_type(rem['reminder_type'])}
-        </h2>
-        <p>Hi {name},</p>
-        <p>{rem['message'] or 'You have a pending item that needs your attention.'}</p>
-        <p style="margin-top: 24px;">
-            <a href="https://app.kartavya.co" style="background: #1AB8B0; color: #fff;
-            padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-            Open Kartavya</a>
-        </p>
-        <p style="color: #888; font-size: 12px; margin-top: 32px;">— Kartavya by Aekam Inc</p>
-    </div>
+    """Render a scheduled reminder on the shared editorial email shell.
+
+    Was a bare <div> with its own teal (#1AB8B0, in no token file), the wrong
+    brand spelling ("Kartavya"), and a link to app.kartavya.co — a domain the
+    owner has corrected repeatedly and which is not where this product lives.
+
+    It also interpolated `full_name` and the reminder `message` unescaped. Both
+    are user-controlled: `message` is written by whoever created the reminder,
+    and a reminder can be addressed to any user in the org.
     """
+    from email_service import _base, _body_text, _cta_row, FRONTEND_URL
+    from html import escape as _h
+
+    name = _h(str(rem.get("full_name") or "there").split()[0])
+    rtype = rem.get("reminder_type") or ""
+    title = _subject_for_type(rtype)
+    message = rem.get("message") or "You have a pending item that needs your attention."
+
+    body = (
+        _body_text(f"Hi <strong>{name}</strong>, this is a scheduled reminder.")
+        + _body_text(_h(str(message)).replace("\n", "<br>"))
+        + _cta_row(f"{FRONTEND_URL}/dashboard", "Open Kartavaya", "primary")
+    )
+    return _base(
+        preheader=title,
+        kicker="REMINDER · स्मरण",
+        headline=title,
+        sanskrit=_HINDI_FOR_TYPE.get(rtype, ""),
+        lede="",
+        body_rows=body,
+    )

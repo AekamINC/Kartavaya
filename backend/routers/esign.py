@@ -708,58 +708,84 @@ def _mask_email(email: str) -> str:
 
 
 def _build_signing_email(doc_title: str, signer_name: str, sign_url: str, description: str) -> str:
-    from html import escape as _h
-    return f"""
-    <div style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto;">
-      <div style="background: #0082c6; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <h1 style="color: #fff; margin: 0; font-size: 20px;">Document Signing Request</h1>
-      </div>
-      <div style="padding: 32px; background: #fff; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
-        <p style="font-size: 15px; color: #333;">Hi {_h(signer_name)},</p>
-        <p style="font-size: 15px; color: #333;">
-          You have been requested to sign: <strong>{_h(doc_title)}</strong>
-        </p>
-        {f'<p style="font-size: 14px; color: #666;">{_h(description)}</p>' if description else ''}
-        <div style="text-align: center; margin: 32px 0;">
-          <a href="{sign_url}" style="background: #0082c6; color: #fff; padding: 14px 40px;
-             border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 15px;
-             display: inline-block;">
-            Review &amp; Sign Document
-          </a>
-        </div>
-        <p style="font-size: 12px; color: #999;">
-          You will need to verify your identity via OTP before signing.
-          If you did not expect this request, you can safely ignore this email.
-        </p>
-      </div>
-      <p style="font-size: 11px; color: #999; text-align: center; margin-top: 16px;">
-        Powered by Kartavaya · Aekam Inc
-      </p>
-    </div>
+    """Signature request, on the shared editorial email shell.
+
+    Was a standalone <div> with its own blue header, `#e5e7eb` borders and a
+    560px max-width — none of which appear in any token file. It also dropped
+    `sign_url` into an href unescaped; the token is generated server-side so it
+    was not exploitable, but a URL in an attribute is exactly the position that
+    needs escaping least conditionally.
     """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(__file__), ".."))
+    from email_service import _base, _body_text, _info_card, _cta_row, _fallback_url
+    from html import escape as _h
+
+    body = (
+        _body_text(f'Hi <strong>{_h(str(signer_name).split()[0] if signer_name else "there")}</strong>, '
+                   f'you have been asked to review and sign a document.')
+        + _info_card([("DOCUMENT", str(doc_title)), ("ACTION", "Review & sign")])
+        + (_body_text(_h(str(description))) if description else "")
+        + _cta_row(sign_url, "Review & sign document", "primary")
+        + _body_text('You will be asked to verify your identity with a one-time code before '
+                     'signing. If you did not expect this request, you can safely ignore it.')
+        + _fallback_url(sign_url)
+    )
+    return _base(
+        preheader=f"You have been asked to sign: {doc_title}",
+        kicker="SIGNATURE REQUESTED · हस्ताक्षर",
+        headline="A document needs your signature",
+        sanskrit="हस्ताक्षर अनुरोध",
+        lede="",
+        body_rows=body,
+        footer_note="You are receiving this because somebody asked you to sign a document "
+                    "through Kartavaya. This message is transactional.",
+    )
 
 
 def _build_otp_email(signer_name: str, otp: str, doc_title: str) -> str:
-    from html import escape as _h
-    return f"""
-    <div style="font-family: -apple-system, system-ui, sans-serif; max-width: 560px; margin: 0 auto;">
-      <div style="background: #0082c6; padding: 24px 32px; border-radius: 12px 12px 0 0;">
-        <h1 style="color: #fff; margin: 0; font-size: 20px;">Verification Code</h1>
-      </div>
-      <div style="padding: 32px; background: #fff; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
-        <p style="font-size: 15px; color: #333;">Hi {_h(signer_name)},</p>
-        <p style="font-size: 15px; color: #333;">
-          Your verification code for signing <strong>{_h(doc_title)}</strong> is:
-        </p>
-        <div style="text-align: center; margin: 24px 0;">
-          <span style="font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #0082c6;
-                 background: #f0f7ff; padding: 16px 32px; border-radius: 12px; display: inline-block;">
-            {otp}
-          </span>
-        </div>
-        <p style="font-size: 13px; color: #666;">
-          This code expires in 10 minutes. Do not share it with anyone.
-        </p>
-      </div>
-    </div>
+    """One-time signing code, on the shared editorial email shell.
+
+    The code is rendered without letter-spacing on the digits' container being
+    inherited by anything else, and never appears in the preheader — preview text
+    is shown on a locked phone screen, so putting the code there would defeat the
+    second factor.
     """
+    import sys as _s, os as _o
+    _s.path.insert(0, _o.path.join(_o.path.dirname(__file__), ".."))
+    from email_service import _base, _body_text, _cta_row  # noqa: F401
+    from email_tokens import FONT_MONO, INK, CARD_BG, INK_3, FONT_UI
+    from html import escape as _h
+
+    code = (
+        f'<tr><td class="em__pad" style="padding:20px 32px 0;">'
+        f'<table role="presentation" class="em__card" width="100%" cellpadding="0" '
+        f'cellspacing="0" border="0" style="background:{CARD_BG};border-radius:10px;">'
+        f'<tr><td align="center" style="padding:22px 16px;">'
+        f'<div class="em__ink3" style="font-family:{FONT_UI};font-size:9px;font-weight:600;'
+        f'letter-spacing:1.8px;text-transform:uppercase;color:{INK_3};padding-bottom:10px;">'
+        f'Your verification code</div>'
+        f'<div class="em__ink" style="font-family:{FONT_MONO};font-size:34px;font-weight:700;'
+        f'letter-spacing:9px;color:{INK};line-height:1.1;">{_h(str(otp))}</div>'
+        f'</td></tr></table></td></tr>'
+    )
+    body = (
+        _body_text(f'Hi <strong>{_h(str(signer_name).split()[0] if signer_name else "there")}</strong>, '
+                   f'use this code to verify your identity and sign '
+                   f'<strong>{_h(str(doc_title))}</strong>.')
+        + code
+        + _body_text('This code expires in <strong>10 minutes</strong> and works once. '
+                     'Nobody from Aekam will ever ask you for it.')
+    )
+    return _base(
+        # Deliberately does not contain the code: preview text renders on a
+        # locked screen, and a second factor visible without unlocking is not one.
+        preheader="Your signing verification code is inside.",
+        kicker="VERIFICATION · सत्यापन",
+        headline="Your verification code",
+        sanskrit="सत्यापन संकेत",
+        lede="",
+        body_rows=body,
+        footer_note="You are receiving this because you are signing a document through "
+                    "Kartavaya. This message is transactional.",
+    )

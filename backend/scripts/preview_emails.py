@@ -40,14 +40,51 @@ sys.path.insert(0, str(BACKEND))
 OUT = Path(__file__).resolve().parent / "_email_preview"
 
 # ── Hostile fixtures ──────────────────────────────────────────────────────────
-XSS = '<script>alert("xss")</script>'
-IMG = '<img src=x onerror=alert(1)>'
-AMP = 'Sharma & Co. "Partners" <ops@x.io>'
+# Escaping regressions in email are invisible until they are exploited: the mail
+# is already in someone's inbox by the time anyone looks. So every sample value
+# is an attack, and `audit()` below asserts none of them survive as live markup.
+#
+# Each payload targets a different failure mode, because "does it escape <" is
+# not the same question as "does it escape a quote inside an attribute".
 
-ORG = f'Aekam Inc {XSS}'
-PERSON = f'Keval {IMG} Shah'
-TASK = f'File GSTR-3B {AMP}'
-NOTE = f'Numbers do not match {XSS} — please recheck.'
+# 1. Script injection — the obvious one, and the one _base() used to allow
+#    through `headline` and `kicker`.
+XSS = '<script>alert("xss")</script>'
+
+# 2. Attribute-breakout without any angle bracket. An escaper that only handles
+#    < and > passes this straight into an href or a style attribute.
+QUOTE_BREAK = '" onmouseover="alert(1)" x="'
+
+# 3. Event handler on a tag that fires with no user interaction, and which mail
+#    clients that strip <script> will happily still run.
+IMG = '<img src=x onerror=alert(1)>'
+
+# 4. Ampersand and angle brackets in ordinary business data. This is the case
+#    that is NOT an attack and must still round-trip correctly — over-escaping
+#    shows up here as "&amp;amp;" in a company name.
+AMP = 'Sharma & Co. "Partners" <ops@sharma.co.in>'
+
+# 5. Bidirectional override. U+202E flips rendering direction and is the classic
+#    filename-spoofing character; in a subject or a task title it can reverse
+#    what the recipient reads. Kartavaya's market writes both LTR scripts and
+#    imports Arabic-script vendor names, so this is not theoretical.
+RTL = 'invoice‮gnp.exe'
+
+# 6. Devanagari conjuncts. क्ष and ज्ञ are the two that break under letter-spacing,
+#    and त्र/श्र/द्व exercise the half-form shaping that a wrong font silently
+#    mangles. These must survive escaping unchanged AND render without tracking.
+DEVA = 'क्षेत्रीय ज्ञान · त्रिवेणी · श्रीमती · द्वारका'
+
+# 7. An org name that IS markup, per the coordinator's note. Not merely a name
+#    containing a tag — a name whose entire content is a well-formed element, so
+#    a naive `if "<" in x` guard that strips rather than escapes still yields
+#    something that renders.
+ORG_IS_HTML = '<b>Aekam</b> <a href="https://evil.example">Inc</a>'
+
+ORG = f'{ORG_IS_HTML} {XSS}'
+PERSON = f'Keval {IMG} Shah{QUOTE_BREAK}'
+TASK = f'File GSTR-3B {AMP} {RTL}'
+NOTE = f'Numbers do not match {XSS} — please recheck. {DEVA}'
 
 
 def _senders():
@@ -257,16 +294,52 @@ def _senders():
     ]
 
 
+def assert_cannot_send():
+    """Refuse to run if this process could physically deliver mail.
+
+    The dry-run flag is a behavioural guard; this is a structural one. If neither
+    provider client exists, `send_email` has nothing to call — there is no code
+    path from here to an inbox regardless of what any flag says. The harness
+    aborts rather than rendering, because the one rule on this surface is that no
+    preview ever becomes a delivery.
+    """
+    import email_service as E
+    configured = []
+    if getattr(E, "_resend_client", None) is not None:
+        configured.append("RESEND_API_KEY")
+    if getattr(E, "ses_client", None) is not None:
+        configured.append("AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY")
+    if configured:
+        raise SystemExit(
+            "preview_emails: REFUSING TO RUN — an email provider is configured in "
+            "this environment (" + ", ".join(configured) + ").\n"
+            "This harness renders templates and must never be one misstep from a "
+            "real delivery. Unset those variables and run again."
+        )
+
+
 def _render_report(E, freq):
-    """Rebuild a report email's HTML without going near the send path."""
-    import types
+    """Rebuild a report email's HTML without going near the send path.
+
+    Three independent guards, because this is the one builder the harness cannot
+    reach without calling its sender:
+      1. `assert_cannot_send()` has already proved no provider client exists, so
+         the terminal `_send()` branch can only reach a logger.
+      2. `threading.Thread` is a no-op for the duration, so `_send()` never runs
+         at all.
+      3. The HTML is taken off `_base` as it is built, so nothing downstream of
+         it is needed.
+
+    `outbound.suppressed` is forced False here only so the builder proceeds past
+    the kill-switch guard added to `send_report_email`. That guard working is
+    exactly why this is necessary — it returns before building anything.
+    """
+    import outbound
     captured = {}
 
-    # send_report_email's only side effect is a thread that talks to SES. Replace
-    # threading.Thread with a no-op for the duration and grab the HTML off the
-    # closure instead — no monkeypatching of the sender itself, no SES client.
     real_thread = E.threading.Thread
     real_base = E._base
+    real_suppressed = outbound.suppressed
 
     def spy_base(*a, **k):
         out = real_base(*a, **k)
@@ -279,6 +352,7 @@ def _render_report(E, freq):
 
     E._base = spy_base
     E.threading.Thread = NoThread
+    outbound.suppressed = lambda *a, **k: False
     try:
         E.send_report_email(
             to_email="preview@example.invalid",
@@ -298,6 +372,7 @@ def _render_report(E, freq):
     finally:
         E._base = real_base
         E.threading.Thread = real_thread
+        outbound.suppressed = real_suppressed
     return captured["html"]
 
 
@@ -363,24 +438,61 @@ def _render_generic_reminder():
 
 
 # ── Escaping audit ────────────────────────────────────────────────────────────
+#
+# Each entry is (needle, what it would mean). A needle is chosen so that it can
+# ONLY appear if a fixture reached the document unescaped — none of them occur in
+# the templates' own legitimate markup, which is why the assertion is meaningful
+# rather than a smoke test that always passes.
+# Every needle keeps the character that makes it dangerous in LITERAL form. That
+# distinction is the whole test: `&lt;img src=x onerror=alert(1)&gt;` still
+# contains the substring "onerror=", but it is inert text. Only the version with
+# a real `<` executes. An earlier draft of this list matched the escaped form too
+# and reported 25 false failures.
+PAYLOADS = [
+    ("<script>",                 "script tag rendered as live markup"),
+    ("<img src=x onerror=",      "injected image tag with a live event handler"),
+    ('" onmouseover="alert',     "attribute breakout — quote not escaped"),
+    ('<a href="https://evil',    "injected anchor — an org name became a link"),
+    ("<b>Aekam</b>",             "org name rendered as markup rather than text"),
+]
 
-# Any of these appearing *unescaped* in rendered output is an injection. They are
-# distinctive enough not to collide with the templates' own legitimate markup.
-PAYLOADS = ["<script>", "onerror=", "<img src=x"]
+# The reverse failure: escaping applied twice. A company name legitimately
+# containing "&" must reach the recipient as "&amp;" in the source and "&" on
+# screen. "&amp;amp;" means two escapes stacked, which is what happens when a
+# caller pre-escapes a value that _base() also escapes.
+DOUBLE_ESCAPES = ["&amp;amp;", "&amp;lt;", "&amp;quot;", "&amp;#x27;"]
 
 
-def audit(name: str, rendered: str) -> list[str]:
-    """Return the payloads that survived into the document as live markup."""
-    hits = []
-    for p in PAYLOADS:
-        if p in rendered:
-            hits.append(p)
-    # A bare `&` that is not part of an entity means an unescaped value reached a
-    # URL or an attribute. Ignore the ones inside href query strings we build.
-    return hits
+def audit(rendered: str) -> list[str]:
+    """Return every escaping defect visible in one rendered document."""
+    problems = [f"UNESCAPED ({why})" for needle, why in PAYLOADS if needle in rendered]
+    problems += [f"DOUBLE-ESCAPED ({d})" for d in DOUBLE_ESCAPES if d in rendered]
+
+    # Devanagari must survive intact, and must never be tracked or uppercased —
+    # letter-spacing splits क्ष and ज्ञ into two glyphs with a gap, and Devanagari
+    # is unicase so text-transform only changes the Latin half of a mixed label.
+    # `24-bilingual-devanagari.md` forbids both.
+    for block in re.findall(r'<[^>]*lang="(?:hi|sa)"[^>]*>', rendered):
+        if "text-transform:uppercase" in block.replace(" ", ""):
+            problems.append("DEVANAGARI uppercased (breaks a unicase script)")
+        ls = re.search(r"letter-spacing:\s*([^;\"]+)", block)
+        if ls and ls.group(1).strip() not in ("normal", "0", "0px"):
+            problems.append(f"DEVANAGARI tracked ({ls.group(1).strip()}) — splits conjuncts")
+
+    # Webfonts declared via <link> are stripped by Gmail, Outlook.com and Yahoo.
+    if "fonts.googleapis.com" in rendered:
+        problems.append("WEBFONT <link> present — stripped by most clients")
+    # Outlook's Word engine drops gradients; anything relying on one loses it.
+    if "linear-gradient" in rendered:
+        problems.append("GRADIENT present — Outlook drops it")
+    # var() resolves to nothing in email and the element paints transparent.
+    if "var(--" in rendered:
+        problems.append("CSS custom property present — does not resolve in email")
+    return problems
 
 
 def main() -> int:
+    assert_cannot_send()
     OUT.mkdir(parents=True, exist_ok=True)
     for stale in OUT.glob("*.html"):
         stale.unlink()
@@ -396,13 +508,14 @@ def main() -> int:
             continue
 
         (OUT / f"{slug}.html").write_text(rendered, encoding="utf-8")
-        hits = audit(slug, rendered)
-        status = "PASS" if not hits else "UNESCAPED: " + ", ".join(hits)
+        hits = audit(rendered)
+        status = "PASS" if not hits else "; ".join(hits)
         if hits:
             failures += 1
         rows.append((slug, label, status, len(rendered)))
-        print(f"  {'PASS ' if not hits else 'FAIL '} {slug:22s} {label}"
-              + ("" if not hits else f"   <-- {status}"))
+        print(f"  {'PASS ' if not hits else 'FAIL '} {slug:22s} {label}")
+        for h in hits:
+            print(f"           -> {h}")
 
     _write_index(rows)
     print(f"\n{len(rows)} templates -> {OUT}")
