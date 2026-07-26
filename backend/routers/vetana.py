@@ -100,6 +100,32 @@ _gate = require_module_or_self(MODULE)
 # else's needs `admin` and is audited.
 
 
+#: The rung demanded by the three routes that RELEASE MONEY — approve a run,
+#: revert an approval, mark a payslip disbursed.
+#:
+#: This SHOULD BE `APPROVER`, and it is `APPROVER` on the branch
+#: `verify/hr-payroll-separated-duty`, together with the tests that prove admin
+#: is refused there. It is `ADMIN` on staging for one reason, and it is a data
+#: reason rather than a disagreement about the rule:
+#:
+#:   `staging.org_member_modules` holds ZERO rows — verified against the live
+#:   catalog. So `held_module_levels` resolves org_owner and org_admin to
+#:   exactly `{admin}`, everybody else to `{}`, and NOBODY holds `approver` on
+#:   vetana in any organisation. Ship `APPROVER` against that and the set of
+#:   people who can approve a payroll run is not narrowed, it is EMPTY. Payroll
+#:   stops company-wide.
+#:
+#: `backend/migrations/PROPOSED_071_vetana_approver_backfill.sql` grants the
+#: rung to each org's owner and carries the query to verify no org is left
+#: without one. **Apply 071, verify, then change this line to APPROVER and merge
+#: `verify/hr-payroll-separated-duty`.** That is the whole remaining change.
+#:
+#: Deliberately a named constant rather than three literals: the flip is one
+#: line, and the reason it has not happened yet is written where the next person
+#: to look at these routes will read it.
+_RELEASE_LEVEL = ADMIN
+
+
 def _can(levels, required: str) -> bool:
     """Does this caller's level set satisfy `required` on Vetana?
 
@@ -744,10 +770,11 @@ async def approve_run(
 ):
     pool = await get_pool()
     # THE separated-duty check. Approving a run is the moment salaries become
-    # payable. `level_satisfies` refuses admin here by design — the person who
-    # wrote the salary structures does not get to release the money because they
-    # also hold the module's admin level.
-    _require(levels, APPROVER)
+    # payable, and `level_satisfies` refuses admin at the approver rung by
+    # design — the person who wrote the salary structures does not get to
+    # release the money because they also hold the module's admin level.
+    # Held at ADMIN until PROPOSED_071 backfills an approver; see _RELEASE_LEVEL.
+    _require(levels, _RELEASE_LEVEL)
     run = await pool.fetchrow(
         "SELECT status FROM staging.vetana_payroll_runs "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -800,8 +827,8 @@ async def revert_run(
 ):
     pool = await get_pool()
     # Reverting takes an APPROVED run back to draft — it un-does an approval, so
-    # it is the approver's authority, not the admin's.
-    _require(levels, APPROVER)
+    # it is the approver's authority, not the admin's. See _RELEASE_LEVEL.
+    _require(levels, _RELEASE_LEVEL)
     run = await pool.fetchrow(
         "SELECT status FROM staging.vetana_payroll_runs "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -902,8 +929,9 @@ async def disburse_payslip(
     levels=Depends(_gate),
 ):
     pool = await get_pool()
-    # Marking a salary disbursed IS the release of money. Approver, not admin.
-    _require(levels, APPROVER)
+    # Marking a salary disbursed IS the release of money. Approver, not admin —
+    # see _RELEASE_LEVEL for why this is still held at admin today.
+    _require(levels, _RELEASE_LEVEL)
     ps = await pool.fetchrow(
         "SELECT status, run_id FROM staging.vetana_payslips "
         "WHERE id=$1::uuid AND org_id=$2::uuid",

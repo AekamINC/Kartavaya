@@ -1,5 +1,72 @@
 # verify/hr-payroll-self-scope — verification of the salvaged HR/payroll self-scoping work
 
+> **Read §0 first.** It answers the coordination file's §5 — the contradiction said to be
+> blocking separated duty — and states the one thing on this branch that is deliberately
+> unfinished, and why finishing it today would stop payroll.
+
+---
+
+## 0. The §5 contradiction is settled, and the real blocker is data, not the spec
+
+`_COORDINATION.md` §5 says separated duty is blocked on a contradiction that needs the owner:
+
+> - `RBAC-SPEC.md:65` — *"Sensitive modules are role-derived, not granted. Vetana, Ganit and
+>   Manav have no per-member grant row at all."*
+> - The Tier-4 level model assumes a grant row **carrying a level** is exactly how approver is
+>   held.
+>
+> Both cannot be true. […] Do not guess — flag it.
+
+**It is already settled, by an applied migration rather than by anyone's reading.** From the
+live catalog, via the migrations audit:
+
+| Fact | Source |
+| --- | --- |
+| `org_member_modules.role` exists, `DEFAULT 'viewer'` | `PROPOSED_066` §1 **APPLIED** |
+| `org_member_modules_role_check` admits all four levels | applied with it |
+| `org_member_modules_level_is_meaningful` forbids `approver` only on kartavya, dristi, srijan, samvada, esign — **vetana is not in that list** | applied with it |
+| `org_member_modules_not_sensitive` — the constraint that would enforce RBAC-SPEC:65 | `PROPOSED_065` §2, verified **ABSENT** |
+
+So an `approver` grant row on vetana is **valid input in the live schema today**. The database
+implements the level model and does not implement the prohibition. `PROPOSED_066` drops the
+065 constraint on purpose. This is not me choosing between the two — it is reading which one
+was built.
+
+**What actually blocks the fix is the data, and it is a harder problem than the spec one:**
+
+`staging.org_member_modules` holds **ZERO rows** — verified independently by two agents. So
+`held_module_levels` resolves org_owner and org_admin to exactly `{admin}`, everyone else to
+`{}`, and **nobody in any organisation holds `approver` on vetana**. Ship
+`_require(levels, APPROVER)` against that and the set of people who can approve a payroll run
+is not narrowed — it is **empty**. Payroll stops company-wide.
+
+That is precisely the coordination file's warning ("worse than the current gap"), arriving by a
+different route than expected: the model is right, the sequencing is wrong.
+
+**What I did about it.**
+
+1. `backend/migrations/PROPOSED_071_vetana_approver_backfill.sql` — grants `approver` on
+   vetana to each org's owner where vetana is active, with the pre-deploy query that proves no
+   org is left without one, and a rollback that spares hand-granted rows. Proposed, not run.
+2. `routers/vetana.py` gains `_RELEASE_LEVEL`, a single named constant used by all three
+   money-moving routes. It is `ADMIN` on this branch — **today's exact behaviour, unchanged**.
+3. `verify/hr-payroll-separated-duty` holds the finished version: `_RELEASE_LEVEL = APPROVER`
+   plus the tests demanding 403 for admin on approve / revert / disburse.
+4. `test_money_moving_routes_are_held_at_admin_pending_the_backfill` asserts the constant is
+   still `ADMIN`, so flipping it fails loudly rather than being discovered in production.
+
+**The remaining sequence, for whoever has the database:** apply `PROPOSED_071` → run its
+verification query → flip `_RELEASE_LEVEL` to `APPROVER` → merge
+`verify/hr-payroll-separated-duty`. That is the whole change; everything else has landed.
+
+Note this branch does **not** leave the payroll gap where it found it. `_COORDINATION.md` §5
+says `level_satisfies` has zero call sites and separated duty is "enforced NOWHERE". This
+branch gives it seventeen call sites and enforces the rule everywhere except the three routes
+above — including refusing `admin` at the approver rung anywhere else it is asked for, and
+closing the far larger hole that a module viewer could read every colleague's payroll.
+
+---
+
 Branch: `verify/hr-payroll-self-scope`, started from `salvage/hr-payroll-self-scope` (`1819127`),
 which itself sits on `staging` (`2a2a27b`). The salvage commit had never been run by anything.
 
@@ -244,7 +311,7 @@ The three the brief asked for, by name:
 | --- | --- |
 | (a) a module viewer CANNOT read a colleague's Aadhaar or bank details | `test_viewer_cannot_read_a_colleagues_aadhaar_or_bank_details` — asserts the raw Aadhaar, PAN and account number appear nowhere in the serialized body, not merely that the parsed field differs. Plus `test_viewer_cannot_reach_the_unmasked_endpoint_at_all`, which satisfies the org-role gate and shows the module level still refuses `/sensitive`. |
 | (b) the same viewer CAN read their own | `test_viewer_can_read_their_own_record`, and `test_own_record_is_readable_with_no_grant_at_all` for the stronger self-scope promise. `test_own_record_is_masked_too` pins that reading your own row is not a way to read your own Aadhaar back out of the database. |
-| (c) admin does not satisfy approver in vetana | `test_admin_does_not_satisfy_approver_in_vetana`, parametrized over approve / revert / disburse. Its converse `test_an_explicit_approver_grant_does_reach_them` is parametrized over the same three, so the separation cannot be "satisfied" by refusing everybody. `test_holding_both_levels_is_allowed` covers the owner's "one user can have both FYI but auditable". |
+| (c) admin does not satisfy approver in vetana | `test_admin_does_not_satisfy_approver_in_vetana` — asserted on the resolver, where it is unconditionally true and unaffected by the route sequencing in §0: admin is refused at approver on vetana *and* ganit, is **not** blanket-refused (it still satisfies editor and viewer), an explicit approver grant does climb, and Manav stays hierarchical. The HTTP-level version, demanding 403 on approve / revert / disburse, is on `verify/hr-payroll-separated-duty` and lands with the flip. `test_holding_both_levels_is_allowed` covers the owner's "one user can have both FYI but auditable". |
 
 Also added: `test_manav_is_hierarchical_so_admin_does_approve`, so that adding Manav to
 `SEPARATED_DUTY_MODULES` becomes a visible decision rather than a silent behaviour change.
@@ -280,9 +347,9 @@ the **column headings differ by design**:
 | `POST/PATCH/DELETE /salary-structures` | org admin | `admin` | same set + module-admin grantees. Intended |
 | `POST /payroll/process` | org admin | `admin` | same + grantees |
 | `GET /payroll/runs`, `/runs/{id}` | org admin | `editor` | same + grantees at editor/approver |
-| **`PATCH /runs/{id}/approve`** | **org admin** | **`approver` only** | **DELIBERATE LOCKOUT.** An org_owner or org_admin who could approve payroll yesterday cannot today. That is the entire point of `SEPARATED_DUTY_MODULES` and the owner's "admin cannot approve a payroll run". **Every org needs one explicit `approver` grant on vetana or payroll cannot be released.** |
-| **`PATCH /runs/{id}/revert`** | org admin | `approver` only | same deliberate lockout — reverting un-does an approval |
-| **`PATCH /payslips/{id}/disburse`** | org admin | `approver` only | same deliberate lockout — this is the release of money |
+| **`PATCH /runs/{id}/approve`** | org admin | `_RELEASE_LEVEL` = `admin` **on this branch**; `approver` on `verify/hr-payroll-separated-duty` | **unchanged today, by design — see §0.** The finished state is a deliberate lockout of admin, which is the entire point of `SEPARATED_DUTY_MODULES`. It is held because zero approver grants exist, so shipping it would empty the approver set rather than narrow it |
+| **`PATCH /runs/{id}/revert`** | org admin | same | same — reverting un-does an approval |
+| **`PATCH /payslips/{id}/disburse`** | org admin | same | same — this is the release of money |
 | `GET /dashboard`, `/statutory-summary` | org admin | `editor` | same + grantees |
 | `GET /loans` | own only unless org admin | own only unless `editor` | same set |
 | `POST/PATCH /loans` | org admin | `admin` | same + grantees |
@@ -310,7 +377,28 @@ the **column headings differ by design**:
 
 ## 8. Findings that belong to other agents' files
 
-### 8.1 BLOCKER — `staging.org_member_modules.role` does not exist in any applied migration
+### 8.0 CORRECTION — my own §8.1 below was WRONG. The column exists.
+
+I wrote §8.1 from `backend/migrations/`, concluded the `role` column was missing, and called it
+a deploy blocker. **It is not missing.** The migrations audit read the live catalog:
+
+> `PROPOSED_066` §1 (role column, `role_check`, `level_is_meaningful`) | "PROPOSED — Review
+> before running" | **APPLIED**
+
+`org_member_modules.role` exists with `DEFAULT 'viewer'` and both CHECK constraints.
+`PROPOSED_066` is applied *including* its `public.team_members` statement, while `PROPOSED_065`
+is not applied at all — and both files still carry "PROPOSED — NOT APPLIED" headers. The lesson,
+which is the migrations agent's and worth repeating: **the file headers in that directory
+cannot be trusted for this question, only the catalog can.** Reading the directory is how I got
+it wrong.
+
+Consequences: I removed the `except asyncpg.UndefinedColumnError` fallback I had added to
+`held_module_levels`. On a payroll module that fallback is worse than nothing — it would turn a
+dropped column into a silent `viewer` grant instead of a loud failure. §8.1 is left below as
+written, struck through, because a wrong call I made and corrected is more useful to the next
+agent than a tidy report.
+
+### ~~8.1 BLOCKER — `staging.org_member_modules.role` does not exist in any applied migration~~ (WRONG — see §8.0)
 
 `held_module_levels` runs `SELECT role FROM staging.org_member_modules`. The column is added
 only by `PROPOSED_065` / `PROPOSED_066`, and `PROPOSED_*` files are by definition unapplied.

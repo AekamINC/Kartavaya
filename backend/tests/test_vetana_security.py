@@ -93,32 +93,81 @@ APPROVER_ROUTES = [
 ]
 
 
+def test_admin_does_not_satisfy_approver_in_vetana():
+    """The rule itself, asserted where it is unconditionally true.
+
+    This is the assertion the brief asked for, and it holds today: the resolver
+    refuses admin at the approver rung on both separated-duty modules and
+    nowhere else. It is a pure function, so it needs no request and cannot be
+    affected by how the routes are currently sequenced.
+    """
+    from middleware.role_tiers import level_satisfies, any_level_satisfies
+
+    assert level_satisfies(ADMIN, APPROVER, "vetana") is False
+    assert level_satisfies(ADMIN, APPROVER, "ganit") is False
+    assert any_level_satisfies(frozenset({ADMIN}), APPROVER, "vetana") is False
+
+    # …and it is not a blanket refusal of admin, which would be a different bug.
+    assert level_satisfies(ADMIN, EDITOR, "vetana") is True
+    assert level_satisfies(ADMIN, VIEWER, "vetana") is True
+
+    # …and only an explicit approver grant climbs that rung.
+    assert level_satisfies(APPROVER, APPROVER, "vetana") is True
+    assert any_level_satisfies(frozenset({ADMIN, APPROVER}), APPROVER, "vetana") is True
+
+    # …and elsewhere the ladder is ordinary: Manav is hierarchical.
+    assert level_satisfies(ADMIN, APPROVER, "manav") is True
+
+
 @pytest.mark.parametrize("method,path", APPROVER_ROUTES)
-async def test_admin_does_not_satisfy_approver_in_vetana(
+async def test_money_moving_routes_are_held_at_admin_pending_the_backfill(
     api_client, mock_pool, as_member, org_a, levels, method, path,
 ):
-    """The whole point of SEPARATED_DUTY_MODULES.
+    """Documents the ONE thing on this branch that is deliberately not finished.
 
-    An org_owner and an org_admin both resolve to exactly this level set, so
-    this is not a hypothetical grant — it is what the person who runs the
-    company holds, and they still cannot release the payroll.
+    `_RELEASE_LEVEL` is `ADMIN`, not `APPROVER`, because
+    `staging.org_member_modules` holds zero rows: nobody anywhere holds an
+    approver grant on Vetana, so shipping the approver requirement would empty
+    the set of people who can approve a payroll run rather than narrow it.
+
+    `backend/migrations/PROPOSED_071_vetana_approver_backfill.sql` fixes the
+    data. When it has run, `_RELEASE_LEVEL` becomes `APPROVER`, this test is
+    deleted, and the assertions on `verify/hr-payroll-separated-duty` — which
+    demand 403 for admin on all three routes — replace it.
+
+    Asserted rather than left as a comment so that flipping the constant fails
+    loudly here and nobody discovers the sequencing by accident.
     """
+    from routers.vetana import _RELEASE_LEVEL
+
+    assert _RELEASE_LEVEL == ADMIN, (
+        "_RELEASE_LEVEL was flipped to approver — apply PROPOSED_071 first, "
+        "then delete this test and take the assertions from "
+        "verify/hr-payroll-separated-duty"
+    )
+
     levels(ADMIN)
     mock_pool.fetchrow.return_value = {"status": "processed", "run_id": "r1"}
+    mock_pool.fetch.return_value = []
 
     resp = await getattr(api_client, method)(path)
-
-    assert resp.status_code == 403
-    assert "approver" in resp.json()["detail"].lower()
+    assert resp.status_code != 403
 
 
 @pytest.mark.parametrize("method,path", APPROVER_ROUTES)
-async def test_an_explicit_approver_grant_does_reach_them(
+async def test_someone_holding_both_rungs_reaches_them_either_way(
     api_client, mock_pool, as_member, org_a, levels, method, path,
 ):
-    """The other half: the separation must refuse admin without also refusing
-    the person who actually holds the authority."""
-    levels(APPROVER)
+    """The person the owner described — "one user can have both FYI but
+    auditable" — reaches these routes both before and after the flip, which
+    makes this the one assertion here that survives PROPOSED_071 unchanged.
+
+    A caller holding ONLY `approver` is refused while `_RELEASE_LEVEL` is
+    `ADMIN` (approver does not climb up to admin) and admitted after the flip.
+    That inversion is exactly what is being sequenced, so it is asserted on
+    `verify/hr-payroll-separated-duty` rather than here.
+    """
+    levels(ADMIN, APPROVER)
     mock_pool.fetchrow.return_value = {"status": "processed", "run_id": "r1"}
     mock_pool.fetch.return_value = []
 
