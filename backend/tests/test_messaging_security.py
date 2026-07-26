@@ -1,5 +1,5 @@
 """
-Security tests for the Sanvaad (Samvada) messaging router.
+Security tests for the Sanvaad messaging router.
 Validates auth requirements, org-scoping, and role-based access control.
 """
 import pytest

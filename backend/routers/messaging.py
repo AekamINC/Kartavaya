@@ -1,5 +1,5 @@
 """
-messaging.py — Samvada · समवाद (Internal Messaging) Router
+messaging.py — Sanvaad · संवाद (Internal Messaging) Router
 Channels, messages, threads, reactions, read state.
 """
 import logging

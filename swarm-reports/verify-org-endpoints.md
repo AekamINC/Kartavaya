@@ -281,3 +281,55 @@ It does say, and it agrees with what was chosen. I replaced the hedges with the 
 `ProfileUpdate` otherwise covers every field the designed Profile tab reads: name, gstin,
 pan, billing_address, logo_url, email, phone, website, bank_details, invoice_note,
 description, industry, team_size, founded_year.
+
+## 7. Migration numbering re-checked at merge time
+
+Re-ran the survey immediately before self-merging, because other agents were landing work
+while I was. Scanned every ref with
+`git log --all --diff-filter=A --name-only -- backend/migrations/PROPOSED_06[7-9]* PROPOSED_07*`:
+
+| Number | Owner | Status |
+|---|---|---|
+| 067 | `feat/me-account-self-service` — `PROPOSED_067_account_self_service.sql` | unmerged |
+| **068, 069, 070** | **this branch** | merging now |
+| 071, 072, 073 | free | — |
+| 074 | `worktree-agent-a91ffbcdbce0c3ac0` — `PROPOSED_074_module_approvers.sql` | unmerged |
+
+**No new collision.** `origin/staging` still tops out at 066, so 068-070 land clean.
+Next agent should take **071**, and be aware 074 is spoken for.
+
+## 8. Live-DB verification of the salvaged routers' runtime claims — ALL HELD
+
+The salvaged routers probe `information_schema` rather than assuming schema exists, and
+each probe's premise checked out exactly:
+
+| Claim in the salvaged code | Verified |
+|---|---|
+| `staging.organisations` has 32 columns, none of them the four new ones | **exact** — 32 columns, 0 of the four present |
+| `staging.org_security` does not exist | **held** — `to_regclass` → NULL, so the 503 path is the live path |
+| `staging.audit_log` does not exist (060 unapplied), so every `audit.emit` is swallowed | **held** — `to_regclass` → NULL; this is why `org_modules.py` writes `subscription_events` too |
+| `staging.module_subscriptions` holds `sanvaad`, 1 row | **held** — and `is_active = false` |
+| `staging.org_member_modules` is empty | **held** — 0 rows |
+
+That last one is what made the spelling fix cheap: there were no grant rows to migrate.
+
+## 9. What I could not finish / left for others
+
+- **`test_ganit.py::test_create_invoice_success`** fails on `staging` already (MagicMock
+  TypeError). Not mine; not fixed.
+- **Frontend test suite and `vite build` could not run here** — this worktree has no
+  `node_modules` (0 entries) and installing would rewrite `frontend/yarn.lock`, which is
+  forbidden. Both token/class gates run on bare node and pass. The four frontend files I
+  touched: `catalogue.js` and `levels.js` were parsed with `node --check` (both OK);
+  `TabModules.jsx` and `AdminOrgsPage.jsx` changes are an import removal, a comment, one
+  filter expression and one string literal, reviewed by diff.
+- **Tier-2 role constants** — `require_org_role("org_admin","org_owner")` is repeated as
+  literals at ~15 call sites. `role_tiers.py` has no org-tier equivalent. Worth one
+  `ORG_SETTINGS_ROLES` constant, for whoever owns `middleware/roles.py`.
+- **`org_members.py` `PUT /v1/org/members/{id}/modules` replaces rather than merges** a
+  member's grants — flagged in the salvaged `org_modules.py` docstring, still true, and
+  owned elsewhere. A member editor that hides disabled modules would delete those grants
+  as a side effect of an unrelated save.
+- **`TabProfile.jsx` / `TabSecurity.jsx` / `TabModules.jsx` are not wired to these
+  endpoints yet.** The endpoints now exist and are registered; the screens still need
+  building per `10-org-settings.md`. `TabModules.jsx` reads a different endpoint today.
