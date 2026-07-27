@@ -74,16 +74,21 @@ export const DEFAULTS = {
   accent:       'teal',
   customAccent: null,
   sidebar:      'wide',
-  // `cozy`, which is what the design is drawn at — the reference harness ships
-  // `data-density="cozy"` on <html>. `comfy` here meant every new user got the
-  // loosest of the three tiers, and `cozy` was not reachable at all because
-  // TabLayout only offered two. See kartavaya-design.css §4.
-  density:      'cozy',
+  // `cozy`, not `comfy`. The rendered harness carries data-density="cozy" and
+  // `design-reference/…/App.jsx:3` defaults to it; `comfy` is the LOOSEST of the
+  // three tiers, not the middle one. Shipping `comfy` as the default put every
+  // page one tier looser than the design — --pad-page 32px against 28px, and
+  // that token is the topbar's padding and .kv__content's padding everywhere.
+  density:      'cozy',       // compact | cozy | comfy
   font:         'newsreader', // display face
   uiFont:       'inter',      // body face — independent of `font` (00 §2)
   fontSize:     14,           // 12 → 20
   lineHeight:   1.5,          // 1.3 | 1.5 | 1.7
-  radius:       10,           // 4 | 10 | 20 — default IS one of the options
+  // 12, measured off the harness (`App.jsx:3` radius: 12, and `Chrome.jsx:190`
+  // is a slider 8→28 step 2). The presets in TabLayout moved to 8 | 12 | 20 to
+  // match, so the default is still one of the options and every option sits
+  // inside the reference's range.
+  radius:       12,           // 8 | 12 | 20 — default IS one of the options
   anim:         'full',       // full | reduced | none
   language:     'en+sa',
   sideBg:       'dark',       // dark | light | accent
@@ -114,29 +119,42 @@ function accentFor(prefs) {
 }
 
 /**
- * One-time density migration.
+ * One-time migration for the two settings whose VALUE SET changed.
  *
  * `setPrefs` persists the WHOLE prefs object, so anyone who ever changed any
- * setting — theme, accent, anything — has `density: 'comfy'` frozen in storage
- * from when that was the default. Changing DEFAULTS alone would fix new
- * installs and leave every existing user on a tier the design was never drawn
- * at, which is most of the point of the change.
+ * setting — theme, accent, anything — has the old defaults frozen in storage.
+ * Changing DEFAULTS alone fixes new installs and leaves every existing user
+ * behind, which is most of the point of both changes.
  *
- * So `comfy` is rewritten to `cozy` exactly once, guarded by its own flag.
- * The honest cost: someone who deliberately CHOSE Comfy gets moved to Cozy one
- * time. That is reversible in two clicks, Comfy is still offered, and the flag
- * means their next choice sticks for good. The alternative — leaving them —
- * cannot be distinguished from leaving everyone, because the old default and a
- * deliberate choice are the same three bytes in storage.
+ * DENSITY: `comfy` → `cozy`. `comfy` is the LOOSEST of the three tiers, not the
+ * middle one, and the design is drawn at cozy.
+ *
+ * RADIUS: the options moved from `4 | 10 | 20` to `8 | 12 | 20` when the scale
+ * was matched to the harness. A stored `4` or `10` now matches NO option, so
+ * the control renders with nothing selected and the user's corners are stuck at
+ * a value they cannot see or change. Each old value maps to its nearest new
+ * one. `20` was in both sets and is left alone.
+ *
+ * The honest cost, for both: someone who deliberately chose the old value is
+ * moved once. Reversible in two clicks, and the flag means their next choice
+ * sticks for good. There is no version of this that touches only the users who
+ * never chose — a default and a deliberate choice are the same bytes in storage.
  */
-const DENSITY_MIGRATION_FLAG = 'kv.densityCozyMigrated';
+const PREFS_MIGRATION_FLAG = 'kv.densityCozyMigrated';
+const RADIUS_REMAP = { 4: 8, 10: 12 };
 
-function migrateDensity(stored) {
+function migrateStoredPrefs(stored) {
   try {
-    if (localStorage.getItem(DENSITY_MIGRATION_FLAG)) return stored;
-    localStorage.setItem(DENSITY_MIGRATION_FLAG, '1');
-    if (stored.density !== 'comfy') return stored;
-    const next = { ...stored, density: 'cozy' };
+    if (localStorage.getItem(PREFS_MIGRATION_FLAG)) return stored;
+    localStorage.setItem(PREFS_MIGRATION_FLAG, '1');
+
+    const next = { ...stored };
+    let changed = false;
+
+    if (stored.density === 'comfy') { next.density = 'cozy'; changed = true; }
+    if (RADIUS_REMAP[stored.radius])  { next.radius  = RADIUS_REMAP[stored.radius]; changed = true; }
+
+    if (!changed) return stored;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     return next;
   } catch { return stored; }
@@ -145,7 +163,7 @@ function migrateDensity(stored) {
 function loadPrefs() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    return { ...DEFAULTS, ...migrateDensity(stored) };
+    return { ...DEFAULTS, ...migrateStoredPrefs(stored) };
   }
   catch { return { ...DEFAULTS }; }
 }

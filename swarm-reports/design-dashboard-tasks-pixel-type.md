@@ -449,24 +449,53 @@ plugin.
 
 ### After merging staging
 
-`origin/staging` moved 23 commits during this work, including edits to both
-stylesheets this change touches. Merged in twice (it moved again mid-merge),
-no conflicts, and re-measured afterwards: every number in §8 is unchanged, and
-a sibling's extraction of the accent maths into `lib/accent.js` survived intact
-alongside the density work in the same file.
+`origin/staging` moved 28 commits during this work and had to be merged three
+times. The third merge conflicted, in three files, because **a sibling reached
+the same `cozy` conclusion independently** — convergent findings from two
+separate measurements of the same harness.
 
-With the new default in place, the build's shipping tokens now equal the
-reference's:
+Conflicts resolved in the sibling's favour wherever they went further:
 
-| token | reference | build default, after |
+- **Density tiers.** They took `compact` and `comfy` from the reference's
+  `tokens.css:228-230` verbatim (34/18/12/14/7 and 54/38/24/30/14), where I had
+  only corrected the missing middle tier. Theirs is strictly more correct.
+- **Radius.** They moved the options from `4 | 10 | 20` to `8 | 12 | 20` with
+  default 12 — the divergence §1 recorded and deliberately left alone as global.
+  Theirs, gladly.
+- **Comments.** Theirs cite `App.jsx:3` and `Chrome.jsx:196` directly.
+
+Two defects in that just-landed radius change, found because this branch owns
+the migration path and re-measures:
+
+1. **Stored radius stranded.** `setPrefs` persists the whole prefs object, so
+   existing users hold `radius: 4` or `10` — values that now match **no option**.
+   The control renders with nothing selected and their corners are stuck at a
+   value they cannot see or change. The one-time migration is generalised to
+   remap `4 → 8` and `10 → 12`; `20` was in both sets and is untouched.
+2. **First-paint jump.** `:root --radius-base` was left at `10px` while the
+   default moved to 12. `applyPrefs` writes the variable as an inline style, so
+   every corner in the product rendered at 10px until React mounted, then
+   snapped to 12px. `:root` now says 12px, and its comment — stale on both the
+   default and the option list — says `8 | 12 | 20`.
+
+Re-measured after all three merges. **The build's stylesheet-only default path
+now equals the reference on every density and radius token**, before any JS runs:
+
+| token | reference | build default |
 |---|---|---|
 | `--pad-page` | 28px | **28px** |
 | `--pad-card` | 18px | **18px** |
 | `--gap-section` | 22px | **22px** |
 | `--gap-tight` | 10px | **10px** |
 | `--row-h` | 44px | **44px** |
+| `--radius-base` | 12px | **12px** |
+| `--r-md` / `--r-lg` | 12px / ×1.45 | **12px / ×1.45** |
 
-Table header band 38px against 38px; row height 44px against 44px.
+`.k-stat`, `.k-stat__lbl`, `.k-stat__val`, `.k-card`, `.k-card__head`,
+`.k-table__head` and `.k-trow` all measure **identical** to their reference
+counterparts on padding, radius and type. Table header band 38px against 38px;
+row height 44px against 44px. The `.k-stat` background difference noted in §8
+also resolved in the merge.
 
 ---
 

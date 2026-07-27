@@ -25,13 +25,13 @@ export default function TabLayout() {
       <div className="sr">
         <div className="sr__l">
           <div className="sr__t">Density</div>
-          <div className="sr__d">Cozy is the design's own spacing. Compact tightens row padding across tables and lists; Comfy loosens it.</div>
+          <div className="sr__d">Compact tightens row padding across tables and lists. Cozy is the default.</div>
         </div>
         <div className="sr__c">
-          {/* Three tiers. `cozy` is the middle one and the default — the tokens
-              for it have always been in kartavaya-design.css §4, but it was
-              missing from this control, so the tier the product is designed at
-              was the one tier nobody could pick. */}
+          {/* Three tiers, matching `Chrome.jsx:196`. Cozy was missing entirely,
+              so the default tier had no control that could return you to it:
+              anyone who tried Compact was stuck choosing between the tightest
+              and the loosest. */}
           <Seg
             label="Density"
             value={prefs.density}
@@ -53,11 +53,14 @@ export default function TabLayout() {
         <div className="sr__c">
           <Seg
             label="Corner radius"
-            value={String(prefs.radius || 10)}
+            value={String(prefs.radius || 12)}
             onChange={v => setPrefs({ radius: parseInt(v, 10) })}
+            /* 8 | 12 | 20. The harness drives this from a slider with min 8
+               (`Chrome.jsx:190`) and defaults to 12, so `4` was outside the
+               design's range and `10` was not a value it ever renders. */
             options={[
-              { label: 'Sharp',   value: '4' },
-              { label: 'Default', value: '10' },
+              { label: 'Sharp',   value: '8' },
+              { label: 'Default', value: '12' },
               { label: 'Round',   value: '20' },
             ]}
           />
