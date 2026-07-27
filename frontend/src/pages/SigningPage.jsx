@@ -387,7 +387,15 @@ export default function SigningPage() {
         {step === 'loading' && (
           <Card className="pub__card">
             <CardBody>
-              <div className="pub__pad pub__stack" aria-busy="true" aria-label="Checking this signing link">
+              {/* `role="status"` is load-bearing, not decoration: this was a
+                  bare <div> carrying aria-busy and aria-label, and aria-label
+                  is IGNORED on an element with an implicit role of `generic`,
+                  so the loading state was announced to nobody. The skeletons
+                  themselves are bare <span>s (Skeleton.jsx:12), so there was no
+                  second chance. role="status" also gives the polite live region
+                  that lets the announcement land when the step resolves. */}
+              <div className="pub__pad pub__stack" role="status" aria-busy="true"
+                aria-label="Checking this signing link">
                 <SkeletonText width="45%" height={11} />
                 <SkeletonText width="70%" height={22} />
                 <SkeletonText width="100%" height={12} />
@@ -472,13 +480,21 @@ export default function SigningPage() {
                 )}
                 {/* `.fldx--otp` is the system's OTP field — a 210px cap, because a
                     six-digit code in a full-width input reads as a text box. */}
+                {/* `is-error` tints the field, which is a colour-only signal.
+                    `aria-invalid` states the same fact non-visually, and
+                    `aria-describedby` binds the message to the input so it is
+                    read WITH the field on focus — `role="alert"` alone fires
+                    once at the moment of change and is gone by the time the
+                    user tabs back to correct it. */}
                 <div className={`fldx fldx--otp${error ? ' is-error' : ''}`}>
                   <label className="fldx__lbl" htmlFor="sgn-otp"><span>Verification code</span></label>
                   <input id="sgn-otp" className="fldx__in sg__otp" value={otp} inputMode="numeric"
                     autoComplete="one-time-code" maxLength={6} autoFocus
+                    aria-invalid={error ? true : undefined}
+                    aria-describedby={error ? 'sgn-otp-err' : undefined}
                     onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     placeholder="000000" />
-                  {error && <span className="fldx__err" role="alert">{error}</span>}
+                  {error && <span id="sgn-otp-err" className="fldx__err" role="alert">{error}</span>}
                 </div>
                 <div className="pub__actions">
                   <Button variant="fill" size="lg" onClick={verifyOtp} disabled={busy}>
@@ -515,9 +531,23 @@ export default function SigningPage() {
                   </a>
                 )}
 
-                <ChipRow>
+                {/* A labelled group, not two loose buttons: these are one
+                    choice — HOW this person signs — and without the group a
+                    screen reader announces two unrelated controls between the
+                    document link and a name field, with nothing saying they are
+                    alternatives to each other.
+
+                    `aria-pressed` is passed explicitly because Chip's default
+                    is `on ? true : undefined`, which leaves the UNSELECTED chip
+                    with no aria-pressed attribute at all — announced as a plain
+                    button, so the user is told which option is on but never
+                    that the other one is a toggle they can turn on. Both must
+                    report state. Chip spreads `...rest` after its own default,
+                    so this wins without touching the shared component. */}
+                <ChipRow className="sg__sigmode" role="group" aria-label="Signature method">
                   {['type', 'draw'].map(t => (
-                    <Chip key={t} on={sigType === t} onClick={() => setSigType(t)}>
+                    <Chip key={t} on={sigType === t} aria-pressed={sigType === t}
+                      onClick={() => setSigType(t)}>
                       {t === 'type' ? 'Type signature' : 'Draw signature'}
                     </Chip>
                   ))}
@@ -526,7 +556,13 @@ export default function SigningPage() {
                 {sigType === 'type' && (
                   <div className="fldx sg__measure">
                     <label className="fldx__lbl" htmlFor="sgn-name"><span>Full name</span></label>
+                    {/* The error for this field renders below the legal notice
+                        (it doubles as the submit error), so without an explicit
+                        association there is nothing tying "Type your name to
+                        sign" to the box it is about. */}
                     <input id="sgn-name" className="fldx__in" value={typedName} autoFocus
+                      aria-invalid={error ? true : undefined}
+                      aria-describedby={error ? 'sgn-sign-err' : undefined}
                       onChange={e => setTypedName(e.target.value)} placeholder="Type your full name" />
                     {typedName && (
                       /* Paper and ink, not surface tokens — this previews the ink
@@ -541,17 +577,39 @@ export default function SigningPage() {
 
                 {sigType === 'draw' && (
                   <div className="sg__measure">
+                    {/* A drawing surface cannot be operated from a keyboard, and
+                        pretending otherwise is worse than saying so: the canvas
+                        is not in the tab order (measured: tabIndex -1), so a
+                        keyboard or switch user who reaches this step lands on
+                        "Clear" with no idea why. `aria-label` alone made it
+                        ANNOUNCE as though it were a control.
+
+                        `role="img"` is the honest description of what it is to
+                        assistive tech — a picture the user may be able to draw
+                        with a pointer — and `aria-describedby` points at the
+                        stated fallback, which is a real one: "Type signature"
+                        produces a signature of equal legal standing by the same
+                        endpoint (`signature_type: 'type'`). 23-accessibility.md
+                        §Touch targets/keyboard requires an operable alternative
+                        OR an explicit stated fallback; this is the latter, said
+                        out loud rather than left to be discovered. */}
                     <div className="sg__paper">
                       <canvas className="sg__canvas" ref={initCanvas} width={500} height={160}
-                        aria-label="Draw your signature" />
+                        role="img" aria-label="Signature drawing area"
+                        aria-describedby="sgn-draw-alt" />
                     </div>
+                    <p id="sgn-draw-alt" className="pub__muted">
+                      Drawing needs a mouse, trackpad or touchscreen. If you cannot draw,
+                      choose <strong>Type signature</strong> above — a typed signature is
+                      accepted here and has the same legal effect.
+                    </p>
                     <Button className="sg__clear" variant="text" size="sm" onClick={clearCanvas}>
                       Clear
                     </Button>
                   </div>
                 )}
 
-                {error && <span className="fldx__err" role="alert">{error}</span>}
+                {error && <span id="sgn-sign-err" className="fldx__err" role="alert">{error}</span>}
 
                 <p className="pub__muted">
                   By pressing &ldquo;Sign document&rdquo; you agree that this electronic signature is
@@ -570,11 +628,18 @@ export default function SigningPage() {
           </Card>
         )}
 
+        {/* The three terminal states get a live region because each one is the
+            OUTCOME of a legally binding act and the only confirmation the
+            signer ever receives. Without it the card silently replaces the form
+            and a screen reader user is left on a page that has stopped
+            responding, with no way to know whether the signature landed. This
+            page never mounts the toast announcer (toast.jsx:185), so nothing
+            else on it would have said so. */}
         {step === 'done' && (
           <Card className="pub__card">
             <CardHead title="Document signed" />
             <CardBody>
-              <div className="pub__stack">
+              <div className="pub__stack" role="status">
                 <p className="pub__lede sg__done">
                   {result?.signers_completed}/{result?.signers_total} signers have signed.
                   {result?.document_status === 'completed' && ' All signatures collected.'}
@@ -592,7 +657,7 @@ export default function SigningPage() {
           <Card className="pub__card">
             <CardHead title="Already signed" />
             <CardBody>
-              <p className="pub__lede">
+              <p className="pub__lede" role="status">
                 You have already signed this document
                 {result?.signed_at ? ` on ${new Date(result.signed_at).toLocaleDateString('en-IN', DATE)}` : ''}.
               </p>
@@ -604,7 +669,7 @@ export default function SigningPage() {
           <Card className="pub__card">
             <CardHead title="Signing declined" />
             <CardBody>
-              <p className="pub__lede">You have declined to sign this document.</p>
+              <p className="pub__lede" role="status">You have declined to sign this document.</p>
             </CardBody>
           </Card>
         )}

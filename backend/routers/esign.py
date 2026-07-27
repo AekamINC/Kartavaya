@@ -300,6 +300,25 @@ async def send_for_signing(
 
 # ── Public signing endpoints (no auth — token-based) ─────────
 
+def _doc_status_guard(doc_status: str, expires_at) -> None:
+    """Refuse a document that is no longer open to signature.
+
+    Lives in one place because it is the answer to "is this document still
+    signable", and the read path and the two write paths must never be able to
+    answer it differently. `get_signing_page` enforced it; `submit_signature`
+    and `decline_signing` did not, which meant a cancelled document could still
+    be signed by anyone holding a link issued before the cancellation.
+
+    Raises 410 Gone rather than 404: the link was real, and telling the signer
+    "cancelled or expired" is what lets them go back to the sender instead of
+    assuming they were sent a broken link.
+    """
+    if doc_status in ("cancelled", "expired"):
+        raise HTTPException(410, "This document has been cancelled or expired")
+    if expires_at and expires_at < datetime.now(timezone.utc):
+        raise HTTPException(410, "This signing link has expired")
+
+
 @router.get("/verify/{token}")
 async def get_signing_page(token: str, request: Request):
     """Public endpoint — signer opens their signing link."""
@@ -316,15 +335,15 @@ async def get_signing_page(token: str, request: Request):
     if not signer:
         raise HTTPException(404, "Invalid signing link")
 
-    if signer["doc_status"] in ("cancelled", "expired"):
-        raise HTTPException(410, "This document has been cancelled or expired")
-
-    if signer["expires_at"] and signer["expires_at"] < datetime.now(timezone.utc):
+    # Persist the expiry transition before raising, so the document stops
+    # showing as 'sent' on the firm's side the moment anyone opens a dead link.
+    if (signer["doc_status"] not in ("cancelled", "expired")
+            and signer["expires_at"] and signer["expires_at"] < datetime.now(timezone.utc)):
         await pool.execute(
             "UPDATE staging.sign_documents SET status='expired' WHERE id=$1",
             signer["document_id"],
         )
-        raise HTTPException(410, "This signing link has expired")
+    _doc_status_guard(signer["doc_status"], signer["expires_at"])
 
     if signer["status"] == "signed":
         return {"status": "already_signed", "signed_at": signer["signed_at"]}
@@ -409,16 +428,39 @@ async def verify_otp(token: str, body: OTPVerify, request: Request):
     if datetime.now(timezone.utc) > signer["otp_expires_at"]:
         raise HTTPException(400, "OTP expired. Request a new one.")
 
+    # ── Attempt limiting ──────────────────────────────────────────────────
+    # The window has to ROLL. The previous form refreshed `first_at` only when
+    # `count == 1` and never reset `count`, so after the first 15 minutes
+    # elapsed the guard `count >= 5 AND elapsed < 900` could never be true
+    # again — the limiter switched itself off permanently for that token and
+    # allowed unlimited guesses at a 6-digit code. Starting a FRESH window once
+    # the old one has expired is what makes "5 per 15 minutes" mean that on the
+    # second quarter-hour as well as the first.
+    #
+    # Still process-local, and that is a known weakness rather than a design:
+    # it is not shared across workers and it is cleared by every deploy. The
+    # `otp_attempts` COLUMN is the durable home for this (the Ganit path uses
+    # it — `services/esign_service.py:152`); moving it there is a schema change
+    # and is reported, not made here.
+    now = datetime.now(timezone.utc)
     otp_attempts_key = f"otp_attempts:{token}"
-    attempts = getattr(verify_otp, '_attempts', {})
-    if not hasattr(verify_otp, '_attempts'):
+    attempts = getattr(verify_otp, '_attempts', None)
+    if attempts is None:
+        attempts = {}
         verify_otp._attempts = attempts
-    current = attempts.get(otp_attempts_key, {"count": 0, "first_at": datetime.now(timezone.utc)})
-    if current["count"] >= 5 and (datetime.now(timezone.utc) - current["first_at"]).total_seconds() < 900:
+
+    # Evict windows that have lapsed. Without this the dict grows without bound
+    # on a key an unauthenticated caller chooses, which is a memory leak an
+    # attacker controls.
+    for _k in [k for k, v in attempts.items() if (now - v["first_at"]).total_seconds() >= 900]:
+        del attempts[_k]
+
+    current = attempts.get(otp_attempts_key)
+    if current is None or (now - current["first_at"]).total_seconds() >= 900:
+        current = {"count": 0, "first_at": now}
+    if current["count"] >= 5:
         raise HTTPException(429, "Too many attempts. Request a new OTP.")
-    current["count"] = current["count"] + 1
-    if current["count"] == 1:
-        current["first_at"] = datetime.now(timezone.utc)
+    current["count"] += 1
     attempts[otp_attempts_key] = current
 
     # Constant-time. A 6-digit OTP is a 10^6 space and `!=` short-circuits at the
@@ -455,7 +497,7 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
 
     signer = await pool.fetchrow(
         "SELECT s.*, d.id as doc_id, d.signers_total, d.signers_completed, d.org_id, "
-        "d.file_key, d.file_url, d.file_hash "
+        "d.file_key, d.file_url, d.file_hash, d.status as doc_status, d.expires_at "
         "FROM staging.sign_signers s "
         "JOIN staging.sign_documents d ON d.id = s.document_id "
         "WHERE s.token=$1",
@@ -465,6 +507,16 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
         raise HTTPException(404, "Invalid signing link")
     if signer["status"] == "signed":
         raise HTTPException(400, "Already signed")
+    # The READ path (`get_signing_page` above) refuses a cancelled or expired
+    # document; this WRITE path did not check either, so the two disagreed about
+    # whether the document was still signable. The page is fetched once and can
+    # sit open indefinitely — and the request can be replayed without the page at
+    # all — so a signer who loaded the link before the firm cancelled it, or
+    # before it expired, could still POST a signature and have it recorded as
+    # valid with a full audit trail. `cancel_document` exists precisely to stop
+    # signing; a withdrawal that the signing endpoint ignores is not a
+    # withdrawal. Enforced here so the decision is made where the row is written.
+    _doc_status_guard(signer["doc_status"], signer["expires_at"])
     if not signer["otp_verified"]:
         raise HTTPException(403, "OTP verification required before signing")
 
@@ -521,7 +573,8 @@ async def decline_signing(token: str, request: Request):
     body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
 
     signer = await pool.fetchrow(
-        "SELECT s.*, d.id as doc_id FROM staging.sign_signers s "
+        "SELECT s.*, d.id as doc_id, d.status as doc_status, d.expires_at "
+        "FROM staging.sign_signers s "
         "JOIN staging.sign_documents d ON d.id = s.document_id "
         "WHERE s.token=$1", token,
     )
@@ -529,6 +582,10 @@ async def decline_signing(token: str, request: Request):
         raise HTTPException(404, "Invalid signing link")
     if signer["status"] == "signed":
         raise HTTPException(400, "Already signed")
+    # Same gate as the sign path: a decline recorded against a cancelled or
+    # expired document writes a misleading audit row ("this party refused")
+    # about a document that was no longer open to anybody.
+    _doc_status_guard(signer["doc_status"], signer["expires_at"])
 
     reason = body.get("reason", "")
     await pool.execute(
