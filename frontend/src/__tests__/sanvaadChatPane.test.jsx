@@ -39,6 +39,7 @@ vi.mock('../lib/api', () => ({
 
 const { default: ChatPane } = await import('../pages/sanvaad/ChatPane');
 const { ToastProvider } = await import('../components/ui');
+const { moduleMeta } = await import('../lib/moduleColors');
 
 let container = null;
 let root = null;
@@ -163,9 +164,16 @@ describe('ChatPane · a module event is not a person', () => {
 
     expect(container.querySelector('.msg--sys')).toBeTruthy();
     expect(container.querySelector('.msg__systag').textContent).toBe('system');
-    // `moduleColors` maps ganit → Invoicing. The person whose action produced
-    // the event must not be presented as its author.
-    expect(text()).toContain('Invoicing');
+    // Read the label from `moduleColors` rather than hardcoding it. The English
+    // name is that file's to own and it has already moved once — `ganit` was
+    // "Invoicing" and is now "Finance", which `_DESIGN-GAP.md` §2 lists as the
+    // designer's word against the build's paraphrase. What this test is for is
+    // that the row carries the MODULE's identity, not that the module is spelt
+    // any particular way.
+    expect(text()).toContain(moduleMeta('ganit').en);
+    // And that the person whose action produced the event is not presented as
+    // its author. This is the assertion that fails if system rendering regresses
+    // to an ordinary message.
     expect(text()).not.toContain('Aanya Mehta');
     // No avatar and no hover tray: there is nobody to react to.
     expect(container.querySelector('.msg--sys .msg__av')).toBeNull();
