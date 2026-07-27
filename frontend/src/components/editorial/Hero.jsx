@@ -23,9 +23,14 @@ export default function Hero({ name, dateLine, lede, weekDates, dotsByDay, today
         {dateLine && (
           <div className="k-hero__meta">
             {dateLine.map((seg, i) => (
+              /* `seg.hindi` already says the segment is Devanagari — गुरुवार and
+                 विक्रम संवत् — so it carries lang="hi" too. Without it neither
+                 editorial.css guard fires and the samvat line takes Latin
+                 leading and whatever tracking the meta row inherits. */
               <span
                 key={seg.label ?? i}
                 className={seg.hindi ? 'k-hero__samvat' : 'k-hero__date'}
+                lang={seg.hindi ? 'hi' : undefined}
               >
                 {seg.label}
               </span>

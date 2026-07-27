@@ -74,17 +74,85 @@ export function toggleReactionLocal(raw, emoji, meId) {
  * page has not caught up with, and keeps the server row authoritative wherever
  * the two overlap.
  */
-export function mergeById(local, incoming) {
+export function mergeById(local, incoming, { markFresh = false } = {}) {
   const byId = new Map();
   for (const m of local) if (m && m.id != null) byId.set(String(m.id), m);
+  // A row is "fresh" only if the log already had content — otherwise the first
+  // page of a channel would arrive with fifty rows all flagged, and the entrance
+  // animation would play across the whole log instead of on the one message that
+  // just landed. See `.msg--new` in sanvaad.css.
+  const wasPopulated = byId.size > 0;
   for (const m of incoming) {
     if (!m || m.id == null) continue;
     const key = String(m.id);
-    byId.set(key, byId.has(key) ? { ...byId.get(key), ...m } : m);
+    if (byId.has(key)) { byId.set(key, { ...byId.get(key), ...m }); continue; }
+    byId.set(key, markFresh && wasPopulated ? { ...m, __fresh: true } : m);
   }
   return [...byId.values()].sort(
     (a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)
   );
+}
+
+/* ── Optimistic send ───────────────────────────────────────────────────────
+ *
+ * `MOTION-SPEC.md` §7.1: "Never lie about state. Optimistic UI renders at
+ * `opacity .6` until acknowledged, then goes solid. A failed write restores the
+ * old value and says so." `IxChat.jsx:48` is the reference implementation — the
+ * row is pushed with `sending: true` in the same tick the composer clears, and
+ * `.cd__m.sending { opacity: .6 }` (motion.css:517) is what renders it.
+ *
+ * The build awaited the POST before the row existed at all, so on a slow network
+ * the message vanished from the composer and appeared nowhere for as long as the
+ * round trip took.
+ */
+
+/** `tmp:` can never collide with a server id, which are integers. */
+let tmpSeq = 0;
+export const TMP_PREFIX = 'tmp:';
+export const isPending = m => !!m && typeof m.id === 'string' && m.id.startsWith(TMP_PREFIX);
+
+export function optimisticMessage(content, { meId, me } = {}) {
+  tmpSeq += 1;
+  return {
+    id: `${TMP_PREFIX}${Date.now()}.${tmpSeq}`,
+    content,
+    sender_id: meId,
+    sender_name: me?.full_name || me?.name || undefined,
+    sender_avatar: me?.avatar_url || undefined,
+    // Sorts last in `mergeById`, which is where it belongs: it is the newest
+    // thing in the channel until the server disagrees.
+    created_at: new Date().toISOString(),
+    __pending: true,
+    // Deliberately NOT `__fresh`. The placeholder is the acknowledgement of your
+    // own keystroke and has to be there in the same frame; sliding it in would
+    // delay the one row that must not be delayed. It is also replaced by a
+    // differently-keyed element when the server answers, so an entrance here
+    // would play twice for one message.
+  };
+}
+
+/**
+ * Drop pending rows the server has already echoed back.
+ *
+ * The 5s poll can land between the optimistic push and the POST's response. When
+ * it does, the real row arrives while the placeholder is still on screen and
+ * `mergeById` — a union — keeps both, so the sender sees their message twice.
+ * Matching on sender + trimmed body is enough: a placeholder only lives for one
+ * round trip, and two identical messages from the same person inside that window
+ * are the same message.
+ */
+export function dropSettled(local, incoming) {
+  const pending = local.filter(isPending);
+  if (!pending.length) return local;
+  const settled = new Set();
+  for (const p of pending) {
+    const hit = incoming.some(m => m
+      && !isPending(m)
+      && String(m.sender_id) === String(p.sender_id)
+      && String(m.content || '').trim() === String(p.content || '').trim());
+    if (hit) settled.add(p.id);
+  }
+  return settled.size ? local.filter(m => !settled.has(m.id)) : local;
 }
 
 const DAY_MS = 86400000;

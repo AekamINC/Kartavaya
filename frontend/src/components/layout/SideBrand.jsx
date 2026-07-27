@@ -13,11 +13,16 @@ import React from 'react';
 export default function SideBrand({ rail = false }) {
   return (
     <div className="side__brand">
+      {/* 34px in BOTH states. Measured off the render: `Chrome.jsx:84`'s Mark
+          takes `size = 34` and the rail reuses it unchanged — the rail is 72px
+          wide, so 34 fits with the same 19px optical inset the nav icons below
+          it sit on. The 32/28 pair here shrank the mark twice for no reason the
+          design expresses. */}
       <img
         className="side__mark"
         src="/kartavaya-mark.png"
-        width={rail ? 28 : 32}
-        height={rail ? 28 : 32}
+        width={34}
+        height={34}
         alt=""
         aria-hidden="true"
       />

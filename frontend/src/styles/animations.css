@@ -68,12 +68,19 @@
 
    ── REDUCED MOTION — BOTH PATHS ──────────────────────────────────────────
    1. OS: `@media (prefers-reduced-motion: reduce)` sets `--ix: .001` and
-      `--motion-scale: 0` (kartavaya-design.css §5). `--motion-scale` is also
-      written INLINE by applyPrefs and an inline style outranks a media query,
-      so that half of the pair only lands because a11y.css §1 restates it with
-      `!important`. Every amplitude below rides on `--motion-scale`, so that
-      rule is load-bearing here: do not remove it before `--motion-scale` gets
-      the `--motion-scale-user` twin that `--ix` already has.
+      `--motion-scale: 0` (kartavaya-design.css §5), and that one query owns both
+      values outright. MEASURED under `emulateMedia({reducedMotion:'reduce'})`:
+      root resolves `--ix: .001`, `--motion-scale: 0`.
+
+      This paragraph used to say the second half only landed because a11y.css §1
+      restated it with `!important`, and to warn against removing that rule until
+      `--motion-scale` got the `-user` twin `--ix` already had. Both halves are
+      now out of date and the warning had become an instruction to preserve a
+      rule that no longer exists: kartavaya-design.css §1 declares
+      `--motion-scale-user` and derives `--motion-scale` from it, applyPrefs
+      writes the twin rather than the derived value, and a11y.css §1 is now a
+      comment recording why its block was deleted. Nothing inline outranks the
+      media query any more, so nothing here depends on an `!important` elsewhere.
    2. Runtime: `applyPrefs` writes `--ix-user` and `--motion-scale` on the root
       when the user picks Animations = Reduced/None in Customization. There is
       no attribute to select on, so CSS cannot branch on it — which is exactly

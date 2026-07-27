@@ -1,12 +1,18 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   Animated, View, Text, StyleSheet, Platform, Vibration,
-  AccessibilityInfo, type AccessibilityActionEvent,
+  type AccessibilityActionEvent,
 } from 'react-native';
-import { PanGestureHandler, type PanGestureHandlerStateChangeEvent, State } from 'react-native-gesture-handler';
+import {
+  PanGestureHandler,
+  type PanGestureHandlerGestureEvent,
+  type PanGestureHandlerStateChangeEvent,
+  State,
+} from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
+import { settle, useReducedMotion } from '../theme/motion';
 
 /**
  * One swipe primitive, used by tasks, approvals and messages.
@@ -35,7 +41,16 @@ import { useTheme } from '../theme/ThemeProvider';
 /** Travel before the action commits. One number, shared by every swipe surface. */
 export const SWIPE_THRESHOLD = 84;
 
-/** Beyond this the row is dragged but will not commit further. */
+/**
+ * Beyond this the row is dragged but will not commit further.
+ *
+ * NOT passed through `amplitude()`, and that is deliberate. Reduced motion
+ * suppresses motion the SYSTEM starts, not the pixels a finger is currently
+ * dragging — collapsing this to 0 would leave the row welded in place under the
+ * touch and make the whole gesture undiscoverable for the users most likely to
+ * be relying on the accessibility action instead. What does collapse is the
+ * release: `settle` goes to 0ms, so the row returns without the spring.
+ */
 const MAX_TRAVEL = 132;
 
 export interface SwipeAction {
@@ -82,36 +97,77 @@ function commitFeedback() {
   Vibration.vibrate(12);
 }
 
+/**
+ * Fired the first time a drag crosses SWIPE_THRESHOLD, before the finger lifts.
+ *
+ * Without it the row is a guess: the action panel is showing from the first
+ * pixel of travel, so there is nothing on screen that distinguishes "open" from
+ * "far enough to commit", and the only way to learn which one you were at is to
+ * let go and see what happened. MOTION-SPEC §7.1 — never lie about state — and
+ * an affordance that reveals its threshold only after the irreversible part is
+ * the same defect in gesture form.
+ *
+ * Deliberately lighter than `commitFeedback`. This one says "release now and it
+ * will happen"; that one says "it happened". Two identical taps would make the
+ * second meaningless.
+ */
+function armFeedback() {
+  if (Platform.OS === 'ios') {
+    void Haptics.selectionAsync().catch(() => {});
+    return;
+  }
+  Vibration.vibrate(8);
+}
+
 export default function SwipeRow({
   children, right, left, disabled = false, accessibilityLabel,
 }: SwipeRowProps) {
   const { t } = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
-  const [reduceMotion, setReduceMotion] = useState(false);
+  // The shared signal from theme/motion, not a fourth private copy of the
+  // AccessibilityInfo subscription. This component had its own before that file
+  // existed; keeping it meant a change to the reduced-motion policy had to be
+  // made in two places and was made in one.
+  const reduceMotion = useReducedMotion();
   const [revealed, setRevealed] = useState<'left' | 'right' | null>(null);
+  /** True once this drag has crossed the commit threshold. Reset on each new drag. */
+  const armed = useRef(false);
 
-  useEffect(() => {
-    let alive = true;
-    AccessibilityInfo.isReduceMotionEnabled().then(on => { if (alive) setReduceMotion(on); });
-    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-    return () => { alive = false; sub?.remove?.(); };
-  }, []);
-
-  const settle = useCallback(() => {
+  const settleBack = useCallback(() => {
     setRevealed(null);
-    if (reduceMotion) { translateX.setValue(0); return; }
-    Animated.spring(translateX, {
-      toValue: 0, useNativeDriver: true, friction: 9, tension: 90,
-    }).start();
+    armed.current = false;
+    // `settle` is a 220ms timing on --ease-spring, which is what the reference
+    // is: `mobile.css:72` `.mtask--sw { transition: transform var(--dur-base)
+    // var(--ease-spring) }`. It collapses to 0ms under reduced motion, so the
+    // explicit `setValue` branch this used to need is gone.
+    settle(translateX, 0, reduceMotion).start();
   }, [reduceMotion, translateX]);
 
   const onGestureEvent = Animated.event(
     [{ nativeEvent: { translationX: translateX } }],
-    { useNativeDriver: true },
+    {
+      useNativeDriver: true,
+      // Runs alongside the native-driven translation. The only work here is the
+      // one-shot arm haptic; the drag itself never touches the JS thread.
+      listener: (e: PanGestureHandlerGestureEvent) => {
+        const past = Math.abs(e.nativeEvent.translationX) >= SWIPE_THRESHOLD;
+        const action = e.nativeEvent.translationX > 0 ? right : left;
+        if (past && action && !armed.current) {
+          armed.current = true;
+          armFeedback();
+        } else if (!past && armed.current) {
+          // Dragged back under the threshold. Re-arming is silent: a finger
+          // hovering on the boundary would otherwise buzz on every crossing.
+          armed.current = false;
+        }
+      },
+    },
   );
 
   const onHandlerStateChange = useCallback((e: PanGestureHandlerStateChangeEvent) => {
     const { translationX, state } = e.nativeEvent;
+
+    if (state === State.BEGAN) { armed.current = false; return; }
 
     if (state === State.ACTIVE) {
       const dir = translationX > 0 ? 'right' : translationX < 0 ? 'left' : null;
@@ -129,13 +185,13 @@ export default function SwipeRow({
         commitFeedback();
         // Settle first, then fire. Firing while the row is still open leaves the
         // action panel showing under a row that is about to unmount or re-render.
-        settle();
+        settleBack();
         action.onTrigger();
         return;
       }
-      settle();
+      settleBack();
     }
-  }, [left, right, settle]);
+  }, [left, right, settleBack]);
 
   const actions = [
     ...(right ? [{ name: 'swipe-right', label: right.label }] : []),

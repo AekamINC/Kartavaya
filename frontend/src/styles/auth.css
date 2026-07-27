@@ -30,7 +30,15 @@
   font-size: clamp(170px, 20vw, 300px);
   line-height: .8; color: #fff; opacity: .045;
   letter-spacing: -.03em; white-space: nowrap; pointer-events: none;
-  animation: auWmDrift 40s var(--ease-standard) infinite alternate;
+  /* `ease-in-out`, not a --ease-* token, and that is not a missed token.
+     Every curve in 00 §5 is asymmetric — --ease-standard is cubic-bezier(.2,0,0,1),
+     an ease-OUT. On an `alternate` animation the timing function is re-applied in
+     the direction of play, so an ease-out means the drift arrives at each end with
+     velocity ~0 and then leaves it at maximum: a visible twitch at both turnarounds,
+     every 40 seconds, forever. A ping-pong needs a curve that is flat at BOTH ends.
+     The reference agrees — design-reference/Kartavaya Redesign/auth.css:13 is
+     `animation: wmDrift 40s ease-in-out infinite alternate`. */
+  animation: auWmDrift 40s ease-in-out infinite alternate;
 }
 /* Travel rides --motion-scale so the in-app Animations preference reaches it.
    The OS setting is handled by the media query below, but CSS has no attribute
@@ -83,7 +91,31 @@
   border: 1px solid var(--side-rule);
   animation: auRotIn var(--dur-slow) var(--ease-emph);
 }
-@keyframes auRotIn { from { opacity: 0; transform: translateY(7px); } }
+/* ── Why every travel distance below is multiplied by --motion-scale ──────
+   There are TWO reduced-motion paths and they need different arithmetic.
+
+   The OS path (`prefers-reduced-motion: reduce`) can be selected in CSS, and it
+   collapses --ix, so every `var(--dur-*)` here already becomes ~0.36ms and the
+   movement is over before it can be seen.
+
+   The IN-APP path — Customization → Animations → Reduced/None — has no attribute
+   and no media query to select on. applyPrefs writes --ix-user and
+   --motion-scale-user as inline custom properties on the root, and the ONLY way a
+   stylesheet can respond is arithmetic. Duration falls out of --ix on its own;
+   DISTANCE does not, and a literal `translateY(7px)` therefore kept its full
+   travel for a user who had asked for no motion at all. At Animations = Reduced
+   that is the worst combination: half the duration, all of the distance, so the
+   movement is twice as fast as designed.
+
+   This is the same defect that was found and fixed on `.au__wm`. These six
+   keyframes were the rest of it — measured with getKeyframes() at
+   --motion-scale: 0, where auWmDrift resolved to translate3d(0,0,0) and every one
+   of these still resolved to its full literal.
+
+   Floor is 0, not .001: --ix bottoms out at .001 so `animationend` still fires and
+   exit handlers still unmount their node, but a distance of zero has no such
+   requirement — it should be exactly nothing. */
+@keyframes auRotIn { from { opacity: 0; transform: translateY(calc(7px * var(--motion-scale, 1))); } }
 .au__rot-k {
   font-size: 8.5px; letter-spacing: .2em; text-transform: uppercase;
   color: var(--primary-vivid); font-weight: 700; margin-bottom: 9px;
@@ -172,7 +204,7 @@
   font-size: 12.5px; line-height: 1.5; margin-bottom: 16px;
   animation: auBannerIn var(--dur-base) var(--ease-emph);
 }
-@keyframes auBannerIn { from { opacity: 0; transform: translateY(-4px); } }
+@keyframes auBannerIn { from { opacity: 0; transform: translateY(calc(-4px * var(--motion-scale, 1))); } }
 .au__banner svg { flex-shrink: 0; margin-top: 1px; }
 .au__banner--err  { background: var(--danger-container); color: var(--on-danger-container); }
 .au__banner--ok   { background: var(--ok-container);     color: var(--on-ok-container); }
@@ -235,7 +267,7 @@
   animation: auFldE var(--dur-base) var(--ease-emph);
 }
 .aufld__e svg { flex-shrink: 0; margin-top: 1px; }
-@keyframes auFldE { from { opacity: 0; transform: translateY(-3px); } }
+@keyframes auFldE { from { opacity: 0; transform: translateY(calc(-3px * var(--motion-scale, 1))); } }
 .aufld__hint { display: block; font-size: 11px; color: var(--on-surface-3); margin-top: 5px; line-height: 1.45; }
 
 /* The reveal control sits inside the field box, so it must clear the padding
@@ -316,7 +348,11 @@
   transition: background var(--dur-fast), transform var(--dur-fast) var(--ease-spring);
 }
 .au__btn:hover { background: var(--primary-hover); }
-.au__btn:active { transform: scale(.99); }
+/* Press feedback on --motion-scale, matching `.ix-press` in animations.css §5.
+   At Animations = None the scale is exactly 1 and the press is expressed by the
+   :hover background change alone, which is a static difference rather than
+   motion — the rule animations.css states for every press affordance. */
+.au__btn:active { transform: scale(calc(1 - .01 * var(--motion-scale, 1))); }
 .au__btn:disabled { opacity: .5; pointer-events: none; }
 .au__spin {
   width: 14px; height: 14px; border-radius: 50%;
@@ -362,7 +398,15 @@
    attribute for CSS to select on and reached this rule through neither
    duration nor distance — the same defect class as `.adm__badge-d` and
    `.au__wm`. Amplitude now rides --motion-scale, so at None the box holds
-   still and the error message carries the signal on its own. */
+   still and the error message carries the signal on its own.
+
+   ONE COUPLING to keep in view if --ix ever gains a value above 1 (the
+   reference catalogue has a 4× slow-motion toggle; this build does not):
+   useShake() in LoginPage.jsx strips `.is-shake` on a FIXED 460ms timer, which
+   is 420ms plus its own 20ms arming delay plus margin. At --ix 1 or below the
+   class always outlives the animation. At --ix 4 it would not, and the shake
+   would be cut off two thirds of the way through — the timer would have to
+   scale with it. */
 .au__box.is-shake { animation: auShake calc(420ms * var(--ix)) cubic-bezier(.36, .07, .19, .97); }
 @keyframes auShake {
   10%, 90%      { transform: translateX(calc(-1px * var(--motion-scale, 1))); }
@@ -387,11 +431,17 @@
   padding: clamp(24px, 5vw, 56px) clamp(20px, 5vw, 44px);
   overflow: hidden;
 }
+/* clamp and opacity from the rendered source, `.ob__wm` in onboarding.css:
+   `clamp(160px, 24vw, 300px)` at `opacity: .03`. This read 22vw / 320px / .035,
+   which at 1280 is 281.60px against the source's 300px — 18.4px smaller AND
+   17% more present, two errors pulling opposite ways so neither showed up as
+   "wrong" on its own. The inset (-3%/-8% here, -4%/-10% there) is placement
+   rather than type and is left for whoever owns the composition. */
 .ob__wm {
   position: absolute; right: -3%; bottom: -8%;
-  font-family: var(--font-hindi); font-size: clamp(160px, 22vw, 320px);
+  font-family: var(--font-hindi); font-size: clamp(160px, 24vw, 300px);
   line-height: .8; color: var(--on-surface);
-  opacity: .035; pointer-events: none; user-select: none;
+  opacity: .03; pointer-events: none; user-select: none;
 }
 .ob__inner { position: relative; z-index: 1; width: 100%; max-width: 880px; }
 
@@ -420,7 +470,15 @@
 .ob__st.done .ob__n { background: var(--ok); color: var(--ok-container); }
 .ob__lb { font-size: 12px; color: var(--on-surface-3); }
 .ob__st.on .ob__lb { color: var(--on-surface); font-weight: 600; }
-.ob__line { flex: 1; height: 1px; background: var(--outline-variant); margin: 0 11px; min-width: 14px; }
+/* The connector transitions on the SAME --dur-base ladder as .ob__n above it.
+   Measured before this line existed: completing a step faded the number badge to
+   green over 220ms while the rail beside it snapped instantly (transition-duration
+   0s), so a single progress indicator moved at two different speeds. Colour only —
+   `all` would catch flex-basis and animate the rail re-measuring itself. */
+.ob__line {
+  flex: 1; height: 1px; background: var(--outline-variant); margin: 0 11px; min-width: 14px;
+  transition: background-color var(--dur-base) var(--ease-standard);
+}
 .ob__st.done + .ob__line { background: var(--ok); }
 /* 12 §1 collapses the rail to numbered dots and keeps only the current label,
    because "five labels on a 393px rail truncate to nonsense". Two further
@@ -444,18 +502,31 @@
    holding a twelve-card module grid is expensive to relayout. */
 .ob__pane { animation: obIn var(--dur-slow) var(--ease-emph); }
 .ob__pane.back { animation: obBack var(--dur-slow) var(--ease-emph); }
-@keyframes obIn   { from { opacity: 0; transform: translateX(22px); } }
-@keyframes obBack { from { opacity: 0; transform: translateX(-22px); } }
+@keyframes obIn   { from { opacity: 0; transform: translateX(calc(22px  * var(--motion-scale, 1))); } }
+@keyframes obBack { from { opacity: 0; transform: translateX(calc(-22px * var(--motion-scale, 1))); } }
 
 .ob__head { margin-bottom: 22px; }
+/* ── Onboarding type, measured against the rendered source ──────────────────
+   12 §1 hands over the RAIL, the step transition and the skip state as literal
+   CSS and nothing else, so every rule from here to the end of the file had only
+   prose behind it. The numbers below come from rendering
+   design-reference/…/Onboarding.html beside this build at 1280x800, cozy/serif.
+
+   `.ob-h1` and `.ob-h2` are the source's names. Both clamps ended one step
+   short of it: 3.4vw against 3.6vw and a 21px floor against 22px. At 1280 the
+   vw term is clamped out and both headings measure identically (40.00px and
+   27.00px), which is why this survived — the divergence only opens below about
+   1176px, where the source is at 36px and this build was at 34px. */
 .ob__h1 {
-  font-family: var(--font-display); font-size: clamp(28px, 3.4vw, 40px);
+  font-family: var(--font-display); font-size: clamp(28px, 3.6vw, 40px);
   font-weight: 400; line-height: 1.14; letter-spacing: -.03em;
   margin: 0 0 10px; color: var(--on-surface);
 }
+/* line-height 1.2, not 1.22 — `.ob-h2` measures 32.40px at 27px and this
+   measured 32.94px. Half a pixel per line, on every step heading in the flow. */
 .ob__h2 {
-  font-family: var(--font-display); font-size: clamp(21px, 2.4vw, 27px);
-  font-weight: 400; line-height: 1.22; letter-spacing: -.024em;
+  font-family: var(--font-display); font-size: clamp(22px, 2.4vw, 27px);
+  font-weight: 400; line-height: 1.2; letter-spacing: -.024em;
   margin: 0 0 8px; color: var(--on-surface);
 }
 .ob__em { font-style: italic; color: var(--primary-text); }
@@ -466,11 +537,17 @@
    The margin stays bottom-side because this line sits ABOVE the sub in our DOM
    order, where the reference puts it below. */
 .ob__hi { font-family: var(--font-hindi); font-size: 15px; color: var(--on-surface-3); margin: 0 0 12px; }
+/* `.ob-sub` is 13.5px/1.65 and `.ob-lede` is 14.5px/1.7 in the source; these
+   were 13 and 14 at 1.65, so both step headings' body copy and the opening
+   screen's lede ran half a pixel small, and the lede also ran 0.05 tight —
+   23.10px of leading against 24.65px. The 62ch measure is NOT the source's
+   (`.ob-lede` caps at 52ch and centres inside a 720px card) and stays, because
+   measure follows this build's left-aligned wizard rather than the card. */
 .ob__sub, .ob__lede {
-  font-size: 13px; line-height: 1.65; color: var(--on-surface-3);
+  font-size: 13.5px; line-height: 1.65; color: var(--on-surface-3);
   margin: 0; max-width: 62ch; text-wrap: pretty;
 }
-.ob__lede { font-size: 14px; margin-bottom: 22px; }
+.ob__lede { font-size: 14.5px; line-height: 1.7; margin-bottom: 22px; }
 .ob__mid { text-align: left; max-width: 56ch; }
 .ob__fine { font-size: 11.5px; color: var(--on-surface-3); margin-top: 14px; }
 .ob__fields { display: flex; flex-direction: column; gap: 16px; max-width: 420px; }
@@ -508,18 +585,39 @@
    Size and line-height brought to the reference with it — at 400 the glyph reads
    lighter, and 15px was already under-set against the 10.5px Latin beside it. */
 .ob__mod-hi { font-family: var(--font-hindi); font-size: 17px; font-weight: 400; line-height: 1.35; }
-.ob__mod-en { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--on-surface-3); font-weight: 700; }
+/* 9.5px, per `.ob-mod__t i` in the source. The note above got the Devanagari
+   right and then justified it against "the 10.5px Latin beside it" — but the
+   source pairs its 17px Devanagari with 9.5px Latin, so the ratio the reference
+   actually strikes is 1.79, not 1.62, and half the pair was still wrong after
+   the other half was fixed.
+   The colour deliberately stays `--on-surface-3` rather than the source's
+   `--on-surface-faint`; this build already moved it up and shrinking the type
+   is not a reason to move it back down.
+   (Footnote on the width claim above, since it is worth being exact about: the
+   620.40px figure is real and reproduces at 620.41px here, but it is the width
+   of the brand-panel Devanagari clause "आपका व्यापार, एक ही जगह", not of a
+   module name. Re-measured on कर्तव्य itself: 134.89px at 400, 500 AND 700,
+   60px, Tiro. The invariant holds on any string — advance width is blind to a
+   synthesised weight — which is the only part the argument needs.) */
+.ob__mod-en { font-size: 9.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--on-surface-3); font-weight: 700; }
 .ob__mod.on .ob__mod-en { color: inherit; opacity: .74; }
-.ob__mod-d { font-size: 11.5px; line-height: 1.5; color: var(--on-surface-3); }
+/* 1.45, per `.ob-mod__d`. 1.5 gave 17.25px of leading against the source's
+   16.68px, which on a two-line card description is a whole extra pixel of
+   card height per module across a twelve-card grid. */
+.ob__mod-d { font-size: 11.5px; line-height: 1.45; color: var(--on-surface-3); }
 .ob__mod.on .ob__mod-d { color: inherit; opacity: .82; }
 .ob__mod-f { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 2px; }
+/* 9.5px, per `.ob-mod__lock`. It sits on the same card footer as .ob__mod-en
+   and the source sets both to the same size; at 10 against 9.5 the two small
+   caps labels on one card were a half-pixel out of step with each other. */
 .ob__lock {
   display: inline-flex; align-items: center; gap: 4px;
-  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase;
   font-weight: 700; color: var(--danger);
 }
+/* 19px, per `.ob-check`. */
 .ob__check {
-  width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+  width: 19px; height: 19px; border-radius: 50%; flex-shrink: 0;
   display: grid; place-items: center;
   border: 1.5px solid var(--outline); color: transparent;
   transition: background var(--dur-fast), border-color var(--dur-fast);
@@ -577,13 +675,22 @@
 .ob__tpl.on { border-color: var(--primary); background: var(--primary-container); color: var(--on-primary-container); }
 .ob__tpl-h { display: flex; align-items: center; gap: 8px; }
 .ob__tpl-n { font-size: 13.5px; font-weight: 600; }
-.ob__tpl-hi { font-family: var(--font-hindi); font-size: 12px; color: var(--on-surface-3); }
+/* 12.5px, per `.ob-tpl__h i`. The source also paints this one `--primary-text`
+   rather than `--on-surface-3` — that is a bilingual-system decision about
+   whether a Devanagari template name carries the accent, and it belongs to
+   whoever owns 24-bilingual-devanagari.md, so only the size moves here. */
+.ob__tpl-hi { font-family: var(--font-hindi); font-size: 12.5px; color: var(--on-surface-3); }
 .ob__tpl.on .ob__tpl-hi { color: inherit; opacity: .74; }
 .ob__tpl-d { font-size: 11.5px; line-height: 1.5; color: var(--on-surface-3); }
 .ob__tpl.on .ob__tpl-d { color: inherit; opacity: .82; }
 .ob__tpl-cols { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+/* 9.5px AND weight 600, per `.ob-tpl__cols i`. The weight was the one that
+   mattered: at 400 these column names were the same weight as the card's
+   description paragraph two lines below, so a chip did not read as a chip until
+   you noticed its background. The source gives them the only semibold on the
+   card apart from its title. */
 .ob__tpl-col {
-  font-size: 10px; letter-spacing: .04em; padding: 2px 6px;
+  font-size: 9.5px; font-weight: 600; letter-spacing: .04em; padding: 2px 6px;
   border-radius: var(--r-xs); background: var(--s-container); color: var(--on-surface-2);
 }
 /* The column chips keep --s-container / --on-surface-2 on a SELECTED card too.
@@ -605,7 +712,9 @@
    and broke "Saved on this device — you can close this and come back" one or two
    words per line beside three full-height controls. A 220px basis makes it drop
    to its own row instead, which is what wrap is for. */
-.ob__save { flex: 1 1 220px; font-size: 11.5px; color: var(--on-surface-3); display: inline-flex; align-items: center; gap: 6px; }
+/* 11px, per `.ob__save` in onboarding.css — the one rule in that file this
+   build shares a class name with, and it still had a different size. */
+.ob__save { flex: 1 1 220px; font-size: 11px; color: var(--on-surface-3); display: inline-flex; align-items: center; gap: 6px; }
 .ob__save svg { flex-shrink: 0; color: var(--ok); }
 /* The wizard's primary action is a button in a row, not a full-width block. */
 .ob__next { width: auto; min-width: 156px; }
