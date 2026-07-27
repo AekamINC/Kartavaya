@@ -11,6 +11,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
 import { a11yButton } from '../components/a11y';
 import Sheet from '../components/Sheet';
+import Refresher from '../components/Refresher';
 import SwipeRow from '../components/SwipeRow';
 import {
   approvalsApi, approvalTitle, isTaskApproval,
@@ -318,8 +319,7 @@ export default function ApprovalsScreen() {
           keyExtractor={a => a.approval_id}
           renderItem={renderPending}
           contentContainerStyle={[s.listPad, pending.length === 0 && s.listGrow]}
-          onRefresh={pendingQ.refetch}
-          refreshing={pendingQ.isRefetching}
+          refreshControl={<Refresher refreshing={pendingQ.isRefetching} onRefresh={pendingQ.refetch} />}
           ListEmptyComponent={
             <View style={s.centre}>
               <Ionicons name="checkmark-done-outline" size={30} color={t.ink3} />
@@ -336,8 +336,7 @@ export default function ApprovalsScreen() {
           keyExtractor={h => h.approval_id}
           renderItem={renderHistory}
           contentContainerStyle={[s.listPad, (historyQ.data ?? []).length === 0 && s.listGrow]}
-          onRefresh={historyQ.refetch}
-          refreshing={historyQ.isRefetching}
+          refreshControl={<Refresher refreshing={historyQ.isRefetching} onRefresh={historyQ.refetch} />}
           ListEmptyComponent={
             <View style={s.centre}>
               <Ionicons name="time-outline" size={30} color={t.ink3} />

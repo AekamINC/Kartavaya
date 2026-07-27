@@ -62,8 +62,11 @@ export const NAV_ITEMS = [
   { id: 'teams', label: 'Team', hi: 'सहयोगी', section: 'Navigate', route: '/teams', keywords: 'team members people' },
   { id: 'inbox', label: 'Inbox', hi: 'सन्देश', section: 'Navigate', route: '/inbox', keywords: 'inbox messages chat' },
   { id: 'sanvaad', label: 'Sanvaad', hi: 'संवाद', section: 'Navigate', route: '/sanvaad', keywords: 'sanvaad chat channels messages varta' },
-  { id: 'graha', label: 'CRM', hi: 'ग्राहक', section: 'Navigate', route: '/graha', keywords: 'crm contacts leads graha new contact create client' },
-  { id: 'ganit', label: 'Invoicing', hi: 'गणित', section: 'Navigate', route: '/ganit', keywords: 'invoicing billing ganit invoices new invoice create bill' },
+  // Labels match the sidebar (navConfig.js) — a command palette that calls the
+  // module something the nav does not is a second name for one thing. The old
+  // labels stay in `keywords` so anyone who learned "invoicing" still finds it.
+  { id: 'graha', label: 'CRM', hi: 'ग्रह', section: 'Navigate', route: '/graha', keywords: 'crm contacts leads graha customers grahak new contact create client' },
+  { id: 'ganit', label: 'Finance', hi: 'गणित', section: 'Navigate', route: '/ganit', keywords: 'finance invoicing billing gst ganit invoices expenses payables bank new invoice create bill' },
   { id: 'manav', label: 'HRMS', hi: 'मानव', section: 'Navigate', route: '/manav', keywords: 'hrms hr employees manav' },
   { id: 'vikray', label: 'Sales', hi: 'विक्रय', section: 'Navigate', route: '/vikray', keywords: 'sales pipeline vikray deals orders' },
   { id: 'vetana', label: 'Payroll', hi: 'वेतन', section: 'Navigate', route: '/vetana', keywords: 'payroll salary vetana' },

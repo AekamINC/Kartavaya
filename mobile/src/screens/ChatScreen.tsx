@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
 import { useAuth } from '../hooks/useAuth';
+import Refresher from '../components/Refresher';
 import { messagesApi, type Message, type Reaction } from '../api/messages';
 import { avatarColor, userInitials, withAlpha } from '../theme/tokens';
 import type { RootStackParamList } from '../nav/RootStack';
@@ -353,8 +354,7 @@ export default function ChatScreen() {
           inverted
           contentContainerStyle={s.listPad}
           keyboardShouldPersistTaps="handled"
-          onRefresh={refetch}
-          refreshing={isRefetching}
+          refreshControl={<Refresher refreshing={isRefetching} onRefresh={refetch} />}
           ListEmptyComponent={
             <View style={[s.centre, s.emptyInverted]}>
               <Ionicons name="chatbubbles-outline" size={30} color={t.ink3} />

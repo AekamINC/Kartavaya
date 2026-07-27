@@ -8,7 +8,13 @@ import { safeArray, Badge, UpiPayBlock, INV_TYPE_LABELS, STATUS_COLORS, DOC_STAT
 import { inr } from '../../lib/inr';
 import { describeDocumentError } from '../../lib/docErrors';
 
-export default function InvoicesTab() {
+/**
+ * `newNonce` lets the page header's "+ Invoice" button open this tab's create
+ * form. A counter, not a boolean, so pressing it again re-opens the form after
+ * the first attempt was cancelled — a boolean would already be `true` and the
+ * effect would not re-run.
+ */
+export default function InvoicesTab({ newNonce = 0 }) {
   const { pushToast } = useToast();
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +41,11 @@ export default function InvoicesTab() {
   const [err, setErr] = useState(null);
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!newNonce) return;
+    setShowForm(true);
+    loadOptions();
+  }, [newNonce]);
 
   async function load() {
     setErr(null);

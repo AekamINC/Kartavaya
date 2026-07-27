@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
-  View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, RefreshControl,
+  View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -12,6 +12,7 @@ import { hindi } from '../theme/fonts';
 import { tasksApi } from '../api/tasks';
 import { TaskCard } from '../components/TaskCard';
 import SwipeRow from '../components/SwipeRow';
+import Refresher from '../components/Refresher';
 import { useOfflineMutation } from '../hooks/useOfflineMutation';
 import { useQueueStatus } from '../hooks/useQueueStatus';
 import { queuedEntityIds } from '../offline/mutationQueue';
@@ -171,7 +172,7 @@ export default function TasksScreen() {
           keyExtractor={(task) => task.task_id}
           contentContainerStyle={[s.listPad, tasks.length === 0 && s.listGrow]}
           refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={t.primary} />
+            <Refresher refreshing={isRefetching} onRefresh={refetch} />
           }
           ListEmptyComponent={
             <View style={s.centre}>

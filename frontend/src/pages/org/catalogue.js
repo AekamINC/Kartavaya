@@ -55,9 +55,11 @@ import { moduleColor } from '../../lib/moduleColors';
  * the report.
  */
 export const ORG_MODULES = [
-  { code: 'graha',   label: 'Graha',   hi: 'ग्राहक', en: 'CRM',        blurb: 'Contacts, deals and pipelines.' },
-  { code: 'vikray',  label: 'Vikray',  hi: 'विक्रय', en: 'Sales',      blurb: 'Orders, quotes and price lists.' },
-  { code: 'ganit',   label: 'Ganit',   hi: 'गणित',  en: 'Invoicing',  blurb: 'Invoices, ledgers and period close.', sensitive: true },
+  // `en` and `hi` match the sidebar (navConfig.js) and lib/moduleColors.js. An
+  // org admin turning a module on must see the name they will find in the nav.
+  { code: 'graha',   label: 'Graha',   hi: 'ग्रह',   en: 'CRM',        blurb: 'Contacts, deals and pipelines.' },
+  { code: 'vikray',  label: 'Vikray',  hi: 'विक्रय', en: 'Sales',      blurb: 'Orders, stock and targets.' },
+  { code: 'ganit',   label: 'Ganit',   hi: 'गणित',  en: 'Finance',    blurb: 'Invoices, GST, expenses and payables.', sensitive: true },
   { code: 'vetana',  label: 'Vetana',  hi: 'वेतन',  en: 'Payroll',    blurb: 'Salary structures and payroll runs.', sensitive: true },
   { code: 'manav',   label: 'Manav',   hi: 'मानव',  en: 'HRMS',       blurb: 'Employee records, leave and assets.', sensitive: true },
   { code: 'prachar', label: 'Prachar', hi: 'प्रचार', en: 'Marketing',  blurb: 'Campaigns, posts and channels.' },

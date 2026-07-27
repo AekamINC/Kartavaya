@@ -1,5 +1,5 @@
 /**
- * E2E tests — Add-on modules (Graha CRM, Ganit Invoicing, Manav HRMS)
+ * E2E tests — Add-on modules (Graha CRM, Ganit Finance, Manav HRMS)
  *
  * Requires:
  *   E2E_ADMIN_EMAIL    — admin account email
@@ -20,6 +20,28 @@ async function loginAs(page: Page, email: string, password: string) {
   await page.fill('input[type="password"]', password);
   await page.getByRole('button', { name: /sign in|log in|login/i }).click();
   await page.waitForURL(/dashboard|boards|tasks/i, { timeout: 12_000 });
+}
+
+/**
+ * Click a module tab by name, opening the `More` popover first when the tab is
+ * not one of the six shown inline.
+ *
+ * `ModuleTabs` shows the first six tabs and puts the rest behind `More +N`, the
+ * arrangement the design reference uses. Only the inline six are `role="tab"`;
+ * the others are `role="menuitem"` inside the popover until selected, at which
+ * point they are promoted into the strip. So `getByRole('tab', …)` alone finds
+ * Ganit's `products` (second) but not its `stats` (tenth), and every deep-tab
+ * assertion below would fail for a reason that has nothing to do with the tab.
+ */
+async function selectTab(page: Page, name: RegExp) {
+  const inline = page.getByRole('tab', { name });
+  if (await inline.count()) {
+    await inline.first().click();
+    return;
+  }
+  const more = page.getByRole('button', { name: /^More/ });
+  await more.click();
+  await page.getByRole('menuitem', { name }).first().click();
 }
 
 // ── Page load smoke tests (no auth required) ─────────────────────────────────
@@ -65,9 +87,7 @@ test.describe('Graha CRM (authenticated)', () => {
 
   test('deals tab renders', async ({ page }) => {
     await page.goto('/graha');
-    const dealsTab = page.getByRole('tab', { name: /deals/i })
-      .or(page.getByText(/deals/i).first());
-    await dealsTab.click();
+    await selectTab(page, /deals/i);
     await expect(
       page.getByText(/no deals|pipeline/i)
         .or(page.locator('[class*="deal"], [class*="card"]'))
@@ -76,9 +96,7 @@ test.describe('Graha CRM (authenticated)', () => {
 
   test('pipeline summary tab renders', async ({ page }) => {
     await page.goto('/graha');
-    const pipeTab = page.getByRole('tab', { name: /pipeline/i })
-      .or(page.getByText(/pipeline/i).first());
-    await pipeTab.click();
+    await selectTab(page, /pipeline/i);
     await page.waitForTimeout(2_000);
     // Pipeline view should show at least the page structure
     await expect(page.locator('body')).not.toHaveText(/error|500|crash/i);
@@ -93,16 +111,16 @@ test.describe('Graha CRM (authenticated)', () => {
   });
 });
 
-// ── Ganit (Invoicing) ────────────────────────────────────────────────────────
+// ── Ganit (Finance) ─────────────────────────────────────────────────────────
 
-test.describe('Ganit Invoicing (authenticated)', () => {
+test.describe('Ganit Finance (authenticated)', () => {
   test.skip(!HAS_CREDS, 'E2E credentials not set');
 
   test.beforeEach(async ({ page }) => {
     await loginAs(page, ADMIN_EMAIL, ADMIN_PASSWORD);
   });
 
-  test('invoicing page loads with tabs', async ({ page }) => {
+  test('finance page loads with tabs', async ({ page }) => {
     await page.goto('/ganit');
     await expect(
       page.getByText(/invoices/i).or(page.getByRole('tab', { name: /invoices/i }))
@@ -111,9 +129,7 @@ test.describe('Ganit Invoicing (authenticated)', () => {
 
   test('products tab renders', async ({ page }) => {
     await page.goto('/ganit');
-    const prodTab = page.getByRole('tab', { name: /products/i })
-      .or(page.getByText(/products/i).first());
-    await prodTab.click();
+    await selectTab(page, /products/i);
     await expect(
       page.getByText(/no products|add product/i)
         .or(page.locator('table, [class*="product"]'))
@@ -122,16 +138,14 @@ test.describe('Ganit Invoicing (authenticated)', () => {
 
   test('stats tab shows dashboard tiles', async ({ page }) => {
     await page.goto('/ganit');
-    const statsTab = page.getByRole('tab', { name: /stats|dashboard/i })
-      .or(page.getByText(/stats|dashboard/i).first());
-    await statsTab.click();
+    await selectTab(page, /stats/i);
     await expect(
       page.locator('[class*="stat"], [class*="tile"], [class*="card"]')
         .or(page.getByText(/outstanding|collected|invoices/i))
     ).toBeVisible({ timeout: 10_000 });
   });
 
-  test('no JS errors on invoicing page', async ({ page }) => {
+  test('no JS errors on finance page', async ({ page }) => {
     const errors: string[] = [];
     page.on('pageerror', (err) => errors.push(err.message));
     await page.goto('/ganit');
@@ -158,9 +172,7 @@ test.describe('Manav HRMS (authenticated)', () => {
 
   test('attendance tab renders', async ({ page }) => {
     await page.goto('/manav');
-    const attTab = page.getByRole('tab', { name: /attendance/i })
-      .or(page.getByText(/attendance/i).first());
-    await attTab.click();
+    await selectTab(page, /attendance/i);
     await expect(
       page.getByText(/mark|today|summary/i)
         .or(page.locator('table, [class*="attendance"]'))
@@ -169,9 +181,7 @@ test.describe('Manav HRMS (authenticated)', () => {
 
   test('leaves tab renders', async ({ page }) => {
     await page.goto('/manav');
-    const leaveTab = page.getByRole('tab', { name: /leaves/i })
-      .or(page.getByText(/leaves/i).first());
-    await leaveTab.click();
+    await selectTab(page, /leaves/i);
     await expect(
       page.getByText(/no leave|request|pending/i)
         .or(page.locator('table, [class*="leave"]'))
@@ -180,9 +190,7 @@ test.describe('Manav HRMS (authenticated)', () => {
 
   test('departments tab renders', async ({ page }) => {
     await page.goto('/manav');
-    const deptTab = page.getByRole('tab', { name: /departments/i })
-      .or(page.getByText(/departments/i).first());
-    await deptTab.click();
+    await selectTab(page, /departments/i);
     await expect(
       page.getByText(/no departments|add department/i)
         .or(page.locator('[class*="card"], [class*="department"]'))
@@ -191,9 +199,7 @@ test.describe('Manav HRMS (authenticated)', () => {
 
   test('holidays tab renders', async ({ page }) => {
     await page.goto('/manav');
-    const holTab = page.getByRole('tab', { name: /holidays/i })
-      .or(page.getByText(/holidays/i).first());
-    await holTab.click();
+    await selectTab(page, /holidays/i);
     await expect(
       page.getByText(/no holidays|add holiday/i)
         .or(page.locator('table, [class*="holiday"]'))

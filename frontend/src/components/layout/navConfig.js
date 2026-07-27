@@ -56,9 +56,14 @@ export const NAV_FULL = [
     // `01-navigation.md`, which describes the sidebar without listing it.
     section: 'revenue', sans: 'राजस्व', gu: 'રાજસ્વ',
     items: [
-      { to: '/graha',   icon: 'graha',   en: 'CRM',       hi: 'ग्राहक',   gu: 'ગ્રાહક',   module: 'graha' },
+      // Labels are the designer's, from the same `Chrome.jsx:36` NAV that gave
+      // this section its shape — `Finance` not "Invoicing", `ग्रह` not
+      // "ग्राहक". Both build labels were paraphrases: Invoicing names one of
+      // Ganit's ten tabs, and ग्राहक (customer) is already the Devanagari for
+      // Graha's own `clients` tab. Rationale in lib/moduleColors.js.
+      { to: '/graha',   icon: 'graha',   en: 'CRM',       hi: 'ग्रह',    gu: 'ગ્રહ',   module: 'graha' },
       { to: '/vikray',  icon: 'vikray',  en: 'Sales',     hi: 'विक्रय',  gu: 'વિક્રય', module: 'vikray' },
-      { to: '/ganit',   icon: 'ganit',   en: 'Invoicing', hi: 'गणित',    gu: 'ગણિત',   module: 'ganit' },
+      { to: '/ganit',   icon: 'ganit',   en: 'Finance',   hi: 'गणित',    gu: 'ગણિત',   module: 'ganit' },
     ],
   },
   {
