@@ -273,4 +273,21 @@
   .pub__actions { flex-direction: column; align-items: stretch; }
   .pub__actions > .btn { width: 100%; justify-content: center; }
   .ap__meta { gap: var(--sp-2) var(--sp-4); }
+
+  /* 23-accessibility.md §Touch targets — 44×44 minimum on mobile web, and
+     "expand the hit area with padding rather than shrinking the target".
+     The signature-method chips measured 116.1×30.4 at 375px: the one choice
+     on this page that decides HOW a person signs, at two-thirds of the
+     minimum, on the device these links are opened on.
+
+     Scoped to `.sg__sigmode` rather than applied to `.chip`, because most
+     chips in the product are read-only status markers where 44px would be
+     wrong. Measured clearance before growing them: 12.0px to the "View
+     document (PDF)" link above and 8.0px between the two chips. Reaching 44
+     costs 6.8px per side, which fits the 12.0px above without the two
+     targets meeting — the neighbouring link is NOT enlarged for exactly this
+     reason (it would need 12.25px per side, and 12.25 + 6.8 = 19.05px against
+     12.0px available, so the two would overlap and swallow each other's
+     taps). That link is recorded as an open finding, not silently grown. */
+  .sg__sigmode .chip { min-height: 44px; }
 }

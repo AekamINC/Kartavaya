@@ -44,7 +44,12 @@ export function Chip({ dot, on, onClick, onDismiss, dismissLabel, className = ''
   );
 }
 
-export const ChipRow = ({ className = '', children }) =>
-  <div className={`chips ${className}`.trim()}>{children}</div>;
+/* `...rest` so a caller can give the row the grouping semantics its contents
+   need. A row of chips that are a mutually exclusive CHOICE (signature method,
+   a filter set) is a labelled group; a row of read-only status chips is not,
+   and neither can be decided here. Additive: passing nothing renders exactly
+   the <div class="chips"> this always rendered. */
+export const ChipRow = ({ className = '', children, ...rest }) =>
+  <div className={`chips ${className}`.trim()} {...rest}>{children}</div>;
 
 export default Chip;
