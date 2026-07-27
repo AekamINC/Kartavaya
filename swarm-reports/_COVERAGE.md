@@ -98,10 +98,28 @@ was not in the first four agents.
 at or near zero. Those areas were converted properly. The pattern is not random:
 they are the surfaces an agent was told to BUILD rather than to audit.
 
+## Landed since this file was written
+
+**vetana — DONE, verified against the directory rather than the entry point.**
+`VetanaPage.jsx` 857 lines / 87 inline → **178 / 0**; `vetana/` is 7 tab files
+carrying **3** inline between them, all the same `width: ${pct}%` proportion bar,
+which is a genuinely per-instance computed value. 87 → 3 for the whole module.
+This is what "done" looks like, against which graha's 648 and manav's 609 are
+not.
+
+Two defects it found that the measurement could never have shown:
+- Six `catch {}` blocks each followed by a `length === 0` check, so **a failed
+  request rendered "No payroll runs"** — on a payroll screen that sentence says
+  nobody is owed anything, and a broken page is pixel-identical to a company
+  with no employees.
+- **`process_payroll` emails every employee** with their payslip attached, and
+  re-running a month rebuilds them — so a second click is a second round of mail
+  to everybody. It fired on one unconfirmed click.
+
 ## In flight
 
-Four agents, one per module, briefed to build rather than audit: **prachar,
-vikray, dristi, vetana**. Each carries split-then-style, `vite build` in the
+Three agents, one per module, briefed to build rather than audit: **prachar,
+vikray, dristi**. Each carries split-then-style, `vite build` in the
 gate, and its verified reference file — `ScreenPrachar`, `ScreenDristi` and
 `ScreenVetana` are all in `ScreensMore.jsx`; `ScreenVikray` is in `ScreensBiz.jsx`;
 `ScreenGraha` is in `ScreensCore.jsx`. Three briefs this week sent an agent to the
