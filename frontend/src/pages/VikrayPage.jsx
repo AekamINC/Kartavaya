@@ -8,14 +8,29 @@
 // and then styled; this one was not, which is why it stayed on the legacy
 // `--ink-*` / `--k-*` vocabulary while they moved.
 //
-// ── Four tabs, and it stays four ──────────────────────────────────────────
-// The reference's `MODULE_TABS.vikray` lists six — it adds `pipeline` and
-// `customers`. `Data.jsx:119` records that those structures were "lifted from
-// staging pages", so the reference is mirroring the build's OLD tab bar rather
-// than specifying a new one. `cae0e0a` removed both because neither has a
-// Vikray endpoint behind it: pipeline and customers are Graha's, the page lede
-// says so, and two tabs pointing at another module's data is the scope creep
-// 27 §1 names. Four.
+// ── Six tabs, as the approved design specifies ────────────────────────────
+// This file previously shipped four and carried a note arguing the reference's
+// six were a stale mirror of an old tab bar. That argument does not survive
+// reading the reference:
+//
+//   · `Data.jsx:125` declares the set — dashboard, orders, stock, pipeline,
+//     targets, customers — and the comment above it at `:119` says the
+//     structures were lifted from staging "— nothing dropped", which is an
+//     instruction to preserve them, not licence to prune.
+//   · `TAB_HI` (`Data.jsx:139`) carries Devanagari for both: प्रवाह and ग्राहक.
+//     Nobody writes a label for a tab they mean to delete.
+//   · `ScreenVikray` (`ScreensBiz.jsx:142`) OPENS this module on `pipeline`.
+//
+// The substantive claim was that both belong to Graha. Pipeline does not:
+// Graha's is a CRM deal board, and the one the reference draws here is
+// `FLOW = ['Quote','Sent','Signed','Invoiced','Paid']` over quote documents —
+// this module's object. Customers does not either: Graha owns the contact,
+// Vikray owns that contact's trading history, and the tab is built by grouping
+// this module's own orders rather than by reading the CRM.
+//
+// Both now have a Vikray endpoint behind them — `GET /v1/vikray/pipeline` and
+// `GET /v1/vikray/customers`, added in `backend/routers/vikray.py` — so the
+// "no endpoint" half of the old argument is answered rather than argued with.
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import ModuleHeader from '../components/module/ModuleHeader';
@@ -29,9 +44,14 @@ import { inrShort } from '../lib/inr';
 import DashboardTab from './vikray/DashboardTab';
 import OrdersTab from './vikray/OrdersTab';
 import StockTab from './vikray/StockTab';
+import PipelineTab from './vikray/PipelineTab';
 import TargetsTab from './vikray/TargetsTab';
+import CustomersTab from './vikray/CustomersTab';
 
-const TABS = ['dashboard', 'orders', 'stock', 'targets'];
+// The reference's order exactly (`Data.jsx:125`). Six is also `ModuleTabs`'
+// `max`, so all six render inline and the More popover does not appear — a
+// seventh would push one behind it.
+const TABS = ['dashboard', 'orders', 'stock', 'pipeline', 'targets', 'customers'];
 
 export default function VikrayPage() {
   const [tab, setTab] = useState('dashboard');
@@ -92,7 +112,7 @@ export default function VikrayPage() {
         kick={<>Revenue <span className="mh__kick-hi" lang="hi">· राजस्व</span></>}
         en={meta.en}
         hi={meta.hi}
-        sub="Orders, stock and targets. Customers and pipeline live in Graha (CRM)."
+        sub="Quote to cash as one flow — every order, what it is waiting on, and who buys."
         icon={ICONS.vikray}
         actions={
           <button
@@ -133,7 +153,9 @@ export default function VikrayPage() {
           />
         )}
         {tab === 'stock' && <StockTab />}
+        {tab === 'pipeline' && <PipelineTab onOpenOrder={openOrder} />}
         {tab === 'targets' && <TargetsTab />}
+        {tab === 'customers' && <CustomersTab onOpenOrder={openOrder} />}
       </div>
     </div>
   );

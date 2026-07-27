@@ -21,6 +21,7 @@
 @import './srijan.css';
 @import './graha.css';
 @import './ganit.css';
+@import './vikray.css';
 @import './pahchan.css';
 /* The two unauthenticated routes, /approve and /sign/:token. Global rather than
    page-local: both render with no session, and a lazily-imported stylesheet
