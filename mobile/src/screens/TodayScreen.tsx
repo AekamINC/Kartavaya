@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback, useState } from 'react';
 import {
   View, Text, SectionList, ScrollView,
-  TouchableOpacity, StyleSheet, ActivityIndicator, Platform,
+  TouchableOpacity, StyleSheet, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -14,6 +14,8 @@ import { useAuth } from '../hooks/useAuth';
 import { tasksApi } from '../api/tasks';
 import { TaskCard } from '../components/TaskCard';
 import Refresher from '../components/Refresher';
+import ScreenState, { resolveScreenState } from '../components/ScreenState';
+import { useOnline } from '../hooks/useOnline';
 import { useQueueStatus } from '../hooks/useQueueStatus';
 import { queuedEntityIds } from '../offline/mutationQueue';
 import type { Task } from '../api/types';
@@ -69,11 +71,18 @@ export default function TodayScreen() {
   const insets   = useSafeAreaInsets();
   const [filter, setFilter] = useState<Filter>('all');
 
-  const { data: tasks = [], isLoading, refetch, isFetching } = useQuery({
+  const online = useOnline();
+
+  const query = useQuery({
     queryKey: ['tasks', 'mine'],
     queryFn:  () => tasksApi.list(),
     staleTime: 60_000,
   });
+  const { isLoading, refetch, isFetching } = query;
+  // `?? []` rather than a destructuring default, because the default would erase
+  // the difference between "the server answered with nothing" and "the request
+  // failed" — and this screen used to render "All clear!" for both.
+  const tasks = query.data ?? [];
 
   const allSections = useMemo(
     () => user ? bucketTasks(tasks, user.user_id) : [],
@@ -104,6 +113,27 @@ export default function TodayScreen() {
     }
     return allSections;
   }, [allSections, filter]);
+
+  /**
+   * Loading, offline, error and empty are four different answers, and this
+   * screen used to give the same one to all of them: `data` defaulted to `[]`,
+   * so a failed fetch fell straight through to `ListEmptyComponent` and told
+   * someone with an overdue task that they were "All clear!".
+   *
+   * The reference is explicit that this state exists — `Mobile.jsx`'s `MToday`
+   * has a dedicated `st === 'error'` branch reading "Couldn't load today · The
+   * server didn't answer. Anything you changed offline is still queued and
+   * safe." The copy below keeps that promise, because it is the one thing a
+   * user needs to know before they retype anything.
+   */
+  const status = resolveScreenState({
+    isLoading,
+    isError: query.isError,
+    error:   query.error,
+    online,
+    hasData: query.data !== undefined,
+    isEmpty: query.data !== undefined && sections.length === 0,
+  });
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -197,20 +227,26 @@ export default function TodayScreen() {
               })}
             </ScrollView>
 
-            {isLoading && (
-              <View style={{ padding: 40, alignItems: 'center' }}>
-                <ActivityIndicator color={t.primary} />
-              </View>
-            )}
           </View>
         }
         ListEmptyComponent={
-          !isLoading ? (
+          status === 'ready' ? null : status === 'empty' ? (
             <View style={s.empty}>
               <Text style={[s.emptyTitle, { color: t.ink }]}>All clear!</Text>
               <Text style={[s.emptyBody, { color: t.ink3 }]}>No tasks for this filter.</Text>
             </View>
-          ) : null
+          ) : (
+            <ScreenState
+              status={status}
+              onRetry={() => refetch()}
+              {...(status === 'error'
+                ? {
+                    title: "Couldn't load today",
+                    body:  'The server didn’t answer. Anything you changed offline is still queued and safe.',
+                  }
+                : {})}
+            />
+          )
         }
         renderSectionHeader={({ section }) => (
           <View style={s.sectionHead}>

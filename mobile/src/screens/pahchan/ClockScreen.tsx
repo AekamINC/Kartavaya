@@ -330,6 +330,19 @@ export default function ClockScreen() {
         photo_uri:     small.uri,
       });
 
+      /**
+       * A capture landed, so the failed-capture count is spent.
+       *
+       * `retakes` only ever incremented. Once someone hit three failures in a
+       * dark doorway, every LATER punch from this screen — a clean first-try
+       * clock-out an hour afterwards — still sent `retry_count: 3` and was
+       * flagged for a manager, and the red "the camera has failed 3 times"
+       * banner stayed up for the life of the screen. `retry_count` is defined
+       * in punchQueue as "captures that FAILED before THIS one landed", so it
+       * belongs to the punch that just went into the queue and not to the next.
+       */
+      setRetakes(0);
+
       setPhase('submitting');
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 
@@ -383,7 +396,11 @@ export default function ClockScreen() {
       setRetakes(n => n + 1);
       setNotice('That did not work. Try again.');
     }
-  }, [direction, phase, qc, flash, reduced]);
+    // `retakes` is read into `retry_count`, so it has to be a dependency. It was
+    // not, and the only reason the right number was sent is that `phase` changes
+    // on every capture and happened to rebuild the closure alongside it — a
+    // payroll-visible value kept correct by an unrelated dependency.
+  }, [direction, phase, qc, flash, reduced, retakes]);
 
   // ── The register ────────────────────────────────────────────────────────────
   // Deliberately ABOVE the camera-permission gate. Reading your own attendance
@@ -639,7 +656,11 @@ const s = StyleSheet.create({
   scrim: { flex: 1, justifyContent: 'space-between', paddingHorizontal: 20 },
   head: { alignItems: 'center', gap: 2 },
   headEn: { fontSize: 22, fontWeight: '700', color: '#FFFFFF' },
-  headHi: { fontSize: 14, color: 'rgba(255,255,255,0.85)' },
+  // `उपस्थिति` / `प्रस्थान`. Named the Indic face: with no fontFamily the platform
+  // picks its own Devanagari fallback, so the Hindi on the one screen an
+  // attendance-only employee ever opens was not in the app's face. No weight —
+  // Tiro ships only 400 and a heavier request is synthesised.
+  headHi: { fontSize: 14, color: 'rgba(255,255,255,0.85)', ...hindi() },
   pendingPill: {
     flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10,
     backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 99,
