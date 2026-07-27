@@ -40,28 +40,31 @@ export const NAV_FULL = [
     ],
   },
   {
-    section: 'srijan', sans: 'सृजन', gu: 'સર્જન',
+    // ── Revenue · राजस्व ────────────────────────────────────────────────────
+    //
+    // All ten module rows used to sit in one flat `modules` group. The design
+    // does not have a `modules` group — `Chrome.jsx`'s NAV splits these exact
+    // modules across Revenue, People, Growth and Clients, each a business
+    // function with its own Devanagari heading. A single bucket is how CRM
+    // ended up filed under a generic heading instead of beside Sales and
+    // Finance, which is where someone selling looks for it.
+    //
+    // Read from `design-reference/Kartavaya Redesign/Chrome.jsx:36`, the NAV
+    // constant the runnable mockups actually render — not from the prose in
+    // `01-navigation.md`, which describes the sidebar without listing it.
+    section: 'revenue', sans: 'राजस्व', gu: 'રાજસ્વ',
     items: [
-      // `module` is the code `require_module(...)` uses, which for the AI hub is
-      // `srijan`. Without it these two rows were the only module surfaces in the
-      // sidebar with no entitlement predicate at all, so `platform_support` — a
-      // role `role_tiers.modules_for()` deliberately grants NOTHING until an org
-      // admin approves a session — was offered the Srijan console on the nav.
-      { to: '/hub/org', icon: 'hub',      en: 'Srijan',       hi: 'सृजन',           gu: 'સર્જન', module: 'srijan' },
-      { to: '/hub',     icon: 'settings', en: 'Srijan Admin', hi: 'सृजन व्यवस्था', gu: 'સર્જન વ્યવસ્થા', adminOnly: true, module: 'srijan' },
+      { to: '/graha',   icon: 'graha',   en: 'CRM',       hi: 'ग्राहक',   gu: 'ગ્રાહક',   module: 'graha' },
+      { to: '/vikray',  icon: 'vikray',  en: 'Sales',     hi: 'विक्रय',  gu: 'વિક્રય', module: 'vikray' },
+      { to: '/ganit',   icon: 'ganit',   en: 'Invoicing', hi: 'गणित',    gu: 'ગણિત',   module: 'ganit' },
     ],
   },
   {
-    section: 'modules', sans: 'मॉड्यूल', gu: 'મૉડ્યુલ',
+    // ── People · जन ────────────────────────────────────────────────────────
+    section: 'people', sans: 'जन', gu: 'જન',
     items: [
-      { to: '/graha',   icon: 'graha',   en: 'CRM',       hi: 'ग्राहक',   gu: 'ગ્રાહક',   module: 'graha' },
-      { to: '/ganit',   icon: 'ganit',   en: 'Invoicing', hi: 'गणित',    gu: 'ગણિત',   module: 'ganit' },
       { to: '/manav',   icon: 'manav',   en: 'HRMS',      hi: 'मानव',    gu: 'માનવ',   module: 'manav' },
-      { to: '/vikray',  icon: 'vikray',  en: 'Sales',     hi: 'विक्रय',  gu: 'વિક્રય', module: 'vikray' },
       { to: '/vetana',  icon: 'vetana',  en: 'Payroll',   hi: 'वेतन',    gu: 'વેતન',   module: 'vetana' },
-      { to: '/dristi',  icon: 'dristi',  en: 'Analytics', hi: 'दृष्टि',  gu: 'દૃષ્ટિ', module: 'dristi' },
-      { to: '/prachar', icon: 'prachar', en: 'Marketing', hi: 'प्रचार',  gu: 'પ્રચાર', module: 'prachar' },
-      { to: '/esign',   icon: 'esign',   en: 'E-Sign',    hi: 'प्रमाण',  gu: 'પ્રમાણ', module: 'esign' },
       // `sanvaad` — ONE spelling, and this is it. The key is compared against
       // `module_grants[]`, which carries whatever code `require_module(...)`
       // gates on, and `routers/messaging.py:27` now gates on `sanvaad`.
@@ -82,6 +85,36 @@ export const NAV_FULL = [
       // reachable exclusively by typing the URL. It is a module like the nine
       // above it and belongs in the group with them.
       { to: '/pahchan', icon: 'pahchan', en: 'Attendance', hi: 'पहचान',  gu: 'પહચાન',  module: 'pahchan' },
+    ],
+  },
+  {
+    // ── Growth · वृद्धि ─────────────────────────────────────────────────────
+    //
+    // Srijan lives here rather than in a section of its own. The design groups
+    // the AI hub with Marketing and Reports because they are the same job —
+    // finding and keeping work — and a one-module section is a heading with
+    // nothing to head.
+    section: 'growth', sans: 'वृद्धि', gu: 'વૃદ્ધિ',
+    items: [
+      { to: '/prachar', icon: 'prachar', en: 'Marketing', hi: 'प्रचार',  gu: 'પ્રચાર', module: 'prachar' },
+      { to: '/dristi',  icon: 'dristi',  en: 'Analytics', hi: 'दृष्टि',  gu: 'દૃષ્ટિ', module: 'dristi' },
+      // `module` is the code `require_module(...)` uses, which for the AI hub is
+      // `srijan`. Without it these two rows were the only module surfaces in the
+      // sidebar with no entitlement predicate at all, so `platform_support` — a
+      // role `role_tiers.modules_for()` deliberately grants NOTHING until an org
+      // admin approves a session — was offered the Srijan console on the nav.
+      { to: '/hub/org', icon: 'hub',      en: 'Srijan',       hi: 'सृजन',           gu: 'સર્જન', module: 'srijan' },
+      { to: '/hub',     icon: 'settings', en: 'Srijan Admin', hi: 'सृजन व्यवस्था', gu: 'સર્જન વ્યવસ્થા', adminOnly: true, module: 'srijan' },
+    ],
+  },
+  {
+    // ── Clients · ग्राहक ────────────────────────────────────────────────────
+    //
+    // eSign is a client-facing surface in the design, not a module among the
+    // internal ten — it is the thing a customer's customer actually touches.
+    section: 'clients', sans: 'ग्राहक', gu: 'ગ્રાહક',
+    items: [
+      { to: '/esign',   icon: 'esign',   en: 'E-Sign',    hi: 'प्रमाण',  gu: 'પ્રમાણ', module: 'esign' },
     ],
   },
   {

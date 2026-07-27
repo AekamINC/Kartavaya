@@ -243,7 +243,14 @@ describe('e2e · the client nav offers nothing that leads out', () => {
   it('staff get the full nav, so the switch is on the user and not on the build', () => {
     const sections = navGroupsFor(users.orgOwner()).map(g => g.section);
     expect(sections).toContain('workspace');
-    expect(sections).toContain('modules');
+    // Was `'modules'`, the flat bucket every module row used to sit in. That
+    // group is gone: the design splits those modules across Revenue, People,
+    // Growth and Clients, which is why CRM no longer sits under a generic
+    // heading. `revenue` is the better sentinel anyway — a client seeing the
+    // firm's revenue nav is the exact leak this file exists to catch, whereas
+    // `modules` only ever meant "some staff group exists".
+    expect(sections).toContain('revenue');
+    expect(sections).toContain('people');
   });
 
   it('no client nav entry points at the firm\'s own approval queue or inbox', () => {
