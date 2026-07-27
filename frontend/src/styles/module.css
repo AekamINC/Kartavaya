@@ -276,6 +276,76 @@
   border-top: 1px solid var(--outline-variant);
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   The month calendar — 17-mobile-app.md:129, "month calendar, states, legend".
+
+   `.pcal__*` is one of the four things 07 §"Reuse before you create" lists as
+   genuinely new, because no primitive covers it. Monday-first: the lead blanks
+   are derived from the first of the month, never hand-typed.
+
+   Fluid, like every other page here — the columns are 1fr and the cells are
+   square by aspect-ratio, so the grid holds at any width without a breakpoint.
+   ══════════════════════════════════════════════════════════════════════════ */
+.pcal { max-width: 520px; }
+.pcal__head,
+.pcal__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+}
+.pcal__head { margin-bottom: 5px; }
+.pcal__dow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: max(10.5px, calc(var(--font-size-base) * .78));
+  color: var(--on-surface-3);
+}
+/* Devanagari is never tracked (24-bilingual-devanagari.md) and takes its own
+   face and leading. The Latin line above it is the one carrying the label. */
+.pcal__dow i {
+  font-family: var(--font-indic);
+  font-style: normal;
+  font-size: max(10px, calc(var(--font-size-base) * .74));
+  letter-spacing: 0;
+  line-height: 1.5;
+  color: var(--on-surface-faint);
+}
+.pcal__pad { aspect-ratio: 1; }
+.pcal__d {
+  aspect-ratio: 1;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  font-size: max(12px, calc(var(--font-size-base) * .88));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.pcal__d.is-today { border-color: var(--primary); }
+.pcal__d.is-open  { outline: 2px solid var(--primary); outline-offset: -2px; }
+.pcal__d:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.pcal__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 12px;
+  font-size: max(11px, calc(var(--font-size-base) * .82));
+  color: var(--on-surface-3);
+}
+.pcal__key { display: inline-flex; align-items: center; gap: 6px; }
+/* The swatch is a second signal beside the words, never the only one — colour
+   alone would fail 23-accessibility.md and this grid is read by the person whose
+   pay depends on it. */
+.pcal__key i {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
 /* Below 900px the location and verdict columns drop and the row becomes
    index / person / triple / time. 07 §3: "a reviewer on a phone is triaging, not
    clearing a day." The header cells carry the same classes, so they hide with
