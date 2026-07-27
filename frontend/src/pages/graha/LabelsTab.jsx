@@ -1,6 +1,14 @@
+// Graha · labels — the contact tag vocabulary, and assigning one.
+//
+// 27 inline styles are now `gr__*` classes. The swatch and the label card both
+// take their colour through `--c`, which is the one legitimate surviving inline
+// (check-tokens deviation 2) because a label's colour is user data.
 import React, { useState, useEffect } from 'react';
-import { api } from '../../lib/api';
+import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import { ErrorState, errorKind } from '../../components/ui/ErrorState';
+import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
+import { EmptyState } from '../../components/ui/EmptyState';
 
 // The one literal in this module that stays a literal. A label colour is USER
 // DATA: it is persisted to the DB and fed to <input type="color">, which accepts
@@ -13,6 +21,7 @@ export default function LabelsTab() {
   const { pushToast } = useToast();
   const [labels, setLabels] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', color: DEFAULT_LABEL_COLOR });
   const [saving, setSaving] = useState(false);
@@ -23,10 +32,14 @@ export default function LabelsTab() {
   useEffect(() => { load(); }, []);
 
   async function load() {
+    setErr(null);
     try {
       const r = await api.get('/v1/graha/labels');
-      setLabels(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load labels', type: 'error' }); }
+      setLabels(rows(r));
+    } catch (e) {
+      setErr(e);
+      pushToast({ title: 'Failed to load labels', type: 'error' });
+    }
     finally { setLoading(false); }
   }
 
@@ -39,7 +52,7 @@ export default function LabelsTab() {
       setShowForm(false);
       setForm({ name: '', color: DEFAULT_LABEL_COLOR });
       load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
   }
 
@@ -52,11 +65,12 @@ export default function LabelsTab() {
     } catch { pushToast({ title: 'Could not delete label', type: 'error' }); }
   }
 
+  // The contact dropdown is an enrichment on the assign form.
   async function loadContacts() {
     try {
       const r = await api.get('/v1/graha/contacts');
-      setContacts(r.data.data || []);
-    } catch {}
+      setContacts(rows(r));
+    } catch { /* the select stays empty and Assign cannot be submitted */ }
   }
 
   async function assignLabel(e) {
@@ -66,27 +80,26 @@ export default function LabelsTab() {
       pushToast({ title: 'Label assigned', type: 'success' });
       setShowAssign(false);
       setAssignForm({ contact_id: '', label_id: '' });
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ New Label</button>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 13 }} onClick={() => { setShowAssign(true); loadContacts(); }}>Assign to Contact</button>
+      <div className="gr__bar">
+        <button className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>+ New Label</button>
+        <button className="k-btn k-btn--ghost" onClick={() => { setShowAssign(true); loadContacts(); }}>Assign to Contact</button>
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Label</h3>
-          <div style={{ display: 'flex', gap: 12 }}>
-            <label style={{ fontSize: 13, flex: 1 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
+        <form onSubmit={save} className="gr__panel">
+          <h3 className="gr__ptitle">New Label</h3>
+          <div className="gr__bar">
+            <label className="gr__f gr__grow"><span className="gr__fl">Name *</span>
               <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Color</span>
-              <input type="color" value={form.color} onChange={e => setForm({ ...form, color: e.target.value })}
-                style={{ width: 48, height: 36, border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', cursor: 'pointer' }} /></label>
+            <label className="gr__f"><span className="gr__fl">Color</span>
+              <input className="gr__color" type="color" value={form.color} onChange={e => setForm({ ...form, color: e.target.value })} /></label>
           </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+          <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
             <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
           </div>
@@ -94,36 +107,46 @@ export default function LabelsTab() {
       )}
 
       {showAssign && (
-        <form onSubmit={assignLabel} style={{ background: 'var(--surface-1)', border: '1px solid var(--k-primary)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Assign Label to Contact</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Contact *</span>
+        <form onSubmit={assignLabel} className="gr__panel gr__panel--accent">
+          <h4 className="gr__ptitle gr__ptitle--sm">Assign Label to Contact</h4>
+          <div className="gr__grid">
+            <label className="gr__f"><span className="gr__fl">Contact *</span>
               <select className="k-input" required value={assignForm.contact_id} onChange={e => setAssignForm({ ...assignForm, contact_id: e.target.value })}>
                 <option value="">Select…</option>
                 {contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Label *</span>
+            <label className="gr__f"><span className="gr__fl">Label *</span>
               <select className="k-input" required value={assignForm.label_id} onChange={e => setAssignForm({ ...assignForm, label_id: e.target.value })}>
                 <option value="">Select…</option>
                 {labels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select></label>
           </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+          <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowAssign(false)}>Cancel</button>
             <button type="submit" className="k-btn k-btn--primary">Assign</button>
           </div>
         </form>
       )}
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        labels.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No labels yet.</p> : (
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      {loading ? (
+        <SkeletonRegion label="Loading labels"><SkeletonList rows={4} /></SkeletonRegion>
+      ) : err ? (
+        <ErrorState kind={errorKind(err)} onRetry={load} />
+      ) : labels.length === 0 ? (
+        <EmptyState
+          illustration="generic"
+          title={{ en: 'No labels yet', hi: 'कोई नाम नहीं' }}
+          description="A label groups contacts across type and company — priority, region, campaign, whatever you sort by."
+          action="New Label"
+          onAction={() => setShowForm(true)}
+        />
+      ) : (
+        <div className="gr__lcards">
           {labels.map(l => (
-            <div key={l.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div style={{ width: 16, height: 16, borderRadius: 'var(--r-xs)', background: l.color || 'var(--on-surface-3)' }} />
-              <span style={{ fontWeight: 600, fontSize: 14 }}>{l.name}</span>
-              <button onClick={() => remove(l.id)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 11, marginLeft: 8 }}>Delete</button>
+            <div key={l.id} className="gr__lcard">
+              <span className="gr__swatch" style={{ '--c': l.color || 'var(--on-surface-3)' }} />
+              <span className="gr__lname">{l.name}</span>
+              <button className="k-btn k-btn--reject" onClick={() => remove(l.id)}>Delete</button>
             </div>
           ))}
         </div>

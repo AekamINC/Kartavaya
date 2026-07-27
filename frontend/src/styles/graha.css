@@ -1,0 +1,399 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Graha · ग्रह — CRM tab bodies
+
+   `GrahaPage.jsx` was split into a route file plus `pages/graha/*` BEFORE any
+   styling was applied, exactly as 13-module-pages.md asks. That split moved the
+   debt rather than paying it: the route file came out at 166 lines and 2 inline
+   styles, so the module READ as finished while the directory behind it carried
+   648 raw CSS property values in markup — the second largest cluster in the
+   codebase, and `ContactsTab.jsx` alone held 104.
+
+   This file is the vocabulary those tabs were missing. Nothing here is new
+   design: every rule is a measurement lifted out of the JSX it replaces, so the
+   conversion is a move from markup to stylesheet and not a restyle. The three
+   things that were WRONG in the inline values are corrected and marked `[fix]`.
+
+   Prefix is `gr__`. Module-scoped, following the `prachar.css` / `vetana.css`
+   precedent, for two reasons: the names cannot collide with the peers working
+   in ganit / manav / srijan at the same time, and a CRM-only rule has no
+   business widening into the shared layer where nine module pages would inherit
+   it. The pipeline board keeps its existing `.gpipe` / `.gdeal` block in
+   module.css — it is already converted and moving it would be churn.
+
+   The one legitimate inline that survives is a custom property feeding a rule
+   here — `style={{ '--c': colour }}` — which is check-tokens.mjs deviation 2.
+   A per-instance colour that comes from user data (a label's hex) or from a
+   categorical map cannot live in a stylesheet, because the stylesheet does not
+   know the row. Raw CSS property values in markup reach zero; `--c` does not.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Toolbars and section heads ─────────────────────────────────────────── */
+
+/* The filter/action row that opens most tabs. `flex-wrap` is a [fix]: this was
+   a nowrap flex row holding a search box, a select, and two buttons, so under
+   ~560px the buttons were pushed out of the viewport with no way to reach them.
+   Every tab that has one of these was affected. */
+.gr__bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.gr__bar .k-input { min-width: 0; }
+.gr__grow    { flex: 1; min-width: 0; }
+.gr__spacer  { flex: 1; }
+.gr__search  { flex: 1; min-width: 160px; max-width: 260px; }
+.gr__sel     { width: auto; min-width: 130px; }
+.gr__sel--wide { min-width: 160px; }
+
+/* Heading + actions, the second toolbar shape. */
+.gr__shead {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.gr__st  { font-size: 14px; font-weight: 700; margin: 0; }
+.gr__st--lg { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
+.gr__sacts { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* A lede under a section title. */
+.gr__lede { font-size: 12px; color: var(--ink-3); margin: 0 0 16px; line-height: 1.55; }
+
+/* ── Panels and forms ───────────────────────────────────────────────────── */
+
+.gr__panel {
+  background: var(--surface-1); border: 1px solid var(--rule-soft);
+  border-radius: var(--r-md); padding: 24px; margin-bottom: 16px;
+}
+/* The lighter form shell used by the settings-ish tabs (approvals, automations,
+   web forms, territories, custom fields). */
+.gr__panel--flat {
+  background: none; border-radius: var(--r-sm); padding: 16px;
+}
+/* The assign-label form marks itself as the active affordance. */
+.gr__panel--accent { border-color: var(--k-primary); }
+
+.gr__ptitle { margin: 0 0 12px; font-size: 15px; font-weight: 700; }
+.gr__ptitle--sm { font-size: 14px; }
+
+.gr__grid       { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.gr__grid--3    { grid-template-columns: 1fr 1fr 1fr; }
+.gr__grid--auto { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+/* [fix] Every one of these grids was a hard `1fr 1fr` / `1fr 1fr 1fr` with no
+   query, so on a phone each field was ~40% of a narrow viewport and the date
+   and number inputs clipped their own controls. */
+@media (max-width: 640px) {
+  .gr__grid, .gr__grid--3 { grid-template-columns: 1fr; }
+}
+
+.gr__f  { font-size: 13px; min-width: 0; }
+.gr__f--wide  { grid-column: 1 / -1; }
+.gr__f--block { display: block; margin-top: 12px; }
+.gr__f--inline { display: flex; align-items: center; gap: 6px; }
+.gr__fl { display: block; font-weight: 600; margin-bottom: 4px; }
+.gr__fl--inline { display: inline; margin-right: 4px; }
+.gr__ta { resize: vertical; }
+.gr__num { width: 72px; }
+
+.gr__acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; flex-wrap: wrap; }
+.gr__acts--start { justify-content: flex-start; }
+.gr__acts--tight { margin-top: 8px; }
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+
+/* The wrapper exists so a wide table scrolls INSIDE its own box rather than
+   pushing the page sideways — the module shell is fluid and full-width, so a
+   table that overflows the body takes the tab strip with it. */
+.gr__tblwrap { overflow-x: auto; border: 1px solid var(--rule-soft); border-radius: var(--r-sm); }
+.gr__tblwrap--bare { border: none; border-radius: 0; }
+
+.gr__tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.gr__tbl th {
+  text-align: left; padding: 8px 10px; font-weight: 600;
+  color: var(--ink-3); font-size: 11px; text-transform: uppercase;
+  letter-spacing: .04em; white-space: nowrap;
+}
+.gr__tbl td { padding: 10px; vertical-align: middle; }
+.gr__tbl thead tr { border-bottom: 1px solid var(--rule-soft); }
+.gr__tbl tbody tr { border-bottom: 1px solid var(--rule-soft); }
+/* A raised header strip, used where the table sits inside a bordered card. */
+.gr__tbl--raised thead tr { background: var(--bg-raised); }
+/* Denser variant for the report tables. */
+.gr__tbl--sm { font-size: 12px; }
+.gr__tbl--sm th, .gr__tbl--sm td { padding: 6px 8px; }
+
+.gr__tr--click { cursor: pointer; }
+.gr__tr--click:hover { background: var(--bg-raised); }
+/* The dedupe survivor row. */
+.gr__tr--on { background: var(--k-primary-bg); }
+
+.gr__td--name { font-weight: 600; }
+.gr__td--mute { color: var(--ink-2); }
+.gr__td--num  { text-align: right; font-variant-numeric: tabular-nums; }
+.gr__td--mid  { text-align: center; }
+.gr__td--cap  { text-transform: capitalize; }
+.gr__td--when { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.gr__td--id   { font-size: 11px; font-family: var(--font-mono); }
+.gr__td--ok   { color: var(--ok); }
+.gr__td--bad  { color: var(--danger); }
+
+/* The in-table "nothing here" row. */
+.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size: 13px; }
+
+/* ── Cards and list rows ────────────────────────────────────────────────── */
+
+.gr__cards { display: flex; flex-direction: column; gap: 8px; }
+.gr__card {
+  background: var(--surface-1); border: 1px solid var(--rule-soft);
+  border-radius: var(--r-md); padding: 12px 16px;
+}
+/* An overdue follow-up. Colour is not the only signal — the row also carries a
+   "Overdue" tag in words, per 00 §12. */
+.gr__card--late { border-color: color-mix(in srgb, var(--danger) 30%, var(--rule-soft)); }
+
+.gr__crow  { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.gr__ctitle { font-weight: 700; font-size: 14px; overflow-wrap: anywhere; }
+.gr__ctitle--done { text-decoration: line-through; }
+.gr__cside { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gr__cmeta { display: flex; gap: 12px; align-items: center; font-size: 12px; color: var(--ink-3); flex-wrap: wrap; }
+.gr__cmeta--plain { display: block; font-size: 13px; color: var(--ink-2); margin-bottom: 6px; }
+.gr__cnote { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--rule-soft); font-size: 12px; color: var(--ink-3); }
+.gr__cedit { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--rule-soft); }
+.gr__val { font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+
+/* The deal title doubles as the edit affordance. It is a real <button> so it is
+   reachable by keyboard — it was a <span> with an onClick, which is not. */
+.gr__link {
+  background: none; border: none; padding: 0; cursor: pointer; font: inherit;
+  font-weight: 700; font-size: 14px; color: inherit; text-align: left;
+  text-decoration: underline; text-decoration-color: var(--rule-soft);
+  text-underline-offset: 2px;
+}
+.gr__link:hover { text-decoration-color: currentColor; }
+
+/* A flat divider row — automations, web forms, territories, custom fields. */
+.gr__lrow {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 0; border-bottom: 1px solid var(--rule-soft); flex-wrap: wrap;
+}
+.gr__lrow--tight { padding: 8px 0; }
+.gr__lmain { flex: 1; min-width: 0; }
+.gr__lt    { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.gr__lt--sm { font-size: 13px; font-weight: 500; }
+.gr__ls    { font-size: 11px; color: var(--ink-3); overflow-wrap: anywhere; }
+.gr__lsub  { font-size: 12px; color: var(--ink-3); }
+.gr__dot   { width: 8px; height: 8px; border-radius: var(--r-pill); background: var(--c); flex-shrink: 0; }
+
+.gr__kv { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--rule-soft); font-size: 13px; align-items: center; }
+.gr__kv:last-child { border-bottom: none; }
+
+/* ── Muted / status text ────────────────────────────────────────────────── */
+
+.gr__mute  { font-size: 12px; color: var(--ink-3); margin: 0; }
+.gr__quiet { font-size: 13px; color: var(--ink-3); text-align: center; padding: 24px; margin: 0; }
+.gr__hint  { margin-top: 24px; padding: 16px; background: var(--bg-raised); border-radius: var(--r-sm); font-size: 12px; color: var(--ink-3); line-height: 1.6; }
+.gr__hint code { font-family: var(--font-mono); font-size: .95em; }
+.gr__sub   { margin: 4px 0 0; font-size: 13px; color: var(--ink-2); }
+.gr__eyebrow {
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--ink-3); margin: 0 0 8px;
+}
+.gr__group { margin-bottom: 20px; }
+.gr__stack { margin-top: 24px; }
+
+/* ── Detail view ────────────────────────────────────────────────────────── */
+
+.gr__back { margin-bottom: 12px; font-size: 12px; }
+.gr__dhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.gr__dname { margin: 0; font-size: 18px; font-weight: 700; }
+.gr__dacts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.gr__dgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; font-size: 13px; }
+.gr__dpair { min-width: 0; overflow-wrap: anywhere; }
+.gr__dsplit { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.gr__dmain { flex: 1 1 340px; border: 1px solid var(--rule-soft); border-radius: var(--r-md); padding: 20px; }
+.gr__daside { flex: 1 1 300px; min-width: 0; }
+.gr__dline { font-size: 12px; color: var(--ink-3); margin-bottom: 4px; overflow-wrap: anywhere; }
+.gr__dnotes { font-size: 13px; color: var(--ink-2); margin: 12px 0 0; line-height: 1.55; }
+.gr__dscore { font-size: 12px; color: var(--ink-3); margin-top: 8px; }
+.gr__dsec { font-size: 13px; font-weight: 700; margin: 16px 0 8px; }
+.gr__dsec:first-child { margin-top: 0; }
+
+/* ── Chips ──────────────────────────────────────────────────────────────── */
+
+/* A contact label. The colour is user data and may be any hex, so it arrives as
+   `--c` and the tint is computed with color-mix — a hex-alpha suffix broke the
+   moment the fallback became a token reference. */
+.gr__chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; padding: 4px 12px;
+  border-radius: var(--r-pill);
+  color: var(--c); background: color-mix(in srgb, var(--c) 9%, transparent);
+}
+.gr__chipx {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: inherit; font-size: 14px; line-height: 1;
+}
+.gr__chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.gr__chips--tight { gap: 4px; margin-top: 4px; }
+/* A plain token chip — assigned users, tags. */
+.gr__tok {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; background: var(--bg-raised);
+  padding: 2px 8px; border-radius: var(--r-xs);
+}
+.gr__tokx { background: none; border: none; padding: 0; cursor: pointer; font-size: 11px; color: var(--danger); }
+.gr__swatch { width: 16px; height: 16px; border-radius: var(--r-xs); background: var(--c); flex-shrink: 0; }
+.gr__count {
+  font-size: 11px; font-weight: 700; padding: 1px 8px;
+  border-radius: var(--r-pill);
+  color: var(--c); background: color-mix(in srgb, var(--c) 9%, transparent);
+}
+/* A fixed-colour count. `--c` is for a value that varies per element; a constant
+   belongs here, not in markup. */
+.gr__count--warn { --c: var(--warn); }
+
+/* A colour input is 48×36 because that is the smallest a swatch can be and
+   still be an obvious target; the control paints its own interior. */
+.gr__color { width: 48px; height: 36px; padding: 2px; border: 1px solid var(--rule-soft); border-radius: var(--r-sm); cursor: pointer; background: var(--surface-1); }
+
+/* ── Label cards (Labels tab) ───────────────────────────────────────────── */
+
+.gr__lcards { display: flex; gap: 12px; flex-wrap: wrap; }
+.gr__lcard {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface-1); border: 1px solid var(--rule-soft);
+  border-radius: var(--r-md); padding: 16px 20px;
+}
+.gr__lname { font-weight: 600; font-size: 14px; }
+
+/* ── Today board ────────────────────────────────────────────────────────── */
+
+.gr__today { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.gr__tcard { border: 1px solid var(--rule-soft); border-radius: var(--r-sm); overflow: hidden; min-width: 0; }
+.gr__thead {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+  border-bottom: 1px solid var(--rule-soft); background: var(--bg-raised);
+}
+.gr__tname { font-size: 13px; font-weight: 700; flex: 1; min-width: 0; }
+.gr__tbody { padding: 8px 14px; max-height: 280px; overflow-y: auto; }
+.gr__titem { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--rule-soft); }
+.gr__titem:last-child { border-bottom: none; }
+.gr__tmain { flex: 1; min-width: 0; }
+.gr__tt { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gr__tt--done { text-decoration: line-through; color: var(--ink-3); }
+.gr__ts { font-size: 11px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gr__tage { font-size: 12px; color: var(--danger); font-weight: 600; min-width: 36px; }
+.gr__tval { font-size: 12px; font-weight: 600; color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gr__tval--ok  { color: var(--ok); }
+.gr__tval--bad { color: var(--danger); }
+.gr__twhen { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
+.gr__tic { font-size: 14px; }
+
+/* ── Contact timeline ───────────────────────────────────────────────────── */
+
+.gr__tl { position: relative; padding-left: 24px; }
+/* The rail sits behind the dots and stops short at both ends so it reads as a
+   thread between events rather than a border on the column. */
+.gr__tl::before {
+  content: ''; position: absolute; left: 7px; top: 4px; bottom: 4px;
+  width: 2px; background: var(--rule-soft); border-radius: 1px;
+}
+.gr__tlrow { position: relative; padding-bottom: 14px; padding-left: 12px; }
+.gr__tldot {
+  position: absolute; left: -24px; top: 1px;
+  width: 18px; height: 18px; border-radius: var(--r-pill);
+  display: flex; align-items: center; justify-content: center; font-size: 11px;
+  background: color-mix(in srgb, var(--c) 8%, transparent);
+}
+.gr__tlt { font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gr__tlamt { color: var(--ok); font-weight: 600; font-size: 12px; }
+.gr__tlmeta { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+.gr__tlkind { color: var(--c); font-weight: 600; text-transform: capitalize; }
+.gr__more { font-size: 12px; color: var(--k-primary); background: none; border: none; cursor: pointer; padding: 4px 0; }
+
+/* ── Kanban board ───────────────────────────────────────────────────────── */
+
+.gr__kb { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 16px; align-items: flex-start; }
+.gr__kbcol { min-width: 220px; flex: 1 0 220px; background: var(--surface-1); border-radius: var(--r-md); padding: 16px; }
+.gr__kbhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+.gr__kbn { font-size: 11px; color: var(--ink-3); }
+.gr__kbsum { font-size: 12px; color: var(--ink-3); margin-bottom: 12px; font-variant-numeric: tabular-nums; }
+.gr__kbcards { display: flex; flex-direction: column; gap: 8px; }
+.gr__kbt { font-weight: 600; font-size: 13px; margin-bottom: 4px; overflow-wrap: anywhere; }
+.gr__kbco { font-size: 11px; color: var(--k-primary); font-weight: 600; margin-bottom: 2px; }
+.gr__kbwho { font-size: 11px; color: var(--ink-3); margin-bottom: 2px; }
+.gr__kbown { font-size: var(--t-label-sm); color: var(--ink-3); margin-bottom: 4px; }
+.gr__kbval { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.gr__kbamt { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gr__kbmove { display: flex; gap: 4px; flex-wrap: wrap; }
+
+/* The card. `--shadow-1` rather than the two literal rgba shadows this replaced,
+   which were black-on-black in dark mode.
+
+   Staleness is a fixed two-step ramp, not per-instance data, so it is two
+   modifiers rather than a custom property. The percentages are the ones
+   `mixAlpha` was computing inline: 19% and 15% on the border, 4% on the fill. */
+.gr__kbcard {
+  background: var(--bg); border: 1px solid var(--rule-soft);
+  border-radius: var(--r-md); padding: 10px; box-shadow: var(--shadow-1);
+}
+.gr__kbcard--warn { border-color: color-mix(in srgb, var(--warn) 15%, var(--rule-soft)); }
+.gr__kbcard--crit {
+  background: color-mix(in srgb, var(--danger) 4%, var(--bg));
+  border-color: color-mix(in srgb, var(--danger) 19%, var(--rule-soft));
+}
+
+/* A stage-move button. `background: ${STAGE_COLORS[s]}18` produced the string
+   "var(--st-todo)18" — not a colour, silently dropped — so every one of these
+   rendered with no fill at all. The colour arrives as `--c` now. */
+.gr__kbstage {
+  font-size: var(--t-label-sm); font-weight: 600;
+  padding: 2px 6px; border-radius: var(--r-xs); border: none; cursor: pointer;
+  color: var(--c); background: color-mix(in srgb, var(--c) 9%, transparent);
+}
+.gr__kbstage:disabled { cursor: progress; }
+.gr__kbempty { font-size: 12px; color: var(--ink-3); text-align: center; padding: 12px; margin: 0; }
+
+/* ── Staleness badge ────────────────────────────────────────────────────── */
+
+/* Three levels of "nobody has touched this deal", so the colour is per-instance
+   and arrives as `--c`. The label is always words as well as colour — the badge
+   has to survive a monochrome print of the board (00 §12).
+
+   The font size was a literal 10px, below 00 §12's 11px metadata floor and
+   immune to the Text size slider; it is `--t-label-sm` now, the same token the
+   rest of the metadata layer uses. */
+.gr__rot {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: var(--t-label-sm); font-weight: 700;
+  padding: 2px 8px; border-radius: var(--r-pill); white-space: nowrap;
+  color: var(--c); background: color-mix(in srgb, var(--c) 7%, transparent);
+}
+
+/* ── Dedupe ─────────────────────────────────────────────────────────────── */
+
+.gr__dd { display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+.gr__ddg { border: 1px solid var(--rule-soft); border-radius: var(--r-md); overflow: hidden; }
+.gr__ddhead {
+  display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+  background: var(--bg-raised); cursor: pointer; user-select: none;
+  width: 100%; border: none; text-align: left; font: inherit; color: inherit;
+}
+.gr__ddkey { font-size: 13px; font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.gr__ddcaret { font-size: 14px; }
+.gr__ddbody { padding: 16px; }
+
+/* ── Reports ────────────────────────────────────────────────────────────── */
+
+.gr__rtiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.gr__rcard { border: 1px solid var(--rule-soft); border-radius: var(--r-sm); padding: 16px; margin-bottom: 24px; }
+.gr__rcard:last-child { margin-bottom: 0; }
+.gr__rt { font-size: 13px; font-weight: 700; margin: 0 0 12px; }
+.gr__rbig { display: flex; gap: 24px; margin-bottom: 12px; flex-wrap: wrap; }
+.gr__rl { font-size: 11px; color: var(--ink-3); }
+.gr__rv { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.gr__rv--ok { color: var(--ok); }
+.gr__rrow { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--rule-soft); flex-wrap: wrap; }
+.gr__rrow:last-child { border-bottom: none; }
+.gr__rn { font-size: 12px; color: var(--ink-2); }
+.gr__rsum { font-size: 12px; font-weight: 600; min-width: 100px; text-align: right; font-variant-numeric: tabular-nums; }
+.gr__rw { font-size: 11px; color: var(--ok); min-width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
+.gr__rperiod { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.gr__rperiod-l { font-size: 13px; color: var(--ink-3); }

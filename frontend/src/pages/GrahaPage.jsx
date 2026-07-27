@@ -20,7 +20,7 @@ import ModuleTabs from '../components/module/ModuleTabs';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
-import { api } from '../lib/api';
+import { api, rows, body } from '../lib/api';
 
 import TodayTab from './graha/TodayTab';
 import ClientsTab from './graha/ClientsTab';
@@ -79,16 +79,18 @@ export default function GrahaPage() {
   async function loadSummary() {
     setKpiErr('');
     try {
-      const [f, c] = await Promise.all([
+      const [fr, cr] = await Promise.all([
         api.get('/v1/graha/reports/forecast'),
         api.get('/v1/graha/reports/conversion?days=90'),
       ]);
-      const openDeals = (f.data.stages || []).reduce((s, r) => s + Number(r.count || 0), 0);
+      const f = body(fr);
+      const c = body(cr);
+      const openDeals = (f.stages || []).reduce((s, r) => s + Number(r.count || 0), 0);
       setKpi([
-        { label: 'Open pipeline', hi: 'प्रवाह', tone: 'p', value: lakh(f.data.total_pipeline), sub: `${openDeals} ${openDeals === 1 ? 'deal' : 'deals'}` },
-        { label: 'Weighted forecast', hi: 'अनुमान', value: lakh(f.data.weighted_forecast), sub: 'by stage probability' },
-        { label: 'Won this quarter', hi: 'विजित', tone: 'ok', value: lakh(c.data.won_value), sub: `${c.data.won} of ${c.data.total_deals} deals` },
-        { label: 'Avg cycle', hi: 'चक्र', value: c.data.avg_cycle_days ? `${c.data.avg_cycle_days}d` : '—', sub: c.data.avg_cycle_days ? 'from open to won' : 'no closed deals yet' },
+        { label: 'Open pipeline', hi: 'प्रवाह', tone: 'p', value: lakh(f.total_pipeline), sub: `${openDeals} ${openDeals === 1 ? 'deal' : 'deals'}` },
+        { label: 'Weighted forecast', hi: 'अनुमान', value: lakh(f.weighted_forecast), sub: 'by stage probability' },
+        { label: 'Won this quarter', hi: 'विजित', tone: 'ok', value: lakh(c.won_value), sub: `${c.won} of ${c.total_deals} deals` },
+        { label: 'Avg cycle', hi: 'चक्र', value: c.avg_cycle_days ? `${c.avg_cycle_days}d` : '—', sub: c.avg_cycle_days ? 'from open to won' : 'no closed deals yet' },
       ]);
       setCounts(k => ({ ...k, pipeline: openDeals }));
     } catch (e) {
@@ -99,15 +101,15 @@ export default function GrahaPage() {
     // one failing must not blank the other.
     try {
       const r = await api.get('/v1/graha/contacts');
-      setCounts(k => ({ ...k, contacts: (r.data.data || []).length }));
+      setCounts(k => ({ ...k, contacts: rows(r).length }));
     } catch { /* the tab simply carries no count */ }
     try {
       const [d, f] = await Promise.all([
         api.get('/v1/graha/deals'),
         api.get('/v1/graha/follow-ups'),
       ]);
-      const open = (d.data.data || []).filter(x => x.stage !== 'Won' && x.stage !== 'Lost');
-      const covered = new Set((f.data.data || []).map(x => x.deal_id).filter(Boolean));
+      const open = rows(d).filter(x => x.stage !== 'Won' && x.stage !== 'Lost');
+      const covered = new Set(rows(f).map(x => x.deal_id).filter(Boolean));
       setNoNext(open.filter(x => !covered.has(x.id)).length);
     } catch { setNoNext(null); }
   }
@@ -115,7 +117,7 @@ export default function GrahaPage() {
   const tabs = TABS.map(([id]) => ({ id, label: id.replace(/-/g, ' '), count: counts[id] }));
 
   return (
-    <div style={{ padding: '0 0 48px' }}>
+    <div className="mpage">
       <ModuleHeader
         module="graha"
         kick={<>Revenue <span className="mh__kick-hi" lang="hi">· राजस्व</span></>}
@@ -124,10 +126,14 @@ export default function GrahaPage() {
         sub="Every deal carries its next step."
         icon={ICONS.graha}
         actions={
+          // `btn btn--fill btn--sm`, not `k-btn k-btn--primary` with a 13px
+          // override. That is the reference's own vocabulary for this control —
+          // `ScreensCore.jsx`:123 gives ScreenGraha's "New deal" exactly these
+          // classes — and it is what VikrayPage's header button already uses,
+          // so the two module headers now match instead of being a size apart.
           <button
             type="button"
-            className="k-btn k-btn--primary"
-            style={{ fontSize: 13 }}
+            className="btn btn--fill btn--sm"
             onClick={() => { setTab('deals'); setNewDealNonce(n => n + 1); }}
           >
             + New deal

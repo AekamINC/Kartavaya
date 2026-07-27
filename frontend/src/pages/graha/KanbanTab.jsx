@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { api } from '../../lib/api';
+import { api, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonBoard, SkeletonRegion } from '../../components/ui/Skeleton';
 import { dealStaleness, RotBadge, Badge, stageColor } from './_shared';
-import { mixAlpha } from '../../lib/statusColors';
 import { inr } from '../../lib/inr';
 
 /**
@@ -76,9 +75,9 @@ export default function KanbanTab() {
     setLoading(true);
     setErr(null);
     try {
-      const r = await api.get('/v1/graha/deals/kanban');
-      setKanban(r.data.columns || {});
-      if (r.data.stages?.length) setStageList(r.data.stages);
+      const b = body(await api.get('/v1/graha/deals/kanban'));
+      setKanban(b.columns || {});
+      if (b.stages?.length) setStageList(b.stages);
     } catch (e) {
       // The toast still fires — it is the thing a sighted user notices first —
       // but the board no longer claims to be empty behind it.
@@ -118,11 +117,11 @@ export default function KanbanTab() {
 
     setPendingIds(prev => new Set(prev).add(sid(dealId)));
     try {
-      const res = await api.patch(`/v1/graha/deals/${dealId}`, { stage: toStage });
+      const res = body(await api.patch(`/v1/graha/deals/${dealId}`, { stage: toStage }));
       // Replace only the card the response is about. A whole-board refetch here
       // would discard any other card the user moved while this one was in
       // flight, which is the common case on a board being tidied.
-      const fresh = res?.data?.data || res?.data;
+      const fresh = res?.data ?? res;
       if (fresh && fresh.id != null) {
         setKanban(prev => ({
           ...prev,
@@ -161,7 +160,7 @@ export default function KanbanTab() {
 
   return (
     <DragDropContext onDragEnd={onDragEnd}>
-      <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 16 }}>
+      <div className="gr__kb">
         {stages.map(stage => {
           const deals = kanban[stage] || [];
           const total = deals.reduce((s, d) => s + Number(d.value || 0), 0);
@@ -171,22 +170,21 @@ export default function KanbanTab() {
                 <div
                   ref={provided.innerRef}
                   {...provided.droppableProps}
-                  className={`ix-drop-target${snapshot.isDraggingOver ? ' is-over' : ''}`}
-                  style={{ minWidth: 220, flex: '1 0 220px', background: 'var(--surface-1)', borderRadius: 'var(--r-md)', padding: 16 }}
+                  className={`gr__kbcol ix-drop-target${snapshot.isDraggingOver ? ' is-over' : ''}`}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <div className="gr__kbhead">
                     <Badge text={stage} color={stageColor(stage)} />
                     {/* The count previews the new total while a card is held
                         over this column — IxViews 9.1. The dragged card is still
                         counted in its source column until the drop commits, so
                         only the target previews; showing both would
                         double-count for the length of the hover. */}
-                    <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                    <span className="gr__kbn">
                       {deals.length + (snapshot.isDraggingOver && !deals.some(d => sid(d.id) === snapshot.draggingOverWith) ? 1 : 0)}
                     </span>
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12 }}>{inr(total)}</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div className="gr__kbsum">{inr(total)}</div>
+                  <div className="gr__kbcards">
                     {deals.map((d, idx) => {
                       const rot = (stage !== 'Won' && stage !== 'Lost') ? dealStaleness(d.updated_at) : null;
                       const pending = pendingIds.has(sid(d.id));
@@ -198,45 +196,38 @@ export default function KanbanTab() {
                               {...dp.draggableProps}
                               {...dp.dragHandleProps}
                               className={[
+                                'gr__kbcard',
+                                rot?.level === 'critical' && 'gr__kbcard--crit',
+                                rot?.level === 'warning' && 'gr__kbcard--warn',
                                 'ix-drag-card',
                                 ds.isDragging && 'is-dragging',
                                 pending && 'ix-pending',
                                 landedIds.has(sid(d.id)) && 'ix-landed',
                               ].filter(Boolean).join(' ')}
-                              style={{
-                                background: rot?.level === 'critical' ? 'color-mix(in srgb, var(--danger) 4%, var(--bg))' : 'var(--bg)',
-                                border: `1px solid ${rot?.level === 'critical' ? mixAlpha('var(--danger)', 19) : rot?.level === 'warning' ? mixAlpha('var(--warn)', 15) : 'var(--rule-soft)'}`,
-                                borderRadius: 'var(--r-md)', padding: 10,
-                                // Was two literal rgba shadows, which are black-on-black in
-                                // dark mode. --shadow-1 is the token and flips with the theme.
-                                boxShadow: 'var(--shadow-1)',
-                                // The library writes transform/position here; it must come
-                                // last or it is overwritten by the object above.
-                                ...dp.draggableProps.style,
-                              }}
+                              // The library writes transform/position here, so its
+                              // style object is the ONLY thing left inline — every
+                              // visual property moved to `.gr__kbcard`.
+                              style={dp.draggableProps.style}
                             >
-                              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{d.title}</div>
-                              {d.client_name && <div style={{ fontSize: 11, color: 'var(--k-primary)', fontWeight: 600, marginBottom: 2 }}>{d.client_name}</div>}
-                              {d.contact_name && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 2 }}>{d.contact_name}</div>}
-                              {d.owner_id && <div style={{ fontSize: 'var(--t-label-sm)', color: 'var(--ink-3)', marginBottom: 4 }}>Owner: {d.owner_id.substring(0, 8)}…</div>}
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                                <span style={{ fontSize: 13, fontWeight: 700 }}>{inr(Number(d.value || 0))}</span>
+                              <div className="gr__kbt">{d.title}</div>
+                              {d.client_name && <div className="gr__kbco">{d.client_name}</div>}
+                              {d.contact_name && <div className="gr__kbwho">{d.contact_name}</div>}
+                              {d.owner_id && <div className="gr__kbown">Owner: {d.owner_id.substring(0, 8)}…</div>}
+                              <div className="gr__kbval">
+                                <span className="gr__kbamt">{inr(Number(d.value || 0))}</span>
                                 {stage !== 'Won' && stage !== 'Lost' && <RotBadge updatedAt={d.updated_at} />}
                               </div>
-                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              <div className="gr__kbmove">
                                 {stages.filter(s => s !== stage).map(s => (
-                                  // `${STAGE_COLORS[s]}18` produced the string
-                                  // "var(--st-todo)18" — not a colour, silently dropped, so
-                                  // every stage-move button rendered with no fill at all.
                                   <button key={s} type="button" disabled={pending}
+                                    className="gr__kbstage"
+                                    style={{ '--c': stageColor(s) }}
                                     // Without this the pointerdown reaches the drag handle
                                     // and a click on the button starts a drag instead.
                                     onMouseDown={e => e.stopPropagation()}
                                     onTouchStart={e => e.stopPropagation()}
                                     onClick={e => { e.stopPropagation(); moveStage(d.id, stage, s, null); }}
-                                    style={{ fontSize: 'var(--t-label-sm)', padding: '2px 6px', borderRadius: 'var(--r-xs)',
-                                      background: mixAlpha(stageColor(s), 9),
-                                      color: stageColor(s), border: 'none', cursor: pending ? 'progress' : 'pointer', fontWeight: 600 }}>{s}</button>
+                                  >{s}</button>
                                 ))}
                               </div>
                             </div>
@@ -246,7 +237,7 @@ export default function KanbanTab() {
                     })}
                     {provided.placeholder}
                     {deals.length === 0 && !snapshot.isDraggingOver && (
-                      <p style={{ fontSize: 12, color: 'var(--ink-3)', textAlign: 'center', padding: 12 }}>No deals</p>
+                      <p className="gr__kbempty">No deals</p>
                     )}
                   </div>
                 </div>

@@ -17,7 +17,19 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-vi.mock('../../../lib/api', () => ({
+// Only the transport is mocked. `rows()` / `body()` are imported from the real
+// module, because they are the thing that decides whether `{"data": […]}` and a
+// bare array both read correctly — stubbing them would mock out the logic under
+// test and let a shape bug through.
+//
+// A bare `() => ({ api: … })` factory here would leave every other export
+// undefined, so the first component to adopt `body()` throws on render and all
+// eight tests fail with `Cannot read properties of undefined`. That is exactly
+// what happened when KanbanTab started unwrapping through it. `importOriginal`
+// is safe: vitest.config.js defines `import.meta.env.VITE_BACKEND_URL`, so
+// evaluating lib/api does not hit its missing-config guard.
+vi.mock('../../../lib/api', async (importOriginal) => ({
+  ...(await importOriginal()),
   api: { get: vi.fn(), patch: vi.fn() },
 }));
 
