@@ -30,15 +30,34 @@ def _json_decoder(value):
 
 
 async def _init_conn(conn):
-    try:
-        await conn.set_type_codec(
-            "jsonb", encoder=_json_encoder, decoder=_json_decoder, schema="pg_catalog", format="text"
-        )
-        await conn.set_type_codec(
-            "json", encoder=_json_encoder, decoder=_json_decoder, schema="pg_catalog", format="text"
-        )
-    except (asyncpg.ConnectionDoesNotExistError, asyncpg.InterfaceError) as exc:
-        logger.warning("set_type_codec skipped (PgBouncer): %s", exc)
+    """Register JSON/JSONB codecs on each new asyncpg connection.
+
+    Retries, because PgBouncer drops a connection mid-handshake often enough to
+    matter — that fix came from production (`main`, 18 Jul) and was missing here.
+    Skipping the codec is NOT harmless: without it asyncpg hands JSONB back as a
+    string, and a caller doing `row["settings"]["tan"]` gets a TypeError on a
+    string index rather than a dict. Several routers already carry defensive
+    `json.loads` for exactly that, which is the symptom.
+    """
+    for attempt in range(3):
+        try:
+            await conn.set_type_codec(
+                "jsonb", encoder=_json_encoder, decoder=_json_decoder, schema="pg_catalog", format="text"
+            )
+            await conn.set_type_codec(
+                "json", encoder=_json_encoder, decoder=_json_decoder, schema="pg_catalog", format="text"
+            )
+            break
+        except (asyncpg.ConnectionDoesNotExistError, asyncpg.InterfaceError) as exc:
+            if attempt == 2:
+                # Warn rather than raise, which is where this differs from
+                # main: a pool that refuses to hand out connections takes the
+                # whole app down, and the codecs are recoverable per-call.
+                logger.warning("set_type_codec failed after 3 attempts (PgBouncer): %s", exc)
+                break
+            logger.warning("_init_conn attempt %d failed: %s", attempt + 1, exc)
+            await asyncio.sleep(0.5 * (attempt + 1))
+
     if DB_SCHEMA == "staging":
         try:
             await conn.execute("SET search_path TO staging, public")
