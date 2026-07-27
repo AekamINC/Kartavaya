@@ -17,7 +17,7 @@ import ModuleTabs from '../components/module/ModuleTabs';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
-import { api } from '../lib/api';
+import { api, rows } from '../lib/api';
 
 import InvoicesTab from './ganit/InvoicesTab';
 import ProductsTab from './ganit/ProductsTab';
@@ -100,14 +100,14 @@ export default function GanitPage() {
     }
     try {
       const r = await api.get('/v1/ganit/invoices');
-      setCounts(k => ({ ...k, invoices: (r.data.data || []).length }));
+      setCounts(k => ({ ...k, invoices: rows(r).length }));
     } catch { /* the tab simply carries no count */ }
   }
 
   const tabs = TABS.map(([id]) => ({ id, label: id.replace(/-/g, ' '), count: counts[id] }));
 
   return (
-    <div style={{ padding: '0 0 48px' }}>
+    <div className="mpage">
       <ModuleHeader
         module="ganit"
         kick={<>Revenue <span className="mh__kick-hi" lang="hi">· राजस्व</span></>}
@@ -118,8 +118,7 @@ export default function GanitPage() {
         actions={
           <button
             type="button"
-            className="k-btn k-btn--primary"
-            style={{ fontSize: 13 }}
+            className="btn btn--fill btn--sm"
             onClick={() => { setTab('invoices'); setNewInvoiceNonce(n => n + 1); }}
           >
             + Invoice

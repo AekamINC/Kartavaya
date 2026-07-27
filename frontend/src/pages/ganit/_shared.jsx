@@ -39,6 +39,51 @@ export function safeArray(v) {
 }
 
 /**
+ * Build a `wa.me` deep link for an invoice, or null when there is no number.
+ *
+ * A DEEP LINK, deliberately — NOT `POST /varta/conversations/{id}/messages`.
+ * That endpoint's own body carries `TODO: Call Meta Cloud API` and writes a row
+ * with `status: 'pending'`; it cannot send anything until the org's WhatsApp
+ * Business account is approved. Wiring "Send on WhatsApp" to it would give you a
+ * button that reports success and delivers nothing, on an invoice — which is the
+ * dead-button failure this codebase has shipped before.
+ *
+ * `wa.me` works today, for every org, with no WABA and no integration. It hands
+ * the message to whichever WhatsApp the user already has and lets them pick the
+ * chat, so NOTHING IS SENT WITHOUT A HUMAN PRESSING SEND. That is also why the
+ * PDF is not attached: a deep link carries text, not files. The flow is download,
+ * then share — which is why the drawer offers both buttons rather than one.
+ *
+ * Exported (rather than nested inside the component, where it used to live) so
+ * the URL can be asserted in a test without a browser and without opening
+ * anything. See `src/__tests__/ganitWaLink.test.js`.
+ */
+export function waLink(phone, text) {
+  // wa.me wants digits only, no `+`. A bare 10-digit number is Indian and the
+  // country code is implied; anything longer already carries its own.
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return null;
+  const full = digits.length === 10 ? `91${digits}` : digits;
+  return `https://wa.me/${full}?text=${encodeURIComponent(text)}`;
+}
+
+/**
+ * The message body that accompanies an invoice on WhatsApp.
+ *
+ * Kept beside `waLink` so the two are tested together. Deliberately plain: the
+ * recipient sees this in a chat before they see the document, and a line of
+ * marketing there reads as spam from an accounts department.
+ */
+export function waInvoiceText(inv) {
+  const kind = INV_TYPE_LABELS[inv?.invoice_type] || 'Invoice';
+  const amount = inv?.total != null ? inv.total : inv?.total_amount;
+  return `${kind} ${inv?.invoice_number || ''}`.trimEnd()
+    + (inv?.invoice_date ? ` dated ${inv.invoice_date}` : '')
+    + (amount != null && amount !== '' ? ` for ${inr(Number(amount))}` : '')
+    + '.';
+}
+
+/**
  * Badge — now `ui/Tag`, not a second private pill.
  *
  * See graha/_shared.jsx for the full note: three byte-identical local Badge
@@ -50,6 +95,7 @@ export function safeArray(v) {
 export function Badge({ text, color, children }) {
   return <Tag color={color}>{text ?? children}</Tag>;
 }
+
 export function UpiPayBlock({ invoice }) {
   const [upiId, setUpiId] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -65,27 +111,31 @@ export function UpiPayBlock({ invoice }) {
   const orgName = invoice.org_name || 'Merchant';
   const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(orgName)}&am=${amount.toFixed(2)}&cu=INR&tn=${encodeURIComponent(`Payment for ${invoice.invoice_number}`)}`;
   return (
-    <div style={{ marginTop: 16, background: 'color-mix(in srgb, var(--surface) 82%, transparent)', backdropFilter: 'blur(12px)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-        <span style={{ fontSize: 20 }}>💳</span>
-        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>UPI Payment Link</h4>
-        <span style={{ fontFamily: 'var(--font-hindi)', fontSize: 12, color: 'var(--ink-3)' }}>यूपीआई भुगतान</span>
+    <div className="gn-upi">
+      <div className="gn-upi__head">
+        <h4 className="gn-upi__t">UPI payment link</h4>
+        <span className="gn-upi__hi" lang="hi">यूपीआई भुगतान</span>
       </div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>Pay {inr(amount)} to</div>
-          <div style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{upiId}</div>
+      <div className="gn-upi__body">
+        <div className="gn-upi__main">
+          <div className="gn-upi__l">Pay {inr(amount)} to</div>
+          <div className="gn-upi__id">{upiId}</div>
           {/* --ink-faint aliases --on-surface-faint, which is 2.3:1 and NON-TEXT
               ONLY (00 §12). An invoice reference number is content. */}
-          <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>Ref: {invoice.invoice_number}</div>
+          <div className="gn-upi__ref">Ref: {invoice.invoice_number}</div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <a href={upiLink} className="k-btn k-btn--primary" style={{ fontSize: 12, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            Open in UPI App
-          </a>
-          <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }}
-            onClick={() => { navigator.clipboard.writeText(upiLink).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); }}>
-            {copied ? '✓ Copied' : 'Copy Link'}
+        <div className="gn-upi__acts">
+          <a href={upiLink} className="btn btn--fill btn--sm">Open in UPI app</a>
+          <button
+            type="button"
+            className="btn btn--ghost btn--sm"
+            onClick={() => {
+              navigator.clipboard?.writeText(upiLink)
+                .then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })
+                .catch(() => {});
+            }}
+          >
+            {copied ? '✓ Copied' : 'Copy link'}
           </button>
         </div>
       </div>

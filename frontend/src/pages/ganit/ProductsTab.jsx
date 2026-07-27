@@ -1,29 +1,88 @@
-import React, { useState, useEffect } from 'react';
-import { api } from '../../lib/api';
+// Ganit · products & services — the catalogue invoice lines are filled from.
+import React, { useCallback, useEffect, useState } from 'react';
+import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import { EmptyState } from '../../components/ui/EmptyState';
+import ErrorState, { errorKind } from '../../components/ui/ErrorState';
+import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
+
+const BLANK = { name: '', hsn_code: '', sac_code: '', unit: 'NOS', price: '', gst_rate: 18, description: '', is_service: false };
+const GST_RATES = [0, 5, 12, 18, 28];
+
+/** The create and edit forms are the same eight fields, so they are one component. */
+function ProductFields({ value, onChange }) {
+  const set = (k, v) => onChange({ ...value, [k]: v });
+  return (
+    <div className="gn-form__grid gn-form__grid--2 gn-form__grid--flush">
+      <label className="fld">
+        <span className="fld__l">Name<span className="fld__req">*</span></span>
+        <input className="inp" required value={value.name} onChange={e => set('name', e.target.value)} />
+      </label>
+      <label className="gn-chk">
+        <input type="checkbox" checked={value.is_service} onChange={e => set('is_service', e.target.checked)} />
+        <span>This is a service</span>
+      </label>
+      <label className="fld">
+        <span className="fld__l">HSN code</span>
+        <input className="inp" placeholder="For goods" value={value.hsn_code} onChange={e => set('hsn_code', e.target.value)} />
+      </label>
+      <label className="fld">
+        <span className="fld__l">SAC code</span>
+        <input className="inp" placeholder="For services" value={value.sac_code} onChange={e => set('sac_code', e.target.value)} />
+      </label>
+      <label className="fld">
+        <span className="fld__l">Unit</span>
+        <input className="inp" value={value.unit} onChange={e => set('unit', e.target.value)} />
+      </label>
+      <label className="fld">
+        <span className="fld__l">Price (₹)</span>
+        <input className="inp" type="number" step="0.01" value={value.price} onChange={e => set('price', e.target.value)} />
+      </label>
+      <label className="fld">
+        <span className="fld__l">GST rate</span>
+        <select className="inp" value={value.gst_rate} onChange={e => set('gst_rate', parseFloat(e.target.value))}>
+          {GST_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
+        </select>
+      </label>
+      <label className="fld">
+        <span className="fld__l">Description</span>
+        <input className="inp" value={value.description} onChange={e => set('description', e.target.value)} />
+      </label>
+    </div>
+  );
+}
 
 export default function ProductsTab() {
   const { pushToast } = useToast();
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', hsn_code: '', sac_code: '', unit: 'NOS', price: '', gst_rate: 18, description: '', is_service: false });
+  const [form, setForm] = useState({ ...BLANK });
   const [saving, setSaving] = useState(false);
-  const [editProduct, setEditProduct] = useState(null);
-  const [editForm, setEditForm] = useState({});
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState({ ...BLANK });
   const [editSaving, setEditSaving] = useState(false);
+  const [confirm, setConfirm] = useState(null);
 
-  useEffect(() => { load(); }, []);
-
-  async function load() {
+  const load = useCallback(async () => {
+    setErr(null);
+    setLoading(true);
     try {
       const r = await api.get('/v1/ganit/products');
-      setProducts(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load products', type: 'error' }); }
-    finally { setLoading(false); }
-  }
+      setProducts(rows(r));
+    } catch (e) {
+      // Not an empty catalogue. "No products yet — add your products" on a
+      // failed fetch invites the user to re-enter a catalogue they already have.
+      setErr(e);
+      setProducts([]);
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   async function save(e) {
     e.preventDefault();
@@ -32,141 +91,153 @@ export default function ProductsTab() {
       await api.post('/v1/ganit/products', { ...form, price: parseFloat(form.price) || 0 });
       pushToast({ title: 'Product created', type: 'success' });
       setShowForm(false);
-      setForm({ name: '', hsn_code: '', sac_code: '', unit: 'NOS', price: '', gst_rate: 18, description: '', is_service: false });
+      setForm({ ...BLANK });
       load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-    finally { setSaving(false); }
+    } catch (err2) {
+      pushToast({ title: err2.response?.data?.detail || 'Could not create the product', type: 'error' });
+    } finally { setSaving(false); }
   }
 
   function startEdit(p) {
-    setEditProduct(p.id);
-    setEditForm({ name: p.name || '', hsn_code: p.hsn_code || '', sac_code: p.sac_code || '', unit: p.unit || 'NOS', price: p.price ?? '', gst_rate: p.gst_rate ?? 18, description: p.description || '', is_service: !!p.is_service });
+    setEditId(p.id);
+    setEditForm({
+      name: p.name || '', hsn_code: p.hsn_code || '', sac_code: p.sac_code || '',
+      unit: p.unit || 'NOS', price: p.price ?? '', gst_rate: p.gst_rate ?? 18,
+      description: p.description || '', is_service: !!p.is_service,
+    });
   }
 
   async function saveEdit(e) {
     e.preventDefault();
     setEditSaving(true);
     try {
-      await api.patch(`/v1/ganit/products/${editProduct}`, { ...editForm, price: parseFloat(editForm.price) || 0 });
+      await api.patch(`/v1/ganit/products/${editId}`, { ...editForm, price: parseFloat(editForm.price) || 0 });
       pushToast({ title: 'Product updated', type: 'success' });
-      setEditProduct(null);
+      setEditId(null);
       load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update product', type: 'error' }); }
-    finally { setEditSaving(false); }
+    } catch (err2) {
+      pushToast({ title: err2.response?.data?.detail || 'Could not update the product', type: 'error' });
+    } finally { setEditSaving(false); }
   }
 
-  async function deleteProduct(id) {
+  async function remove(p) {
     try {
-      await api.delete(`/v1/ganit/products/${id}`);
-      setProducts(prev => prev.filter(p => p.id !== id));
+      await api.delete(`/v1/ganit/products/${p.id}`);
+      setProducts(prev => prev.filter(x => x.id !== p.id));
       pushToast({ title: 'Product deleted', type: 'success' });
-    } catch { pushToast({ title: 'Could not delete product', type: 'error' }); }
+    } catch {
+      pushToast({ title: 'Could not delete the product', type: 'error' });
+    }
   }
 
   return (
     <div>
-      <button className="k-btn k-btn--primary" style={{ fontSize: 13, marginBottom: 16 }} onClick={() => setShowForm(true)}>+ Add Product / Service</button>
+      <div className="gn-bar">
+        <span className="gn-bar__sp" />
+        <button type="button" className="btn btn--fill btn--sm" onClick={() => setShowForm(v => !v)}>
+          {showForm ? 'Close form' : '+ Add product or service'}
+        </button>
+      </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Product / Service</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
-              <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
-            <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, paddingTop: 20 }}>
-              <input type="checkbox" checked={form.is_service} onChange={e => setForm({ ...form, is_service: e.target.checked })} />
-              <span style={{ fontWeight: 600 }}>This is a Service</span></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>HSN Code</span>
-              <input className="k-input" placeholder="For goods" value={form.hsn_code} onChange={e => setForm({ ...form, hsn_code: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>SAC Code</span>
-              <input className="k-input" placeholder="For services" value={form.sac_code} onChange={e => setForm({ ...form, sac_code: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Unit</span>
-              <input className="k-input" value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Price (₹)</span>
-              <input className="k-input" type="number" step="0.01" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>GST Rate (%)</span>
-              <select className="k-input" value={form.gst_rate} onChange={e => setForm({ ...form, gst_rate: parseFloat(e.target.value) })}>
-                {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
-              <input className="k-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
-          </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Saving…' : 'Create'}</button>
+        <form className="gn-form" onSubmit={save}>
+          <h3 className="gn-form__t">New product or service</h3>
+          <ProductFields value={form} onChange={setForm} />
+          <div className="gn-form__acts">
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="btn btn--fill btn--sm" disabled={saving}>
+              {saving ? 'Saving…' : 'Create'}
+            </button>
           </div>
         </form>
       )}
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        products.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No products yet</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Add your products and services with HSN codes and GST rates to speed up invoicing.</div>
-          </div>
-        ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-              {['Name', 'HSN/SAC', 'Unit', 'Price', 'GST', 'Type', ''].map(h => (
-                <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {products.map(p => (
-              <React.Fragment key={p.id}>
-              <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                <td style={{ padding: '10px', fontWeight: 600 }}>
-                  <span style={{ cursor: 'pointer', color: 'var(--k-primary)', textDecoration: 'underline', textDecorationStyle: 'dotted' }} onClick={() => startEdit(p)}>{p.name}</span>
-                </td>
-                <td style={{ padding: '10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{p.hsn_code || p.sac_code || '—'}</td>
-                <td style={{ padding: '10px' }}>{p.unit}</td>
-                <td style={{ padding: '10px' }}>{inr(Number(p.price))}</td>
-                <td style={{ padding: '10px' }}>{Number(p.gst_rate)}%</td>
-                <td style={{ padding: '10px' }}><Badge text={p.is_service ? 'Service' : 'Goods'} color={p.is_service ? 'var(--st-in-review)' : 'var(--st-in-progress)'} /></td>
-                <td style={{ padding: '10px', display: 'flex', gap: 8 }}>
-                  <button onClick={() => startEdit(p)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--k-primary)', fontSize: 11 }}>Edit</button>
-                  <button onClick={() => deleteProduct(p.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 11 }}>Delete</button>
-                </td>
+      {loading ? (
+        <SkeletonRegion label="Loading products"><SkeletonTable rows={6} columns={6} /></SkeletonRegion>
+      ) : err ? (
+        <ErrorState kind={errorKind(err)} onRetry={load} />
+      ) : products.length === 0 ? (
+        <EmptyState
+          illustration="generic"
+          title={{ en: 'No products yet', hi: 'कोई वस्तु नहीं' }}
+          description="Add your products and services with their HSN or SAC codes and GST rates. Invoice lines then fill themselves from this catalogue."
+          action="+ Add product or service"
+          onAction={() => setShowForm(true)}
+        />
+      ) : (
+        <div className="tbl__wrap">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>HSN/SAC</th>
+                <th>Unit</th>
+                <th className="tbl__num">Price</th>
+                <th className="tbl__num">GST</th>
+                <th>Type</th>
+                <th aria-label="Actions" />
               </tr>
-              {editProduct === p.id && (
-                <tr><td colSpan={7} style={{ padding: 0 }}>
-                  <form onSubmit={saveEdit} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16, margin: '4px 0 8px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
-                        <input className="k-input" required value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></label>
-                      <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, paddingTop: 20 }}>
-                        <input type="checkbox" checked={editForm.is_service} onChange={e => setEditForm({ ...editForm, is_service: e.target.checked })} />
-                        <span style={{ fontWeight: 600 }}>This is a Service</span></label>
-                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>HSN Code</span>
-                        <input className="k-input" value={editForm.hsn_code} onChange={e => setEditForm({ ...editForm, hsn_code: e.target.value })} /></label>
-                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>SAC Code</span>
-                        <input className="k-input" value={editForm.sac_code} onChange={e => setEditForm({ ...editForm, sac_code: e.target.value })} /></label>
-                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Unit</span>
-                        <input className="k-input" value={editForm.unit} onChange={e => setEditForm({ ...editForm, unit: e.target.value })} /></label>
-                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Price</span>
-                        <input className="k-input" type="number" step="0.01" value={editForm.price} onChange={e => setEditForm({ ...editForm, price: e.target.value })} /></label>
-                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>GST Rate (%)</span>
-                        <select className="k-input" value={editForm.gst_rate} onChange={e => setEditForm({ ...editForm, gst_rate: parseFloat(e.target.value) })}>
-                          {[0, 5, 12, 18, 28].map(r => <option key={r} value={r}>{r}%</option>)}
-                        </select></label>
-                      <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
-                        <input className="k-input" value={editForm.description} onChange={e => setEditForm({ ...editForm, description: e.target.value })} /></label>
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-                      <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditProduct(null)}>Cancel</button>
-                      <button type="submit" className="k-btn k-btn--primary" disabled={editSaving}>{editSaving ? 'Saving…' : 'Save'}</button>
-                    </div>
-                  </form>
-                </td></tr>
-              )}
-              </React.Fragment>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {products.map(p => (
+                <React.Fragment key={p.id}>
+                  <tr>
+                    <td>
+                      <button type="button" className="gn-link" onClick={() => startEdit(p)}>{p.name}</button>
+                    </td>
+                    <td className="gn-tbl__mono">{p.hsn_code || p.sac_code || '—'}</td>
+                    <td>{p.unit}</td>
+                    <td className="tbl__num">{inr(Number(p.price))}</td>
+                    <td className="tbl__num">{Number(p.gst_rate)}%</td>
+                    <td>
+                      <Badge
+                        text={p.is_service ? 'Service' : 'Goods'}
+                        color={p.is_service ? 'var(--st-in-review)' : 'var(--st-in-progress)'}
+                      />
+                    </td>
+                    <td>
+                      <span className="gn-tbl__acts">
+                        <button type="button" className="gn-act" onClick={() => startEdit(p)}>Edit</button>
+                        {/* Deleting a catalogue entry that invoices already
+                            reference is not obviously reversible, so it asks. */}
+                        <button
+                          type="button" className="gn-act gn-act--danger"
+                          onClick={() => setConfirm({
+                            title: `Delete ${p.name}?`,
+                            message: 'The product is removed from the catalogue. Invoices already raised keep their lines.',
+                            confirmLabel: 'Delete',
+                            onConfirm: () => remove(p),
+                          })}
+                        >
+                          Delete
+                        </button>
+                      </span>
+                    </td>
+                  </tr>
+                  {editId === p.id && (
+                    <tr>
+                      <td colSpan={7}>
+                        <form className="gn-form gn-form--accent" onSubmit={saveEdit}>
+                          <h4 className="gn-form__h">Edit {p.name}</h4>
+                          <ProductFields value={editForm} onChange={setEditForm} />
+                          <div className="gn-form__acts">
+                            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditId(null)}>Cancel</button>
+                            <button type="submit" className="btn btn--fill btn--sm" disabled={editSaving}>
+                              {editSaving ? 'Saving…' : 'Save'}
+                            </button>
+                          </div>
+                        </form>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
+
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
   );
 }

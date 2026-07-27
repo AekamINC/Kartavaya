@@ -19,15 +19,43 @@ import logging
 from services.doc_fonts import DISPLAY_STACK, deva_span, font_face_css, group_indian
 from services.doc_validation import DocumentCheck, validate_tax_invoice
 
-_INK      = "#1A2230"
-_INK2     = "#4A5468"
-_INK3     = "#6E7B91"
-_RULE     = "#E2DCC9"
-_RULE_SOFT= "#EFE9D8"
-_BG_SOFT  = "#F0ECDF"
-_SURFACE  = "#FCFAF5"
-_TEAL     = "#05b7aa"
-_DEEP     = "#0082c6"
+# ── Palette ───────────────────────────────────────────────────────────────
+# These are the `--doc-*` tokens from `design-reference/Kartavaya Redesign/
+# docs/brand.css`, which is the specification for every document the product
+# generates. They are duplicated as literals rather than read from that file
+# because WeasyPrint renders a self-contained string and there is no CSS
+# cascade to inherit from — but the VALUES are the spec's, and each is
+# annotated with the token it mirrors so a drift is visible in review.
+#
+# Every one of these was previously a near-miss of its own spec value (--doc-ink
+# was #1A2230 against a specified #14171A, --doc-rule #E2DCC9 against #D9D5CA,
+# and so on for all six). Individually invisible; together they made the
+# generated invoice a slightly different document from the one in the reference.
+_INK      = "#14171A"   # --doc-ink
+_INK2     = "#464B52"   # --doc-ink-2
+_INK3     = "#6E747C"   # --doc-ink-3
+# --doc-ink-faint (#9AA0A8) is deliberately NOT mirrored: it is a non-text tone
+# and nothing on a tax invoice is decorative enough to earn it.
+_RULE     = "#D9D5CA"   # --doc-rule
+_RULE_SOFT= "#EAE7DE"   # --doc-rule-soft
+_BG_SOFT  = "#F7F5EF"   # --doc-tint
+
+# `.page` in brand.css is `background: #fff`. This was #FCFAF5 — a cream sheet.
+# On screen that reads as warmth; on paper it is a full-bleed ink wash over an
+# A4 page, and on a mono office laser it comes out as a grey cast behind every
+# invoice the customer receives.
+_SURFACE  = "#ffffff"
+
+# The org accent. brand.css maps this to a per-tenant `--org-accent` and states
+# that the staging `/v1/org/profile` schema carries no colour field yet, so the
+# documented fallback is Kartavaya teal — which is what this uses.
+#
+# It replaces `_DEEP = "#0082c6"`, the RETIRED brand blue. 00 §9 retires that
+# hex, `pages/ganit/_shared.jsx` documents removing it from the badge maps for
+# the same reason, and it was still setting the "TAX INVOICE" heading and the
+# export declaration on every PDF the product emits.
+_ACCENT   = "#04837A"   # --org-accent (aekam / Kartavaya fallback)
+_TEAL     = "#04837A"   # paid figures — the same accent, not a second teal
 _DANGER   = "#C0392B"
 
 # Font stacks. The spec family is named FIRST, then a chain that degrades onto
@@ -405,7 +433,10 @@ body{{ background:{_SURFACE}; font-family:{_FONT_UI}; color:{_INK}; -webkit-prin
 .pdf{{ width:210mm; min-height:297mm; background:{_SURFACE}; padding:40px 48px; display:flex; flex-direction:column; gap:18px; }}
 .pdf::before{{ content:none; }}
 
-.pdf__head{{ display:flex; justify-content:space-between; gap:24px; padding-bottom:16px; border-bottom:2px solid {_INK}; }}
+/* `.lh` in brand.css closes the letterhead with `2px solid var(--org-accent)`,
+   not with ink. The accent rule under the letterhead is the one piece of brand
+   colour on an otherwise black-on-white document. */
+.pdf__head{{ display:flex; justify-content:space-between; gap:24px; padding-bottom:16px; border-bottom:2px solid {_ACCENT}; }}
 .pdf__brand{{ display:flex; gap:14px; align-items:flex-start; }}
 .pdf__logo{{ width:56px; height:56px; object-fit:contain; }}
 .pdf__org-name{{ font-family:{_FONT_DISP}; font-size:20px; font-weight:700; color:{_INK}; }}
@@ -414,7 +445,7 @@ body{{ background:{_SURFACE}; font-family:{_FONT_UI}; color:{_INK}; -webkit-prin
    customer, so it is marked rather than omitted — see _gstin_line(). */
 .pdf__unset{{ color:#B42318; border-bottom:1px dashed #B42318; font-weight:600; }}
 .pdf__doc-meta{{ text-align:right; }}
-.pdf__doc-title{{ font-family:{_FONT_DISP}; font-size:22px; font-weight:700; color:{_DEEP}; letter-spacing:-0.01em; margin-bottom:6px; }}
+.pdf__doc-title{{ font-family:{_FONT_DISP}; font-size:22px; font-weight:700; color:{_ACCENT}; letter-spacing:-0.01em; margin-bottom:6px; }}
 .pdf__meta-row{{ font-size:11px; color:{_INK3}; display:flex; justify-content:flex-end; gap:8px; }}
 .pdf__meta-row b{{ color:{_INK}; min-width:90px; text-align:right; }}
 
@@ -435,7 +466,7 @@ body{{ background:{_SURFACE}; font-family:{_FONT_UI}; color:{_INK}; -webkit-prin
 .pdf__totals{{ width:260px; }}
 .pdf__row{{ display:flex; justify-content:space-between; font-size:12px; padding:4px 0; color:{_INK2}; }}
 .pdf__row--total{{ border-top:2px solid {_INK}; margin-top:4px; padding-top:8px; font-size:15px; font-weight:700; color:{_INK}; }}
-.pdf__export-note{{ font-size:9.5px; color:{_DEEP}; font-weight:700; text-align:right; letter-spacing:0.02em; }}
+.pdf__export-note{{ font-size:9.5px; color:{_ACCENT}; font-weight:700; text-align:right; letter-spacing:0.02em; }}
 
 .pdf__words{{ font-size:11px; font-style:italic; color:{_INK2}; border-top:1px dashed {_RULE}; padding-top:10px; }}
 
