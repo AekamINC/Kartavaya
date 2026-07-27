@@ -911,7 +911,13 @@ body {
 }
 .k-trow {
   border-bottom: 1px dashed var(--rule-soft);
-  transition: background calc(.1s * var(--ix));
+  /* Was `calc(.1s * var(--ix))` with the browser's default `ease`. It scaled
+     with --ix, so it was not a strobe risk — but 100ms is not a rung on the
+     ladder and `ease` is not one of the six easings, so the busiest hover in
+     the product was the one surface measurably off-system. `--dur-fast` is the
+     hover rung (26 §6) and the reference table row is `transition: background
+     var(--dur-fast)` (motion.css `.tv__row`, IxViews §10). */
+  transition: background var(--dur-fast) var(--ease-standard);
   cursor: pointer;
 }
 .k-trow:hover { background: var(--surface); }

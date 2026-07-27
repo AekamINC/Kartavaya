@@ -34,6 +34,7 @@
  */
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSkeletonGate } from '../hooks/useSkeletonGate';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import { Hero, Citation } from '../components/editorial';
@@ -80,6 +81,12 @@ export default function TodayPage({ teams = [] }) {
   // actually happened is that the request failed. Every other state on this
   // page was handled; this was the one that lied.
   const [error, setError] = useState(null);
+  // Whether a load has ever SUCCEEDED — the skeleton gate below needs it, and
+  // the answer is not `!error`: the first load and a retry after a failure both
+  // have nothing to hold, and holding would show the zero state ("The board is
+  // clear") for the length of the hold. Exactly the sentence this page already
+  // refuses to print on a failure, reintroduced by a loading optimisation.
+  const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -92,6 +99,7 @@ export default function TodayPage({ teams = [] }) {
       api.get('/v1/ganit/stats').catch(() => null),
     ]).then(([tRes, vRes, fRes]) => {
       setTasks(Array.isArray(tRes.data) ? tRes.data : []);
+      setLoaded(true);
       if (vRes) setVerse(vRes.data);
       if (fRes?.data) setFinStats(fRes.data);
     }).catch(err => {
@@ -106,6 +114,14 @@ export default function TodayPage({ teams = [] }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // MOTION-SPEC §7.4 — "Hold the previous page if the fetch resolves under
+  // 120ms; a flashed skeleton is worse than none." Measured before this: with
+  // the retry button and a 30ms response, the whole Today body was replaced by
+  // `TodaySkeleton` and put back inside one animation frame. The lede rides the
+  // same flag rather than `loading`, so the hero and the body never disagree
+  // about whether the page is still arriving.
+  const showSkeleton = useSkeletonGate(loading, loaded);
 
   // Not gated on `teams.length` any more. The gate was the client guessing at a
   // server rule and getting it wrong in one direction: `/activity/feed` derives
@@ -236,7 +252,7 @@ export default function TodayPage({ teams = [] }) {
   // whole page stepped down when the counts arrived (26 §9). `inline-block`
   // rather than the primitive's own `display: block`, so the paragraph keeps
   // its real line box and the swap moves nothing at all.
-  const ledeCopy = loading ? (
+  const ledeCopy = showSkeleton ? (
     <SkeletonText width="48%" height={14} style={{ display: 'inline-block' }} />
   ) : error ? (
     // Says nothing about the work, because nothing about the work is known.
@@ -290,7 +306,7 @@ export default function TodayPage({ teams = [] }) {
 
       {/* ReceivablesKPI stays mounted above: it has its own source and its own
           null guard, so a task failure must not blank a figure that loaded. */}
-      {loading ? <TodaySkeleton /> : error ? (
+      {showSkeleton ? <TodaySkeleton /> : error ? (
         <ErrorState
           kind={errorKind(error)}
           grant="access to this workspace"

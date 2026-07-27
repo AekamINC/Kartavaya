@@ -126,7 +126,33 @@ const mapPalette = (p: Record<GeneratedTokenName, string>) => ({
   // "waiting on the client" is the distinction the approval flow exists for.
   purple:          p.apPendingClient,
   purpleContainer: p.tertiaryContainer,
-  // Borders
+  // Borders.
+  //
+  // `outline` is below 1.4.11's 3:1 on every canvas it is drawn on. Measured on
+  // the generated palette, translucency composited first:
+  //
+  //            light #ADA692            dark #5B626C
+  //   bg        2.12:1                   3.14:1
+  //   surface   2.27:1                   2.97:1
+  //   sLow      2.15:1                   2.80:1
+  //
+  // This was previously filed as decorative and therefore exempt. That holds for
+  // the dividers, but not for all 89 uses: `outline` is also the ONLY boundary
+  // some interactive controls have — the new-column TextInput
+  // (BoardScreen.tsx:217) and the chat composer (ChatScreen.tsx:382) are both a
+  // bare border on `bg`, at 2.12:1 in light, and the outlined Cancel / Add card /
+  // Retry buttons are the same pattern. 1.4.11 covers "visual information
+  // required to identify user interface components", so those are in scope even
+  // though a hairline divider is not.
+  //
+  // Clearing 3:1 on both canvases, holding hue and saturation:
+  //   light  #ADA692 → ≈#93896F  (HLS lightness .626 → .505)   3.25:1 / 3.03:1
+  //   dark   #5B626C → ≈#5C636D  (one step; it misses by 0.03) 3.01:1 / 3.18:1
+  //
+  // NOT changed here, twice over: this file maps a GENERATED palette, so editing
+  // the value would be reverted by the next `npm run tokens`, and --outline is a
+  // web-side token whose change re-skins every hairline in the web app too. It
+  // belongs to whoever owns the stylesheets, followed by a regeneration.
   outline:    p.outline,
   outlineVar: p.outlineVariant,
 });
@@ -307,6 +333,60 @@ export function avatarColor(userId: string, index?: number): string {
 // `labelHindi` carries no fontWeight: Tiro Devanagari Hindi ships only a 400, so
 // a weight above that is synthesised and a Hindi phrase renders in two weights.
 // See theme/fonts.ts.
+//
+// ── A fixed lineHeight does NOT clip scaled text. Measured, not assumed. ──────
+//
+// It was handed down that pairing a fixed `fontSize` with a fixed `lineHeight`
+// here clips text under dynamic type — glyphs grow, line box does not — and that
+// the fix was to make every lineHeight a ratio. That is FALSE on both platforms,
+// and acting on it would have re-rhythmed every screen to fix nothing.
+//
+// React Native scales lineHeight by the same multiplier it scales fontSize by,
+// verified in the installed react-native@0.74.5 source:
+//
+//   iOS      Libraries/Text/RCTTextAttributes.mm:132
+//              CGFloat lineHeight = _lineHeight * self.effectiveFontSizeMultiplier;
+//            and effectiveFontSizeMultiplier (same file, :229) reflects Dynamic
+//            Type whenever allowFontScaling is on.
+//
+//   Android  views/text/TextAttributes.java:145-148 converts lineHeight with
+//              PixelUtil.toPixelFromSP(mLineHeight, …)
+//            and toPixelFromSP (uimanager/PixelUtil.java:33-42) returns
+//              value * scaledDensity,  scaledDensity = density * fontScale.
+//
+//   Default  Libraries/Text/Text.js:272 — allowFontScaling={allowFontScaling !== false},
+//            so scaling is ON unless a call site opts out. Nothing in mobile/src
+//            passes allowFontScaling={false} or maxFontSizeMultiplier.
+//
+// Both halves of the pair therefore move together and the ratio is preserved at
+// every OS text size. Leave these as fixed pairs.
+//
+// ── What IS wrong with type in this app ──────────────────────────────────────
+//
+// This scale has ZERO importers. Nothing in mobile/src reads `type`, `space` or
+// `radius` — every consumer of theme/tokens imports colours only (withAlpha ×15,
+// avatarColor/userInitials ×5, PRIORITY_COLORS ×4, …). Meanwhile the screens
+// carry 364 raw `fontSize` literals and 67 raw `lineHeight` literals across 80
+// files.
+//
+// The sizes are broadly on-system: 25 distinct sizes, and only 8 / 20 / 24 / 28
+// fall outside the set the reference's mobile.css uses. The incoherence is in the
+// RATIOS. 65 of those literal pairs sit on one line, and they express 26
+// different lineHeight/fontSize ratios between 1.176 and 1.636 — including the
+// same size given two different rhythms in different files:
+//
+//   fontSize 12   → 1.417, 1.458, 1.5
+//   fontSize 13   → 1.385, 1.462
+//   fontSize 17   → 1.353, 1.412
+//   fontSize 11.5 → 1.391, 1.435
+//
+// For comparison, the rendered reference resolves to a small ratio family —
+// 1.5 dominant, then 1.4 / 1.45 / 1.35 / 1.15 — and 35 of its 44 line-height
+// declarations are unitless, so they scale by construction.
+//
+// Consolidating those 364 literals onto this scale is the real open type item.
+// It is deliberately NOT done here: it touches ~30 screen files that other
+// agents are editing, and the resulting rhythm change needs a device to judge.
 export const type = {
   displaySerif: { fontFamily: FAMILY.display, fontWeight: '400' as const },
   titleSerif:   { fontFamily: FAMILY.display, fontWeight: '400' as const },
