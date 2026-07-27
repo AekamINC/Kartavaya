@@ -1,6 +1,18 @@
+// Graha · documents — the CRM document register.
+//
+// 38 inline styles are now `gr__*` classes. The load carried the usual
+// `catch { toast }` and fell through to "No documents found", so a failed fetch
+// claimed the register was empty; it now has an error state with a retry.
+//
+// Note this is the CRM's own document list, not the file-attachment surface —
+// `18-documents.md` describes the PRINT documents, and attachments are specced
+// in `03` §5. The `_SOURCE-MAP.md` warns that this confusion has been made
+// before, so: no drop zone and no lightbox here on purpose.
 import React, { useState, useEffect } from 'react';
-import { api } from '../../lib/api';
+import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import { ErrorState, errorKind } from '../../components/ui/ErrorState';
+import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { Badge } from './_shared';
 
 export default function DocumentsTab() {
@@ -8,6 +20,7 @@ export default function DocumentsTab() {
   const [documents, setDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
   const [folderFilter, setFolderFilter] = useState('');
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -16,28 +29,34 @@ export default function DocumentsTab() {
 
   const fmtSize = bytes => {
     if (!bytes) return '—';
-    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
-    return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)} MB`;
+    return `${(bytes / 1024).toFixed(1)} KB`;
   };
 
   useEffect(() => { load(); loadFolders(); }, []);
 
   async function load() {
+    setErr(null);
     try {
       let url = '/v1/graha/documents?';
       if (folderFilter) url += `folder=${encodeURIComponent(folderFilter)}&`;
       if (search) url += `search=${encodeURIComponent(search)}&`;
       const r = await api.get(url);
-      setDocuments(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load documents', type: 'error' }); }
+      setDocuments(rows(r));
+    } catch (e) {
+      setErr(e);
+      pushToast({ title: 'Failed to load documents', type: 'error' });
+    }
     finally { setLoading(false); }
   }
 
+  // The folder filter is an enrichment: it failing leaves "All Folders" as the
+  // only option rather than blocking the register.
   async function loadFolders() {
     try {
       const r = await api.get('/v1/graha/documents/folders');
-      setFolders(r.data.data || []);
-    } catch {}
+      setFolders(rows(r));
+    } catch { /* filter offers "All Folders" only */ }
   }
 
   async function createDocument(e) {
@@ -51,7 +70,7 @@ export default function DocumentsTab() {
       setForm({ name: '', file_url: '', folder: '', description: '', tags: '' });
       load();
       loadFolders();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
   }
 
@@ -65,84 +84,84 @@ export default function DocumentsTab() {
     } catch { pushToast({ title: 'Could not delete document', type: 'error' }); }
   }
 
-  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+  const field = (label, node, mod = '') => (
+    <label className={`gr__f${mod}`}><span className="gr__fl">{label}</span>{node}</label>
+  );
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-        <select className="k-input" style={{ width: 160 }} value={folderFilter} onChange={e => setFolderFilter(e.target.value)}>
+      <div className="gr__bar">
+        <select className="k-input gr__sel gr__sel--wide" aria-label="Filter by folder" value={folderFilter} onChange={e => setFolderFilter(e.target.value)}>
           <option value="">All Folders</option>
           {folders.map(f => <option key={f.folder} value={f.folder}>{f.folder} ({f.count})</option>)}
         </select>
-        <input className="k-input" style={{ flex: 1, maxWidth: 260 }} placeholder="Search documents..." value={search}
+        <input className="k-input gr__search" placeholder="Search documents…" value={search}
           onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} />
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Search</button>
-        <div style={{ flex: 1 }} />
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ Add Document</button>
+        <button className="k-btn k-btn--ghost" onClick={load}>Search</button>
+        <div className="gr__spacer" />
+        <button className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>+ Add Document</button>
       </div>
 
       {showForm && (
-        <form onSubmit={createDocument} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Add Document</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
-              <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>File URL *</span>
-              <input className="k-input" required value={form.file_url} onChange={e => setForm({ ...form, file_url: e.target.value })} placeholder="https://..." /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Folder</span>
-              <input className="k-input" value={form.folder} onChange={e => setForm({ ...form, folder: e.target.value })} placeholder="e.g. contracts, invoices" /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Tags (comma-separated)</span>
-              <input className="k-input" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} placeholder="e.g. legal, signed, 2026" /></label>
-            <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
-              <input className="k-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
+        <form onSubmit={createDocument} className="gr__panel">
+          <h3 className="gr__ptitle">Add Document</h3>
+          <div className="gr__grid">
+            {field('Name *', <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />)}
+            {field('File URL *', <input className="k-input" required value={form.file_url} onChange={e => setForm({ ...form, file_url: e.target.value })} placeholder="https://…" />)}
+            {field('Folder', <input className="k-input" value={form.folder} onChange={e => setForm({ ...form, folder: e.target.value })} placeholder="e.g. contracts, invoices" />)}
+            {field('Tags (comma-separated)', <input className="k-input" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} placeholder="e.g. legal, signed" />)}
+            {field('Description', <input className="k-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />, ' gr__f--wide')}
           </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+          <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Saving...' : 'Add Document'}</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Saving…' : 'Add Document'}</button>
           </div>
         </form>
       )}
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-            {['Name', 'Folder', 'Size', 'Type', 'Uploaded', 'Actions'].map(h => (
-              <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {documents.map(d => (
-            <tr key={d.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-              <td style={{ padding: '10px' }}>
-                <div style={{ fontWeight: 600 }}>{d.name}</div>
-                {d.description && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{d.description}</div>}
-                {d.tags?.length > 0 && (
-                  <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                    {(d.tags || []).map(t => <Badge key={t} text={t} color="var(--st-in-review)" />)}
-                  </div>
-                )}
-              </td>
-              <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{d.folder || '—'}</td>
-              <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{fmtSize(d.file_size)}</td>
-              <td style={{ padding: '10px', color: 'var(--ink-2)', fontSize: 11 }}>{d.mime_type || '—'}</td>
-              <td style={{ padding: '10px', fontSize: 11, color: 'var(--ink-3)' }}>{d.created_at ? new Date(d.created_at).toLocaleDateString('en-IN') : '—'}</td>
-              <td style={{ padding: '10px' }}>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {d.file_url && (
-                    <a href={d.file_url} target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 11, color: 'var(--k-primary)', textDecoration: 'none' }}>Open</a>
-                  )}
-                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--danger)' }} onClick={() => deleteDoc(d.id)}>Delete</button>
-                </div>
-              </td>
-            </tr>
-          ))}
-          {documents.length === 0 && (
-            <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No documents found.</td></tr>
-          )}
-        </tbody>
-      </table>
+      {loading ? (
+        <SkeletonRegion label="Loading documents"><SkeletonList rows={6} /></SkeletonRegion>
+      ) : err ? (
+        <ErrorState kind={errorKind(err)} onRetry={load} />
+      ) : (
+        <div className="gr__tblwrap gr__tblwrap--bare">
+          <table className="gr__tbl">
+            <thead>
+              <tr>{['Name', 'Folder', 'Size', 'Type', 'Uploaded', 'Actions'].map(h => <th key={h}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {documents.map(d => (
+                <tr key={d.id}>
+                  <td>
+                    <div className="gr__td--name">{d.name}</div>
+                    {d.description && <div className="gr__ls">{d.description}</div>}
+                    {d.tags?.length > 0 && (
+                      <div className="gr__chips gr__chips--tight">
+                        {d.tags.map(t => <Badge key={t} text={t} color="var(--st-in-review)" />)}
+                      </div>
+                    )}
+                  </td>
+                  <td className="gr__td--mute">{d.folder || '—'}</td>
+                  <td className="gr__td--mute">{fmtSize(d.file_size)}</td>
+                  <td className="gr__td--mute gr__td--id">{d.mime_type || '—'}</td>
+                  <td className="gr__td--when">{d.created_at ? new Date(d.created_at).toLocaleDateString('en-IN') : '—'}</td>
+                  <td>
+                    <div className="gr__sacts">
+                      {d.file_url && (
+                        <a className="k-btn k-btn--ghost" href={d.file_url} target="_blank" rel="noopener noreferrer">Open</a>
+                      )}
+                      <button className="k-btn k-btn--reject" onClick={() => deleteDoc(d.id)}>Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {documents.length === 0 && (
+                <tr><td className="gr__none" colSpan={6}>No documents found.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

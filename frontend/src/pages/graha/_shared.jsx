@@ -45,23 +45,24 @@ export function dealStaleness(updatedAt) {
   const days = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 86400000);
   // `bg` was a hex-alpha suffix (#dc262612). With token references that string
   // concatenation produces "var(--danger)12", which is not a colour and is
-  // dropped silently — mixAlpha is the replacement, 0x12/255 ≈ 7%.
-  const at = (color, level, label) => ({ days, level, color, bg: mixAlpha(color, 7), label });
+  // dropped silently. The tint is now `.gr__rot`'s own color-mix off `--c`, so
+  // there is one place that decides how strong it is.
+  const at = (color, level, label) => ({ days, level, color, label });
   if (days >= 14) return at('var(--danger)', 'critical', `${days}d stale`);
   if (days >= 7)  return at('var(--warn)',   'warning',  `${days}d idle`);
   if (days >= 3)  return at('var(--on-surface-3)', 'mild', `${days}d ago`);
   return null;
 }
+
+/**
+ * The "nobody has touched this" marker. Geometry lives in `.gr__rot`; only the
+ * per-instance colour is inline, as `--c` — check-tokens deviation 2.
+ */
 export function RotBadge({ updatedAt }) {
   const rot = dealStaleness(updatedAt);
   if (!rot) return null;
   return (
-    <span title={`No activity for ${rot.days} days`} style={{
-      fontSize: 'var(--t-label-sm)', fontWeight: 700, padding: '2px 8px',
-      borderRadius: 'var(--r-pill)',
-      background: rot.bg, color: rot.color, whiteSpace: 'nowrap',
-      display: 'inline-flex', alignItems: 'center', gap: 3,
-    }}>
+    <span className="gr__rot" style={{ '--c': rot.color }} title={`No activity for ${rot.days} days`}>
       {rot.level === 'critical' ? '🔥' : rot.level === 'warning' ? '⏳' : '·'} {rot.label}
     </span>
   );

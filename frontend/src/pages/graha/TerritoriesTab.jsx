@@ -1,22 +1,37 @@
+// Graha · territories — named sales regions and who covers them.
+//
+// 26 inline styles are now `gr__*` classes, and the `.catch(() => {})` that
+// rendered "Territories (0)" over a failed fetch is a real error state.
 import React, { useState, useEffect } from 'react';
-import { api } from '../../lib/api';
+import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import { ErrorState, errorKind } from '../../components/ui/ErrorState';
+import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
 
 export default function TerritoriesTab() {
   const { pushToast } = useToast();
   const [territories, setTerritories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', assigned_users: [] });
   const [userInput, setUserInput] = useState('');
 
-  useEffect(() => {
-    api.get('/v1/graha/territories')
-      .then(r => setTerritories(r.data.data || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setErr(null);
+    try {
+      const r = await api.get('/v1/graha/territories');
+      setTerritories(rows(r));
+    } catch (e) {
+      setErr(e);
+      pushToast({ title: 'Failed to load territories', type: 'error' });
+    }
+    finally { setLoading(false); }
+  }
 
   async function create(e) {
     e.preventDefault();
@@ -25,9 +40,8 @@ export default function TerritoriesTab() {
       pushToast({ title: 'Territory created', type: 'success' });
       setShowForm(false);
       setForm({ name: '', description: '', assigned_users: [] });
-      const r = await api.get('/v1/graha/territories');
-      setTerritories(r.data.data || []);
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+      load();
+    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
   async function remove(id) {
@@ -46,61 +60,68 @@ export default function TerritoriesTab() {
     }
   }
 
-  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+  if (loading) return <SkeletonRegion label="Loading territories"><SkeletonList rows={4} /></SkeletonRegion>;
+  if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h3 style={{ fontSize: 14, fontWeight: 700 }}>Territories ({territories.length})</h3>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => setShowForm(!showForm)}>+ New Territory</button>
+      <div className="gr__shead">
+        <h3 className="gr__st">Territories ({territories.length})</h3>
+        <button className="k-btn k-btn--primary" onClick={() => setShowForm(!showForm)}>+ New Territory</button>
       </div>
 
       {showForm && (
-        <form onSubmit={create} style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16, marginBottom: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name</span>
-              <input className="k-input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
+        <form onSubmit={create} className="gr__panel gr__panel--flat">
+          <div className="gr__grid">
+            <label className="gr__f"><span className="gr__fl">Name</span>
+              <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
+            <label className="gr__f"><span className="gr__fl">Description</span>
               <input className="k-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
           </div>
-          <div style={{ marginBottom: 12 }}>
-            <span style={{ fontWeight: 600, display: 'block', marginBottom: 4, fontSize: 13 }}>Assigned Users</span>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+          <div className="gr__group">
+            <span className="gr__fl">Assigned Users</span>
+            <div className="gr__chips">
               {form.assigned_users.map(u => (
-                <span key={u} style={{ fontSize: 11, background: 'var(--bg-raised)', padding: '2px 8px', borderRadius: 'var(--r-xs)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span key={u} className="gr__tok">
                   {u.slice(0, 12)}
-                  <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--danger)' }}
+                  <button type="button" className="gr__tokx" aria-label={`Remove ${u}`}
                     onClick={() => setForm({ ...form, assigned_users: form.assigned_users.filter(x => x !== u) })}>×</button>
                 </span>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <input className="k-input" placeholder="User ID" value={userInput} onChange={e => setUserInput(e.target.value)} style={{ flex: 1 }} />
+            <div className="gr__bar">
+              <input className="k-input gr__grow" placeholder="User ID" aria-label="User ID" value={userInput} onChange={e => setUserInput(e.target.value)} />
               <button type="button" className="k-btn k-btn--ghost" onClick={addUser}>Add</button>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
             <button type="submit" className="k-btn k-btn--primary">Create</button>
           </div>
         </form>
       )}
 
-      {territories.map(t => (
-        <div key={t.id} style={{ padding: '12px 0', borderBottom: '1px solid var(--rule-soft)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{t.name}</div>
-              {t.description && <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>{t.description}</div>}
-            </div>
-            <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{t.assigned_users?.length || 0} users</span>
-            <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--danger)' }} onClick={() => remove(t.id)}>Delete</button>
+      {territories.length === 0 ? (
+        <EmptyState
+          illustration="generic"
+          title={{ en: 'No territories yet', hi: 'कोई क्षेत्र नहीं' }}
+          description="A territory names a region and the people who cover it, so leads route to whoever owns the patch."
+          action="New Territory"
+          onAction={() => setShowForm(true)}
+        />
+      ) : territories.map(t => (
+        <div key={t.id} className="gr__lrow">
+          <div className="gr__lmain">
+            <div className="gr__lt">{t.name}</div>
+            {t.description && <div className="gr__lsub">{t.description}</div>}
+            {t.assigned_users?.length > 0 && (
+              <div className="gr__chips gr__chips--tight">
+                {t.assigned_users.map(u => <Badge key={u} text={u.slice(0, 12)} color="var(--st-in-review)" />)}
+              </div>
+            )}
           </div>
-          {t.assigned_users?.length > 0 && (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-              {t.assigned_users.map(u => <Badge key={u} text={u.slice(0, 12)} color="var(--st-in-review)" />)}
-            </div>
-          )}
+          <span className="gr__ls">{t.assigned_users?.length || 0} users</span>
+          <button className="k-btn k-btn--reject" onClick={() => remove(t.id)}>Delete</button>
         </div>
       ))}
     </div>

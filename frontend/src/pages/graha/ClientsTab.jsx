@@ -1,10 +1,17 @@
+// Graha · clients — companies, their contacts and their deals.
+//
+// 51 inline styles are now `gr__*` classes. The largest single removal was a
+// hand-rolled `inputStyle` object applied to eleven bare `<input>`s: it
+// duplicated `.k-input` approximately, so the client form's fields were a
+// slightly different height, radius and background from every other form in
+// the product. They are `.k-input` now, which is also why they pick up focus
+// rings and the dark theme for free.
 import React, { useState, useEffect, useCallback } from 'react';
-import { api } from '../../lib/api';
+import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
-import { Card } from '../../components/editorial';
-import { mixAlpha } from '../../lib/statusColors';
 import { inr } from '../../lib/inr';
 
 export default function ClientsTab() {
@@ -16,6 +23,7 @@ export default function ClientsTab() {
   const [form, setForm] = useState({ name: '', ref_no: '', gstin: '', website: '', notes: '', address: {} });
   const [search, setSearch] = useState('');
   const [detail, setDetail] = useState(null);
+  const [detailErr, setDetailErr] = useState(null);
   // Without this a failed load left `clients` at [] and the list painted its
   // "No clients yet" empty state — a confident wrong answer behind a toast that
   // is gone in four seconds.
@@ -25,7 +33,7 @@ export default function ClientsTab() {
     const params = search ? `?search=${encodeURIComponent(search)}` : '';
     setErr(null);
     api.get(`/v1/graha/clients${params}`)
-      .then(r => setClients(r.data.data || []))
+      .then(r => setClients(rows(r)))
       .catch(e => { setErr(e); pushToast({ title: 'Failed to load clients', type: 'error' }); })
       .finally(() => setLoading(false));
   }, [search]);
@@ -33,7 +41,7 @@ export default function ClientsTab() {
   useEffect(() => { load(); }, [load]);
 
   async function save() {
-    if (!form.name.trim()) return pushToast({ title: 'Company name is required', type: 'error' });
+    if (!form.name.trim()) { pushToast({ title: 'Company name is required', type: 'error' }); return; }
     try {
       if (editId) {
         await api.patch(`/v1/graha/clients/${editId}`, form);
@@ -56,10 +64,17 @@ export default function ClientsTab() {
   }
 
   async function openDetail(id) {
+    setDetailErr(null);
     try {
       const r = await api.get(`/v1/graha/clients/${id}`);
-      setDetail(r.data);
-    } catch { pushToast({ title: 'Failed to load client', type: 'error' }); }
+      setDetail(body(r));
+    } catch (e) {
+      // Was: toast and stay on the list. The click then looked like it had
+      // simply not registered.
+      setDetailErr(e);
+      setDetail({ id });
+      pushToast({ title: 'Failed to load client', type: 'error' });
+    }
   }
 
   async function remove(id) {
@@ -78,116 +93,129 @@ export default function ClientsTab() {
   if (detail) {
     return (
       <div>
-        <button onClick={() => setDetail(null)} style={{ fontSize: 12, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 12 }}>← Back to clients</button>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 340px', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{detail.name}</h3>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => openEdit(detail)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 'var(--r-sm)', background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', cursor: 'pointer' }}>Edit</button>
-                <button onClick={() => remove(detail.id)} style={{ fontSize: 12, padding: '4px 12px', borderRadius: 'var(--r-sm)', background: mixAlpha('var(--danger)', 9), color: 'var(--danger)', border: 'none', cursor: 'pointer' }}>Delete</button>
+        <button className="k-btn k-btn--ghost gr__back" onClick={() => { setDetail(null); setDetailErr(null); }}>← Back to clients</button>
+        {detailErr ? (
+          <ErrorState kind={errorKind(detailErr)} onRetry={() => openDetail(detail.id)} />
+        ) : (
+          <div className="gr__dsplit">
+            <div className="gr__dmain">
+              <div className="gr__dhead">
+                <h3 className="gr__dname">{detail.name}</h3>
+                <div className="gr__dacts">
+                  <button className="k-btn k-btn--ghost" onClick={() => openEdit(detail)}>Edit</button>
+                  <button className="k-btn k-btn--reject" onClick={() => remove(detail.id)}>Delete</button>
+                </div>
               </div>
+              {detail.ref_no && <div className="gr__dline">Ref: {detail.ref_no}</div>}
+              {detail.gstin && <div className="gr__dline">GSTIN: {detail.gstin}</div>}
+              {detail.website && <div className="gr__dline">Web: {detail.website}</div>}
+              {detail.address?.line1 && (
+                <div className="gr__dline">
+                  Address: {[detail.address.line1, detail.address.line2, detail.address.city, detail.address.state, detail.address.pincode].filter(Boolean).join(', ')}
+                </div>
+              )}
+              {detail.notes && <div className="gr__dnotes">{detail.notes}</div>}
             </div>
-            {detail.ref_no && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>Ref: {detail.ref_no}</div>}
-            {detail.gstin && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>GSTIN: {detail.gstin}</div>}
-            {detail.website && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>Web: {detail.website}</div>}
-            {detail.address?.line1 && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 4 }}>Address: {[detail.address.line1, detail.address.line2, detail.address.city, detail.address.state, detail.address.pincode].filter(Boolean).join(', ')}</div>}
-            {detail.notes && <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 8 }}>{detail.notes}</div>}
-          </div>
-          <div style={{ flex: '1 1 300px' }}>
-            <h4 style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Contacts ({detail.contacts?.length || 0})</h4>
-            {(detail.contacts || []).map(c => (
-              <div key={c.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13 }}>
-                <span style={{ fontWeight: 600 }}>{c.name}</span>
-                {c.designation && <span style={{ color: 'var(--ink-3)', fontSize: 11 }}> · {c.designation}</span>}
-                {c.email && <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{c.email}</div>}
-              </div>
-            ))}
-            {(!detail.contacts || detail.contacts.length === 0) && <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>No contacts linked</p>}
 
-            <h4 style={{ fontSize: 13, fontWeight: 700, marginTop: 16, marginBottom: 8 }}>Deals ({detail.deals?.length || 0})</h4>
-            {(detail.deals || []).map(d => (
-              <div key={d.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--rule-soft)', fontSize: 13, display: 'flex', justifyContent: 'space-between' }}>
-                <span>{d.title}</span>
-                <span style={{ fontWeight: 600 }}>{inr(Number(d.value || 0))}</span>
-              </div>
-            ))}
-            {(!detail.deals || detail.deals.length === 0) && <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>No deals linked</p>}
+            <div className="gr__daside">
+              <h4 className="gr__dsec">Contacts ({detail.contacts?.length || 0})</h4>
+              {(detail.contacts || []).map(c => (
+                <div key={c.id} className="gr__lrow gr__lrow--tight">
+                  <div className="gr__lmain">
+                    <span className="gr__lt--sm">{c.name}</span>
+                    {c.designation && <span className="gr__ls"> · {c.designation}</span>}
+                    {c.email && <div className="gr__ls">{c.email}</div>}
+                  </div>
+                </div>
+              ))}
+              {!detail.contacts?.length && <p className="gr__mute">No contacts linked</p>}
+
+              <h4 className="gr__dsec">Deals ({detail.deals?.length || 0})</h4>
+              {(detail.deals || []).map(d => (
+                <div key={d.id} className="gr__kv">
+                  <span>{d.title}</span>
+                  <span className="gr__val">{inr(Number(d.value || 0))}</span>
+                </div>
+              ))}
+              {!detail.deals?.length && <p className="gr__mute">No deals linked</p>}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     );
   }
 
-  const inputStyle = { width: '100%', padding: '6px 10px', fontSize: 13, border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', background: 'var(--bg)', color: 'var(--ink-1)' };
-
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients..."
-          style={{ ...inputStyle, maxWidth: 260 }} />
-        <button onClick={() => { setShowForm(true); setEditId(null); setForm({ name: '', ref_no: '', gstin: '', website: '', notes: '', address: {} }); }}
-          className="k-btn k-btn--primary" style={{ whiteSpace: 'nowrap' }}>
+      <div className="gr__bar">
+        <input className="k-input gr__search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients…" />
+        <button
+          className="k-btn k-btn--primary"
+          onClick={() => { setShowForm(true); setEditId(null); setForm({ name: '', ref_no: '', gstin: '', website: '', notes: '', address: {} }); }}
+        >
           + Add Client
         </button>
       </div>
 
       {showForm && (
-        <Card style={{ marginBottom: 16, padding: 16 }}>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>{editId ? 'Edit' : 'New'} Client</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
-            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Company Name *" style={inputStyle} />
-            <input value={form.ref_no} onChange={e => setForm(f => ({ ...f, ref_no: e.target.value }))} placeholder="Ref No" style={inputStyle} />
-            <input value={form.gstin} onChange={e => setForm(f => ({ ...f, gstin: e.target.value }))} placeholder="GST No" style={inputStyle} />
-            <input value={form.website} onChange={e => setForm(f => ({ ...f, website: e.target.value }))} placeholder="Website" style={inputStyle} />
+        <div className="gr__panel">
+          <h4 className="gr__ptitle gr__ptitle--sm">{editId ? 'Edit' : 'New'} Client</h4>
+          <div className="gr__grid--auto gr__grid">
+            <input className="k-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Company Name *" aria-label="Company name" />
+            <input className="k-input" value={form.ref_no} onChange={e => setForm(f => ({ ...f, ref_no: e.target.value }))} placeholder="Ref No" aria-label="Reference number" />
+            <input className="k-input" value={form.gstin} onChange={e => setForm(f => ({ ...f, gstin: e.target.value }))} placeholder="GST No" aria-label="GSTIN" />
+            <input className="k-input" value={form.website} onChange={e => setForm(f => ({ ...f, website: e.target.value }))} placeholder="Website" aria-label="Website" />
+            <input className="k-input" value={form.address?.line1 || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, line1: e.target.value } }))} placeholder="Address Line 1" aria-label="Address line 1" />
+            <input className="k-input" value={form.address?.line2 || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, line2: e.target.value } }))} placeholder="Address Line 2" aria-label="Address line 2" />
+            <input className="k-input" value={form.address?.city || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, city: e.target.value } }))} placeholder="City" aria-label="City" />
+            <input className="k-input" value={form.address?.state || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, state: e.target.value } }))} placeholder="State" aria-label="State" />
+            <input className="k-input" value={form.address?.pincode || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, pincode: e.target.value } }))} placeholder="Pincode" aria-label="Pincode" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10, marginTop: 10 }}>
-            <input value={form.address?.line1 || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, line1: e.target.value } }))} placeholder="Address Line 1" style={inputStyle} />
-            <input value={form.address?.line2 || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, line2: e.target.value } }))} placeholder="Address Line 2" style={inputStyle} />
-            <input value={form.address?.city || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, city: e.target.value } }))} placeholder="City" style={inputStyle} />
-            <input value={form.address?.state || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, state: e.target.value } }))} placeholder="State" style={inputStyle} />
-            <input value={form.address?.pincode || ''} onChange={e => setForm(f => ({ ...f, address: { ...f.address, pincode: e.target.value } }))} placeholder="Pincode" style={inputStyle} />
+          <label className="gr__f gr__f--block"><span className="gr__fl">Notes</span>
+            <textarea className="k-input gr__ta" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></label>
+          <div className="gr__acts gr__acts--start">
+            <button className="k-btn k-btn--primary" onClick={save}>{editId ? 'Update' : 'Create'}</button>
+            <button className="k-btn k-btn--ghost" onClick={() => { setShowForm(false); setEditId(null); }}>Cancel</button>
           </div>
-          <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Notes" rows={2}
-            style={{ ...inputStyle, marginTop: 10, resize: 'vertical' }} />
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button onClick={save} className="k-btn k-btn--primary">
-              {editId ? 'Update' : 'Create'}
-            </button>
-            <button onClick={() => { setShowForm(false); setEditId(null); }} style={{ padding: '6px 16px', fontSize: 13, borderRadius: 'var(--r-sm)', background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', cursor: 'pointer' }}>Cancel</button>
-          </div>
-        </Card>
+        </div>
       )}
 
-      <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: 'var(--bg-raised)', textAlign: 'left' }}>
-              <th style={{ padding: '8px 12px', fontWeight: 600 }}>Company</th>
-              <th style={{ padding: '8px 12px', fontWeight: 600 }}>Ref No</th>
-              <th style={{ padding: '8px 12px', fontWeight: 600 }}>GSTIN</th>
-              <th style={{ padding: '8px 12px', fontWeight: 600 }}>Website</th>
-              <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'center' }}>Contacts</th>
-              <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'center' }}>Deals</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map(c => (
-              <tr key={c.id} onClick={() => openDetail(c.id)} style={{ cursor: 'pointer', borderTop: '1px solid var(--rule-soft)' }}>
-                <td style={{ padding: '8px 12px', fontWeight: 600 }}>{c.name}</td>
-                <td style={{ padding: '8px 12px', color: 'var(--ink-3)' }}>{c.ref_no || '—'}</td>
-                <td style={{ padding: '8px 12px', color: 'var(--ink-3)' }}>{c.gstin || '—'}</td>
-                <td style={{ padding: '8px 12px', color: 'var(--ink-3)' }}>{c.website || '—'}</td>
-                <td style={{ padding: '8px 12px', textAlign: 'center' }}>{c.contact_count}</td>
-                <td style={{ padding: '8px 12px', textAlign: 'center' }}>{c.deal_count}</td>
+      {clients.length === 0 ? (
+        <EmptyState
+          illustration="generic"
+          title={{ en: 'No clients yet', hi: 'कोई ग्राहक नहीं' }}
+          description="A client is the company a contact and a deal belong to. Add your first company to group them."
+          action="Add Client"
+          onAction={() => { setShowForm(true); setEditId(null); }}
+        />
+      ) : (
+        <div className="gr__tblwrap">
+          <table className="gr__tbl gr__tbl--raised">
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Ref No</th>
+                <th>GSTIN</th>
+                <th>Website</th>
+                <th className="gr__td--mid">Contacts</th>
+                <th className="gr__td--mid">Deals</th>
               </tr>
-            ))}
-            {clients.length === 0 && (
-              <tr><td colSpan={6} style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No clients yet. Add your first company.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {clients.map(c => (
+                <tr key={c.id} className="gr__tr--click" onClick={() => openDetail(c.id)}>
+                  <td className="gr__td--name">{c.name}</td>
+                  <td className="gr__td--mute">{c.ref_no || '—'}</td>
+                  <td className="gr__td--mute">{c.gstin || '—'}</td>
+                  <td className="gr__td--mute">{c.website || '—'}</td>
+                  <td className="gr__td--mid">{c.contact_count}</td>
+                  <td className="gr__td--mid">{c.deal_count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

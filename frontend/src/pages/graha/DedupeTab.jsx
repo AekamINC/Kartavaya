@@ -1,8 +1,36 @@
+// Graha · dedupe — duplicate contact groups and the merge ledger.
+//
+// 47 inline styles are now `gr__*` classes.
+//
+// ── The defect this tab had ────────────────────────────────────────────────
+// Both loads were `catch { toast }` with no error state, so a failed fetch fell
+// through to `groups.length === 0` and painted a green tick over "No duplicates
+// found — all contacts have unique email and phone values". That is a specific,
+// checkable claim about the customer's data, asserted on the strength of a
+// request that failed. The merge history did the same with "No merges yet".
+// Both panels now carry their own error state and retry, and they are
+// independent: the history failing must not hide the duplicates.
+//
+// The group header was a `<div onClick>` that expands a panel; it is a
+// `<button aria-expanded>` now, so it is reachable by keyboard and announces
+// its state.
 import React, { useState, useEffect } from 'react';
-import { api } from '../../lib/api';
+import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { ErrorState, errorKind } from '../../components/ui/ErrorState';
+import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { Badge, TYPE_COLORS, SOURCE_COLORS } from './_shared';
-import { mixAlpha } from '../../lib/statusColors';
+
+const FIELDS = [
+  { key: 'name', label: 'Name' },
+  { key: 'email', label: 'Email' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'company', label: 'Company' },
+  { key: 'contact_type', label: 'Type' },
+  { key: 'source', label: 'Source' },
+  { key: 'lead_score', label: 'Score' },
+];
 
 export default function DedupeTab() {
   const { pushToast } = useToast();
@@ -10,6 +38,8 @@ export default function DedupeTab() {
   const [merges, setMerges] = useState([]);
   const [loading, setLoading] = useState(true);
   const [mergesLoading, setMergesLoading] = useState(true);
+  const [err, setErr] = useState(null);
+  const [mergesErr, setMergesErr] = useState(null);
   const [expandedIdx, setExpandedIdx] = useState(null);
   const [survivors, setSurvivors] = useState({});
   const [merging, setMerging] = useState(false);
@@ -19,19 +49,27 @@ export default function DedupeTab() {
 
   async function loadGroups() {
     setLoading(true);
+    setErr(null);
     try {
       const r = await api.get('/v1/graha/contacts/duplicates');
-      setGroups(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load duplicate groups', type: 'error' }); }
+      setGroups(rows(r));
+    } catch (e) {
+      setErr(e);
+      pushToast({ title: 'Failed to load duplicate groups', type: 'error' });
+    }
     finally { setLoading(false); }
   }
 
   async function loadMerges() {
     setMergesLoading(true);
+    setMergesErr(null);
     try {
       const r = await api.get('/v1/graha/contacts/merges');
-      setMerges(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load merge history', type: 'error' }); }
+      setMerges(rows(r));
+    } catch (e) {
+      setMergesErr(e);
+      pushToast({ title: 'Failed to load merge history', type: 'error' });
+    }
     finally { setMergesLoading(false); }
   }
 
@@ -42,7 +80,7 @@ export default function DedupeTab() {
   async function doMerge(groupIdx) {
     const group = groups[groupIdx];
     const survivorId = survivors[groupIdx];
-    if (!survivorId) return pushToast({ title: 'Select a contact to keep first', type: 'error' });
+    if (!survivorId) { pushToast({ title: 'Select a contact to keep first', type: 'error' }); return; }
     const mergeIds = group.contacts.filter(c => c.id !== survivorId).map(c => c.id);
     if (mergeIds.length === 0) return;
     setMerging(true);
@@ -53,7 +91,7 @@ export default function DedupeTab() {
       setSurvivors(prev => { const n = { ...prev }; delete n[groupIdx]; return n; });
       loadGroups();
       loadMerges();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Merge failed', type: 'error' }); }
+    } catch (e) { pushToast({ title: e.response?.data?.detail || 'Merge failed', type: 'error' }); }
     finally { setMerging(false); }
   }
 
@@ -66,91 +104,89 @@ export default function DedupeTab() {
       setSurvivors({});
       loadGroups();
       loadMerges();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Undo failed', type: 'error' }); }
+    } catch (e) { pushToast({ title: e.response?.data?.detail || 'Undo failed', type: 'error' }); }
     finally { setUndoing(null); }
   }
 
-  const FIELDS = [
-    { key: 'name', label: 'Name' },
-    { key: 'email', label: 'Email' },
-    { key: 'phone', label: 'Phone' },
-    { key: 'company', label: 'Company' },
-    { key: 'contact_type', label: 'Type' },
-    { key: 'source', label: 'Source' },
-    { key: 'lead_score', label: 'Score' },
-  ];
-
   return (
     <div>
-      <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, fontFamily: 'var(--font-ui), var(--font-hindi)' }}>Dedupe Review (द्वैतनिवारण)</h3>
-      <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 16 }}>
+      <h3 className="gr__st--lg">Dedupe Review <span lang="hi">(द्वैतनिवारण)</span></h3>
+      <p className="gr__lede">
         Contacts sharing the same email or phone are grouped below. Select the record to keep and merge the rest.
       </p>
 
-      {/* Duplicate Groups */}
       {loading ? (
-        <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading duplicates...</p>
+        <SkeletonRegion label="Loading duplicates"><SkeletonList rows={4} /></SkeletonRegion>
+      ) : err ? (
+        <ErrorState kind={errorKind(err)} onRetry={loadGroups} />
       ) : groups.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-          <div style={{ fontSize: 32, marginBottom: 8 }}>✅</div>
-          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No duplicates found</div>
-          <div style={{ fontSize: 13, color: 'var(--ink-3)' }}>All contacts have unique email and phone values.</div>
-        </div>
+        <EmptyState
+          illustration="generic"
+          tone="ok"
+          title={{ en: 'No duplicates found', hi: 'कोई द्वैत नहीं' }}
+          description="Every contact has a unique email and phone value."
+        />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 32 }}>
+        <div className="gr__dd">
           {groups.map((g, gi) => {
             const expanded = expandedIdx === gi;
             const survivorId = survivors[gi];
             return (
-              <div key={`${g.match_type}-${g.match_key}`}
-                style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
-                {/* Group header */}
-                <div onClick={() => setExpandedIdx(expanded ? null : gi)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px',
-                    background: 'var(--bg-raised)', cursor: 'pointer', userSelect: 'none' }}>
-                  <span style={{ fontSize: 14 }}>{expanded ? '▾' : '▸'}</span>
+              <div key={`${g.match_type}-${g.match_key}`} className="gr__ddg">
+                <button
+                  type="button"
+                  className="gr__ddhead"
+                  aria-expanded={expanded}
+                  onClick={() => setExpandedIdx(expanded ? null : gi)}
+                >
+                  <span className="gr__ddcaret" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
                   <Badge text={g.match_type} color={g.match_type === 'email' ? 'var(--st-in-progress)' : 'var(--ok)'} />
-                  <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{g.match_key}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 'var(--r-pill)',
-                    background: mixAlpha('var(--warn)', 9), color: 'var(--warn)' }}>{g.count} contacts</span>
-                </div>
+                  <span className="gr__ddkey">{g.match_key}</span>
+                  <span className="gr__count gr__count--warn">{g.count} contacts</span>
+                </button>
 
-                {/* Side-by-side comparison */}
                 {expanded && (
-                  <div style={{ padding: 16 }}>
-                    <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12 }}>
+                  <div className="gr__ddbody">
+                    <p className="gr__lede">
                       Select the record to keep (survivor). All others will be merged into it.
                     </p>
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <div className="gr__tblwrap gr__tblwrap--bare">
+                      <table className="gr__tbl">
                         <thead>
-                          <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--ink-3)' }}>Keep</th>
-                            {FIELDS.map(f => (
-                              <th key={f.key} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--ink-3)' }}>{f.label}</th>
-                            ))}
-                            <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', color: 'var(--ink-3)' }}>Created</th>
+                          <tr>
+                            <th>Keep</th>
+                            {FIELDS.map(f => <th key={f.key}>{f.label}</th>)}
+                            <th>Created</th>
                           </tr>
                         </thead>
                         <tbody>
                           {g.contacts.map(c => {
                             const selected = survivorId === c.id;
                             return (
-                              <tr key={c.id} onClick={() => selectSurvivor(gi, c.id)}
-                                style={{ borderBottom: '1px solid var(--rule-soft)', cursor: 'pointer',
-                                  background: selected ? 'var(--k-primary-bg)' : 'transparent' }}>
-                                <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                                  <input type="radio" name={`survivor-${gi}`} checked={selected}
-                                    onChange={() => selectSurvivor(gi, c.id)} />
+                              <tr
+                                key={c.id}
+                                className={`gr__tr--click${selected ? ' gr__tr--on' : ''}`}
+                                onClick={() => selectSurvivor(gi, c.id)}
+                              >
+                                <td className="gr__td--mid">
+                                  <input
+                                    type="radio"
+                                    name={`survivor-${gi}`}
+                                    checked={selected}
+                                    aria-label={`Keep ${c.name || c.email || c.phone}`}
+                                    onChange={() => selectSurvivor(gi, c.id)}
+                                  />
                                 </td>
                                 {FIELDS.map(f => (
-                                  <td key={f.key} style={{ padding: '8px 10px', color: 'var(--ink-2)' }}>
-                                    {f.key === 'contact_type' && c[f.key] ? <Badge text={c[f.key]} color={TYPE_COLORS[c[f.key]] || 'var(--on-surface-3)'} /> :
-                                     f.key === 'source' && c[f.key] ? <Badge text={c[f.key]} color={SOURCE_COLORS[c[f.key]] || 'var(--on-surface-3)'} /> :
-                                     (c[f.key] ?? '—')}
+                                  <td key={f.key} className="gr__td--mute">
+                                    {f.key === 'contact_type' && c[f.key]
+                                      ? <Badge text={c[f.key]} color={TYPE_COLORS[c[f.key]] || 'var(--on-surface-3)'} />
+                                      : f.key === 'source' && c[f.key]
+                                        ? <Badge text={c[f.key]} color={SOURCE_COLORS[c[f.key]] || 'var(--on-surface-3)'} />
+                                        : (c[f.key] ?? '—')}
                                   </td>
                                 ))}
-                                <td style={{ padding: '8px 10px', fontSize: 11, color: 'var(--ink-3)' }}>
+                                <td className="gr__td--when">
                                   {c.created_at ? new Date(c.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
                                 </td>
                               </tr>
@@ -159,11 +195,10 @@ export default function DedupeTab() {
                         </tbody>
                       </table>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                    <div className="gr__acts">
                       <button className="k-btn k-btn--ghost" onClick={() => setExpandedIdx(null)}>Cancel</button>
-                      <button className="k-btn k-btn--primary" disabled={!survivorId || merging}
-                        onClick={() => doMerge(gi)}>
-                        {merging ? 'Merging...' : `Merge ${g.count - 1} into survivor`}
+                      <button className="k-btn k-btn--primary" disabled={!survivorId || merging} onClick={() => doMerge(gi)}>
+                        {merging ? 'Merging…' : `Merge ${g.count - 1} into survivor`}
                       </button>
                     </div>
                   </div>
@@ -174,54 +209,57 @@ export default function DedupeTab() {
         </div>
       )}
 
-      {/* Recent Merges */}
-      <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 4, marginTop: 16, fontFamily: 'var(--font-ui), var(--font-hindi)' }}>Recent Merges (विलय इतिहास)</h3>
-      <p style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12 }}>
-        Previously merged contacts. Undo is available for recent merges.
-      </p>
-      {mergesLoading ? (
-        <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading merge history...</p>
-      ) : merges.length === 0 ? (
-        <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>No merges yet.</p>
-      ) : (
-        <div style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: 'var(--bg-raised)', textAlign: 'left' }}>
-                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Survivor</th>
-                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Merged Contact</th>
-                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Rows Moved</th>
-                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Date</th>
-                <th style={{ padding: '8px 12px', fontWeight: 600 }}>Status</th>
-                <th style={{ padding: '8px 12px', fontWeight: 600 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {merges.map(m => (
-                <tr key={m.id} style={{ borderTop: '1px solid var(--rule-soft)' }}>
-                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>{m.survivor_name}</td>
-                  <td style={{ padding: '8px 12px', color: 'var(--ink-2)' }}>{m.merged_name}</td>
-                  <td style={{ padding: '8px 12px', color: 'var(--ink-2)' }}>{m.moved_rows ?? '—'}</td>
-                  <td style={{ padding: '8px 12px', fontSize: 11, color: 'var(--ink-3)' }}>
-                    {m.created_at ? new Date(m.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                  </td>
-                  <td style={{ padding: '8px 12px' }}>
-                    {m.undone_at ? <Badge text="Undone" color="var(--on-surface-3)" /> : <Badge text="Merged" color="var(--ok)" />}
-                  </td>
-                  <td style={{ padding: '8px 12px' }}>
-                    {!m.undone_at && (
-                      <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--warn)' }}
-                        disabled={undoing === m.id} onClick={() => undoMerge(m.id)}>
-                        {undoing === m.id ? 'Undoing...' : 'Undo'}
-                      </button>
-                    )}
-                  </td>
+      <div className="gr__stack">
+        <h3 className="gr__st--lg">Recent Merges <span lang="hi">(विलय इतिहास)</span></h3>
+        <p className="gr__lede">Previously merged contacts. Undo is available for recent merges.</p>
+
+        {mergesLoading ? (
+          <SkeletonRegion label="Loading merge history"><SkeletonList rows={3} /></SkeletonRegion>
+        ) : mergesErr ? (
+          <ErrorState kind={errorKind(mergesErr)} onRetry={loadMerges} />
+        ) : merges.length === 0 ? (
+          <p className="gr__quiet">No merges yet.</p>
+        ) : (
+          <div className="gr__tblwrap">
+            <table className="gr__tbl gr__tbl--raised">
+              <thead>
+                <tr>
+                  <th>Survivor</th>
+                  <th>Merged Contact</th>
+                  <th>Rows Moved</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th><span className="sr-only">Actions</span></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {merges.map(m => (
+                  <tr key={m.id}>
+                    <td className="gr__td--name">{m.survivor_name}</td>
+                    <td className="gr__td--mute">{m.merged_name}</td>
+                    <td className="gr__td--mute">{m.moved_rows ?? '—'}</td>
+                    <td className="gr__td--when">
+                      {m.created_at ? new Date(m.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                    </td>
+                    <td>
+                      {m.undone_at
+                        ? <Badge text="Undone" color="var(--on-surface-3)" />
+                        : <Badge text="Merged" color="var(--ok)" />}
+                    </td>
+                    <td>
+                      {!m.undone_at && (
+                        <button className="k-btn k-btn--ghost" disabled={undoing === m.id} onClick={() => undoMerge(m.id)}>
+                          {undoing === m.id ? 'Undoing…' : 'Undo'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

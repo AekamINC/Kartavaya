@@ -1,13 +1,22 @@
+// Graha · follow-ups — the next step on a contact or a deal.
+//
+// 31 inline styles are now `gr__*` classes. This tab is what the pipeline board
+// reads to decide whether a deal has a next step at all, so "No follow-ups
+// found" printed after a failed fetch is the same false statement twice: here,
+// and as a clean pipeline on the board. It has an error state now.
 import React, { useState, useEffect } from 'react';
-import { api } from '../../lib/api';
+import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import { ErrorState, errorKind } from '../../components/ui/ErrorState';
+import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
+import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
-import { mixAlpha } from '../../lib/statusColors';
 
 export default function FollowUpsTab() {
   const { pushToast } = useToast();
   const [followUps, setFollowUps] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [contacts, setContacts] = useState([]);
   const [deals, setDeals] = useState([]);
@@ -18,21 +27,26 @@ export default function FollowUpsTab() {
   useEffect(() => { load(); }, []);
 
   async function load() {
+    setErr(null);
     try {
       let url = '/v1/graha/follow-ups?';
       if (statusFilter) url += `status=${statusFilter}&`;
       const r = await api.get(url);
-      setFollowUps(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load follow-ups', type: 'error' }); }
+      setFollowUps(rows(r));
+    } catch (e) {
+      setErr(e);
+      pushToast({ title: 'Failed to load follow-ups', type: 'error' });
+    }
     finally { setLoading(false); }
   }
 
+  // Both dropdowns are an enrichment on the create form.
   async function loadOptions() {
     try {
       const [c, d] = await Promise.all([api.get('/v1/graha/contacts'), api.get('/v1/graha/deals')]);
-      setContacts(c.data.data || []);
-      setDeals(d.data.data || []);
-    } catch {}
+      setContacts(rows(c));
+      setDeals(rows(d));
+    } catch { /* selects offer "None" only */ }
   }
 
   async function save(e) {
@@ -44,7 +58,7 @@ export default function FollowUpsTab() {
       setShowForm(false);
       setForm({ title: '', description: '', contact_id: '', deal_id: '', due_at: '', remind_at: '' });
       load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
   }
 
@@ -65,73 +79,90 @@ export default function FollowUpsTab() {
     } catch { pushToast({ title: 'Could not delete follow-up', type: 'error' }); }
   }
 
+  const field = (label, node) => (
+    <label className="gr__f"><span className="gr__fl">{label}</span>{node}</label>
+  );
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-        <select className="k-input" style={{ width: 130 }} value={statusFilter} onChange={e => { setStatusFilter(e.target.value); }}>
+      <div className="gr__bar">
+        <select className="k-input gr__sel" aria-label="Filter by status" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
           <option value="">All</option>
           <option value="pending">Pending</option>
           <option value="completed">Completed</option>
           <option value="overdue">Overdue</option>
         </select>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Filter</button>
-        <div style={{ flex: 1 }} />
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => { setShowForm(true); loadOptions(); }}>+ New Follow-up</button>
+        <button className="k-btn k-btn--ghost" onClick={load}>Filter</button>
+        <div className="gr__spacer" />
+        <button className="k-btn k-btn--primary" onClick={() => { setShowForm(true); loadOptions(); }}>+ New Follow-up</button>
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Follow-up</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
-              <input className="k-input" required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Due Date *</span>
-              <input className="k-input" type="datetime-local" required value={form.due_at} onChange={e => setForm({ ...form, due_at: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Contact</span>
+        <form onSubmit={save} className="gr__panel">
+          <h3 className="gr__ptitle">New Follow-up</h3>
+          <div className="gr__grid">
+            {field('Title *', <input className="k-input" required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />)}
+            {field('Due Date *', <input className="k-input" type="datetime-local" required value={form.due_at} onChange={e => setForm({ ...form, due_at: e.target.value })} />)}
+            {field('Contact', (
               <select className="k-input" value={form.contact_id} onChange={e => setForm({ ...form, contact_id: e.target.value })}>
                 <option value="">None</option>
                 {contacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Deal</span>
+              </select>
+            ))}
+            {field('Deal', (
               <select className="k-input" value={form.deal_id} onChange={e => setForm({ ...form, deal_id: e.target.value })}>
                 <option value="">None</option>
                 {deals.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Remind At</span>
-              <input className="k-input" type="datetime-local" value={form.remind_at} onChange={e => setForm({ ...form, remind_at: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
-              <input className="k-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
+              </select>
+            ))}
+            {field('Remind At', <input className="k-input" type="datetime-local" value={form.remind_at} onChange={e => setForm({ ...form, remind_at: e.target.value })} />)}
+            {field('Description', <input className="k-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />)}
           </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+          <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
             <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
           </div>
         </form>
       )}
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        followUps.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No follow-ups found.</p> : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {loading ? (
+        <SkeletonRegion label="Loading follow-ups"><SkeletonList rows={5} /></SkeletonRegion>
+      ) : err ? (
+        <ErrorState kind={errorKind(err)} onRetry={load} />
+      ) : followUps.length === 0 ? (
+        <EmptyState
+          illustration="generic"
+          title={{ en: 'No follow-ups', hi: 'कोई अनुसरण नहीं' }}
+          description={statusFilter
+            ? `Nothing matches the "${statusFilter}" filter. Clear it to see everything.`
+            : 'A follow-up is the next step on a contact or a deal. Deals without one are flagged on the pipeline board.'}
+          action="New Follow-up"
+          onAction={() => { setShowForm(true); loadOptions(); }}
+        />
+      ) : (
+        <div className="gr__cards">
           {followUps.map(f => {
             const overdue = !f.is_completed && new Date(f.due_at) < new Date();
             return (
-              <div key={f.id} style={{ background: 'var(--surface-1)', border: `1px solid ${overdue ? mixAlpha('var(--danger)', 25) : 'var(--rule-soft)'}`, borderRadius: 'var(--r-md)', padding: '12px 16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <span style={{ fontWeight: 700, fontSize: 14, textDecoration: f.is_completed ? 'line-through' : 'none' }}>{f.title}</span>
-                  <Badge text={f.is_completed ? 'Done' : overdue ? 'Overdue' : 'Pending'}
-                    color={f.is_completed ? 'var(--ok)' : overdue ? 'var(--danger)' : 'var(--warn)'} />
+              <div key={f.id} className={`gr__card${overdue ? ' gr__card--late' : ''}`}>
+                <div className="gr__crow">
+                  <span className={f.is_completed ? 'gr__ctitle gr__ctitle--done' : 'gr__ctitle'}>{f.title}</span>
+                  <Badge
+                    text={f.is_completed ? 'Done' : overdue ? 'Overdue' : 'Pending'}
+                    color={f.is_completed ? 'var(--ok)' : overdue ? 'var(--danger)' : 'var(--warn)'}
+                  />
                 </div>
-                <div style={{ fontSize: 13, color: 'var(--ink-2)', marginBottom: 6 }}>
+                <div className="gr__cmeta--plain">
                   {f.contact_name && <span>{f.contact_name} · </span>}
                   {f.deal_title && <span>{f.deal_title} · </span>}
                   <span>Due: {new Date(f.due_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</span>
                   {f.description && <span> · {f.description}</span>}
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
+                <div className="gr__sacts">
                   {!f.is_completed && (
-                    <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '3px 10px' }} onClick={() => complete(f.id)}>Complete</button>
+                    <button className="k-btn k-btn--primary" onClick={() => complete(f.id)}>Complete</button>
                   )}
-                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '3px 10px', color: 'var(--danger)' }} onClick={() => remove(f.id)}>Delete</button>
+                  <button className="k-btn k-btn--reject" onClick={() => remove(f.id)}>Delete</button>
                 </div>
               </div>
             );

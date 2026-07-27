@@ -1,35 +1,52 @@
+// Graha · approvals — the threshold rules and the requests they raise.
+//
+// 47 inline styles are now `gr__*` classes.
+//
+// The single `catch { toast }` around both loads fell through to two "nothing
+// here" table rows: "No approval rules defined" and "No {status} requests".
+// The second is the dangerous one — a pending approval that failed to load
+// reads as an empty queue, and an empty queue is a reason to stop looking.
+// Both tables now render an error state with a retry instead.
 import React, { useState, useEffect } from 'react';
-import { api } from '../../lib/api';
+import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import { ErrorState, errorKind } from '../../components/ui/ErrorState';
+import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
+
+const ENTITY_TYPES = ['deal', 'vendor_bill', 'expense_claim'];
+const STATUS_COLORS = { pending: 'var(--warn)', approved: 'var(--ok)', rejected: 'var(--danger)' };
 
 export default function ApprovalsTab() {
   const { pushToast } = useToast();
   const [rules, setRules] = useState([]);
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState(null);
   const [ruleEntityFilter, setRuleEntityFilter] = useState('');
   const [requestStatus, setRequestStatus] = useState('pending');
   const [showRuleForm, setShowRuleForm] = useState(false);
   const [ruleForm, setRuleForm] = useState({ entity_type: 'deal', threshold_amount: '', approver_role: '' });
 
   const FMT = v => inr(Number(v || 0));
-  const ENTITY_TYPES = ['deal', 'vendor_bill', 'expense_claim'];
-  const STATUS_COLORS = { pending: 'var(--warn)', approved: 'var(--ok)', rejected: 'var(--danger)' };
 
   useEffect(() => { load(); }, []);
 
   async function load() {
+    setErr(null);
     try {
       const params = ruleEntityFilter ? `?entity_type=${ruleEntityFilter}` : '';
       const [rulesR, reqR] = await Promise.all([
         api.get(`/v1/graha/approval-rules${params}`),
         api.get(`/v1/graha/approval-requests?status=${requestStatus}`),
       ]);
-      setRules(rulesR.data.data || []);
-      setRequests(reqR.data.data || []);
-    } catch { pushToast({ title: 'Failed to load approvals', type: 'error' }); }
+      setRules(rows(rulesR));
+      setRequests(rows(reqR));
+    } catch (e) {
+      setErr(e);
+      pushToast({ title: 'Failed to load approvals', type: 'error' });
+    }
     finally { setLoading(false); }
   }
 
@@ -41,7 +58,7 @@ export default function ApprovalsTab() {
       setShowRuleForm(false);
       setRuleForm({ entity_type: 'deal', threshold_amount: '', approver_role: '' });
       load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+    } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
   async function deleteRule(id) {
@@ -69,113 +86,106 @@ export default function ApprovalsTab() {
     } catch { pushToast({ title: 'Reject failed', type: 'error' }); }
   }
 
-  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+  if (loading) return <SkeletonRegion label="Loading approvals"><SkeletonList rows={6} /></SkeletonRegion>;
+  if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
 
   return (
     <div>
-      {/* ── Approval Rules ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h3 style={{ fontSize: 14, fontWeight: 700 }}>Approval Rules ({rules.length})</h3>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <select className="k-input" style={{ width: 150 }} value={ruleEntityFilter} onChange={e => setRuleEntityFilter(e.target.value)}>
+      <div className="gr__shead">
+        <h3 className="gr__st">Approval Rules ({rules.length})</h3>
+        <div className="gr__sacts">
+          <select className="k-input gr__sel gr__sel--wide" aria-label="Filter rules by entity" value={ruleEntityFilter} onChange={e => setRuleEntityFilter(e.target.value)}>
             <option value="">All Entities</option>
             {ENTITY_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
           </select>
-          <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Filter</button>
-          <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => setShowRuleForm(!showRuleForm)}>+ New Rule</button>
+          <button className="k-btn k-btn--ghost" onClick={load}>Filter</button>
+          <button className="k-btn k-btn--primary" onClick={() => setShowRuleForm(!showRuleForm)}>+ New Rule</button>
         </div>
       </div>
 
       {showRuleForm && (
-        <form onSubmit={createRule} style={{ border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16, marginBottom: 16 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Entity Type</span>
+        <form onSubmit={createRule} className="gr__panel gr__panel--flat">
+          <div className="gr__grid gr__grid--3">
+            <label className="gr__f"><span className="gr__fl">Entity Type</span>
               <select className="k-input" value={ruleForm.entity_type} onChange={e => setRuleForm({ ...ruleForm, entity_type: e.target.value })}>
                 {ENTITY_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
               </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Threshold Amount</span>
-              <input className="k-input" type="number" value={ruleForm.threshold_amount} onChange={e => setRuleForm({ ...ruleForm, threshold_amount: e.target.value })} required /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Approver Role</span>
-              <input className="k-input" value={ruleForm.approver_role} onChange={e => setRuleForm({ ...ruleForm, approver_role: e.target.value })} required /></label>
+            <label className="gr__f"><span className="gr__fl">Threshold Amount</span>
+              <input className="k-input" type="number" required value={ruleForm.threshold_amount} onChange={e => setRuleForm({ ...ruleForm, threshold_amount: e.target.value })} /></label>
+            <label className="gr__f"><span className="gr__fl">Approver Role</span>
+              <input className="k-input" required value={ruleForm.approver_role} onChange={e => setRuleForm({ ...ruleForm, approver_role: e.target.value })} /></label>
           </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowRuleForm(false)}>Cancel</button>
             <button type="submit" className="k-btn k-btn--primary">Create Rule</button>
           </div>
         </form>
       )}
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 32 }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-            {['Entity Type', 'Threshold', 'Approver Role', 'Status', 'Actions'].map(h => (
-              <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+      <div className="gr__tblwrap gr__tblwrap--bare gr__group">
+        <table className="gr__tbl">
+          <thead>
+            <tr>{['Entity Type', 'Threshold', 'Approver Role', 'Status', 'Actions'].map(h => <th key={h}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rules.map(r => (
+              <tr key={r.id}>
+                <td className="gr__td--cap">{r.entity_type.replace(/_/g, ' ')}</td>
+                <td className="gr__td--name">{FMT(r.threshold_amount)}</td>
+                <td>{r.approver_role}</td>
+                <td><Badge text={r.is_active ? 'Active' : 'Inactive'} color={r.is_active ? 'var(--ok)' : 'var(--on-surface-3)'} /></td>
+                <td><button className="k-btn k-btn--reject" onClick={() => deleteRule(r.id)}>Delete</button></td>
+              </tr>
             ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rules.map(r => (
-            <tr key={r.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-              <td style={{ padding: '10px', textTransform: 'capitalize' }}>{r.entity_type.replace(/_/g, ' ')}</td>
-              <td style={{ padding: '10px', fontWeight: 600 }}>{FMT(r.threshold_amount)}</td>
-              <td style={{ padding: '10px' }}>{r.approver_role}</td>
-              <td style={{ padding: '10px' }}><Badge text={r.is_active ? 'Active' : 'Inactive'} color={r.is_active ? 'var(--ok)' : 'var(--on-surface-3)'} /></td>
-              <td style={{ padding: '10px' }}>
-                <button className="k-btn k-btn--ghost" style={{ fontSize: 11, color: 'var(--danger)' }} onClick={() => deleteRule(r.id)}>Delete</button>
-              </td>
-            </tr>
-          ))}
-          {rules.length === 0 && (
-            <tr><td colSpan={5} style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No approval rules defined.</td></tr>
-          )}
-        </tbody>
-      </table>
+            {rules.length === 0 && (
+              <tr><td className="gr__none" colSpan={5}>No approval rules defined.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
-      {/* ── Pending Requests ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h3 style={{ fontSize: 14, fontWeight: 700 }}>Approval Requests</h3>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <select className="k-input" style={{ width: 130 }} value={requestStatus} onChange={e => setRequestStatus(e.target.value)}>
+      <div className="gr__shead">
+        <h3 className="gr__st">Approval Requests</h3>
+        <div className="gr__sacts">
+          <select className="k-input gr__sel" aria-label="Filter requests by status" value={requestStatus} onChange={e => setRequestStatus(e.target.value)}>
             <option value="pending">Pending</option>
             <option value="approved">Approved</option>
             <option value="rejected">Rejected</option>
           </select>
-          <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Filter</button>
+          <button className="k-btn k-btn--ghost" onClick={load}>Filter</button>
         </div>
       </div>
 
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-            {['Entity Type', 'Amount', 'Status', 'Requested By', 'Approver Role', 'Created', 'Actions'].map(h => (
-              <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+      <div className="gr__tblwrap gr__tblwrap--bare">
+        <table className="gr__tbl">
+          <thead>
+            <tr>{['Entity Type', 'Amount', 'Status', 'Requested By', 'Approver Role', 'Created', 'Actions'].map(h => <th key={h}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {requests.map(r => (
+              <tr key={r.id}>
+                <td className="gr__td--cap">{r.entity_type.replace(/_/g, ' ')}</td>
+                <td className="gr__td--name">{FMT(r.amount)}</td>
+                <td><Badge text={r.status} color={STATUS_COLORS[r.status] || 'var(--on-surface-3)'} /></td>
+                <td className="gr__td--id">{r.requested_by?.slice(0, 12) || '—'}</td>
+                <td>{r.approver_role || '—'}</td>
+                <td className="gr__td--when">{r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '—'}</td>
+                <td>
+                  {r.status === 'pending' && (
+                    <div className="gr__sacts">
+                      <button className="k-btn k-btn--primary" onClick={() => approveRequest(r.id)}>Approve</button>
+                      <button className="k-btn k-btn--reject" onClick={() => rejectRequest(r.id)}>Reject</button>
+                    </div>
+                  )}
+                </td>
+              </tr>
             ))}
-          </tr>
-        </thead>
-        <tbody>
-          {requests.map(r => (
-            <tr key={r.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-              <td style={{ padding: '10px', textTransform: 'capitalize' }}>{r.entity_type.replace(/_/g, ' ')}</td>
-              <td style={{ padding: '10px', fontWeight: 600 }}>{FMT(r.amount)}</td>
-              <td style={{ padding: '10px' }}><Badge text={r.status} color={STATUS_COLORS[r.status] || 'var(--on-surface-3)'} /></td>
-              <td style={{ padding: '10px', fontSize: 11, fontFamily: 'var(--mono)' }}>{r.requested_by?.slice(0, 12) || '—'}</td>
-              <td style={{ padding: '10px' }}>{r.approver_role || '—'}</td>
-              <td style={{ padding: '10px', fontSize: 11, color: 'var(--ink-3)' }}>{r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '—'}</td>
-              <td style={{ padding: '10px' }}>
-                {r.status === 'pending' && (
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="k-btn k-btn--primary" style={{ fontSize: 11, padding: '2px 10px' }} onClick={() => approveRequest(r.id)}>Approve</button>
-                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 10px', color: 'var(--danger)' }} onClick={() => rejectRequest(r.id)}>Reject</button>
-                  </div>
-                )}
-              </td>
-            </tr>
-          ))}
-          {requests.length === 0 && (
-            <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No {requestStatus} requests.</td></tr>
-          )}
-        </tbody>
-      </table>
+            {requests.length === 0 && (
+              <tr><td className="gr__none" colSpan={7}>No {requestStatus} requests.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

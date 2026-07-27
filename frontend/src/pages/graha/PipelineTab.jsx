@@ -15,7 +15,7 @@
 // stage buttons live there and not here. Read-only is the point, not a gap: a
 // forecast you can accidentally edit by clicking is worse than one you cannot.
 import React, { useState, useEffect } from 'react';
-import { api } from '../../lib/api';
+import { api, rows, body } from '../../lib/api';
 import { Empty, Shimmer } from '../../components/editorial';
 import { stageColor } from './_shared';
 
@@ -60,9 +60,9 @@ export default function PipelineTab() {
   async function load() {
     setErr('');
     try {
-      const r = await api.get('/v1/graha/deals/kanban');
-      setStages(r.data.stages || []);
-      setColumns(r.data.columns || {});
+      const r = body(await api.get('/v1/graha/deals/kanban'));
+      setStages(r.stages || []);
+      setColumns(r.columns || {});
     } catch (e) {
       // The board itself failing is the only fatal case — without deals there
       // is nothing to draw. The three enrichments below each fail on their own.
@@ -79,7 +79,7 @@ export default function PipelineTab() {
     try {
       const f = await api.get('/v1/graha/follow-ups');
       const map = {};
-      for (const x of f.data.data || []) {
+      for (const x of rows(f)) {
         if (x.deal_id && !map[x.deal_id]) map[x.deal_id] = x;
       }
       setNext(map);
@@ -89,7 +89,7 @@ export default function PipelineTab() {
     try {
       const fc = await api.get('/v1/graha/reports/forecast');
       const map = {};
-      for (const s of fc.data.stages || []) {
+      for (const s of body(fc).stages || []) {
         const total = Number(s.total_value) || 0;
         if (total > 0) map[s.stage] = Math.round((Number(s.weighted_value) / total) * 100);
       }
@@ -102,7 +102,9 @@ export default function PipelineTab() {
     try {
       const m = await api.get('/v1/org/members');
       const map = {};
-      for (const x of m.data || []) map[x.user_id] = x.full_name || x.email;
+      // `/v1/org/members` answers a BARE array, not `{"data": […]}` — one of the
+      // 28 routes that do. `rows()` is indifferent to which.
+      for (const x of rows(m)) map[x.user_id] = x.full_name || x.email;
       setOwners(map);
     } catch { setOwners(null); }
   }
