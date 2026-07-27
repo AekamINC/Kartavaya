@@ -455,7 +455,11 @@ async def get_invoice(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
+        # `c.phone` is here so the detail screen can offer "Send on WhatsApp"
+        # without a second round trip. It is the contact's own number and
+        # goes no further than the browser that asked for this invoice.
         "SELECT i.*, c.name as contact_name, c.email as contact_email, "
+        "c.phone as contact_phone, "
         "c.company as contact_company, c.gstin as contact_gstin, "
         "c.billing_address as contact_billing_address "
         "FROM staging.ganit_invoices i "
