@@ -553,6 +553,13 @@
 }
 .gr__history-hi{
   font-family:var(--font-hindi);
+  /* font-weight is NOT inherited-safe here: `.gr__history-h` above is 500, and
+     Tiro Devanagari Hindi ships weight 400 only, so `पूर्व निर्यात` measured at
+     500 and the rasteriser synthesised the difference — a smeared shirorekha,
+     the same faux-bold doc_fonts.py documents for print. `.gr__export-hi`, the
+     identical label 100 lines up under an identical 500 parent, already
+     declares 400; this one was simply missed. */
+  font-weight:400;
   font-size:12px; color:var(--ink-3);
   margin-left:auto;
 }

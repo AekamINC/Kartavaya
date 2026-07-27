@@ -9,7 +9,7 @@ import { grahaApi, inrCompact, inr, num, type Deal, type PipelineStage } from '.
 import { withAlpha } from '../../theme/tokens';
 
 /**
- * Graha · ग्राहक — CRM, checking view.
+ * Graha · ग्रह — CRM, checking view.
  *
  * Endpoints:
  *   GET /api/v1/graha/pipeline-summary   value and count by stage
@@ -73,7 +73,7 @@ export default function GrahaScreen() {
 
   return (
     <ModuleShell
-      title="CRM" hi="ग्राहक"
+      title="CRM" hi="ग्रह"
       status={status}
       stale={hasData && !online}
       onRetry={refetch}

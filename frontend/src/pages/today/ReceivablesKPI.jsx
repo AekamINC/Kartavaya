@@ -30,7 +30,11 @@ export default function ReceivablesKPI({ stats }) {
     <section className="k-hero-kpi" aria-label="Receivables">
       <div className="k-hero-kpi__main">
         <div className="k-hero-kpi__label">
-          RECEIVABLES <span className="hi-mute">प्राप्य</span>
+          {/* lang="hi" is load-bearing here, not decoration: this label is
+              uppercase AND tracked at 1.68px, and only `[lang="hi"]` in
+              editorial.css can zero the tracking that would otherwise split
+              the conjuncts in प्राप्य. See the matching rule in today.css. */}
+          RECEIVABLES <span className="hi-mute" lang="hi">प्राप्य</span>
         </div>
         <div className="k-hero-kpi__value">{inr(stats.total_outstanding)}</div>
         <div className="k-hero-kpi__sub">

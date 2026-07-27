@@ -66,6 +66,26 @@
 .k-today .k-hero-kpi__label .hi-mute,
 .k-today .k-hero-kpi__card-lbl .hi-mute { font-size: 11px; }
 
+/* `.k-hero-kpi__label` is the ONE label on this page that is simultaneously
+   uppercase, tracked and bold — measured in the browser at font-weight 700,
+   letter-spacing 1.68px, text-transform uppercase — and `.hi-mute` sets only a
+   family and a size, so `प्राप्य` inherited all three. The two rules above had
+   already corrected the font and the size on this exact selector and stopped
+   short of the other three properties.
+   Tracking is the damaging one: 1.68px between glyphs detaches the repha in
+   `प्र` and splits the `प्य` ligature. `lang="hi"` on the span (added in
+   ReceivablesKPI.jsx) makes editorial.css's `[lang="hi"]{letter-spacing:0
+   !important}` fire and gives the run its Devanagari leading; that rule
+   deliberately does NOT reset weight or transform, so those two belong here.
+   The three sibling `.k-hero-kpi__card-lbl` labels are unaffected — they were
+   never uppercase or tracked, and they already measured clean.
+   Same shape as the fix `.side__sec-hi` already uses for the sidebar section
+   heading, which sits under an identical 700/1.7px/uppercase parent. */
+.k-today .k-hero-kpi__label .hi-mute {
+  font-weight: 400;
+  text-transform: none;
+}
+
 /* English-only mode hides every secondary Devanagari label. The rule in
    `editorial.css` names `.k-wday__hi`, which `editorial/WeekStrip.jsx` does not
    render — it emits `.k-week__hi` — so the strip was the one place the setting

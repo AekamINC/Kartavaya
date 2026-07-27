@@ -234,8 +234,18 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
 
                 {canInvoice && ganit === false && (
                   <p className="note vkd__gate" role="status">
+                    {/* `गणित` was here, inside the <b>. Three separate faults in
+                        one run: 24 §"where it must not" puts error and denial
+                        text on the No list (a user reading a refusal for the
+                        first time is not helped by half of it in a second
+                        script); `.note` resolves to --font-ui, which has no
+                        Devanagari coverage, so the glyphs fell through to a
+                        system face — measured 89.45px against Tiro's 85.45px;
+                        and <b> asked weight 600 of a font that ships only 400.
+                        The module is named in English, which is what the rest
+                        of this sentence is. */}
                     An invoice is an accounting record, so raising one needs a
-                    <b> Finance (गणित)</b> grant as well as Sales. Ask an organisation
+                    <b> Finance</b> grant as well as Sales. Ask an organisation
                     admin, or ask somebody in Finance to raise it from this order.
                   </p>
                 )}

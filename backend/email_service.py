@@ -1137,7 +1137,7 @@ def send_report_email(
             champ_hi    = "दिन का नायक"
         elif frequency == "weekly":
             champ_label = "CHAMPION OF THE WEEK"
-            champ_hi    = "सप्ताह का नाय��"
+            champ_hi    = "सप्ताह का नायक"
         else:
             champ_label = "CHAMPION OF THE MONTH"
             champ_hi    = "माह का नायक"

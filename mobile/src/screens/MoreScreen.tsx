@@ -39,7 +39,12 @@ interface Dest {
 
 const WORK: Dest[] = [
   { key: 'boards',    en: 'Boards',    hi: 'फ़लक',      icon: 'grid-outline',            route: 'Board' },
-  { key: 'inbox',     en: 'Inbox',     hi: 'संदेश-पेटी', icon: 'notifications-outline',   route: 'Inbox', badge: 'unread' },
+  // `सूचना`, not `संदेश-पेटी`. The invented word appeared in no reference file and
+  // disagreed with the screen this row opens: `InboxScreen.tsx:154` already
+  // renders `Inbox · सूचना`, and the reference labels this exact destination
+  // `Notifications · सूचना` (`Mobile.jsx` MMODULES, key `inbox`). A row and its
+  // own destination cannot use two different words for one place.
+  { key: 'inbox',     en: 'Inbox',     hi: 'सूचना',     icon: 'notifications-outline',   route: 'Inbox', badge: 'unread' },
   { key: 'approvals', en: 'Approvals', hi: 'सम्मति',     icon: 'checkmark-circle-outline', route: 'Approvals' },
   { key: 'time',      en: 'Time',      hi: 'काल',        icon: 'time-outline',            route: 'Time' },
   { key: 'reminders', en: 'Reminders', hi: 'स्मरण',      icon: 'alarm-outline',           route: 'Reminders' },
@@ -61,7 +66,11 @@ const WORK: Dest[] = [
  */
 const MODULES: Dest[] = [
   { key: 'pahchan', en: 'Attendance', hi: 'पहचान',  icon: 'finger-print-outline', route: 'Clock' },
-  { key: 'graha',   en: 'CRM',        hi: 'ग्राहक',  icon: 'people-outline',       route: 'Graha' },
+  // `ग्रह`, not `ग्राहक`. The reference says so in three places — `Chrome.jsx:36`
+  // (desktop NAV), `MobileModules.jsx:7` and `Mobile.jsx` MMODULES — and the web
+  // sidebar already reads ग्रह. ग्राहक (customer) is spent on the Clients section
+  // heading, so using it here put one word on two destinations.
+  { key: 'graha',   en: 'CRM',        hi: 'ग्रह',     icon: 'people-outline',       route: 'Graha' },
   { key: 'ganit',   en: 'Invoicing',  hi: 'गणित',    icon: 'receipt-outline',      route: 'Ganit' },
   { key: 'manav',   en: 'HR',         hi: 'मानव',    icon: 'id-card-outline',      route: 'Manav' },
   { key: 'vetana',  en: 'Payslips',   hi: 'वेतन',    icon: 'cash-outline',         route: 'Vetana' },
