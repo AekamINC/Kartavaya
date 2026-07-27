@@ -11,64 +11,40 @@ Statutory completeness is checked BEFORE rendering, in `services.doc_validation`
 A tax invoice missing a mandatory Rule 46 particular raises `DocumentIncomplete`
 and no PDF is produced. Advisory gaps render, marked in red. See that module for
 which is which and why.
+
+One brand layer, not two
+------------------------
+This module used to carry its OWN stylesheet — its own palette, its own type
+scale, its own `.pdf__*` class vocabulary — while the six documents built later
+share `services/doc_render.py` (brand.css plus the `<doc-page>` translation).
+The result was that a firm sending a client an invoice and a statement in the
+same email sent two visibly different documents. That was the largest remaining
+conformance gap in the set, and it is closed here: every rule this document is
+painted with now comes from `doc_render`, and nothing about the document's
+CONTENT changed with it.
+
+Two behaviours that look cosmetic are load-bearing and are preserved verbatim:
+
+  * `_org_gstin_line` still decides whether a missing supplier GSTIN is marked,
+    because that turns on whether the document is a tax document. `doc_render`
+    marks by default and takes this line as an override — see its `gstin_html`
+    argument, which exists for exactly this one case.
+  * The palette is `doc_render`'s, which is brand.css's. The retired brand blue
+    `#0082c6` is not reintroduced by the move; the accent is the documented
+    Kartavaya teal fallback, as before.
 """
-import base64
-import html
 import logging
 
-from services.doc_fonts import DISPLAY_STACK, deva_span, font_face_css, group_indian
+from services import doc_render as R
+from services.doc_fonts import group_indian
 from services.doc_validation import DocumentCheck, validate_tax_invoice
 
-# ── Palette ───────────────────────────────────────────────────────────────
-# These are the `--doc-*` tokens from `design-reference/Kartavaya Redesign/
-# docs/brand.css`, which is the specification for every document the product
-# generates. They are duplicated as literals rather than read from that file
-# because WeasyPrint renders a self-contained string and there is no CSS
-# cascade to inherit from — but the VALUES are the spec's, and each is
-# annotated with the token it mirrors so a drift is visible in review.
-#
-# Every one of these was previously a near-miss of its own spec value (--doc-ink
-# was #1A2230 against a specified #14171A, --doc-rule #E2DCC9 against #D9D5CA,
-# and so on for all six). Individually invisible; together they made the
-# generated invoice a slightly different document from the one in the reference.
-_INK      = "#14171A"   # --doc-ink
-_INK2     = "#464B52"   # --doc-ink-2
-_INK3     = "#6E747C"   # --doc-ink-3
-# --doc-ink-faint (#9AA0A8) is deliberately NOT mirrored: it is a non-text tone
-# and nothing on a tax invoice is decorative enough to earn it.
-_RULE     = "#D9D5CA"   # --doc-rule
-_RULE_SOFT= "#EAE7DE"   # --doc-rule-soft
-_BG_SOFT  = "#F7F5EF"   # --doc-tint
-
-# `.page` in brand.css is `background: #fff`. This was #FCFAF5 — a cream sheet.
-# On screen that reads as warmth; on paper it is a full-bleed ink wash over an
-# A4 page, and on a mono office laser it comes out as a grey cast behind every
-# invoice the customer receives.
-_SURFACE  = "#ffffff"
-
-# The org accent. brand.css maps this to a per-tenant `--org-accent` and states
-# that the staging `/v1/org/profile` schema carries no colour field yet, so the
-# documented fallback is Kartavaya teal — which is what this uses.
-#
-# It replaces `_DEEP = "#0082c6"`, the RETIRED brand blue. 00 §9 retires that
-# hex, `pages/ganit/_shared.jsx` documents removing it from the badge maps for
-# the same reason, and it was still setting the "TAX INVOICE" heading and the
-# export declaration on every PDF the product emits.
-_ACCENT   = "#04837A"   # --org-accent (aekam / Kartavaya fallback)
-_TEAL     = "#04837A"   # paid figures — the same accent, not a second teal
-_DANGER   = "#C0392B"
-
-# Font stacks. The spec family is named FIRST, then a chain that degrades onto
-# faces the render image actually ships.
-#
-# Georgia, Times New Roman, Helvetica Neue, Arial and Courier New — what these
-# stacks named before — are installed in NO build of this image. Every name
-# missed and each stack fell through to its generic, so every invoice PDF was
-# silently DejaVu. Newsreader is now vendored (`services/doc_fonts.py`) and
-# declared with `@font-face`, so the first name resolves; the rest is fallback.
-_FONT_DISP = DISPLAY_STACK
-_FONT_UI   = 'Inter, "Noto Sans", "Helvetica Neue", Arial, "DejaVu Sans", sans-serif'
-_FONT_MONO = '"JetBrains Mono", "Noto Sans Mono", "DejaVu Sans Mono", "Courier New", monospace'
+# The palette, the type scale and the page geometry all live in
+# `services/doc_render.py` now — it resolves brand.css's `--doc-*` tokens once,
+# for every document in the set. The near-miss values this file used to carry
+# (--doc-ink as #1A2230 against a specified #14171A, --doc-rule #E2DCC9 against
+# #D9D5CA) and the retired brand blue #0082c6 are gone with it, and cannot drift
+# back in independently of the other seven documents.
 
 _CURRENCY_SYMBOLS = {"INR": "₹", "USD": "$", "EUR": "€", "GBP": "£", "AED": "AED ", "SGD": "S$"}
 
@@ -161,23 +137,8 @@ def _fmt_amount(amount, currency: str) -> str:
     return f"{sym}{float(amount or 0):,.2f}"
 
 
-def _embed_logo(logo_url: str) -> str:
-    """Fetch the org logo and inline it as a base64 data URI — WeasyPrint runs
-    without a browser sandbox, so a bare <img src> to a remote URL is fragile
-    (redirects, auth, timeouts all silently blank the header)."""
-    if not logo_url:
-        return ""
-    try:
-        import httpx
-        resp = httpx.get(logo_url, timeout=8)
-        resp.raise_for_status()
-        mime = resp.headers.get("content-type", "image/png").split(";")[0]
-        b64 = base64.b64encode(resp.content).decode("ascii")
-        return f'<img src="data:{mime};base64,{b64}" class="pdf__logo" />'
-    except Exception as e:
-        log.warning("invoice_pdf: logo fetch failed for %s: %s", logo_url, e)
-        return ""
-
+# `_embed_logo` is now `doc_render.embed_logo`, which applies the same policy
+# (inline as a data URI, degrade to the initial mark on failure) plus a size cap.
 
 # Document types that are a tax document under GST and therefore MUST carry the
 # supplier's GSTIN. A quotation or proforma is an offer, not a tax document, and
@@ -201,21 +162,22 @@ def _org_gstin_line(org_gstin: str, org_pan: str, invoice_type: str) -> str:
     The RECIPIENT's GSTIN is deliberately not treated this way — a B2C sale to
     an unregistered buyer legitimately has none, and flagging it would put a red
     warning on every consumer invoice.
+
+    This is now the `.lh__ids` line of `doc_render.letterhead`, passed in as
+    `ids_html`. The MARKUP is brand.css's — `GSTIN <b>…</b> · PAN <b>…</b>`,
+    with `.unset` for the absent case — and the DECISION about when to mark is
+    still this function's, because it is a statutory one.
     """
     if org_gstin:
-        pan = f' · PAN: {org_pan}' if org_pan else ''
-        return f'<div class="pdf__org-line">GSTIN: {org_gstin}{pan}</div>'
+        pan = f' &middot; PAN <b>{org_pan}</b>' if org_pan else ''
+        return f'GSTIN <b>{org_gstin}</b>{pan}'
 
     if invoice_type in _GSTIN_REQUIRED_TYPES:
-        pan = f' · PAN: {org_pan}' if org_pan else ''
-        return (
-            '<div class="pdf__org-line">'
-            '<span class="pdf__unset">GSTIN NOT SET</span>'
-            f'{pan}</div>'
-        )
+        pan = f' &middot; PAN <b>{org_pan}</b>' if org_pan else ''
+        return f'{_unset("GSTIN")}{pan}'
 
     # Not a tax document: a missing GSTIN is unremarkable, show PAN if present.
-    return f'<div class="pdf__org-line">PAN: {org_pan}</div>' if org_pan else ''
+    return f'PAN <b>{org_pan}</b>' if org_pan else ''
 
 
 def _unset(label: str) -> str:
@@ -224,276 +186,198 @@ def _unset(label: str) -> str:
     `18-documents.md`: "an unset field renders a visible red warning, not a
     placeholder ... the red is deliberately ugly because it must never survive
     to a customer."
+
+    The CLASS is brand.css's `.unset`, shared with the other seven documents.
+    The WORDING stays this document's louder uppercase: a tax invoice leaves the
+    building addressed to a customer, and the mark has to survive being glanced
+    at. `doc_render.unset` prefixes the same warning glyph.
     """
-    return f'<span class="pdf__unset">{html.escape(label)} NOT SET</span>'
-
-
-def _advisory_note(check: DocumentCheck) -> str:
-    """The `.gap-note` strip listing every advisory gap, by name.
-
-    Advisory gaps do not block, but they are never silent — the same honesty
-    rule the GSTR-3B working paper applies when it names the invoices it held
-    back instead of quietly excluding them.
-    """
-    if not check.advisory:
-        return ""
-    items = "".join(f"<li>{html.escape(g.label)} — {html.escape(g.reason)}</li>" for g in check.advisory)
-    return (
-        '<div class="pdf__gap-note">'
-        "<b>Incomplete organisation details.</b> This document is issuable, but "
-        "the fields below are not on file and nothing has been invented to fill them."
-        f"<ul>{items}</ul></div>"
-    )
+    return f'<span class="unset">&#9888; {R.esc(label)} NOT SET</span>'
 
 
 def _build_html(invoice: dict, org: dict, contact: dict, check: DocumentCheck | None = None) -> str:
     check = check or DocumentCheck(document="invoice")
+    invoice, org, contact = invoice or {}, org or {}, contact or {}
     is_export = bool(invoice.get("is_export"))
     currency = invoice.get("currency") or "INR"
     line_items = invoice.get("line_items") or []
 
-    org_name = html.escape(org.get("name") or "")
-    org_gstin = html.escape(org.get("gstin") or "")
-    org_pan = html.escape(org.get("pan") or "")
-    org_addr = html.escape(_fmt_addr(org.get("billing_address") or {}))
-    org_contact_line = html.escape(" · ".join(
-        f for f in [org.get("email", ""), org.get("phone", ""), org.get("website", "")] if f
-    ))
-    logo_html = _embed_logo(org.get("logo_url") or "")
-
-    contact_name = html.escape(contact.get("name") or "") if contact else ""
-    contact_company = html.escape(contact.get("company") or "") if contact else ""
-    contact_gstin = html.escape(contact.get("gstin") or "") if contact else ""
-    contact_addr = html.escape(_fmt_addr(contact.get("billing_address") or {})) if contact else ""
-    contact_email = html.escape(contact.get("email") or "") if contact else ""
-
+    inv_type = invoice.get("invoice_type") or ""
     inv_type_labels = {
         "tax_invoice": "Tax Invoice", "proforma": "Proforma Invoice",
         "credit_note": "Credit Note", "debit_note": "Debit Note", "quotation": "Quotation",
     }
-    doc_title = "Export Invoice" if is_export else inv_type_labels.get(invoice.get("invoice_type"), "Invoice")
+    doc_title = "Export Invoice" if is_export else inv_type_labels.get(inv_type, "Invoice")
 
-    rows = ""
-    for i, li in enumerate(line_items, 1):
-        # An em-dash here used to stand in for a missing HSN/SAC, which reads as
-        # "no code applies" rather than "the mandatory code is absent". Rule
-        # 46(g) requires one per line; on a tax document a missing code now
-        # blocks generation outright, so this marker is what a proforma or
-        # quotation shows.
-        raw_code = li.get("hsn_code") or li.get("sac_code")
-        code_cell = html.escape(str(raw_code)) if raw_code else _unset("HSN/SAC")
-        rows += f"""
-        <tr>
-          <td class="mono">{i}</td>
-          <td>{html.escape(str(li.get("description", "")))}</td>
-          <td class="mono">{code_cell}</td>
-          <td class="num">{li.get("quantity", 0)} {html.escape(str(li.get("unit", "")))}</td>
-          <td class="num">{_fmt_amount(li.get("rate", 0), currency)}</td>
-          {'' if is_export else f'<td class="num">{li.get("gst_rate", 0)}%</td>'}
-          <td class="num strong">{_fmt_amount(li.get("line_total", 0), currency)}</td>
-        </tr>"""
+    # ── letterhead ───────────────────────────────────────────────────────────
+    # `.lh__kind-hi` (the design sets a Devanagari kind beside "Tax Invoice")
+    # is deliberately NOT added here. This change is the brand LAYER, not a
+    # redesign, and a Devanagari kind would be new content on the face of the
+    # document. Recorded in the report as a remaining conformance gap.
+    head = R.letterhead(
+        org,
+        kind_en=doc_title,
+        kind_hi="",
+        doc_no=invoice.get("invoice_number") or "",
+        ids_html=_org_gstin_line(
+            R.esc(org.get("gstin") or ""), R.esc(org.get("pan") or ""), inv_type
+        ),
+    )
 
+    # ── meta strip ───────────────────────────────────────────────────────────
+    # Place of supply is omitted on an export: the concept does not apply, and
+    # printing it would be wrong rather than merely redundant.
+    meta_cells = [
+        ("Invoice date", R.esc(invoice.get("invoice_date") or "") or R.unset("Invoice date")),
+        ("Due date", R.esc(invoice.get("due_date") or "") or "&mdash;"),
+    ]
     if is_export:
-        tax_rows = f"""
-        <div class="pdf__row"><span>Subtotal</span><span>{_fmt_amount(invoice.get("subtotal"), currency)}</span></div>
-        <div class="pdf__row pdf__export-note">SUPPLY MEANT FOR EXPORT UNDER LUT WITHOUT PAYMENT OF INTEGRATED TAX</div>"""
-    elif invoice.get("is_igst"):
-        tax_rows = f"""
-        <div class="pdf__row"><span>Subtotal</span><span>{_fmt_amount(invoice.get("subtotal"), currency)}</span></div>
-        <div class="pdf__row"><span>IGST</span><span>{_fmt_amount(invoice.get("igst"), currency)}</span></div>"""
+        meta_cells.append(("Currency", R.esc(currency)))
     else:
-        tax_rows = f"""
-        <div class="pdf__row"><span>Subtotal</span><span>{_fmt_amount(invoice.get("subtotal"), currency)}</span></div>
-        <div class="pdf__row"><span>CGST</span><span>{_fmt_amount(invoice.get("cgst"), currency)}</span></div>
-        <div class="pdf__row"><span>SGST</span><span>{_fmt_amount(invoice.get("sgst"), currency)}</span></div>"""
+        meta_cells.append((
+            "Place of supply",
+            R.esc(invoice.get("place_of_supply") or "") or "&mdash;",
+        ))
+    meta = R.meta_strip(meta_cells)
 
-    discount_row = ""
+    # ── parties ──────────────────────────────────────────────────────────────
+    billed_name = R.esc(contact.get("name") or "")
+    if contact.get("company"):
+        billed_name = f'{billed_name} &mdash; {R.esc(contact["company"])}' if billed_name \
+            else R.esc(contact["company"])
+    id_bits = []
+    # The recipient's GSTIN is never marked when absent — a B2C sale to an
+    # unregistered buyer legitimately has none. It is simply not shown, and it
+    # is not shown at all on an export.
+    if contact.get("gstin") and not is_export:
+        id_bits.append(f'GSTIN {R.esc(contact["gstin"])}')
+    if contact.get("email"):
+        id_bits.append(R.esc(contact["email"]))
+
+    party_block = R.parties(
+        R.party(
+            "Billed to",
+            name=billed_name or R.unset("Recipient"),
+            addr_html=R.fmt_addr(contact.get("billing_address") or {}),
+            id_html=" &middot; ".join(id_bits),
+        ),
+        "",
+    )
+
+    # ── lines ────────────────────────────────────────────────────────────────
+    rows = []
+    for i, li in enumerate(line_items, 1):
+        li = li or {}
+        # Rule 46(g) requires an HSN or SAC per line. On a TAX document a
+        # missing code blocks generation outright in `validate_tax_invoice`, so
+        # this marker is what a proforma or quotation shows. An em-dash was
+        # used here once and read as "no code applies" rather than "the
+        # mandatory code is absent".
+        raw_code = li.get("hsn_code") or li.get("sac_code")
+        code_cell = R.esc(str(raw_code)) if raw_code else _unset("HSN/SAC")
+        qty = f'{li.get("quantity", 0)} {R.esc(str(li.get("unit") or ""))}'.strip()
+        gst_cell = "" if is_export else f'<td class="num">{R.esc(li.get("gst_rate", 0))}%</td>'
+        rows.append(
+            f'<tr><td class="num num--left">{i}</td>'
+            f'<td>{R.cell_desc(str(li.get("description", "")))}</td>'
+            f'<td class="num">{code_cell}</td>'
+            f'<td class="num">{qty}</td>'
+            f'<td class="num">{_fmt_amount(li.get("rate", 0), currency)}</td>'
+            f'{gst_cell}'
+            f'<td class="num">{_fmt_amount(li.get("line_total", 0), currency)}</td></tr>'
+        )
+    if not rows:
+        colspan = 6 if is_export else 7
+        rows.append(f'<tr><td colspan="{colspan}" class="lines__mute">No lines on this document.</td></tr>')
+
+    headers = [("#", "", "26px"), ("Description", "", ""), ("HSN/SAC", "num", "62px"),
+               ("Qty", "num", "48px"), ("Rate", "num", "78px")]
+    if not is_export:
+        headers.append(("GST", "num", "48px"))
+    headers.append(("Amount", "num", "88px"))
+    lines_table = R.table(headers, rows)
+
+    # ── totals ───────────────────────────────────────────────────────────────
+    total_rows = [("Subtotal", _fmt_amount(invoice.get("subtotal"), currency))]
+    if is_export:
+        pass  # the zero-rated declaration replaces the tax breakdown, below
+    elif invoice.get("is_igst"):
+        total_rows.append(("IGST", _fmt_amount(invoice.get("igst"), currency)))
+    else:
+        total_rows.append(("CGST", _fmt_amount(invoice.get("cgst"), currency)))
+        total_rows.append(("SGST", _fmt_amount(invoice.get("sgst"), currency)))
     if float(invoice.get("discount") or 0) > 0:
-        discount_row = f'<div class="pdf__row" style="color:{_DANGER};"><span>Discount</span><span>-{_fmt_amount(invoice.get("discount"), currency)}</span></div>'
+        total_rows.append(("Discount", f'&minus;{_fmt_amount(invoice.get("discount"), currency)}'))
 
+    # The grand row is what is actually OWED, which is the balance whenever one
+    # is recorded. `.totals__row--grand` is the one figure a reader looks for,
+    # so it must not be a number they no longer have to pay. Total and Paid
+    # stay as ordinary rows above it, which is the order this document has
+    # always printed them in.
+    paid = float(invoice.get("amount_paid") or 0)
+    balance = float(invoice.get("balance_due") or 0)
+    if paid > 0 or balance > 0:
+        total_rows.append(("Total", _fmt_amount(invoice.get("total"), currency)))
+    if paid > 0:
+        total_rows.append(("Paid", f'&minus;{_fmt_amount(invoice.get("amount_paid"), currency)}'))
+    grand = ("Balance due", _fmt_amount(invoice.get("balance_due"), currency)) if balance > 0 \
+        else ("Total", _fmt_amount(invoice.get("total"), currency))
+    totals_html = R.totals(total_rows, grand=grand)
+
+    export_note = ""
+    if is_export:
+        export_note = R.words_line(
+            "SUPPLY MEANT FOR EXPORT UNDER LUT WITHOUT PAYMENT OF INTEGRATED TAX"
+        )
+
+    # No amount in words for an export: the recipient's numbering convention is
+    # unknown, so a lakh/crore rendering would be worse than none.
     words_html = ""
     if currency == "INR" and not is_export:
-        words_html = f'<div class="pdf__words">{html.escape(amount_in_words_inr(float(invoice.get("total") or 0)))}</div>'
+        words_html = R.words_line(
+            f'Amount in words &mdash; <b>{R.esc(amount_in_words_inr(float(invoice.get("total") or 0)))}</b>'
+        )
 
+    # ── bank, terms, signature ───────────────────────────────────────────────
     bank = org.get("bank_details") or {}
     bank_html = ""
     if isinstance(bank, dict) and any(bank.values()):
-        bank_rows = "".join(
-            f'<div class="pdf__bank-row"><span>{html.escape(label)}</span><span>{html.escape(str(bank.get(key, "")))}</span></div>'
+        bank_lines = "<br>".join(
+            f'{R.esc(label)} <span class="num num--left">{R.esc(bank.get(key))}</span>'
             for label, key in [
                 ("Account name", "account_name"), ("Account number", "account_number"),
                 ("IFSC", "ifsc"), ("Bank", "bank_name"), ("Branch", "branch"), ("UPI", "upi_id"),
             ] if bank.get(key)
         )
-        bank_html = f"""
-        <div class="pdf__bank">
-          <div class="pdf__bank-h">Payment details</div>
-          {bank_rows}
-        </div>"""
+        bank_html = R.block(
+            "Payment details",
+            f'<div class="party__a">{bank_lines}</div>',
+            top="0" if not bank_html else "12px",
+        )
 
-    footer_note = html.escape(org.get("invoice_note") or "") or "Thank you for your business."
-    terms = html.escape(invoice.get("terms") or "")
+    note_items = []
+    if invoice.get("terms"):
+        note_items.append(R.esc(invoice["terms"]))
+    note_items.append(R.esc(org.get("invoice_note") or "") or "Thank you for your business.")
+    terms_html = R.block("Terms", R.terms_list(note_items), top="12px" if bank_html else "0")
 
-    # Signature block. `Tax Invoice.html` renders "For {org} / Authorised signatory /
-    # {name}, {designation}" followed by the Rule 46 declaration — the sentence that
-    # is what makes an unsigned computer-generated invoice valid. Both columns have
-    # existed on `organisations` all along and were simply never read, so the whole
-    # block was missing from every document the product has ever produced.
-    sig_name = html.escape(org.get("authorized_signatory_name") or "")
-    sig_role = html.escape(org.get("authorized_signatory_designation") or "")
-    sig_line = f"{sig_name}{f', {sig_role}' if sig_role else ''}" if sig_name else ""
-    rule46 = (
-        "Computer-generated tax invoice · valid without physical signature under "
-        "Rule 46 of the CGST Rules, 2017."
+    sign = R.sign_block(
+        f'For {R.esc(org.get("name") or "")}'.strip() if org.get("name") else "Authorised signatory",
+        org.get("authorized_signatory_name") or "",
+        org.get("authorized_signatory_designation") or "",
     )
-    signature_html = f"""
-    <div class="pdf__sign">
-      <div class="pdf__sign-for">For {org_name}</div>
-      {f'<div class="pdf__sign-name">{sig_line}</div>' if sig_line else
-       '<div class="pdf__sign-name pdf__unset">Authorised signatory not set</div>'}
-      <div class="pdf__sign-label">Authorised signatory</div>
-    </div>"""
 
-    body = f"""
-<div class="pdf">
-  <div class="pdf__head">
-    <div class="pdf__brand">
-      {logo_html}
-      <div>
-        <div class="pdf__org-name">{org_name}</div>
-        {_org_gstin_line(org_gstin, org_pan, invoice.get("invoice_type") or "")}
-        {f'<div class="pdf__org-line">{org_addr}</div>' if org_addr else ''}
-        {f'<div class="pdf__org-line">{org_contact_line}</div>' if org_contact_line else ''}
-      </div>
-    </div>
-    <div class="pdf__doc-meta">
-      <div class="pdf__doc-title">{doc_title}</div>
-      <div class="pdf__meta-row"><span>No.</span><b>{html.escape(invoice.get("invoice_number", ""))}</b></div>
-      <div class="pdf__meta-row"><span>Date</span><b>{invoice.get("invoice_date", "")}</b></div>
-      {f'<div class="pdf__meta-row"><span>Due</span><b>{invoice.get("due_date", "")}</b></div>' if invoice.get("due_date") else ''}
-      {f'<div class="pdf__meta-row"><span>Place of supply</span><b>{html.escape(invoice.get("place_of_supply", ""))}</b></div>' if invoice.get("place_of_supply") and not is_export else ''}
-    </div>
-  </div>
-
-  <div class="pdf__bill-to">
-    <div class="pdf__bill-h">Bill To</div>
-    <div class="pdf__bill-name">{contact_name}{f' — {contact_company}' if contact_company else ''}</div>
-    {f'<div class="pdf__bill-line">{contact_addr}</div>' if contact_addr else ''}
-    {f'<div class="pdf__bill-line">GSTIN: {contact_gstin}</div>' if contact_gstin and not is_export else ''}
-    {f'<div class="pdf__bill-line">{contact_email}</div>' if contact_email else ''}
-  </div>
-
-  <table class="pdf__table">
-    <thead>
-      <tr>
-        <th style="width:28px;">#</th>
-        <th>Description</th>
-        <th style="width:70px;">HSN/SAC</th>
-        <th class="num" style="width:70px;">Qty</th>
-        <th class="num" style="width:90px;">Rate</th>
-        {'' if is_export else '<th class="num" style="width:50px;">GST</th>'}
-        <th class="num" style="width:100px;">Amount</th>
-      </tr>
-    </thead>
-    <tbody>{rows}</tbody>
-  </table>
-
-  <div class="pdf__totals-wrap">
-    <div class="pdf__totals">
-      {tax_rows}
-      {discount_row}
-      <div class="pdf__row pdf__row--total"><span>Total</span><span>{_fmt_amount(invoice.get("total"), currency)}</span></div>
-      {f'<div class="pdf__row" style="color:{_TEAL};"><span>Paid</span><span>{_fmt_amount(invoice.get("amount_paid"), currency)}</span></div>' if float(invoice.get("amount_paid") or 0) > 0 else ''}
-      {f'<div class="pdf__row" style="color:{_DANGER};font-weight:700;"><span>Balance due</span><span>{_fmt_amount(invoice.get("balance_due"), currency)}</span></div>' if float(invoice.get("balance_due") or 0) > 0 else ''}
-    </div>
-  </div>
-
-  {words_html}
-
-  <div class="pdf__foot-grid">
-    {bank_html}
-    <div class="pdf__terms">
-      {f'<div class="pdf__terms-h">Terms</div><p>{terms}</p>' if terms else ''}
-      <p class="pdf__thankyou">{footer_note}</p>
-    </div>
-    {signature_html}
-  </div>
-
-  <div class="pdf__rule46">{rule46}</div>
-  {_advisory_note(check)}
-
-  <div class="pdf__colophon">Generated by Kartavaya · {deva_span("कर्तव्य", "Kartavya")} — by Aekam Inc</div>
-</div>"""
-
-    css = f"""
-{font_face_css()}
-*{{ box-sizing:border-box; margin:0; padding:0; }}
-body{{ background:{_SURFACE}; font-family:{_FONT_UI}; color:{_INK}; -webkit-print-color-adjust:exact; print-color-adjust:exact; }}
-@page{{ size:A4; margin:0; }}
-.pdf{{ width:210mm; min-height:297mm; background:{_SURFACE}; padding:40px 48px; display:flex; flex-direction:column; gap:18px; }}
-.pdf::before{{ content:none; }}
-
-/* `.lh` in brand.css closes the letterhead with `2px solid var(--org-accent)`,
-   not with ink. The accent rule under the letterhead is the one piece of brand
-   colour on an otherwise black-on-white document. */
-.pdf__head{{ display:flex; justify-content:space-between; gap:24px; padding-bottom:16px; border-bottom:2px solid {_ACCENT}; }}
-.pdf__brand{{ display:flex; gap:14px; align-items:flex-start; }}
-.pdf__logo{{ width:56px; height:56px; object-fit:contain; }}
-.pdf__org-name{{ font-family:{_FONT_DISP}; font-size:20px; font-weight:700; color:{_INK}; }}
-.pdf__org-line{{ font-size:10.5px; color:{_INK3}; margin-top:2px; }}
-/* Deliberately ugly. A missing supplier GSTIN must never survive to a
-   customer, so it is marked rather than omitted — see _gstin_line(). */
-.pdf__unset{{ color:#B42318; border-bottom:1px dashed #B42318; font-weight:600; }}
-.pdf__doc-meta{{ text-align:right; }}
-.pdf__doc-title{{ font-family:{_FONT_DISP}; font-size:22px; font-weight:700; color:{_ACCENT}; letter-spacing:-0.01em; margin-bottom:6px; }}
-.pdf__meta-row{{ font-size:11px; color:{_INK3}; display:flex; justify-content:flex-end; gap:8px; }}
-.pdf__meta-row b{{ color:{_INK}; min-width:90px; text-align:right; }}
-
-.pdf__bill-to{{ background:{_BG_SOFT}; border:1px solid {_RULE}; border-radius:8px; padding:12px 16px; }}
-.pdf__bill-h{{ font-size:9px; letter-spacing:0.16em; text-transform:uppercase; color:{_INK3}; font-weight:700; margin-bottom:4px; }}
-.pdf__bill-name{{ font-size:14px; font-weight:700; color:{_INK}; }}
-.pdf__bill-line{{ font-size:11px; color:{_INK2}; margin-top:2px; }}
-
-.pdf__table{{ width:100%; border-collapse:collapse; font-size:11.5px; }}
-.pdf__table th{{ text-align:left; font-size:9px; letter-spacing:0.1em; text-transform:uppercase; color:#fff; background:{_INK}; font-weight:700; padding:8px 8px; }}
-.pdf__table th.num{{ text-align:right; }}
-.pdf__table td{{ padding:8px; border-bottom:1px solid {_RULE_SOFT}; vertical-align:top; }}
-.pdf__table td.num{{ text-align:right; }}
-.pdf__table td.mono{{ font-family:{_FONT_MONO}; font-size:10.5px; color:{_INK3}; }}
-.pdf__table td.strong{{ font-weight:700; }}
-
-.pdf__totals-wrap{{ display:flex; justify-content:flex-end; }}
-.pdf__totals{{ width:260px; }}
-.pdf__row{{ display:flex; justify-content:space-between; font-size:12px; padding:4px 0; color:{_INK2}; }}
-.pdf__row--total{{ border-top:2px solid {_INK}; margin-top:4px; padding-top:8px; font-size:15px; font-weight:700; color:{_INK}; }}
-.pdf__export-note{{ font-size:9.5px; color:{_ACCENT}; font-weight:700; text-align:right; letter-spacing:0.02em; }}
-
-.pdf__words{{ font-size:11px; font-style:italic; color:{_INK2}; border-top:1px dashed {_RULE}; padding-top:10px; }}
-
-.pdf__foot-grid{{ display:grid; grid-template-columns:1fr 1fr auto; gap:20px; margin-top:auto; padding-top:14px; }}
-.pdf__sign{{ text-align:right; display:flex; flex-direction:column; justify-content:flex-end; min-width:150px; }}
-.pdf__sign-for{{ font-size:10.5px; color:{_INK2}; }}
-.pdf__sign-name{{ font-family:{_FONT_DISP}; font-size:12px; font-weight:600; color:{_INK}; margin-top:34px; }}
-.pdf__sign-label{{ font-size:9px; letter-spacing:0.14em; text-transform:uppercase; color:{_INK3}; font-weight:700; border-top:1px solid {_RULE}; padding-top:4px; margin-top:3px; }}
-.pdf__rule46{{ font-size:8.5px; color:{_INK3}; text-align:center; padding-top:10px; }}
-.pdf__bank-h, .pdf__terms-h{{ font-size:9px; letter-spacing:0.16em; text-transform:uppercase; color:{_INK3}; font-weight:700; margin-bottom:6px; }}
-.pdf__bank-row{{ display:flex; justify-content:space-between; font-size:11px; color:{_INK2}; padding:2px 0; max-width:280px; }}
-.pdf__bank-row span:first-child{{ color:{_INK3}; }}
-.pdf__terms p{{ font-size:10.5px; color:{_INK3}; line-height:1.5; }}
-.pdf__thankyou{{ margin-top:8px; font-style:italic; }}
-
-.pdf__colophon{{ text-align:center; font-size:9px; color:{_INK3}; border-top:1px solid {_RULE_SOFT}; padding-top:10px; }}
-
-.pdf__gap-note{{ background:#FADAD6; border-radius:6px; padding:9px 12px; font-size:10px; color:#7A1B12; line-height:1.5; }}
-.pdf__gap-note b{{ display:block; font-size:10.5px; }}
-.pdf__gap-note ul{{ margin:4px 0 0 16px; }}
-"""
-
-    return f"""<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><style>{css}</style></head>
-<body>{body}</body>
-</html>"""
+    page = "".join([
+        head, meta, party_block, lines_table,
+        totals_html, export_note, words_html,
+        R.parties(bank_html + terms_html, sign, flush=True),
+        R.gap_note(check),
+        R.foot(
+            "Computer-generated tax invoice &middot; valid without physical "
+            "signature under Rule 46 of the CGST Rules, 2017."
+        ),
+    ])
+    return R.document([page], org, title=f"{doc_title} — Kartavaya")
 
 
 def generate_invoice_pdf(invoice: dict, org: dict, contact: dict = None) -> bytes:
@@ -507,14 +391,9 @@ def generate_invoice_pdf(invoice: dict, org: dict, contact: dict = None) -> byte
     invoice, org, contact = invoice or {}, org or {}, contact or {}
     check = validate_tax_invoice(invoice, org, contact)
     check.raise_if_incomplete()
-
-    try:
-        from weasyprint import HTML
-    except (ImportError, OSError) as e:
-        # OSError, not just ImportError: WeasyPrint imports fine and then fails
-        # to dlopen libgobject/libpango, which is what a machine or image
-        # without the native stack actually does. Catching only ImportError let
-        # that surface as a raw OSError and a 500 with a stack trace.
-        raise RuntimeError("WeasyPrint is not available on this server") from e
-    html_str = _build_html(invoice, org, contact, check)
-    return HTML(string=html_str, base_url=None).write_pdf()
+    # `doc_render.render_pdf` is the single PDF path for the whole set. It
+    # catches OSError as well as ImportError, because WeasyPrint imports fine
+    # and then fails to dlopen libgobject/libpango on an image without the
+    # native stack — catching only ImportError let that surface as a 500 with a
+    # stack trace.
+    return R.render_pdf(_build_html(invoice, org, contact, check))

@@ -12,9 +12,59 @@ books under section 35" — and the meta strip carries "Filing status: Working �
 not filed" with "ARN: Not generated". Nothing here files anything, and the
 document must never be mistaken for the summary the portal generates.
 
-That framing is load-bearing, because the specification's Table 4 is a SUBSET
-of the notified form. See `_TABLE_4_DIVERGENCE` below; it is reproduced in
-`swarm-reports/documents-build.md` rather than buried here.
+That framing is load-bearing and is stated three times on the face of the paper —
+in the meta strip, in "Before you file", and in the colophon. It is what makes
+any residual divergence from the portal's own summary tolerable, and it must not
+be removed.
+
+Table 4 follows the NOTIFIED form, not the design mock
+-----------------------------------------------------
+`docs/GSTR-3B Summary.html` prints a six-row Table 4 that is a SUBSET of the
+notified form, and one of its rows is in the wrong place. Table 4 here follows
+the FORM; the design's letterhead, type, colour, spacing, components and
+colophon are untouched. The authorities are:
+
+  * Notification 14/2022-Central Tax, 5 July 2022 — notified the revised Table 4.
+  * GSTN advisory of 2 September 2022 — the labels went live on the portal on
+    01.09.2022 and apply "for the GSTR-3B to be filed for the period August 2022
+    onwards". Every period this product can generate is after that date.
+  * Circular 170/02/2022-GST, 6 July 2022 — para 4.3 and the worked Annexure.
+
+The notified rows, and what changed here:
+
+  (A) ITC Available (whether in full or part)
+      (1) Import of goods                                — existed
+      (2) Import of services                             — ADDED
+      (3) Inward supplies liable to reverse charge       — existed
+      (4) Inward supplies from ISD                       — ADDED
+      (5) All other ITC                                  — existed
+  (B) ITC Reversed
+      (1) Rules 38, 42, 43 and section 17(5)             — now ABSORBS s.17(5)
+      (2) Others                                         — ADDED
+  (C) Net ITC Available (A) − (B)
+  (D) Other Details                                      — MEMO, NOT additive
+      (1) ITC reclaimed, reversed under 4(B)(2) earlier  — ADDED
+      (2) Ineligible under s.16(4) and PoS restrictions  — was mislabelled
+
+The consequential change is (B)(1). The design printed section 17(5) blocked
+credit as a separate "(D) Ineligible ITC" memo sitting OUTSIDE the reversal, so
+it never reduced Net ITC. Circular 170/02/2022 para 4.4 is explicit: "the
+reversal of ITC of ineligible credit under section 17(5) … is required to be made
+under Table 4(B) and not under Table 4(D)". Para 4.2 gives the reason — 4(C) is
+what gets credited to the electronic credit ledger, so anything ineligible must
+be taken out before it. On the design's own figures that moves ₹12,480 out of the
+credit column and into cash, which is exactly the size of error a CA firm checks
+for against the portal.
+
+Table 4(D) is disclosure only. Circular 170/02/2022 para 4.3(D) fixes the
+arithmetic as `4C = 4A − [4B(1) + 4B(2)]`, and the Annexure's worked example
+computes 4(C) with (D) excluded. `compute` therefore never lets a (D) row touch
+Net ITC. 4(D)(1) in particular is a BREAK-UP of credit already availed inside
+4(A)(5) — the GSTN advisory says credit reversed under 4(B)(2) "can be reclaimed
+in table 4(A)(5) at appropriate time and the break-up detail of such reclaimed
+ITC should be provided in 4(D)(1) in the same return" — so adding it to (A) again
+would double-count it. `validate_gstr3b` refuses a paper where 4(D)(1) exceeds
+4(A)(5), which is the arithmetic form of that rule.
 
 The set-off is computed, never accepted
 ---------------------------------------
@@ -35,9 +85,10 @@ implemented in `compute_set_off` rather than left to the caller:
 
 Feeding the specification's own Table 3.1 and Table 4 figures through
 `compute_set_off` reproduces its printed Table 6.1 and its four totals exactly,
-to the rupee. `tests/test_document_statutory.py` asserts precisely that, so a
-change to the set-off logic fails against the approved design rather than
-against nothing.
+to the rupee, ONCE section 17(5) is moved to where the form puts it.
+`tests/test_document_set.py::TestGstr3bAgainstSpec` asserts that end to end and
+shows the arithmetic in full, so a change to the set-off logic fails against a
+derivation a reader can check rather than against nothing.
 
 Rounding
 --------
@@ -58,17 +109,9 @@ from services.invoice_pdf import amount_in_words_inr
 #: The heads, in the order every table in the form prints them.
 HEADS = ("igst", "cgst", "sgst", "cess")
 
-#: Table 4 of the specification is a subset of the notified form. Recorded here
-#: and in the build report; NOT silently "corrected", because the specification
-#: is the approved design and improvising field names on a statutory document is
-#: the worse failure. A firm filing from this paper reads the portal's own form.
-_TABLE_4_DIVERGENCE = (
-    "Specification Table 4 omits (A)(2) import of services, (A)(4) inward "
-    "supplies from an ISD, and (D)(1) ITC reclaimed. Its (D) row is labelled "
-    "'Ineligible ITC — section 17(5)'; on the form notified from July 2022 "
-    "section 17(5) ineligible credit is reported as a reversal under 4(B)(1) "
-    "and 4(D)(2) covers section 16(4) and place-of-supply restrictions instead."
-)
+#: The form revision this paper reproduces, printed on its face so a preparer
+#: can tell at a glance which Table 4 they are reading.
+FORM_REVISION = "Table 4 as notified by Notification 14/2022-CT (periods from August 2022)"
 
 #: 3.1 row labels — the specification's wording, which is the form's wording.
 _ROW_31 = (
@@ -79,12 +122,44 @@ _ROW_31 = (
     ("outward_non_gst", "(e) Non-GST outward supplies", ""),
 )
 
-#: 4 row labels — see `_TABLE_4_DIVERGENCE`.
+#: 4(A) — the five rows of "ITC Available (whether in full or part)", in the
+#: notified order and with the notified wording. These ADD to Net ITC.
 _ROW_4_AVAILABLE = (
-    ("itc_import_goods", "(A) ITC available — import of goods", ""),
-    ("itc_reverse_charge", "(A) ITC available — inward reverse charge", ""),
-    ("itc_all_other", "(A) ITC available — all other ITC", ""),
+    ("itc_import_goods", "(A)(1) Import of goods", ""),
+    ("itc_import_services", "(A)(2) Import of services", ""),
+    ("itc_reverse_charge", "(A)(3) Inward supplies liable to reverse charge", "Other than 1 and 2 above"),
+    ("itc_isd", "(A)(4) Inward supplies from ISD", ""),
+    ("itc_all_other", "(A)(5) All other ITC", ""),
 )
+
+#: 4(B) — the two rows of "ITC Reversed". These SUBTRACT from Net ITC.
+#:
+#: (B)(1) is one printed row carrying two inputs, because the notified form
+#: prints one row: rule 38/42/43 reversals AND section 17(5) blocked credit.
+#: Circular 170/02/2022's Annexure sums them into a single figure the same way
+#: (₹1,25,500 = ₹75,500 under rules 42/43 + ₹50,000 under section 17(5)). They
+#: are kept as separate INPUTS so a preparer's two distinct workings survive
+#: into the paper and can be shown under the row.
+_ROW_4_REVERSED_B1 = ("itc_reversed", "itc_blocked_17_5")
+_ROW_4_REVERSED_B2 = "itc_reversed_other"
+
+#: 4(D) — "Other Details". DISCLOSURE ONLY. Circular 170/02/2022 para 4.3(D)
+#: computes Net ITC as 4A − [4B(1) + 4B(2)], so neither row may touch 4(C).
+_ROW_4_OTHER = (
+    ("itc_reclaimed", "(D)(1) ITC reclaimed, reversed under 4(B)(2) earlier",
+     "Already included in (A)(5) — shown here as its break-up, not added again"),
+    ("itc_ineligible_16_4_pos", "(D)(2) Ineligible ITC — section 16(4), place-of-supply",
+     "Not available, and not part of (A) or (C)"),
+)
+
+#: `itc_ineligible` USED to mean section 17(5) blocked credit, which the design
+#: printed as a standalone "(D) Ineligible ITC" memo. The notified form reports
+#: that figure as a reversal inside 4(B)(1). The key is still accepted and its
+#: MEANING is preserved — a caller's section 17(5) number keeps being a section
+#: 17(5) number — it is simply reported where the form requires. It is not
+#: silently re-read as the new 4(D)(2), which would move a blocked-credit figure
+#: into a row that means something else entirely.
+_LEGACY_17_5_KEY = "itc_ineligible"
 
 
 def _r(value) -> int:
@@ -103,6 +178,21 @@ def _heads(block) -> dict[str, int]:
 def _taxable(block) -> int:
     block = block if isinstance(block, dict) else {}
     return _r(block.get("taxable"))
+
+
+def _blocked_17_5(gstr: dict) -> dict[str, int]:
+    """Section 17(5) blocked credit, from either the current or the legacy key.
+
+    `itc_blocked_17_5` wins when the caller supplies it; otherwise the legacy
+    `itc_ineligible` is read with its ORIGINAL meaning. See `_LEGACY_17_5_KEY`.
+    """
+    if "itc_blocked_17_5" in gstr:
+        return _heads(gstr.get("itc_blocked_17_5"))
+    return _heads(gstr.get(_LEGACY_17_5_KEY))
+
+
+def _sum_heads(*blocks: dict[str, int]) -> dict[str, int]:
+    return {h: sum(b[h] for b in blocks) for h in HEADS}
 
 
 def compute_set_off(
@@ -174,13 +264,25 @@ def compute(gstr: dict) -> dict:
     # output tax by definition and are not added.
     payable = {h: outward_tax[h] + rcm_tax[h] for h in HEADS}
 
-    available = {h: 0 for h in HEADS}
-    for key, _label, _sub in _ROW_4_AVAILABLE:
-        row = _heads(gstr.get(key))
-        for h in HEADS:
-            available[h] += row[h]
-    reversed_itc = _heads(gstr.get("itc_reversed"))
-    net_itc = {h: available[h] - reversed_itc[h] for h in HEADS}
+    # 4(A) — the five availment rows, summed.
+    available = _sum_heads(*(_heads(gstr.get(key)) for key, _l, _s in _ROW_4_AVAILABLE))
+
+    # 4(B)(1) — rules 38/42/43 PLUS section 17(5). One printed row, two inputs.
+    rule_reversal = _heads(gstr.get("itc_reversed"))
+    blocked_17_5 = _blocked_17_5(gstr)
+    reversed_b1 = _sum_heads(rule_reversal, blocked_17_5)
+    # 4(B)(2) — reversals that are not permanent and may be reclaimed later.
+    reversed_b2 = _heads(gstr.get(_ROW_4_REVERSED_B2))
+    reversed_total = _sum_heads(reversed_b1, reversed_b2)
+
+    # 4(C) = 4A − [4B(1) + 4B(2)]. Circular 170/02/2022 para 4.3(D), verbatim.
+    # Table 4(D) is deliberately absent from this line: it is disclosure only.
+    net_itc = {h: available[h] - reversed_total[h] for h in HEADS}
+
+    # 4(D) — memo rows. Computed so the renderer and the validator read one
+    # source, and never folded into `net_itc`.
+    reclaimed = _heads(gstr.get("itc_reclaimed"))
+    ineligible_16_4 = _heads(gstr.get("itc_ineligible_16_4_pos"))
 
     set_off = compute_set_off(payable, net_itc, cash_only=rcm_tax)
 
@@ -192,8 +294,16 @@ def compute(gstr: dict) -> dict:
     return {
         "payable": payable,
         "itc_available": available,
-        "itc_reversed": reversed_itc,
+        "itc_rule_reversal": rule_reversal,
+        "itc_blocked_17_5": blocked_17_5,
+        "itc_reversed_b1": reversed_b1,
+        "itc_reversed_b2": reversed_b2,
+        # Kept under its historical name so callers reading the total reversal
+        # do not silently start reading only the 4(B)(1) half of it.
+        "itc_reversed": reversed_total,
         "net_itc": net_itc,
+        "itc_reclaimed": reclaimed,
+        "itc_ineligible_16_4_pos": ineligible_16_4,
         "set_off": set_off,
         "interest": interest,
         "total_payable": total_payable,
@@ -331,15 +441,34 @@ def _build_html(gstr: dict, org: dict, check: DocumentCheck | None = None) -> st
     )
 
     # ── 4 ────────────────────────────────────────────────────────────────────
+    # Row order and wording are the notified form's. See the module docstring
+    # for the authorities and for why (D) sits below (C) without changing it.
     rows_4 = [
         _tax_row(label, sub, None, _heads(gstr.get(key)))
         for key, label, sub in _ROW_4_AVAILABLE
     ]
-    rows_4.append(_tax_row("(B) ITC reversed — rule 42 / 43", "", None, c["itc_reversed"]))
-    rows_4.append(_tax_row("(C) Net ITC available (A − B)", "", None, c["net_itc"]))
-    rows_4.append(
-        _tax_row("(D) Ineligible ITC — section 17(5)", "", None, _heads(gstr.get("itc_ineligible")))
-    )
+
+    # 4(B)(1) prints as ONE row, as the form does. When a section 17(5) figure
+    # is present it is named underneath, because a preparer reconciling this row
+    # against their own workings needs to see what the single number is made of
+    # — and because that component is precisely the one that moved.
+    blocked = c["itc_blocked_17_5"]
+    b1_sub = ""
+    if any(blocked[h] for h in HEADS):
+        b1_sub = (
+            "Includes section 17(5) blocked credit of "
+            + ", ".join(
+                f"{h.upper()} {R.num0(blocked[h])}" for h in HEADS if blocked[h]
+            )
+        )
+    rows_4.append(_tax_row(
+        "(B)(1) ITC reversed — rules 38, 42, 43 and section 17(5)", b1_sub, None, c["itc_reversed_b1"]
+    ))
+    rows_4.append(_tax_row("(B)(2) ITC reversed — others", "", None, c["itc_reversed_b2"]))
+    rows_4.append(_tax_row("(C) Net ITC available (A) − (B)", "", None, c["net_itc"]))
+    for key, label, sub in _ROW_4_OTHER:
+        rows_4.append(_tax_row(label, sub, None, c[key]))
+
     table_4 = R.table(
         [("Details", "", ""), ("IGST", "num", "74px"), ("CGST", "num", "74px"),
          ("SGST", "num", "74px"), ("Cess", "num", "64px")],
@@ -388,6 +517,22 @@ def _build_html(gstr: dict, org: dict, check: DocumentCheck | None = None) -> st
         )
     for n in gstr.get("notes") or []:
         notes.append(R.esc(n))
+
+    # The one statutory note that must always be on the face of the paper: it
+    # explains why 4(C) here is smaller than a reader of the pre-2022 form
+    # expects, and it names the authority so a CA can check it in a minute.
+    if any(c["itc_blocked_17_5"][h] for h in HEADS):
+        notes.append(
+            "Section 17(5) blocked credit is reversed within 4(B)(1) and therefore "
+            "reduces Net ITC at 4(C) — Circular 170/02/2022-GST, paragraphs 4.2 and "
+            "4.4. It is <b>not</b> reported at 4(D)."
+        )
+    if any(c["itc_reclaimed"][h] for h in HEADS):
+        notes.append(
+            "ITC reclaimed at 4(D)(1) is the break-up of credit already availed "
+            "within 4(A)(5). It is disclosed, not added a second time."
+        )
+    notes.append(R.esc(FORM_REVISION) + ".")
     notes.append(
         "Figures are a working, not a filed return. No ARN exists until submission "
         "on the GST portal."
