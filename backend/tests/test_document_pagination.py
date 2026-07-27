@@ -542,3 +542,164 @@ class TestBreakMechanics:
                 f"cost_report_pdf leaves a {box}mm content box, past the "
                 f"{CONTENT_BUDGET_MM}mm budget"
             )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# The cost and credit reports: the font contract, in rendered bytes
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# These two are client-facing and bilingual, and they shipped for months with
+# their Devanagari falling through to DejaVu — which has no Devanagari coverage
+# — so `उपयोग एवं लागत प्रतिवेदन` printed as a row of tofu boxes. The static
+# scan in `test_document_statutory.py` catches an UNWRAPPED literal; this
+# catches the other half, which is a wrapper that is present but not working:
+# a stylesheet missing `@font-face`, a face that fails to embed, a font-weight
+# that pulls in a synthesised bold.
+#
+# The signal is that the vendored family appears in the page's font RESOURCES at
+# all. WeasyPrint subsets and embeds only the faces it actually draws with, so
+# its presence proves the Devanagari was set in it and its absence proves the
+# fallback happened — which is exactly what the pre-fix bytes showed.
+#
+# Embedding is checked by walking /Resources /Font -> /FontDescriptor, NOT by
+# searching the raw bytes for b"FontFile2". That search is permanently False
+# here because the descriptors live inside compressed object streams, so an
+# assertion built on it passes nothing and fails nothing.
+
+def _font_resources(pdf_bytes: bytes):
+    """[(basefont, embedded)] for every font on every page."""
+    try:
+        import io
+
+        from pypdf import PdfReader
+    except ImportError:
+        pytest.skip("pypdf is not installed — cannot read fonts back out of the PDF")
+    out = []
+    for page in PdfReader(io.BytesIO(pdf_bytes)).pages:
+        res = page.get("/Resources")
+        if res is None:
+            continue
+        fonts = res.get_object().get("/Font")
+        if fonts is None:
+            continue
+        for ref in fonts.get_object().values():
+            f = ref.get_object()
+            nodes = [f]
+            if f.get("/Subtype") == "/Type0" and f.get("/DescendantFonts"):
+                nodes += [d.get_object() for d in f["/DescendantFonts"]]
+            embedded = any(
+                k in node["/FontDescriptor"].get_object()
+                for node in nodes if node.get("/FontDescriptor") is not None
+                for k in ("/FontFile", "/FontFile2", "/FontFile3")
+            )
+            out.append((str(f.get("/BaseFont", "?")), embedded))
+    return out
+
+
+def _cost_report(ai_n: int, sc_n: int) -> bytes:
+    """Synthetic usage. Every figure is a repdigit and every name a placeholder:
+    this is the product's OWN cost report, so nothing in the fixture may read as
+    a rate card."""
+    from services.cost_report_pdf import generate_cost_report_pdf
+
+    def rows(n, key):
+        return [{"service": f"Sample Service {i + 1}", key: 111 * (i + 1),
+                 "charge_inr": 1111.11} for i in range(n)]
+
+    ai, sc = rows(ai_n, "calls"), rows(sc_n, "runs")
+    return generate_cost_report_pdf({
+        "org_name": "Meghdoot Advisory LLP", "plan_name": "Sample Plan",
+        "period_start": "01 Apr 2026", "period_end": "30 Apr 2026",
+        "ai_services": ai, "scraper_services": sc, "credits_used": 4444,
+        "total_ai_inr": 1111.11 * ai_n, "total_scraper_inr": 1111.11 * sc_n,
+        "total_charge_inr": 1111.11 * (ai_n + sc_n),
+        "signatory_name": "A. Sample", "signatory_designation": "Authorised Signatory",
+    })
+
+
+def _credit_report(n: int) -> bytes:
+    from services.cost_report_pdf import generate_credit_report_pdf
+
+    br = [{"name": f"Sample Catalog {i + 1}", "runs": 111 * (i + 1),
+           "credits": 222 * (i + 1)} for i in range(n)]
+    used = sum(b["credits"] for b in br)
+    return generate_credit_report_pdf({
+        "org_name": "Meghdoot Advisory LLP", "plan_name": "Sample Plan",
+        "period_start": "01 Apr 2026", "period_end": "30 Apr 2026",
+        "plan_credits": 55555, "current_balance": 11111, "ai_credits_used": 2222,
+        "scraper_credits_used": used, "total_credits_used": used + 2222,
+        "overage_credits": 0, "scraper_breakdown": br,
+        "signatory_name": "A. Sample", "signatory_designation": "Authorised Signatory",
+    })
+
+
+COST_DOCS = [
+    ("cost_report", "spec", lambda: _cost_report(3, 3), 1),
+    ("cost_report", "large", lambda: _cost_report(28, 24), 2),
+    ("credit_report", "spec", lambda: _credit_report(3), 1),
+    ("credit_report", "large", lambda: _credit_report(34), 2),
+]
+
+
+@pytest.mark.parametrize("name,volume,build_pdf,expected_pages", COST_DOCS,
+                         ids=[f"{n}-{v}" for n, v, _b, _p in COST_DOCS])
+class TestCostReportFontContract:
+    def test_the_vendored_devanagari_face_is_used_and_embedded(
+            self, name, volume, build_pdf, expected_pages):
+        """The defect this file's cost-report section exists for. Before the
+        fix, Tiro appeared in NO page's resources and the Devanagari was drawn
+        with DejaVu."""
+        from services.doc_fonts import DEVANAGARI_FAMILY, has_devanagari_font
+
+        if not has_devanagari_font():
+            pytest.skip("no vendored Devanagari face — deva_span degrades to Latin")
+        family = DEVANAGARI_FAMILY.replace(" ", "")
+        fonts = _font_resources(build_pdf())
+        used = [(b, e) for b, e in fonts if family in b.replace("-", "")]
+        assert used, (
+            f"{name} at {volume} volume draws no run in {DEVANAGARI_FAMILY} — "
+            f"its Devanagari fell back and is printing as tofu. Fonts: "
+            f"{sorted({b for b, _ in fonts})}"
+        )
+        for basefont, embedded in used:
+            assert embedded, f"{basefont} is referenced but not embedded"
+
+    def test_no_devanagari_run_lands_on_a_synthesised_bold(
+            self, name, volume, build_pdf, expected_pages):
+        """Tiro ships one weight, 400. A bold Devanagari face in the resources
+        means the renderer synthesised one, which smears the conjunct joins.
+
+        This is not hypothetical: naming the Devanagari family inside the Latin
+        stacks — the obvious-looking way to cover Devanagari in tenant data —
+        made Tiro the first PRESENT family in every stack, moved the whole
+        document onto it, and produced exactly this face.
+        """
+        from services.doc_fonts import DEVANAGARI_FAMILY
+
+        family = DEVANAGARI_FAMILY.replace(" ", "").lower()
+        offenders = [
+            b for b, _e in _font_resources(build_pdf())
+            if family in b.replace("-", "").lower()
+            and ("bold" in b.lower() or "italic" in b.lower())
+        ]
+        assert offenders == [], (
+            f"{name} at {volume} volume synthesised {offenders} — "
+            f"{DEVANAGARI_FAMILY} has only weight 400"
+        )
+
+    def test_the_page_count_is_what_we_intend(self, name, volume, build_pdf,
+                                              expected_pages):
+        assert len(_pdf_pages_text(build_pdf())) == expected_pages
+
+    def test_no_page_carries_only_a_signature_or_a_colophon(
+            self, name, volume, build_pdf, expected_pages):
+        """An orphan page. The colophon is the last thing on the sheet, so a
+        page holding it and nothing else is a page the reader is handed for no
+        reason."""
+        pages = _pdf_pages_text(build_pdf())
+        for i, text in enumerate(pages):
+            body = [ln.strip() for ln in text.splitlines() if ln.strip()]
+            assert len(body) > 6, (
+                f"{name} at {volume} volume: page {i + 1} of {len(pages)} carries "
+                f"only {body} — an orphan page"
+            )

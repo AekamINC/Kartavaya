@@ -552,16 +552,54 @@ class TestDevanagariCss:
         assert deva_span("कर्तव्य", "Kartavya") == '<span class="deva">कर्तव्य</span>'
         assert "<script>" not in deva_span("<script>", "x")
 
+    # Every generator that emits a document, not a chosen two. This test used to
+    # scan `invoice_pdf` and `payslip_pdf` only, and the gap is exactly how
+    # `cost_report_pdf` shipped a client-facing report whose Devanagari fell
+    # through to DejaVu and printed as tofu: it was never scanned, so nothing
+    # objected. The cost of scanning all nine is one tuple.
+    GENERATORS = (
+        "invoice_pdf", "payslip_pdf", "gstr3b_pdf", "tds_challan_pdf",
+        "statement_pdf", "quotation_pdf", "agreement_pdf", "project_report_pdf",
+        "cost_report_pdf",
+    )
+
+    # The three ways a Devanagari literal may legitimately reach the HTML. Each
+    # ends at `deva_span`, which is what carries the family, weight 400 and the
+    # no-tracking reset:
+    #   deva_span(  — directly, including `R.deva_span(`
+    #   kind_hi=    — the letterhead's Devanagari sibling; `doc_render.letterhead`
+    #                 wraps it (`hi = deva_span(kind_hi)`)
+    #   _bi(        — cost_report_pdf's bilingual heading, which wraps its Hindi
+    #                 half and drops the separator when no face is vendored
+    WRAPPERS = ("deva_span(", "kind_hi=", "_bi(")
+
     def test_rendered_documents_wrap_their_devanagari(self):
         """A raw Devanagari literal in the HTML would inherit the Latin family
         stack and fall to whatever fontconfig finds. Every occurrence must go
         through deva_span."""
-        for module in ("invoice_pdf", "payslip_pdf"):
+        for module in self.GENERATORS:
             src = (Path(__file__).resolve().parent.parent / "services" / f"{module}.py").read_text(encoding="utf-8")
             body = src.split('"""', 2)[2]  # skip the module docstring
             for match in re.finditer(r"[ऀ-ॿ]+", body):
                 line_start = body.rfind("\n", 0, match.start())
                 line = body[line_start:body.find("\n", match.end())]
-                assert "deva_span(" in line, (
+                assert any(w in line for w in self.WRAPPERS), (
                     f"{module}.py has unwrapped Devanagari {match.group()!r} on: {line.strip()}"
                 )
+
+    def test_the_bilingual_heading_helper_wraps_and_degrades(self):
+        """`cost_report_pdf._bi` is the only wrapper outside doc_render, so it is
+        held to the same two properties as `deva_span`: it wraps, and when no
+        face is vendored it drops the Devanagari AND the separator rather than
+        leaving a heading ending in a bare middot."""
+        from services.cost_report_pdf import _bi
+
+        out = _bi("AI Services", "AI सेवाएं")
+        assert out.startswith("AI Services")
+        if has_devanagari_font():
+            assert '<span class="deva">AI सेवाएं</span>' in out
+            assert "&middot;" in out
+        else:
+            assert out == "AI Services"
+        # The English half is escaped: a firm's document must survive an `&`.
+        assert _bi("Data & Scraper", "डेटा").startswith("Data &amp; Scraper")
