@@ -53,7 +53,7 @@ import {
   makeHost, signIn, clearSession, users, SRC_DIR,
 } from './_harness';
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 
 let host;
@@ -315,11 +315,26 @@ describe('e2e · separated duty · the payroll approve control', () => {
   it('the frontend has no level gate around the approve control — recorded, not asserted away', () => {
     // A statement of fact with a citation, so the report and the code agree.
     // When enforcement lands this test is the second one to update.
-    const vetana = readFileSync(path.join(SRC_DIR, 'pages/VetanaPage.jsx'), 'utf8');
-    expect(vetana).toMatch(/Approve Payroll/);
+    //
+    // Reads the WHOLE Vetana module, not one file. Vetana has since been split
+    // per 13-module-pages.md into a route file plus `pages/vetana/*` — the
+    // approve control now lives in `vetana/PayrollTab.jsx`. Pinned to a single
+    // path, this check went red on a pure file move (which is noise) and would
+    // have gone GREEN and silent had the control merely been moved to a file
+    // the path no longer named (which is the failure that matters). Scanning
+    // the directory is immune to both.
+    const files = [
+      path.join(SRC_DIR, 'pages/VetanaPage.jsx'),
+      ...readdirSync(path.join(SRC_DIR, 'pages/vetana'))
+        .filter(f => /\.jsx?$/.test(f))
+        .map(f => path.join(SRC_DIR, 'pages/vetana', f)),
+    ];
+    const vetana = files.map(f => readFileSync(f, 'utf8')).join('\n');
+
+    expect(vetana, 'the approve control has left the Vetana module').toMatch(/Approve Payroll/);
     expect(
       /levelSatisfies|APPROVER|require_module_level/.test(vetana),
-      'VetanaPage now references a level check — flip the two it.fails pins above to it()',
+      'Vetana now references a level check — flip the two it.fails pins above to it()',
     ).toBe(false);
   });
 });
