@@ -590,6 +590,22 @@ textarea.inp { resize: vertical; min-height: 76px; }
    the same object. Amplitude rides on --motion-scale so Animations = None
    leaves the state change without the pop. */
 @keyframes dmTickPop { 40% { transform: scale(calc(1 + .18 * var(--motion-scale, 1))); } }
+/* The card-landed flash, IxViews 9.1: "one --primary flash so you can find it in
+   the new column". MOTION-SPEC §4 gives 540ms, which is `--dur-slow * 1.5`.
+
+   Declared here for the reason its two previous copies stated and could not
+   enforce. `bcJust` (boards.css) and `ixLanded` (animations.css) were
+   byte-identical, and animations.css said so out loud — "deliberately identical
+   to boards.css `bcJust` rather than improved: two boards in one product that
+   confirm a drop differently is the bug". That is exactly right, and two global
+   names is the one way of expressing it that a later edit can break silently.
+   One keyframe, two users, and the drift is now impossible rather than
+   discouraged. `.k-trow.is-just` keeps its own `kTrowJust`: the table's flash is
+   INSET, because an outer ring on a flush row paints over its neighbours. */
+@keyframes dmLanded {
+  0%   { box-shadow: 0 0 0 2px var(--primary); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
 /* Fires on the element, never a container. A whole flashing card is an alarm;
    a flashing cell is information. */
 @keyframes ixflash {

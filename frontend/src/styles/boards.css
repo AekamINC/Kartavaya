@@ -218,12 +218,13 @@
    so this is keyed on the pending class alone. */
 .bc.pending { opacity: .6; cursor: progress; }
 /* The settle flash — IxViews 9.1 exit, "one --primary flash so you can find it
-   in the new column". `motion.css` @keyframes kbJust, same duration and easing. */
-.bc.just { animation: bcJust calc(var(--dur-slow) * 1.5) var(--ease-exit); }
-@keyframes bcJust {
-  0%   { box-shadow: 0 0 0 2px var(--primary); }
-  100% { box-shadow: 0 0 0 0 transparent; }
-}
+   in the new column". `motion.css` @keyframes kbJust, same duration and easing.
+   `dmLanded` from the registry in components.css: this was `bcJust` here and a
+   byte-identical `ixLanded` in animations.css, for the graha board's
+   `.ix-landed`. Two boards confirming a drop differently is the bug both
+   comments named, and one keyframe is the only version of that a later edit
+   cannot break. */
+.bc.just { animation: dmLanded calc(var(--dur-slow) * 1.5) var(--ease-exit); }
 
 /* Quick complete — IxViews 9.4. One quick action, not five: the tick is the
    most common single change and everything else is a click into the drawer.
