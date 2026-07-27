@@ -190,6 +190,18 @@
   font-size: var(--t-label);
   color: var(--on-surface-3);
 }
+/* The unreachable-server state, which shares this frame. It carries a sentence
+   and a retry, because a failure to reach the API is NOT a sign-out and used to
+   be presented as one. Width-capped so the sentence wraps in the middle of the
+   screen rather than running the full viewport. */
+.k-boot__d {
+  margin: var(--sp-2) auto var(--sp-5);
+  max-width: 34ch;
+  font-size: var(--t-body-sm);
+  line-height: 1.55;
+  color: var(--on-surface-2);
+}
+.k-boot__in .au__btn { display: inline-flex; width: auto; padding-inline: var(--sp-6); }
 
 /* Environment marker. Colours were a hardcoded #f59e0b on #000; both are now
    the warning pair, so the banner follows the theme like everything else.

@@ -21,7 +21,7 @@ import { navigationRef } from '../nav/navigationRef';
 import type { Notification } from '../api/types';
 import { AVATAR_COLORS } from '../theme/tokens';
 import { toneFor } from '../theme/tones';
-import { useReducedMotion } from '../theme/motion';
+import { amplitude, duration, useReducedMotion, DUR, EASE } from '../theme/motion';
 import { a11yButton, hitSlopTo } from './a11y';
 
 // The tone map used to live here as eight hardcoded hexes with translucent
@@ -50,22 +50,33 @@ function colorFromId(id: string) {
 function BannerCard({ notif, onDismiss }: { notif: Notification; onDismiss: () => void }) {
   const { t }     = useTheme();
   const reduced   = useReducedMotion();
-  const slideY    = useRef(new Animated.Value(-120)).current;
+  // 0 → 1. The travel is applied by interpolation so `amplitude()` can collapse
+  // it without the animation itself having to know.
+  const enter     = useRef(new Animated.Value(0)).current;
   const progress  = useRef(new Animated.Value(1)).current;
   const tone      = toneFor(t, notif.type);
   const avatarBg  = colorFromId(notif.user_id);
   const senderInitials = initials(notif.title.split(' ').slice(0, 2).join(' ') || 'KA');
 
   useEffect(() => {
-    // Under reduced motion the banner appears in place rather than flying 120px
-    // down the screen. `setValue` rather than a shortened spring: a fast spring
-    // is still motion, and a toast that snaps into position at speed is the
-    // thing a vestibular user asked not to happen.
-    if (reduced) {
-      slideY.setValue(0);
-    } else {
-      Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 80, friction: 12 }).start();
-    }
+    /**
+     * MOTION-SPEC §3, Toast row: in `translateX(16px)` + fade over `--dur-base`,
+     * "mobile: `translateY(12px)`". Twelve pixels.
+     *
+     * This was `Animated.spring` from **-120px** — ten times the spec's travel,
+     * on an unsourced `tension: 80, friction: 12` pair that no document
+     * anywhere in this project contains, and with no duration for reduced
+     * motion to collapse. A spring is the one animation shape where
+     * `duration()` has nothing to act on, which is why the old code needed an
+     * explicit `if (reduced) setValue(0)` branch to get the accessibility case
+     * right at all. With a timing, both scalars apply and the branch is gone.
+     */
+    Animated.timing(enter, {
+      toValue: 1,
+      duration: duration(DUR.base, reduced),
+      easing: EASE.emph,
+      useNativeDriver: true,
+    }).start();
     // The progress rail is kept in both cases. It is a 5-second linear width
     // change reporting how long is left before auto-dismiss — information, not
     // decoration — and removing it would leave the banner vanishing without
@@ -88,7 +99,22 @@ function BannerCard({ notif, onDismiss }: { notif: Notification; onDismiss: () =
   const s = styles(t);
 
   return (
-    <Animated.View style={[s.card, { transform: [{ translateY: slideY }] }]}>
+    <Animated.View
+      style={[
+        s.card,
+        {
+          opacity: enter,
+          transform: [{
+            translateY: enter.interpolate({
+              inputRange:  [0, 1],
+              // §3's 12px for the mobile toast, negative because this one enters
+              // from above rather than below.
+              outputRange: [-amplitude(12, reduced), 0],
+            }),
+          }],
+        },
+      ]}
+    >
       <Pressable onPress={handlePress} style={s.inner}>
         {/* Left urgent rail. `t.error` rather than the iOS system red #FF453A:
             MOTION-SPEC §6 gives destructive/urgent to --danger, and the literal

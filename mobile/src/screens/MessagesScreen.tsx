@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator, RefreshControl,
+  View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -9,6 +9,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
+import Refresher from '../components/Refresher';
 import { messagesApi, type Channel } from '../api/messages';
 
 /**
@@ -90,7 +91,7 @@ export default function MessagesScreen() {
         keyExtractor={(c) => c.id}
         contentContainerStyle={[s.listPad, list.length === 0 && s.listGrow]}
         refreshControl={
-          <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={t.primary} />
+          <Refresher refreshing={isRefetching} onRefresh={refetch} />
         }
         ListEmptyComponent={
           <View style={s.centre}>

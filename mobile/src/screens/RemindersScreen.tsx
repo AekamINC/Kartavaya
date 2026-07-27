@@ -13,6 +13,7 @@ import { hindi } from '../theme/fonts';
 import { a11yButton, a11yToggle } from '../components/a11y';
 import { useOnline } from '../hooks/useOnline';
 import Sheet from '../components/Sheet';
+import Refresher from '../components/Refresher';
 import ScreenState, { resolveScreenState, StaleBar } from '../components/ScreenState';
 import {
   tasksApi, REMINDER_OFFSETS, REMINDER_OFFSET_LABEL, REMINDER_CHANNEL_LABEL,
@@ -164,8 +165,7 @@ export default function RemindersScreen() {
           keyExtractor={task => task.task_id}
           stickySectionHeadersEnabled={false}
           contentContainerStyle={[s.listPad, { paddingBottom: insets.bottom + 40 }]}
-          onRefresh={() => list.refetch()}
-          refreshing={list.isRefetching}
+          refreshControl={<Refresher refreshing={list.isRefetching} onRefresh={() => list.refetch()} />}
           ListHeaderComponent={
             list.data !== undefined && !online
               ? <View style={{ marginBottom: 8 }}>

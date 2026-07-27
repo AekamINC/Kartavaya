@@ -2,7 +2,7 @@ import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   FlatList, TextInput, ActivityIndicator,
-  Platform, Alert, RefreshControl, Pressable,
+  Platform, Alert, Pressable,
 } from 'react-native';
 import { useRoute, useNavigation, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, isToday, isPast } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
 import Sheet from '../components/Sheet';
+import Refresher from '../components/Refresher';
 import { tasksApi } from '../api/tasks';
 import { projectsApi } from '../api/projects';
 import { PRIORITY_COLORS, projectColor, AVATAR_COLORS, BRAND_GRADIENT_2, withAlpha } from '../theme/tokens';
@@ -346,7 +347,7 @@ export default function BoardScreen() {
       <ScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={isFetching && !isLoading} onRefresh={refetch} tintColor={t.primary} />}
+        refreshControl={<Refresher refreshing={isFetching && !isLoading} onRefresh={refetch} />}
       >
         {/* Column header kicker */}
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, paddingHorizontal: 4, paddingBottom: 10 }}>
@@ -399,7 +400,7 @@ export default function BoardScreen() {
       keyExtractor={task => task.task_id}
       contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 8 }}
       ListEmptyComponent={<Text style={[s.empty, { color: t.ink3 }]}>No tasks yet.</Text>}
-      refreshControl={<RefreshControl refreshing={isFetching && !isLoading} onRefresh={refetch} tintColor={t.primary} />}
+      refreshControl={<Refresher refreshing={isFetching && !isLoading} onRefresh={refetch} />}
       renderItem={({ item }) => {
         const col = columns.find((c: ProjectColumn) => c.column_id === item.column_id);
         const pri = PRIORITY_COLORS[scheme][item.priority] ?? t.ink3;

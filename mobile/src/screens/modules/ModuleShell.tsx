@@ -1,11 +1,12 @@
 import React from 'react';
-import { View, Text, ScrollView, Pressable, StyleSheet, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme/ThemeProvider';
 import { hindi } from '../../theme/fonts';
 import { a11yButton } from '../../components/a11y';
+import Refresher from '../../components/Refresher';
 import ScreenState, { StaleBar, type ScreenStatus } from '../../components/ScreenState';
 
 /**
@@ -69,7 +70,7 @@ export default function ModuleShell({
           contentContainerStyle={[s.body, { paddingBottom: insets.bottom + 40 }]}
           refreshControl={
             onRetry
-              ? <RefreshControl refreshing={!!refreshing} onRefresh={onRetry} tintColor={t.primary} />
+              ? <Refresher refreshing={!!refreshing} onRefresh={onRetry} />
               : undefined
           }
         >
