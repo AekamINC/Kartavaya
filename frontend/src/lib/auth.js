@@ -28,8 +28,11 @@ import { api } from './api';
  *
  * A 502/504 does not mean the request was not processed — it means the answer
  * did not come back. That is exactly the case where a retry doubles a side
- * effect. `OnboardingPage.jsx` already opted `POST /admin/invites` and
- * `POST /teams` out for the same reason; these five were the rest of the set.
+ * effect. `OnboardingPage.jsx` already opted its invite POST and `POST /teams`
+ * out for the same reason; these five were the rest of the set.
+ *
+ * `apiInvitePreview` below is deliberately NOT in the set: it is a GET with no
+ * side effect, which is the case the retry was written for.
  *
  * The user-visible motion consequence is separate and also real: without this,
  * the button sat in its pending state with the spinner running for ~4.8s before
@@ -46,6 +49,51 @@ export async function apiLogin(email, password) {
 
 export async function apiAcceptInvite(token, name, password) {
   const res = await api.post('/auth/accept-invite', { token, name, password }, NO_RETRY);
+  localStorage.setItem('Kartavaya_user', JSON.stringify(res.data.user));
+  if (res.data.token) localStorage.setItem('auth_token', res.data.token);
+  return res.data;
+}
+
+/**
+ * What the invite is for, before anyone types a password into it.
+ *
+ * `GET /api/auth/invite/:token` is unauthenticated and answers one 404 with one
+ * string for every kind of dead token, so there is nothing here to branch on
+ * beyond "it resolved or it did not".
+ */
+export async function apiInvitePreview(token) {
+  const res = await api.get(`/auth/invite/${encodeURIComponent(token)}`);
+  return res.data;
+}
+
+/**
+ * Turn the invitation down. Expires the row; idempotent on the server.
+ *
+ * `NO_RETRY` for the motion reason rather than the correctness one — a second
+ * decline is a 404 and changes nothing — but four attempts still hold the
+ * button in its pending state for 4.8s before anything appears, on a press
+ * whose whole meaning is "I am finished with this".
+ */
+export async function apiDeclineInvite(token) {
+  const res = await api.post(`/auth/invite/${encodeURIComponent(token)}/decline`, null, NO_RETRY);
+  return res.data;
+}
+
+/**
+ * Slide the session's window forward and pick up any role change with it.
+ *
+ * This EXTENDS a live session; it cannot revive an expired one — the endpoint
+ * is behind `require_user`, so an expired token is refused before the handler
+ * runs. Callers must treat a rejection as "carry on with what you have", never
+ * as "sign the user out": the token that failed to refresh may still be minutes
+ * from valid, and `api.js`'s 401 branch already owns the case where it is not.
+ *
+ * `NO_RETRY`: this mints a JWT and sets a cookie. Four attempts mint four
+ * tokens, and it runs on a six-hour timer where nobody is waiting — the next
+ * tick is the retry.
+ */
+export async function apiRefreshSession() {
+  const res = await api.post('/auth/refresh', null, NO_RETRY);
   localStorage.setItem('Kartavaya_user', JSON.stringify(res.data.user));
   if (res.data.token) localStorage.setItem('auth_token', res.data.token);
   return res.data;

@@ -2,7 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../components/ui/toast';
 import AuthShell from '../components/layout/AuthShell';
-import { apiLogin, apiAcceptInvite, apiForgotPassword, apiResetPassword } from '../lib/auth';
+import {
+  apiLogin, apiAcceptInvite, apiForgotPassword, apiResetPassword,
+  apiInvitePreview, apiDeclineInvite,
+} from '../lib/auth';
+import { moduleMeta } from '../lib/moduleColors';
 
 /**
  * The four auth screens — 12-auth-onboarding.md §2.
@@ -258,10 +262,35 @@ function useShake() {
 
 const REMEMBER_KEY = 'kv_auth_email';
 
+/**
+ * Where to land after signing in. `?from=` is written only by `api.js`'s 401
+ * branch, and it is still treated as untrusted input: a same-origin absolute
+ * path or nothing. `//evil.example` is a valid pathname-looking string that the
+ * browser reads as a protocol-relative URL, which is why the second character
+ * is checked too.
+ */
+function safeReturnTo(raw) {
+  if (!raw || raw[0] !== '/' || raw[1] === '/' || raw.startsWith('/login')) return null;
+  return raw;
+}
+
 // ── Login ──────────────────────────────────────────────────────────────────────
 export function LoginPage() {
   const navigate = useNavigate();
   const { pushToast } = useToast();
+  const [searchParams] = useSearchParams();
+  /**
+   * The session-expired state — the one thing 12 §5 asks the login screen to
+   * distinguish and it never could, because nothing in the app knew a 401 from
+   * a bad password. `api.js` now ends a dead session with `?expired=1` and the
+   * path the user was on, so this screen can explain the empty form instead of
+   * leaving them to guess what they did.
+   *
+   * Held in state, not read from the URL on every render: it must survive the
+   * user starting to type, and it must clear the moment they submit.
+   */
+  const [expired, setExpired] = useState(() => searchParams.get('expired') === '1');
+  const returnTo = safeReturnTo(searchParams.get('from'));
   const [form, setForm] = useState(() => ({
     email: (typeof localStorage !== 'undefined' && localStorage.getItem(REMEMBER_KEY)) || '',
     password: '',
@@ -302,6 +331,7 @@ export function LoginPage() {
 
     setFieldErr({});
     setBanner(null);
+    setExpired(false);
     setLoading(true);
     try {
       // Trimmed, because validation already trimmed. `login` in
@@ -315,7 +345,11 @@ export function LoginPage() {
         if (remember) localStorage.setItem(REMEMBER_KEY, email);
         else localStorage.removeItem(REMEMBER_KEY);
       } catch { /* private mode — not worth failing a sign-in over */ }
-      navigate(data.user?.role === 'client' ? '/client' : '/dashboard', { replace: true });
+      // Back to where the expiry interrupted them, when there was one and it is
+      // theirs to reach. `Protected` re-checks the role on arrival, so a client
+      // carrying a staff path still lands in the portal.
+      const home = data.user?.role === 'client' ? '/client' : '/dashboard';
+      navigate(returnTo || home, { replace: true });
     } catch (err) {
       if (isNetworkError(err)) {
         pushToast({
@@ -342,12 +376,22 @@ export function LoginPage() {
   return (
     <AuthShell shake={shake}>
       <Head
-        kick="Welcome back"
-        title="Sign in to"
+        kick={expired ? 'Session ended' : 'Welcome back'}
+        title={expired ? 'Sign in again to' : 'Sign in to'}
         accent="Kartavaya"
         hi="प्रवेश"
-        lede="Pick up where your team left off."
+        lede={expired ? undefined : 'Pick up where your team left off.'}
       />
+      {/* An expired session and a wrong password are different events and now
+          say so. The banner is `info`, not `err`: nothing went wrong and the
+          user did nothing — a session simply ran out. Suppressed once a real
+          rejection arrives, because the newer fact is the useful one. */}
+      {expired && !banner && (
+        <Banner kind="info">
+          Your session expired, so you were signed out.
+          {returnTo ? ' Sign in and we will take you back to where you were.' : ' Sign in to carry on.'}
+        </Banner>
+      )}
       {banner && <Banner kind="err">{banner}</Banner>}
       <form onSubmit={submit} noValidate>
         <div className="au__fields">
@@ -400,6 +444,111 @@ export function LoginPage() {
   );
 }
 
+/* ── Accept-invite context panel ───────────────────────────────────────────── */
+
+const ORG_ROLE_LABEL = {
+  org_owner: 'Owner',
+  org_admin: 'Admin',
+  org_member: 'Member',
+};
+/** Grant levels, as `role_tiers.py` names them. */
+const GRANT_LABEL = {
+  viewer: 'Viewer', editor: 'Editor', approver: 'Approver', admin: 'Admin',
+};
+
+/**
+ * "expires in 7 days", the way the reference writes it.
+ *
+ * Rounded, not floored. An invitation issued seconds ago is 6.99 days from
+ * expiring, and flooring that says "6 days" on a screen whose email said seven
+ * — a difference of one day in the user's favour is not worth a contradiction
+ * between two messages about the same link.
+ */
+function relativeExpiry(iso) {
+  if (!iso) return null;
+  const ms = new Date(iso).getTime() - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  if (ms >= 36 * 3_600_000) {
+    const days = Math.round(ms / 86_400_000);
+    return `${days} days`;
+  }
+  const hours = Math.max(1, Math.round(ms / 3_600_000));
+  return `${hours} hour${hours === 1 ? '' : 's'}`;
+}
+
+/**
+ * What you are being asked to accept — `AUTH-SPEC.md` "Accept invite": it must
+ * show "org, inviter, role **and the module grants**".
+ *
+ * Until `GET /auth/invite/:token` landed there was nothing to draw this from,
+ * which is why `auth.css` shipped no rules for it and said so. All four fields
+ * were already being STORED — `routers/org_invites.create_org_invite` writes
+ * org_id, member_role and module_grants, and `accept_invite` applies all
+ * three — so the person accepting was the only party who could not see them.
+ *
+ * A platform-console invite (`POST /api/admin/invites`) carries no org at all,
+ * and this renders that difference rather than inventing an organisation:
+ * "an account on Kartavaya" is a truthful description of what that link does.
+ */
+function InviteContext({ invite }) {
+  const grants = invite.module_grants || [];
+  const expiry = relativeExpiry(invite.expires_at);
+  return (
+    <div className="auinv">
+      <div className="auinv__head">
+        <span className="auinv__org">{invite.org_name || 'Kartavaya'}</span>
+        {invite.org_name && invite.org_members > 0 && (
+          <span className="auinv__meta">
+            {invite.org_members} {invite.org_members === 1 ? 'member' : 'members'}
+          </span>
+        )}
+      </div>
+
+      <p className="auinv__by">
+        {invite.invited_by_name ? <strong>{invite.invited_by_name}</strong> : 'You were'}
+        {invite.invited_by_name ? ' invited you' : ' invited'}
+        {invite.org_name ? '' : ' to Kartavaya'}
+        {invite.org_role && ORG_ROLE_LABEL[invite.org_role] && (
+          <> as <span className="auinv__role">{ORG_ROLE_LABEL[invite.org_role]}</span></>
+        )}
+        {' · '}<span className="auinv__email">{invite.email}</span>
+      </p>
+
+      {/* Grants, not a promise of grants. An empty list is a real answer and is
+          said out loud, because "you will get access later" and "you have
+          access to nothing yet" are different things to walk into. */}
+      {invite.org_name && (
+        <div className="auinv__grants">
+          {grants.length > 0 ? (
+            <>
+              <span className="auinv__glabel">With access to</span>
+              {grants.map((g) => {
+                const m = moduleMeta(g.code);
+                return (
+                  <span key={g.code} className="auinv__tag" style={{ '--tag-c': m?.color || 'var(--primary)' }}>
+                    {m?.hi && <span className="auinv__tag-hi" lang="hi">{m.hi}</span>}
+                    <span>{m?.en || g.code}</span>
+                    <span className="auinv__tag-lv">{GRANT_LABEL[g.role] || g.role}</span>
+                  </span>
+                );
+              })}
+            </>
+          ) : (
+            <span className="auinv__glabel">
+              No module access yet — an admin grants that separately, after you join.
+            </span>
+          )}
+        </div>
+      )}
+
+      <p className="auinv__fine">
+        {expiry ? `This invitation expires in ${expiry}. ` : ''}
+        Only {invite.email} can accept it.
+      </p>
+    </div>
+  );
+}
+
 // ── Accept invite ──────────────────────────────────────────────────────────────
 export function AcceptInvitePage() {
   const navigate = useNavigate();
@@ -411,6 +560,31 @@ export function AcceptInvitePage() {
   const [banner, setBanner] = useState(null);
   const [fieldErr, setFieldErr, clearErr] = useFieldErrors();
   const [shake, fireShake] = useShake();
+  /** `undefined` while loading, `null` once the token is known to be dead. */
+  const [invite, setInvite] = useState(undefined);
+  const [declined, setDeclined] = useState(false);
+
+  /**
+   * Read the invitation before drawing a form for it. The preview is the only
+   * thing that can tell a live token from a dead one without creating an
+   * account, so the "expired link" case is now a screen rather than a banner
+   * the user meets after typing a password.
+   */
+  useEffect(() => {
+    if (!token) return undefined;
+    let live = true;
+    apiInvitePreview(token)
+      .then((d) => { if (live) setInvite(d); })
+      .catch((err) => {
+        if (!live) return;
+        // A dead token is a dead end; anything else is a connection problem and
+        // must not be reported as an expired invitation, or the user goes and
+        // asks their admin to reissue a link that was fine.
+        if (err?.response?.status === 404) setInvite(null);
+        else setInvite({ unreachable: true });
+      });
+    return () => { live = false; };
+  }, [token]);
 
   const set = (e) => {
     const { name, value } = e.target;
@@ -419,12 +593,98 @@ export function AcceptInvitePage() {
     if (name === 'password') clearErr('confirm');
   };
 
+  const decline = async () => {
+    setLoading(true);
+    try {
+      await apiDeclineInvite(token);
+      setDeclined(true);
+    } catch {
+      // Idempotent server-side, and a decline that did not reach the server is
+      // still a decline as far as this person is concerned — they are simply
+      // not going to accept. Say it worked rather than demand a retry.
+      setDeclined(true);
+    } finally { setLoading(false); }
+  };
+
   if (!token) return (
     <AuthShell>
       <Head kick="Invitation" title="This link is" accent="incomplete." />
       <Banner kind="err">No invite token was found in the link. Ask your admin to send a new one.</Banner>
       <div className="au__actions">
         <AuButton type="button" onClick={() => navigate('/login')}>Back to sign in</AuButton>
+      </div>
+    </AuthShell>
+  );
+
+  if (invite === undefined) return (
+    <AuthShell>
+      <Head kick="Invitation" title="Checking your" accent="invitation…" />
+    </AuthShell>
+  );
+
+  if (invite === null) return (
+    <AuthShell>
+      <Head kick="Invitation" title="This invitation is no" accent="longer valid." />
+      <Banner kind="err">
+        It may have expired, already been used, or been withdrawn. Ask whoever
+        invited you to send a new one — invitations last seven days.
+      </Banner>
+      <div className="au__actions">
+        <AuButton type="button" onClick={() => navigate('/login')}>Back to sign in</AuButton>
+      </div>
+    </AuthShell>
+  );
+
+  if (invite.unreachable) return (
+    <AuthShell>
+      <Head kick="Invitation" title="Could not reach" accent="Kartavaya." />
+      <Banner kind="err">
+        Your invitation is probably fine — we could not read it just now. Try again in a moment.
+      </Banner>
+      <div className="au__actions">
+        <AuButton type="button" onClick={() => window.location.reload()}>Try again</AuButton>
+      </div>
+    </AuthShell>
+  );
+
+  if (declined) return (
+    <AuthShell>
+      <Head kick="Invitation" title="Invitation" accent="declined." />
+      <Banner kind="ok">
+        Nothing was created and no account exists for this link.
+        {invite.invited_by_name ? ` ${invite.invited_by_name} can send a new one if this was a mistake.` : ''}
+      </Banner>
+      <div className="au__actions">
+        <AuButton type="button" onClick={() => navigate('/login')}>Back to sign in</AuButton>
+      </div>
+    </AuthShell>
+  );
+
+  /**
+   * The address already has an account. `accept_invite` answers this 409, so
+   * there is no form to draw — the useful move is sign-in, not a password field
+   * that will be refused.
+   *
+   * This is the only reachable half of AUTH-SPEC's existing-user branch. The
+   * other half — an org inviting somebody who already has an account — cannot
+   * happen: `invite_router.py` and `org_invites.py` both refuse to CREATE such
+   * an invite (409, "Add them from the Members tab instead"). What lands here
+   * is somebody who signed up during the seven days their invitation was live.
+   */
+  if (invite.account_exists) return (
+    <AuthShell>
+      <Head
+        kick="Invitation"
+        title="You already have an"
+        accent="account."
+        lede="Sign in with it and this invitation is applied to the account you already have."
+      />
+      <InviteContext invite={invite} />
+      <div className="au__actions">
+        <AuButton type="button" onClick={() => navigate('/login')}>Sign in</AuButton>
+        <button type="button" className="au__link au__link--mute" onClick={decline} disabled={loading}>
+          Decline this invitation
+        </button>
       </div>
     </AuthShell>
   );
@@ -478,8 +738,13 @@ export function AcceptInvitePage() {
         title="You have been"
         accent="invited."
         hi="स्वागत"
-        lede="Set a name and a password to activate your account. You will land in your organisation straight after."
+        lede={invite.org_name
+          ? `Set a name and a password, and you are in ${invite.org_name}.`
+          : 'Set a name and a password to activate your account.'}
       />
+      {/* The whole point of the preview: what is being accepted goes ABOVE the
+          fields, because the decision comes before the typing. */}
+      <InviteContext invite={invite} />
       {banner && <Banner kind="err">{banner}</Banner>}
       <form onSubmit={submit} noValidate>
         <div className="au__fields">
@@ -517,7 +782,15 @@ export function AcceptInvitePage() {
           />
         </div>
         <div className="au__actions">
-          <AuButton type="submit" loading={loading}>{loading ? 'Activating…' : 'Activate account'}</AuButton>
+          <AuButton type="submit" loading={loading}>{loading ? 'Activating…' : 'Accept & create account'}</AuButton>
+          {/* AUTH-SPEC gives every invite screen a decline, and quieter than
+              the accept. It was the one control on this screen with no route
+              at all — there was no endpoint until `POST /auth/invite/:token/
+              decline`, so someone who did not want the invitation could only
+              close the tab and leave a live token in their inbox for a week. */}
+          <button type="button" className="au__link au__link--mute" onClick={decline} disabled={loading}>
+            Decline this invitation
+          </button>
         </div>
       </form>
       <p className="au__note">
@@ -648,6 +921,15 @@ export function ResetPasswordPage() {
   const [banner, setBanner] = useState(null);
   const [fieldErr, setFieldErr, clearErr] = useFieldErrors();
   const [shake, fireShake] = useShake();
+  /**
+   * `AU_SCREENS` in the reference lists "Expired link" as a SCREEN, not a
+   * banner — and the reference's version of it offers the one thing that helps:
+   * request a new link. This build already had that screen for a link with no
+   * token at all, and answered a link whose token the server REJECTED with a
+   * banner over a password form the user had just filled in and could never
+   * submit. Same dead end, two shapes; now one.
+   */
+  const [dead, setDead] = useState(false);
 
   const set = (e) => {
     const { name, value } = e.target;
@@ -656,12 +938,23 @@ export function ResetPasswordPage() {
     if (name === 'password') clearErr('confirm');
   };
 
-  if (!token) return (
+  if (!token || dead) return (
     <AuthShell>
-      <Head kick="Password reset" title="This link is" accent="incomplete." />
-      <Banner kind="err">No reset token was found in the link. Reset links expire after an hour.</Banner>
+      <Head
+        kick="Password reset"
+        title={dead ? 'This link has' : 'This link is'}
+        accent={dead ? 'expired.' : 'incomplete.'}
+      />
+      <Banner kind="err">
+        {dead
+          ? 'Reset links last one hour and work once. Request another and we will send a fresh one.'
+          : 'No reset token was found in the link. Reset links expire after an hour.'}
+      </Banner>
       <div className="au__actions">
         <AuButton type="button" onClick={() => navigate('/forgot-password')}>Request a new link</AuButton>
+        <button type="button" className="au__link au__link--mute" onClick={() => navigate('/login')}>
+          Back to sign in
+        </button>
       </div>
     </AuthShell>
   );
@@ -686,6 +979,12 @@ export function ResetPasswordPage() {
     } catch (err) {
       if (isNetworkError(err)) {
         pushToast({ type: 'error', title: 'Could not reach the server', message: 'Check your connection and try again.' });
+      } else if (err?.response?.status === 400) {
+        // The one status `reset_password` uses for a token it will not accept
+        // (`auth_router.py`: "Reset link is invalid or has expired."). A form
+        // the user cannot make work is not worth leaving on screen — it becomes
+        // the dead-end screen with the route out.
+        setDead(true);
       } else {
         setBanner(authErrorMessage(err, detailOf(err) || 'This reset link is invalid or has expired.'));
         fireShake();
