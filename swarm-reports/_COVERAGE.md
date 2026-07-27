@@ -212,6 +212,47 @@ What the metric could not see, and what actually made the module unusable:
   because an unhandled rejection is not an assertion. A green suite is not
   evidence here.
 
+## Corrections to agent reports — verify before acting on these
+
+Two claims in the prachar report do not survive checking. Both would cause
+damage if acted on, which is the whole reason this section exists.
+
+**1. `TaskDrawer.jsx:196` is NOT the envelope bug.** There is no
+response-wrapping middleware; the shape is decided per route, and `fields.py`
+returns **bare arrays** at `:105` and `:194`. So `r.data.forEach(…)` there is
+correct, and "fixing" it to `r.data.data` would break a working drawer.
+
+There IS a real defect at that spot, smaller and different: the two inner
+`api.get(…).then(…)` chains carry **no `.catch`** — the trailing
+`.catch(logger.error)` belongs to the outer chain — so a failed fields fetch
+rejects unhandled and the drawer silently renders no custom fields. That is what
+`task-flow.test.jsx` is surfacing. The report's point about a green suite
+hiding it stands; the diagnosis does not.
+
+**2. "codebase-wide shape problem" — overstated as a live bug, understated as a
+design flaw.** I scanned every `api.get` call site against its resolved backend
+route:
+
+| | |
+|---|---|
+| call sites consistent with their endpoint | **117** |
+| confirmed mismatches | **0** |
+| routes I could not resolve statically | **140** |
+
+The single hit my scan produced — `manav/AttendanceTab.jsx:31` — is a false
+positive: it keeps the envelope on purpose, because the JSX reads both
+`summary.month` and `summary.data`. prachar and dristi's own fixes were real;
+there is no third victim among the call sites that can be resolved.
+
+**140 unresolved is a real limit, not a rounding error** — routes defined in
+`server.py` rather than in `routers/`, and paths built at runtime. Treat this as
+"no evidence of more", never as "there are no more".
+
+The genuine finding underneath is a design inconsistency worth fixing on its own
+schedule: **99 GET routes return `{"data": […]}` and 28 return a bare list, with
+no rule.** Every call site has to remember which. That is what produced eight
+real bugs across two modules, and it will keep producing them.
+
 ## In flight
 
 One agent remains, briefed to build rather than audit: **vikray**
