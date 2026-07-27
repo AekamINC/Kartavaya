@@ -30,7 +30,21 @@
   font-size: 10px; font-weight: 700; letter-spacing: .12em;
   text-transform: uppercase; color: var(--primary-text); margin-bottom: 2px;
 }
-.st__gh { font-family: var(--font-hindi); font-size: 11px; color: var(--on-surface-3); }
+/* font-weight and text-transform are reset for the same reason `.k-lbl__in`
+   resets them (editorial.css §"The bilingual secondary inside a tracked/uppercase
+   label"): `.st__gt` above is 700/.12em/uppercase, and SoundGrid nests this span
+   INSIDE it, so all three inherit. The `[lang="hi"]` rule in editorial.css already
+   zeroes the tracking, but it does NOT touch weight or case.
+
+   Tiro Devanagari Hindi ships at weight 400 only, so the inherited 700 was being
+   synthesised by the rasteriser — measured computed `font-weight: 700` on the
+   rendered span. That is faux-bold: it smears the शिरोरेखा and closes the
+   counters. `text-transform` is a no-op on unicase Devanagari, which is the
+   problem — the Latin beside it uppercases and the pair stops matching. */
+.st__gh {
+  font-family: var(--font-hindi); font-size: 11px; color: var(--on-surface-3);
+  font-weight: 400; text-transform: none;
+}
 
 /* ── Segmented control ─────────────────────────────────────────────────── */
 .seg {
