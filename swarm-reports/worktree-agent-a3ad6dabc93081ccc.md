@@ -231,3 +231,138 @@ The one animation I added, `kTrowJust`, is **finite** (1 iteration), so collapsi
 - `--motion-scale` is kept as the build has it: `--ix` scales duration and bottoms at `.001` so
   `animationend` still fires; `--motion-scale` scales distance and bottoms at `0`. The split is not
   corrected toward the reference, which does not have it.
+
+### Final sweep — both pages, both states, loading and loaded
+
+`document.getAnimations()` filtered to `playState === 'running'`, on the real pages:
+
+| State | no preference | reduce |
+|---|---|---|
+| Tasks, **loading** | 48 × `k-shimmer` @ 1700ms + `k-onboard-slide-up` @ 250ms ×1 | **`[]` — nothing running** |
+| Tasks, loaded | `[]` | `[]` |
+| Today, loaded | `[]` | `[]` |
+
+`--ix` resolves `1 → .001` and `--motion-scale` `1 → 0`. **Lowest running duration anywhere on this
+surface: 1700ms. Nothing under 640ms. Nothing accelerated.**
+
+---
+
+## 5 · The toast had an entrance and no exit
+
+Not strictly a Dashboard/Tasks file, but it is the confirmation surface for every write on both of
+them and "toast behaviour" is on this brief, so it is measured and fixed here.
+
+`tstIn` slides a toast 16px in over `--dur-base`. `dismiss()` removed the node in the same frame.
+Every other overlay in the reconciled table is a pair; this one shipped with half — so the one toast
+a user actively reached for and clicked was the only one that vanished without warning, and a
+four-second auto-dismiss ended as a disappearance rather than a departure.
+
+| | BEFORE | AFTER |
+|---|---|---|
+| entrance | `tstIn` `0.22s` `--ease-emph` | unchanged |
+| exit | **none — removed in one frame** | `tstOut` `0.14s` `cubic-bezier(.4,0,1,1)` (`--dur-fast` `--ease-exit`) |
+| exit travel | — | `translateX(12px)` — less than the 16px entrance (§7.3) |
+| pointer events during exit | — | `none` |
+| unmount trigger | — | `animationend`, not a JS timer |
+
+Measured 60ms after the click: class `tst tst--ok is-out`, one live `Animation` at 140ms, gone by
+300ms. Four variants follow the corner the stack sits in and the mobile full-width case, exactly as
+the entrance already does.
+
+**Under reduced motion `animationend: tstOut` still fires and the node is gone inside 120ms.** That
+is the first demonstration in this build that `--ix` bottoming at `.001` rather than `0` is
+load-bearing rather than argued: at `0` the event never fires and every dismissed toast leaks its
+node. `animations.css` §8 states the reason; this measures it.
+
+Two traps, both found by measuring:
+
+- The mobile `@media` block sets `animation-name` on `[data-toast-pos] .tst`. `@media` adds no
+  specificity, so that beats `.tst.is-out` declared outside it purely on source order — a mobile
+  toast in a left corner would have "exited" by replaying its **entrance** keyframe. The `.is-out`
+  rules are restated inside the block. Identical to the trap `animations.css` §9/§10 documents.
+- `pause()` on hover read the exit's safety-net timer entry as a dismiss timer and stored
+  `remaining: NaN`, so the resume on mouse-out fired immediately — a hover that made the toast leave
+  *faster*, which is the opposite of what hover-to-pause is for.
+
+---
+
+## 6 · Cover list, item by item
+
+| Brief item | State |
+|---|---|
+| skeleton / loading treatment | **Fixed** — 120ms gate + 220ms floor, both pages, frame-traced |
+| row hover | **Fixed** — Tasks, Today main and Today side column, all on `--dur-fast` `--ease-standard` |
+| sort transitions | **Nothing to transition — the Tasks table has no sort at all.** See §7 |
+| filter transitions | **Fixed** — segmented control on `--dur-instant`; compound filter chips do not exist, §7 |
+| empty-state entrance | **Fixed** — `EmptyState` on `ixFadeUp` `--dur-base`, three distinct states |
+| toast behaviour | **Fixed** — exit pair added, §5 |
+| optimistic-update feedback | **Fixed** — `.6` pending + rollback on archive, restore and complete |
+| quick-complete | **Added** — IxViews 9.4, board-identical contract |
+| failed fetch ≠ empty state | **Fixed on Tasks, verified still holding on Today** |
+| no regression under `reduce` | **Verified** — nothing running, nothing under 640ms |
+
+---
+
+## 7 · Not mine — for whoever owns structure and features
+
+1. **`.k-trow` is declared in two stylesheets.** `kartavaya-design.css:865` and `editorial.css:1287`,
+   both full rule blocks for the same class. It is the same class of defect as the duplicate
+   `@keyframes k-shimmer` and `dmPop` already reported: the later file silently wins per-property,
+   and reading either one alone gives the wrong answer. The transition lived in the file with none of
+   the row's layout, which is why "`.k-trow` has no transition" was my first, wrong reading.
+
+2. **The visible task id is fake AND duplicated.** `TasksListPage` renders
+   `KAR-{String(idx + 100)}` where `idx` is the index **within its group**, so the first row of every
+   group reads `KAR-100`. Two rows on one screen carrying the same identifier is worse than no
+   identifier: it is the string a user reads out on a phone call. The dashboard's `#{task_id.slice(-6)}`
+   is at least unique. Neither is a real key.
+
+3. **IxViews §10 is three-quarters unbuilt on the Tasks table** — no sort (10.1, wants three-state
+   plus `aria-sort`), no bulk selection (10.2), no inline cell edit (10.3), no compound filter chips
+   (10.4). All feature work, not motion. **One motion constraint if anyone builds sort:** 10.1 is
+   explicit that rows reorder with **no animation** — "animating a 40-row reorder is nausea, not
+   polish."
+
+4. **`--ease-emph` diverges from the spec.** Build: `cubic-bezier(.16, 1, .3, 1)`. `MOTION-SPEC.md`
+   §2 and reference `motion.css:31`: `cubic-bezier(.2, 0, 0, 1)` — which the build declares as
+   `--ease-standard`. So the build has the spec's `--ease-emph` under a different name and an
+   expo-out curve under the real one. Everything is internally consistent, so this is a decision for
+   the token owner, not a defect I should have silently "corrected".
+
+5. **`.k-stackbar__seg` transitions `flex` over `--dur-slow`** (Today, Project status). `flex-grow`
+   is a layout property: every frame re-runs layout for the whole bar. `animations.css`'s own
+   performance note says nothing here animates width, height, top or left for exactly this reason.
+   Same visual is reachable with `transform: scaleX` on a track, or by accepting an instant change.
+
+6. **Undo-over-confirm is still unbuilt** (MOTION-SPEC §7.2). Archive is reversible and gets no undo;
+   the toast has no action slot to put one in. Adding a slot is a `toast.jsx` API change with app-wide
+   reach, so it wants one owner rather than the page that noticed.
+
+---
+
+## 8 · Claims from the brief, adjudicated
+
+| Claim | Verdict | Evidence |
+|---|---|---|
+| "A failed fetch must not render as an empty state — that defect shipped repeatedly here" | **HELD, and still live on Tasks** | mocked 500 rendered "No tasks match this filter" under four tabs reading 0 |
+| Same defect on the dashboard | **already fixed by a sibling, verified still holding** | 500 → ErrorState, no "board is clear", 0 stat tiles |
+| "nothing under 640ms now — do not regress it" | **not regressed** | lowest running duration on this surface is 1700ms; under reduce, nothing runs |
+| `16-animations.md:44` mandates the reduced-motion strobe | **HELD, not followed** | no infinite duration on this surface is multiplied by `--ix` |
+| `--motion-scale` is a build invention and better than the reference | **HELD, kept** | the split is what lets amplitude collapse while `animationend` still fires — now demonstrated by the toast exit under reduce |
+| Reading CSS gives the wrong answer here | **HELD, twice** | `.k-trow`'s transition is in a different file from its rules; `.k-col-resize`'s is on a pseudo-element |
+| The reference HTML files are runnable harnesses | **HELD** | rendered; `IxViews.jsx` §9–10 is the source for the tick, the settle flash and the pending state |
+
+---
+
+## 9 · What I did not do
+
+- **Did not add sort, bulk selection, inline cell edit or the filter builder.** All four are
+  structure and feature work owned by a sibling; my lens is behaviour and time. Recorded in §7 with
+  the one motion constraint that applies to them.
+- **Did not touch `--ease-emph`.** It diverges from the spec but is internally consistent, and a
+  token change reaches every surface in the product. §7.4.
+- **Did not add an undo toast.** It needs an action slot in `toast.jsx`, which is an API change with
+  app-wide reach. §7.6.
+- **Did not renumber or fix the fake `KAR-` id.** Structure. §7.2.
+- The probe (`frontend/public/__ref/probe.html`) and the isolated vite config are **not committed** —
+  `frontend/public/__ref/` is gitignored, per the brief.
