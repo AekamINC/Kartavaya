@@ -65,6 +65,7 @@ import { resolveRouteMeta } from './navConfig';
 import { useCustomize } from '../CustomizePanel';
 import { urlBase64ToUint8Array } from '../../lib/push';
 import { playNotifSound } from '../../lib/notifSound';
+import ErrorBoundary from '../ErrorBoundary';
 import {
   NotificationProvider, askAfterAction, clearAskReason,
   notifPermission, readNotifPrefs, shouldDeliver, useNotifications,
@@ -422,7 +423,20 @@ export default function AppShell() {
               it the jump moves the scroll position but not focus, so the next Tab
               continues from the sidebar. */}
           <main className="kv__content" id="main" tabIndex={-1}>
-            <Outlet context={{ teamId, teams }} />
+            {/* A SECOND boundary, inside the shell.
+                The only other one wraps the whole app in `App.jsx:296`, so a
+                throw anywhere in any tab replaced the sidebar, the nav and the
+                whole product with "Something went wrong / Reload page" — one
+                bad panel took down everything, and the sole way out was a
+                reload. Scoped here, the shell survives: the failure is confined
+                to the page, and the user can navigate to a working module
+                instead of losing the session's context.
+                `key={pathname}` clears it on navigation — a boundary latches on
+                error, so without it the first throw would poison every
+                subsequent route for the rest of the session. */}
+            <ErrorBoundary key={location.pathname} scope="page">
+              <Outlet context={{ teamId, teams }} />
+            </ErrorBoundary>
           </main>
 
           {/* Bottom bar, ≤767px. The compact bar above carries no "New task"
