@@ -247,3 +247,89 @@ describe('confirming requires a comparison that is actually on screen', () => {
     expect(cursorRow?.textContent).toContain('Priya Deshmukh');
   });
 });
+
+describe('the per-row buttons, which are the only path on a touch device', () => {
+  // The reference (`PahchanReview.jsx:184`) puts a confirm and a flag control on
+  // every row. The build had ↵ and F only, so a reviewer on a tablet — or anyone
+  // reaching for a mouse — could read the whole queue and decide nothing.
+  //
+  // The risk in adding them is that a second path re-implements the gate and
+  // drifts from the first. These pin that it did not: the button obeys exactly
+  // the rule ↵ obeys, because it calls the same function.
+  const confirmBtn = () => host.$$('button').find(b => b.textContent.trim() === 'Confirm');
+  const flagBtn    = () => host.$$('button').find(b => b.textContent.trim() === 'Flag');
+
+  it('offers a Confirm and a Flag control on the row', async () => {
+    installMockApi({
+      [REGISTER]:    { punches: [ROW] },
+      [PUNCH_PHOTO]: { url: 'blob:punch' },
+      [REF_PHOTO]:   { url: 'blob:ref' },
+      [REVIEW]:      { ok: true },
+    });
+    await host.mount(<Register />);
+    await settle();
+    expect(confirmBtn()).toBeTruthy();
+    expect(flagBtn()).toBeTruthy();
+  });
+
+  it('Confirm is DISABLED while the photos are still in flight', async () => {
+    installMockApi({
+      [REGISTER]:    { punches: [ROW] },
+      [PUNCH_PHOTO]: NEVER,
+      [REF_PHOTO]:   NEVER,
+      [REVIEW]:      { ok: true },
+    });
+    await host.mount(<Register />);
+    await settle();
+    // Disabled, not merely refusing on click: the reviewer should learn the row
+    // is not theirs to judge before they commit to judging it.
+    expect(confirmBtn().disabled).toBe(true);
+  });
+
+  it('clicking Confirm while unresolved writes nothing', async () => {
+    const mock = installMockApi({
+      [REGISTER]:    { punches: [ROW] },
+      [PUNCH_PHOTO]: NEVER,
+      [REF_PHOTO]:   NEVER,
+      [REVIEW]:      { ok: true },
+    });
+    await host.mount(<Register />);
+    await settle();
+    await host.click(confirmBtn());
+    expect(mock.calledWith('PATCH', '/review')).toHaveLength(0);
+    expect(host.text()).not.toContain('Confirmed');
+  });
+
+  it('Flag stays live on a row nobody can see — the queue must not strand', async () => {
+    const mock = installMockApi({
+      [REGISTER]:    { punches: [ROW] },
+      [PUNCH_PHOTO]: NEVER,
+      [REF_PHOTO]:   NEVER,
+      [REVIEW]:      { ok: true },
+    });
+    await host.mount(<Register />);
+    await settle();
+    expect(flagBtn().disabled).toBeFalsy();
+    await host.click(flagBtn());
+    const wrote = mock.calledWith('PATCH', '/review');
+    expect(wrote).toHaveLength(1);
+    expect(wrote[0].body).toEqual({ verdict: 'flagged' });
+  });
+
+  it('Confirm writes the verdict once all three faces are on screen', async () => {
+    const mock = installMockApi({
+      [REGISTER]:    { punches: [ROW] },
+      [PUNCH_PHOTO]: { url: 'blob:punch' },
+      [REF_PHOTO]:   { url: 'blob:ref' },
+      [REVIEW]:      { ok: true },
+    });
+    await host.mount(<Register />);
+    await host.click(host.$$('.seg__b').find(b => b.textContent.startsWith('All')));
+    await settle();
+    expect(confirmBtn().disabled).toBeFalsy();
+    await host.click(confirmBtn());
+    const wrote = mock.calledWith('PATCH', '/review');
+    expect(wrote).toHaveLength(1);
+    expect(wrote[0].body).toEqual({ verdict: 'ok' });
+  });
+});

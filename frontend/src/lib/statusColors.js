@@ -138,6 +138,10 @@ export const PUNCH_COLORS = {
   // is simply nothing to compare against yet.
   noref:    'var(--warn)',
   halfref:  'var(--warn)',
+  // Repeated capture failures. Warn, not danger: the common cause is a bad
+  // camera or a dark doorway, not someone gaming the shutter. It asks a
+  // manager to look; it does not accuse.
+  retries:  'var(--warn)',
 };
 
 export const PUNCH_LABELS = {
@@ -151,6 +155,7 @@ export const PUNCH_LABELS = {
   reuse:    'Photo reused',
   noref:    'No reference pair',
   halfref:  'One reference only',
+  retries:  'Repeated attempts',
 };
 
 export const punchColor = f => PUNCH_COLORS[f] || FALLBACK;

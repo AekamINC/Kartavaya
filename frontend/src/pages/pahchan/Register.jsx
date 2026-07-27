@@ -836,14 +836,60 @@ export default function Register() {
                            one it is in rather than letting the refusal arrive as
                            an unexplained toast. */
                         : (
-                          <span style={{
-                            fontSize: 11,
-                            color: compare[p.id] === COMPARE.BROKEN ? 'var(--danger)' : 'var(--on-surface-3)',
-                          }}>
-                            {compare[p.id] === COMPARE.BROKEN ? 'Cannot compare'
-                              : compare[p.id] === COMPARE.READY ? '—'
-                                : 'Loading photos'}
-                          </span>
+                          /* The reference (`PahchanReview.jsx:184`) puts a
+                             confirm and a flag control on every row. The build
+                             had the keyboard path only, so a reviewer who
+                             reaches for a mouse — or a touch device, where there
+                             is no ↵ at all — could read the queue and decide
+                             nothing.
+
+                             Both buttons seek to this row and then call the SAME
+                             `record()` the keyboard calls. That is the point: the
+                             gate that refuses a confirm against photos which have
+                             not loaded lives inside `record`, and duplicating the
+                             decision here is how the two paths drift until one of
+                             them will clear a day nobody looked at.
+
+                             Confirm is disabled while the comparison is not
+                             READY, so the refusal is visible before the click
+                             rather than arriving as a toast afterwards. Flag is
+                             never disabled — §3's reasoning, and the same reason
+                             F is ungated: a reviewer who cannot see the faces
+                             still has an opinion, and gating it strands the queue
+                             on exactly the rows that need a person. */
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              style={{ fontSize: 11 }}
+                              disabled={compare[p.id] !== COMPARE.READY}
+                              title={compare[p.id] === COMPARE.BROKEN
+                                ? 'The photos did not load, so there is nothing to compare'
+                                : compare[p.id] === COMPARE.READY
+                                  ? `Confirm ${p.employee_name}'s punch`
+                                  : 'Still loading the photos'}
+                              onClick={(e) => { e.stopPropagation(); seek(i); record('ok'); }}
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn--ghost"
+                              style={{ fontSize: 11 }}
+                              title={`Flag ${p.employee_name}'s punch for a second look`}
+                              onClick={(e) => { e.stopPropagation(); seek(i); record('flagged'); }}
+                            >
+                              Flag
+                            </button>
+                            {compare[p.id] !== COMPARE.READY && (
+                              <span style={{
+                                fontSize: 11,
+                                color: compare[p.id] === COMPARE.BROKEN ? 'var(--danger)' : 'var(--on-surface-3)',
+                              }}>
+                                {compare[p.id] === COMPARE.BROKEN ? 'Cannot compare' : 'Loading photos'}
+                              </span>
+                            )}
+                          </div>
                         )}
                   </Td>
                 </tr>

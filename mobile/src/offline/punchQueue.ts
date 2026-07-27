@@ -63,6 +63,10 @@ export interface QueuedPunch {
   mock_location?:  boolean | null;
   /** Advisory only — an anomaly signal, not an auth factor. */
   device_id?:      string | null;
+  /** Captures that FAILED before this one landed — distinct from `attempts`,
+   *  which counts send retries after a successful capture. The server flags
+   *  `retries` at 3 so a manager checks the day; it never refuses the punch. */
+  retry_count?:    number;
   /** Attempts so far. Diagnostics only; it never causes a drop. */
   attempts:        number;
   last_error?:     string | null;
@@ -198,6 +202,8 @@ export interface EnqueuePunchInput {
   photo_key?:    string | null;
   mock_location?: boolean | null;
   device_id?:    string | null;
+  /** Captures that failed before this one landed. The server flags at 3. */
+  retry_count?:  number;
 }
 
 /**
@@ -222,6 +228,7 @@ export function enqueuePunch(input: EnqueuePunchInput): string {
     photo_key:     input.photo_key ?? null,
     mock_location: input.mock_location ?? null,
     device_id:     input.device_id ?? null,
+    retry_count:   input.retry_count ?? 0,
     attempts:      0,
     last_error:    null,
     enqueued_at:   new Date().toISOString(),
@@ -297,6 +304,7 @@ export async function flushPunches(): Promise<PunchFlushResult> {
         // the connection looks like now. The server flags it, and the reviewer
         // sees why captured_at and received_at differ.
         source:          'offline',
+        retry_count:     punch.retry_count ?? 0,
         client_punch_id: punch.client_punch_id,
       });
       sent += 1;

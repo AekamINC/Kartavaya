@@ -326,6 +326,7 @@ export default function ClockScreen() {
         lng:           fix.lng,
         accuracy_m:    fix.accuracy_m,
         mock_location: fix.mock_location,
+        retry_count:   retakes,
         photo_uri:     small.uri,
       });
 
@@ -442,7 +443,16 @@ export default function ClockScreen() {
     );
   }
 
-  const blockedByRetakes = retakes >= MAX_RETAKES;
+  // Past the retake limit the punch STILL GOES THROUGH -- it is flagged
+  // `retries` by the server and a manager is asked to look at the day.
+  //
+  // This used to hide the shutter entirely, which contradicted §2 at the top
+  // of this file: "No condition here returns early without recording." Three
+  // camera failures in a dark doorway locked someone out of clocking in, and
+  // the only route back was asking a manager to type the time by hand -- the
+  // exact payroll dispute §2 exists to prevent, caused by the app rather than
+  // by the employee.
+  const willBeFlaggedForRetries = retakes >= MAX_RETAKES;
 
   return (
     <View style={s.root}>
@@ -521,11 +531,13 @@ export default function ClockScreen() {
             </View>
           )}
 
-          {blockedByRetakes ? (
+          {willBeFlaggedForRetries && (
             <Text style={s.retakeWarn}>
-              You have retaken this {MAX_RETAKES} times. Ask your manager to add the time manually.
+              The camera has failed {MAX_RETAKES} times. Punch anyway — it will be
+              recorded and sent to your manager to check.
             </Text>
-          ) : (
+          )}
+          {(
             // Two scales composed: `confirm` is the one-shot landing pop,
             // `shutter.scale` is the press. Separate values so an interrupted
             // press cannot cancel a confirmation the employee is reading.

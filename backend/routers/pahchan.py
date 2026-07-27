@@ -87,6 +87,11 @@ async def _may_view_others_biometrics(pool, user_id: str, org_id: str) -> bool:
 # only sees the result. Kept here as the reason the size ceiling is small.
 MAX_PHOTO_BYTES = 4 * 1024 * 1024
 
+#: Captures that failed before the one that landed, past which the punch is
+#: flagged for a human. The server owns this number rather than the client so
+#: the threshold cannot be edited away by whoever is holding the phone.
+RETRY_FLAG_THRESHOLD = 3
+
 EARTH_RADIUS_M = 6_371_000.0
 
 
@@ -120,6 +125,12 @@ class PunchBody(BaseModel):
     mock_location: Optional[bool] = None
     source: str = Field("live", pattern="^(live|offline)$")
     client_punch_id: str = Field(..., min_length=8, max_length=64)
+    # How many captures failed before this one landed. The client used to
+    # HIDE THE SHUTTER at three, which contradicted this module's own rule
+    # that nothing blocks a punch -- three camera errors in a dark doorway
+    # locked someone out of clocking in entirely. It now punches through and
+    # flags, which is what every other condition here does.
+    retry_count: int = Field(0, ge=0, le=99)
 
 
 class ReviewBody(BaseModel):
@@ -262,6 +273,11 @@ def _compute_flags(
         # Nothing to compare the selfie against yet. Records, flags, and HR is
         # prompted to enroll — it does not stop the employee being paid.
         flags.append("noref")
+    if body.retry_count >= RETRY_FLAG_THRESHOLD:
+        # Asks a manager to look at the day; it does not refuse the punch and
+        # is not an accusation. A bad front camera produces this exactly as
+        # readily as someone hunting for a frame that hides where they are.
+        flags.append("retries")
     return flags
 
 
