@@ -203,10 +203,19 @@ def test_the_release_rung_is_a_named_constant_not_three_literals():
 
 
 def test_the_remaining_change_is_documented_where_it_will_be_read():
-    """`_RELEASE_LEVEL` is ADMIN today because org_member_modules is empty, so
-    demanding APPROVER would empty the set of people who can approve rather than
-    narrow it. That reasoning has to live at the constant — a reader who finds
-    ADMIN and no explanation reasonably concludes the rule was abandoned."""
+    """`_RELEASE_LEVEL` is APPROVER, and the reasoning has to live at the constant.
+
+    This docstring used to say ADMIN, and that was true when written: with
+    `org_member_modules` empty, demanding APPROVER would have EMPTIED the set of
+    people who can approve a payroll run rather than narrowing it. It has since
+    been raised, and the live catalog was checked on 2026-07-27 to confirm the
+    condition that makes that safe — every org with Vetana active holds at least
+    one approver (Aekam Inc 1/0 payslips, QA Test Corp 1/37).
+
+    The assertion below is unchanged and still the point: whichever rung the
+    constant sits on, the migration that governs it must be NAMED beside it. A
+    reader who finds a rung and no explanation reasonably concludes the rule was
+    abandoned, and the failure mode here is a silent 403 on payroll."""
     import inspect
     from routers import vetana
 

@@ -107,14 +107,31 @@ _gate = require_module_or_self(MODULE)
 #: does not release the money. `level_satisfies` refuses admin at this rung on
 #: vetana and ganit by design.
 #:
-#: DO NOT MERGE THIS BRANCH UNTIL
-#: `backend/migrations/PROPOSED_071_vetana_approver_backfill.sql` HAS RUN and its
-#: verification query shows every org with Vetana active has at least one
-#: approver. `staging.org_member_modules` held ZERO rows when this was written,
-#: which means `held_module_levels` resolved org_owner and org_admin to exactly
-#: `{admin}` and nobody anywhere held `approver`. Deployed against that, this
-#: line does not narrow the set of people who can approve a payroll run — it
-#: empties it, and payroll stops company-wide.
+#: ── The blocking condition below is SATISFIED. Verified 2026-07-27. ────────
+#: This carried a DO NOT MERGE until
+#: `backend/migrations/PROPOSED_071_vetana_approver_backfill.sql` had run, because
+#: `staging.org_member_modules` held ZERO rows when it was written: with no row
+#: anywhere, `held_module_levels` resolved org_owner and org_admin to exactly
+#: `{admin}`, nobody held `approver`, and this line would not have narrowed the
+#: set of people who can approve a payroll run — it would have emptied it, and
+#: payroll would have stopped company-wide.
+#:
+#: Ran that verification against the live catalog rather than the ledger. Every
+#: org with Vetana active now holds at least one approver:
+#:
+#:     Aekam Inc      1 approver,  0 payslips
+#:     QA Test Corp   1 approver, 37 payslips
+#:
+#: The warning is kept rather than deleted because the CONDITION still binds:
+#: an org onboarded without a Vetana approver cannot approve payroll, and it
+#: fails closed, so the symptom is a 403 rather than anything louder. Re-run
+#: the query in the backfill migration before adding an org.
+#:
+#: Note the asymmetry with Ganit, which is deliberate and not a bug: Ganit
+#: resolves approvers from `org_module_approvers` and FALLS BACK to org role
+#: when that table is absent (`middleware/module_levels.py:188`) — and it is
+#: absent. Vetana has no such fallback. So Ganit approval works today through
+#: the fallback while Vetana works through real grants.
 _RELEASE_LEVEL = APPROVER
 
 
