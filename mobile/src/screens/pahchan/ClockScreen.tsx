@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, ActivityIndicator, StatusBar, Platform, Linking,
+  View, Text, Pressable, StyleSheet, ActivityIndicator, StatusBar, Linking, Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -13,7 +13,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../theme/ThemeProvider';
 import { pahchanApi, enrollmentApi, type PunchDirection } from '../../api/pahchan';
-import { enqueuePunch, attachPhotoKey, flushPunches, getPunchCount } from '../../offline/punchQueue';
+import { enqueuePunch, attachPhotoKey, flushPunches } from '../../offline/punchQueue';
+import { useQueueStatus } from '../../hooks/useQueueStatus';
+import { duration, scaleTo, useReducedMotion, DUR, EASE } from '../../theme/motion';
 
 /**
  * Clock in / clock out. 07-pahchan.md, and the prototype at `Pahchan v1.html` §01.
@@ -45,6 +47,30 @@ const MAX_RETAKES = 3;
 
 /** 07 §2's threshold. Worse than this flags — it never blocks. */
 const ACCURACY_FLAG_M = 100;
+
+/**
+ * How long the confirmation ring holds before it settles.
+ *
+ * From the reference prototype, which is the only place this timing is written
+ * down: `Mobile.jsx:318` runs `setTimeout(…, 900)` on the `matched` stage before
+ * moving on. It is deliberately long for a confirmation — 900ms is four times
+ * `--dur-base` — because this is the frame that tells someone their day has been
+ * recorded, and it is the last thing they look at before putting the phone away.
+ *
+ * The build had no equivalent. `phase` went `capturing → submitting → done` with
+ * the shutter swapped for a spinner and a line of text underneath; nothing on
+ * screen ever said "that worked" in a way you could see from arm's length.
+ */
+const CONFIRM_HOLD_MS = 900;
+
+/**
+ * `.mcam__ring.ok` from `mobile.css:196`, split across the two properties RN
+ * gives us. Fixed hexes rather than tokens for the same reason the rest of this
+ * screen is: the background here is a live camera feed, so there is no surface
+ * for a theme colour to be legible against.
+ */
+const CONFIRM_GREEN = '#5BD98A';
+const CONFIRM_HALO  = 'rgba(91,217,138,0.35)';
 
 type Phase = 'idle' | 'capturing' | 'submitting' | 'done';
 
@@ -98,11 +124,67 @@ export default function ClockScreen() {
   const [phase, setPhase] = useState<Phase>('idle');
   const [retakes, setRetakes] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
-  const [pending, setPending] = useState(getPunchCount());
+  const reduced = useReducedMotion();
+
+  /**
+   * The pending count was `useState(getPunchCount())` refreshed by an effect
+   * keyed on `[phase]`, so it only moved when the employee happened to take
+   * another photo. A punch that flushed in the background while this screen was
+   * open kept showing as waiting; one enqueued elsewhere never appeared at all.
+   * `useQueueStatus` subscribes to the MMKV write instead.
+   */
+  const { punches } = useQueueStatus();
+
+  /**
+   * The confirmation pop. MOTION-SPEC §4's one-shot vocabulary — `--dur-slow`
+   * on `--ease-spring`, overshooting and settling — applied to the shutter,
+   * which is the control the employee is already looking at.
+   *
+   * Reduced motion collapses BOTH halves: `scaleTo` takes the overshoot to 1 so
+   * nothing grows, and `duration` takes the settle to 0ms. What survives is the
+   * colour and the tick, which is where the meaning was. §4 gives spring to
+   * confirmations only, and a punch landing is exactly that.
+   */
+  const confirm = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    if (phase !== 'done') { confirm.setValue(1); return; }
+    Animated.sequence([
+      Animated.timing(confirm, {
+        toValue: scaleTo(1.14, reduced),
+        duration: duration(DUR.slow, reduced),
+        easing: EASE.spring,
+        useNativeDriver: true,
+      }),
+      Animated.timing(confirm, {
+        toValue: 1,
+        duration: duration(DUR.base, reduced),
+        easing: EASE.emph,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    /**
+     * Hold the confirmation, then hand the control back.
+     *
+     * `done` was terminal: the shutter is disabled for every phase but `idle`,
+     * so once a punch landed this screen could not take another one until it was
+     * unmounted and remounted. Clock in, then clock out an hour later without
+     * leaving the screen, and the button was dead.
+     *
+     * The `notice` deliberately survives — the confirmation ring is the part
+     * that is timed, and the sentence explaining a flagged location or an unsent
+     * punch is information the employee may still be reading.
+     *
+     * `direction` recomputes on its own: the flush invalidates ['pahchan'], the
+     * refetch lands, and the button comes back saying the opposite thing.
+     */
+    const back = setTimeout(() => setPhase('idle'), CONFIRM_HOLD_MS);
+    return () => clearTimeout(back);
+  }, [phase, reduced, confirm]);
 
   const nav = useNavigation();
 
-  const { data: mine } = useQuery({
+  const { data: mine, isFetching: mineFetching } = useQuery({
     queryKey: ['pahchan', 'me'],
     queryFn: () => pahchanApi.me(7),
   });
@@ -120,8 +202,6 @@ export default function ClockScreen() {
   // whether they are currently in — the last punch already knows.
   const lastToday = mine?.punches?.[0];
   const direction: PunchDirection = lastToday?.direction === 'in' ? 'out' : 'in';
-
-  useEffect(() => { setPending(getPunchCount()); }, [phase]);
 
   const submit = useCallback(async () => {
     if (!camera.current || phase !== 'idle') return;
@@ -293,11 +373,26 @@ export default function ClockScreen() {
             </Pressable>
           )}
 
-          {pending > 0 && (
-            <View style={s.pendingPill}>
-              <Ionicons name="cloud-upload-outline" size={12} color="#FFFFFF" />
+          {punches.count > 0 && (
+            <View
+              style={s.pendingPill}
+              accessibilityLiveRegion="polite"
+            >
+              <Ionicons
+                name="cloud-upload-outline" size={12} color="#FFFFFF"
+                accessibilityElementsHidden importantForAccessibility="no"
+              />
               <Text style={s.pendingText}>
-                {pending} waiting to send
+                {punches.count} waiting to send
+                {/* The 72-hour buffer, named while it is still open. Before
+                    this, `PUNCH_RETENTION_MS` was enforced silently by
+                    pruneExpired and only ever surfaced as an Alert AFTER a
+                    punch had aged out — by which point the employee's only
+                    remaining option is a regularisation request. Shown inside
+                    the last day so it reads as a warning and not as wallpaper. */}
+                {punches.hoursLeft != null && punches.hoursLeft <= 24
+                  ? ` · about ${punches.hoursLeft} h left`
+                  : ''}
               </Text>
             </View>
           )}
@@ -315,29 +410,52 @@ export default function ClockScreen() {
               You have retaken this {MAX_RETAKES} times. Ask your manager to add the time manually.
             </Text>
           ) : (
-            <Pressable
-              onPress={submit}
-              disabled={phase !== 'idle'}
-              accessibilityRole="button"
-              accessibilityLabel={direction === 'in' ? 'Clock in now' : 'Clock out now'}
-              accessibilityState={{ disabled: phase !== 'idle' }}
-              style={({ pressed }) => [
-                s.shutter,
-                { backgroundColor: phase === 'idle' ? '#FFFFFF' : 'rgba(255,255,255,0.5)' },
-                pressed && { transform: [{ scale: 0.96 }] },
-              ]}
-            >
-              {phase === 'idle' ? (
-                <Ionicons name="finger-print" size={30} color="#111111" />
-              ) : (
-                <ActivityIndicator color="#111111" />
-              )}
-            </Pressable>
+            <Animated.View style={{ transform: [{ scale: confirm }] }}>
+              <Pressable
+                onPress={submit}
+                // `mineFetching` closes the window the confirmation hold opens.
+                // `direction` is derived from the last punch, so between handing
+                // the shutter back and the refetch landing it would still read
+                // "Clock in" — and a second tap there is a duplicate punch that
+                // this queue is append-only and does NOT dedupe.
+                disabled={phase !== 'idle' || mineFetching}
+                accessibilityRole="button"
+                accessibilityLabel={direction === 'in' ? 'Clock in now' : 'Clock out now'}
+                accessibilityState={{ disabled: phase !== 'idle' || mineFetching }}
+                style={({ pressed }) => [
+                  s.shutter,
+                  {
+                    backgroundColor: phase === 'done' ? CONFIRM_GREEN
+                      : phase === 'idle' ? '#FFFFFF'
+                      : 'rgba(255,255,255,0.5)',
+                    // The ring 07 §1's prototype puts round the face. `.mcam__ring.ok`
+                    // is `box-shadow: 0 0 0 2px #5BD98A, 0 0 0 12px rgba(91,217,138,.2)`;
+                    // RN has no box-shadow, so the outer halo is the border and the
+                    // inner ring is the fill.
+                    borderColor: phase === 'done' ? CONFIRM_HALO : 'rgba(255,255,255,0.4)',
+                  },
+                  // §1 gives press feedback --dur-instant; a Pressable style
+                  // callback has no duration to give it, so what is left to get
+                  // right is the amplitude — and that is the half reduced motion
+                  // cares about. `scaleTo` takes it to 1, so the button responds
+                  // in colour alone.
+                  pressed && { transform: [{ scale: scaleTo(0.96, reduced) }] },
+                ]}
+              >
+                {phase === 'done' ? (
+                  <Ionicons name="checkmark" size={34} color="#06282B" />
+                ) : phase === 'idle' ? (
+                  <Ionicons name="finger-print" size={30} color="#111111" />
+                ) : (
+                  <ActivityIndicator color="#111111" />
+                )}
+              </Pressable>
+            </Animated.View>
           )}
 
-          <Text style={s.hint}>
+          <Text style={s.hint} accessibilityLiveRegion="polite">
             {phase === 'submitting' ? 'Sending…'
-              : phase === 'done' ? 'Done'
+              : phase === 'done' ? (direction === 'in' ? 'Clocked in' : 'Clocked out')
               : 'Look at the camera and tap'}
           </Text>
         </View>

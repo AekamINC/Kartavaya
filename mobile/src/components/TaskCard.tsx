@@ -70,10 +70,21 @@ function TaskCardInner({ task, onPress, showProject = true, syncing = false }: T
           : { backgroundColor: t.surface,    borderRadius: 16,
               shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
               shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
+        // MOTION-SPEC §7.1, verbatim: "Optimistic UI renders at opacity .6 until
+        // acknowledged, then goes solid." The reference does the same for an
+        // unsent message (`.cd__m.sending`) and an in-flight upload
+        // (`.fcard.up`). A swipe-completed row on a train was rendering
+        // identically to one the server had accepted, which is the lie that rule
+        // exists to prevent. Not animated — it is a STATE, and a card that
+        // pulsed while queued would be a loop nobody asked for.
+        syncing && { opacity: 0.6 },
       ]}
       onPress={onPress}
       activeOpacity={0.75}
-      {...a11yButton(task.title, 'Opens task detail')}
+      {...a11yButton(
+        task.title,
+        syncing ? 'Waiting to sync. Opens task detail' : 'Opens task detail',
+      )}
     >
       {/* Top row: project + task ID + sync */}
       <View style={s.topRow}>
@@ -82,7 +93,19 @@ function TaskCardInner({ task, onPress, showProject = true, syncing = false }: T
           {task.team_name ?? '—'}
         </Text>
         <Text style={[s.taskId, { color: t.ink3 }]}>{task.task_id.slice(0, 8)}</Text>
-        {syncing && <Ionicons name="sync-outline" size={13} color="#f59e0b" />}
+        {/* `Mobile.jsx:45` draws the same marker in the same corner. The card
+            already carries the state in its accessibilityHint, so the glyph is
+            hidden from the reader rather than announced a second time as an
+            unlabelled image. */}
+        {syncing && (
+          <Ionicons
+            name="sync-outline"
+            size={13}
+            color="#f59e0b"
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          />
+        )}
       </View>
 
       {/* Title */}

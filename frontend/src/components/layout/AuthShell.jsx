@@ -90,15 +90,52 @@ function Mark({ size = 36 }) {
   );
 }
 
+/**
+ * Has the user asked for no motion, by EITHER route?
+ *
+ * There are two, and only one of them is a media query. The OS setting is
+ * `prefers-reduced-motion: reduce`. The in-app setting is Customization →
+ * Animations, which `applyPrefs` persists to `k_prefs` and then expresses as
+ * inline `--ix-user` / `--motion-scale-user` custom properties on the root —
+ * there is no attribute and no media feature for it, so nothing that only asks
+ * matchMedia can see it.
+ *
+ * Measured before this existed: with Animations = None the sign-in panel still
+ * changed its content every 7 seconds. The person had turned motion off inside
+ * the product and the very first screen ignored them.
+ *
+ * Read from `k_prefs` rather than from `useCustomize()` for two reasons. The
+ * hook THROWS outside CustomizeProvider and the e2e harness mounts LoginPage
+ * with only ToastProvider and a MemoryRouter, so calling it here would fail
+ * `__tests__/e2e/auth-session.test.jsx` on mount. And the computed
+ * `--motion-scale` cannot be trusted at this moment either: React runs child
+ * effects before parent ones, so this effect fires BEFORE the provider's
+ * `applyPrefs`, and would read the stylesheet default of 1 every time.
+ * localStorage is the one source that is already correct during the first
+ * render. `SigningPage.jsx` reads the same key for the same reason.
+ *
+ * `anim: 'reduced'` still rotates — reduced means less, not none, and the
+ * remaining motion is a 180ms fade of a panel the user is not interacting with.
+ */
+function prefersNoMotion() {
+  try {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return true;
+  } catch { /* no matchMedia — fall through to the stored preference */ }
+  try {
+    return JSON.parse(window.localStorage?.getItem('k_prefs') || '{}').anim === 'none';
+  } catch { return false; }
+}
+
 function BrandPanel() {
   const [i, setI] = useState(0);
 
-  // Auto-advancing content is moving content (WCAG 2.2.2). A user who asked
-  // their OS for less motion gets the first panel and the dots, not a carousel
-  // that changes under them while they are typing a password.
+  // Auto-advancing content is moving content (WCAG 2.2.2). A user who asked for
+  // less motion gets the first panel and the dots, not a carousel that changes
+  // under them while they are typing a password. The dots stay in both cases:
+  // stopping the timer must not remove the way to read the other two panels.
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return undefined;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+    if (typeof window === 'undefined') return undefined;
+    if (prefersNoMotion()) return undefined;
     const t = setInterval(() => setI((x) => (x + 1) % ROTATE.length), 7000);
     return () => clearInterval(t);
   }, []);

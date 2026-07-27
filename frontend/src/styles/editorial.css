@@ -782,7 +782,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
   }
 }
 .k-iconbtn {
-  width: 34px; height: 34px; border-radius: 8px;
+  /* 00-tokens.md §96 — was a literal `8px`, so the Corner radius control moved
+     cards, inputs and chips while every icon button in the toolbar, the drawer
+     and the shortcuts sheet stayed put under all three settings. `.k-iconbtn`
+     is the port of the reference's `.icobtn` (`app.css:89`), which is
+     `var(--r-sm)` — same 34x34 box, same `--on-surface-2` colour, same hover.
+     -2.2px at the Default setting; 2.3px under Sharp and 11.6px under Pill,
+     which is the point. The duplicate in kartavaya-design.css moves with it so
+     deleting one cannot reintroduce the literal. */
+  width: 34px; height: 34px; border-radius: var(--r-sm);
   background: transparent; border: 0;
   color: var(--ink-2);
   display: inline-flex; align-items: center; justify-content: center;
@@ -2712,9 +2720,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
 
 /* ── Form input ─────────────────────────────────────────────────────────── */
 .k-input {
+  /* §96 again. The reference's field is `.fldx__in`, `var(--r-sm)`. */
   width: 100%; padding: 10px 12px;
   background: var(--bg-soft); border: 1px solid var(--rule);
-  border-radius: 8px; font-size: 13.5px; color: var(--ink); outline: none;
+  border-radius: var(--r-sm); font-size: 13.5px; color: var(--ink); outline: none;
   transition: border-color calc(.15s * var(--ix)), background calc(.15s * var(--ix)); font-family: inherit;
 }
 .k-input:focus { border-color: color-mix(in srgb, var(--k-primary) 60%, var(--rule)); background: var(--surface); }
@@ -2723,7 +2732,8 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-select {
   appearance: none; padding: 8px 28px 8px 10px;
   background: var(--bg-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236E7B91'/%3E%3C/svg%3E") no-repeat right 10px center;
-  border: 1px solid var(--rule); border-radius: 8px; font-size: 13px; color: var(--ink);
+  /* §96 — matched to `.k-input` above, which it sits beside in every form. */
+  border: 1px solid var(--rule); border-radius: var(--r-sm); font-size: 13px; color: var(--ink);
   cursor: pointer; outline: none; font-family: inherit;
 }
 .k-select:focus { border-color: color-mix(in srgb, var(--k-primary) 60%, var(--rule)); }

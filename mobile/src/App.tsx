@@ -1,7 +1,7 @@
-﻿import React, { useEffect, useState, useCallback } from 'react';
+﻿import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View, Text, ActivityIndicator, StyleSheet, StatusBar,
-  TouchableOpacity, Alert, Platform,
+  TouchableOpacity, Alert, Platform, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -13,8 +13,10 @@ import { ThemeProvider, useTheme } from './theme/ThemeProvider';
 import { AuthProvider } from './hooks/useAuth';
 import { queryClient, persister, setupQueryPersistence } from './offline/queryClient';
 import { useFonts } from './theme/fonts';
-import { flushQueue, getQueueCount, clearQueue, friendlyFlushError } from './offline/mutationQueue';
-import { flushPunches, getPunchCount } from './offline/punchQueue';
+import { flushQueue, getQueueCount, getQueueSummary, clearQueue, friendlyFlushError } from './offline/mutationQueue';
+import { flushPunches, getPunchCount, getPunchSummary } from './offline/punchQueue';
+import { agoLabel } from './hooks/useQueueStatus';
+import { amplitude, duration, useReducedMotion, DUR, EASE } from './theme/motion';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import { NotificationProvider } from './context/NotificationContext';
 import { NotificationBannerContainer } from './components/NotificationBanner';
@@ -28,7 +30,7 @@ restoreToken();
 // ── Offline banner ────────────────────────────────────────────────────────────
 interface BannerProps {
   message:    string | null;
-  kind:       'error' | 'warn' | 'info' | 'syncing';
+  kind:       'error' | 'warn' | 'info' | 'syncing' | 'synced';
   onRetry?:   () => void;
   onClear?:   () => void;
 }
@@ -55,32 +57,101 @@ interface BannerProps {
  */
 function OfflineBanner({ message, kind, onRetry, onClear }: BannerProps) {
   const { t } = useTheme();
-  if (!message) return null;
+  const reduced = useReducedMotion();
 
+  /**
+   * The banner had no entrance and no exit — `if (!message) return null`, which
+   * is the same `if (!open) return null` MOTION-SPEC §9 lists as the defect on
+   * every web overlay. It appeared and vanished between two frames, over
+   * whatever was on screen, which is the single most startling way to deliver
+   * "you are offline".
+   *
+   * `shown` trails `message` so the pill can animate out before it unmounts, and
+   * the last non-null message is held during that exit — otherwise the text
+   * disappears on the first frame of the fade and what slides away is an empty
+   * pill.
+   */
+  const [shown, setShown] = useState<{ message: string; kind: BannerProps['kind'] } | null>(
+    message ? { message, kind } : null,
+  );
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (message) {
+      setShown({ message, kind });
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: duration(DUR.base, reduced),
+        easing: EASE.enter,
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+    // §7.3 — decisive out. 180ms against the 220ms in.
+    Animated.timing(anim, {
+      toValue: 0,
+      duration: duration(DUR.exit, reduced),
+      easing: EASE.exit,
+      useNativeDriver: true,
+    }).start(({ finished }) => { if (finished) setShown(null); });
+  }, [message, kind, reduced, anim]);
+
+  if (!shown) return null;
+
+  const k = message ? kind : shown.kind;
+
+  // `synced` uses the success container pair, which is the one MOTION-SPEC §6
+  // maps to "success, complete, approved". `successBg` with `onSuccessContainer`
+  // and never with `success` — tokens.ts measured that mismatch at 2.37:1.
   const bg =
-    kind === 'error'   ? t.error            :
-    kind === 'warn'    ? t.approvalBg       :
-                         t.primaryContainer;
+    k === 'error'   ? t.error            :
+    k === 'warn'    ? t.approvalBg       :
+    k === 'synced'  ? t.successBg        :
+                      t.primaryContainer;
   const textColor =
-    kind === 'error'   ? t.onError              :
-    kind === 'warn'    ? t.onApprovalContainer  :
-                         t.onPrimaryContainer;
+    k === 'error'   ? t.onError              :
+    k === 'warn'    ? t.onApprovalContainer  :
+    k === 'synced'  ? t.onSuccessContainer   :
+                      t.onPrimaryContainer;
   const borderColor =
-    kind === 'error'   ? withAlpha(t.error,    0.30) :
-    kind === 'warn'    ? withAlpha(t.approval, 0.35) :
-                         withAlpha(t.primary,  0.30);
+    k === 'error'   ? withAlpha(t.error,    0.30) :
+    k === 'warn'    ? withAlpha(t.approval, 0.35) :
+    k === 'synced'  ? withAlpha(t.success,  0.30) :
+                      withAlpha(t.primary,  0.30);
 
   const iconName =
-    kind === 'error'   ? 'alert-circle-outline'  :
-    kind === 'warn'    ? 'wifi-outline'           :
-    kind === 'syncing' ? 'sync-outline'           : 'wifi-outline';
+    k === 'error'   ? 'alert-circle-outline' :
+    k === 'warn'    ? 'wifi-outline'         :
+    k === 'syncing' ? 'sync-outline'         :
+    k === 'synced'  ? 'checkmark-circle'     : 'wifi-outline';
 
   return (
-    <View style={s.bannerRow}>
+    <Animated.View
+      style={[
+        s.bannerRow,
+        {
+          opacity: anim,
+          // Enters from above, which is where it lives. The travel collapses to
+          // 0 under reduced motion while the opacity change — the part carrying
+          // the information — is kept.
+          transform: [{
+            translateY: anim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [-amplitude(16, reduced), 0],
+            }),
+          }],
+        },
+      ]}
+      // Announced as a live region so a screen-reader user is told the device
+      // went offline without having to find the pill. `polite`, not `assertive`:
+      // this interrupts nothing the user is doing.
+      accessibilityLiveRegion="polite"
+      accessibilityRole="alert"
+    >
       <View style={[s.bannerPill, { backgroundColor: bg, borderColor }]}>
         <Ionicons name={iconName as any} size={13} color={textColor} />
-        <Text style={[s.bannerText, { color: textColor, flex: 1 }]} numberOfLines={2}>
-          {message}
+        <Text style={[s.bannerText, { color: textColor, flex: 1 }]} numberOfLines={3}>
+          {shown.message}
         </Text>
         {onRetry && (
           <TouchableOpacity onPress={onRetry} style={[s.bannerBtn, { borderColor }]}
@@ -95,7 +166,7 @@ function OfflineBanner({ message, kind, onRetry, onClear }: BannerProps) {
           </TouchableOpacity>
         )}
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -137,6 +208,19 @@ function InnerApp() {
   // Push notification registration + tap-to-navigate
   usePushNotifications();
 
+  /**
+   * Clears the banner after `ms`, and cancels a pending clear when a new one is
+   * scheduled. Without the ref, an error banner scheduled to clear at +7s and a
+   * synced banner scheduled at +3.5s race, and whichever fires second wipes a
+   * message the user has not read.
+   */
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearAfter = useCallback((ms: number) => {
+    if (clearTimer.current) clearTimeout(clearTimer.current);
+    clearTimer.current = setTimeout(() => setBanner(null), ms);
+  }, []);
+  useEffect(() => () => { if (clearTimer.current) clearTimeout(clearTimer.current); }, []);
+
   const doFlush = useCallback(async () => {
     const count = getQueueCount();
     const punchCount = getPunchCount();
@@ -158,7 +242,7 @@ function InnerApp() {
 
     const result = count > 0
       ? await flushQueue()
-      : { failed: [] as Awaited<ReturnType<typeof flushQueue>>['failed'] };
+      : { succeeded: 0, failed: [] as Awaited<ReturnType<typeof flushQueue>>['failed'] };
 
     // Punches replay from their own queue, separately and unconditionally.
     // 17: "A dropped punch is an unpaid day" — so a failure in the mutation
@@ -189,7 +273,7 @@ function InnerApp() {
           canRetry: false,
           canClear: false,
         });
-        setTimeout(() => setBanner(null), 7000);
+        clearAfter(7000);
       } else if (transient.length > 0) {
         setBanner({
           message:  `Sync incomplete — ${transient.length} change${transient.length > 1 ? 's' : ''} will retry.`,
@@ -199,12 +283,49 @@ function InnerApp() {
         });
       }
     } else {
-      setBanner(null);
+      /**
+       * A successful flush used to be silent: `setBanner(null)` and nothing
+       * else. The user watched "Syncing 3 changes…" appear and then vanish, with
+       * no statement that it worked — so a flush that succeeded and a flush that
+       * was cancelled looked identical, and the only way to find out which had
+       * happened was to go and check the record.
+       *
+       * Confirmations are the cheap half of §7.1. It says what landed, then
+       * clears itself: this is an acknowledgement, not a state, and a banner
+       * that stays is a banner that gets ignored the next time it means
+       * something.
+       */
+      const landed: string[] = [];
+      if (punchResult.sent > 0) {
+        landed.push(`${punchResult.sent} clock-in${punchResult.sent === 1 ? '' : 's'}`);
+      }
+      if (result.succeeded > 0) {
+        landed.push(`${result.succeeded} change${result.succeeded === 1 ? '' : 's'}`);
+      }
+
+      if (landed.length > 0) {
+        setBanner({
+          message:  `Synced ${landed.join(' and ')}.`,
+          kind:     'synced',
+          canRetry: false,
+          canClear: false,
+        });
+        // Long enough to read a short sentence, short enough not to sit over the
+        // screen the user came back to.
+        clearAfter(3500);
+      } else {
+        setBanner(null);
+      }
+
       // Scope to affected query keys; a global invalidation thrashes all caches
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      // The punch queue feeds attendance surfaces, which were not being
+      // refreshed after a flush — a clocked-in employee whose punch finally
+      // landed kept seeing the pre-sync figure until they pulled to refresh.
+      if (punchResult.sent > 0) queryClient.invalidateQueries({ queryKey: ['pahchan'] });
     }
-  }, []);
+  }, [clearAfter]);
 
   const handleRetry = useCallback(() => {
     doFlush();
@@ -239,21 +360,40 @@ function InnerApp() {
         // a grey cloud is not." Punches are counted separately and named
         // separately — a queued clock-in is the one item where the employee needs
         // to know it is still pending, because their pay depends on it arriving.
-        const queued = getQueueCount();
-        const punches = getPunchCount();
+        const changes = getQueueSummary();
+        const punches = getPunchSummary();
         const parts: string[] = [];
-        if (punches > 0) parts.push(`${punches} clock-in${punches === 1 ? '' : 's'}`);
-        if (queued > 0) parts.push(`${queued} change${queued === 1 ? '' : 's'}`);
+        if (punches.count > 0) parts.push(`${punches.count} clock-in${punches.count === 1 ? '' : 's'}`);
+        if (changes.count > 0) parts.push(`${changes.count} change${changes.count === 1 ? '' : 's'}`);
+
+        // The age, which the reference banner carries and this one did not:
+        // `Offline. 3 changes queued · oldest 12 min` (Mobile.jsx:82). A count
+        // alone reads the same at minute one and hour seventy-one.
+        const oldestIso = [changes.oldestAt, punches.oldestCapturedAt]
+          .filter((v): v is string => !!v)
+          .sort()[0] ?? null;
+        const oldest = agoLabel(oldestIso);
+
+        // The 72-hour promise, stated while the window is still open rather than
+        // as an Alert after a punch has already aged out. Only inside the last
+        // day, so it is a warning rather than wallpaper.
+        const punchWindow =
+          punches.count > 0 && punches.hoursLeft != null && punches.hoursLeft <= 24
+            ? ` Attendance is held for 72 hours — about ${punches.hoursLeft} h left on the oldest.`
+            : '';
+
         setBanner({
           message: parts.length
-            ? `You're offline — ${parts.join(' and ')} waiting to sync.`
+            ? `You're offline — ${parts.join(' and ')} waiting to sync`
+              + (oldest ? `, oldest ${oldest}.` : '.')
+              + punchWindow
             : "You're offline — changes will sync when reconnected.",
           kind:     'info',
           canRetry: false,
           // Discarding must never offer to throw away a punch. canClear drives
           // clearQueue(), which only touches the mutation queue, so it is offered
           // on changes alone.
-          canClear: queued > 0,
+          canClear: changes.count > 0,
         });
       }
     });
