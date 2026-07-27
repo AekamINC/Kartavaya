@@ -10,6 +10,7 @@ import React, { useState } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import { ICONS } from '../components/layout/navIcons';
+import useTabPanelMotion from '../lib/tabPanelMotion';
 
 import TodayTab from './graha/TodayTab';
 import ClientsTab from './graha/ClientsTab';
@@ -41,6 +42,9 @@ const TABS = [
 export default function GrahaPage() {
   const [tab, setTab] = useState('today');
   const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];
+  // Seventeen tabs, and switching between them had no motion at all: the
+  // underline teleported and the panel swapped between one frame and the next.
+  const motion = useTabPanelMotion(TABS.map(([id]) => id), tab);
 
   return (
     <div style={{ padding: '0 0 48px' }}>
@@ -59,7 +63,13 @@ export default function GrahaPage() {
         label="Graha sections"
       />
 
-      <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
+      <div
+        role="tabpanel"
+        id={`mt-panel-${tab}`}
+        aria-labelledby={`mt-tab-${tab}`}
+        className="ix-panel"
+        {...motion}
+      >
         <Active />
       </div>
     </div>

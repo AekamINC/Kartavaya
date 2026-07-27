@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { ErrorState, errorKind } from '../../components/ui/ErrorState';
+import { SkeletonTable, SkeletonRegion } from '../../components/ui/Skeleton';
 import { safeArray, Badge, UpiPayBlock, INV_TYPE_LABELS, STATUS_COLORS, DOC_STATUS_COLORS, PAY_METHODS } from './_shared';
 import { inr } from '../../lib/inr';
 import { describeDocumentError } from '../../lib/docErrors';
@@ -27,17 +29,25 @@ export default function InvoicesTab() {
     line_items: [{ description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 }],
   });
   const [downloading, setDownloading] = useState(false);
+  // A failed load left `invoices` at [] and painted "No invoices yet — create
+  // your first invoice". On a finance ledger that is the worst version of this
+  // bug: an empty receivables list is a number the user may act on.
+  const [err, setErr] = useState(null);
 
   useEffect(() => { load(); }, []);
 
   async function load() {
+    setErr(null);
     try {
       let url = '/v1/ganit/invoices?';
       if (typeFilter) url += `invoice_type=${typeFilter}&`;
       if (statusFilter) url += `payment_status=${statusFilter}&`;
       const r = await api.get(url);
       setInvoices(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load invoices', type: 'error' }); }
+    } catch (e) {
+      setErr(e);
+      pushToast({ title: 'Failed to load invoices', type: 'error' });
+    }
     finally { setLoading(false); }
   }
 
@@ -431,7 +441,11 @@ export default function InvoicesTab() {
         </form>
       )}
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
+      {loading ? (
+        <SkeletonRegion label="Loading invoices"><SkeletonTable rows={8} columns={5} /></SkeletonRegion>
+      ) : err ? (
+        <ErrorState kind={errorKind(err)} onRetry={load} />
+      ) :
         invoices.length === 0 ? (
           <EmptyState
             illustration="invoice"
