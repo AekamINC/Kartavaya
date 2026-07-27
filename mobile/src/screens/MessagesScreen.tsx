@@ -83,7 +83,7 @@ export default function MessagesScreen() {
     <View style={[s.root, { backgroundColor: t.bg, paddingTop: insets.top }]}>
       <View style={s.header}>
         <Text style={[s.title, { color: t.ink }]}>Messages</Text>
-        <Text style={[s.titleHi, { color: t.primaryText }]}>सन्देश</Text>
+        <Text style={[s.titleHi, { color: t.primaryText }]}>संवाद</Text>
       </View>
 
       <FlatList

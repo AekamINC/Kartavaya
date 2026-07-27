@@ -310,7 +310,7 @@ export default function ChatScreen() {
       </Pressable>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={[s.headerTitle, { color: t.ink }]} numberOfLines={1}>{channelName}</Text>
-        <Text style={[s.headerSub, { color: t.ink4 }]} numberOfLines={1}>सन्देश</Text>
+        <Text style={[s.headerSub, { color: t.ink4 }]} numberOfLines={1}>संवाद</Text>
       </View>
     </View>
   );

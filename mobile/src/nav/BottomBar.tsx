@@ -45,7 +45,7 @@ const ICONS: Record<string, IconPair> = {
 const LABELS: Record<string, { en: string; hi: string }> = {
   Today:    { en: 'Today',    hi: 'आज' },
   Tasks:    { en: 'Tasks',    hi: 'कर्तव्य' },
-  Messages: { en: 'Messages', hi: 'सन्देश' },
+  Messages: { en: 'Messages', hi: 'संवाद' },
   More:     { en: 'More',     hi: 'अधिक' },
   Clock:    { en: 'Clock',    hi: 'उपस्थिति' },
   Me:       { en: 'Me',       hi: 'मैं' },
