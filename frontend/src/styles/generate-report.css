@@ -107,7 +107,7 @@
   font-family:var(--font-display); font-size:16px; font-weight:500;
 }
 .gr__seg-hint{ font-size:11px; color:var(--ink-3); }
-.gr__seg-btn.is-active .gr__seg-hint{ color:var(--k-mid); }
+.gr__seg-btn.is-active .gr__seg-hint{ color:var(--primary-text); }  /* see .gr__preview-brand-hi */
 
 /* Date range row */
 .gr__range{
@@ -354,13 +354,25 @@
   font-family:var(--font-display);
   font-size:15px; font-weight:500; color:var(--ink);
 }
+/* --primary-text, NOT --k-mid, on every rule in this file that paints TEXT.
+   `applyPrefs` writes --k-mid as `acc.mid` with NO theme arm — the same
+   #00897f in light and dark — so it is a fill that cannot follow the theme,
+   and 00 §7 is explicit that primary-coloured text uses --primary-text
+   (which applyPrefs DOES write per theme: acc.text in light, acc.color in
+   dark). Measured on the report preview paper:
+     --k-mid  light 4.02:1 on --surface · dark 4.26:1     both FAIL 4.5
+     --primary-text                                        clears in both
+   The Devanagari half of the bilingual pair (कर्तव्य below) was the worst of
+   them, which is the same shape as the ApprovePage defect.
+   The --k-mid uses on border-color and box-shadow in this file are LEFT
+   ALONE: those are non-text UI at the 3:1 threshold and measure 4.02+. */
 .gr__preview-brand-hi{
   font-family:var(--font-hindi);
-  font-size:12px; color:var(--k-mid);
+  font-size:12px; color:var(--primary-text);
 }
 .gr__preview-kicker{
   font-size:9.5px; letter-spacing:0.2em; text-transform:uppercase;
-  color:var(--k-mid); font-weight:700;
+  color:var(--primary-text); font-weight:700;
   margin-bottom:8px;
 }
 .gr__preview-h2{
@@ -414,7 +426,7 @@
 }
 .gr__preview-sec:last-child{ border-bottom:0; }
 .gr__preview-sec i{
-  font-style:normal; color:var(--k-mid);
+  font-style:normal; color:var(--primary-text);   /* see .gr__preview-brand-hi */
   font-family:var(--font-display); font-size:13px;
 }
 .gr__preview-foot{

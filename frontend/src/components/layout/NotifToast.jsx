@@ -151,7 +151,12 @@ function NotifToast({ notif, onDismiss }) {
           </button>
           <button
             onClick={handleView}
-            style={{ fontSize: 11, color: '#fff', background: 'var(--k-primary)', border: 'none', borderRadius: 6, padding: '3px 10px', cursor: 'pointer', fontFamily: 'var(--font-ui)', fontWeight: 600 }}
+            /* --on-primary on --primary, not #fff on --k-primary. --k-primary
+               is an alias of --primary-vivid, which is a FILL and is the same
+               #05b7aa in BOTH themes; white on it measures 2.51:1 either way.
+               --primary is the accent fill and --on-primary is the ink derived
+               for it per theme (deriveOnAccent), so the pair moves together. */
+            style={{ fontSize: 11, color: 'var(--on-primary)', background: 'var(--primary)', border: 'none', borderRadius: 6, padding: '3px 10px', cursor: 'pointer', fontFamily: 'var(--font-ui)', fontWeight: 600 }}
           >
             View →
           </button>

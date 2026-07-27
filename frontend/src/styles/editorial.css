@@ -352,7 +352,12 @@ input, textarea, select { font-family: inherit; color: inherit; }
   color: var(--side-fg-faint); font-weight: 700;
   cursor: pointer;
 }
-.side__sec:hover { color: var(--side-fg-mute); }
+/* --side-fg, not --side-fg-mute. The rest state is --side-fg-faint, which now
+   ALIASES --side-fg-mute (kartavaya-design.css §7) because at .28/.24 it
+   measured 2.52:1 / 2.06:1 as text. Left as --side-fg-mute this hover became a
+   no-op — the same colour it already was — so the heading lost its only
+   affordance. --side-fg is the brighter step the hover was reaching for. */
+.side__sec:hover { color: var(--side-fg); }
 .side__sec-hi {
   font-family: var(--font-indic);
   /* Tracks the Text size slider instead of a 10px literal — a fixed sub-label
@@ -711,7 +716,17 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .mnav__lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .mnav__fab {
   width: 44px; height: 44px; border-radius: 50%;
-  background: linear-gradient(135deg, var(--primary), var(--primary-vivid));
+  /* FLAT, for the identical reason `.k-btn--primary` (:925) is flat: a ramp
+     ending at `--primary-vivid` puts --on-primary on #05b7aa at the vivid end.
+     Measured per stop in light — the only way this class of defect shows up,
+     since it passes at the other stop:
+       --primary       #00897f (runtime accent)  4.30:1   marginal
+       --primary-vivid #05b7aa                   2.51:1   FAIL
+     This is the mobile nav's floating action button, i.e. the primary action on
+     every phone screen. Dark was never the problem: --on-primary is near-black
+     there, so both stops clear.
+     `--k-grad` and the other gradients are untouched — they carry no text. */
+  background: var(--primary);
   color: var(--on-primary);
   display: grid; place-items: center;
   box-shadow: var(--shadow-2);
@@ -982,7 +997,19 @@ input, textarea, select { font-family: inherit; color: inherit; }
   flex-shrink: 0;
 }
 .k-avatar--ring { box-shadow: 0 0 0 1.5px var(--surface); }
-.k-avatar--me { background: var(--k-gradD) !important; }
+/* FLAT, and with its own ink — the third instance of the same defect as
+   `.k-btn--primary` (:925) and `.mnav__fab` (:712).
+   `--k-gradD` is `linear-gradient(135deg, deep+cc, mid+cc 55%, color+cc)`, so
+   `.k-avatar`'s `color: #fff` sat on a translucent ramp. Measured at the mid
+   stop, which is the one under the initials:
+     light  #fff on rgb(8,152,141)   3.58:1   FAIL (needs 4.5 — 11px/700)
+     dark   #fff on rgb(6,148,139)   3.72:1   FAIL
+   It is the signed-in user's own avatar in the sidebar footer, so it renders on
+   every authenticated page in the product. --on-primary is derived per accent
+   AND per theme (deriveOnAccent), so the pair stays legible across all twelve
+   presets instead of only the ones where white happens to work. The `color`
+   needs the same `!important` as the background to beat `.k-avatar`. */
+.k-avatar--me { background: var(--primary) !important; color: var(--on-primary) !important; }
 
 .k-avstack {
   display: inline-flex; align-items: center;

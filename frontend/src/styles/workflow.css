@@ -185,7 +185,15 @@
               box-shadow var(--dur-fast) var(--ease-standard);
 }
 .hcl-card:hover { border-color: var(--primary); }
-.hcl-card:focus-visible { border-color: var(--primary); box-shadow: 0 0 0 3px var(--focus-ring); }
+/* `var(--focus-ring)` is the WHOLE shadow, not a colour: it is declared as
+   `0 0 0 3px color-mix(...)` in kartavaya-design.css §"Ready-made focus halos".
+   Writing `0 0 0 3px var(--focus-ring)` expanded to `0 0 0 3px 0 0 0 3px
+   color-mix(...)`, which is invalid at computed-value time — measured
+   box-shadow resolved to `none`, so the halo never rendered and the only focus
+   feedback left was a border-colour change, i.e. colour alone.
+   `:hover` on the line above sets the SAME border-color, so keyboard focus was
+   also indistinguishable from hover. */
+.hcl-card:focus-visible { border-color: var(--primary); box-shadow: var(--focus-ring); }
 
 .hcl-card__head { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); }
 

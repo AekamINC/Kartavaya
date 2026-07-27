@@ -138,7 +138,22 @@
 }
 .gn-li__x:hover:not(:disabled) { color: var(--danger); opacity: .75; }
 .gn-li__x:disabled { opacity: .35; cursor: not-allowed; }
-.gn-li__x:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+/* --primary, NOT --focus-ring. All four :focus-visible rules in this file said
+   `outline: 2px solid var(--focus-ring)`, and --focus-ring is not a colour: it
+   is a complete ready-made shadow, `0 0 0 3px color-mix(...)`
+   (kartavaya-design.css §"Ready-made focus halos"). Substituting it into the
+   `outline` shorthand makes the declaration invalid AT COMPUTED-VALUE TIME,
+   which does not fall back to the previous rule — it computes to `unset`, and
+   `outline-style`'s initial value is `none`.
+   Measured with a genuine :focus-visible match: outline-style resolved to
+   `none` while the correct token gave `solid 2px rgb(5,183,170)`. Because
+   `.gn-act:focus-visible` outranks the app-wide `:focus-visible` rule in
+   components.css:530, the invalid declaration DEFEATED the global ring rather
+   than deferring to it — these four controls had no visible focus indicator at
+   all (WCAG 2.4.7). check-tokens.mjs cannot see this: the token is declared, so
+   it resolves; it just resolves to the wrong TYPE.
+   --primary is what every other focus rule in the codebase uses. */
+.gn-li__x:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 /* The running total under the line editor. Explicitly a PREVIEW — the server
    computes and stores the figures that end up on the document. */
@@ -184,7 +199,7 @@
   text-decoration-style: dotted;
   text-underline-offset: 2px;
 }
-.gn-link:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.gn-link:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
 /* Bare text actions inside a row (Edit / Delete / Unmatch). Real buttons, so
    they are reachable by keyboard — these were <button> with every style
@@ -199,7 +214,7 @@
   border-radius: var(--r-xs);
 }
 .gn-act:hover { text-decoration: underline; }
-.gn-act:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.gn-act:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .gn-act--danger { color: var(--danger); }
 
 /* ── Card lists ────────────────────────────────────────────────────────────
@@ -221,7 +236,7 @@
    is unreachable by keyboard and invisible to a screen reader. */
 button.gn-row { cursor: pointer; display: block; }
 button.gn-row:hover { background: var(--s-low); border-color: var(--outline-variant); }
-button.gn-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+button.gn-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .gn-row__head {
   display: flex;
   justify-content: space-between;

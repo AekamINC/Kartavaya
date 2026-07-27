@@ -19,13 +19,27 @@ const TYPE_META = {
 };
 
 
+/*
+ * The two badges below carried HARDCODED backgrounds — #fee2e2 and #dcfce7 —
+ * with #16a34a as the "to" ink. None of the three flips with the theme, and
+ * #16a34a is on the retired literal list in lib/tokens.css. Measured:
+ *
+ *   dark   var(--danger) #F2867A on #fee2e2   2.03:1   (needs 4.5)
+ *   both   #16a34a       on #dcfce7           3.00:1   (needs 4.5)
+ *
+ * The light-pink and light-green grounds stayed light in dark mode while the
+ * ink moved, which is why the "from" badge is worst in dark specifically.
+ * --danger-container / --ok-container are the theme-flipping equivalents and
+ * each already has a measured `on-` half (10.45:1 and 11.02:1 light, 10.00:1
+ * and 8.94:1 dark), so the pairs are correct in both themes with no second rule.
+ */
 function DiffBadge({ from, to }) {
   if (from == null && to == null) return null;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, marginLeft: 6 }}>
-      {from !== null && from !== undefined && <span style={{ background: "#fee2e2", color: "var(--danger)", borderRadius: 4, padding: "1px 5px" }}>{String(from)}</span>}
+      {from !== null && from !== undefined && <span style={{ background: "var(--danger-container)", color: "var(--on-danger-container)", borderRadius: 4, padding: "1px 5px" }}>{String(from)}</span>}
       {from !== null && from !== undefined && to !== null && to !== undefined && <span style={{ color: "var(--ink-3)" }}>→</span>}
-      {to   !== null && to !== undefined && <span style={{ background: "#dcfce7", color: "#16a34a", borderRadius: 4, padding: "1px 5px" }}>{String(to)}</span>}
+      {to   !== null && to !== undefined && <span style={{ background: "var(--ok-container)", color: "var(--on-ok-container)", borderRadius: 4, padding: "1px 5px" }}>{String(to)}</span>}
     </span>
   );
 }
@@ -46,8 +60,8 @@ function FieldDiff({ data }) {
   if (data.added?.length || data.removed?.length) {
     return (
       <span style={{ color: "var(--ink-3)", fontSize: 12, marginLeft: 4 }}>
-        {data.added?.length  > 0 && <span style={{ background: "#dcfce7", color: "#16a34a", borderRadius: 4, padding: "1px 5px", marginRight: 4 }}>+{data.added.length}</span>}
-        {data.removed?.length > 0 && <span style={{ background: "#fee2e2", color: "var(--danger)", borderRadius: 4, padding: "1px 5px" }}>-{data.removed.length}</span>}
+        {data.added?.length  > 0 && <span style={{ background: "var(--ok-container)", color: "var(--on-ok-container)", borderRadius: 4, padding: "1px 5px", marginRight: 4 }}>+{data.added.length}</span>}
+        {data.removed?.length > 0 && <span style={{ background: "var(--danger-container)", color: "var(--on-danger-container)", borderRadius: 4, padding: "1px 5px" }}>-{data.removed.length}</span>}
       </span>
     );
   }
