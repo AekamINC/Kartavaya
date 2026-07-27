@@ -428,6 +428,10 @@ P('```');
    50% and 999px/9999px are NOT violations: a circle and a pill are shapes, not
    radii, and `--r-pill` is itself 999px. */
 const RADIUS_LITERAL = /(^|[\s,])(\d+(?:\.\d+)?)px/;
+const RADIUS_BASE = (() => {
+  const m = /--radius-base:\s*(\d+(?:\.\d+)?)px/.exec(fs.readFileSync(path.join(BUILD_STYLES, 'kartavaya-design.css'), 'utf8'));
+  return m ? parseFloat(m[1]) : 12;
+})();
 const radiusLiterals = [];
 for (const r of buildRules) {
   for (const [prop, val] of r.decls) {
@@ -464,8 +468,11 @@ P(`bars and ticks, where a token that scales to 20px under Pill would be wrong.`
 P(``);
 P(table(['file:line', 'selector', 'value', 'nearest token'],
   realRadii.map(r => {
-    // --radius-base is 10 in the build; the ramp is .34 / .58 / 1 / 1.45 / 2.1
-    const ramp = [['--r-xs', 3.4], ['--r-sm', 5.8], ['--r-md', 10], ['--r-lg', 14.5], ['--r-xl', 21]];
+    // The ramp is .34 / .58 / 1 / 1.45 / 2.1 of --radius-base, and the base is
+    // READ, not assumed: it moved 10 → 12 mid-run, and a hard-coded 10 here
+    // would have named the wrong nearest token for all 83 rows.
+    const ramp = [['--r-xs', 0.34], ['--r-sm', 0.58], ['--r-md', 1], ['--r-lg', 1.45], ['--r-xl', 2.1]]
+      .map(([n, k]) => [n, Math.round(k * RADIUS_BASE * 100) / 100]);
     const near = ramp.reduce((a, b) => Math.abs(b[1] - r.px) < Math.abs(a[1] - r.px) ? b : a);
     return [`\`${r.file}:${r.line}\``, `\`${r.selector}\``, r.value, `\`${near[0]}\` (${near[1]}px, Δ${(r.px - near[1]).toFixed(1)})`];
   })));
