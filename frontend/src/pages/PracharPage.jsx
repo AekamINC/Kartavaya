@@ -294,7 +294,7 @@ function AdsTab() {
                         <strong style={{ fontSize: 14 }}>{a.platform || a.name}</strong>
                         <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{a.account_id || a.id}</p>
                       </div>
-                      <button className="k-btn" style={{ fontSize: 12 }} onClick={() => syncAccount(a.social_account_id || a.id)}>Sync</button>
+                      <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => syncAccount(a.social_account_id || a.id)}>Sync</button>
                     </ModCard>
                   ))}
                 </div>
@@ -430,7 +430,7 @@ function SequencesTab() {
 
           <div className="k-detail__actions">
             {detail.status !== 'paused' && detail.status !== 'completed' && (
-              <button className="k-btn" style={{ fontSize: 13 }} onClick={pause}>Pause</button>
+              <button className="k-btn k-btn--ghost" style={{ fontSize: 13 }} onClick={pause}>Pause</button>
             )}
           </div>
         </div>
@@ -489,7 +489,7 @@ function SequencesTab() {
               </label>
               <div className="k-formpanel__actions">
                 <button onClick={addStep} className="k-btn k-btn--primary" style={{ fontSize: 13 }}>Add Step</button>
-                <button onClick={() => setStepForm(null)} className="k-btn" style={{ fontSize: 13 }}>Cancel</button>
+                <button onClick={() => setStepForm(null)} className="k-btn k-btn--ghost" style={{ fontSize: 13 }}>Cancel</button>
               </div>
             </div>
           )}
@@ -912,7 +912,7 @@ function EventsTab() {
           </div>
           <div className="k-formpanel__actions">
             <button onClick={save} className="k-btn k-btn--primary" style={{ fontSize: 13 }}>{form.id ? 'Update Event' : 'Create Event'}</button>
-            <button onClick={() => setForm(null)} className="k-btn" style={{ fontSize: 13 }}>Cancel</button>
+            <button onClick={() => setForm(null)} className="k-btn k-btn--ghost" style={{ fontSize: 13 }}>Cancel</button>
           </div>
         </div>
       </div>
@@ -953,9 +953,9 @@ function EventsTab() {
                 <Td align="right">{ev.reg_count || 0}</Td>
                 <td>
                   <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
-                    <button className="k-btn" style={{ fontSize: 12 }} onClick={() => setForm({ ...ev, starts_at: ev.starts_at ? ev.starts_at.slice(0, 16) : '', ends_at: ev.ends_at ? ev.ends_at.slice(0, 16) : '' })}>Edit</button>
-                    {ev.status === 'draft' && <button className="k-btn" style={{ fontSize: 12 }} onClick={() => updateStatus(ev.id, 'published')}>Publish</button>}
-                    {ev.status === 'published' && <button className="k-btn" style={{ fontSize: 12 }} onClick={() => updateStatus(ev.id, 'cancelled')}>Cancel</button>}
+                    <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => setForm({ ...ev, starts_at: ev.starts_at ? ev.starts_at.slice(0, 16) : '', ends_at: ev.ends_at ? ev.ends_at.slice(0, 16) : '' })}>Edit</button>
+                    {ev.status === 'draft' && <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => updateStatus(ev.id, 'published')}>Publish</button>}
+                    {ev.status === 'published' && <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => updateStatus(ev.id, 'cancelled')}>Cancel</button>}
                     <button style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }} onClick={() => remove(ev.id)}>Delete</button>
                   </div>
                 </td>
@@ -975,7 +975,7 @@ function EventsTab() {
                     <div style={{ marginBottom: 8 }}>
                       <strong style={{ fontSize: 13 }}>Registrations</strong>
                       {!regForm && (
-                        <button className="k-btn" style={{ fontSize: 12, marginLeft: 8 }} onClick={() => setRegForm({ name: '', email: '', phone: '' })}>+ Register</button>
+                        <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginLeft: 8 }} onClick={() => setRegForm({ name: '', email: '', phone: '' })}>+ Register</button>
                       )}
                     </div>
 
@@ -985,7 +985,7 @@ function EventsTab() {
                         <input placeholder="Email" value={regForm.email} onChange={e => setRegForm({ ...regForm, email: e.target.value })} className="k-formpanel__input" style={{ flex: 1, minWidth: 120 }} />
                         <input placeholder="Phone" value={regForm.phone} onChange={e => setRegForm({ ...regForm, phone: e.target.value })} className="k-formpanel__input" style={{ flex: 1, minWidth: 120 }} />
                         <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => registerAttendee(ev.id)}>Submit</button>
-                        <button className="k-btn" style={{ fontSize: 12 }} onClick={() => setRegForm(null)}>Cancel</button>
+                        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => setRegForm(null)}>Cancel</button>
                       </div>
                     )}
 
@@ -1002,7 +1002,7 @@ function EventsTab() {
                             <td style={{ fontSize: 12 }}>{reg.registered_at ? new Date(reg.registered_at).toLocaleDateString('en-IN') : '-'}</td>
                             <td>
                               {reg.status !== 'attended' && (
-                                <button className="k-btn" style={{ fontSize: 12 }} onClick={() => updateRegStatus(ev.id, reg.id, 'attended')}>Mark Attended</button>
+                                <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => updateRegStatus(ev.id, reg.id, 'attended')}>Mark Attended</button>
                               )}
                             </td>
                           </tr>

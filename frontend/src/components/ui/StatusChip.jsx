@@ -18,7 +18,26 @@ const STATUS_MAP = {
 
 const FALLBACK = 'var(--on-surface-3)';
 
-export default function StatusChip({ status, approvalStatus, columnName, columnColor }) {
+/**
+ * `label` overrides the word STATUS_MAP would have printed, keeping the tone —
+ * the dot colour and the tint — that `status` selects.
+ *
+ * It was accepted by exactly one caller and honoured by none. Pahchan's
+ * register passes `label={FLAG_LABEL[f]}` for every punch flag
+ * (Register.jsx:419) and is the only call site in the build that passes it, so
+ * the prop was dropped on the floor and its whole eight-entry table was dead
+ * code. Measured in the rendered register: fourteen punches carrying eight
+ * distinct flags rendered THREE distinct chips — "Requested", "In Review",
+ * "Rejected". A punch that was outside its site read "Requested"; one with a
+ * simulated location read "Rejected"; weak GPS read "In Review".
+ *
+ * Those are workflow words for a task, and this is not a task. The reviewer's
+ * whole job on this screen is to tell one kind of wrong from another, and the
+ * chip was telling them a category that does not exist here instead of the one
+ * that does. Additive: the other eight call sites pass no `label` and are
+ * untouched.
+ */
+export default function StatusChip({ status, approvalStatus, columnName, columnColor, label }) {
   // Approval state takes precedence when active
   const activeApproval = approvalStatus && approvalStatus !== 'approved' && approvalStatus !== 'rejected';
   const decidedApproval = approvalStatus === 'approved' || approvalStatus === 'rejected';
@@ -28,7 +47,7 @@ export default function StatusChip({ status, approvalStatus, columnName, columnC
     return (
       <span className="k-statuschip" style={{ '--c': s.color }}>
         <span className="k-statuschip__dot" />
-        {s.label}
+        {label ?? s.label}
       </span>
     );
   }
@@ -38,7 +57,7 @@ export default function StatusChip({ status, approvalStatus, columnName, columnC
     return (
       <span className="k-statuschip" style={{ '--c': columnColor || FALLBACK }}>
         <span className="k-statuschip__dot" />
-        {columnName}
+        {label ?? columnName}
       </span>
     );
   }
@@ -47,7 +66,7 @@ export default function StatusChip({ status, approvalStatus, columnName, columnC
   return (
     <span className="k-statuschip" style={{ '--c': s.color }}>
       <span className="k-statuschip__dot" />
-      {s.label}
+      {label ?? s.label}
     </span>
   );
 }

@@ -59,13 +59,29 @@ export default function Composer({
   // Opening a reply should put the cursor where the reply gets typed.
   useEffect(() => { if (replyTo) ta.current?.focus(); }, [replyTo]);
 
+  /**
+   * The box clears BEFORE the request, not after it.
+   *
+   * `MOTION-SPEC.md` §7.1 pairs the optimistic row in the log with an immediately
+   * empty composer — that is one gesture, and splitting it across a round trip is
+   * what made a slow send look like a dropped one: the text was still sitting in
+   * the box, the send button was disabled, and nothing had appeared in the log.
+   *
+   * The draft is restored on failure, which is the other half of the same rule
+   * ("a failed write restores the old value"). `onSend` rethrows after `ChatPane`
+   * has raised the server's own reason, so the reader gets the sentence and their
+   * words back together.
+   */
   const submit = async () => {
     const body = text.trim();
     if (!body || busy || disabled) return;
     setBusy(true);
+    setText('');
     try {
       await onSend(body);
-      setText('');
+    } catch {
+      setText(body);
+      ta.current?.focus();
     } finally {
       setBusy(false);
     }

@@ -21,10 +21,16 @@
 /* ── 1 · Runtime-tunable roots (§1) ─────────────────────────────────────────
    Set by Customization via applyPrefs. Everything else derives from these. */
 :root {
-  /* 12px is the reference's --radius-base (tokens.css:28). At 10 the whole
-     --r-* ladder rendered at 83% of the drawn radius: --r-lg, which carries
-     cards, stat tiles and the table shell, came out 14.5px against 17.4px. */
-  --radius-base:      12px;   /* user: 4 | 12 | 20 — default IS an option */
+  /* 12px — the harness's own value (`design-reference/…/tokens.css:30`,
+     `App.jsx:3` radius: 12) and now DEFAULTS.radius in CustomizePanel.
+     It was 10px while the default moved to 12, which is a first-paint jump:
+     applyPrefs writes --radius-base as an inline style, so every corner in the
+     product rendered at 10px until React mounted and then snapped to 12px.
+     The comment was stale on both counts — the options are 8 | 12 | 20.
+     Measured downstream: at 10 the whole --r-* ladder sat at 83% of the drawn
+     radius, and --r-lg — cards, stat tiles, the table shell — came out 14.5px
+     against the reference's 17.4px. */
+  --radius-base:      12px;   /* user: 8 | 12 | 20 — default IS an option */
   --glass-mix:        .6;     /* user: 0 → 1 */
   --font-size-base:   14px;   /* user: 12 → 20 */
   --line-height-base: 1.5;    /* user: 1.3 | 1.5 | 1.7 */
@@ -97,35 +103,43 @@
   --sp-5: 20px; --sp-6: 24px; --sp-7: 32px;  --sp-8: 44px;
   --sp-10: 40px;   /* legacy, 1 use — not part of §4 */
 }
-/* Three steps, and the numbers are the reference's, measured out of
-   `design-reference/Kartavaya Redesign/tokens.css:228-230` by rendering the
-   harness rather than by reading it.
- *
- * The middle step is `cozy` and it is what `:root` above already carried —
- * 44 / 28 / 18 / 22 / 10 is the design's baseline, and the redesign harness
- * ships `data-density="cozy"` on `<html>`. The build had no `cozy` at all and
- * defaulted the preference to `comfy`, so every shipping page was measured
- * against a scale (48 / 32 / 20 / 26 / 12) that exists nowhere in the design:
- * it sits between the reference's cozy and its comfy and matches neither. That
- * is invisible in a screenshot and fatal to any spacing comparison, which is
- * why it is fixed here before anything downstream of it.
- *
- * `compact` also carries the two type steps the reference gives it. Density is
- * meant to move text as well as padding; without them the compact rows tighten
- * around body copy that never shrinks. */
+/* Three tiers, and the middle one is the default — measured off the rendered
+   harness, not the prose. `Kartavaya Redesign.html` carries data-density="cozy"
+   and `App.jsx:3` defaults `density: 'cozy'`, with `Chrome.jsx:196` offering all
+   three. Spacing numbers are `design-reference/…/tokens.css:228-230` verbatim.
+
+   `cozy` did not exist here, so the shipped default was `comfy` — a tier the
+   design never renders. --pad-page is the topbar's horizontal padding AND
+   .kv__content's padding on every page, so 32px vs 28px moved the whole product,
+   not a sidebar detail.
+
+   The :root block above already declared exactly these cozy numbers and could
+   never be reached: applyPrefs writes data-density unconditionally, so an
+   attribute rule always won. Declared explicitly here so the default tier is
+   visible beside its siblings rather than implied by an absence.
+
+   ── Why the type steps are ratios and not the reference's literals
+   tokens.css:228/230 also move text with density: --t-body 13px on compact,
+   15px on comfy, --t-body-sm 12px on compact. Density SHOULD move type —
+   tightening a row to 34px around body copy that never shrinks is how a
+   compact table ends up with less air than it had before.
+
+   But copying those literals here would break the Text size slider. Unlike the
+   reference, this build derives the whole scale from --font-size-base (§ above,
+   lines 66-79) precisely so the slider moves everything at once; a literal
+   13px would pin body text at 13px for every user at every slider position,
+   but only while they were on compact. The ratios below are the reference's
+   own steps expressed against the base — .93 is 13/14, 1.07 is 15/14 — so the
+   design's intent and the slider both survive. */
 [data-density="compact"] {
-  --row-h: 34px; --pad-page: 18px; --pad-card: 12px;
-  --gap-section: 14px; --gap-tight: 7px;
-  --t-body: 13px; --t-body-sm: 12px;
+  --row-h:34px; --pad-page:18px; --pad-card:12px; --gap-section:14px; --gap-tight:7px;
+  --t-body: calc(var(--font-size-base) * .93);      /* 13px @14 */
+  --t-body-sm: calc(var(--font-size-base) * .86);   /* 12px @14 */
 }
-[data-density="cozy"] {
-  --row-h: 44px; --pad-page: 28px; --pad-card: 18px;
-  --gap-section: 22px; --gap-tight: 10px;
-}
-[data-density="comfy"] {
-  --row-h: 54px; --pad-page: 38px; --pad-card: 24px;
-  --gap-section: 30px; --gap-tight: 14px;
-  --t-body: 15px;
+[data-density="cozy"]    { --row-h:44px; --pad-page:28px; --pad-card:18px; --gap-section:22px; --gap-tight:10px }
+[data-density="comfy"]   {
+  --row-h:54px; --pad-page:38px; --pad-card:24px; --gap-section:30px; --gap-tight:14px;
+  --t-body: calc(var(--font-size-base) * 1.07);     /* 15px @14 */
 }
 
 /* ── 5 · Motion (§5) ────────────────────────────────────────────────────────
@@ -140,7 +154,19 @@
   --dur-xslow:   calc(520ms * var(--ix));
 
   --ease-standard:    cubic-bezier(.2, 0, 0, 1);
-  --ease-emph:        cubic-bezier(.16, 1, .3, 1);   /* expo-out, genuinely distinct */
+  /* M3 emphasised. It IS the same curve as --ease-standard, and that is not a
+     mistake to correct: `design-reference/Kartavaya Redesign/tokens.css:47-48`
+     declares both as `cubic-bezier(.2, 0, 0, 1)`, and MOTION-SPEC.md §2 gives
+     the same pair. The two names exist so a call site can say which ROLE it is
+     playing — emphasised transitions and pulses/shimmer are separately tunable
+     later — not because they must look different today.
+     This carried `cubic-bezier(.16, 1, .3, 1)` (expo-out) under the note
+     "genuinely distinct". Measured, that curve puts the drawer 93% of the way
+     across at t=90ms of its 360ms budget, so a --dur-slow entrance reads as a
+     ~90ms snap plus a long invisible tail — the opposite of drawer.css's own
+     stated intent that "entering is the system responding to you and can afford
+     to be gracious". Distinctness was never the goal; travel time was. */
+  --ease-emph:        cubic-bezier(.2, 0, 0, 1);
   --ease-enter:       cubic-bezier(0, 0, .2, 1);
   --ease-exit:        cubic-bezier(.4, 0, 1, 1);
   --ease-emph-in:     cubic-bezier(.05, .7, .1, 1);
@@ -212,15 +238,38 @@
   --on-surface-disabled: #9DA096;
 
   --outline-variant: #D8D1BE;
-  --outline:         #ADA692;
+  /* SPEC-A11Y-1, closed. Was #ADA692, which measured 2.12:1 on --bg and
+     1.71:1 on --s-highest — WCAG 1.4.11 wants 3:1 for "visual information
+     required to identify user interface components", and --outline IS that
+     information: it is the border of every text input, checkbox, radio and
+     select trigger. It failed on 11 of the 12 surface/theme combinations.
+     #78725F measured against all seven light surfaces:
+       --s-lowest 4.76 · --surface 4.49 · --s-low 4.26 · --bg 4.19
+       --s-container 3.96 · --s-high 3.68 · --s-highest 3.38
+     Chosen over the 3:1 minimum (#7E7663, worst 3.17) for headroom, and it
+     keeps the warm khaki hue rather than sliding grey. No rule in the tree
+     paints --outline as TEXT — 39 call sites, all borders — so the 4.5:1
+     threshold does not apply and the darker value costs nothing but weight.
+     --rule-strong (:468) and --border-strong (lib/tokens.css:98) alias this,
+     so both move with it. */
+  --outline:         #78725F;
 
   --primary:              #04837A;
   --primary-hover:        #026B64;
   /* --primary is 4.04:1 on --bg. It is a FILL — buttons, toggles, checkboxes,
-     active bars — where it pairs with --on-primary at 5.1:1. Any primary-
-     coloured TEXT uses --primary-text at 5.2:1 (00 §7, 23 contrast table).
-     applyPrefs overwrites this per accent with a measured value; the literal
-     here is the default teal, and the value that applies before JS runs. */
+     active bars — where it pairs with --on-primary at 4.63:1. Any primary-
+     coloured TEXT uses --primary-text, 5.56:1 (00 §7).
+     TWO NUMBERS HERE WERE WRONG, and `23-accessibility.md`'s contrast table is
+     where both came from. It claims 5.1 for the --on-primary pair (measured
+     4.63 — it overstates by 0.47, so the margin is half what the table says)
+     and 5.2 for --primary-text (measured 5.56 — it understates). Recorded as a
+     spec defect rather than quietly corrected in one place, because the table
+     is what the next person will read.
+     And the caveat below matters more than either: applyPrefs overwrites BOTH
+     --primary and --on-primary per accent, so every ratio on this line
+     describes the pre-JS default and nothing else. The pair that actually
+     renders at the default teal is white on acc.mid #00897f, which is 4.30.
+     scripts/check-accent-contrast.mjs measures the 48 that ship. */
   --primary-text:         #046B64;
   --on-primary:           #FFFFFF;
   --primary-container:    #B4F1E8;
@@ -293,7 +342,13 @@
   --on-surface-disabled: #64645F;   /* inactive controls only (00 §11) */
 
   --outline-variant: #333A43;
-  --outline:         #5B626C;
+  /* SPEC-A11Y-1, dark half. Was #5B626C: 3.14:1 on --bg was the ONLY passing
+     combination in the whole matrix, and it fell to 2.01:1 on --s-highest.
+     #7E8590 against all seven dark surfaces:
+       --s-lowest 5.33 · --bg 5.20 · --surface 4.92 · --s-low 4.65
+       --s-container 4.30 · --s-high 3.83 · --s-highest 3.33
+     Same reasoning as light — see the comment there. */
+  --outline:         #7E8590;
 
   /* Dark INVERTS the primary relationship: --primary is the light mint and
      --primary-container is the DARK one. Any component assuming container is
@@ -595,7 +650,7 @@ body {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);   /* 00 §96 — was a literal; editorial.css carries the same fix */
   background: transparent;
   border: 1px solid transparent;
   color: var(--ink-3);
@@ -688,11 +743,16 @@ body {
    and 16/20/20 on the body, and it inset the head's rule 20px from each edge
    so it stopped reading as a rule and started reading as a stray line.
    The reference's card (`app.css:150`) carries no shell padding either. */
+/* The `padding` stays. It is NOT the double-pad defect — twelve call sites
+   render `.k-card` around bare content and legitimately need it. editorial.css
+   scopes it off with `:has(> .k-card__head)` / `:has(> .k-card__body)`, which
+   is the precise version of the blanket removal this file first reached for:
+   only a card that brings its own padded parts gives the shell padding up. */
 .k-card {
   background: var(--surface);
   border: 1px solid var(--rule);
   border-radius: var(--r-lg);
-  overflow: hidden;
+  padding: var(--sp-5);
 }
 .k-card__head {
   display: flex;
@@ -903,7 +963,13 @@ body {
 }
 .k-trow {
   border-bottom: 1px dashed var(--rule-soft);
-  transition: background calc(.1s * var(--ix));
+  /* Was `calc(.1s * var(--ix))` with the browser's default `ease`. It scaled
+     with --ix, so it was not a strobe risk — but 100ms is not a rung on the
+     ladder and `ease` is not one of the six easings, so the busiest hover in
+     the product was the one surface measurably off-system. `--dur-fast` is the
+     hover rung (26 §6) and the reference table row is `transition: background
+     var(--dur-fast)` (motion.css `.tv__row`, IxViews §10). */
+  transition: background var(--dur-fast) var(--ease-standard);
   cursor: pointer;
 }
 .k-trow:hover { background: var(--surface); }
@@ -1141,7 +1207,7 @@ body {
   padding: 10px 12px;
   background: var(--bg-soft);
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--r-sm);   /* 00 §96 — was a literal; editorial.css carries the same fix */
   font-size: 13.5px;
   color: var(--ink);
   outline: none;
@@ -1160,7 +1226,7 @@ body {
   padding: 8px 28px 8px 10px;
   background: var(--bg-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236E7B91'/%3E%3C/svg%3E") no-repeat right 10px center;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--r-sm);   /* 00 §96 — was a literal; editorial.css carries the same fix */
   font-size: 13px;
   color: var(--ink);
   cursor: pointer;
@@ -1169,25 +1235,28 @@ body {
 }
 .k-select:focus { border-color: color-mix(in srgb, var(--k-primary) 60%, var(--rule)); }
 
-/* ── Density overrides (set via data-density on <html>) ────────────────── */
-/* The `.k-card` and `.k-stat` entries that used to sit here are gone, and the
-   deletion is the fix rather than tidying.
- *
- * `.k-card` carries no shell padding by design — `.k-card__head` and
- * `.k-card__body` own it, so the head's bottom rule can run the full width of
- * the card. `[data-density="comfy"] .k-card { padding: 20px 22px }` added a
- * second, outer pad on top of that: measured 20/22 on the shell AND 16/20 on
- * the head AND 16/20/20 on the body, and it inset the head rule from both
- * edges. Every user got this, because `comfy` was the default.
- *
- * `.k-stat` now takes `var(--pad-card)`, which is what density is FOR. The
- * literals here contradicted it in both directions — 10px 14px where
- * --pad-card is 12px, 16px 18px where it is 24px — so the tile stopped
- * tracking the density it was supposed to be responding to.
- *
- * `.k-page`, `.k-pageh`, `.k-hero` and `.k-wday` are left alone: they are not
- * this pass's surface. Note that `.k-page`'s comfy padding is ALSO declared in
- * editorial.css, which is imported later and wins. Reported, not touched. */
+/* ── Density overrides (set via data-density on <html>) ──────────────────
+   These are per-component escapes from the token system, and each one that
+   names a component whose padding IS `--pad-card` beats that token on
+   specificity — `[data-density=…] .k-stat` is (0,2,0) against `.k-stat`'s
+   (0,1,0), so the literal wins at two of the three tiers no matter which file
+   loads last. `.k-stat` and `.k-card` now read `--pad-card`, which is what the
+   rendered reference measures and what the three tiers already define, so their
+   overrides are removed rather than kept and re-tuned: a token and an override
+   of that token in the same stylesheet is how the two drift.
+
+   `.k-card`'s removal fixes a second thing measured on the way past: it carries
+   no shell padding by design — `.k-card__head` and `.k-card__body` own it, so
+   the head's bottom rule runs the full width of the card. The comfy override
+   wrapped a second, outer pad around both. Measured 20/22 on the shell AND
+   16/20 on the head AND 16/20/20 on the body, with the head rule inset 20px
+   from each edge so it read as a stray line rather than a divider — and every
+   user got it, because `comfy` used to be the default.
+
+   The rest stay. `.k-page`, `.k-pageh`, `.k-hero` and `.k-wday` do not consume
+   `--pad-card` and are outside this change. Note that `.k-page`'s comfy padding
+   is ALSO declared in editorial.css, which is imported later and wins;
+   reported, not touched. */
 [data-density="compact"] .k-page          { padding: 12px 16px; }
 [data-density="compact"] .k-pageh         { margin-bottom: 10px; }
 [data-density="compact"] .k-hero          { padding: 20px 22px; }

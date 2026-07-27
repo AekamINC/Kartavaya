@@ -28,7 +28,9 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
-import { mergeById, parseReactions, toggleReactionLocal } from './messageUtils';
+import {
+  dropSettled, mergeById, optimisticMessage, parseReactions, toggleReactionLocal,
+} from './messageUtils';
 
 const POLL_MS = 5000;
 
@@ -68,8 +70,14 @@ export function useChannelMessages(channelId, meId, me = null) {
         const page = await fetchPage();
         if (dead) return;
         // Merge, never assign — an optimistic send that landed between the
-        // request and the response must survive.
-        setMessages(prev => mergeById(prev, page));
+        // request and the response must survive. `dropSettled` first, so a
+        // placeholder whose real row is in this page is retired rather than
+        // rendered beside its own echo; `markFresh` is what gives the rows that
+        // genuinely just arrived their entrance animation, and it is deliberately
+        // NOT passed on the first load or on `loadOlder`.
+        setMessages(prev => mergeById(dropSettled(prev, page), page, {
+          markFresh: !first.current,
+        }));
         if (first.current && page.length < PAGE) setMore(false);
         setError(null);
       } catch (e) {
@@ -98,13 +106,35 @@ export function useChannelMessages(channelId, meId, me = null) {
     setMessages(prev => prev.map(m => (String(m.id) === String(id) ? { ...m, ...fields } : m)));
   }, []);
 
+  /**
+   * `MOTION-SPEC.md` §7.1 — the row goes up FIRST, at `opacity: .6`, and only
+   * goes solid when the server acknowledges it. Awaiting the POST before
+   * rendering anything is the "lie about state" the rule names: on a slow
+   * network the text left the composer and appeared nowhere.
+   *
+   * A failed send removes the placeholder and rethrows, so `ChatPane` still
+   * raises the server's own reason and `Composer` puts the draft back in the box
+   * rather than losing what somebody just typed.
+   */
   const send = useCallback(async (content, parentId) => {
-    const r = await api.post(`/v1/messaging/channels/${channelId}/messages`, {
-      content,
-      parent_message_id: parentId || null,
-    });
-    // A reply belongs to the thread panel, not the log — but its parent's
-    // `thread_count` has just gone up and the poll is up to five seconds away.
+    // A reply belongs to the thread panel, not the log, so it gets no
+    // placeholder here — `ThreadPanel` renders its own.
+    const optimistic = parentId ? null : optimisticMessage(content, { meId, me });
+    if (optimistic) setMessages(prev => mergeById(prev, [optimistic]));
+
+    let r;
+    try {
+      r = await api.post(`/v1/messaging/channels/${channelId}/messages`, {
+        content,
+        parent_message_id: parentId || null,
+      });
+    } catch (e) {
+      if (optimistic) setMessages(prev => prev.filter(m => m.id !== optimistic.id));
+      throw e;
+    }
+
+    // Its parent's `thread_count` has just gone up and the poll is up to five
+    // seconds away.
     if (parentId) {
       setMessages(prev => prev.map(m => (
         String(m.id) === String(parentId)
@@ -122,10 +152,17 @@ export function useChannelMessages(channelId, meId, me = null) {
       const mine = me
         ? { sender_name: me.full_name || me.name || undefined, sender_avatar: me.avatar_url || undefined }
         : {};
-      setMessages(prev => mergeById(prev, [{ ...r.data, ...mine }]));
+      // The placeholder is dropped in the same update the real row lands in, so
+      // the two never coexist for a frame. No `__fresh`: the placeholder has
+      // already occupied that space and the reader's own message must not
+      // animate in twice.
+      setMessages(prev => mergeById(
+        prev.filter(m => m.id !== optimistic.id),
+        [{ ...r.data, ...mine }],
+      ));
     }
     return r.data;
-  }, [channelId, me]);
+  }, [channelId, me, meId]);
 
   /**
    * Scrollback. `?before=` is a MESSAGE ID, not a timestamp — `list_messages`

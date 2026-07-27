@@ -109,10 +109,15 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
 }
 .bd__composerow { display: flex; align-items: center; gap: 5px; }
-/* A card created by the composer enters at the column's foot — 9.3 exit. */
+/* A card created by the composer enters at the column's foot — 9.3 exit.
+   The 6px rides --motion-scale, which is this build's improvement on the
+   reference and the invariant animations.css §2 states for every travel
+   distance: at Animations = None the rise is 0 and the entry degrades to a
+   pure fade, which is still a state change. Measured before this: a fixed
+   -6px translate survived --motion-scale: 0. */
 .bd__list .bc.fresh { animation: bcIn var(--dur-base) var(--ease-emph); }
 @keyframes bcIn {
-  from { opacity: 0; transform: translateY(-6px); }
+  from { opacity: 0; transform: translateY(calc(-6px * var(--motion-scale, 1))); }
   to   { opacity: 1; transform: none; }
 }
 
@@ -198,6 +203,43 @@
 }
 .bc__tick svg { width: 11px; height: 11px; }
 .bc:hover .bc__tick, .bc__tick:focus-visible { opacity: 1; }
+
+/* IxViews 9.4 exit is one sentence and it was not implemented: "Ticking runs
+   the 2.2 checkbox animation, then the card moves to Done with the 9.1 settle."
+   The settle (`.bc.just`) was here; 2.2 was not — measured, `.bc__tick.on`
+   carried no animation at all and its `<path>` had `stroke-dasharray: none`,
+   so the tick appeared fully drawn in one 140ms colour swap.
+
+   2.2 (IxWork.jsx:240), and `motion.css` `.sb__ck` implements it identically:
+     · box fills            --dur-fast
+     · tick path draws      --dur-base  --ease-emph  via stroke-dashoffset
+     · box overshoots 1.18  --dur-slow  --ease-spring
+   The fill is the transition already declared above; these two add the rest.
+
+   `.bc.tickpop` gates them, and the gate is the point. Keying off `.on` alone
+   fires on MOUNT — open a board with twelve done cards and twelve ticks spring
+   at once, which is an alarm, not a confirmation. KanbanView sets `tickpop` for
+   600ms only when a click completed the task, which also satisfies 2.2's exit
+   rule: "Unchecking reverses in 140ms with no spring. Undo should feel plainer
+   than do." Unchecking removes `.on` and falls back to the transition. */
+.bc.tickpop .bc__tick.on { animation: bcTickPop var(--dur-slow) var(--ease-spring); }
+@keyframes bcTickPop {
+  40% { transform: scale(calc(1 + .18 * var(--motion-scale, 1))); }
+}
+/* 18 is `motion.css:206`'s value for this exact path in this exact viewBox —
+   `M3.5 8.4l3 3 6-6.6` in `0 0 16 16`, measured by `getTotalLength()` at 13.16
+   user units. `stroke-dasharray` is in the SVG's units, not CSS pixels, so the
+   number only means anything against the viewBox: the drawer's copy of this
+   animation renders a different icon in a 24-unit box and carries 23. Covering
+   the path with 4.84 units to spare is deliberate here — the tick stays fully
+   hidden for the first ~27% of the draw, so it starts appearing as the 140ms
+   box fill finishes rather than racing it. */
+.bc__tick svg path { stroke-dasharray: 18; stroke-dashoffset: 0; }
+.bc.tickpop .bc__tick.on svg path { animation: bcTickDraw var(--dur-base) var(--ease-emph) backwards; }
+@keyframes bcTickDraw {
+  from { stroke-dashoffset: 18; }
+  to   { stroke-dashoffset: 0; }
+}
 /* --on-ok, not #fff. --ok is a FILL that inverts hard: #14743A in light takes
    white at 5.85:1, but #5BD98A in dark is a light mint where white measures
    1.79:1 — below even the 3:1 floor this tick needs as a non-text control. A
@@ -225,11 +267,16 @@
   border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
 }
 
+/* The ghost arrives with the column tint it belongs to, not a frame ahead of
+   it: `.bd__col.over` transitions over --dur-fast, and measured, this box was
+   appearing instantly, so dragging into an empty column produced a hard
+   rectangle followed by a fading tint. One fade, same duration, same curve. */
 .bc__ghost {
   border: 1px dashed var(--outline);
   background: color-mix(in srgb, var(--primary) 5%, transparent);
   border-radius: var(--r-sm);
   min-height: 52px;
+  animation: dmFade var(--dur-fast) var(--ease-enter) both;
 }
 
 /* ── 3 · Table ────────────────────────────────────────────────────────────
@@ -301,7 +348,22 @@
   background: rgba(var(--glass-tint), .94);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  animation: dmSheetIn var(--dur-base) var(--ease-emph-in);
+  /* IxViews 10.2 entry: "Bar slides down `translateY(-8px)` + fade 220ms
+     --ease-emph". This carried `dmSheetIn --dur-base --ease-emph-in` — the
+     MOBILE SHEET keyframe — which measured a 56px travel (100% of the bar's own
+     height) on the curve that MOTION-SPEC §2 reserves for "bottom sheets
+     rising", and no fade at all, so the bar arrived at full opacity from
+     off-screen. A 40px-tall toolbar borrowing a sheet's identity reads as a
+     modal appearing under the table.
+     8px and a fade, per 10.2. The sign is inverted because this bar docks to
+     the BOTTOM of the scroll container rather than sitting above the header —
+     10.2's own mobile note sanctions that placement — so it rises 8px into
+     place instead of dropping 8px. Travel rides --motion-scale. */
+  animation: tbBulkIn var(--dur-base) var(--ease-emph) both;
+}
+@keyframes tbBulkIn {
+  from { opacity: 0; transform: translateY(calc(8px * var(--motion-scale, 1))); }
+  to   { opacity: 1; transform: none; }
 }
 /* Windows gets no glass — 00 §6. */
 [data-platform="win"] .tbv .tbl__bulk { background: var(--s-low); -webkit-backdrop-filter: none; backdrop-filter: none; }

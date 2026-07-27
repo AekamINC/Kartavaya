@@ -9,10 +9,11 @@
  */
 import React from 'react';
 import { useLocation } from 'react-router-dom';
-import { resolveRouteMeta } from './navConfig';
+import { navContext, resolveRouteMeta } from './navConfig';
 import { ICONS } from './navIcons';
 import { NotificationsModal } from '../NotificationsModal';
 import { useCustomize } from '../CustomizePanel';
+import { currentUser } from '../../lib/auth';
 
 // PAGE_META removed — the breadcrumb now derives from navConfig.js.
 // It had 21 entries against far more live routes, so /sanvaad, /graha,
@@ -20,9 +21,28 @@ import { useCustomize } from '../CustomizePanel';
 // /admin/orgs and /admin/costs all fell through and rendered the app name.
 // It also disagreed with the sidebar on two labels (see navConfig.js).
 
-export default function Topbar({ unread = 0, notifOpen = false, onNotifOpenChange, onNewTask, onOpenCmdk }) {
+export default function Topbar({ unread = 0, notifOpen = false, onNotifOpenChange, onNewTask, onOpenCmdk, onOpenShortcuts }) {
   const location = useLocation();
   const meta = resolveRouteMeta(location.pathname);
+
+  /**
+   * The ORGANISATION is the first breadcrumb segment.
+   *
+   * `Chrome.jsx:254-262` renders the crumb as four parts — org, `/`, the page's
+   * Devanagari, the page's English — and this bar had only the last three. So
+   * the trail began mid-path: it told you which page you were on and never
+   * which company's data you were looking at. That is a live confusion for the
+   * people this product is for, who work across several entities, and the
+   * information was already on the client (`org_roles[].org_name`, sent by
+   * `/auth/me` since it was written) with nothing reading it.
+   *
+   * Rendered as TEXT, not as the mockup's toggle button. The mockup's chip
+   * flips between "Aekam Inc" and "Aekam platform" because the harness has one
+   * component pretending to be both surfaces; here the platform console is a
+   * real, separately-guarded route (`Protected` rule 3 → `AdminShell`), and a
+   * second, unguarded way in does not belong in a breadcrumb.
+   */
+  const orgName = navContext(currentUser()).orgName;
 
   /**
    * The Indic half is the PAGE's name, not the product's.
@@ -51,6 +71,12 @@ export default function Topbar({ unread = 0, notifOpen = false, onNotifOpenChang
   return (
     <header className="top">
       <div className="crumb">
+        {orgName && (
+          <>
+            <span className="crumb__org" title={orgName}>{orgName}</span>
+            <span className="crumb__sep" aria-hidden="true">/</span>
+          </>
+        )}
         <span className="crumb__hi" lang={(showGu && meta.gu) ? 'gu' : 'hi'}>{indic}</span>
         <span className="crumb__sep" aria-hidden="true">/</span>
         <span className="crumb__cur">{meta.en}</span>
@@ -72,6 +98,27 @@ export default function Topbar({ unread = 0, notifOpen = false, onNotifOpenChang
       </button>
 
       <div className="top__right">
+        {/* Keyboard shortcuts.
+
+            The sheet and its state have existed in AppShell all along; the ONLY
+            way to reach them was pressing `?` with no field focused, which is
+            a shortcut for discovering shortcuts. Anyone who did not already
+            know could not find out, and on a layout where `?` needs Shift it is
+            two keys for a control the mockup gives a button
+            (`Chrome.jsx:271`). Hidden ≤767px by `.top` itself, where there is
+            no keyboard to shortcut. */}
+        {onOpenShortcuts && (
+          <button
+            type="button"
+            className="k-iconbtn"
+            title="Keyboard shortcuts"
+            aria-label="Keyboard shortcuts"
+            aria-keyshortcuts="?"
+            onClick={onOpenShortcuts}
+          >
+            <kbd className="k-kbd k-kbd--bare" aria-hidden="true">?</kbd>
+          </button>
+        )}
         {/* The panel is anchored HERE, not rendered as a centred overlay from
             the shell — 21 asks for a popover under the bell. The wrapper is the
             positioning context; without it the panel would hang off the page. */}

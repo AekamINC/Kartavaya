@@ -60,41 +60,89 @@ without listing it, so reading the prose could never have caught this.
 
 Ordered by how visible each is.
 
-1. **Section headings.** The reference renders `WORKSPACE` above `कार्यक्षेत्र` as a
-   two-line stacked heading. Confirm the build's heading component matches —
-   size, tracking, weight, and the Devanagari line's font (Tiro, weight 400, and
-   NOT tracked; `24-bilingual-devanagari.md` forbids tracking on Devanagari and
-   the heading style applies it to the Latin line only).
+1. ~~**Section headings.** The reference renders `WORKSPACE` above `कार्यक्षेत्र`
+   as a two-line stacked heading.~~ **WRONG — struck.** It does not. `.side__sec`
+   is `display:flex; flex-direction:row`; measured on the rendered page the Latin
+   sits at `x=18` and the Devanagari at `x=201` in a 251px sidebar — one row,
+   Devanagari pushed right by `margin-left:auto`. The build already matches. This
+   entry was written from the JSX, which is the mistake this whole file exists to
+   warn about. Type treatment of the two spans is still a fair question; the
+   LAYOUT is not.
 2. **Item labels.** Reference says `Finance` where the build says `Invoicing`,
-   and `ग्रह` where the build says `ग्राहक` for CRM. Both are the designer's
-   words; the build's are somebody's paraphrase. Settle each deliberately rather
-   than silently.
-3. **Badges.** The reference carries counts on Tasks (12), Finance (4),
-   Attendance (3), Messaging (7), Roles (1), Approvals (3). Confirm the build
-   renders a badge in the same position and shape for each.
+   and `ग्रह` where the build says `ग्राहक` for CRM. **SETTLED — both kept as the
+   build has them**, see `worktree-agent-a124b468e0049b3a9.md` §2. Short version:
+   `Invoicing` is live in eight surfaces and describes what the module does;
+   `ग्रह` means *planet*, and `Modules.jsx:28` carries a written prior decision
+   that CRM is `ग्राहक`, customer. The mockup is not right about everything.
+   Still open, and found while doing this: `ग्राहक` is now the CRM sub-label AND
+   the Clients section heading — rename the section.
+3. **Badges.** ~~Confirm the build renders a badge in the same position and shape
+   for each.~~ **DONE.** Element and slot match exactly (`.side__badge`,
+   `margin-left:auto`, last child, hidden in the rail). The reference's
+   12/4/3/7/1 are mockup fixtures; `01 §4` specs exactly two counts
+   (`{inbox, approvals}`) and the build has both. Not a gap.
 4. **Per-page layout.** Every module screen in `ScreensBiz.jsx`, `ScreensCore.jsx`,
    `ScreensWork.jsx`, `ScreensMore.jsx` — compare rendered, page by page.
 5. **Density and display presets.** The harness sets `data-density="cozy"` and
    `data-display="serif"` on `<html>`. If the build defaults elsewhere, every
    spacing comparison is against the wrong baseline and will look wrong for a
    reason that is not the page's fault.
-6. **Preset industry navs.** `Chrome.jsx:72-76` defines per-industry module sets
-   (`ca`, `agency`, `trading`, `consult`). The build has no equivalent.
+6. **Preset industry navs.** ~~The build has no equivalent.~~ **ANSWERED — do not
+   build it.** It has a better one, in two halves: `onboarding/data.js`'s
+   `OB_PRESETS` picks the starting modules per industry, and `/auth/me`'s
+   `module_grants[]` drives `canSeeNavItem`, with `navGroupsFor` dropping the
+   emptied groups — the same visible behaviour, decided by entitlement rather
+   than a client toggle the server knows nothing about. A second filter would let
+   a user reveal a row that 403s. Full reasoning in
+   `worktree-agent-a124b468e0049b3a9.md` §3.
 
-## Not yet diagnosed — scrolling
+## Also settled — the app shell's structure
 
-Reported as "not working at all". First hypothesis — `.kv` grid had no
-`grid-template-rows`, so the row sized to content — was **measured and proved
-wrong**: an `auto` row in a definite-height grid still stretches, and
-`.kv__content` scrolls correctly in isolation. That change was reverted rather
-than shipped, because a wrong fix with a confident comment is worse than none.
+Sidebar, toolbar, breadcrumb, rail, mobile bar: enumerated element by element
+against the rendered mockup in `worktree-agent-a124b468e0049b3a9.md` §1, with
+screenshots of both sides in `swarm-reports/_shots/`. Six differences fixed in
+`76e06b1`; nine left open as decisions rather than patches (section order,
+`Client Portal` having no staff route, the sync chip, the appearance popover,
+gear-vs-sign-out in the footer, and a duplicate `.k-kbd` declaration).
 
-Ruled out so far:
-- `.kv` / `.kv__main` / `.kv__content` in isolation — scrolls (probe measured
-  `contentScrollH 3000` vs `clientH 720`).
-- The landing page — the document scrolls normally.
-- `document.body` scroll locks in `modal.jsx`, `Sheet.jsx`, `SlideOver.jsx` —
-  the shell scrolls `.kv__content`, not body, so a body lock cannot cause it.
+**Two build-harness facts worth having before you start**: the shared dev server
+on `:5173` serves the MAIN repo, not your worktree, and the Playwright MCP
+browser is shared — tabs get stolen mid-task. Headless Chrome
+(`chrome.exe --headless=new --screenshot=… --virtual-time-budget=7000`) is
+contention-free.
 
-Needs reproduction inside the authenticated shell — which page, which viewport
-width, and whether a drawer or sheet had been opened first.
+## Scrolling — DIAGNOSED AND FIXED (`699d51f`)
+
+**`.kv` had no `grid-template-rows`.** It is `display:grid` with `height:100vh`,
+so the single implicit row was `auto` and sized to its TALLEST ITEM rather than
+to the 100vh box. Measured on a 720px viewport with a long page and a long nav:
+the row computed to **3078px**. `.kv__main` and `.side` inherited it, so
+`.kv__content` and `.side__nav` were each exactly as tall as their own content —
+their `overflow-y: auto` had nothing left to scroll — while `overflow: hidden` on
+`.kv` silently clipped everything past the fold.
+
+Measured A/B on one loaded page:
+
+| `grid-template-rows` | `.kv__content` | `.side__nav` |
+|---|---|---|
+| `auto` → 3078px | **cannot scroll** | **cannot scroll** |
+| `minmax(0, 1fr)` → 720px | 699 / 3056 ✓ | 666 / 3024 ✓ |
+
+`minmax(0, 1fr)` and not a bare `1fr` — `1fr` floors at min-content, which is the
+same bug wearing a different hat.
+
+### The methodology lesson, which is the reusable part
+
+**This exact diagnosis was made, shipped, and then REVERTED** — because a probe
+reported the row already resolving to 720px on its own. The probe was the thing
+that was wrong: it loaded **two of the four stylesheets** `App.jsx` imports and
+left the sidebar **empty**, so nothing was tall enough to stretch the row and the
+bug could not appear. A reassuring measurement beat a correct hypothesis.
+
+What made it reproducible was the owner saying the **sidebar** would not scroll
+either. One clipped region can be a page bug; two is the shell.
+
+If you build a probe, make it faithful: **all four stylesheets in `App.jsx` order**
+(`index.css`, `kartavaya-design.css`, `editorial.css`, `settings.css`) and real
+content in every region you are not testing. An unfaithful probe does not fail
+loudly — it agrees with you.

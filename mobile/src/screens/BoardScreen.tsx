@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  FlatList, Modal, TextInput, ActivityIndicator,
-  Platform, Alert, RefreshControl, KeyboardAvoidingView, Pressable,
+  FlatList, TextInput, ActivityIndicator,
+  Platform, Alert, RefreshControl, Pressable,
 } from 'react-native';
 import { useRoute, useNavigation, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,9 +12,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, isToday, isPast } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
+import Sheet from '../components/Sheet';
 import { tasksApi } from '../api/tasks';
 import { projectsApi } from '../api/projects';
 import { PRIORITY_COLORS, projectColor, AVATAR_COLORS, BRAND_GRADIENT_2, withAlpha } from '../theme/tokens';
+import { FAMILY } from '../theme/fonts';
+import BiLabel from '../theme/BiLabel';
 import type { Task, ProjectColumn, TeamMember, Project } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
 
@@ -33,13 +36,16 @@ function ProjectPicker({
   onSelect: (p: Project) => void; onClose: () => void; t: any;
 }) {
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={ps.backdrop} onPress={onClose} />
-      <View style={[ps.sheet, { backgroundColor: t.surface }]}>
-        <View style={[ps.handle, { backgroundColor: t.outline }]} />
-        <Text style={[ps.title, { color: t.ink }]}>Switch Project</Text>
-        <Text style={[ps.sub, { color: t.ink3 }]}>परियोजना चुनें</Text>
-        <ScrollView style={{ maxHeight: 380 }}>
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      closeLabel="Close project picker"
+      panelStyle={[ps.sheet, { backgroundColor: t.surface }]}
+    >
+      <View style={[ps.handle, { backgroundColor: t.outline }]} />
+      <Text style={[ps.title, { color: t.ink }]}>Switch Project</Text>
+      <Text style={[ps.sub, { color: t.ink3 }]}>परियोजना चुनें</Text>
+      <ScrollView style={{ maxHeight: 380 }}>
           {projects.map(p => {
             const color = projectColor(p.team_id, p.color ?? undefined);
             const isActive = p.team_id === activeId;
@@ -59,12 +65,15 @@ function ProjectPicker({
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
-        <TouchableOpacity onPress={onClose} style={[ps.cancelBtn, { borderColor: t.outline }]}>
-          <Text style={[ps.cancelText, { color: t.ink3 }]}>Cancel · रद्द करें</Text>
-        </TouchableOpacity>
-      </View>
-    </Modal>
+      </ScrollView>
+      <TouchableOpacity onPress={onClose} style={[ps.cancelBtn, { borderColor: t.outline }]}>
+        {/* fontWeight '700' on `रद्द करें` has no Tiro to apply it to, so the
+            Hindi half renders in a synthesised bold or the system face. */}
+        <BiLabel latinStyle={[ps.cancelText, { color: t.ink3 }]} hindiStyle={{ color: t.ink3 }} hindiSize={13}>
+          Cancel · रद्द करें
+        </BiLabel>
+      </TouchableOpacity>
+    </Sheet>
   );
 }
 
@@ -201,11 +210,14 @@ function NewTaskModal({ visible, columns, projectId, onClose, onCreated, t }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <Pressable style={s.overlay} onPress={onClose} />
-        <View style={[s.sheet, { backgroundColor: t.surface, borderColor: t.outline }]}>
-          <View style={[s.sheetHandle, { backgroundColor: t.outline }]} />
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      closeLabel="Close new task sheet"
+      panelStyle={[s.sheet, { backgroundColor: t.surface, borderColor: t.outline }]}
+      avoidKeyboard
+    >
+      <View style={[s.sheetHandle, { backgroundColor: t.outline }]} />
           <Text style={[s.sheetTitle, { color: t.ink }]}>New Task</Text>
           <TextInput
             style={[s.sheetInput, { backgroundColor: t.bg, borderColor: t.outline, color: t.ink }]}
@@ -245,9 +257,7 @@ function NewTaskModal({ visible, columns, projectId, onClose, onCreated, t }: {
               </LinearGradient>
             </TouchableOpacity>
           </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </Sheet>
   );
 }
 
@@ -344,7 +354,7 @@ export default function BoardScreen() {
           <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1.4, textTransform: 'uppercase', color: t.ink2 }}>
             {col.name}
           </Text>
-          <Text style={{ marginLeft: 'auto', fontSize: 11, fontFamily: 'SpaceMono', color: t.ink2 }}>
+          <Text style={{ marginLeft: 'auto', fontSize: 11, fontFamily: FAMILY.mono, color: t.ink2 }}>
             {colCards.length}
           </Text>
         </View>
@@ -468,7 +478,14 @@ export default function BoardScreen() {
     return (
       <View style={[s.root, { backgroundColor: t.bg }]}>
         <View style={[s.header, { backgroundColor: IS_ANDROID ? t.surface : t.bg, paddingTop: insets.top + (IS_ANDROID ? 8 : 54) }]}>
-          <Text style={[s.kicker, { color: t.primary }]}>Boards · कार्यफलक</Text>
+          {/* Split: `s.kicker` carries letterSpacing 1.4 and fontWeight '700',
+              both of which damage Devanagari — tracking is applied after shaping
+              and breaks the shirorekha and the repha in `कार्यफलक`, and there is
+              no bold Tiro to weight it with. The loaded header below already
+              splits these into two <Text>s; only this empty state did not. */}
+          <BiLabel latinStyle={[s.kicker, { color: t.primary }]} hindiStyle={{ color: t.primary }} hindiSize={12}>
+            Boards · कार्यफलक
+          </BiLabel>
         </View>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <Ionicons name="grid-outline" size={40} color={t.ink3} />
@@ -611,7 +628,7 @@ export default function BoardScreen() {
 
 // ── Project picker styles ─────────────────────────────────────────────────────
 const ps = StyleSheet.create({
-  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  // backdrop removed — Sheet owns the scrim and fades it.
   sheet:      { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 28, paddingHorizontal: 20, shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.18, shadowRadius: 20, elevation: 20 },
   handle:     { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 4 },
   title:      { fontSize: 17, fontWeight: '700', textAlign: 'center', marginTop: 12 },
@@ -630,13 +647,13 @@ const bc = StyleSheet.create({
   topRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   priDot:       { width: 8, height: 8, flexShrink: 0 },
   priLabel:     { fontSize: 11.5, fontWeight: '600', textTransform: 'capitalize', flex: 1 },
-  taskId:       { fontSize: 11, fontFamily: 'SpaceMono' },
+  taskId:       { fontSize: 11, fontFamily: FAMILY.mono },
   title:        { fontSize: IS_ANDROID ? 15.5 : 15, fontWeight: '500', lineHeight: IS_ANDROID ? 21 : 20, letterSpacing: IS_ANDROID ? 0 : -0.2, marginBottom: 10 },
   footer:       { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   chip:         { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: IS_ANDROID ? 4 : 3, borderRadius: 99 },
   chipText:     { fontSize: 11, fontWeight: '700', letterSpacing: 0.3, textTransform: 'uppercase' },
   metaItem:     { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  metaCount:    { fontSize: 11, fontFamily: 'SpaceMono' },
+  metaCount:    { fontSize: 11, fontFamily: FAMILY.mono },
   avatar:       { width: IS_ANDROID ? 22 : 20, height: IS_ANDROID ? 22 : 20, borderRadius: 99, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
   avatarText:   { fontSize: 8, fontWeight: '700', color: '#fff' },
 });
@@ -649,8 +666,8 @@ const s = StyleSheet.create({
   backBtn:      { width: 32, flexShrink: 0, marginBottom: 4 },
   kickerRow:    { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 4 },
   kicker:       { fontSize: 11, fontWeight: '700', letterSpacing: 1.4, textTransform: 'uppercase' },
-  kickerHi:     { fontSize: 12, fontFamily: 'TiroDevanagariHindi' },
-  screenTitle:  { fontSize: IS_ANDROID ? 30 : 34, fontWeight: IS_ANDROID ? '500' : '400', lineHeight: IS_ANDROID ? 36 : 40, letterSpacing: -0.5, marginBottom: 10, fontFamily: IS_ANDROID ? undefined : 'Newsreader' },
+  kickerHi:     { fontSize: 12, fontFamily: FAMILY.devanagari },
+  screenTitle:  { fontSize: IS_ANDROID ? 30 : 34, fontWeight: IS_ANDROID ? '500' : '400', lineHeight: IS_ANDROID ? 36 : 40, letterSpacing: -0.5, marginBottom: 10, fontFamily: IS_ANDROID ? undefined : FAMILY.display },
   projectBtn:   { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, paddingHorizontal: 14, marginBottom: 4 },
   projDot:      { width: 12, height: 12, flexShrink: 0 },
   projName:     { fontSize: 15, fontWeight: '600' },
@@ -662,7 +679,7 @@ const s = StyleSheet.create({
   colTab:       { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 99, borderWidth: 1, flexShrink: 0 },
   colTabDot:    { width: 7, height: 7 },
   colTabText:   { fontSize: 13, fontWeight: '600' },
-  colTabCount:  { fontSize: 11, fontFamily: 'SpaceMono' },
+  colTabCount:  { fontSize: 11, fontFamily: FAMILY.mono },
   // Approval hint (board view)
   approvalHint:     { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: IS_ANDROID ? 20 : 10, paddingHorizontal: 14, paddingVertical: 12 },
   approvalHintText: { fontSize: IS_ANDROID ? 13 : 12, lineHeight: 18, flex: 1 },
@@ -694,7 +711,7 @@ const s = StyleSheet.create({
   trackerBar:   { height: 10, borderRadius: 5 },
   trackerTotal: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 16, borderTopWidth: 1 },
   // Modal
-  overlay:      { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+  // overlay removed — Sheet owns the scrim and fades it.
   sheet:        { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, borderTopWidth: 1 },
   sheetHandle:  { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
   sheetTitle:   { fontSize: 18, fontWeight: '900', marginBottom: 16 },

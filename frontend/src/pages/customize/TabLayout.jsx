@@ -25,13 +25,13 @@ export default function TabLayout() {
       <div className="sr">
         <div className="sr__l">
           <div className="sr__t">Density</div>
-          <div className="sr__d">Cozy is the drawn baseline. Compact tightens row padding across tables and lists; Comfy loosens it and raises body text a step.</div>
+          <div className="sr__d">Compact tightens row padding across tables and lists. Cozy is the default.</div>
         </div>
         <div className="sr__c">
-          {/* Three steps, matching the three the token layer defines. `cozy`
-              was missing from this control even though it is the design's
-              baseline, so the only way to reach it was to have no stored
-              preference at all. */}
+          {/* Three tiers, matching `Chrome.jsx:196`. Cozy was missing entirely,
+              so the default tier had no control that could return you to it:
+              anyone who tried Compact was stuck choosing between the tightest
+              and the loosest. */}
           <Seg
             label="Density"
             value={prefs.density}
@@ -55,8 +55,11 @@ export default function TabLayout() {
             label="Corner radius"
             value={String(prefs.radius || 12)}
             onChange={v => setPrefs({ radius: parseInt(v, 10) })}
+            /* 8 | 12 | 20. The harness drives this from a slider with min 8
+               (`Chrome.jsx:190`) and defaults to 12, so `4` was outside the
+               design's range and `10` was not a value it ever renders. */
             options={[
-              { label: 'Sharp',   value: '4' },
+              { label: 'Sharp',   value: '8' },
               { label: 'Default', value: '12' },
               { label: 'Round',   value: '20' },
             ]}

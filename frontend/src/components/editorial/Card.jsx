@@ -9,7 +9,13 @@ export default function Card({ title, sanskrit, right, children, noPad, style, o
         <header className="k-card__head">
           <div className="k-card__titles">
             {title && <h3 className="k-card__title">{title}</h3>}
-            {sanskrit && <span className="k-card__sans">{sanskrit}</span>}
+            {/* lang="hi" is not decoration. editorial.css §Devanagari metrics
+                keys BOTH guards off it — `letter-spacing: 0 !important` and the
+                ×1.18 leading the शिरोरेखा needs — so a Devanagari run without it
+                is unprotected and mis-led. `StatTile.jsx` and `PageHeader.jsx`
+                already carry it; this was the third of the pair and missed it,
+                which is every card sub-title on Today. */}
+            {sanskrit && <span className="k-card__sans" lang="hi">{sanskrit}</span>}
           </div>
           {right && <div>{right}</div>}
         </header>
