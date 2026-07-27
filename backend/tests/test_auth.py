@@ -380,3 +380,196 @@ async def test_reset_password_emits_audit(api_client, mock_pool, admin_user):
         mock_audit.assert_called_once()
         call_args = mock_audit.call_args
         assert call_args[0][0] == "auth.password_reset"
+
+
+# ── GET /api/auth/invite/{token} — the accept screen's context ───────────────
+#
+# The accept-invite screen showed a name field, a password field and nothing
+# about what was being accepted. Every field it needed — org, inviter, role,
+# module grants — was already on the invite row and unreadable. These tests pin
+# the two properties that matter: it says what you are joining, and it will not
+# tell you WHY a bad token is bad.
+
+async def _org_invite(**over):
+    """An org-scoped invite row, i.e. one written by routers/org_invites.py."""
+    inv = await _make_invite(email="rohan@aekam.co")
+    inv.update({
+        "invited_by": "user_admin001",
+        "org_id": "11111111-2222-3333-4444-555555555555",
+        "member_role": "org_admin",
+        "module_grants": '[{"code":"graha","role":"editor"},{"code":"ganit","role":"viewer"}]',
+    })
+    inv.update(over)
+    return inv
+
+
+async def test_preview_invite_returns_org_inviter_role_and_grants(api_client, mock_pool):
+    invite = await _org_invite()
+
+    async def fetchrow_side_effect(query, *args):
+        return invite if "invites WHERE token" in query else None
+
+    async def fetchval_side_effect(query, *args):
+        if "organisations" in query:
+            return "Aekam Inc"
+        if "COUNT(DISTINCT user_id)" in query:
+            return 6
+        if "COALESCE(full_name, name, email)" in query:
+            return "Keval Shah"
+        return None
+
+    async def fetch_side_effect(query, *args):
+        if "module_subscriptions" in query:
+            return [{"module_code": "graha"}, {"module_code": "ganit"}]
+        return []
+
+    mock_pool.fetchrow.side_effect = fetchrow_side_effect
+    mock_pool.fetchval.side_effect = fetchval_side_effect
+    mock_pool.fetch.side_effect = fetch_side_effect
+
+    resp = await api_client.get("/api/auth/invite/invite-token-xyz")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["org_name"] == "Aekam Inc"
+    assert data["org_members"] == 6
+    assert data["org_role"] == "org_admin"
+    assert data["invited_by_name"] == "Keval Shah"
+    assert data["account_exists"] is False
+    assert data["module_grants"] == [
+        {"code": "graha", "role": "editor"},
+        {"code": "ganit", "role": "viewer"},
+    ]
+
+
+async def test_preview_invite_drops_a_grant_the_org_no_longer_has(api_client, mock_pool):
+    """An invite lives seven days; a module can be switched off inside that
+    window. The screen must not promise access that `accept_invite` will then
+    silently refuse to write — it re-validates against live subscriptions too."""
+    invite = await _org_invite()
+
+    async def fetchrow_side_effect(query, *args):
+        return invite if "invites WHERE token" in query else None
+
+    async def fetch_side_effect(query, *args):
+        if "module_subscriptions" in query:
+            return [{"module_code": "graha"}]      # ganit was deactivated
+        return []
+
+    mock_pool.fetchrow.side_effect = fetchrow_side_effect
+    mock_pool.fetch.side_effect = fetch_side_effect
+    mock_pool.fetchval.side_effect = None
+    mock_pool.fetchval.return_value = None
+
+    resp = await api_client.get("/api/auth/invite/invite-token-xyz")
+    assert resp.status_code == 200
+    assert [g["code"] for g in resp.json()["module_grants"]] == ["graha"]
+
+
+async def test_preview_invite_is_one_answer_for_every_dead_token(api_client, mock_pool):
+    """Unknown, expired and already-accepted must be indistinguishable, or the
+    endpoint becomes a way to sweep for live tokens."""
+    from datetime import datetime, timezone
+
+    bodies = []
+    for row in (
+        None,
+        await _make_invite(expires_delta_days=-1),
+        await _make_invite(accepted_at=datetime.now(timezone.utc)),
+    ):
+        async def fetchrow_side_effect(query, *args, _r=row):
+            return _r if "invites WHERE token" in query else None
+        mock_pool.fetchrow.side_effect = fetchrow_side_effect
+        resp = await api_client.get("/api/auth/invite/some-token")
+        assert resp.status_code == 404
+        bodies.append(resp.json()["detail"])
+
+    assert len(set(bodies)) == 1, bodies
+
+
+async def test_preview_invite_flags_an_address_that_now_has_an_account(api_client, mock_pool):
+    invite = await _org_invite()
+
+    async def fetchrow_side_effect(query, *args):
+        return invite if "invites WHERE token" in query else None
+
+    async def fetchval_side_effect(query, *args):
+        if "FROM users WHERE LOWER(email)" in query:
+            return 1
+        return None
+
+    mock_pool.fetchrow.side_effect = fetchrow_side_effect
+    mock_pool.fetchval.side_effect = fetchval_side_effect
+    mock_pool.fetch.side_effect = None
+    mock_pool.fetch.return_value = []
+
+    resp = await api_client.get("/api/auth/invite/invite-token-xyz")
+    assert resp.status_code == 200
+    assert resp.json()["account_exists"] is True
+
+
+# ── POST /api/auth/invite/{token}/decline ────────────────────────────────────
+
+async def test_decline_invite_expires_the_row(api_client, mock_pool):
+    async def fetchrow_side_effect(query, *args):
+        if "UPDATE invites SET expires_at" in query:
+            return {"invite_id": "inv_abc", "email": "rohan@aekam.co"}
+        return None
+
+    mock_pool.fetchrow.side_effect = fetchrow_side_effect
+    resp = await api_client.post("/api/auth/invite/invite-token-xyz/decline")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+async def test_decline_of_a_dead_token_matches_the_preview_word_for_word(
+    api_client, mock_pool,
+):
+    mock_pool.fetchrow.side_effect = None
+    mock_pool.fetchrow.return_value = None
+    resp = await api_client.post("/api/auth/invite/already-declined/decline")
+    assert resp.status_code == 404
+    preview = await api_client.get("/api/auth/invite/already-declined")
+    assert resp.json()["detail"] == preview.json()["detail"]
+
+
+# ── POST /api/auth/refresh ───────────────────────────────────────────────────
+#
+# It slides a live session's window forward. It CANNOT revive an expired one —
+# require_user rejects the token before the handler runs — and the test below
+# pins that, because the whole point of adding the route was to stop the
+# frontend guessing about it.
+
+async def test_refresh_issues_a_new_token_and_cookie(api_client, mock_pool, admin_user, as_admin):
+    resp = await api_client.post("/api/auth/refresh")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["token"]
+    assert data["user"]["email"] == admin_user["email"]
+    cookie_header = resp.headers.get("set-cookie", "")
+    assert "session_token=" in cookie_header
+    assert "httponly" in cookie_header.lower()
+
+
+async def test_refresh_without_a_session_is_401(api_client, mock_pool):
+    resp = await api_client.post("/api/auth/refresh")
+    assert resp.status_code == 401
+
+
+async def test_refresh_rejects_an_expired_token(api_client, mock_pool, admin_user):
+    """A sliding window, not a resurrection. If this ever starts passing an
+    expired token through, the frontend's `expired → /login` path becomes a lie."""
+    import jwt as _jwt
+    from datetime import datetime, timedelta, timezone
+    import auth_router as ar
+
+    dead = _jwt.encode(
+        {"sub": admin_user["user_id"],
+         "exp": datetime.now(timezone.utc) - timedelta(seconds=1),
+         "iat": datetime.now(timezone.utc) - timedelta(days=8)},
+        ar.JWT_SECRET, algorithm=ar.JWT_ALGORITHM,
+    )
+    mock_pool.fetchrow.return_value = admin_user
+    resp = await api_client.post(
+        "/api/auth/refresh", headers={"Authorization": f"Bearer {dead}"}
+    )
+    assert resp.status_code == 401
