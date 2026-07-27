@@ -14,7 +14,21 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-button { font-family: inherit; cursor: pointer; }
+/* The reference's reset is five declarations (`app.css:7`); this had two, and
+   the three missing ones are the three that matter. Without them a <button>
+   whose class sets no background/border/colour of its own falls through to the
+   user-agent stylesheet: `buttonface` #F0F0F0, a 2px `outset` border and
+   `buttontext` black — a light-grey slab with black text, IN BOTH THEMES.
+   In dark that is a pale rectangle on a near-black page.
+   Measured, not assumed: `.k-btn` (editorial.css:702) declares `border: 0`
+   but no background and no colour, and `PracharPage.jsx` renders it bare at
+   ten call sites (297, 433, 492, 915, 956, 957, 958, 978, 988, 1005). The
+   probe read them as rgb(240,240,240) / rgb(0,0,0) in dark.
+   An element selector is specificity 0,0,1 and loses to every class rule
+   regardless of document order, so this cannot override a styled button — it
+   only catches the ones nothing styles. `input, textarea, select` below
+   already inherits colour for exactly this reason; `button` was the omission. */
+button { font-family: inherit; cursor: pointer; border: 0; background: none; color: inherit; }
 a { color: inherit; text-decoration: none; cursor: pointer; }
 input, textarea, select { font-family: inherit; color: inherit; }
 ::selection { background: color-mix(in srgb, var(--k-primary) 30%, transparent); }
@@ -183,13 +197,13 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .side::before {
   content: ''; position: absolute; inset: -60px -80px auto auto;
   width: 240px; height: 240px; border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--primary-vivid) 18%, transparent), transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--primary-vivid) 26%, transparent), transparent 66%);
   pointer-events: none;
 }
 .side::after {
   content: ''; position: absolute; inset: auto auto -70px -50px;
   width: 200px; height: 200px; border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--tertiary) 16%, transparent), transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--tertiary) 16%, transparent), transparent 66%);
   pointer-events: none;
 }
 .side > * { position: relative; z-index: 1; }
@@ -201,14 +215,28 @@ input, textarea, select { font-family: inherit; color: inherit; }
   flex-shrink: 0;
 }
 .side--rail .side__brand { justify-content: center; padding: 16px 0; }
-.side__mark { border-radius: var(--r-sm); flex-shrink: 0; object-fit: cover; display: block; }
+/* radius and shadow measured off `app.css:36`. --r-sm computed 5.8px here
+   against the reference's 9.6px because that rule is
+   `calc(var(--radius-base) * .8)`, a ratio of the base rather than a step on
+   the --r-* ladder. The two shadows are the mark's whole dimensionality — an
+   inset top highlight and a teal cast beneath — and the build had `none`, so
+   the mark sat flat on the ink. */
+.side__mark {
+  border-radius: calc(var(--radius-base) * .8);
+  flex-shrink: 0; object-fit: cover; display: block;
+  box-shadow: 0 1px 0 rgba(255,255,255,.24) inset, 0 5px 16px -6px rgba(5,183,170,.7);
+}
 
 .side__wm { line-height: 1.12; min-width: 0; }
 .side__wm-en {
   font-family: var(--font-display);
   font-size: var(--t-title-lg); font-weight: var(--t-title-lg-w);
   color: #fff;
-  letter-spacing: -.01em;
+  /* POSITIVE. `app.css:38` is `letter-spacing: .004em` — the wordmark is the one
+     display string in the shell that is opened up rather than tightened, because
+     Newsreader at 19px in a 252px column needs the air. This was -.01em, which is
+     not a near miss but the opposite sign: measured -0.2002px against +0.076px. */
+  letter-spacing: .004em;
 }
 /* 24's fixed-glyph exception, and this one really is fixed: कर्तव्य here is the
    brand word beside the mark, not a label, so it never translates and never
@@ -221,9 +249,16 @@ input, textarea, select { font-family: inherit; color: inherit; }
   color: var(--primary-vivid);
   margin-top: 1px;
 }
+/* 8.5px / .2em, the SAME treatment as `.side__sec` below — in the design these
+   two are one style, an 8.5px tracked-and-uppercased Latin caption in
+   --side-fg-faint, and they read as a pair down the left edge. `--t-label-sm`
+   computed 11.06px here, 30% over, which is enough for a 3-word byline to stop
+   reading as a caption and start competing with the wordmark above it. A literal
+   for the same reason `.side__sec` already uses one: there is no --t-* step this
+   small, and inventing one for two rules is worse than the literal. */
 .side__wm-sub {
-  font-size: var(--t-label-sm);
-  letter-spacing: .18em; text-transform: uppercase;
+  font-size: 8.5px;
+  letter-spacing: .2em; text-transform: uppercase;
   color: var(--side-fg-faint); font-weight: 600;
   margin-top: 3px;
 }
@@ -242,6 +277,12 @@ input, textarea, select { font-family: inherit; color: inherit; }
   background: transparent; border: 0;
   font-family: inherit;
   font-size: 8.5px; letter-spacing: .2em; text-transform: uppercase;
+  /* The reference's heading is a <div> and inherits 1.5; the build's is a
+     <button>, and a button takes the UA's `line-height: normal` unless told
+     otherwise — `font-family: inherit` above does not carry it. Measured 12.75px
+     against `normal`, which made the whole heading box 40.3px where the design
+     is 35.5px. */
+  line-height: 1.5;
   color: var(--side-fg-faint); font-weight: 700;
   cursor: pointer;
 }
@@ -249,8 +290,17 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .side__sec-hi {
   font-family: var(--font-indic);
   /* Tracks the Text size slider instead of a 10px literal — a fixed sub-label
-     under a scaling label is the defect the ledger records at §3.2. */
-  font-size: var(--t-label); letter-spacing: 0; text-transform: none;
+     under a scaling label is the defect the ledger records at §3.2. The step is
+     --t-label-sm (11.06px at the 14px default), which lands on the reference's
+     11px; --t-label was one step up at 12.04px. */
+  font-size: var(--t-label-sm); letter-spacing: 0; text-transform: none;
+  /* 400, against the 700 inherited from the heading. Tiro Devanagari Hindi ships
+     a SINGLE weight, so 700 is synthesised: the rasteriser smears the शिरोरेखा
+     and closes the counters on ठ and ढ. 24-bilingual-devanagari.md forbids it and
+     the note at the foot of this file already argues exactly this for
+     `.k-lbl__in` — the section heading was the one place it was not applied. The
+     reference has the same bug; it is still a bug. */
+  font-weight: 400;
   margin-left: auto;
 }
 .side__sec-chev { flex-shrink: 0; transition: transform var(--dur-fast) var(--ease-standard); }
@@ -282,6 +332,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
   color: var(--side-fg);
   font-family: var(--font-ui);
   font-size: var(--t-body-sm);
+  /* On the ITEM, not only on `.side__en`. `app.css:50` sets 500 here, and every
+     child that is not `.side__en` inherits it — the badge above all, which
+     measured 400 against the design's 700-on-500 stack. `.side__hi` overrides
+     back to 400 below, deliberately: Tiro has one weight. */
+  font-weight: 500;
   text-align: left;
   position: relative;
   cursor: pointer;
@@ -296,6 +351,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
   background: var(--primary-vivid);
 }
 .side__ic { display: inline-flex; flex-shrink: 0; opacity: .8; }
+/* 17px, measured off the render — `Chrome.jsx`'s icon set is drawn at
+   width="17" on a 20-unit viewBox, against this build's 16 on a 16-unit one.
+   Sized in CSS rather than by editing 34 SVG strings: the glyphs are a
+   different set from the reference's and redrawing them to a 20-unit grid is an
+   icon-set replacement, not a measurement fix. Scaling 16 units into 17px also
+   carries the 1.4 stroke to an effective 1.4875, which is where the reference's
+   1.5 sits — so the weight lands as well as the box. */
+.side__ic svg { width: 17px; height: 17px; }
 .side__item.on .side__ic { opacity: 1; color: var(--primary-vivid); }
 
 .side__label { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
@@ -308,7 +371,18 @@ input, textarea, select { font-family: inherit; color: inherit; }
    proves too tight, raise this step — do not touch .side__en. */
 .side__hi {
   font-family: var(--font-indic);
+  /* `line-height: 1.5` here is DEAD and kept only so this note has somewhere to
+     live: `[lang="hi"], [lang="sa"]` at the foot of this file sets
+     calc(--line-height-base * 1.18), same specificity, later in the cascade. The
+     rendered ratio is 1.77, not 1.5 — measured. That rule is deliberate and
+     correct (Devanagari needs the leading), but it is also the single largest
+     reason a nav row is 53.2px here against the design's 49.2px. Do not "fix"
+     the row height by touching this declaration; it has never applied. */
   font-size: var(--t-label-sm); line-height: 1.5;
+  /* 400 against the 500 now inherited from `.side__item`. Tiro is single-weight
+     — see `.side__sec-hi`. This is the one place the build should NOT match the
+     reference, which renders this line at a synthesised 500. */
+  font-weight: 400;
   color: var(--side-fg-mute);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -323,11 +397,19 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-radius: var(--r-pill);
 }
 .side__badge--admin { letter-spacing: .1em; }
-.side__badge--count {
-  background: var(--danger);
-  color: var(--on-danger);
-  min-width: 18px; text-align: center;
-}
+/* NOT --danger. The render carries six of these — Tasks 12, Finance 4,
+   Attendance 3, Messaging 7, Roles 1, Approvals 3 — and every one is the teal
+   pill above; there is no red badge anywhere in the design's sidebar.
+   `01-navigation.md:57` agrees independently. A red unread count is a defensible
+   product choice, but it is not this one, and the two the build actually shows
+   (Approvals, Inbox) were the only saturated colour in a 252px column of muted
+   ink, which made routine counts read as errors.
+
+   min-width and centring are kept: they are a real improvement the reference
+   lacks, and they cost nothing — a single digit in a 7px-padded pill is
+   otherwise narrower than a double one, so the right edge of the column jitters
+   as counts cross 10. */
+.side__badge--count { min-width: 18px; text-align: center; }
 
 .side--rail .side__item { justify-content: center; padding: 11px 0; }
 .side--rail .side__label,
@@ -346,8 +428,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
 /* Ellipsis, like `.side__me-n` above it. The line now carries "role · org"
    rather than a single word, and a registered company name is as long as it
    likes — without this it wrapped and pushed the sign-out button out of the
-   252px column. */
-.side__me-r { font-size: var(--t-label-sm); color: var(--side-fg-mute); margin-top: 1px; text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+   252px column.
+
+   --side-fg-faint (.28), not --side-fg-mute (.5) — measured off `app.css:70`.
+   The role sits under the name as the quietest thing in the sidebar; at .5 it
+   competed with the nav sub-labels beside it, which are that value.
+   text-transform is KEPT against the reference: this prints a raw role code
+   (`org_owner`), where the design prints prose. */
+.side__me-r { font-size: var(--t-label-sm); color: var(--side-fg-faint); margin-top: 1px; text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side__foot-btn {
   background: transparent; border: 0; padding: 6px;
   color: var(--side-fg-mute);
@@ -374,17 +462,31 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .side--rail .side__toggle-chev { transform: rotate(180deg); }
 
 /* ── Topbar (01-navigation.md §1 · Topbar) ───────────────────────────────── */
+/* 56px and var(--glass-alpha), both measured off the render (`app.css:75`).
+   `01-navigation.md:88` says 54px and a hardcoded .72 — that is stale prose, and
+   the same paragraph also claims blur(18px) saturate(1.6) where the render
+   computes 13.2/1.3 like everything else. Where the prose and the harness
+   disagree, the harness is the product.
+
+   The hardcoded alpha mattered beyond the two-percent: the sidebar honours
+   --glass-alpha, so the Translucency control moved one of these two adjacent
+   glass surfaces and not the other. */
 .top {
   display: flex; align-items: center; gap: 14px;
   padding: 0 var(--pad-page);
-  height: 54px; flex-shrink: 0;
+  height: 56px; flex-shrink: 0;
+  /* z-index needs a positioned element to mean anything. The reference gives the
+     bar `position: relative; z-index: 20` so it stacks over page content that
+     scrolls beneath its blur; the build left it static, so the rung was inert. */
+  position: relative; z-index: 20;
   border-bottom: 1px solid var(--outline-variant);
-  background: rgba(var(--glass-tint), .72);
+  background: rgba(var(--glass-tint), var(--glass-alpha));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
 }
 [data-platform="win"] .top { background: var(--s-low); }
-.crumb { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; min-width: 0; }
+/* gap 9px, not 8 — `app.css:77`. */
+.crumb { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; min-width: 0; }
 /* The organisation, first segment. Quieter than `.crumb__cur` on purpose — it
    is the context for the trail, not the destination, and it is the same string
    on every page of a session, so it must not compete with the part that
@@ -408,11 +510,18 @@ input, textarea, select { font-family: inherit; color: inherit; }
    the face has no Devanagari coverage, so the word loses its conjuncts rather
    than failing visibly. 01 §1 specifies --font-indic unconditionally; that is
    the one place it is wrong, and it is wrong in this direction. */
-.crumb__hi { font-family: var(--font-hindi); font-size: var(--t-body); color: var(--primary-text); }
+/* --t-title (15.96px at the default), not --t-body (14px). `app.css:78` sets 16px
+   here — the Devanagari is the LARGER half of the breadcrumb pair, above the
+   13.5px Latin beside it, which is what makes the page's own name read as the
+   title rather than as a prefix. At --t-body it was the smaller of the two. */
+.crumb__hi { font-family: var(--font-hindi); font-size: var(--t-title); color: var(--primary-text); }
 /* Set only when the row really has a Gujarati string; --font-indic is repointed
    per language by applyPrefs, so under EN+GU it is the Gujarati face. */
 .crumb__hi[lang="gu"] { font-family: var(--font-indic); }
-.crumb__sep { color: var(--on-surface-faint); }
+/* --on-surface-disabled (#9DA096), per `app.css:79`. --on-surface-faint resolves
+   to #666A61 — the same value as --on-surface-3, i.e. body-text weight for a
+   glyph whose whole job is to separate without being read. */
+.crumb__sep { color: var(--on-surface-disabled); }
 .crumb__cur { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); overflow: hidden; text-overflow: ellipsis; }
 
 .top__search {
@@ -1079,7 +1188,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
   text-align: left;
   font-family: var(--font-ui);
   color: inherit;
-  transition: background var(--dur-fast);
+  /* Easing added: the duration was already the --dur-fast rung but the curve
+     was the browser default `ease`, so this row and the Tasks row next door
+     eased differently on the same gesture. */
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .k-taskrow:last-child { border-bottom: 0; }
 [data-density="comfy"] .k-taskrow { padding: 13px 18px; }
@@ -1149,6 +1261,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-radius: 10px;
   border-bottom: 1px dashed var(--rule-soft);
   color: inherit;
+  /* `.k-upcoming__row:hover` changed background with no transition at all,
+     while `.k-taskrow` in the column beside it faded over --dur-fast. Two
+     lists of tasks, one page, two different hover behaviours. */
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .k-upcoming__row:last-child { border-bottom: 0; }
 .k-upcoming__row:hover { background: var(--rule-soft); cursor: pointer; }
@@ -1267,6 +1383,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-size: 12.5px; font-weight: 600;
   color: var(--ink-3);
   font-family: inherit;
+  /* The Tasks filter had NO transition: hover and the active pill both snapped
+     between two states in one frame, which is the one control on the page a
+     user presses repeatedly. 26 §6 puts a colour-only change and a chip fill on
+     --dur-instant (90ms) — the same rung `.ix-state` uses. Named properties, not
+     `all`: `all` catches `width` when the count badge changes and animates the
+     whole segmented control reflowing. */
+  transition: background-color var(--dur-instant) var(--ease-standard),
+              color            var(--dur-instant) var(--ease-standard);
 }
 .k-segctrl__btn:hover { color: var(--ink-2); }
 .k-segctrl__btn.is-active {
@@ -1359,6 +1483,71 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-trow--archived { opacity: 0.52; }
 .k-trow--archived:hover { opacity: 0.8; }
 
+/* ── In-flight and just-changed rows ─────────────
+   MOTION-SPEC §7.1: an optimistic write renders at `opacity .6` until the
+   server acknowledges, then goes solid. Archive, restore and the quick-complete
+   tick all used to run with NO feedback at all — the row sat unchanged for the
+   whole round trip, so a slow archive looked like a dead button and users
+   pressed it twice.
+
+   `.is-pending` deliberately wins over `.k-trow--archived`'s own opacity by
+   being declared after it: a pending archived row is pending FIRST. */
+.k-trow.is-pending { opacity: .6; cursor: progress; }
+/* The row is `role="button" tabIndex=0` rather than a `<button>` (nested
+   buttons — see the JSX). It picks up the app-wide ring from components.css;
+   only the offset changes, because a +2px outline on a row flush against its
+   neighbours paints over their borders. */
+.k-trow:focus-visible { outline-offset: -2px; }
+/* IxViews 9.1's settle — "one --primary flash so you can find it". Boards uses
+   an outer `box-shadow: 0 0 0 2px`, which is right for a floating card; table
+   rows are flush against each other and an outer ring would paint over the
+   neighbours' borders, so this is the same flash drawn INSET. Same duration and
+   easing as `bcJust` and reference `kbJust`: --dur-slow * 1.5 = 540ms, --ease-exit. */
+.k-trow.is-just { animation: kTrowJust calc(var(--dur-slow) * 1.5) var(--ease-exit); }
+@keyframes kTrowJust {
+  0%   { box-shadow: inset 0 0 0 2px var(--k-primary); }
+  100% { box-shadow: inset 0 0 0 0 transparent; }
+}
+
+/* ── Quick-complete tick — IxViews 9.4 ───────────
+   "One quick action, not five. A complete-tick is worth surfacing because it is
+   the most common single change; everything else is a click into the drawer."
+   Same control, same tokens and the same touch rule as the board's `.bc__tick`,
+   because a tick that behaves differently on the list than on the board is two
+   features to learn.
+
+   `margin-left: auto` sits HERE and not on `.k-row-action` beside it: two auto
+   margins in one flex row split the free space and leave both controls floating
+   mid-row instead of pinned right. */
+.k-trow__tick {
+  width: 17px; height: 17px; flex-shrink: 0;
+  margin-left: auto;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--outline); border-radius: 50%;
+  background: none; color: transparent; opacity: 0; cursor: pointer;
+  transition: opacity      var(--dur-fast) var(--ease-standard),
+              background   var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard),
+              color        var(--dur-fast) var(--ease-standard);
+}
+.k-trow__tick + .k-row-action { margin-left: 6px; }
+.k-trow:hover .k-trow__tick,
+.k-trow__tick:focus-visible { opacity: 1; }
+/* --on-ok, not #fff: --ok is a fill that inverts hard, and white on the dark
+   theme's mint measures 1.79:1 — below the 3:1 floor a non-text control needs. */
+.k-trow__tick:hover,
+.k-trow__tick:focus-visible { background: var(--ok); border-color: var(--ok); color: var(--on-ok); }
+.k-trow__tick.on { opacity: 1; background: var(--ok); border-color: var(--ok); color: var(--on-ok); }
+/* No hover to reveal it on touch, so it is permanently visible there —
+   MOTION-SPEC §7.7, "every hover affordance has a touch equivalent". */
+@media (hover: none) { .k-trow__tick { opacity: 1; } }
+
+/* The table's own zero state. Was `.pb__loading` — the project board's LOADING
+   class, borrowed onto a different page, so "there is nothing here" was styled
+   as "still fetching". `.empty` centres and pads itself; this only has to give
+   it the rule that separates it from the header above. */
+.k-table__empty { border-top: 1px solid var(--rule-soft); }
+
 /* ── Row archive action button ─────────────────── */
 .k-row-action {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1366,7 +1555,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border: 1px solid var(--rule); border-radius: var(--r-sm);
   background: var(--surface); color: var(--ink-3);
   font-size: 11px; font-weight: 500;
-  cursor: pointer; opacity: 0; transition: opacity calc(0.15s * var(--ix)); white-space: nowrap;
+  /* 0.15s was off the ladder; --dur-fast (140ms) is the hover rung, and the
+     easing was the browser default rather than one of the six. */
+  cursor: pointer; opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-standard); white-space: nowrap;
 }
 .k-trow:hover .k-row-action { opacity: 1; }
 .k-row-action--unarchive { color: var(--ink-2); opacity: 1; }
@@ -1502,7 +1694,9 @@ input, textarea, select { font-family: inherit; color: inherit; }
   width: 2px; height: 14px;
   border-radius: 1px;
   background: transparent;
-  transition: background calc(0.15s * var(--ix));
+  /* Off-ladder 0.15s → the --dur-fast hover rung, same as every other hover
+     reveal on this table. */
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .k-col-resize:hover::after,
 .k-col-resize:active::after { background: var(--k-primary); }

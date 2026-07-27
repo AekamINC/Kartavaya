@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../theme/ThemeProvider';
+import BiLabel from '../theme/BiLabel';
 
 export interface PickedFile {
   uri:  string;
@@ -111,7 +112,11 @@ export default function AttachmentSourceSheet({ visible, onClose, onPicked, maxF
         </View>
 
         <TouchableOpacity onPress={onClose} style={[s.cancelBtn, { borderColor: t.outline }]}>
-          <Text style={[s.cancelText, { color: t.ink3 }]}>Cancel · रद्द करें</Text>
+          {/* fontWeight '600' has no Tiro weight to resolve to; split so the
+              Devanagari run keeps the one weight the face actually ships. */}
+          <BiLabel latinStyle={[s.cancelText, { color: t.ink3 }]} hindiStyle={{ color: t.ink3 }} hindiSize={14}>
+            Cancel · रद्द करें
+          </BiLabel>
         </TouchableOpacity>
       </View>
     </Modal>
