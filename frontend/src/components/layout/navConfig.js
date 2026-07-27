@@ -122,11 +122,26 @@ export const NAV_FULL = [
     ],
   },
   {
-    // ── Clients · ग्राहक ────────────────────────────────────────────────────
+    // ── Clients · मुवक्किल ──────────────────────────────────────────────────
     //
     // eSign is a client-facing surface in the design, not a module among the
     // internal ten — it is the thing a customer's customer actually touches.
-    section: 'clients', sans: 'ग्राहक', gu: 'ગ્રાહક',
+    //
+    // NOT `ग्राहक`, which this section carried when it was created and which is
+    // already the CRM row's label eleven lines up. One sidebar cannot use one
+    // word for two things; a reader has no way to tell which sense is meant.
+    //
+    // The reference avoids the clash by calling CRM `ग्रह`, freeing `ग्राहक` for
+    // this heading. The build went the other way for a documented reason —
+    // `ग्रह` means *planet*, and `Modules.jsx:28` already recorded that CRM is
+    // `ग्राहक`, customer. So the heading moves instead.
+    //
+    // `मुवक्किल` is the professional-services sense of client, as against `ग्राहक`
+    // for a retail customer — which is the right distinction for a firm that
+    // keeps customer records in CRM and sends documents to the people it acts
+    // for. OWNER: this is a vocabulary call made by a non-native speaker on a
+    // bilingual product; override it if a CA firm would say something else.
+    section: 'clients', sans: 'मुवक्किल', gu: 'અસીલ',
     items: [
       { to: '/esign',   icon: 'esign',   en: 'E-Sign',    hi: 'प्रमाण',  gu: 'પ્રમાણ', module: 'esign' },
     ],
