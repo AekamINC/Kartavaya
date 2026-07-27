@@ -194,13 +194,34 @@ Two real bugs came out of writing them:
    have. Clauses whose column is unknown are dropped from what the UI reads,
    guarded on the column list having loaded. The URL is left intact.
 
-### Gates
+### Gates, and what was NOT verified
 
 `check-tokens: 0 missing` · `check-classes: 0 missing a rule` · `vite build`
-green · **444 tests pass** (433 + 13, less the 2 that split). The two unhandled
-rejections vitest reports come from an unstubbed `/fields/task/:id/values` in
-`task-flow.test.jsx`; `git diff staging` over that file and `TaskDrawer.jsx` is
-empty, so they are not this branch's.
+green · **448 of 449 tests pass**, my 13 among them. Merged to `staging` as a
+fast-forward after three rounds of merging `staging` back in.
+
+Two failures in the suite are **not this branch's**, and both are stated here
+rather than buried:
+
+- `visual-regression.test.jsx > semantic-palette` fails on a stale baseline.
+  `c41128a` ("--outline failed 1.4.11 on eleven of twelve surfaces") changed
+  `--outline` deliberately — light `#ADA692`→`#78725F`, dark `#5B626C`→`#7E8590`
+  — and did not update the snapshot. `git diff staging` over
+  `__snapshots__/` is empty for this branch. Not updated here: a visual
+  baseline is that agent's instrument, and refreshing someone else's on a
+  reading of their commit message is how a real regression gets cemented.
+  Flagged as a follow-up.
+- Two unhandled rejections in `task-flow.test.jsx` from an unstubbed
+  `/fields/task/:id/values`. `git diff staging` over that file and
+  `TaskDrawer.jsx` is likewise empty.
+
+**Not verified in a browser.** The reference harnesses were rendered and read
+directly. The build's own `/boards` was not: it needs an authenticated session
+against a backend, and this agent will not enter credentials. So the build side
+of the comparison is source, `vite build`, and the thirteen structural tests —
+which is why those tests exist and assert the DOM rather than describing it. A
+human with a session should still put the two on screen side by side before
+this is called done; the open items in §C are the list to check while doing it.
 
 ---
 
