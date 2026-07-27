@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  ActivityIndicator, RefreshControl, ScrollView, Platform,
+  ActivityIndicator, ScrollView, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -10,6 +10,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { format, isToday, isYesterday } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
+import Refresher from '../components/Refresher';
 import { notificationsApi } from '../api/notifications';
 import { avatarColor, userInitials } from '../theme/tokens';
 import { FAMILY } from '../theme/fonts';
@@ -122,11 +123,7 @@ export default function InboxScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
-          <RefreshControl
-            refreshing={isFetching && !isLoading}
-            onRefresh={refetch}
-            tintColor={t.primary}
-          />
+          <Refresher refreshing={isFetching && !isLoading} onRefresh={refetch} />
         }
         ListHeaderComponent={
           <View>

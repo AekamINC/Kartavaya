@@ -209,6 +209,144 @@ async def _module_grants(
     return sorted({r["module_code"] for r in rows} - SENSITIVE_MODULES)
 
 
+#: What an invite preview says when the token is no good. ONE string for every
+#: failure — unknown, expired, already accepted and revoked are indistinguishable
+#: from outside, so a token cannot be probed for which kind of wrong it is.
+_INVITE_DEAD = "This invitation link is not valid. It may have expired, already been used, or been withdrawn."
+
+
+@router.get("/invite/{token}")
+@limiter.limit("20/minute")
+async def preview_invite(request: Request, token: str):
+    """What the person is being asked to accept, before they accept it.
+
+    The accept screen used to show a name field and a password field and nothing
+    about the organisation, the inviter, the role or the module grants — every
+    one of which was already stored on the invite row by
+    `routers/org_invites.create_org_invite` and applied by `accept_invite`
+    below. The data was there; there was no way to read it.
+
+    **On disclosure.** This is an unauthenticated endpoint that returns an email
+    address and an organisation name, and that is deliberate rather than an
+    oversight. The caller has to hold a 256-bit `secrets.token_urlsafe(32)` that
+    was mailed to that address, so holding it already implies knowing it —
+    `accept_invite` accepts nothing else, and would let the same caller SET THE
+    PASSWORD on the account. A preview strictly discloses less than the accept
+    it precedes.
+
+    What it will not do is distinguish *why* a token is no good. Unknown,
+    expired, spent and revoked all answer 404 with one string, so the endpoint
+    cannot be used to sweep for live tokens or to confirm that a given address
+    was ever invited.
+    """
+    pool = await get_pool()
+    # `SELECT *`, and the `.keys()` guards below, for the same reason
+    # `accept_invite` uses them: `org_id` and `module_grants` arrive with
+    # `PROPOSED_073_org_scoped_invites.sql`, which is a PROPOSAL — naming those
+    # columns in the select list would raise UndefinedColumnError on an
+    # unmigrated database instead of degrading to the platform-invite shape.
+    invite = await pool.fetchrow("SELECT * FROM invites WHERE token=$1", token)
+    if (
+        not invite
+        or invite["accepted_at"] is not None
+        or invite["expires_at"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)
+    ):
+        raise HTTPException(status_code=404, detail=_INVITE_DEAD)
+
+    org_id = invite["org_id"] if "org_id" in invite.keys() else None
+    org_name = None
+    org_members = None
+    if org_id:
+        org_name = await pool.fetchval(
+            "SELECT name FROM staging.organisations WHERE id=$1::uuid", str(org_id)
+        )
+        org_members = await pool.fetchval(
+            "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
+            "WHERE org_id=$1::uuid AND role_code = ANY($2::text[])",
+            str(org_id), ["org_owner", "org_admin", "org_member"],
+        )
+
+    inviter = None
+    if invite["invited_by"]:
+        inviter = await pool.fetchval(
+            "SELECT COALESCE(full_name, name, email) FROM users WHERE user_id=$1",
+            invite["invited_by"],
+        )
+
+    raw = invite["module_grants"] if "module_grants" in invite.keys() else None
+    try:
+        grants = json.loads(raw) if isinstance(raw, str) else (raw or [])
+    except (TypeError, ValueError):
+        grants = []
+
+    # A grant is re-checked against the org's live subscriptions for the same
+    # reason `accept_invite` re-checks before writing one: an invite is good for
+    # seven days and a module can be switched off inside that window. Promising
+    # access on this screen that the accept will then silently drop is the exact
+    # mismatch worth avoiding, since this screen is the promise.
+    if grants and org_id:
+        active = {
+            r["module_code"]
+            for r in await pool.fetch(
+                "SELECT module_code FROM staging.module_subscriptions "
+                "WHERE org_id=$1::uuid AND is_active = TRUE",
+                str(org_id),
+            )
+        }
+        grants = [g for g in grants if (g or {}).get("code") in active]
+
+    # Whether the address already has an account decides which form the screen
+    # draws. Today this can only be TRUE for someone who signed up in the window
+    # between issue and acceptance — both invite creators refuse an address that
+    # already has one (`invite_router.py:365`, `org_invites.py:236`).
+    has_account = await pool.fetchval(
+        "SELECT 1 FROM users WHERE LOWER(email)=LOWER($1)", invite["email"]
+    )
+
+    return {
+        "email": invite["email"],
+        "full_name": invite["full_name"],
+        "account_type": invite["role"],
+        "org_id": str(org_id) if org_id else None,
+        "org_name": org_name,
+        "org_members": org_members,
+        "org_role": invite["member_role"] if org_id else None,
+        "invited_by_name": inviter,
+        "module_grants": [
+            {"code": g.get("code"), "role": g.get("role") or "viewer"}
+            for g in grants if (g or {}).get("code")
+        ],
+        "expires_at": invite["expires_at"].replace(tzinfo=timezone.utc).isoformat(),
+        "account_exists": bool(has_account),
+    }
+
+
+@router.post("/invite/{token}/decline")
+@limiter.limit("10/minute")
+async def decline_invite(request: Request, token: str):
+    """Turn down an invitation. The reference screen offers it; nothing did it.
+
+    Declining expires the row rather than deleting it, so the org's own
+    `GET /api/v1/org/invites` stops listing it (that query is
+    `expires_at > NOW()`) while the audit trail of who invited whom survives.
+
+    Same single answer as the preview for a token that is not live, and it is
+    idempotent — declining twice is not an error, because a person who clicks it
+    again has not done anything wrong.
+    """
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "UPDATE invites SET expires_at = NOW() "
+        "WHERE token=$1 AND accepted_at IS NULL AND expires_at > NOW() "
+        "RETURNING invite_id, email",
+        token,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail=_INVITE_DEAD)
+    audit("auth.invite_declined", request, detail={"invite_id": row["invite_id"]}, severity="warn")
+    return {"ok": True}
+
+
 @router.post("/accept-invite")
 @limiter.limit("10/minute")
 async def accept_invite(request: Request, body: AcceptInviteBody):
@@ -354,6 +492,57 @@ async def login(request: Request, body: LoginBody):
     token = _create_token(user["user_id"])
     audit("auth.login", request, user_id=user["user_id"])
     return _auth_response(token, {"token": token, "user": _safe_user(dict(user), platform_roles, org_roles)})
+
+
+@router.post("/refresh")
+@limiter.limit("30/minute")
+async def refresh(request: Request, current_user: dict = Depends(require_user)):
+    """Extend a session that is still alive. **It cannot revive a dead one.**
+
+    That limit is the whole design, so it is stated first. `require_user` rejects
+    an expired JWT, which means this endpoint only ever sees a token that is
+    still valid — it slides the seven-day window forward for someone who is
+    using the product, and answers 401 to someone whose window has closed. There
+    is no refresh token anywhere in this file and no table to hold one, so a
+    sliding window is the honest ceiling; anything more would need a token store,
+    which is also what `reset_password` would need to revoke other sessions.
+
+    `AUTH-SPEC.md` and `12-auth-onboarding.md` both assume `/auth/refresh`
+    exists. It did not, in any form — so "verify session refresh" had nothing to
+    verify, and the frontend had nothing to call before deciding a 401 meant the
+    session was over.
+
+    Re-reads the user's roles rather than echoing the request's, because the
+    point of a refresh is to pick up what changed. A member promoted to org_admin
+    an hour ago gets the new nav on the next refresh instead of on the next
+    sign-in.
+    """
+    pool = await get_pool()
+    user_id = current_user["user_id"]
+    pr = await pool.fetch(
+        "SELECT role_code FROM staging.user_roles WHERE user_id=$1 AND org_id IS NULL",
+        user_id,
+    )
+    # ORDER BY granted_at for the same reason `me` does: `or_rows[0]` has to be
+    # the org `middleware/org_resolver.py` falls back to, or the nav is gated
+    # against one org while the requests are scoped to another.
+    or_rows = await pool.fetch(
+        "SELECT ur.org_id::text, ur.role_code, o.name AS org_name "
+        "FROM staging.user_roles ur "
+        "JOIN staging.organisations o ON o.id = ur.org_id "
+        "WHERE ur.user_id=$1 AND ur.org_id IS NOT NULL "
+        "AND ur.role_code IN ('org_owner','org_admin','org_member') "
+        "ORDER BY ur.granted_at",
+        user_id,
+    )
+    platform_roles = [r["role_code"] for r in pr]
+    org_roles = [dict(r) for r in or_rows]
+    grants = await _module_grants(pool, user_id, platform_roles, org_roles)
+    token = _create_token(user_id)
+    return _auth_response(
+        token,
+        {"token": token, "user": _safe_user(current_user, platform_roles, org_roles, grants)},
+    )
 
 
 @router.post("/logout")

@@ -345,6 +345,40 @@ export function useLoop(
 }
 
 /**
+ * Press feedback with a real duration.
+ *
+ * A `Pressable` style callback — `pressed && { transform: [{ scale: .96 }] }` —
+ * has no duration to give, so the button snaps to the pressed size and snaps
+ * back. MOTION-SPEC §1 names `--dur-instant` for press feedback specifically,
+ * and 90ms is short enough to feel immediate while still being a movement rather
+ * than a jump. This returns the value plus the two handlers, so a call site
+ * spreads it and cannot get half of the pair.
+ *
+ * Both halves collapse: `scaleTo` takes the target to 1 and `duration` takes the
+ * timing to 0, which leaves whatever the button does with colour.
+ */
+export function usePressScale(target: number, reduced: boolean) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const to = (value: number) => Animated.timing(scale, {
+    toValue: value,
+    duration: duration(PRESS.duration, reduced),
+    easing: PRESS.ease,
+    useNativeDriver: true,
+  }).start();
+
+  return {
+    scale,
+    handlers: {
+      onPressIn:  () => to(scaleTo(target, reduced)),
+      // Always back to exactly 1, never to `scaleTo(1, …)` — the rest position
+      // is 1 in both modes and an interrupted press must not leave it elsewhere.
+      onPressOut: () => to(1),
+    },
+  };
+}
+
+/**
  * The settle used by every gesture that springs back — swipe rows, sheets
  * dragged and released, a card returning to its column.
  *

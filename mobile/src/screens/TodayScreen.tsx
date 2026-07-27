@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback, useState } from 'react';
 import {
   View, Text, SectionList, ScrollView,
-  TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Platform,
+  TouchableOpacity, StyleSheet, ActivityIndicator, Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -13,6 +13,7 @@ import { FAMILY } from '../theme/fonts';
 import { useAuth } from '../hooks/useAuth';
 import { tasksApi } from '../api/tasks';
 import { TaskCard } from '../components/TaskCard';
+import Refresher from '../components/Refresher';
 import { useQueueStatus } from '../hooks/useQueueStatus';
 import { queuedEntityIds } from '../offline/mutationQueue';
 import type { Task } from '../api/types';
@@ -127,11 +128,7 @@ export default function TodayScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
-          <RefreshControl
-            refreshing={isFetching && !isLoading}
-            onRefresh={refetch}
-            tintColor={t.primary}
-          />
+          <Refresher refreshing={isFetching && !isLoading} onRefresh={refetch} />
         }
         ListHeaderComponent={
           <View>
