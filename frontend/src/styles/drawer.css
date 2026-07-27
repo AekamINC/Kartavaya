@@ -61,11 +61,19 @@
      than a panel sliding in from the side. The keyframes were already right —
      `translateX(28px)` + `opacity .3→1` in, `translateX(16px)` out — only the
      curve was the sheet's. The `.ix-enter-drawer` utility in animations.css
-     still carries `--ease-emph-in`, as does that file's own summary table;
-     both are reported rather than edited, being another surface's file. */
+     and that file's summary table both carried `--ease-emph-in`; they were
+     reported from here rather than edited, and have since been corrected to
+     match — a migration utility that produces different motion from the thing
+     it replaces is worse than no utility. */
   animation: dmDrawerIn var(--dur-slow) var(--ease-emph) both;
 }
 .dr.is-closing { animation: dmDrawerOut var(--dur-base) var(--ease-exit) forwards; }
+/* Click-through while leaving, matching every other overlay (the shared rule in
+   components.css §8 names the ones declared there; these two are declared here).
+   The drawer is painted for the full 220ms of its exit and covers 78vw of the
+   board — closing it and immediately clicking a card underneath must hit the
+   card, not the panel that is on its way out. */
+.dr.is-closing, .dr__scrim.is-closing { pointer-events: none; }
 
 .dr__scrim {
   position: fixed; inset: 0; z-index: 199;

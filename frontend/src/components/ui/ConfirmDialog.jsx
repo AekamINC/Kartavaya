@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import FocusTrap from "./FocusTrap";
+import { useExitAnimation } from "../../hooks/useExitAnimation";
 
 /**
  * Accessible confirm dialog — replaces window.confirm throughout the app.
@@ -32,10 +33,25 @@ import FocusTrap from "./FocusTrap";
  *
  * Escape only; Tab-trapping and focus restore belong to <FocusTrap>, which
  * captures the trigger before moving focus inward.
+ *
+ * 4 · **An exit.** It shared Modal's hard cut — `if (!state) return null` — so
+ *     the dialog the user is most often reading carefully was also the one that
+ *     vanished mid-sentence. The reference gives it its own rule (`.ov-cd.out`,
+ *     motion.css:273) on the same `--dur-fast --ease-exit` as the modal.
+ *     `state` is an object rather than a boolean, so the LAST non-null one is
+ *     held in a ref and rendered through the exit: the alternative is a dialog
+ *     that blanks its own title and buttons on the frame it starts leaving.
  */
 export default function ConfirmDialog({ state, onClose }) {
   const cancelRef = useRef(null);
   const [typed, setTyped] = useState('');
+  const { alive, closing, onAnimationEnd } = useExitAnimation(!!state);
+
+  // The content to paint while leaving. Assigned during render on purpose: it
+  // must be the value from THIS render, and an effect would update it a frame
+  // late — the first frame of the exit would show the dialog after next.
+  const lastState = useRef(state);
+  if (state) lastState.current = state;
 
   // useId, not a literal. Two dialogs mounted at once — a delete confirm opened
   // from inside a slide-over — produced duplicate "cd-title" ids, and
@@ -56,7 +72,8 @@ export default function ConfirmDialog({ state, onClose }) {
   // first one's text still in the box.
   useEffect(() => { setTyped(''); }, [state]);
 
-  if (!state) return null;
+  const shown = state || lastState.current;
+  if (!alive || !shown) return null;
 
   const {
     title = 'Are you sure?',
@@ -65,9 +82,9 @@ export default function ConfirmDialog({ state, onClose }) {
     confirmLabel = 'Delete',
     // `confirmStyle` is the legacy name and still honoured; `intent` is the one
     // 02 asks for. Neither call site has to change on the same commit as this.
-    intent = state.confirmStyle === 'primary' ? 'neutral' : (state.confirmStyle || 'danger'),
+    intent = shown.confirmStyle === 'primary' ? 'neutral' : (shown.confirmStyle || 'danger'),
     confirmText,
-  } = state;
+  } = shown;
 
   const needsTyping = Boolean(confirmText);
   const ready = !needsTyping || typed.trim() === confirmText;
@@ -76,17 +93,19 @@ export default function ConfirmDialog({ state, onClose }) {
   return (
     <div
       role="presentation"
-      className="modal__scrim"
+      className={`modal__scrim ${closing ? 'is-closing' : ''}`.trim()}
+      aria-hidden={closing || undefined}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <FocusTrap active initialFocus={cancelRef}>
+      <FocusTrap active={!!state} initialFocus={cancelRef}>
         <div
           role="alertdialog"
           aria-modal="true"
           aria-labelledby={titleId}
           aria-describedby={messageId}
-          className="modal__panel modal__panel--sm"
+          className={`modal__panel modal__panel--sm ${closing ? 'is-closing' : ''}`.trim()}
           data-intent={intent}
+          onAnimationEnd={onAnimationEnd}
         >
           <div className="modal__body">
             <p id={titleId} className="cd__t">{title}</p>
