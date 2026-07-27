@@ -80,6 +80,7 @@ from routers.prachar_ads    import router as prachar_ads_router
 from routers.esign          import router as esign_router
 from routers.org_members    import router as org_members_router
 from routers.org_invites    import router as org_invites_router
+from routers.pahchan_attendance import router as pahchan_attendance_router
 from routers.org_profile    import router as org_profile_router
 from routers.org_modules    import router as org_modules_router
 from routers.org_security   import router as org_security_router
@@ -3096,6 +3097,7 @@ app.include_router(prachar_ads_router)
 app.include_router(esign_router)
 app.include_router(org_members_router)
 app.include_router(org_invites_router)
+app.include_router(pahchan_attendance_router)
 app.include_router(org_profile_router)
 app.include_router(org_modules_router)
 app.include_router(org_security_router)
