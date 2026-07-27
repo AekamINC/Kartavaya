@@ -211,7 +211,7 @@ project's board), not to the project list.
 So the project list screen exists, is written, and no user can reach it. Flagged, not
 fixed — wiring it is a Tasks-screen restructure that belongs with the segment work.
 
-### 3.4 `components/Sheet.tsx` — confirmed absent; the count was low
+### 3.4 `components/Sheet.tsx` — confirmed absent at my base; the count was low
 
 My brief said four screens roll their own modal. It is **nine sheet/dialog sites across
 eight files**, each hand-rolling `<Modal transparent>` + its own scrim:
@@ -240,37 +240,31 @@ See §4.
 
 ---
 
-## 4. `components/Sheet.tsx` · **BUILT, 8 of 9 migrated**
+## 4. `components/Sheet.tsx` — **the motion sibling built it; I dropped mine**
 
-The single bottom-sheet primitive: `<Modal transparent>`, one scrim, the grab handle the
-reference draws (`msheet__grab`), `paddingBottom` from the real safe-area inset,
-`onRequestClose`, `accessibilityViewIsModal`, `statusBarTranslucent`, optional bilingual
-title, and an opt-in `keyboardAvoiding` for the sheets that hold a `TextInput`.
+I built a `Sheet` and migrated eight of the nine sites. While I was doing it, the motion
+agent landed `9348cd7` on `staging` — a `Sheet` **and** a `Dialog`, with real entrance/exit
+pairs, an animated scrim, and reduced-motion handling, across all eleven overlay call
+sites including the two centre dialogs I had left alone.
 
-Migrated: `AttachmentSourceSheet`, `MoveModal`, `AssigneePickerModal`, `RemindersScreen`,
-`ManavScreen`, and **both** of `BoardScreen`'s.
+**Theirs is strictly better and mine is deleted.** My own rationale said the sheet's curve
+belongs to MOTION-SPEC and that a primitive hardcoding its own timing is the thing that
+would have to be torn out — they built exactly that thing, with `animationType="none"` and
+the `visible` vs `mounted` split that makes an exit possible at all. Reimplementing around
+it, or merging both, would have left two sheet primitives in one app.
 
-**`NewTaskSheet` left deliberately.** It carries a custom bilingual `BiLabel` header and
-nests `AttachmentSourceSheet` inside its own `Modal`. Migrating it means making a
-typography decision about that header, which belongs to the sibling who owns pixels.
+So the commit was dropped at merge rather than rebased: my branch was replayed onto
+`origin/staging` by cherry-picking the register and the reports and **skipping the Sheet
+commit entirely**. Nothing of mine survives in `components/Sheet.tsx`.
 
-Two things worth knowing about the implementation:
+Recorded because the finding still stands and the count was wrong in the brief: it was
+**nine sheet sites across eight files, with three scrim values** (`0.45` ×4, `0.40` ×3,
+and `0.55` in `BoardScreen`'s `NewTaskModal`), not four screens. If anyone audits whether
+the consolidation was complete, that is the number to check against.
 
-- **It owns no motion.** RN's built-in `animationType`, not a hand-driven timing. The
-  sheet's curve belongs to MOTION-SPEC, and a primitive with a hardcoded duration is
-  exactly what has to be torn out when the motion work lands. This is the seam that work
-  needs — one place instead of nine — and nothing more.
-- **The scrim is a sibling of the sheet, not its parent.** The `MoveModal` pattern being
-  replaced wrapped the sheet *inside* a pressable scrim, which means every tap in the
-  sheet has to be swallowed by a second `Pressable` with an empty `onPress` — and
-  anything that forgets closes the sheet under the user's finger.
-
-`contentStyle` applies to the body wrapper rather than the sheet itself, so the two call
-sites that relied on a container `gap` keep their spacing without the grabber being
-pushed off the top edge. That was a regression I introduced and caught before committing.
-
-The two centre dialogs (`ApprovalsScreen`, `taskdetail/ApprovalModal`) are a different
-component and were left alone.
+I also took their `useQueueStatus` in the register (see §2) in place of my own per-render
+queue read — it subscribes to the MMKV write, so a punch enqueued on the Clock tab appears
+on the register beside it without polling.
 
 ---
 
@@ -283,7 +277,9 @@ component and were left alone.
 - **Query-key collision — fixed.** `ClockScreen` and `MyBiometrics` both used
   `['pahchan','me']` while requesting **7 days** and **1 day**. Same key, different
   request: whichever mounted first decided what both got back. `days` is now part of the
-  key in all three call sites.
+  key in all three call sites. Survives on `staging` — the motion agent touched the same
+  `useQuery` block in `ClockScreen` and the two changes were merged by hand, not by
+  taking one side.
 - **Messages tab carries no badge.** Reference `MTABS` puts `7` on `msgs`; the build
   passes `badges={{ More: unread }}` only. Flagged, not changed — which tab owns the
   count is a product call.
@@ -294,7 +290,7 @@ component and were left alone.
 
 | Gate | Command | Result |
 |---|---|---|
-| Mobile typecheck | `cd mobile && npx tsc --noEmit` | **exit 0** |
+| Mobile typecheck | `cd mobile && npx tsc --noEmit` | **exit 0** — before and after the rebase onto `origin/staging` |
 | Register logic | `cd mobile && node --experimental-strip-types src/screens/pahchan/register.check.mjs` | **12 checks passed** |
 | Web tokens | `cd frontend && node scripts/check-tokens.mjs` | **exit 0** — 340 declared, 234 referenced, 0 missing |
 | Web classes | `cd frontend && node scripts/check-classes.mjs` | **exit 0** — 2120 selectors, 1443 classes, 0 missing |
