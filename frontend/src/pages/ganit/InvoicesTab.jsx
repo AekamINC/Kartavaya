@@ -179,6 +179,31 @@ export default function InvoicesTab({ newNonce = 0 }) {
     } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
   }
 
+/**
+ * Open WhatsApp with a message about this invoice already typed.
+ *
+ * A `wa.me` deep link, deliberately — NOT `POST /varta/conversations/{id}/messages`.
+ * That endpoint's own body carries `TODO: Call Meta Cloud API` and writes a row
+ * with `status: 'pending'`; it cannot send anything until the org's WhatsApp
+ * Business account is approved. Wiring "Send on WhatsApp" to it would give you a
+ * button that reports success and delivers nothing, on an invoice — which is the
+ * dead-button failure this codebase has shipped before.
+ *
+ * `wa.me` works today, for every org, with no WABA and no integration. It hands
+ * the message to whichever WhatsApp the user already has and lets them pick the
+ * chat, so nothing is sent without a human pressing send. That is also why the
+ * PDF is not attached: a deep link carries text, not files. The flow is download,
+ * then share — which is why both buttons are here rather than one.
+ */
+function waLink(phone, text) {
+  // wa.me wants digits only, no `+`. A bare 10-digit number is Indian and the
+  // country code is implied; anything longer already carries its own.
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (!digits) return null;
+  const full = digits.length === 10 ? `91${digits}` : digits;
+  return `https://wa.me/${full}?text=${encodeURIComponent(text)}`;
+}
+
   async function downloadPdf() {
     if (!detail) return;
     setDownloading(true);
@@ -223,6 +248,28 @@ export default function InvoicesTab({ newNonce = 0 }) {
             <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={downloadPdf} disabled={downloading}>
               {downloading ? 'Generating…' : '⬇ Download PDF'}
             </button>
+            {(() => {
+              const link = waLink(
+                inv.contact_phone,
+                `${INV_TYPE_LABELS[inv.invoice_type] || 'Invoice'} ${inv.invoice_number}`
+                + ` dated ${inv.invoice_date}`
+                + (inv.total_amount != null ? ` for ${inr(inv.total_amount)}` : '')
+                + `.`,
+              );
+              return (
+                <button
+                  className="k-btn k-btn--ghost"
+                  style={{ fontSize: 12 }}
+                  disabled={!link}
+                  title={link
+                    ? 'Opens WhatsApp with the message ready — you choose the chat and press send'
+                    : `${inv.contact_name || 'This customer'} has no phone number on their contact record`}
+                  onClick={() => { if (link) window.open(link, '_blank', 'noopener,noreferrer'); }}
+                >
+                  Send on WhatsApp
+                </button>
+              );
+            })()}
             {nextDocStatus[inv.doc_status] && (
               <button className="k-btn k-btn--primary" style={{ fontSize: 12 }}
                 onClick={() => updateDocStatus(nextDocStatus[inv.doc_status])}>

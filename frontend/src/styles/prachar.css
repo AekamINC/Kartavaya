@@ -1,0 +1,592 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PRACHAR · प्रचार — marketing surfaces.
+
+   Why this file exists at all: `PracharPage.jsx` was one 1,021-line file with
+   108 inline `style={{…}}` objects. An inline style is not a small sin here —
+   it is a value that cannot follow the theme, cannot follow the Text size or
+   Corner radius controls in the customize hub, and cannot be corrected in one
+   place. Every literal `fontSize: 13` in that file ignored `--font-size-base`;
+   every `borderRadius: 8` ignored the radius setting; every `gap: 6` was a
+   spacing ramp step retyped by hand.
+
+   The class vocabulary is `pr__*`. It follows the same construction as
+   `module.css`'s `.gpipe`/`.gdeal`: a short module prefix, BEM-ish elements,
+   colour supplied per-instance through `--c` where it is genuinely per-instance
+   (a channel tint, a status tone) and through tokens everywhere else.
+
+   Nothing here restates a primitive that already exists. `.k-btn`, `.chip`,
+   `.tag`, `.note`, `.k-formpanel`, `.k-modtable`, `.seg` and `.k-statuschip`
+   are all used as-is; the rules below are only for the objects Prachar has and
+   nothing else does — the campaign calendar, the template card, and the
+   panel-level loading/error/empty frame.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The page box. Every other module page spends one of its inline styles on
+   `style={{ padding: '0 0 48px' }}`; this is that value, once, as a rule. The
+   trailing space is what stops the last row of a long tab sitting flush against
+   the viewport edge with no room to scroll past it. */
+.pr__page { padding: 0 0 48px; }
+
+/* ── Toolbars ──────────────────────────────────────────────────────────────
+   The row above a panel: a heading on the left, controls at the trailing edge.
+   `flex-wrap` and the `min-width: 0` on the heading are what stop a long
+   Devanagari title from pushing the buttons off a narrow screen. */
+.pr__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.pr__bar-t {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -.015em;
+}
+/* Devanagari beside a Latin heading: own face, never tracked, never uppercased
+   — 24-bilingual-devanagari.md. Single weight 400 is all Tiro ships. */
+.pr__bar-hi {
+  font-family: var(--font-hindi);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--on-surface-3);
+}
+.pr__bar-act {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* `.k-formpanel__input` is `width: 100%`, which is right inside a form column
+   and wrong in a toolbar: at 100% the filter select claimed the whole trailing
+   group and pushed the button it sits beside onto a second line. Measured on
+   the running page — the select and "+ New template" were on separate rows for
+   no reason but an inherited width. */
+.pr__bar-act .k-formpanel__input {
+  width: auto;
+  min-width: 9rem;
+  /* Keeps the control on the same optical line as the buttons beside it;
+     `.k-formpanel__input` pads 9px against `.k-btn--sm`'s 7px. */
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+/* A select needs room for its own chevron, which is painted as a background
+   image at `right 10px` rather than reserved by `appearance`. */
+.pr__bar-act select.k-formpanel__input { padding-right: 30px; }
+
+/* A row of inputs that ends in a button — the unsubscribe adder, the AI brief
+   box, the contact enroller. */
+.pr__inline {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+.pr__inline > .k-formpanel__input,
+.pr__inline > .pr__grow { flex: 1 1 220px; min-width: 0; }
+/* A select in an inline row sizes to its options, not to the row. Without this
+   the reason dropdown beside the unsubscribe field took an equal third of the
+   width and left the email input too narrow to read an address in. */
+.pr__inline > select.k-formpanel__input { flex: 0 1 auto; width: auto; padding-right: 30px; }
+
+/* ── Panel states ──────────────────────────────────────────────────────────
+   `.pr__err` is the reason this section exists. A failed fetch rendering as an
+   empty state is the single most repeated defect on these pages: "No campaigns
+   yet" and "we could not reach the server" are opposite facts, and the first
+   one invites the user to create a duplicate of something they already have.
+   The error frame is a `note--warn` with a retry, never an illustration. */
+.pr__err {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.pr__err-b { margin-left: auto; flex-shrink: 0; }
+
+/* ── Stacked list ──────────────────────────────────────────────────────────
+   Replaces `style={{ display:'flex', flexDirection:'column', gap:6 }}`, which
+   appeared six times in the old file. */
+.pr__list { display: flex; flex-direction: column; gap: 6px; }
+
+/* A `.note` used as a standing constraint above a panel rather than as a
+   reaction to something the user just did. It needs the section gap under it;
+   `.note` itself carries no margin because most of its uses are inside a card. */
+.pr__note { margin: 0 0 18px; }
+
+/* Card grid for templates. `auto-fill` with a 320px floor is the reference's
+   `repeat(auto-fill, minmax(340px,1fr))`, floored slightly lower so two columns
+   survive a 720px pane. */
+.pr__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+/* ── Meta lines inside a card ─────────────────────────────────────────────── */
+.pr__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: max(11px, calc(var(--font-size-base) * .82));
+  color: var(--on-surface-3);
+}
+.pr__meta-end { margin-left: auto; }
+.pr__mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A swatch that takes its colour from an inline `--c`, the same way `.tag`
+   does. The alternative — `style={{ background: colour }}` — is a raw property
+   in the markup, and a raw property is the thing this file exists to remove:
+   it cannot be corrected in one place and it does not participate in the
+   token layer. Setting a custom property is not the same sin, and
+   `check-tokens.mjs` deviation 2 names it as the correct pattern for a value
+   that genuinely varies per element. */
+.pr__dot { background: var(--c, var(--on-surface-3)); }
+
+/* ── Template card ─────────────────────────────────────────────────────────
+   The reference's `PracharTemplates` card: mono name and status tag on one
+   line, category / language / send-count beneath, then the body in a recessed
+   well so the copy reads as content rather than as chrome. */
+.pr__tpl {
+  display: flex;
+  flex-direction: column;
+  padding: var(--pad-card);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.pr__tpl-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pr__tpl-n {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.pr__tpl-head > .tag { margin-left: auto; flex-shrink: 0; }
+/* The subject line. Second in the hierarchy after the template's own name,
+   because it is what the recipient sees first. */
+.pr__tpl-sub {
+  margin: 10px 0 0;
+  font-size: max(12.5px, calc(var(--font-size-base) * .93));
+  font-weight: 600;
+  color: var(--on-surface);
+  overflow-wrap: anywhere;
+}
+/* The body preview. `--s-container` rather than a literal grey so it inverts
+   with the theme, and `overflow-wrap: anywhere` because a template body is user
+   data that may be one 200-character URL. */
+.pr__tpl-body {
+  margin-top: 11px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--s-container);
+  color: var(--on-surface-2);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  /* Four lines, then fade. A card grid whose cards are different heights
+     because one template is an essay stops being scannable. */
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.pr__tpl-act {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  /* Pins the actions to the bottom of the tallest card in the row, so a grid of
+     cards has one action line rather than a ragged one. */
+  padding-top: 12px;
+  margin-top: auto;
+}
+
+/* ── Campaign calendar ─────────────────────────────────────────────────────
+   `design-reference/…/ScreensMore.jsx` `ScreenPrachar`: a seven-column month
+   grid, Devanagari day names, campaign pills tinted by channel.
+
+   Two departures from the reference, both deliberate:
+
+   · The reference hard-codes 28 cells starting on Monday. A real month starts
+     on an arbitrary weekday and runs 28-31 days, so the lead blanks and the
+     length are derived in JS and `.pcal`-style `__pad` cells fill the head.
+   · The reference's cell background for "today" is `--primary-container`. Kept,
+     but the date numeral also goes bold and gains a ring, because a container
+     tint alone is ~1.2:1 against the surface and disappears in high contrast.
+
+   Not `.pcal__*`: that is Pahchan's attendance month grid in module.css, which
+   is a square aspect-ratio day picker with no content in the cells. Same shape,
+   different object — reusing it would mean one of the two eventually breaks the
+   other. */
+.pr__cal {
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface);
+}
+.pr__cal-head,
+.pr__cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+.pr__cal-head { border-bottom: 1px solid var(--outline-variant); }
+.pr__cal-dow {
+  padding: 9px 0;
+  text-align: center;
+  font-family: var(--font-hindi);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: normal;
+  color: var(--on-surface-3);
+}
+.pr__cal-d {
+  min-height: 88px;
+  padding: 7px;
+  border-right: 1px solid var(--outline-variant);
+  border-bottom: 1px solid var(--outline-variant);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+/* The trailing cell of each row and the final row carry no rule, so the grid
+   does not draw a double border against the container's own. */
+.pr__cal-d:nth-child(7n) { border-right: 0; }
+.pr__cal-d.is-pad { background: var(--s-low); }
+.pr__cal-d.is-today { background: var(--primary-container); }
+/* A drop target while a campaign pill is being dragged. Inset outline rather
+   than a border so the cell does not change size and shift the grid. */
+.pr__cal-d.is-drop { outline: 2px solid var(--primary); outline-offset: -2px; }
+.pr__cal-n {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--on-surface-3);
+}
+.pr__cal-d.is-today .pr__cal-n {
+  color: var(--on-primary-container);
+  font-weight: 700;
+}
+.pr__cal-items { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+/* The pill. `--c` is the channel colour, set per element. Text sits at full
+   `--c` on a 16% tint of itself, which is the same construction `.tag` uses and
+   the same one 02 §1 measured at 6.0-6.4:1. */
+.pr__pill {
+  --c: var(--on-surface-3);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--c) 16%, transparent);
+  color: var(--c);
+  font-family: inherit;
+  font-size: max(10.5px, calc(var(--font-size-base) * .78));
+  font-weight: 600;
+  text-align: left;
+  cursor: grab;
+  min-width: 0;
+}
+.pr__pill:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.pr__pill.is-dragging { opacity: .45; cursor: grabbing; }
+.pr__pill-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 9px;
+  background: var(--c);
+  flex-shrink: 0;
+}
+.pr__pill-t {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Month navigation above the grid. */
+.pr__cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.pr__cal-m {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  min-width: 11ch;
+}
+
+/* The unscheduled bucket. A campaign with no `scheduled_at` cannot sit on the
+   grid, and silently omitting it would make the calendar lie about how much
+   work is in flight — so it gets a named tray under the month. */
+.pr__tray {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--outline-variant);
+  border-radius: var(--r-md);
+}
+.pr__tray-l {
+  font-size: max(11px, calc(var(--font-size-base) * .82));
+  font-weight: 600;
+  color: var(--on-surface-3);
+  flex-shrink: 0;
+}
+.pr__tray-items { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.pr__tray .pr__pill { width: auto; max-width: 190px; }
+
+/* ── Week view ─────────────────────────────────────────────────────────────
+   The reference's lede promises "full previews in week view", and the Month /
+   Week control it draws did nothing. Seven columns, one row, each cell tall
+   enough to carry the campaign's subject line under its name. */
+.pr__week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+.pr__week-c {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 150px;
+  padding: 10px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  min-width: 0;
+}
+.pr__week-c.is-today { border-color: var(--primary); }
+.pr__week-c.is-drop { outline: 2px solid var(--primary); outline-offset: -2px; }
+.pr__week-h {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+.pr__week-dow {
+  font-family: var(--font-hindi);
+  font-size: 12px;
+  color: var(--on-surface-3);
+}
+.pr__week-n {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+}
+/* The full preview. Not a pill — a card with the subject line, which is the
+   whole difference between the two views. */
+.pr__wcard {
+  --c: var(--on-surface-3);
+  display: block;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-left: 3px solid var(--c);
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--c) 12%, transparent);
+  font-family: inherit;
+  text-align: left;
+  cursor: grab;
+  min-width: 0;
+}
+.pr__wcard:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.pr__wcard.is-dragging { opacity: .45; cursor: grabbing; }
+.pr__wcard-n {
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+  font-weight: 600;
+  color: var(--on-surface);
+  overflow-wrap: anywhere;
+}
+.pr__wcard-s {
+  margin-top: 2px;
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  color: var(--on-surface-2);
+  overflow-wrap: anywhere;
+}
+
+/* Below 900px seven columns is four characters wide. The week becomes a stack,
+   which is the only honest thing a week of full previews can do on a phone. */
+@media (max-width: 900px) {
+  .pr__week { grid-template-columns: 1fr; }
+  .pr__week-c { min-height: 0; }
+}
+
+/* Below 640px the month grid's 88px cells and 7 columns give ~45px per day,
+   which cannot hold a pill. The grid keeps its shape — a calendar that reflows
+   to a list is no longer a calendar — but the cells shrink and the pills drop
+   to dots, with the campaign names carried by the tray beneath. */
+@media (max-width: 640px) {
+  .pr__cal-d { min-height: 54px; padding: 4px; }
+  .pr__pill-t { display: none; }
+  .pr__pill { justify-content: center; padding: 3px; }
+}
+
+/* ── Sequence steps ────────────────────────────────────────────────────────
+   A sequence is an ordered ladder, so it is drawn as one: the connector between
+   steps is the object, not a table row. */
+.pr__steps { display: flex; flex-direction: column; }
+.pr__step {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+.pr__step-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 26px;
+}
+.pr__step-n {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-pill);
+  display: grid;
+  place-items: center;
+  background: var(--s-container);
+  color: var(--on-surface-2);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.pr__step-line {
+  flex: 1;
+  width: 2px;
+  min-height: 14px;
+  background: var(--outline-variant);
+}
+.pr__step-b {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 16px;
+}
+.pr__step-t {
+  font-size: max(12.5px, calc(var(--font-size-base) * .93));
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.pr__step-when {
+  font-size: max(11px, calc(var(--font-size-base) * .82));
+  color: var(--on-surface-3);
+}
+
+/* ── Event registrations ───────────────────────────────────────────────────
+   The expanded row under an event. `--s-low` rather than `--surface-2`: this is
+   a recess inside a table, and it has to read as beneath the row it opened
+   from. */
+.pr__exp { padding: 12px 16px; background: var(--s-low); }
+.pr__exp-d {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--on-surface-2);
+  overflow-wrap: anywhere;
+}
+.pr__exp-facts {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--on-surface-3);
+}
+.pr__exp-facts strong { color: var(--on-surface-2); font-weight: 600; }
+.pr__exp-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ── Ad analysis output ────────────────────────────────────────────────────
+   Pre-formatted model output. `white-space: pre-wrap` keeps the model's own
+   line breaks; `overflow-x: auto` stops one long unbroken line from widening
+   the page, which is the failure mode a bare <pre> has. */
+.pr__pre {
+  margin: 0;
+  padding: 16px;
+  border-radius: var(--r-sm);
+  background: var(--s-container);
+  color: var(--on-surface-2);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
+
+/* ── Row actions ───────────────────────────────────────────────────────────
+   `.pr__rowact` replaces `style={{ display:'flex', gap:6 }}` on every table's
+   action cell. `.pr__del` replaces the eight hand-rolled delete buttons that
+   each restated `background:none; border:none; cursor:pointer; color:danger`
+   — and each of which was a 12px hit target in a 44px world. */
+.pr__rowact { display: flex; gap: 6px; flex-wrap: wrap; }
+.pr__del {
+  border: 0;
+  background: none;
+  color: var(--danger);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  /* 23-accessibility.md's 44px minimum, bought with padding rather than a box
+     so the control still reads as a text link inside a dense row. */
+  padding: 12px 8px;
+  margin: -12px -8px;
+  border-radius: var(--r-xs);
+}
+.pr__del:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.pr__del:focus-visible { outline: 2px solid var(--danger); outline-offset: -2px; }
+.pr__del[disabled] { opacity: .5; cursor: default; }
+
+/* ── Form panel heading ────────────────────────────────────────────────────
+   Was `style={{ fontSize:16, fontWeight:600, fontFamily:'var(--font-display)',
+   margin:'0 0 20px' }}`, repeated verbatim in six form panels. */
+.pr__form-t {
+  margin: 0 0 20px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+}
+/* A checkbox that has to sit on the baseline of the input beside it. The old
+   file used `paddingTop: 24` to fake the label height. */
+.pr__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: end;
+  padding-bottom: 9px;
+}
