@@ -116,6 +116,13 @@ export default function KanbanView({
   const [freshIds, setFreshIds] = useState(() => new Set());
   const [justIds, setJustIds] = useState(() => new Set());
   const [pendingIds, setPendingIds] = useState(() => new Set());
+  // Separate from `justIds` on purpose. `just` is 9.1's settle and fires on a
+  // DROP as well as a tick; the checkbox animation (9.4 → 2.2) must fire only
+  // when a click completed the task, or dragging an already-done card would
+  // spring its tick for no reason, and every done card on the board would
+  // spring on mount. 2.2's exit — "unchecking reverses with no spring" — falls
+  // out of the same gate, because uncompleting never enters this set.
+  const [tickIds, setTickIds] = useState(() => new Set());
 
   const markTransient = useCallback((setter, id, ms) => {
     setter(prev => new Set(prev).add(id));
@@ -219,6 +226,10 @@ export default function KanbanView({
     const next = task.status === 'done' ? 'todo' : 'done';
     const previous = task;
     setPendingIds(prev => new Set(prev).add(task.task_id));
+    // Before the await, not after: 2.2 recomputes client-side first, and a
+    // confirmation that waits for the round trip is not a confirmation of the
+    // click. 600ms covers the longest of the two (`--dur-slow` box overshoot).
+    if (next === 'done') markTransient(setTickIds, task.task_id, 600);
     onTasksChange?.(prev => prev.map(t => (t.task_id === task.task_id ? { ...t, status: next } : t)));
     try {
       const res = await api.patch(`/tasks/${task.task_id}`, { status: next });
@@ -453,6 +464,7 @@ export default function KanbanView({
                                 pending={pendingIds.has(task.task_id)}
                                 just={justIds.has(task.task_id)}
                                 fresh={freshIds.has(task.task_id)}
+                                tickpop={tickIds.has(task.task_id)}
                                 onComplete={readOnly || isSynth ? undefined : toggleComplete}
                                 onClick={() => !draggingId && setDrawerTaskId(task.task_id)}
                               />

@@ -28,7 +28,21 @@ export function Field({ label, sanskrit, required, hint, error, span, htmlFor, c
       {typeof children === 'function'
         ? children({ id, 'aria-describedby': describedBy, 'aria-invalid': error ? 'true' : undefined, required })
         : children}
-      {hint && !error && <span className="fld__hint" id={`${id}-hint`}>{hint}</span>}
+      {/* The hint does NOT leave when the error arrives. `hint && !error` was
+          the common pattern — error replaces hint — and the rendered component
+          inventory (§5, rule 2) argues against it by name: swapping them
+          "deletes the format instruction at the exact moment the user has
+          proven they need it". A field that says "Not a valid IFSC" and has
+          just removed "Four letters, a zero, then six characters" has taken
+          away the only thing that would fix it. Both stay; the error stacks
+          below, which `.fld`'s column flex already does.
+
+          It also repairs a dangling IDREF: `describedBy` above lists
+          `${id}-hint` whenever a hint is passed, error or not — so a field with
+          both pointed `aria-describedby` at a node that had just been rendered
+          away, and a screen reader announced the error with nothing to read
+          after it. */}
+      {hint && <span className="fld__hint" id={`${id}-hint`}>{hint}</span>}
       {error && <span className="fld__err" id={`${id}-err`} role="alert">{error}</span>}
     </div>
   );
