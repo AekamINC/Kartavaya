@@ -426,15 +426,47 @@ All fifteen resolve to Tiro Devanagari Hindi at its real 400.
 
 ### Gates
 
-Run from `frontend/` in this worktree, unpiped:
+Run from `frontend/` in this worktree after merging `origin/staging`:
 
-```
-check-tokens:  340 declared, 235 referenced, 0 missing
-check-classes: 2120 selectors defined, 1443 classes used, 0 missing a rule
-```
+| gate | result |
+|---|---|
+| `check-tokens` | 340 declared, 235 referenced, **0 missing** |
+| `check-classes` | 2125 selectors, 1448 classes used, **0 missing a rule** |
+| `check-accent-contrast` | **ok** |
+| `check-touch-targets` | **pass** — nothing under 44px without a mobile rule |
+| `check-component-parity` | byte-identical to staging (3 missing roots, 17 declaration drift — all pre-existing) |
+| `check-contrast` | **FAILS — pre-existing, not this change** |
+
+`check-contrast` was verified against a pristine `origin/staging` extracted with
+`git archive`, run with the same Node: **11 failures on staging, 11 on this
+branch, and `diff` of the two sorted failure lists is empty.** None of the
+eleven selectors (`.cbx`, `.av`, `.k-pill-high`, `.wahdr__ic`, `.k-badge`,
+`.k-apcard__kind--creative`, three `.k-actitem__verb--*`, `.k-rule__status--on`)
+appears anywhere in this branch's diff.
 
 All eight touched JSX files parse clean under `@babel/parser` with the `jsx`
 plugin.
+
+### After merging staging
+
+`origin/staging` moved 23 commits during this work, including edits to both
+stylesheets this change touches. Merged in twice (it moved again mid-merge),
+no conflicts, and re-measured afterwards: every number in §8 is unchanged, and
+a sibling's extraction of the accent maths into `lib/accent.js` survived intact
+alongside the density work in the same file.
+
+With the new default in place, the build's shipping tokens now equal the
+reference's:
+
+| token | reference | build default, after |
+|---|---|---|
+| `--pad-page` | 28px | **28px** |
+| `--pad-card` | 18px | **18px** |
+| `--gap-section` | 22px | **22px** |
+| `--gap-tight` | 10px | **10px** |
+| `--row-h` | 44px | **44px** |
+
+Table header band 38px against 38px; row height 44px against 44px.
 
 ---
 
