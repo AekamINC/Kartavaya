@@ -24,6 +24,7 @@
  */
 import React from 'react';
 import { FocusTrap } from './ui';
+import { useExitAnimation } from '../hooks/useExitAnimation';
 
 const CLOSE = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
@@ -50,20 +51,27 @@ const SHORTCUTS = [
 ];
 
 export default function KeyboardShortcuts({ open, onClose }) {
-  if (!open) return null;
+  // It shares the palette's chrome, and it shared the palette's defect: an
+  // entrance and a hard `if (!open) return null` where the exit should be. The
+  // hook must be called before any early return — the unmount is what it is
+  // deferring. See hooks/useExitAnimation.js.
+  const exit = useExitAnimation(open);
+  if (!exit.alive) return null;
 
   return (
     <div
-      className="k-cmdk-overlay"
+      className={`k-cmdk-overlay ${exit.closing ? 'is-closing' : ''}`.trim()}
       data-k-palette=""
+      aria-hidden={exit.closing || undefined}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <FocusTrap active>
+      <FocusTrap active={open}>
       <div
-        className="k-shortcuts"
+        className={`k-shortcuts ${exit.closing ? 'is-closing' : ''}`.trim()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="k-shortcuts-title"
+        onAnimationEnd={exit.onAnimationEnd}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } }}
       >
         <div className="k-shortcuts__header">

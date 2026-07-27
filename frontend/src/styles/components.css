@@ -580,6 +580,16 @@ textarea.inp { resize: vertical; min-height: 76px; }
 @keyframes dmTip  { from { opacity: 0; transform: scale(.94) } }
 /* Linear, never eased — an eased spin looks like it is struggling. */
 @keyframes dmSpin { to { transform: rotate(360deg) } }
+/* The confirmation overshoot on a checkbox, MOTION-SPEC §4: "box overshoots to
+   scale(1.18) over --dur-slow --ease-spring". Declared HERE, in the registry
+   animations.css names as its single owner, because it was declared TWICE —
+   `bcTickPop` in boards.css and `drStPop` in drawer.css, byte-identical bodies
+   under two names. Two names for one animation is the softer half of the
+   duplicate-keyframe hazard: nothing breaks, but the board's tick and the
+   drawer's tick can now drift apart silently, and they are the same gesture on
+   the same object. Amplitude rides on --motion-scale so Animations = None
+   leaves the state change without the pop. */
+@keyframes dmTickPop { 40% { transform: scale(calc(1 + .18 * var(--motion-scale, 1))); } }
 /* Fires on the element, never a container. A whole flashing card is an alarm;
    a flashing cell is information. */
 @keyframes ixflash {
