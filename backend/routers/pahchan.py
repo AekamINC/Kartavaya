@@ -139,6 +139,22 @@ class PolicyBody(BaseModel):
     report_weekly: Optional[bool] = None
     report_monthly: Optional[bool] = None
 
+    # ── Shift and overtime (migration 082) ───────────────────────────────────
+    # Until these existed the attendance bridge refused to compute overtime,
+    # because deriving it needs a standard day and there was none to read.
+    # Thresholds follow the Factories Act 1948: §54 nine hours a day, §51
+    # forty-eight a week, §59 twice the ordinary rate beyond either. Per-org
+    # rather than constant because state Shops & Establishments Acts differ.
+    standard_hours_per_day: Optional[float] = Field(None, gt=0, le=24)
+    overtime_daily_threshold_hours: Optional[float] = Field(None, gt=0, le=24)
+    overtime_weekly_threshold_hours: Optional[float] = Field(None, gt=0, le=168)
+    overtime_multiplier: Optional[float] = Field(None, ge=1)
+    overtime_enabled: Optional[bool] = None
+    week_starts_on: Optional[int] = Field(None, ge=1, le=7)
+    shift_start_time: Optional[str] = None
+    shift_end_time: Optional[str] = None
+    overnight_shift: Optional[bool] = None
+
 
 class SiteBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
@@ -161,6 +177,18 @@ DEFAULT_POLICY = {
     "report_daily": True,
     "report_weekly": True,
     "report_monthly": True,
+    # Mirrors migration 082's column defaults. `overtime_enabled` is False so an
+    # org that never opens this screen keeps exactly today's behaviour — turning
+    # overtime on changes what people are paid and is nobody's default.
+    "standard_hours_per_day": 8.0,
+    "overtime_daily_threshold_hours": 9.0,
+    "overtime_weekly_threshold_hours": 48.0,
+    "overtime_multiplier": 2.0,
+    "overtime_enabled": False,
+    "week_starts_on": 1,
+    "shift_start_time": None,
+    "shift_end_time": None,
+    "overnight_shift": False,
 }
 
 
@@ -973,8 +1001,14 @@ async def update_policy(
                (org_id, default_radius_m, grace_minutes, allow_outside_geofence,
                 accuracy_flag_threshold_m, punch_photo_retention_days,
                 reference_photo_grace_days, record_retention_years,
-                report_recipients, report_daily, report_weekly, report_monthly)
-           VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12)
+                report_recipients, report_daily, report_weekly, report_monthly,
+                standard_hours_per_day, overtime_daily_threshold_hours,
+                overtime_weekly_threshold_hours, overtime_multiplier,
+                overtime_enabled, week_starts_on, shift_start_time,
+                shift_end_time, overnight_shift)
+           VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12,
+                   $13, $14, $15, $16, $17, $18,
+                   NULLIF($19,'')::time, NULLIF($20,'')::time, $21)
            ON CONFLICT (org_id) DO UPDATE SET
                default_radius_m           = EXCLUDED.default_radius_m,
                grace_minutes              = EXCLUDED.grace_minutes,
@@ -987,6 +1021,15 @@ async def update_policy(
                report_daily               = EXCLUDED.report_daily,
                report_weekly              = EXCLUDED.report_weekly,
                report_monthly             = EXCLUDED.report_monthly,
+               standard_hours_per_day          = EXCLUDED.standard_hours_per_day,
+               overtime_daily_threshold_hours  = EXCLUDED.overtime_daily_threshold_hours,
+               overtime_weekly_threshold_hours = EXCLUDED.overtime_weekly_threshold_hours,
+               overtime_multiplier             = EXCLUDED.overtime_multiplier,
+               overtime_enabled                = EXCLUDED.overtime_enabled,
+               week_starts_on                  = EXCLUDED.week_starts_on,
+               shift_start_time                = EXCLUDED.shift_start_time,
+               shift_end_time                  = EXCLUDED.shift_end_time,
+               overnight_shift                 = EXCLUDED.overnight_shift,
                updated_at                 = NOW()
         RETURNING *""",
         org_id, merged["default_radius_m"], merged["grace_minutes"],
@@ -994,6 +1037,14 @@ async def update_policy(
         merged["punch_photo_retention_days"], merged["reference_photo_grace_days"],
         merged["record_retention_years"], json.dumps(merged["report_recipients"]),
         merged["report_daily"], merged["report_weekly"], merged["report_monthly"],
+        merged["standard_hours_per_day"], merged["overtime_daily_threshold_hours"],
+        merged["overtime_weekly_threshold_hours"], merged["overtime_multiplier"],
+        merged["overtime_enabled"], merged["week_starts_on"],
+        # asyncpg wants a `time`, and the API speaks strings. NULLIF in the SQL
+        # turns "" back into NULL so clearing a shift window works, which the
+        # 082 CHECK requires to happen for both ends together.
+        str(merged["shift_start_time"] or ""), str(merged["shift_end_time"] or ""),
+        merged["overnight_shift"],
     )
 
     retention_keys = {

@@ -35,6 +35,7 @@ from services.attendance_bridge import (
     MARKED_BY_MANUAL,
     Punch,
     Regularisation,
+    ShiftPolicy,
     build_day_records,
 )
 
@@ -213,6 +214,29 @@ async def publish_attendance_to_payroll(
         org_id, body.from_date, body.to_date,
     )
 
+    # No policy row means every default, and the defaults have overtime OFF —
+    # so an org that has never opened the settings screen gets exactly today's
+    # behaviour rather than a surprise on the next payslip.
+    pol = await pool.fetchrow(
+        "SELECT overtime_enabled, standard_hours_per_day, "
+        "       overtime_daily_threshold_hours, overtime_weekly_threshold_hours, "
+        "       overtime_multiplier, week_starts_on, shift_start_time, "
+        "       shift_end_time, overnight_shift "
+        "  FROM staging.pahchan_policy WHERE org_id=$1::uuid",
+        org_id,
+    )
+    policy = ShiftPolicy(
+        overtime_enabled=bool(pol["overtime_enabled"]),
+        standard_hours_per_day=float(pol["standard_hours_per_day"]),
+        overtime_daily_threshold_hours=float(pol["overtime_daily_threshold_hours"]),
+        overtime_weekly_threshold_hours=float(pol["overtime_weekly_threshold_hours"]),
+        overtime_multiplier=float(pol["overtime_multiplier"]),
+        week_starts_on=int(pol["week_starts_on"]),
+        shift_start_time=pol["shift_start_time"],
+        shift_end_time=pol["shift_end_time"],
+        overnight_shift=bool(pol["overnight_shift"]),
+    ) if pol else ShiftPolicy()
+
     result = build_day_records(
         [
             Punch(
@@ -233,6 +257,7 @@ async def publish_attendance_to_payroll(
             )
             for r in reg_rows
         ],
+        policy=policy,
     )
 
     written = 0
@@ -246,20 +271,26 @@ async def publish_attendance_to_payroll(
             row = await pool.fetchrow(
                 "INSERT INTO staging.manav_attendance "
                 "    (org_id, employee_id, date, check_in, check_out, status, "
-                "     work_hours, notes, marked_by) "
-                "VALUES ($1::uuid, $2::uuid, $3::date, $4, $5, $6, $7, $8, $9) "
+                "     work_hours, overtime_hours, notes, marked_by) "
+                "VALUES ($1::uuid, $2::uuid, $3::date, $4, $5, $6, $7, $8, $9, $10) "
                 "ON CONFLICT (employee_id, date) DO UPDATE SET "
                 "    check_in   = EXCLUDED.check_in, "
                 "    check_out  = EXCLUDED.check_out, "
                 "    status     = EXCLUDED.status, "
                 "    work_hours = EXCLUDED.work_hours, "
+                # COALESCE, not a plain assignment: when overtime is not being
+                # computed EXCLUDED carries NULL, and overwriting with it would
+                # erase a figure somebody entered by hand. Not computed means
+                # leave it alone, not set it to nothing.
+                "    overtime_hours = COALESCE(EXCLUDED.overtime_hours, "
+                "                              staging.manav_attendance.overtime_hours), "
                 "    notes      = EXCLUDED.notes, "
                 "    marked_by  = EXCLUDED.marked_by "
-                "  WHERE staging.manav_attendance.marked_by IS DISTINCT FROM $10 "
+                "  WHERE staging.manav_attendance.marked_by IS DISTINCT FROM $11 "
                 "RETURNING employee_id",
                 org_id, rec.employee_id, rec.day, rec.check_in, rec.check_out,
-                rec.status, rec.work_hours, rec.notes, MARKED_BY_BRIDGE,
-                MARKED_BY_MANUAL,
+                rec.status, rec.work_hours, rec.overtime_hours, rec.notes,
+                MARKED_BY_BRIDGE, MARKED_BY_MANUAL,
             )
             if row:
                 written += 1
@@ -288,9 +319,19 @@ async def publish_attendance_to_payroll(
         "skipped_manual_rows": len(skipped_manual),
         "skipped_manual": skipped_manual[:50],
         "withheld_days": result.withheld_days[:50],
-        # Stated in the response rather than left to be discovered. There is no
-        # shift definition anywhere in this product -- pahchan_policy holds
-        # geofence radius, grace minutes and retention, no expected hours -- so
-        # overtime cannot be derived and is deliberately not written.
-        "overtime_hours": "not computed - no shift definition exists to derive it from",
+        # Said plainly, because "0.0 overtime" and "overtime was never computed"
+        # look identical on a payslip and mean opposite things.
+        "overtime": {
+            "computed": policy.overtime_enabled,
+            "reason": None if policy.overtime_enabled else (
+                "overtime_enabled is off for this organisation, so overtime_hours "
+                "was left untouched. Set the shift policy to turn it on."
+            ),
+            "daily_threshold_hours": policy.overtime_daily_threshold_hours,
+            "weekly_threshold_hours": policy.overtime_weekly_threshold_hours,
+            "multiplier": policy.overtime_multiplier,
+            "total_hours": round(
+                sum(r.overtime_hours or 0 for r in result.records), 2
+            ) if policy.overtime_enabled else None,
+        },
     }

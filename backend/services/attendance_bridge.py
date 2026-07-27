@@ -20,13 +20,24 @@ precisely the one waiting for someone to look at it, and a punch verdicted
 and reported instead, because the useful output is "eleven days are waiting on
 you", not silence.
 
-**Overtime is NOT computed, and that is deliberate.**
-There is no shift definition anywhere in this product. `pahchan_policy` holds
-geofence radius, grace minutes and retention — no start time, no expected hours,
-no overtime threshold. Computing overtime would mean inventing a standard day,
-usually as eight hours, and an invented number that reaches a payslip is worse
-than an absent one: it looks authoritative and nobody re-derives it.
-`overtime_hours` is left untouched for a human or a later policy to set.
+**Overtime is computed only from a policy the org actually set.**
+Migration 082 added the shift definition this file used to say was missing.
+Without a policy — or with `overtime_enabled` false, which is the default —
+`overtime_hours` is left untouched, exactly as before. Nothing starts earning
+overtime because a migration ran.
+
+The thresholds are statutory rather than invented. Factories Act 1948 §54 caps a
+day at nine hours and §51 caps a week at forty-eight; §59 prices work beyond
+either at twice the ordinary rate. So the daily threshold defaults to 9, NOT to
+the eight-hour contracted day — the ninth hour is ordinary time under the Act,
+and paying it at 2x would be as wrong as not paying the tenth.
+
+**An hour is overtime once.** A day can breach the daily cap, the weekly cap, or
+both, and counting it twice inflates a payslip. Per day the answer is
+`max(daily_excess, weekly_excess)`, where the weekly figure is the part of THAT
+day falling beyond the weekly threshold once the week's hours are accumulated in
+order. That places the 49th hour of the week on the day it was actually worked,
+rather than on whichever day the report happens to sort last.
 
 **A manual row is never overwritten.**
 `marked_by` distinguishes 'manual' (HR typed it) from 'pahchan' (this bridge).
@@ -46,7 +57,7 @@ to use this is to run it repeatedly as corrections land.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date as _date, datetime
+from datetime import date as _date, datetime, timedelta
 from typing import Iterable, Optional
 
 #: A punch pays only if a reviewer cleared it, or it never needed clearing.
@@ -60,6 +71,33 @@ STATUS_INCOMPLETE = "incomplete"
 
 MARKED_BY_BRIDGE = "pahchan"
 MARKED_BY_MANUAL = "manual"
+
+
+@dataclass
+class ShiftPolicy:
+    """The org's shift definition — migration 082.
+
+    Defaults mirror the column defaults so an org with no policy row behaves
+    identically to one that has accepted every default: overtime OFF.
+    """
+    overtime_enabled: bool = False
+    standard_hours_per_day: float = 8.0
+    overtime_daily_threshold_hours: float = 9.0      # Factories Act §54
+    overtime_weekly_threshold_hours: float = 48.0    # Factories Act §51
+    overtime_multiplier: float = 2.0                 # Factories Act §59
+    week_starts_on: int = 1                          # ISO: 1 = Monday
+    shift_start_time: Optional[object] = None        # datetime.time
+    shift_end_time: Optional[object] = None
+    overnight_shift: bool = False
+
+    def week_key(self, day: _date) -> _date:
+        """The date the containing week starts on.
+
+        `isoweekday()` is 1..7 Mon..Sun, matching `week_starts_on`, so the offset
+        is the distance back to the configured first day.
+        """
+        offset = (day.isoweekday() - self.week_starts_on) % 7
+        return day - timedelta(days=offset)
 
 
 @dataclass
@@ -101,6 +139,9 @@ class DayRecord:
     check_out: Optional[datetime] = None
     status: str = STATUS_INCOMPLETE
     work_hours: Optional[float] = None
+    #: None means "not computed" — no policy, or overtime disabled. Distinct
+    #: from 0.0, which means "computed, and there was none".
+    overtime_hours: Optional[float] = None
     sources: list = field(default_factory=list)   # 'punch' and/or 'regularisation'
 
     @property
@@ -124,22 +165,72 @@ class BridgeResult:
         }
 
 
-def _day_of(dt: datetime) -> _date:
-    """The calendar day a punch belongs to.
+def _day_of(dt: datetime, policy: Optional[ShiftPolicy] = None) -> _date:
+    """The day a punch belongs to — which is the SHIFT's day, not the clock's.
 
-    Uses the timestamp as stored. Every punch carries a timezone-aware
-    `captured_at`, so this is the day in whichever zone the connection reports —
-    which for an overnight shift is NOT the shift's day. There is no shift
-    definition to consult (see the module docstring), so there is nothing to
-    resolve it against; a night-shift org would need one before this is correct
-    for them. Stated rather than silently assumed.
+    For a normal shift these are the same. For an overnight shift they are not:
+    a punch at 01:00 belongs to the shift that started at 22:00 yesterday, and
+    treating it as today's splits one night into two half-days that both look
+    like somebody forgot to clock out.
+
+    A punch is attributed to the previous day when the shift runs overnight and
+    the punch falls before the shift's END time — i.e. it is still inside the
+    window that opened yesterday. Migration 082's CHECK guarantees an overnight
+    policy has a window, so `shift_end_time` is present whenever this matters.
     """
+    if policy and policy.overnight_shift and policy.shift_end_time is not None:
+        # `<=`, not `<`. The overnight tail runs from midnight to the shift's end
+        # INCLUSIVE: someone clocking out at exactly 06:00 is finishing the night
+        # that began at 22:00, not starting a new day. An exclusive bound put
+        # that punch on the following day and split one night into two half-days,
+        # each looking like a missed clock-out.
+        if dt.timetz().replace(tzinfo=None) <= policy.shift_end_time:
+            return (dt - timedelta(days=1)).date()
     return dt.date()
+
+
+def _apply_overtime(records: list, policy: Optional[ShiftPolicy]) -> None:
+    """Fill `overtime_hours`, in place, once per hour worked.
+
+    Left as None when there is no policy or overtime is switched off — None is
+    "not computed", which the caller must be able to tell apart from a computed
+    zero. A day with no hours at all is skipped for the same reason: an
+    incomplete day has unknown overtime, not none.
+
+    Weekly overtime is accumulated in date order so the hours beyond the weekly
+    threshold land on the day they were actually worked. Taking `max` of the two
+    figures rather than their sum is what keeps a day that breaches both caps
+    from being paid twice for the same hour.
+    """
+    if not policy or not policy.overtime_enabled:
+        return
+
+    by_person_week: dict[tuple[str, _date], float] = {}
+
+    for rec in sorted(records, key=lambda r: (r.employee_id, r.day)):
+        if rec.work_hours is None:
+            continue
+
+        daily_excess = max(0.0, rec.work_hours - policy.overtime_daily_threshold_hours)
+
+        key = (rec.employee_id, policy.week_key(rec.day))
+        before = by_person_week.get(key, 0.0)
+        after = before + rec.work_hours
+        by_person_week[key] = after
+
+        # The slice of THIS day that sits beyond the weekly cap.
+        weekly_excess = max(
+            0.0,
+            min(rec.work_hours, after - policy.overtime_weekly_threshold_hours),
+        )
+
+        rec.overtime_hours = round(max(daily_excess, weekly_excess), 2)
 
 
 def build_day_records(
     punches: Iterable[Punch],
     regularisations: Iterable[Regularisation] = (),
+    policy: Optional[ShiftPolicy] = None,
 ) -> BridgeResult:
     """Pair punches into one record per employee per day.
 
@@ -152,7 +243,7 @@ def build_day_records(
     buckets: dict[tuple[str, _date], list[Punch]] = {}
 
     for p in punches:
-        buckets.setdefault((p.employee_id, _day_of(p.captured_at)), []).append(p)
+        buckets.setdefault((p.employee_id, _day_of(p.captured_at, policy)), []).append(p)
 
     # A correction can name a day with no punch at all — someone who forgot
     # entirely — so it has to be able to create a bucket, not only amend one.
@@ -209,8 +300,7 @@ def build_day_records(
                 result.withheld_days.append({"employee_id": employee_id, "date": day.isoformat()})
             continue
 
-        if withheld:
-            result.withheld_pending_review += 0  # counted only for fully-withheld days
         result.records.append(rec)
 
+    _apply_overtime(result.records, policy)
     return result
