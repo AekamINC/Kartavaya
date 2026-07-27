@@ -27,6 +27,19 @@ this directory, or those four Sanvaad queries are broken." It is the latter, and
 it was six places rather than four. This file now joins `users` like every other
 router (auth_router, approvals_router, invite_router, server.py).
 
+PROVEN AGAINST THE LIVE DATABASE, 2026-07-27. The suite could not prove this:
+`pytest` mocks the pool, so every one of these tests passed BEFORE the fix too —
+a mocked cursor never resolves a table name. So the directory query below was
+run read-only against the real schema with its parameters inlined, and returned
+real rows. Every table and column this module touches was checked the same way:
+
+    staging.samvada_channels / _channel_members / _messages / _message_reactions
+    staging.user_roles                                        all resolve
+    public.users . user_id, full_name, name, avatar, email    all exist
+
+If you change a join here, re-run it against the catalogue rather than trusting
+green tests — green is what this module had while every read endpoint 500'd.
+
 `u.avatar AS avatar_url` / `u.avatar AS sender_avatar` keep the WIRE names the
 frontend already reads (`Avatar.jsx:49`, `org/MemberTable.jsx:87-89`,
 sanvaad message components), so only the SQL changes and no client does.
