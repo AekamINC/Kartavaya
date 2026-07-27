@@ -94,8 +94,23 @@
   --sp-5: 20px; --sp-6: 24px; --sp-7: 32px;  --sp-8: 44px;
   --sp-10: 40px;   /* legacy, 1 use — not part of §4 */
 }
-[data-density="compact"] { --row-h:38px; --pad-page:16px; --pad-card:14px; --gap-section:16px; --gap-tight:8px }
-[data-density="comfy"]   { --row-h:48px; --pad-page:32px; --pad-card:20px; --gap-section:26px; --gap-tight:12px }
+/* Three tiers, and the middle one is the default — measured off the rendered
+   harness, not the prose. `Kartavaya Redesign.html` carries data-density="cozy"
+   and `App.jsx:3` defaults `density: 'cozy'`, with `Chrome.jsx:196` offering all
+   three. Numbers are `design-reference/…/tokens.css:228-230` verbatim.
+
+   `cozy` did not exist here, so the shipped default was `comfy` — a tier the
+   design never renders. --pad-page is the topbar's horizontal padding AND
+   .kv__content's padding on every page, so 32px vs 28px moved the whole product,
+   not a sidebar detail.
+
+   The :root block above already declared exactly these cozy numbers and could
+   never be reached: applyPrefs writes data-density unconditionally, so an
+   attribute rule always won. Declared explicitly here so the default tier is
+   visible beside its siblings rather than implied by an absence. */
+[data-density="compact"] { --row-h:34px; --pad-page:18px; --pad-card:12px; --gap-section:14px; --gap-tight:7px }
+[data-density="cozy"]    { --row-h:44px; --pad-page:28px; --pad-card:18px; --gap-section:22px; --gap-tight:10px }
+[data-density="comfy"]   { --row-h:54px; --pad-page:38px; --pad-card:24px; --gap-section:30px; --gap-tight:14px }
 
 /* ── 5 · Motion (§5) ────────────────────────────────────────────────────────
    applyPrefs writes --ix-user, NEVER --ix. An inline style on the root beats
