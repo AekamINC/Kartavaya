@@ -534,3 +534,331 @@
   margin-left: auto; font-family: var(--font-hindi); font-size: 12px;
   color: var(--on-surface-3);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   VIKRAY — Sales · विक्रय.  design-handover/27-vikray.md
+
+   The page was 71 inline styles, which is why it stayed on the legacy
+   `--ink-*` / `--rule-soft` / `--k-primary` vocabulary while Graha and Ganit
+   moved off it: a token cannot be corrected centrally if the value is written
+   into JSX. Every rule below is `00` §2 tokens, so this page follows a theme
+   change, a density change and a radius change without being edited.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* The module page's own box. Eight route files carry this as
+   `style={{ padding: '0 0 48px' }}`; it is one declaration and belongs here.
+   The bottom space is for the mobile tab bar and the last row of a long table,
+   not decoration — dropping it puts the final row under the nav. */
+.mpage { padding: 0 0 48px; }
+
+/* ── Toolbar above a tab's content ───────────────────────────────────────── */
+.vk-bar {
+  display: flex; align-items: flex-end; flex-wrap: wrap;
+  gap: 12px; margin-bottom: 16px;
+}
+.vk-bar__f  { display: flex; flex-direction: column; gap: 5px; min-width: 150px; }
+.vk-bar__fl { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3); }
+.vk-bar__new { margin-left: auto; }
+.vk-bar__chk { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--on-surface-2); }
+.vk-bar__n   { color: var(--warn); font-variant-numeric: tabular-nums; }
+.vk-bar__note { flex: 1 1 320px; margin: 0; font-size: 12px; line-height: 1.5; color: var(--on-surface-3); }
+.vk-bar__note b { color: var(--on-surface-2); font-weight: 600; }
+
+/* ── The order list ───────────────────────────────────────────────────────
+   The reference (`ScreensBiz.jsx`, "Quote to cash") renders a header row plus
+   one <button> per record — an actual button, so the row is reachable by
+   keyboard and announced as a control. The build's version was a div with an
+   onClick, which is neither.
+
+   `.vko__head` and `.vko__row` carry the SAME `grid-template-columns`, because
+   a header whose columns can drift from its rows is worse than no header. */
+.vko { display: flex; flex-direction: column; }
+.vko__head, .vko__row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1.4fr) 96px minmax(120px, 1.3fr) minmax(0, 132px);
+  gap: 12px; align-items: center;
+  padding: 0 14px;
+  text-align: left;
+}
+.vko__head {
+  height: 34px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--on-surface-3);
+  border-bottom: 1px solid var(--outline-variant);
+}
+.vko__row {
+  min-height: 54px; width: 100%;
+  border-bottom: 1px solid var(--outline-variant);
+  background: none; color: inherit; font: inherit;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.vko__row:last-child { border-bottom: 0; }
+.vko__row:hover { background: var(--s-low); }
+.vko__row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+/* A left keyline for a row that needs somebody. The reason is ALSO printed as
+   text in `.vko__why` — 00 §12: colour is never the only carrier. */
+.vko__row--warn   { box-shadow: inset 3px 0 0 var(--warn); }
+.vko__row--danger { box-shadow: inset 3px 0 0 var(--danger); }
+
+.vko__id      { font-family: var(--font-mono); font-size: 11.5px; color: var(--on-surface-3); }
+.vko__party   { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13.5px; font-weight: 600; }
+.vko__noparty { font-weight: 400; color: var(--on-surface-3); }
+.vko__why     { font-size: 11px; font-weight: 500; color: var(--on-surface-2); }
+.vko__val     { text-align: right; font-family: var(--font-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.vko__prog    { min-width: 0; }
+.vko__state   { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.vko__date    { font-size: 11px; color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+
+/* Five segments, one per lifecycle state, filled up to where the order sits.
+   `--c` is the state's own colour so the bar and the tag beside it agree. */
+.vko__flow { display: flex; gap: 4px; width: 100%; }
+.vko__seg  { flex: 1; height: 5px; border-radius: var(--r-pill); background: var(--s-highest); }
+.vko__seg.is-on { background: var(--c); }
+
+/* ── Line-item editor ─────────────────────────────────────────────────────
+   Seven columns on a desktop; below 768px each line becomes a card, because
+   seven columns at .8fr on a 393px screen is unusable and the page previously
+   had no mobile form at all (27 §4). */
+.vk-lis { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 16px; }
+.vk-li {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 78px 96px 72px 96px 30px;
+  gap: 8px; align-items: end;
+}
+.vk-li__head {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--on-surface-3);
+  align-items: center;
+}
+.vk-li__desc { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.vk-li__pick { color: var(--on-surface-2); }
+.vk-li__amt  { text-align: right; font-family: var(--font-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; padding-bottom: 9px; }
+.vk-li__head .vk-li__amt { padding-bottom: 0; }
+.vk-li__x {
+  height: 36px; width: 30px;
+  border-radius: var(--r-sm);
+  color: var(--on-surface-3); font-size: 17px; line-height: 1;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+}
+.vk-li__x:hover { background: var(--danger-container); color: var(--danger); }
+.vk-li__x:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* ── Create / target forms ───────────────────────────────────────────────── */
+.vk-form {
+  padding: var(--pad-card);
+  margin-bottom: 20px;
+  background: var(--s-low);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+}
+.vk-form__head { margin-bottom: 14px; }
+.vk-form__t    { margin: 0; font-family: var(--font-display); font-size: 18px; font-weight: 400; }
+.vk-form__hi   { margin-left: 9px; font-family: var(--font-indic); font-size: 13px; color: var(--primary-text); }
+.vk-form__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.vk-form__chk  { display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; color: var(--on-surface-2); margin-bottom: 14px; }
+.vk-form__chkhint { display: block; font-size: 11.5px; color: var(--on-surface-3); margin-top: 2px; }
+.vk-form__quick   { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.vk-form__quickl  { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3); }
+.vk-form__foot { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; justify-content: space-between; padding-top: 14px; border-top: 1px solid var(--outline-variant); margin-bottom: 14px; }
+.vk-form__disc { max-width: 150px; }
+.vk-form__ta   { min-height: 62px; resize: vertical; }
+.vk-form__acts { display: flex; gap: 8px; margin-top: 14px; }
+
+/* The client-side figure is a PREVIEW and says so — 27 §5. Making the client
+   authoritative would put GST arithmetic somewhere nobody can audit; showing
+   an unlabelled figure that later changes is the same lie with extra steps. */
+.vk-form__est { margin: 0; min-width: 230px; }
+.vk-form__estrow { display: flex; justify-content: space-between; gap: 24px; font-size: 12.5px; color: var(--on-surface-2); padding: 3px 0; }
+.vk-form__estrow dt { margin: 0; }
+.vk-form__estrow dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.vk-form__estrow--tot { font-size: 14px; font-weight: 700; color: var(--on-surface); border-top: 1px solid var(--outline-variant); margin-top: 4px; padding-top: 7px; }
+.vk-form__estnote { margin: 6px 0 0; font-size: 11px; line-height: 1.45; color: var(--on-surface-3); }
+
+/* ── Dashboard ───────────────────────────────────────────────────────────── */
+.vk-dash { display: flex; flex-direction: column; gap: 18px; }
+
+/* Counts that take you to the rows they count. A number you cannot act on is
+   a number that did not need rendering. */
+.vk-mix { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.vk-mix__b {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 11px 14px; text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-left: 3px solid var(--c, var(--outline-variant));
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.vk-mix__b:hover { background: var(--s-low); }
+.vk-mix__b:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.vk-mix__n { font-family: var(--font-display); font-size: 22px; font-variant-numeric: tabular-nums; }
+.vk-mix__l { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-3); }
+/* The skeleton keeps the strip's exact geometry so the counts do not shift the
+   page when they land — a loading state that reflows on resolve is a second
+   layout the user has to re-read. */
+.vk-mix--load    { pointer-events: none; }
+.vk-mix__b--load { height: 66px; background: var(--s-container); border-left-color: var(--outline-variant); cursor: default; }
+
+/* Two panels, the second narrower — the reference's `.two` on this screen. */
+.vk-two { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.vk-card { min-width: 0; }
+
+.vk-att { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.vk-att__i {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 11px; border-radius: var(--r-sm);
+  background: var(--s-container);
+}
+.vk-att__i--warn   { background: var(--warn-container); }
+.vk-att__i--danger { background: var(--danger-container); }
+.vk-att__txt  { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.vk-att__who  { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.vk-att__why  { font-size: 11.5px; color: var(--on-surface-2); }
+.vk-att__none { margin: 0; font-size: 12.5px; line-height: 1.55; color: var(--on-surface-3); }
+
+/* ── Stock ───────────────────────────────────────────────────────────────── */
+/* A low row is marked as a ROW, not only by a badge beside the name (27 §8):
+   the scan pattern here is "which rows need me", not "read every name". */
+.vk-stk tbody tr.is-low td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.vk-stk__name {
+  background: none; border: 0; padding: 0; margin-right: 8px;
+  font: inherit; color: inherit; text-align: left;
+  text-decoration: underline; text-decoration-color: var(--outline); text-underline-offset: 3px;
+  cursor: pointer;
+}
+.vk-stk__name:hover { text-decoration-color: var(--primary); }
+.vk-stk__name:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 2px; }
+.vk-stk__qty  { font-weight: 600; }
+.vk-stk__acts { text-align: right; white-space: nowrap; }
+.vk-stk__acts .btn + .btn { margin-left: 5px; }
+.vk-stk__exp td { background: var(--s-low); }
+
+/* The threshold field says whether it saved. It fired a silent PATCH on blur
+   and surfaced a failure as a toast that named no row. */
+.vk-th     { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.vk-th__in { width: 82px; text-align: right; }
+.vk-th__s  { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; min-height: 12px; color: var(--on-surface-3); }
+.vk-th--saved  .vk-th__s { color: var(--ok); }
+.vk-th--failed .vk-th__s { color: var(--danger); }
+.vk-th--failed .vk-th__in { border-color: var(--danger); }
+
+.vk-adj__p     { margin: 0 0 14px; font-size: 13px; color: var(--on-surface-2); }
+.vk-adj__after { margin: 14px 0 0; font-size: 12.5px; color: var(--on-surface-2); }
+.vk-adj__neg   { color: var(--warn); }
+
+/* The movement history — `GET /stock/{id}/moves` had no caller until now. */
+.vk-mv      { list-style: none; margin: 0; padding: 4px 0; display: flex; flex-direction: column; gap: 5px; }
+.vk-mv__i   { display: grid; grid-template-columns: 74px minmax(0, 1fr) 92px; gap: 12px; align-items: baseline; font-size: 12px; }
+.vk-mv__d   { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ok); }
+.vk-mv__d--out { color: var(--danger); }
+.vk-mv__r   { color: var(--on-surface-2); }
+.vk-mv__t   { text-align: right; color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+.vk-mv__none { margin: 0; padding: 4px 0; font-size: 12px; color: var(--on-surface-3); }
+
+/* ── Targets ─────────────────────────────────────────────────────────────── */
+/* The achievement column carries a bar, a percentage and a deal count, so its
+   rows are taller than `--row-h`. `.tbl` sets a fixed height; this releases it
+   rather than cropping the second line. */
+.vk-tg td { height: auto; padding-top: 9px; padding-bottom: 9px; }
+.vk-tg__period  { font-size: 12px; color: var(--on-surface-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vk-tg__unknown { font-family: var(--font-mono); font-size: 11px; color: var(--on-surface-3); }
+.vk-tg__in      { width: 110px; text-align: right; }
+.vk-tg__acts    { text-align: right; white-space: nowrap; }
+.vk-tg__acts .btn + .btn { margin-left: 4px; }
+.vk-tg__del:hover { color: var(--danger); background: var(--danger-container); }
+.vk-tg__deals   { display: block; font-size: 11px; color: var(--on-surface-3); margin-top: 3px; }
+.vk-tg__bar     { display: flex; align-items: center; gap: 9px; }
+.vk-tg__track   { width: 92px; height: 6px; border-radius: var(--r-pill); background: var(--s-highest); overflow: hidden; flex: none; }
+.vk-tg__fill    { display: block; height: 100%; border-radius: var(--r-pill); background: var(--primary); transition: width var(--dur-slow) var(--ease-standard); }
+.vk-tg__fill.is-met { background: var(--ok); }
+.vk-tg__pct     { font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: var(--on-surface-2); }
+.vk-tg__pct.is-met { color: var(--ok); }
+.vk-tg__nopct   { font-size: 11.5px; color: var(--on-surface-3); }
+
+.vk-lead { margin-bottom: 18px; }
+.vk-lead__l { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.vk-lead__i { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, auto); gap: 14px; align-items: center; }
+.vk-lead__n { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.vk-lead__v { font-family: var(--font-mono); font-size: 11.5px; color: var(--on-surface-3); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* ── The order drawer ─────────────────────────────────────────────────────
+   `.dr` is the task drawer's chrome — same scrim, same focus trap, same exit —
+   because 27 §6 asks for one navigation model for "open this record", not two.
+   Only the width differs: an order carries a line-item table, and 560px puts
+   six numeric columns into a scroller on every desktop. */
+.dr.vkd { width: min(680px, 96%); }
+/* 27 §6: a drawer at ≥1024, a full-screen push below it. drawer.css already
+   does this at ≤767; the tablet band was the gap, where a 560px panel left a
+   useless strip of scrim beside a table that needed the room. */
+@media (max-width: 1023px) { .dr.vkd { width: 100%; border-left: 0; } }
+
+.vkd__title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; padding: 14px var(--pad-card) 6px; }
+.vkd__num   { margin: 0; font-family: var(--font-display); font-size: 22px; font-weight: 400; letter-spacing: -.02em; }
+.vkd__when  { font-size: 12px; color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+.vkd__acts  { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px var(--pad-card) 4px; }
+.dr__body .vkd__acts { padding-left: 0; padding-right: 0; }
+.vkd__gate  { margin: 6px var(--pad-card) 0; }
+.vkd__party   { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.vkd__co      { font-weight: 400; color: var(--on-surface-3); }
+.vkd__contact { margin: 3px 0 0; font-size: 12px; color: var(--on-surface-3); overflow-wrap: anywhere; }
+.vkd__hsn     { font-family: var(--font-mono); font-size: 11.5px; color: var(--on-surface-3); }
+.vkd__amt     { font-weight: 600; }
+.vkd__notes   { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--on-surface-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.vkd__ta      { min-height: 62px; resize: vertical; }
+.vkd__editrow { margin-bottom: 12px; }
+
+.vkd__totwrap { display: flex; justify-content: flex-end; }
+.vkd__tot     { margin: 0; min-width: 236px; }
+.vkd__totrow  { display: flex; justify-content: space-between; gap: 24px; padding: 4px 0; font-size: 13px; }
+.vkd__totrow dt { margin: 0; }
+.vkd__totrow dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.vkd__totrow--sub { color: var(--on-surface-3); font-size: 12px; }
+.vkd__totrow--off { color: var(--danger); font-size: 12px; }
+.vkd__totrow--tot { margin-top: 5px; padding-top: 8px; border-top: 1px solid var(--outline-variant); font-size: 15px; font-weight: 700; }
+
+.vkd__est     { margin: 12px 0 0; font-size: 12.5px; color: var(--on-surface-2); }
+.vkd__estnote { color: var(--on-surface-3); font-size: 11.5px; }
+
+/* ── Below the fold ───────────────────────────────────────────────────────
+   Three reflows, all of them collapses rather than rearrangements: a row that
+   moves its columns around at a breakpoint has to be re-learned. */
+@media (max-width: 1023px) {
+  .vk-two { grid-template-columns: 1fr; }
+}
+@media (max-width: 767px) {
+  .vko__head { display: none; }
+  .vko__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "id state" "party party" "flow flow";
+    row-gap: 6px; padding: 12px;
+    align-items: start;
+  }
+  .vko__id    { grid-area: id; }
+  .vko__state { grid-area: state; flex-direction: column; align-items: flex-end; gap: 3px; }
+  .vko__party { grid-area: party; }
+  .vko__val   { grid-area: id; justify-self: end; text-align: right; }
+  .vko__prog  { grid-area: flow; }
+
+  .vk-li {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 7px; padding: 11px;
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--r-sm);
+    background: var(--s-low);
+  }
+  .vk-li__head { display: none; }
+  .vk-li__desc { grid-column: 1 / -1; }
+  .vk-li__amt  { grid-column: 1 / -1; padding-top: 6px; padding-bottom: 0; border-top: 1px solid var(--outline-variant); font-weight: 600; }
+  .vk-li__x    { grid-column: 1 / -1; justify-self: end; }
+
+  .vk-form__foot { flex-direction: column; }
+  .vk-form__disc { max-width: none; }
+  .vk-stk__acts  { text-align: left; white-space: normal; }
+  .vk-mv__i      { grid-template-columns: 60px minmax(0, 1fr); }
+  .vk-mv__t      { grid-column: 2; text-align: left; }
+  .vk-lead__i    { grid-template-columns: 1fr; gap: 5px; }
+  .vk-lead__v    { text-align: left; }
+}

@@ -1,78 +1,86 @@
-// Vikray · विक्रय — sales — on the shared module chrome, 13-module-pages.md §1.
+// Vikray · विक्रय — sales route shell.
 //
-// Was `PageHeader` + `TabBar`. Three measured differences from the spec:
-//  · `.k-pageh__h1` is `clamp(32px, 4vw, 44px)`; 13 §1 specs `.mh__en` at 25px.
-//  · `.k-pageh__sans` puts the Devanagari at 0.7em of that h1 — 22-31px where
-//    the spec says 15px — in `--k-primary`, i.e. `--primary-vivid`, a FILL.
-//    `.mh__hi` uses `--primary-text`, the measured text pair.
-//  · `PageHeader` carries no module accent; `.mh__ic` is the 38px tinted icon.
-// `.k-tabbar` also has no role="tablist"/aria-selected/aria-controls.
-import React, { useState, useEffect, useCallback } from 'react';
+// This file was 756 lines with 71 inline styles and four tab components
+// declared inside it. Per 13-module-pages.md the module pages are split into a
+// route file plus a directory of tab components BEFORE any styling is applied:
+// a restyle of a single-file module touches every tab, every table and every
+// form at once, and the diff is unreviewable. Graha, Ganit and Manav were split
+// and then styled; this one was not, which is why it stayed on the legacy
+// `--ink-*` / `--k-*` vocabulary while they moved.
+//
+// ── Four tabs, and it stays four ──────────────────────────────────────────
+// The reference's `MODULE_TABS.vikray` lists six — it adds `pipeline` and
+// `customers`. `Data.jsx:119` records that those structures were "lifted from
+// staging pages", so the reference is mirroring the build's OLD tab bar rather
+// than specifying a new one. `cae0e0a` removed both because neither has a
+// Vikray endpoint behind it: pipeline and customers are Graha's, the page lede
+// says so, and two tabs pointing at another module's data is the scope creep
+// 27 §1 names. Four.
+import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { useToast } from '../components/ui/toast';
-import { StatTile, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
-import { ErrorState, errorKind } from '../components/ui/ErrorState';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
 import { moduleMeta } from '../lib/moduleColors';
-import { ORDER_COLORS } from '../lib/statusColors';
-import { inr } from '../lib/inr';
+import { inrShort } from '../lib/inr';
 
-// Order statuses and rupee formatting come from the shared modules. This file
-// carried a private hex map — the ninth in the codebase — whose `confirmed`
-// was #0082c6, the brand blue that 00 §9 retires, and a local FMT that
-// reimplemented Indian digit grouping.
-const STATUS_COLORS = ORDER_COLORS;
-const FMT = inr;
+import DashboardTab from './vikray/DashboardTab';
+import OrdersTab from './vikray/OrdersTab';
+import StockTab from './vikray/StockTab';
+import TargetsTab from './vikray/TargetsTab';
 
 const TABS = ['dashboard', 'orders', 'stock', 'targets'];
-
-const lakh = n => {
-  const v = Number(n) || 0;
-  if (v >= 10000000) return `₹${(v / 10000000).toFixed(2)} Cr`;
-  if (v >= 100000) return `₹${(v / 100000).toFixed(1)} L`;
-  return `₹${v.toLocaleString('en-IN')}`;
-};
 
 export default function VikrayPage() {
   const [tab, setTab] = useState('dashboard');
   const [newOrderNonce, setNewOrderNonce] = useState(0);
+  // Order-tab state that survives a tab switch. It lives here rather than in
+  // OrdersTab so the Dashboard's status counts and its "needs attention" list
+  // can open an order or filter the list — which is the only thing that makes a
+  // count worth rendering.
+  const [orderStatus, setOrderStatus] = useState('');
+  const [openOrderId, setOpenOrderId] = useState(null);
+
   const meta = moduleMeta('vikray');
   const motion = useTabPanelMotion(TABS, tab);
 
-  // The four money figures move up here from DashboardTab. Every module screen
-  // in the reference carries its figures above the tab bar, where they are true
-  // of the module rather than of one tab — a revenue number that disappears
-  // when you click "Orders" was never about the dashboard.
+  // The four money figures sit above the tab bar, where they are true of the
+  // module rather than of one tab — a revenue number that disappears when you
+  // click "Orders" was never about the dashboard.
   const [kpi, setKpi] = useState(null);
   const [kpiErr, setKpiErr] = useState('');
   const [counts, setCounts] = useState({});
 
-  useEffect(() => { loadSummary(); }, []);
-
-  async function loadSummary() {
+  const loadSummary = useCallback(async () => {
     setKpiErr('');
     try {
-      const r = await api.get('/v1/vikray/dashboard');
-      const d = r.data;
+      const { data: d } = await api.get('/v1/vikray/dashboard');
+      const orders = Number(d.total_orders) || 0;
+      const open = Number(d.open_deals) || 0;
       setKpi([
-        { label: 'Pipeline value', hi: 'प्रवाह', tone: 'p', value: lakh(d.pipeline_value), sub: `${d.open_deals} open ${Number(d.open_deals) === 1 ? 'deal' : 'deals'}` },
-        { label: 'Order value', hi: 'आदेश', value: lakh(d.order_value), sub: `${d.total_orders} ${Number(d.total_orders) === 1 ? 'order' : 'orders'}` },
-        { label: 'Revenue', hi: 'राजस्व', tone: 'ok', value: lakh(d.total_revenue), sub: 'invoiced' },
-        { label: 'Collected', hi: 'प्राप्त', tone: 'ok', value: lakh(d.collected), sub: 'payments received' },
+        { label: 'Pipeline value', hi: 'प्रवाह', tone: 'p', value: inrShort(d.pipeline_value), sub: `${open} open ${open === 1 ? 'deal' : 'deals'} in CRM` },
+        { label: 'Order value', hi: 'आदेश', value: inrShort(d.order_value), sub: `${orders} ${orders === 1 ? 'order' : 'orders'}` },
+        { label: 'Revenue', hi: 'राजस्व', tone: 'ok', value: inrShort(d.total_revenue), sub: 'invoiced' },
+        { label: 'Collected', hi: 'प्राप्त', tone: 'ok', value: inrShort(d.collected), sub: 'payments received' },
       ]);
-      setCounts({ orders: Number(d.total_orders) || undefined });
+      setCounts({ orders: orders || undefined });
     } catch (e) {
       setKpi(null);
-      setKpiErr(e.response?.status === 403 ? 'You do not have access to Sales figures.' : 'Retry, or check your connection.');
+      setKpiErr(e.response?.status === 403
+        ? 'You do not have access to Sales figures.'
+        : 'Retry, or check your connection.');
     }
-  }
+  }, []);
+
+  useEffect(() => { loadSummary(); }, [loadSummary]);
+
+  const goOrders = useCallback(status => { setOrderStatus(status); setTab('orders'); }, []);
+  const openOrder = useCallback(id => { setOpenOrderId(id); if (id) setTab('orders'); }, []);
 
   return (
-    <div style={{ padding: '0 0 48px' }}>
+    <div className="mpage">
       <ModuleHeader
         module="vikray"
         kick={<>Revenue <span className="mh__kick-hi" lang="hi">· राजस्व</span></>}
@@ -83,16 +91,23 @@ export default function VikrayPage() {
         actions={
           <button
             type="button"
-            className="k-btn k-btn--primary"
-            style={{ fontSize: 13 }}
+            className="btn btn--fill btn--sm"
             onClick={() => { setTab('orders'); setNewOrderNonce(n => n + 1); }}
           >
             + New order
           </button>
         }
       />
+
       <KpiStrip items={kpi} loading={!kpi && !kpiErr} error={kpiErr} count={4} />
-      <ModuleTabs tabs={TABS.map(id => ({ id, label: id, count: counts[id] }))} value={tab} onChange={setTab} label="Vikray sections" />
+
+      <ModuleTabs
+        tabs={TABS.map(id => ({ id, count: counts[id] }))}
+        value={tab}
+        onChange={setTab}
+        label="Vikray sections"
+      />
+
       <div
         role="tabpanel"
         id={`mt-panel-${tab}`}
@@ -100,657 +115,19 @@ export default function VikrayPage() {
         className="ix-panel"
         {...motion}
       >
-        {tab === 'dashboard' && <DashboardTab />}
-        {tab === 'orders' && <OrdersTab newNonce={newOrderNonce} />}
+        {tab === 'dashboard' && <DashboardTab onOpenOrder={openOrder} onFilter={goOrders} />}
+        {tab === 'orders' && (
+          <OrdersTab
+            newNonce={newOrderNonce}
+            status={orderStatus}
+            onStatus={setOrderStatus}
+            openId={openOrderId}
+            onOpen={setOpenOrderId}
+          />
+        )}
         {tab === 'stock' && <StockTab />}
         {tab === 'targets' && <TargetsTab />}
       </div>
-    </div>
-  );
-}
-
-
-function DashboardTab() {
-  const [data, setData] = useState(null);
-  // `.catch(() => {})` with `if (!data) return <Shimmer/>` is worse than an
-  // empty state: on failure `data` stays null forever and the tab shows a
-  // loading shimmer that will never resolve, with no toast and no way out.
-  // A skeleton that never finishes is a lie that never stops telling itself.
-  const [err, setErr] = useState(null);
-  const load = useCallback(() => {
-    setErr(null);
-    api.get('/v1/vikray/dashboard').then(r => setData(r.data)).catch(e => setErr(e));
-  }, []);
-  useEffect(() => { load(); }, [load]);
-  if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
-  if (!data) return <Shimmer count={4} />;
-  return (
-    <Section title="Orders" hi="आदेश">
-      <div className="k-stats">
-        <StatTile label="Total Orders" value={data.total_orders} />
-        <StatTile label="Open Deals" value={data.open_deals} />
-        <StatTile label="Draft" value={data.draft_orders} />
-        <StatTile label="Dispatched" value={data.dispatched_orders} />
-      </div>
-    </Section>
-  );
-}
-
-
-/** `newNonce` — the page header's "+ New order" opens this tab's create form.
- *  A counter, not a boolean, so a second press re-opens it after a cancel. */
-function OrdersTab({ newNonce = 0 }) {
-  const { pushToast } = useToast();
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [contacts, setContacts] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [saving, setSaving] = useState(false);
-  const [detail, setDetail] = useState(null);
-  const [statusFilter, setStatusFilter] = useState('');
-  // A failed load left `orders` at [] and painted "No orders yet — create your
-  // first sales order", which is a wrong answer offered as an invitation.
-  const [err, setErr] = useState(null);
-
-  const [form, setForm] = useState({
-    contact_id: '', deal_id: '', order_date: '', expected_delivery: '', is_igst: false,
-    discount: 0, shipping_address: {}, notes: '',
-    line_items: [{ description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 }],
-  });
-
-  useEffect(() => { load(); }, [statusFilter]);
-  useEffect(() => {
-    if (!newNonce) return;
-    setShowForm(true);
-    loadOptions();
-  }, [newNonce]);
-
-  async function load() {
-    setErr(null);
-    try {
-      let url = '/v1/vikray/orders?';
-      if (statusFilter) url += `status=${statusFilter}&`;
-      const r = await api.get(url);
-      setOrders(r.data.data || []);
-    } catch (e) {
-      setErr(e);
-      pushToast({ title: 'Failed to load orders', type: 'error' });
-    }
-    finally { setLoading(false); }
-  }
-
-  async function loadOptions() {
-    try {
-      const [c, p] = await Promise.all([api.get('/v1/graha/contacts'), api.get('/v1/ganit/products')]);
-      setContacts(c.data.data || []);
-      setProducts(p.data.data || []);
-    } catch {}
-  }
-
-  function addLine() {
-    setForm(f => ({ ...f, line_items: [...f.line_items, { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 }] }));
-  }
-  function updateLine(idx, field, val) {
-    setForm(f => { const items = [...f.line_items]; items[idx] = { ...items[idx], [field]: val }; return { ...f, line_items: items }; });
-  }
-  function removeLine(idx) { setForm(f => ({ ...f, line_items: f.line_items.filter((_, i) => i !== idx) })); }
-
-  function fillFromProduct(idx, productId) {
-    const p = products.find(x => x.id === productId);
-    if (!p) return;
-    updateLine(idx, 'description', p.name);
-    updateLine(idx, 'hsn_code', p.hsn_code || p.sac_code || '');
-    updateLine(idx, 'rate', Number(p.price));
-    updateLine(idx, 'gst_rate', Number(p.gst_rate));
-    updateLine(idx, 'unit', p.unit || 'NOS');
-  }
-
-  const computedSubtotal = form.line_items.reduce((s, li) => {
-    let lt = li.quantity * li.rate;
-    if (li.discount_pct > 0) lt *= (1 - li.discount_pct / 100);
-    return s + lt;
-  }, 0);
-  const computedGst = form.line_items.reduce((s, li) => {
-    let lt = li.quantity * li.rate;
-    if (li.discount_pct > 0) lt *= (1 - li.discount_pct / 100);
-    return s + lt * li.gst_rate / 100;
-  }, 0);
-  const computedTotal = computedSubtotal + computedGst - (form.discount || 0);
-
-  async function save(e) {
-    e.preventDefault();
-    if (form.line_items.length === 0) { pushToast({ title: 'Add at least one line item', type: 'error' }); return; }
-    setSaving(true);
-    try {
-      await api.post('/v1/vikray/orders', form);
-      pushToast({ title: 'Sales order created', type: 'success' });
-      setShowForm(false);
-      setForm({
-        contact_id: '', deal_id: '', order_date: '', expected_delivery: '', is_igst: false,
-        discount: 0, shipping_address: {}, notes: '',
-        line_items: [{ description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 }],
-      });
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-    finally { setSaving(false); }
-  }
-
-  async function loadDetail(id) {
-    try { const r = await api.get(`/v1/vikray/orders/${id}`); setDetail(r.data); } catch { pushToast({ title: 'Failed to load order', type: 'error' }); }
-  }
-
-  async function updateStatus(newStatus) {
-    if (!detail) return;
-    try {
-      await api.patch(`/v1/vikray/orders/${detail.id}/status`, { status: newStatus });
-      pushToast({ title: `Status → ${newStatus}`, type: 'success' });
-      loadDetail(detail.id);
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-  }
-
-  async function generateInvoice() {
-    if (!detail) return;
-    try {
-      const r = await api.post(`/v1/vikray/orders/${detail.id}/invoice`);
-      pushToast({ title: `Invoice ${r.data.invoice_number} generated`, type: 'success' });
-      loadDetail(detail.id);
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-  }
-
-  async function cancelOrder() {
-    if (!detail) return;
-    try {
-      await api.delete(`/v1/vikray/orders/${detail.id}`);
-      pushToast({ title: 'Order cancelled', type: 'success' });
-      setDetail(null);
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-  }
-
-  const NEXT_STATUS = { draft: 'confirmed', confirmed: 'dispatched', dispatched: 'delivered', delivered: 'closed' };
-  const NEXT_LABEL = { draft: 'Confirm Order', confirmed: 'Mark Dispatched', dispatched: 'Mark Delivered', delivered: 'Close Order' };
-
-  const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({});
-  const [editSaving, setEditSaving] = useState(false);
-
-  function startEdit() {
-    const o = detail;
-    const items = Array.isArray(o.line_items) ? o.line_items : JSON.parse(o.line_items || '[]');
-    setEditForm({
-      expected_delivery: o.expected_delivery || '',
-      discount: Number(o.discount || 0),
-      notes: o.notes || '',
-      line_items: items.map(li => ({ ...li })),
-    });
-    setEditing(true);
-  }
-
-  function editUpdateLine(idx, field, val) {
-    setEditForm(f => { const items = [...f.line_items]; items[idx] = { ...items[idx], [field]: val }; return { ...f, line_items: items }; });
-  }
-  function editRemoveLine(idx) { setEditForm(f => ({ ...f, line_items: f.line_items.filter((_, i) => i !== idx) })); }
-  function editAddLine() {
-    setEditForm(f => ({ ...f, line_items: [...f.line_items, { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 }] }));
-  }
-
-  async function saveEdit(e) {
-    e.preventDefault();
-    setEditSaving(true);
-    try {
-      await api.patch(`/v1/vikray/orders/${detail.id}`, editForm);
-      pushToast({ title: 'Order updated', type: 'success' });
-      setEditing(false);
-      loadDetail(detail.id);
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update order', type: 'error' }); }
-    finally { setEditSaving(false); }
-  }
-
-  if (detail) {
-    const o = detail;
-    const items = Array.isArray(o.line_items) ? o.line_items : JSON.parse(o.line_items || '[]');
-    return (
-      <div>
-        <BackButton onClick={() => { setDetail(null); setEditing(false); }} label="Back to list" />
-        <div className="k-detail">
-          <div className="k-detail__header">
-            <div>
-              <h3 className="k-detail__title">{o.order_number}</h3>
-              <p className="k-detail__sub">
-                {o.order_date} {o.expected_delivery && `· Delivery: ${o.expected_delivery}`}
-              </p>
-            </div>
-            <Badge text={o.status} color={STATUS_COLORS[o.status]} />
-          </div>
-
-          <div className="k-detail__actions">
-            {NEXT_STATUS[o.status] && <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => updateStatus(NEXT_STATUS[o.status])}>{NEXT_LABEL[o.status]}</button>}
-            {o.status !== 'draft' && !o.invoice_id && <button className="k-btn k-btn--primary" style={{ fontSize: 12, background: 'var(--ok)' }} onClick={generateInvoice}>Generate Invoice</button>}
-            {!editing && (o.status === 'draft' || o.status === 'confirmed') && <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={startEdit}>Edit</button>}
-            {(o.status === 'draft' || o.status === 'confirmed') && <button className="k-btn k-btn--ghost" style={{ fontSize: 12, color: 'var(--danger)' }} onClick={cancelOrder}>Cancel</button>}
-            {o.invoice_id && <Badge text="Invoiced" color="var(--ok)" />}
-          </div>
-
-          {o.contact_name && (
-            <div className="k-metabar">
-              <span><strong>Customer:</strong> {o.contact_name} {o.contact_company && `(${o.contact_company})`}</span>
-            </div>
-          )}
-
-          <DataTable columns={['Description', 'HSN', { label: 'Qty', align: 'right' }, { label: 'Rate', align: 'right' }, { label: 'GST%', align: 'right' }, { label: 'Amount', align: 'right' }]}>
-            {items.map((li, i) => {
-              const amt = li.quantity * li.rate * (1 - (li.discount_pct || 0) / 100);
-              return (
-                <tr key={i}>
-                  <td>{li.description}</td>
-                  <Td align="right" mono>{li.hsn_code || '—'}</Td>
-                  <Td align="right">{li.quantity} {li.unit}</Td>
-                  <Td align="right" mono>{FMT(li.rate)}</Td>
-                  <Td align="right">{li.gst_rate}%</Td>
-                  <Td align="right" bold>{FMT(amt)}</Td>
-                </tr>
-              );
-            })}
-          </DataTable>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-            <div className="k-totals">
-              <div className="k-totals__row"><span>Subtotal</span><span>{FMT(o.subtotal)}</span></div>
-              {!o.is_igst ? (<>
-                <div className="k-totals__row" style={{ color: 'var(--ink-3)' }}><span>CGST</span><span>{FMT(o.cgst)}</span></div>
-                <div className="k-totals__row" style={{ color: 'var(--ink-3)' }}><span>SGST</span><span>{FMT(o.sgst)}</span></div>
-              </>) : (
-                <div className="k-totals__row" style={{ color: 'var(--ink-3)' }}><span>IGST</span><span>{FMT(o.igst)}</span></div>
-              )}
-              {Number(o.discount) > 0 && <div className="k-totals__row" style={{ color: 'var(--danger)' }}><span>Discount</span><span>-{FMT(o.discount)}</span></div>}
-              <div className="k-totals__row k-totals__row--total"><span>Total</span><span>{FMT(o.total)}</span></div>
-            </div>
-          </div>
-
-          {o.notes && !editing && <p style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 16 }}>Notes: {o.notes}</p>}
-
-          {editing && (
-            <form onSubmit={saveEdit} className="k-formpanel" style={{ marginTop: 20 }}>
-              <Section title="Edit Order" hi="संपादन">
-                <div className="k-formpanel__grid k-formpanel__grid--3">
-                  <label className="k-formpanel__label">Expected Delivery
-                    <input type="date" value={editForm.expected_delivery} onChange={e => setEditForm(f => ({ ...f, expected_delivery: e.target.value }))} className="k-input" />
-                  </label>
-                  <label className="k-formpanel__label">Discount (₹)
-                    <input type="number" value={editForm.discount} onChange={e => setEditForm(f => ({ ...f, discount: Number(e.target.value) }))} className="k-input" />
-                  </label>
-                </div>
-
-                <p style={{ fontSize: 12, fontWeight: 600, margin: '16px 0 8px', color: 'var(--ink-2)' }}>Line Items</p>
-                {editForm.line_items.map((li, idx) => (
-                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr .8fr 1fr .8fr auto', gap: 8, marginBottom: 8, alignItems: 'end' }}>
-                    <input placeholder="Description" value={li.description} onChange={e => editUpdateLine(idx, 'description', e.target.value)} className="k-input" />
-                    <input placeholder="HSN" value={li.hsn_code || ''} onChange={e => editUpdateLine(idx, 'hsn_code', e.target.value)} className="k-input" />
-                    <input type="number" min="1" value={li.quantity} onChange={e => editUpdateLine(idx, 'quantity', Number(e.target.value))} className="k-input" />
-                    <input type="number" value={li.rate} onChange={e => editUpdateLine(idx, 'rate', Number(e.target.value))} className="k-input" />
-                    <input type="number" value={li.gst_rate} onChange={e => editUpdateLine(idx, 'gst_rate', Number(e.target.value))} className="k-input" />
-                    {editForm.line_items.length > 1 && <button type="button" onClick={() => editRemoveLine(idx)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }}>×</button>}
-                  </div>
-                ))}
-                <button type="button" onClick={editAddLine} style={{ fontSize: 12, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, marginBottom: 12 }}>+ Add line item</button>
-
-                <textarea placeholder="Notes" value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} className="k-input" style={{ minHeight: 48, marginTop: 8, width: '100%' }} />
-
-                <div className="k-formpanel__actions" style={{ marginTop: 12 }}>
-                  <button type="submit" className="k-btn k-btn--primary" disabled={editSaving} style={{ fontSize: 13 }}>{editSaving ? 'Saving…' : 'Save Changes'}</button>
-                  <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditing(false)} style={{ fontSize: 13 }}>Cancel</button>
-                </div>
-              </Section>
-            </form>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="k-section__head" style={{ marginBottom: 20 }}>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="k-formpanel__input" style={{ width: 'auto', minWidth: 140 }}>
-            <option value="">All statuses</option>
-            {Object.keys(STATUS_COLORS).map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
-          onClick={() => { setShowForm(!showForm); if (!showForm) loadOptions(); }}>
-          {showForm ? 'Cancel' : '+ New Order'}
-        </button>
-      </div>
-
-      {showForm && (
-        <form onSubmit={save} className="k-formpanel">
-          <div className="k-formpanel__grid k-formpanel__grid--3">
-            <label className="k-formpanel__label">Customer
-              <select value={form.contact_id} onChange={e => setForm(f => ({ ...f, contact_id: e.target.value }))} className="k-formpanel__input">
-                <option value="">Select…</option>
-                {contacts.map(c => <option key={c.id} value={c.id}>{c.name} {c.company && `(${c.company})`}</option>)}
-              </select>
-            </label>
-            <label className="k-formpanel__label">Order Date
-              <input type="date" value={form.order_date} onChange={e => setForm(f => ({ ...f, order_date: e.target.value }))} className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Expected Delivery
-              <input type="date" value={form.expected_delivery} onChange={e => setForm(f => ({ ...f, expected_delivery: e.target.value }))} className="k-formpanel__input" />
-            </label>
-          </div>
-
-          <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-            <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--ink-2)' }}>
-              <input type="checkbox" checked={form.is_igst} onChange={e => setForm(f => ({ ...f, is_igst: e.target.checked }))} /> Inter-state (IGST)
-            </label>
-          </div>
-
-          <Section title="Line Items" hi="वस्तुएँ">
-            {form.line_items.map((li, idx) => (
-              <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr .8fr .8fr 1fr .8fr auto', gap: 8, marginBottom: 8, alignItems: 'end' }}>
-                <div>
-                  <select onChange={e => fillFromProduct(idx, e.target.value)} className="k-formpanel__input" style={{ marginBottom: 4, padding: '6px 10px' }}>
-                    <option value="">From product…</option>
-                    {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                  <input placeholder="Description" value={li.description} onChange={e => updateLine(idx, 'description', e.target.value)} className="k-formpanel__input" style={{ padding: '6px 10px' }} />
-                </div>
-                <input placeholder="HSN" value={li.hsn_code} onChange={e => updateLine(idx, 'hsn_code', e.target.value)} className="k-formpanel__input" style={{ padding: '6px 10px' }} />
-                <input type="number" min="1" value={li.quantity} onChange={e => updateLine(idx, 'quantity', Number(e.target.value))} className="k-formpanel__input" style={{ padding: '6px 10px' }} />
-                <input type="number" value={li.rate} onChange={e => updateLine(idx, 'rate', Number(e.target.value))} className="k-formpanel__input" style={{ padding: '6px 10px' }} />
-                <input type="number" value={li.gst_rate} onChange={e => updateLine(idx, 'gst_rate', Number(e.target.value))} className="k-formpanel__input" style={{ padding: '6px 10px' }} />
-                <span style={{ fontSize: 12, fontWeight: 600, padding: '8px 0', fontFamily: 'var(--font-mono)' }}>{FMT(li.quantity * li.rate * (1 - (li.discount_pct || 0) / 100))}</span>
-                {form.line_items.length > 1 && <button type="button" onClick={() => removeLine(idx)} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', fontSize: 16 }}>×</button>}
-              </div>
-            ))}
-            <button type="button" onClick={addLine} style={{ fontSize: 12, color: 'var(--k-primary)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, marginBottom: 12 }}>+ Add line item</button>
-          </Section>
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderTop: '1px solid var(--rule-soft)' }}>
-            <div style={{ fontSize: 13, display: 'flex', gap: 16 }}>
-              <span>Subtotal: <strong>{FMT(computedSubtotal)}</strong></span>
-              <span>GST: <strong>{FMT(computedGst)}</strong></span>
-              <span style={{ fontSize: 14, fontWeight: 700 }}>Total: {FMT(computedTotal)}</span>
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <label className="k-formpanel__label" style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>Discount ₹
-                <input type="number" value={form.discount} onChange={e => setForm(f => ({ ...f, discount: Number(e.target.value) }))} className="k-formpanel__input" style={{ width: 80, padding: '6px 10px' }} />
-              </label>
-            </div>
-          </div>
-
-          <textarea placeholder="Notes" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="k-formpanel__input" style={{ minHeight: 48, marginTop: 8 }} />
-
-          <div className="k-formpanel__actions">
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving} style={{ fontSize: 13 }}>
-              {saving ? 'Saving…' : 'Create Order'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {loading ? <Shimmer count={4} /> : err ? (
-        <ErrorState kind={errorKind(err)} onRetry={load} />
-      ) : orders.length === 0 ? (
-        <Empty icon="📦" title="No orders yet" sub="Create your first sales order to start tracking revenue and deliveries." cta="+ New Order" onCta={() => { setShowForm(true); loadOptions(); }} />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {orders.map(o => (
-            <ModCard key={o.id} onClick={() => loadDetail(o.id)}>
-              <div>
-                <strong style={{ fontSize: 14 }}>{o.order_number}</strong>
-                {(o.contact_name || o.contact_company) && <span style={{ fontSize: 12, color: 'var(--ink-3)', marginLeft: 8 }}>{o.contact_name || o.contact_company}</span>}
-                <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{o.order_date}</p>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>{FMT(o.total)}</span>
-                <Badge text={o.status} color={STATUS_COLORS[o.status]} />
-              </div>
-            </ModCard>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-function StockTab() {
-  const { pushToast } = useToast();
-  const [stock, setStock] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [lowStockOnly, setLowStockOnly] = useState(false);
-  const [edits, setEdits] = useState({});
-  // "No stock records" on a failed load reads as "you hold no stock", which on
-  // an inventory screen is a number somebody may reorder against.
-  const [err, setErr] = useState(null);
-
-  useEffect(() => { load(); }, [lowStockOnly]);
-
-  async function load() {
-    setErr(null);
-    try {
-      const r = await api.get(`/v1/vikray/stock${lowStockOnly ? '?low_stock=true' : ''}`);
-      setStock(r.data.data || []);
-    } catch (e) {
-      setErr(e);
-      pushToast({ title: 'Failed to load stock', type: 'error' });
-    }
-    finally { setLoading(false); }
-  }
-
-  async function adjust(productId, quantity_delta, reason) {
-    try {
-      await api.patch(`/v1/vikray/stock/${productId}`, { quantity_delta, reason });
-      pushToast({ title: 'Stock updated', type: 'success' });
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-  }
-
-  async function setThreshold(productId) {
-    const val = edits[productId];
-    if (val === undefined || val === '') return;
-    try {
-      await api.patch(`/v1/vikray/stock/${productId}`, { low_stock_threshold: Number(val) });
-      pushToast({ title: 'Threshold updated', type: 'success' });
-      setEdits(e => ({ ...e, [productId]: undefined }));
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-  }
-
-  if (loading) return <Shimmer count={6} />;
-  if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
-
-  return (
-    <div>
-      <div className="k-section__head" style={{ marginBottom: 20 }}>
-        <h3 className="k-section__title">Stock Ledger<span className="k-section__title-hi">स्टॉक</span></h3>
-        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input type="checkbox" checked={lowStockOnly} onChange={e => setLowStockOnly(e.target.checked)} /> Low stock only
-        </label>
-      </div>
-
-      {stock.length === 0 ? (
-        <Empty icon="📦" title="No stock records" sub="Stock levels appear here once products are confirmed on orders or a threshold is set." />
-      ) : (
-        <DataTable columns={['Product', { label: 'On Hand', align: 'right' }, { label: 'Threshold', align: 'right' }, { label: 'Actions', align: 'right' }]}>
-          {stock.map(s => {
-            const low = Number(s.quantity_on_hand) <= Number(s.low_stock_threshold) && Number(s.low_stock_threshold) > 0;
-            return (
-              <tr key={s.product_id}>
-                <td>{s.name} {low && <Badge text="Low Stock" color="var(--danger)" />}</td>
-                <Td align="right" mono bold>{s.quantity_on_hand} {s.unit}</Td>
-                <Td align="right">
-                  <input type="number" placeholder={s.low_stock_threshold} value={edits[s.product_id] ?? ''}
-                    onChange={e => setEdits(ed => ({ ...ed, [s.product_id]: e.target.value }))}
-                    onBlur={() => setThreshold(s.product_id)}
-                    className="k-formpanel__input" style={{ width: 80, display: 'inline-block' }} />
-                </Td>
-                <Td align="right">
-                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11, marginRight: 6 }} onClick={() => adjust(s.product_id, 1, 'restock')}>+1</button>
-                  <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => adjust(s.product_id, -1, 'manual_adjustment')}>-1</button>
-                </Td>
-              </tr>
-            );
-          })}
-        </DataTable>
-      )}
-    </div>
-  );
-}
-
-
-// Restored. `cae0e0a` set out to drop the two tabs that duplicated Graha —
-// pipeline and customers — and removed this one as well, while leaving
-// 'targets' in TABS and <TargetsTab /> in the render. Clicking the fourth tab
-// was an uncaught ReferenceError that took the page down. The backend was
-// never the problem: POST/GET/PATCH/DELETE /v1/vikray/targets and
-// staging.vikray_targets all exist. Tokens corrected to `00` §2 on the way
-// back in; the split into vikray/ that `27-vikray.md` asks for is separate.
-function TargetsTab() {
-  const { pushToast } = useToast();
-  const [targets, setTargets] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [members, setMembers] = useState([]);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ salesperson_id: '', period_start: '', period_end: '', target_amount: 0, target_deals: 0, notes: '' });
-  const [editId, setEditId] = useState(null);
-  const [editForm, setEditForm] = useState({});
-  const [editSaving, setEditSaving] = useState(false);
-  // This one swallowed the rejection ENTIRELY — `catch {}`, no toast, no state.
-  // A 500 rendered "No targets set. Set sales targets for your team", with
-  // nothing anywhere on the page saying the request had failed.
-  const [err, setErr] = useState(null);
-
-  useEffect(() => { load(); }, []);
-
-  async function load() {
-    setErr(null);
-    try { const r = await api.get('/v1/vikray/targets'); setTargets(r.data.data || []); }
-    catch (e) { setErr(e); pushToast({ title: 'Failed to load targets', type: 'error' }); }
-    finally { setLoading(false); }
-  }
-
-  async function loadMembers() {
-    try { const r = await api.get('/teams'); setMembers(r.data || []); } catch {}
-  }
-
-  async function save(e) {
-    e.preventDefault();
-    if (!form.salesperson_id || !form.period_start || !form.period_end) { pushToast({ title: 'Fill required fields', type: 'error' }); return; }
-    setSaving(true);
-    try {
-      await api.post('/v1/vikray/targets', form);
-      pushToast({ title: 'Target saved', type: 'success' });
-      setShowForm(false);
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-    finally { setSaving(false); }
-  }
-
-  function startEditTarget(t) {
-    setEditId(t.id);
-    setEditForm({ target_amount: t.target_amount || 0, target_deals: t.target_deals || 0, notes: t.notes || '' });
-  }
-
-  async function saveEditTarget(e) {
-    e.preventDefault();
-    setEditSaving(true);
-    try {
-      await api.patch(`/v1/vikray/targets/${editId}`, editForm);
-      pushToast({ title: 'Target updated', type: 'success' });
-      setEditId(null);
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update target', type: 'error' }); }
-    finally { setEditSaving(false); }
-  }
-
-  return (
-    <div>
-      <div className="k-section__head" style={{ marginBottom: 20 }}>
-        <h3 className="k-section__title">Sales Targets<span className="k-section__title-hi">लक्ष्य</span></h3>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
-          onClick={() => { setShowForm(!showForm); if (!showForm) loadMembers(); }}>
-          {showForm ? 'Cancel' : '+ Set Target'}
-        </button>
-      </div>
-
-      {showForm && (
-        <form onSubmit={save} className="k-formpanel">
-          <div className="k-formpanel__grid k-formpanel__grid--3">
-            <label className="k-formpanel__label">Salesperson
-              <input value={form.salesperson_id} onChange={e => setForm(f => ({ ...f, salesperson_id: e.target.value }))}
-                placeholder="User ID" className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Period Start
-              <input type="date" value={form.period_start} onChange={e => setForm(f => ({ ...f, period_start: e.target.value }))} className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Period End
-              <input type="date" value={form.period_end} onChange={e => setForm(f => ({ ...f, period_end: e.target.value }))} className="k-formpanel__input" />
-            </label>
-          </div>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Target Amount (₹)
-              <input type="number" value={form.target_amount} onChange={e => setForm(f => ({ ...f, target_amount: Number(e.target.value) }))} className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Target Deals
-              <input type="number" value={form.target_deals} onChange={e => setForm(f => ({ ...f, target_deals: Number(e.target.value) }))} className="k-formpanel__input" />
-            </label>
-          </div>
-          <div className="k-formpanel__actions">
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving} style={{ fontSize: 13 }}>{saving ? 'Saving…' : 'Save Target'}</button>
-          </div>
-        </form>
-      )}
-
-      {loading ? <Shimmer count={4} /> : err ? (
-        <ErrorState kind={errorKind(err)} onRetry={load} />
-      ) : targets.length === 0 ? (
-        <Empty title="No targets set" sub="Set sales targets for your team to track performance and achievement." cta="+ Set Target" onCta={() => { setShowForm(true); loadMembers(); }} />
-      ) : (
-        <DataTable columns={['Salesperson', 'Period', { label: 'Target', align: 'right' }, { label: 'Actual', align: 'right' }, 'Achievement', '']}>
-          {targets.map(t => {
-            const pct = t.target_amount > 0 ? Math.round((t.actual_amount || 0) / t.target_amount * 100) : 0;
-            if (editId === t.id) {
-              return (
-                <tr key={t.id}>
-                  <td>{t.salesperson_name || t.salesperson_id}</td>
-                  <td style={{ fontSize: 12 }}>{t.period_start} — {t.period_end}</td>
-                  <Td align="right"><input type="number" value={editForm.target_amount} onChange={e => setEditForm(f => ({ ...f, target_amount: Number(e.target.value) }))} className="k-input" style={{ width: 100 }} /></Td>
-                  <Td align="right" mono>{FMT(t.actual_amount)}</Td>
-                  <td><input value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} className="k-input" placeholder="Notes" style={{ width: 100 }} /></td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
-                    <button className="k-btn k-btn--primary" style={{ fontSize: 11, marginRight: 4 }} disabled={editSaving} onClick={saveEditTarget}>{editSaving ? '…' : 'Save'}</button>
-                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => setEditId(null)}>Cancel</button>
-                  </td>
-                </tr>
-              );
-            }
-            return (
-              <tr key={t.id}>
-                <td>{t.salesperson_name || t.salesperson_id}</td>
-                <td style={{ fontSize: 12 }}>{t.period_start} — {t.period_end}</td>
-                <Td align="right" mono>{FMT(t.target_amount)}</Td>
-                <Td align="right" mono>{FMT(t.actual_amount)}</Td>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 80, height: 6, background: 'var(--rule-soft)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: pct >= 100 ? 'var(--ok)' : 'var(--primary)', borderRadius: 'var(--r-xs)', transition: 'width .4s' }} />
-                    </div>
-                    <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono)', color: pct >= 100 ? 'var(--ok)' : 'var(--ink-2)' }}>{pct}%</span>
-                  </div>
-                </td>
-                <td><button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => startEditTarget(t)}>Edit</button></td>
-              </tr>
-            );
-          })}
-        </DataTable>
-      )}
     </div>
   );
 }
