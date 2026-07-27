@@ -36,11 +36,19 @@
    | Surface              | Enter                                   | Exit                                    |
    |----------------------|-----------------------------------------|-----------------------------------------|
    | scrim / plain fade   | dmFade      --dur-base  --ease-enter    | dmFadeOut   --dur-fast --ease-exit      |
-   | drawer               | dmDrawerIn  --dur-slow  --ease-emph-in  | dmDrawerOut --dur-base --ease-exit      |
+   | drawer               | dmDrawerIn  --dur-slow  --ease-emph     | dmDrawerOut --dur-base --ease-exit      |
    | sheet (mobile)       | dmSheetIn   --dur-slow  --ease-emph-in  | dmSheetOut  --dur-base --ease-exit      |
-   | popover/menu/picker  | dmPop       --dur-base  --ease-enter    | dmPopOut    --dur-fast --ease-exit      |
-   | modal panel          | dmPop       --dur-base  --ease-enter    | dmPopOut    --dur-fast --ease-exit      |
-   | toast                | dmPop       --dur-base  --ease-enter    | dmPopOut    --dur-fast --ease-exit      |
+   | popover/menu/picker  | dmPop       --dur-fast  --ease-spring   | dmPopOut  calc(--dur-fast*.85) --ease-exit |
+   | modal panel          | modalPanelIn --dur-base --ease-emph     | NONE — unmounts, see below              |
+   | toast                | tstIn       --dur-base  --ease-emph     | NONE — unmounts, see below              |
+
+   The popover exit resolves to 119ms, which is MOTION-SPEC.md §3's stated
+   figure exactly. The modal and toast rows say NONE because they measure as
+   none: no `.modal__panel.is-closing` and no `.tst.is-closing` rule exists, so
+   both still leave by unmounting — the gap MOTION-SPEC §9 lists first. The
+   entrances landed and the exits did not. Stated rather than implied, because
+   the previous version of this table claimed a `dmPopOut` exit for both and
+   nothing in the build delivered it.
    | tooltip              | dmTip       --dur-fast  --ease-enter    | none — instant unmount, 300ms delay in  |
    | spinner              | dmSpin      640ms linear infinite       | —                                       |
    | one-shot flash       | ixflash     calc(--dur-slow * 1.4) --ease-exit                                     |
@@ -288,14 +296,33 @@
    Pair every `.ix-enter-*` with its `.ix-exit-*` and unmount on `animationend`.
    `--ix` bottoms out at .001 rather than 0 precisely so that event still fires:
    a zero-duration animation never fires `animationend`, and the handler that
-   unmounts the node never runs. */
+   unmounts the node never runs.
+
+   MEASURED CORRECTION — these helpers disagreed with the components they
+   exist to replace, which made them a drift generator rather than a fix:
+
+     surface   shipped component            this file (before)        reference
+     popover   .pop / .pk__pop              dmPop --dur-base          motion.css:143
+               --dur-fast --ease-spring     --ease-enter              --dur-fast --ease-spring
+     drawer    .dr --dur-slow --ease-emph   --ease-emph-in            motion.css:92 --ease-emph
+
+   Both are corrected to the shipped values, which are ALSO the reference's —
+   the two agreed with each other and only this file dissented. A popover
+   migrated to `.ix-enter-pop` would have arrived 80ms slower with the
+   overshoot removed, and the comment above names the customize panel as a
+   migration target, so that is the surface it would have hit first.
+
+   `.ix-enter-tip` stays at --dur-fast to match the shipped `.tip`. Note that
+   MOTION-SPEC.md §3 and motion.css:324 both put the tooltip on --dur-instant
+   (90ms, not 140ms); both this helper and `.tip` deviate, so the fix belongs
+   with `.tip` in components.css and is reported rather than split here. */
 .ix-enter-fade   { animation: dmFade      var(--dur-base) var(--ease-enter)   both; }
 .ix-exit-fade    { animation: dmFadeOut   var(--dur-fast) var(--ease-exit)    both; }
-.ix-enter-drawer { animation: dmDrawerIn  var(--dur-slow) var(--ease-emph-in) both; }
+.ix-enter-drawer { animation: dmDrawerIn  var(--dur-slow) var(--ease-emph)    both; }
 .ix-exit-drawer  { animation: dmDrawerOut var(--dur-base) var(--ease-exit)    both; }
 .ix-enter-sheet  { animation: dmSheetIn   var(--dur-slow) var(--ease-emph-in) both; }
 .ix-exit-sheet   { animation: dmSheetOut  var(--dur-base) var(--ease-exit)    both; }
-.ix-enter-pop    { animation: dmPop       var(--dur-base) var(--ease-enter)   both; }
+.ix-enter-pop    { animation: dmPop       var(--dur-fast) var(--ease-spring)  both; }
 .ix-exit-pop     { animation: dmPopOut    var(--dur-fast) var(--ease-exit)    both; }
 .ix-enter-tip    { animation: dmTip       var(--dur-fast) var(--ease-enter)   both; }
 

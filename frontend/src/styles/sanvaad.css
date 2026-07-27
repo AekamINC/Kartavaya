@@ -37,10 +37,22 @@
 
 /* The Devanagari apposition — 24-bilingual-devanagari.md: `--font-indic` on any
  * label that follows the user's language, one step down in size and weight so
- * the recognised word keeps the hierarchy (01-navigation.md). */
+ * the recognised word keeps the hierarchy (01-navigation.md).
+ *
+ * The floor is note 2 in the file header, applied to this rule. `.85em` is a
+ * ratio, so it re-derives whatever the parent happens to be — and on the two
+ * places where the parent is ALREADY the smallest step in the scale it lands
+ * below the floor the header refuses to write by hand. Measured, at the shipped
+ * defaults: `.sv__sep-t` and `.sv__newline` resolve `--t-label-sm` to 11.06px,
+ * and `.85em` of that is 9.4px for "आज", "कल" and "नए संदेश" — under the 11px
+ * 00 §12 sets for metadata, and under it in the one script whose conjuncts and
+ * matras suffer most from being shrunk. `max()` mirrors how `--t-label-sm`
+ * itself is built, so the ratio still governs every larger parent (the tab
+ * labels and `.sv__lt` stay at 11.07px, unchanged) and only the two separators
+ * move. */
 .sv__hi {
   font-family: var(--font-indic);
-  font-size: .85em;
+  font-size: max(11px, .85em);
   font-weight: 400;
   color: var(--on-surface-3);
 }
