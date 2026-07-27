@@ -74,12 +74,21 @@ export const DEFAULTS = {
   accent:       'teal',
   customAccent: null,
   sidebar:      'wide',
-  density:      'comfy',
+  // `cozy`, not `comfy`. The rendered harness carries data-density="cozy" and
+  // `design-reference/…/App.jsx:3` defaults to it; `comfy` is the LOOSEST of the
+  // three tiers, not the middle one. Shipping `comfy` as the default put every
+  // page one tier looser than the design — --pad-page 32px against 28px, and
+  // that token is the topbar's padding and .kv__content's padding everywhere.
+  density:      'cozy',       // compact | cozy | comfy
   font:         'newsreader', // display face
   uiFont:       'inter',      // body face — independent of `font` (00 §2)
   fontSize:     14,           // 12 → 20
   lineHeight:   1.5,          // 1.3 | 1.5 | 1.7
-  radius:       10,           // 4 | 10 | 20 — default IS one of the options
+  // 12, measured off the harness (`App.jsx:3` radius: 12, and `Chrome.jsx:190`
+  // is a slider 8→28 step 2). The presets in TabLayout moved to 8 | 12 | 20 to
+  // match, so the default is still one of the options and every option sits
+  // inside the reference's range.
+  radius:       12,           // 8 | 12 | 20 — default IS one of the options
   anim:         'full',       // full | reduced | none
   language:     'en+sa',
   sideBg:       'dark',       // dark | light | accent
