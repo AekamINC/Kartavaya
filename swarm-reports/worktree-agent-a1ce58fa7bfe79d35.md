@@ -64,6 +64,45 @@ tst tst--err tst--info tst--ok tst__a tst__b tst__i tst__s tst__t
 exists under its reference name or exists under a `k-` name. That is the headline
 and it is better news than the prose-only runs implied.
 
+### Cross-checked against `check-component-parity.mjs`
+
+A sibling landed `frontend/scripts/check-component-parity.mjs` on `staging`
+(`899ac19`) while this was in flight. It diffs the two stylesheets mechanically,
+so it is a real independent check on the table above. Merged and run:
+
+```
+roots: ref 220, build 407
+missing roots      : 3  .icobtn .offb .rmp
+```
+
+`.rmp` is the inventory page's own spacing-ramp chrome, correctly excluded from
+the table above as page furniture. So the tool and this table agree exactly on
+`.icobtn` and `.offb`.
+
+**They disagree on five roots, and the tool is the one with the blind spot** —
+worth flagging to its author rather than treated as a contradiction. Its scope is
+`inComponentSet` = *roots the reference declares in `components.css`*
+(`check-component-parity.mjs:293`). But the reference splits the component set
+across two sheets: `components.css` holds the states, form layout and picker,
+while `app.css` holds `.btn`, `.chip`, `.card`, `.tbl`, `.seg`, `.tabs`, `.stat`,
+`.empty`, `.sk` and `.avs`. `.icobtn` is only visible to the tool because one
+`:focus-visible` rule in `components.css:19` happens to name it.
+
+Lift the scope with the tool's own `--root` flag and it confirms all three
+renames this table found:
+
+| `node scripts/check-component-parity.mjs --root …` | result |
+|---|---|
+| `sk` | `missing roots : 1  .sk` |
+| `stat` | `missing roots : 1  .stat` |
+| `avs` | `missing roots : 1  .avs` |
+| `seg` | `missing roots : 0` (present, but see §5) |
+| `empty` | `missing roots : 0` |
+
+That gap is the argument for this agent's lens in one line: a stylesheet diff
+scoped to one file cannot see what the harness renders, because the harness pulls
+from both.
+
 ## 2 · What the build has that the inventory does not
 
 Not defects — the inventory covers 12 sections, not the whole product. Listed so
