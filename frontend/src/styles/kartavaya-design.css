@@ -123,7 +123,19 @@
   --dur-xslow:   calc(520ms * var(--ix));
 
   --ease-standard:    cubic-bezier(.2, 0, 0, 1);
-  --ease-emph:        cubic-bezier(.16, 1, .3, 1);   /* expo-out, genuinely distinct */
+  /* M3 emphasised. It IS the same curve as --ease-standard, and that is not a
+     mistake to correct: `design-reference/Kartavaya Redesign/tokens.css:47-48`
+     declares both as `cubic-bezier(.2, 0, 0, 1)`, and MOTION-SPEC.md §2 gives
+     the same pair. The two names exist so a call site can say which ROLE it is
+     playing — emphasised transitions and pulses/shimmer are separately tunable
+     later — not because they must look different today.
+     This carried `cubic-bezier(.16, 1, .3, 1)` (expo-out) under the note
+     "genuinely distinct". Measured, that curve puts the drawer 93% of the way
+     across at t=90ms of its 360ms budget, so a --dur-slow entrance reads as a
+     ~90ms snap plus a long invisible tail — the opposite of drawer.css's own
+     stated intent that "entering is the system responding to you and can afford
+     to be gracious". Distinctness was never the goal; travel time was. */
+  --ease-emph:        cubic-bezier(.2, 0, 0, 1);
   --ease-enter:       cubic-bezier(0, 0, .2, 1);
   --ease-exit:        cubic-bezier(.4, 0, 1, 1);
   --ease-emph-in:     cubic-bezier(.05, .7, .1, 1);
@@ -195,7 +207,21 @@
   --on-surface-disabled: #9DA096;
 
   --outline-variant: #D8D1BE;
-  --outline:         #ADA692;
+  /* SPEC-A11Y-1, closed. Was #ADA692, which measured 2.12:1 on --bg and
+     1.71:1 on --s-highest — WCAG 1.4.11 wants 3:1 for "visual information
+     required to identify user interface components", and --outline IS that
+     information: it is the border of every text input, checkbox, radio and
+     select trigger. It failed on 11 of the 12 surface/theme combinations.
+     #78725F measured against all seven light surfaces:
+       --s-lowest 4.76 · --surface 4.49 · --s-low 4.26 · --bg 4.19
+       --s-container 3.96 · --s-high 3.68 · --s-highest 3.38
+     Chosen over the 3:1 minimum (#7E7663, worst 3.17) for headroom, and it
+     keeps the warm khaki hue rather than sliding grey. No rule in the tree
+     paints --outline as TEXT — 39 call sites, all borders — so the 4.5:1
+     threshold does not apply and the darker value costs nothing but weight.
+     --rule-strong (:468) and --border-strong (lib/tokens.css:98) alias this,
+     so both move with it. */
+  --outline:         #78725F;
 
   --primary:              #04837A;
   --primary-hover:        #026B64;
@@ -276,7 +302,13 @@
   --on-surface-disabled: #64645F;   /* inactive controls only (00 §11) */
 
   --outline-variant: #333A43;
-  --outline:         #5B626C;
+  /* SPEC-A11Y-1, dark half. Was #5B626C: 3.14:1 on --bg was the ONLY passing
+     combination in the whole matrix, and it fell to 2.01:1 on --s-highest.
+     #7E8590 against all seven dark surfaces:
+       --s-lowest 5.33 · --bg 5.20 · --surface 4.92 · --s-low 4.65
+       --s-container 4.30 · --s-high 3.83 · --s-highest 3.33
+     Same reasoning as light — see the comment there. */
+  --outline:         #7E8590;
 
   /* Dark INVERTS the primary relationship: --primary is the light mint and
      --primary-container is the DARK one. Any component assuming container is
