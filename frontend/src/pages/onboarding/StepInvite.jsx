@@ -3,7 +3,17 @@ import { Button, Input, Select, Textarea, Avatar } from '../../components/ui';
 import { EMAIL_RE } from './data';
 import { Cross } from './icons';
 
-const ROLES = [['member', 'Member'], ['admin', 'Admin']];
+/**
+ * The org roles, by the codes `staging.user_roles` actually stores — which is
+ * also what the reference uses verbatim (`Onboarding.jsx`: `OB_ROLES =
+ * [['org_member','Member'],['org_admin','Admin']]`).
+ *
+ * These used to be `member` / `admin`, which are `users.role` account types
+ * from a different ladder entirely. `POST /v1/org/invites` validates against
+ * `INVITABLE_ROLES` — `org_owner`, `org_admin`, `org_member` — so the old
+ * values would have been rejected with "Invalid role: member".
+ */
+const ROLES = [['org_member', 'Member'], ['org_admin', 'Admin']];
 
 /**
  * Step 4 — invite the team.
@@ -33,7 +43,7 @@ export default function StepInvite({ value, onChange }) {
     const dupe = parts.find((p) => list.some((x) => x.email === p));
     setErr(dupe ? `${dupe} is already on the list` : null);
     const fresh = parts.filter((p) => !list.some((x) => x.email === p));
-    onChange({ ...value, invites: [...list, ...fresh.map((email) => ({ email, role: 'member' }))] });
+    onChange({ ...value, invites: [...list, ...fresh.map((email) => ({ email, role: 'org_member' }))] });
     setDraft('');
   };
 
