@@ -252,7 +252,13 @@ def _build_html(report: dict, org: dict, client: dict, check: DocumentCheck | No
             + (f" &middot; figures are live at {R.esc(_date_label(as_at))}" if as_at else "")
         ),
     ])
-    return R.document([page], org, title="Project Report — Kartavaya")
+    return R.document(
+        [page], org, title="Project Report — Kartavaya",
+        running=R.running_id(
+            "Project report", org,
+            " · ".join(p for p in (report.get("report_number") or "", period) if p),
+        ),
+    )
 
 
 def generate_project_report_pdf(report: dict, org: dict, client: dict = None) -> bytes:

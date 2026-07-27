@@ -377,7 +377,10 @@ def _build_html(invoice: dict, org: dict, contact: dict, check: DocumentCheck | 
             "signature under Rule 46 of the CGST Rules, 2017."
         ),
     ])
-    return R.document([page], org, title=f"{doc_title} — Kartavaya")
+    return R.document(
+        [page], org, title=f"{doc_title} — Kartavaya",
+        running=R.running_id(doc_title, org, invoice.get("invoice_number") or ""),
+    )
 
 
 def generate_invoice_pdf(invoice: dict, org: dict, contact: dict = None) -> bytes:

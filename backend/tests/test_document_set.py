@@ -984,8 +984,13 @@ class TestServiceAgreementRefusal:
         from services.agreement_pdf import _build_html
         doc = _build_html(agreement(), ORG, CLIENT)
         assert doc.count('<section class="page">') == 2
-        assert "Page 1 of 2" in doc
-        assert "Page 2 of 2" in doc
+        # The page count is no longer ASSERTED by the colophon. It used to print
+        # "Page 1 of 2" / "Page 2 of 2" as literal text, which stopped being true
+        # the moment a long milestone table spilled an authored page onto a third
+        # sheet. `doc_render` prints `Page N of M` from the real page counters
+        # instead — see `test_the_continuation_footer_counts_real_pages`.
+        assert "Page 1 of 2" not in doc
+        assert "counter(page)" in doc and "counter(pages)" in doc
 
     def test_every_clause_the_design_specifies_is_present(self):
         from services.agreement_pdf import _build_html
@@ -1108,10 +1113,20 @@ class TestEveryDocument:
 
     def test_the_page_geometry_is_the_doc_page_contract(self, name, module, make):
         """`doc-page.js` emits `@page { size …; margin: 0 }` for a paginated
-        document and lets each page carry its own inset."""
+        document and lets each page carry its own inset.
+
+        The TOP margin is still 0 and `.page` still carries `--doc-pad`, so the
+        letterhead sits exactly where the design puts it. What changed is the
+        BOTTOM: 12mm is reserved so content breaks at 285mm rather than running
+        to the edge of the sheet (`doc_render.CONTENT_BUDGET_MM`). That strip is
+        blank space on a correctly-laid-out page, so nothing in the design moves
+        — it is where the flow is allowed to stop, not where anything is drawn.
+        """
+        from services.doc_render import CONTENT_BUDGET_MM, PAGE_TAIL_MM
         rendered = _html_for(module, make())
-        assert "@page{ size:A4; margin:0; }" in rendered
+        assert f"size:A4; margin:0 0 {PAGE_TAIL_MM}mm 0;" in rendered
         assert "padding:0.62in" in rendered
+        assert f"min-height:{CONTENT_BUDGET_MM}mm" in rendered
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1181,7 +1196,7 @@ EXPECTED_IN_PDF = {
     "quotation": ["Quotation", "QT-118", "Vendor Demo Limited",
                   "21,24,000", "Accepted for", "Payment schedule", "Terms"],
     "agreement": ["Service agreement", "AGR-2026-018", "Scope of services",
-                  "Dispute resolution", "Execution", "Page 2 of 2"],
+                  "Dispute resolution", "Execution", "execution copy"],
     "project_report": ["Project report", "RPT-0037", "Mumbai fit-out",
                        "Position at a glance", "Risks", "Decisions needed"],
 }
@@ -1254,7 +1269,11 @@ class TestRealPdfBytes:
             pytest.skip("pypdf is not installed")
         reader = PdfReader(io.BytesIO(self._generate(module, func, make)))
         assert len(reader.pages) >= 2
-        assert "Page 1 of 2" in (reader.pages[0].extract_text() or "")
+        # Page one carries the letterhead as its identity, so it gets no running
+        # footer; every continuation sheet is counted from the real page counters.
+        assert "execution copy" in (reader.pages[0].extract_text() or "")
+        last = len(reader.pages)
+        assert f"Page {last} of {last}" in (reader.pages[-1].extract_text() or "")
         assert "Confidentiality".casefold() in (
             reader.pages[1].extract_text() or ""
         ).casefold(), "clause 5 must open page 2"

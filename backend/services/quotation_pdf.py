@@ -256,7 +256,10 @@ def _build_html(quote: dict, org: dict, contact: dict, check: DocumentCheck | No
             "Accepting this quote creates the engagement and its first invoice."
         ),
     ])
-    return R.document([page], org, title="Quotation — Kartavaya")
+    return R.document(
+        [page], org, title="Quotation — Kartavaya",
+        running=R.running_id("Quotation", org, quote.get("quote_number") or ""),
+    )
 
 
 def generate_quotation_pdf(quote: dict, org: dict, contact: dict = None) -> bytes:

@@ -558,7 +558,10 @@ def _build_html(gstr: dict, org: dict, check: DocumentCheck | None = None) -> st
             "not a filed return &middot; retain with books under section 35"
         ),
     ])
-    return R.document([page], org, title="GSTR-3B — Kartavaya")
+    return R.document(
+        [page], org, title="GSTR-3B — Kartavaya",
+        running=R.running_id("GSTR-3B summary", org, _period_label(period)),
+    )
 
 
 def generate_gstr3b_pdf(gstr: dict, org: dict) -> bytes:

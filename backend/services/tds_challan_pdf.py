@@ -355,7 +355,13 @@ def _build_html(challan: dict, org: dict, check: DocumentCheck | None = None) ->
             "verify against the bank challan before filing 26Q"
         ),
     ])
-    return R.document([page], org, title="TDS Challan — Kartavaya")
+    return R.document(
+        [page], org, title="TDS Challan — Kartavaya",
+        running=R.running_id(
+            "TDS challan · ITNS-281", org,
+            " · ".join(p for p in (challan.get("challan_number") or "", _period_label(period)) if p),
+        ),
+    )
 
 
 def generate_tds_challan_pdf(challan: dict, org: dict) -> bytes:
