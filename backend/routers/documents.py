@@ -1,0 +1,924 @@
+"""documents.py — download endpoints for the generated document set.
+
+`design-reference/Kartavaya Redesign/docs/` specifies nine documents. The tax
+invoice and the payslip already have endpoints, on the modules that own their
+data (`ganit.download_invoice_pdf`, `vetana.download_payslip_pdf`). These are
+the other five, plus the project report.
+
+Every route follows those two exactly: `require_user` for auth, the module gate
+for entitlement, `get_org_id` for tenancy, and `DocumentIncomplete` translated
+to a 422 that names every missing field so the UI can point at the setting that
+fixes it. Nothing here writes, and nothing here sends: a document is generated
+as bytes and returned on the response. Emailing one is a separate action on a
+separate path, and `OUTBOUND_MODE` gates that path, not this one.
+
+They live in one module rather than being spread across `ganit.py` because
+three of them draw on more than one module's tables — the statement joins
+invoices to payments and contacts, the challan joins Ganit to Vetana, and the
+project report joins boards and time entries to invoices.
+
+Data that does not exist
+------------------------
+Verified against the live catalog, not the migration ledger. Three of these
+documents need columns Kartavaya does not have:
+
+  * **TDS challan** — `staging.organisations` has no `tan`, and there is no
+    challan table at all (BSR code, serial, tender date, deposit date, bank,
+    major head, type of payment). Non-salary deductions have no store either:
+    `ganit_vendor_bills` records no section, rate or TDS amount. So the route
+    takes the bank's own challan particulars in the request body — which is
+    where they come from anyway, off the counterfoil the bank issues — and
+    derives only the 192B salary line, from `staging.vetana_payslips`.
+  * **GSTR-3B** — reverse charge, nil/exempt, non-GST, ITC reversal and
+    ineligible-ITC flags have no columns, and `ganit_vendor_bills` has no
+    `cess`. Those rows are accepted as overrides and default to nil, which the
+    document states rather than hides.
+  * **Project report** — there is no `projects` table (two files under
+    `services/skills/data/` join one that does not exist), no milestone store
+    and no risk register.
+
+`PROPOSED_documents.sql` proposes the columns. It is NOT applied: staging and
+production share one Supabase project.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import traceback
+from datetime import date, datetime, timedelta
+from uuid import UUID
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, Field
+
+from auth_router import require_user
+from db import get_pool
+from middleware.org_resolver import get_org_id
+from middleware.subscription import require_module
+from services.doc_validation import DocumentIncomplete
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
+
+_ganit = require_module("ganit")
+
+#: The org columns every letterhead needs. `tan` is NOT here — no such column
+#: exists yet (see the module docstring); it is read from `settings` instead so
+#: the document can carry one the day it is stored, without a migration this
+#: agent is not permitted to apply.
+_ORG_COLS = (
+    "name, gstin, pan, billing_address, logo_url, logo_key, email, phone, website, "
+    "bank_details, invoice_note, settings, "
+    "COALESCE(authorized_signatory_name, '') AS authorized_signatory_name, "
+    "COALESCE(authorized_signatory_designation, '') AS authorized_signatory_designation"
+)
+
+
+async def _load_org(pool, org_id: str) -> dict:
+    """The org, with its JSONB columns parsed and its logo signed.
+
+    Identical handling to `ganit.download_invoice_pdf`: asyncpg hands JSONB back
+    as a string on some paths, and `logo_key` needs signing because a bare R2
+    URL is not fetchable.
+    """
+    row = await pool.fetchrow(
+        f"SELECT {_ORG_COLS} FROM staging.organisations WHERE id=$1::uuid", org_id
+    )
+    org = dict(row) if row else {}
+    for field in ("billing_address", "bank_details", "settings"):
+        if isinstance(org.get(field), str):
+            try:
+                org[field] = json.loads(org[field] or "{}")
+            except json.JSONDecodeError:
+                org[field] = {}
+
+    # TAN has no column. Read it from `settings` if an org has put one there, so
+    # the challan can carry a real TAN today; the validator still blocks when it
+    # is absent rather than the document inventing one.
+    settings = org.get("settings") or {}
+    if isinstance(settings, dict) and settings.get("tan"):
+        org["tan"] = str(settings["tan"]).strip().upper()
+
+    if org.get("logo_key"):
+        from services.storage import sign_key
+        org["logo_url"] = await sign_key(org_id, org["logo_key"]) or org.get("logo_url", "")
+    return org
+
+
+def _parse_contact(row: dict, prefix: str = "contact_") -> dict:
+    contact = {
+        key[len(prefix):]: row.pop(key)
+        for key in list(row)
+        if key.startswith(prefix)
+    }
+    if isinstance(contact.get("billing_address"), str):
+        try:
+            contact["billing_address"] = json.loads(contact["billing_address"] or "{}")
+        except json.JSONDecodeError:
+            contact["billing_address"] = {}
+    return contact
+
+
+def _pdf_response(pdf_bytes: bytes, filename: str) -> Response:
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _refuse(document: str, exc: DocumentIncomplete, **ctx) -> HTTPException:
+    """422, naming every missing field.
+
+    Not a server failure: the document is incomplete and we refuse to emit one
+    that looks finished. The same reasoning and the same status
+    `download_invoice_pdf` uses.
+    """
+    logger.info(
+        "%s PDF refused as incomplete: %s missing=%s",
+        document, ctx, [g.field for g in exc.check.blocking],
+    )
+    return HTTPException(422, detail=exc.as_payload())
+
+
+def _failed(document: str, exc: Exception, **ctx) -> HTTPException:
+    logger.error(
+        "%s PDF generation failed: %s err=%s\n%s",
+        document, ctx, exc, traceback.format_exc(),
+    )
+    return HTTPException(500, f"Failed to generate the {document} PDF — please try again.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Quotation
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/quotations/{invoice_id}/pdf")
+async def download_quotation_pdf(
+    invoice_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_ganit),
+):
+    """A quotation rendered against its OWN specification.
+
+    Previously a quotation went through `invoice_pdf.py` with the word
+    "Quotation" swapped into the title, which produced a tax invoice wearing
+    another name — an HSN column no offer needs, no validity date, no payment
+    schedule, and the SUPPLIER's signature where the design has the client's
+    acceptance block. `services/quotation_pdf.py` records the full list.
+    """
+    from services.quotation_pdf import generate_quotation_pdf
+
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT i.*, c.name AS contact_name, c.email AS contact_email, "
+        "c.company AS contact_company, c.gstin AS contact_gstin, "
+        "c.designation AS contact_designation, "
+        "c.billing_address AS contact_billing_address "
+        "FROM staging.ganit_invoices i "
+        "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "WHERE i.id=$1::uuid AND i.org_id=$2::uuid AND i.is_active",
+        str(invoice_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Quotation not found")
+
+    invoice = dict(row)
+    if (invoice.get("invoice_type") or "") not in ("quotation", "proforma"):
+        # 409 rather than 404: the record exists, it is simply not an offer, and
+        # rendering a tax invoice through the quotation template would drop the
+        # Rule 46 particulars that make it a tax document.
+        raise HTTPException(
+            409,
+            f"{invoice.get('invoice_number', 'This document')} is a "
+            f"{(invoice.get('invoice_type') or 'document').replace('_', ' ')}, not a "
+            "quotation. Download it from the invoice route so the tax-invoice "
+            "particulars are rendered.",
+        )
+
+    if isinstance(invoice.get("line_items"), str):
+        invoice["line_items"] = json.loads(invoice["line_items"] or "[]")
+    contact = _parse_contact(invoice)
+
+    for li in invoice.get("line_items") or []:
+        # `line_total` is what the design's Amount column prints. Older rows
+        # stored `amount`; neither is recomputed here, because a quotation that
+        # has been SENT must render the figures it was sent with.
+        if li.get("line_total") is None:
+            li["line_total"] = li.get("amount") or 0
+
+    quote = {
+        "quote_number": invoice.get("invoice_number"),
+        "quote_date": invoice.get("invoice_date"),
+        "valid_until": invoice.get("due_date"),
+        "reference": invoice.get("notes") or "",
+        "scope_summary": invoice.get("terms") or "",
+        "line_items": invoice.get("line_items") or [],
+        "subtotal": invoice.get("subtotal"),
+        "discount": invoice.get("discount"),
+        "is_igst": invoice.get("is_igst"),
+        "igst": invoice.get("igst"),
+        "cgst": invoice.get("cgst"),
+        "sgst": invoice.get("sgst"),
+        "currency": invoice.get("currency") or "INR",
+        # `prepared_by`, the payment schedule and the numbered terms have no
+        # columns. The validator raises an advisory naming each rather than the
+        # renderer inventing a schedule a client might rely on.
+        "prepared_by": "",
+        "payment_schedule": [],
+        "terms": [],
+    }
+
+    org = await _load_org(pool, org_id)
+    try:
+        pdf = generate_quotation_pdf(quote, org, contact)
+    except DocumentIncomplete as e:
+        raise _refuse("quotation", e, invoice_id=str(invoice_id), org=org_id) from e
+    except Exception as e:
+        raise _failed("quotation", e, invoice_id=str(invoice_id), org=org_id) from e
+
+    return _pdf_response(pdf, f"{quote['quote_number'] or 'quotation'}.pdf")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Statement of account
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/contacts/{contact_id}/statement/pdf")
+async def download_statement_pdf(
+    contact_id: UUID,
+    period_start: str = Query(..., description="ISO date, inclusive"),
+    period_end: str = Query(..., description="ISO date, inclusive"),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_ganit),
+):
+    """The ledger for one account over one period, with ageing.
+
+    The opening balance is computed from everything BEFORE `period_start`, so
+    the statement ties to the account's whole history rather than only to the
+    window it prints. A statement whose opening balance is assumed to be zero
+    understates the debt and is the single most common way this document
+    misleads.
+    """
+    from services.statement_pdf import age_receivables, generate_statement_pdf
+
+    for label, value in (("period_start", period_start), ("period_end", period_end)):
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            raise HTTPException(400, f"{label} must be an ISO date (YYYY-MM-DD)")
+    if period_start > period_end:
+        raise HTTPException(400, "period_start is after period_end")
+
+    pool = await get_pool()
+    contact_row = await pool.fetchrow(
+        "SELECT name, company, email, gstin, billing_address "
+        "FROM staging.graha_contacts WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(contact_id), org_id,
+    )
+    if not contact_row:
+        raise HTTPException(404, "Contact not found")
+    contact = dict(contact_row)
+    if isinstance(contact.get("billing_address"), str):
+        contact["billing_address"] = json.loads(contact["billing_address"] or "{}")
+
+    # Opening balance: invoices raised less payments received, both strictly
+    # before the window. Cancelled invoices are excluded — a cancelled tax
+    # document is not a receivable.
+    opening_invoiced = await pool.fetchval(
+        "SELECT COALESCE(SUM(total), 0) FROM staging.ganit_invoices "
+        "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active "
+        "AND cancelled_at IS NULL AND invoice_type IN ('tax_invoice','debit_note') "
+        "AND invoice_date < $3::date",
+        org_id, str(contact_id), period_start,
+    ) or 0
+    opening_credited = await pool.fetchval(
+        "SELECT COALESCE(SUM(total), 0) FROM staging.ganit_invoices "
+        "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active "
+        "AND cancelled_at IS NULL AND invoice_type = 'credit_note' "
+        "AND invoice_date < $3::date",
+        org_id, str(contact_id), period_start,
+    ) or 0
+    opening_paid = await pool.fetchval(
+        "SELECT COALESCE(SUM(p.amount), 0) FROM staging.ganit_payments p "
+        "JOIN staging.ganit_invoices i ON i.id = p.invoice_id "
+        "WHERE p.org_id=$1::uuid AND i.contact_id=$2::uuid AND p.payment_date < $3::date",
+        org_id, str(contact_id), period_start,
+    ) or 0
+    opening = float(opening_invoiced) - float(opening_credited) - float(opening_paid)
+
+    invoices = await pool.fetch(
+        "SELECT invoice_number, invoice_type, invoice_date, due_date, total, "
+        "balance_due, notes FROM staging.ganit_invoices "
+        "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active "
+        "AND cancelled_at IS NULL AND invoice_date BETWEEN $3::date AND $4::date "
+        "ORDER BY invoice_date, invoice_number",
+        org_id, str(contact_id), period_start, period_end,
+    )
+    payments = await pool.fetch(
+        "SELECT p.payment_date, p.amount, p.payment_method, p.reference, "
+        "i.invoice_number FROM staging.ganit_payments p "
+        "JOIN staging.ganit_invoices i ON i.id = p.invoice_id "
+        "WHERE p.org_id=$1::uuid AND i.contact_id=$2::uuid "
+        "AND p.payment_date BETWEEN $3::date AND $4::date "
+        "ORDER BY p.payment_date",
+        org_id, str(contact_id), period_start, period_end,
+    )
+
+    entries = []
+    for inv in invoices:
+        # A credit note reduces the receivable, so it is a CREDIT on the
+        # statement even though it is an outward document.
+        is_credit = (inv["invoice_type"] or "") == "credit_note"
+        entries.append({
+            "date": inv["invoice_date"],
+            "document": inv["invoice_number"],
+            "particulars": inv["notes"] or {
+                "credit_note": "Credit note", "debit_note": "Debit note",
+            }.get(inv["invoice_type"] or "", "Invoice"),
+            "credit" if is_credit else "debit": float(inv["total"] or 0),
+        })
+    for pay in payments:
+        method = (pay["payment_method"] or "").strip()
+        entries.append({
+            "date": pay["payment_date"],
+            "document": pay["reference"] or pay["invoice_number"],
+            "particulars": "Payment received" + (f" — {method}" if method else ""),
+            "credit": float(pay["amount"] or 0),
+        })
+    entries.sort(key=lambda e: (str(e["date"]), str(e.get("document") or "")))
+
+    open_items = [
+        {"balance_due": float(i["balance_due"] or 0), "due_date": i["due_date"],
+         "date": i["invoice_date"]}
+        for i in invoices if (i["invoice_type"] or "") != "credit_note"
+    ]
+    ageing = age_receivables(open_items, as_at=period_end)
+
+    org = await _load_org(pool, org_id)
+    settings = org.get("settings") or {}
+    statement = {
+        "statement_number": f"SOA-{str(contact_id)[:8].upper()}-{period_end.replace('-', '')}",
+        "period_start": period_start,
+        "period_end": period_end,
+        "opening_balance": opening,
+        "entries": entries,
+        "ageing": ageing,
+        "currency": "INR",
+        # A claim about the issuer's own registration, made on a document that
+        # lands in a buyer's tax file. Never assumed — see `statement_pdf`.
+        "msme_registered": bool(isinstance(settings, dict) and settings.get("msme_registered")),
+    }
+
+    try:
+        pdf = generate_statement_pdf(statement, org, contact)
+    except DocumentIncomplete as e:
+        raise _refuse("statement", e, contact_id=str(contact_id), org=org_id) from e
+    except Exception as e:
+        raise _failed("statement", e, contact_id=str(contact_id), org=org_id) from e
+
+    return _pdf_response(pdf, f"{statement['statement_number']}.pdf")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GSTR-3B working paper
+# ══════════════════════════════════════════════════════════════════════════════
+
+class Gstr3bOverrides(BaseModel):
+    """The rows Kartavaya has no columns for.
+
+    Each defaults to nil and each is stated on the face of the document, so a
+    firm that leaves them empty gets a paper that visibly reports nil rather
+    than one that quietly omits the row. See `PROPOSED_documents.sql`.
+    """
+
+    outward_nil_exempt: dict = Field(default_factory=dict)
+    outward_non_gst: dict = Field(default_factory=dict)
+    inward_reverse_charge: dict = Field(default_factory=dict)
+    itc_import_goods: dict = Field(default_factory=dict)
+    itc_reverse_charge: dict = Field(default_factory=dict)
+    itc_reversed: dict = Field(default_factory=dict)
+    itc_ineligible: dict = Field(default_factory=dict)
+    interest: float = 0
+    late_fee: float = 0
+    gstr2b_date: str = ""
+    prepared_by: str = ""
+    notes: list[str] = Field(default_factory=list)
+
+
+@router.post("/gst/gstr3b/{period}/pdf")
+async def download_gstr3b_pdf(
+    period: str,
+    overrides: Gstr3bOverrides = Body(default_factory=Gstr3bOverrides),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_ganit),
+):
+    """The GSTR-3B working paper for one tax period.
+
+    POST rather than GET because the rows the schema cannot supply come in the
+    body. Nothing is written; the verb reflects the payload, not a side effect.
+
+    Table 3.1(a) and (b) are computed from `ganit_invoices`, and 4(A) "all other
+    ITC" from `ganit_vendor_bills`. Everything else has no column and arrives as
+    an override. Invoices missing an HSN or SAC on any line are HELD BACK and
+    named on the face of the paper — the behaviour `doc_validation`'s docstring
+    cites the design for, and the reason this document is worth generating at
+    all for a CA firm.
+    """
+    from services.gstr3b_pdf import generate_gstr3b_pdf
+
+    try:
+        datetime.strptime(period, "%Y-%m")
+    except (ValueError, TypeError):
+        raise HTTPException(400, "period must be YYYY-MM")
+
+    pool = await get_pool()
+    start = f"{period}-01"
+    py, pm = int(period[:4]), int(period[5:7])
+    end_exclusive = date(py + 1, 1, 1) if pm == 12 else date(py, pm + 1, 1)
+
+    invoices = await pool.fetch(
+        "SELECT invoice_number, invoice_type, is_igst, is_export, line_items, "
+        "subtotal, cgst, sgst, igst, cess, total "
+        "FROM staging.ganit_invoices "
+        "WHERE org_id=$1::uuid AND is_active AND cancelled_at IS NULL "
+        "AND invoice_type IN ('tax_invoice','credit_note','debit_note') "
+        "AND invoice_date >= $2::date AND invoice_date < $3::date",
+        org_id, start, end_exclusive.isoformat(),
+    )
+
+    def _f(value) -> float:
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    taxable = {"taxable": 0.0, "igst": 0.0, "cgst": 0.0, "sgst": 0.0, "cess": 0.0}
+    zero_rated = {"taxable": 0.0, "igst": 0.0, "cgst": 0.0, "sgst": 0.0, "cess": 0.0}
+    held_back: list[dict] = []
+    counted = 0
+
+    for inv in invoices:
+        lines = inv["line_items"]
+        if isinstance(lines, str):
+            try:
+                lines = json.loads(lines or "[]")
+            except json.JSONDecodeError:
+                lines = []
+        # Rule 46(g): every line needs an HSN or SAC. An invoice missing one is
+        # held back rather than silently included — the same rule
+        # `validate_tax_invoice` applies when it refuses to render one.
+        if not lines or any(
+            not str((li or {}).get("hsn_code") or "").strip()
+            and not str((li or {}).get("sac_code") or "").strip()
+            for li in lines
+        ):
+            held_back.append({
+                "party": inv["invoice_number"] or "an unnumbered invoice",
+                "reason": "HSN/SAC code missing on a line",
+                "itc": 0,
+            })
+            continue
+
+        counted += 1
+        # A credit note reduces the outward supply and its tax; it is netted off
+        # rather than reported as a separate row, which is what 3.1 expects.
+        sign = -1 if (inv["invoice_type"] or "") == "credit_note" else 1
+        bucket = zero_rated if inv["is_export"] else taxable
+        bucket["taxable"] += sign * _f(inv["subtotal"])
+        bucket["igst"] += sign * _f(inv["igst"])
+        bucket["cgst"] += sign * _f(inv["cgst"])
+        bucket["sgst"] += sign * _f(inv["sgst"])
+        bucket["cess"] += sign * _f(inv["cess"])
+
+    bills = await pool.fetch(
+        "SELECT COALESCE(SUM(igst),0) AS igst, COALESCE(SUM(cgst),0) AS cgst, "
+        "COALESCE(SUM(sgst),0) AS sgst, COUNT(*) AS n "
+        "FROM staging.ganit_vendor_bills "
+        "WHERE org_id=$1::uuid AND is_active "
+        "AND bill_date >= $2::date AND bill_date < $3::date",
+        org_id, start, end_exclusive.isoformat(),
+    )
+    bill_row = dict(bills[0]) if bills else {"igst": 0, "cgst": 0, "sgst": 0, "n": 0}
+
+    org = await _load_org(pool, org_id)
+    state = ""
+    addr = org.get("billing_address") or {}
+    if isinstance(addr, dict) and addr.get("state"):
+        state = str(addr["state"])
+
+    gstr = {
+        "period": period,
+        "outward_taxable": taxable,
+        "outward_zero_rated": zero_rated,
+        "outward_nil_exempt": overrides.outward_nil_exempt,
+        "inward_reverse_charge": overrides.inward_reverse_charge,
+        "outward_non_gst": overrides.outward_non_gst,
+        "itc_import_goods": overrides.itc_import_goods,
+        "itc_reverse_charge": overrides.itc_reverse_charge,
+        # `ganit_vendor_bills` has no `cess` column, so inward cess credit is
+        # not derivable and is left nil rather than guessed.
+        "itc_all_other": {
+            "igst": _f(bill_row["igst"]), "cgst": _f(bill_row["cgst"]),
+            "sgst": _f(bill_row["sgst"]), "cess": 0,
+        },
+        "itc_reversed": overrides.itc_reversed,
+        "itc_ineligible": overrides.itc_ineligible,
+        "interest": overrides.interest,
+        "late_fee": overrides.late_fee,
+        "outward_count": counted,
+        "inward_count": int(bill_row["n"] or 0),
+        "gstr2b_date": overrides.gstr2b_date,
+        "prepared_by": overrides.prepared_by,
+        "prepared_on": date.today().isoformat(),
+        "state_label": state,
+        "held_back": held_back,
+        "notes": overrides.notes,
+    }
+
+    try:
+        pdf = generate_gstr3b_pdf(gstr, org)
+    except DocumentIncomplete as e:
+        raise _refuse("GSTR-3B", e, period=period, org=org_id) from e
+    except Exception as e:
+        raise _failed("GSTR-3B", e, period=period, org=org_id) from e
+
+    return _pdf_response(pdf, f"GSTR-3B-{period}.pdf")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TDS challan (ITNS-281)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TdsDeductionLine(BaseModel):
+    section: str
+    nature: str
+    count: int = 0
+    amount_paid: float = 0
+    rate: float | None = None
+    tds: float = 0
+    note: str = ""
+
+
+class TdsChallanBody(BaseModel):
+    """The bank's own challan particulars.
+
+    None of these has a column. They are transcribed off the counterfoil the
+    bank issues, which is where a preparer gets them from in any case. See
+    `PROPOSED_documents.sql` for the table that would let this become a GET.
+    """
+
+    challan_number: str = ""
+    deposit_date: str
+    major_head: str
+    payment_type: str
+    bsr_code: str
+    challan_serial: str
+    tender_date: str = ""
+    bank_name: str = ""
+    payment_method: str = ""
+    #: Non-salary deductions (194C, 194J, 194I, 194H …). No store exists.
+    deductions: list[TdsDeductionLine] = Field(default_factory=list)
+    #: Set false to exclude the derived 192B salary line.
+    include_salary_tds: bool = True
+    amounts: dict = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
+
+
+@router.post("/tds/challan/{period}/pdf")
+async def download_tds_challan_pdf(
+    period: str,
+    body: TdsChallanBody,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_ganit),
+):
+    """The ITNS-281 counterfoil for one deduction period.
+
+    The 192B salary line is DERIVED from `staging.vetana_payslips` — the one
+    part of this document Kartavaya actually holds. Everything else is supplied,
+    because nothing stores it.
+
+    The salary line reads the aggregate `tds` column only. It never reads an
+    employee's PAN, name or bank details, so this route needs none of the
+    unmasked-identity gating `vetana.download_payslip_pdf` applies: a period
+    total is a book figure, not an identity document.
+    """
+    from services.tds_challan_pdf import generate_tds_challan_pdf
+
+    try:
+        datetime.strptime(period, "%Y-%m")
+    except (ValueError, TypeError):
+        raise HTTPException(400, "period must be YYYY-MM")
+
+    pool = await get_pool()
+    deductions = [d.model_dump() for d in body.deductions]
+
+    if body.include_salary_tds:
+        salary = await pool.fetchrow(
+            "SELECT COALESCE(SUM(tds), 0) AS tds, COALESCE(SUM(gross), 0) AS gross, "
+            "COUNT(*) AS n FROM staging.vetana_payslips "
+            "WHERE org_id=$1::uuid AND month=$2 AND is_active AND tds > 0",
+            org_id, period,
+        )
+        if salary and float(salary["tds"] or 0) > 0:
+            deductions.append({
+                "section": "192B",
+                "nature": "Salary — non-government employees",
+                "note": f"{int(salary['n'])} employees, computed in Vetana",
+                "count": int(salary["n"]),
+                "amount_paid": float(salary["gross"] or 0),
+                # Section 192(1) — deducted at the employee's own average rate,
+                # not at a section rate. A single percentage here would be wrong
+                # for every employee, so the column stays empty.
+                "rate": None,
+                "tds": float(salary["tds"] or 0),
+            })
+
+    amounts = dict(body.amounts or {})
+    if not amounts:
+        # Default the income-tax head to what the lines total, so a challan with
+        # no surcharge, cess, interest or penalty reconciles without the caller
+        # restating a figure the lines already carry. Anything else must be
+        # stated — the validator refuses a breakdown that does not tie.
+        amounts = {"income_tax": sum(float(d.get("tds") or 0) for d in deductions)}
+
+    challan = {
+        "period": period,
+        "challan_number": body.challan_number,
+        "deposit_date": body.deposit_date,
+        "major_head": body.major_head,
+        "payment_type": body.payment_type,
+        "bsr_code": body.bsr_code,
+        "challan_serial": body.challan_serial,
+        "tender_date": body.tender_date or body.deposit_date,
+        "bank_name": body.bank_name,
+        "payment_method": body.payment_method,
+        "deductions": deductions,
+        "amounts": amounts,
+        "notes": body.notes,
+    }
+
+    org = await _load_org(pool, org_id)
+    try:
+        pdf = generate_tds_challan_pdf(challan, org)
+    except DocumentIncomplete as e:
+        raise _refuse("TDS challan", e, period=period, org=org_id) from e
+    except Exception as e:
+        raise _failed("TDS challan", e, period=period, org=org_id) from e
+
+    return _pdf_response(pdf, f"TDS-{body.challan_number or period}.pdf")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Service agreement
+# ══════════════════════════════════════════════════════════════════════════════
+
+class AgreementBody(BaseModel):
+    """Clause values `staging.ganit_contracts` has no columns for.
+
+    The contract row carries a title, a value, dates and a status. The design's
+    clause set needs a scope, a milestone schedule, a governing seat and the
+    notice periods. Those are supplied rather than defaulted: a generator that
+    guessed an arbitration seat would send a dispute to the wrong forum.
+    """
+
+    scope: list[str] = Field(default_factory=list)
+    client_obligations: list[str] = Field(default_factory=list)
+    milestones: list[dict] = Field(default_factory=list)
+    governing_law: str = ""
+    governing_seat: str = ""
+    place_of_supply: str = ""
+    is_igst: bool = False
+    gst_rate: float = 18
+    payment_days: int = 30
+    notice_days: int = 30
+    cure_days: int = 15
+    term_months: int | None = None
+    provider_is_msme: bool = False
+    tds_section: str = ""
+    tds_rate: float | None = None
+    project_ref: str = ""
+    status_note: str = ""
+
+
+@router.post("/contracts/{contract_id}/agreement/pdf")
+async def download_agreement_pdf(
+    contract_id: UUID,
+    body: AgreementBody = Body(default_factory=AgreementBody),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_ganit),
+):
+    """The two-page execution copy for a Ganit contract."""
+    from services.agreement_pdf import generate_agreement_pdf
+
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT k.*, c.name AS contact_name, c.company AS contact_company, "
+        "c.gstin AS contact_gstin, c.designation AS contact_designation, "
+        "c.billing_address AS contact_billing_address "
+        "FROM staging.ganit_contracts k "
+        "LEFT JOIN staging.graha_contacts c ON c.id = k.contact_id "
+        "WHERE k.id=$1::uuid AND k.org_id=$2::uuid AND k.is_active",
+        str(contract_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Contract not found")
+
+    contract = dict(row)
+    contact = _parse_contact(contract)
+
+    term_months = body.term_months
+    if term_months is None and contract.get("start_date") and contract.get("end_date"):
+        delta = contract["end_date"] - contract["start_date"]
+        term_months = max(1, round(delta.days / 30.44))
+
+    agreement = {
+        "agreement_number": contract.get("title") and f"AGR-{str(contract_id)[:8].upper()}",
+        "effective_date": contract.get("start_date"),
+        "term_months": term_months or 12,
+        "fee": contract.get("contract_value"),
+        "scope": body.scope or ([contract["description"]] if contract.get("description") else []),
+        "client_obligations": body.client_obligations or None,
+        "milestones": body.milestones,
+        "governing_law": body.governing_law,
+        "governing_seat": body.governing_seat,
+        "place_of_supply": body.place_of_supply,
+        "is_igst": body.is_igst,
+        "gst_rate": body.gst_rate,
+        "payment_days": body.payment_days,
+        "notice_days": body.notice_days,
+        "cure_days": body.cure_days,
+        "provider_is_msme": body.provider_is_msme,
+        "tds_section": body.tds_section,
+        "tds_rate": body.tds_rate,
+        "project_ref": body.project_ref,
+        "status_note": body.status_note or "",
+    }
+    if agreement["client_obligations"] is None:
+        agreement.pop("client_obligations")
+
+    org = await _load_org(pool, org_id)
+    try:
+        pdf = generate_agreement_pdf(agreement, org, contact)
+    except DocumentIncomplete as e:
+        raise _refuse("service agreement", e, contract_id=str(contract_id), org=org_id) from e
+    except Exception as e:
+        raise _failed("service agreement", e, contract_id=str(contract_id), org=org_id) from e
+
+    return _pdf_response(pdf, f"{agreement['agreement_number'] or 'agreement'}.pdf")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Project report
+# ══════════════════════════════════════════════════════════════════════════════
+
+class ProjectReportBody(BaseModel):
+    """What no table holds: the plan side of every measure, the milestone
+    schedule and the risk register. See the module docstring."""
+
+    headline: str = ""
+    prepared_by: str = ""
+    overall_state: str = ""
+    planned_hours: float | None = None
+    planned_fee: float | None = None
+    milestones: list[dict] = Field(default_factory=list)
+    risks: list[dict] = Field(default_factory=list)
+    decisions: list[dict] = Field(default_factory=list)
+    milestone_note: str = ""
+    client_contact_id: str = ""
+
+
+@router.post("/projects/{board_id}/report/pdf")
+async def download_project_report_pdf(
+    board_id: str,
+    period_start: str = Query(..., description="ISO date, inclusive"),
+    period_end: str = Query(..., description="ISO date, inclusive"),
+    body: ProjectReportBody = Body(default_factory=ProjectReportBody),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+):
+    """A status report for one board over one period.
+
+    No module gate: boards and tasks are core, not an add-on module, so gating
+    this on Ganit would deny the report to an org that pays for tasks alone. It
+    is still org-scoped — the board must belong to this org's team, which is the
+    check that matters for tenancy.
+
+    Measures are computed where a store exists (tasks, logged hours, fee
+    invoiced) and the PLAN side of each comes from the body, because no baseline
+    is recorded anywhere. A measure with no plan is reported as actual-only
+    rather than against a plan of zero, which would show every project as
+    catastrophically over.
+    """
+    from services.project_report_pdf import generate_project_report_pdf
+
+    for label, value in (("period_start", period_start), ("period_end", period_end)):
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            raise HTTPException(400, f"{label} must be an ISO date (YYYY-MM-DD)")
+
+    pool = await get_pool()
+    team_id = await pool.fetchval(
+        "SELECT team_id FROM staging.organisations WHERE id=$1::uuid", org_id
+    )
+    if not team_id:
+        raise HTTPException(404, "Organisation has no team")
+
+    board = await pool.fetchrow(
+        "SELECT board_id, name FROM public.boards WHERE board_id=$1 AND team_id=$2",
+        board_id, team_id,
+    )
+    if not board:
+        raise HTTPException(404, "Project board not found")
+
+    open_tasks = await pool.fetchval(
+        "SELECT COUNT(*) FROM public.tasks WHERE board_id=$1 AND team_id=$2 "
+        "AND archived_at IS NULL AND status <> 'done'",
+        board_id, team_id,
+    ) or 0
+    overdue_tasks = await pool.fetchval(
+        "SELECT COUNT(*) FROM public.tasks WHERE board_id=$1 AND team_id=$2 "
+        "AND archived_at IS NULL AND status <> 'done' AND due_at < NOW()",
+        board_id, team_id,
+    ) or 0
+    minutes = await pool.fetchval(
+        "SELECT COALESCE(SUM(t.minutes), 0) FROM staging.time_entries t "
+        "JOIN public.tasks k ON k.task_id = t.task_id "
+        "WHERE t.org_id=$1::uuid AND k.board_id=$2 "
+        "AND t.started_at >= $3::date AND t.started_at < ($4::date + 1)",
+        org_id, board_id, period_start, period_end,
+    ) or 0
+    hours = round(float(minutes) / 60, 1)
+
+    client = {}
+    fee_invoiced = 0.0
+    if body.client_contact_id:
+        contact_row = await pool.fetchrow(
+            "SELECT name, company, designation FROM staging.graha_contacts "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            body.client_contact_id, org_id,
+        )
+        if contact_row:
+            client = dict(contact_row)
+            fee_invoiced = float(await pool.fetchval(
+                "SELECT COALESCE(SUM(total), 0) FROM staging.ganit_invoices "
+                "WHERE org_id=$1::uuid AND contact_id=$2::uuid AND is_active "
+                "AND cancelled_at IS NULL AND invoice_type='tax_invoice' "
+                "AND invoice_date <= $3::date",
+                org_id, body.client_contact_id, period_end,
+            ) or 0)
+
+    def _measure(label: str, plan, actual, state: str, sub: str = "", unit: str = "") -> dict:
+        # No baseline recorded -> report the actual alone. A plan of zero would
+        # show every project as infinitely over.
+        if plan is None:
+            return {"label": label, "sub": sub, "numeric": False,
+                    "plan": "—", "actual": actual, "variance": "—", "state": state}
+        return {"label": label, "sub": sub, "numeric": True, "unit": unit,
+                "plan": plan, "actual": actual, "variance": actual - plan, "state": state}
+
+    measures = [
+        _measure("Fee invoiced to date", body.planned_fee, fee_invoiced,
+                 "On plan" if body.planned_fee in (None, fee_invoiced) else "Watch"),
+        _measure("Hours consumed", body.planned_hours, hours,
+                 "Over" if body.planned_hours is not None and hours > body.planned_hours
+                 else "On plan", sub="Logged in Kartavya", unit="h"),
+        _measure("Open tasks", None, open_tasks, "Watch" if open_tasks else "On plan"),
+        _measure("Overdue tasks", None, overdue_tasks, "Late" if overdue_tasks else "On plan"),
+    ]
+
+    org = await _load_org(pool, org_id)
+    report = {
+        "report_number": f"RPT-{board_id[:8].upper()}",
+        "project_name": board["name"],
+        "period_start": period_start,
+        "period_end": period_end,
+        "as_at": period_end,
+        "prepared_by": body.prepared_by,
+        "prepared_on": date.today().isoformat(),
+        "board_ref": board_id,
+        "overall_state": body.overall_state,
+        "headline": body.headline,
+        "measures": measures,
+        "milestones": body.milestones,
+        "milestone_note": body.milestone_note,
+        "risks": body.risks,
+        "decisions": body.decisions,
+    }
+
+    try:
+        pdf = generate_project_report_pdf(report, org, client)
+    except DocumentIncomplete as e:
+        raise _refuse("project report", e, board_id=board_id, org=org_id) from e
+    except Exception as e:
+        raise _failed("project report", e, board_id=board_id, org=org_id) from e
+
+    return _pdf_response(pdf, f"{report['report_number']}.pdf")

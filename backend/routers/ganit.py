@@ -500,6 +500,22 @@ async def download_invoice_pdf(
     if not row:
         raise HTTPException(404, "Invoice not found")
 
+    # A quotation is NOT an invoice, and rendering it through this template made
+    # it look like one: `docs/Quotation.html` has `Prepared for` and a scope
+    # summary where the invoice has `Bill To`, no HSN column, a validity date, a
+    # payment schedule, numbered terms, and — the substantive difference — an
+    # ACCEPTANCE block for the client to counter-sign rather than the supplier's
+    # own signature. Previously the only difference was the words in the title.
+    #
+    # Dispatched here rather than only on the new route so that every existing
+    # caller and every saved link gets the right document; the quotation route
+    # in `routers/documents.py` is the same generator by a name that says so.
+    if (row["invoice_type"] or "") == "quotation":
+        from routers.documents import download_quotation_pdf
+        return await download_quotation_pdf(
+            invoice_id=invoice_id, user=user, org_id=org_id, _g=None
+        )
+
     # `authorized_signatory_name` / `_designation` have existed on organisations
     # since the org-profile migration and were simply never selected, so the
     # signature block the Tax Invoice design specifies rendered as nothing at all.
