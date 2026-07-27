@@ -37,10 +37,15 @@ import { PRIORITY_COLORS, PRIORITY_LABELS } from '../../lib/statusColors';
  *    ticking a card also opens it, which the catalogue calls out by name.
  *  · **`pending`** carries MOTION-SPEC §7.1: an optimistic write renders at
  *    `opacity .6` until the server acknowledges. **`just`** is 9.1's settle
- *    flash, so a card you dropped is findable in its new column.
+ *    flash, so a card you dropped is findable in its new column. **`tickpop`**
+ *    is 9.4's "ticking runs the 2.2 checkbox animation" — the stroke draw and
+ *    the box overshoot. It is a separate flag from `just` because `just` also
+ *    fires on a drop, and because keying the animation off the done state alone
+ *    springs every completed card on the board at mount.
  */
 export default function TaskCard({
-  task, onClick, dragging = false, pending = false, just = false, fresh = false, onComplete,
+  task, onClick, dragging = false, pending = false, just = false, fresh = false,
+  tickpop = false, onComplete,
 }) {
   const priority = task.priority || 'medium';
   const color = PRIORITY_COLORS[priority] || 'var(--on-surface-3)';
@@ -54,8 +59,8 @@ export default function TaskCard({
   return (
     <button
       type="button"
-      className={['bc', dragging && 'drag', pending && 'pending', just && 'just', fresh && 'fresh']
-        .filter(Boolean).join(' ')}
+      className={['bc', dragging && 'drag', pending && 'pending', just && 'just',
+        fresh && 'fresh', tickpop && 'tickpop'].filter(Boolean).join(' ')}
       onClick={onClick}
     >
       <span className="bc__top">

@@ -166,7 +166,14 @@
   padding: 8px 12px; border: 0;
   font: inherit; font-size: 11.5px; font-weight: 600;
   background: var(--s-low); color: var(--on-surface-3); cursor: pointer;
-  transition: background var(--dur-instant) var(--ease-standard), color var(--dur-instant) var(--ease-standard);
+  /* --dur-base, not --dur-instant. 26 §6's --dur-instant bucket is "a colour-only
+     change and a chip fill" — hover feedback, where instant is right because the
+     pointer is already there. Advancing the pipeline is a state-machine step the
+     user committed to, and `motion.css` `.dm-stage:124` gives it
+     `background var(--dur-base) var(--ease-emph), color var(--dur-base)`. The
+     reference implementation is the pixel source when it and the prose differ,
+     which is the resolution this file's neighbours already record twice. */
+  transition: background var(--dur-base) var(--ease-emph), color var(--dur-base) var(--ease-emph);
 }
 .dr__stage:first-child { border-radius: var(--r-pill) 0 0 var(--r-pill); }
 .dr__stage:last-child  { border-radius: 0 var(--r-pill) var(--r-pill) 0; }
@@ -184,6 +191,12 @@
   border-top: 13px solid transparent;
   border-bottom: 13px solid transparent;
   border-left: 8px solid var(--s-low);
+  /* The chevron IS the segment — it is drawn from the stage's own colour in
+     three states — so it has to move on the same clock. Measured, it had no
+     transition at all while the stage behind it had one, so advancing a stage
+     tore: the block faded and the arrowhead in front of it snapped. Same
+     duration, same curve, one shape. `motion.css:131` does exactly this. */
+  transition: border-left-color var(--dur-base) var(--ease-emph);
 }
 .dr__stage.on:not(:last-child)::after   { border-left-color: var(--c); }
 .dr__stage.past:not(:last-child)::after { border-left-color: color-mix(in srgb, var(--c) 15%, var(--surface)); }
@@ -248,8 +261,58 @@
   transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
 }
 .dr__st-box.on { background: var(--primary); border-color: var(--primary); }
-.dr__st-t { flex: 1; min-width: 0; font-size: 13px; color: var(--on-surface); }
-.dr__st.done .dr__st-t { color: var(--on-surface-3); text-decoration: line-through; }
+
+/* ── The 2.2 checkbox animation ───────────────────────────────────────────
+   IxWork.jsx:240 is the whole spec and none of it was here: "Box fills
+   --primary 140ms; the tick path draws via stroke-dashoffset 220ms --ease-emph;
+   box overshoots to scale(1.18) and settles, --dur-slow --ease-spring."
+   Measured before this, `.dr__st-box.on` had no animation and its path had
+   `stroke-dasharray: none`, so the most-repeated action in the drawer was a
+   140ms colour swap. `motion.css` `.sb__ck:207-210` is the reference.
+
+   `.tickpop` gates both, set by TaskDrawer for 600ms on a completing click
+   only. Without a gate the animation fires on MOUNT — every done subtask
+   springs when the drawer opens — and it would fire on UNCHECK too, which 2.2
+   forbids by name: "Unchecking reverses in 140ms with no spring. Undo should
+   feel plainer than do." Unchecking drops `.on` and the transition above
+   carries it back at --dur-fast, which is exactly that sentence. */
+.dr__st-box.tickpop.on { animation: drStPop var(--dur-slow) var(--ease-spring); }
+@keyframes drStPop {
+  40% { transform: scale(calc(1 + .18 * var(--motion-scale, 1))); }
+}
+/* 23, not the reference's 18, and the number is arithmetic rather than taste.
+   `stroke-dasharray` is in the SVG's own user units, so it has to be read
+   against the viewBox the icon is actually drawn in. `motion.css:206` uses 18
+   for a hand-written path in a 16-unit box; this box renders lucide's `Check`,
+   whose path is `M20 6 9 17l-5-5` in a 24-unit box — measured by
+   `getTotalLength()` at 22.63 units. At 18 the dash is SHORTER than the path,
+   so the tail of the tick is already on screen when the draw begins. 23 is the
+   smallest value that hides it completely. Change the icon, re-measure this. */
+.dr__st-box svg path { stroke-dasharray: 23; stroke-dashoffset: 0; }
+.dr__st-box.tickpop.on svg path { animation: drStDraw var(--dur-base) var(--ease-emph) backwards; }
+@keyframes drStDraw {
+  from { stroke-dashoffset: 23; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* ── Strikethrough ────────────────────────────────────────────────────────
+   MOTION-SPEC §4: "transform: scaleX(0→1) from left, --dur-base --ease-emph",
+   and 2.2 active: "a strikethrough that wipes left→right 220ms". This was
+   `text-decoration: line-through`, which is not an animatable property — the
+   rule appeared and the line was simply there. A pseudo-element rule is,
+   and it is what `motion.css` `.sb__t::after:212` uses.
+
+   `position: relative` and the `52%` top are the reference's; 52 rather than 50
+   because a 13px line's optical centre sits below its geometric one. */
+.dr__st-t { position: relative; flex: 1; min-width: 0; font-size: 13px; color: var(--on-surface); }
+.dr__st-t::after {
+  content: ''; position: absolute; left: 0; top: 52%;
+  width: 100%; height: 1px; background: currentColor;
+  transform: scaleX(0); transform-origin: left;
+  transition: transform var(--dur-base) var(--ease-emph);
+}
+.dr__st.done .dr__st-t { color: var(--on-surface-3); }
+.dr__st.done .dr__st-t::after { transform: scaleX(1); }
 
 /* The assignee control is `ui/Picker.jsx` — 26 §4 replaces all four
    hand-written drawer pickers with it, which is what gives this one Escape,
