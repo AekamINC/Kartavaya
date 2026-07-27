@@ -191,6 +191,39 @@ async def test_reaction_refused_to_non_member_of_private_channel(
     assert r.status_code == 403
 
 
+# ── The editor gate now runs first, and these three tests predate it ──────────
+#
+# `_require_editor()` was added to every messaging write path (the spec's rule
+# that `viewer` — the default level on every new grant — must not post). It reads
+# `staging.org_member_modules`, and it runs BEFORE `_assert_same_org`.
+#
+# That broke three tests without breaking anything they protect. A blanket
+# `fetchval -> None` now fails the editor gate first, so the refusal arrives as
+# 403 instead of 404, and `call_args` — which is the LAST call — returns the
+# editor gate's query rather than the tenancy one.
+#
+# The security property is unchanged: a foreign user still cannot be added, and
+# `execute` is still never reached. These now let the editor gate PASS so the
+# tenancy check is the thing actually under test, and search every recorded call
+# for it rather than assuming it was the last. Asserting on "the last query" is
+# what made a correct new gate look like a regression.
+def _fetchval_editor_ok(same_org_answer=None):
+    """Pass the editor gate, answer the tenancy check with `same_org_answer`."""
+    async def _fv(query, *args):
+        if "org_member_modules" in query:
+            return "editor"
+        return same_org_answer
+    return AsyncMock(side_effect=_fv)
+
+
+def _tenancy_calls(mock_pool):
+    """Every fetchval that asked the tenant table, in order."""
+    return [
+        c.args for c in mock_pool.fetchval.call_args_list
+        if c.args and "staging.user_roles" in c.args[0]
+    ]
+
+
 @pytest.mark.anyio
 async def test_cannot_add_a_user_from_another_org_to_a_channel(
     api_client, as_member, with_org_id, mock_pool
@@ -201,7 +234,7 @@ async def test_cannot_add_a_user_from_another_org_to_a_channel(
         {"type": "public"},           # channel exists in caller's org
         {"role": "member"},           # caller is a member, so may add others
     ])
-    mock_pool.fetchval = AsyncMock(return_value=None)  # target has no role in this org
+    mock_pool.fetchval = _fetchval_editor_ok()  # target has no role in this org
     r = await api_client.post(
         f"/api/v1/messaging/channels/{CHANNEL_ID}/members",
         params={"user_id": FOREIGN_USER},
@@ -214,7 +247,7 @@ async def test_cannot_add_a_user_from_another_org_to_a_channel(
 async def test_cannot_open_a_dm_with_a_user_from_another_org(
     api_client, as_member, with_org_id, mock_pool
 ):
-    mock_pool.fetchval = AsyncMock(return_value=None)
+    mock_pool.fetchval = _fetchval_editor_ok()
     r = await api_client.post(
         "/api/v1/messaging/dm", params={"target_user_id": FOREIGN_USER}
     )
@@ -227,11 +260,13 @@ async def test_same_org_check_queries_user_roles_with_the_callers_org(
 ):
     """The tenant path is staging.user_roles, and it must be asked about the
     caller's org — not an org id taken from the request body."""
-    mock_pool.fetchval = AsyncMock(return_value=None)
+    mock_pool.fetchval = _fetchval_editor_ok()
     await api_client.post(
         "/api/v1/messaging/dm", params={"target_user_id": FOREIGN_USER}
     )
-    query, *args = mock_pool.fetchval.call_args.args
+    calls = _tenancy_calls(mock_pool)
+    assert calls, "the tenant table was never asked — staging.user_roles is the only tenant path"
+    query, *args = calls[-1]
     assert "staging.user_roles" in query
     assert args == [FOREIGN_USER, TEST_ORG_ID]
     assert OTHER_ORG_ID not in args

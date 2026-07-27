@@ -362,3 +362,46 @@ Confidence is assigned at cross-reference time, not here.
 - Deliberately not built, with reasons: `Request Editor` (reference draws the
   button; no endpoint to request a grant, and a dead button is worse than none),
   attachments (`samvada_message_attachments` has no endpoint at all).
+
+---
+## Pahchan · STRUCTURE (a440a014) — 31st report; my "all 30" was wrong
+
+- **`GET /regularisations` 500'd on every call** — selected `e.full_name`, which
+  `manav_employees` has never had (it is `name`; `full_name` is on
+  `manav_candidates`). This is MY code from the payroll-bridge work. FIXED.
+- **A correction could be approved but never declined** — my model matched
+  `rejected`; migration 064's CHECK is `declined`. Every decline was a constraint
+  violation dressed as a 500. Also MY error. FIXED.
+- **The geofence has never existed for any org.** No UI could create a site, so
+  `_nearest_site` always returned nothing, `distance_m` stayed null, and the
+  geofence branch could never fire — while Policy offered a "geofence radius"
+  setting for something uncreatable. FIXED.
+- Every flag chip showed the wrong word — `StatusChip` has no `label` prop, so
+  the register's was dropped and six attendance conditions collapsed into three
+  task-tracker nouns, on the one screen whose job is telling one wrong from
+  another. FIXED.
+- Built: register detail (`openId` was written and read by nothing), date picker
+  (`?on=` existed, nothing sent it), shift/overtime policy UI, sites,
+  corrections, payroll push, history. Web tabs 3 → 6.
+- Judgment worth keeping: the detail draws its own accuracy geometry rather than
+  loading map tiles — OpenStreetMap would put an employee's punch coordinates in
+  a URL to a third party, strictly worse than the leak §7 forbids. And history
+  never renders "absent": `/me` returns punches, not a muster roll, so an empty
+  day could be leave, a weekly off, or a punch still in the 72h buffer.
+
+### RESOLVED: the red `test_separated_duty.py`
+Reported as 3 failures on cross-org isolation and left for adjudication. Verified
+red, then diagnosed: **not a hole.** `_require_editor()` was added to every
+messaging write path (correct, per spec) and runs BEFORE `_assert_same_org`. A
+blanket `fetchval -> None` fails the editor gate first, so the refusal arrives as
+403 not 404, and `call_args` — the LAST call — returns the editor gate's query
+instead of the tenancy one. `_assert_same_org` reads `staging.user_roles`
+correctly and always did.
+
+Tests now let the editor gate pass so the tenancy check is what is under test,
+and search every recorded call rather than assuming it was last. **Proved not
+weakened**: neutering `_assert_same_org` puts all three back to red.
+Backend 1266 passed.
+
+→ The agent was right to refuse to turn it green by guessing. Asserting on "the
+  last query" is what made a correct new gate look like a regression.
