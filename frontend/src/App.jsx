@@ -67,6 +67,7 @@ const AdminBillingPage      = lazy(() => import('./pages/AdminBillingPage'));
 const AdminOrgsPage         = lazy(() => import('./pages/AdminOrgsPage'));
 const AdminCostDashboardPage = lazy(() => import('./pages/AdminCostDashboardPage'));
 const OrgSettingsPage       = lazy(() => import('./pages/OrgSettingsPage'));
+const RolesAccessPage       = lazy(() => import('./pages/RolesAccessPage'));
 const HubDashboardPage      = lazy(() => import('./pages/HubDashboardPage'));
 const HubClientsPage        = lazy(() => import('./pages/HubClientsPage'));
 const HubClientDetailPage   = lazy(() => import('./pages/HubClientDetailPage'));
@@ -218,6 +219,10 @@ function AppRouter() {
           <Route path="settings/notifications" element={<Navigate to="/settings/customize?tab=notifications" replace />} />
           <Route path="settings/customize"     element={<CustomizeSettingsPage />} />
           <Route path="settings/organisation" element={<OrgSettingsPage />} />
+          {/* `Roles & access` · अधिकार — a Settings destination in the design
+              (`Chrome.jsx:36`) that the build only had as a tab of the row next
+              to it. Same wired component behind both, opened on its grid half. */}
+          <Route path="settings/roles"        element={<RolesAccessPage />} />
 
           {/* Billing lives in Organisation settings now — `10-org-settings.md`
               folded `BillingPage.jsx` into `org/TabBilling.jsx`. The route

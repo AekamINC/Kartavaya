@@ -71,6 +71,12 @@
   transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
 }
 .bd__cx:hover { background: var(--s-container); color: var(--on-surface-2); }
+/* `.anchor` is `Menu`'s trigger wrapper and is the focusable element, not the
+   glyph inside it — so the ring belongs here, and the column-stacking it
+   defaults to would otherwise make it a full-height flex item in the header
+   row. */
+.bd__ch .anchor { flex: none; border-radius: var(--r-xs); }
+.bd__ch .anchor:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .bd__cname { flex: 1; min-width: 0; }
 
 /* min-height keeps an empty column a legal drop target — a zero-height list
