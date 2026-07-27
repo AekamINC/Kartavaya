@@ -247,12 +247,43 @@ Run from `frontend/`, unpiped, per `_COORDINATION.md` §2.
 | `node scripts/check-tokens.mjs` | 340 declared, 234 referenced, **0 missing** |
 | `node scripts/check-classes.mjs` | 2132 selectors, 1456 classes, **0 missing a rule** |
 | `npx vite build` | **succeeds** — it did not before §3.6 |
-| `npx vitest run` | **438 passed / 23 files** |
-| `python -m pytest` (backend) | see below |
+| `npx vitest run` | **451 passed, 1 failed** — the failure is pre-existing, see below |
+| `python -m pytest` (backend) | **1247 passed, 0 failed** |
 
-The two `Unhandled Rejection`s vitest reports are pre-existing, in
+### The one red test is `staging`'s, not this branch's
+
+`visual-regression.test.jsx > semantic-palette` fails on `--outline`:
+
+```
+- --outline   light=#ADA692  dark=#5B626C     (the committed snapshot)
++ --outline   light=#78725F  dark=#7E8590     (what the CSS now resolves to)
+```
+
+`--outline` is declared in exactly one file, `kartavaya-design.css:231,327`. **This
+branch does not touch that file or the snapshot** — both are byte-identical to
+`origin/staging`, so the test fails the same way on staging alone. A sibling changed the
+token and did not re-record the baseline.
+
+**Deliberately not updated here.** Re-recording someone else's visual baseline would
+silently ratify a token change I have not reviewed, and the whole point of that snapshot
+is that a palette change has to be looked at by a person. It belongs to whoever moved
+`--outline`.
+
+The two `Unhandled Rejection`s vitest reports are also pre-existing, in
 `task-flow.test.jsx` via `TaskDrawer.jsx:168` (`r.data.forEach` on a mock that returns a
-non-array). Not on this surface and not introduced here.
+non-array). Not on this surface.
+
+### Two siblings fixed things this branch also fixed
+
+Both landed while this was in flight, and both are worth knowing about because the
+resolutions were not symmetric:
+
+- **`8131f24`'s build break (§3.6)** — fixed identically by a sibling. Took theirs.
+- **The flag pills (§3.1)** — `4b64d6f` added a `label` prop to `StatusChip`; this
+  branch instead folded `PUNCH_*` into `STATUS_MAP`, which is what 07 asks for by name.
+  **Kept both, because they are not duplicates.** `label` is the general escape hatch for
+  any caller; the map is what makes the register correct with no override at all. Their
+  comments each falsified the other's and were reconciled in `2ad4c11`.
 
 `frontend/node_modules` had to be installed to run the last three. **`npm install`
 rewrote both `package-lock.json` and `yarn.lock`** — restored with `git checkout --`
