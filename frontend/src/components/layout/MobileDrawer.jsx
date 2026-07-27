@@ -25,8 +25,14 @@ export default function MobileDrawer({ open, onClose, inboxCount = 0, approvalsC
    * never have run however it was declared. The drawer appeared with a slide
    * and disappeared with a cut.
    *
-   * `mounted` outlives `open` by exactly one animation. `data-closing` is what
-   * the two exit rules in editorial.css select on, and `animationend` on the
+   * `mounted` outlives `open` by exactly one animation. `.is-closing` is what
+   * the two exit rules in editorial.css select on — the same class every other
+   * leaving surface in the build uses (`.pop`, `.pk__pop`, `.sheet`, `.dr`,
+   * `.modal__*`, `.menu--float`, `.tst`, `.aso`, `.dr__lb`, `.sv__thread`,
+   * `.k-onboard`). It was `data-closing="1"` here, which behaves identically
+   * and reads as a different mechanism; overlay-motion.test.jsx keys on the
+   * class, so a twelfth spelling of one state is also a surface the exit tests
+   * cannot see. And `animationend` on the
    * DRAWER is what unmounts — the drawer's exit is `--dur-base` and the scrim's
    * is `--dur-fast`, so the drawer is the last to finish and waiting on the
    * scrim would cut the panel off mid-slide.
@@ -58,8 +64,7 @@ export default function MobileDrawer({ open, onClose, inboxCount = 0, approvalsC
 
   return (
     <div
-      className="kv__scrim"
-      data-closing={closing ? '1' : undefined}
+      className={`kv__scrim ${closing ? 'is-closing' : ''}`.trim()}
       onClick={closing ? undefined : onClose}
     >
       {/* Wrap the panel, not the scrim — FocusTrap's own contract.
@@ -79,8 +84,7 @@ export default function MobileDrawer({ open, onClose, inboxCount = 0, approvalsC
           exactly what a screen reader should not be walking. */}
       <FocusTrap active={!closing}>
         <div
-          className="kv__drawer"
-          data-closing={closing ? '1' : undefined}
+          className={`kv__drawer ${closing ? 'is-closing' : ''}`.trim()}
           role="dialog"
           aria-modal={closing ? undefined : 'true'}
           aria-hidden={closing ? 'true' : undefined}

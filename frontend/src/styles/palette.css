@@ -37,13 +37,56 @@
   align-items: flex-start;
   justify-content: center;
   padding-top: 12vh;
-  animation: k-cmdk-fade-v2 var(--dur-fast) var(--ease-enter);
+  /* Was `k-cmdk-fade-v2 var(--dur-fast)`, and both halves have gone.
+
+     `@keyframes k-cmdk-fade-v2` was `from { opacity: 0 }` — `dmFade` under a
+     second name. The `-v2` suffix exists for one reason, stated in the header:
+     `k-cmdk-slideIn` collides with the legacy block in editorial.css and the
+     last global declaration wins. No `dm*` name is declared there, so this one
+     had nothing to protect itself from and was pure duplication — the same
+     defect that cost this build `@keyframes modalIn`.
+
+     `--dur-base`, not `--dur-fast`, puts this on 26 §6's row for a scrim
+     alongside `.dr__scrim`, `.sheet__scrim` and `.modal__scrim`. At
+     `--dur-fast` it was the only overlay in the build whose dim arrived exactly
+     as fast as it left, which is the one thing MOTION-SPEC §7.3 rules out. */
+  animation: dmFade var(--dur-base) var(--ease-enter) both;
 }
 
-/* `dmFade` has no transform at all (26 §6) — a scrim that also moves reads as a
-   second object arriving. */
-@keyframes k-cmdk-fade-v2 { from { opacity: 0 } }
 @keyframes k-cmdk-in-v2 { from { opacity: 0; transform: translateY(-10px) scale(.985) } }
+
+/* ── The exits ───────────────────────────────────────────────────────────
+   Both overlays entered and then vanished on a frame boundary: `CommandPalette`
+   and `KeyboardShortcuts` each ended `if (!open) return null`. MOTION-SPEC §3
+   tables an exit for the palette — `scale(.98)` + fade — and the reference
+   implements it as `.ov-pal.out` (motion.css:295).
+
+   Reusing the GLOBAL `dmFadeOut` and `dmPopOut` rather than minting
+   `k-cmdk-out-v2`. The `-v2` suffix on the two keyframes above exists for one
+   reason, stated in the header: `k-cmdk-slideIn` collides with the legacy block
+   in editorial.css, and the last global declaration wins. No `dm*` name is
+   declared in editorial.css, so there is nothing to collide with — and a third
+   keyframe whose body is `to { opacity: 0; transform: scale(.98) }` would be
+   exactly the duplicate that cost this build `@keyframes modalIn`.
+
+   160ms on the panel, via `calc(var(--dur-base) * .73)` = 160.6ms. §3 gives the
+   number and the `.tst` / `.sheet` exits are written the same way — a fraction
+   of the token its own entrance uses, so the whole thing still scales with
+   `--ix` where a literal `160ms` would not.
+
+   The scrim exit is `--dur-fast`, identical to `.dr__scrim`, `.sheet__scrim`
+   and `.modal__scrim`, so all four scrims leave alike — and now enter alike
+   too, the overlay rule above having moved onto `dmFade --dur-base`. */
+[data-k-palette].k-cmdk-overlay.is-closing {
+  animation: dmFadeOut var(--dur-fast) var(--ease-exit) both;
+  /* Painted, and a click target, for the whole exit — without this, dismissing
+     the palette and immediately clicking the page hits the scrim. */
+  pointer-events: none;
+}
+[data-k-palette] .k-cmdk.is-closing,
+[data-k-palette] .k-shortcuts.is-closing {
+  animation: dmPopOut calc(var(--dur-base) * .73) var(--ease-exit) both;
+}
 
 /* ── Panel ───────────────────────────────────────────────────────────────── */
 

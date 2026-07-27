@@ -27,6 +27,9 @@ const TYPE_STYLES = {
  */
 const DURATION = { success: 4000, info: 4000, warning: 7000, error: null };
 
+/** Live toasts on screen at once (26 §9). One playing its exit does not count. */
+const MAX_VISIBLE = 3;
+
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   /**
@@ -119,7 +122,10 @@ export function ToastProvider({ children }) {
       title: t.title || "",
       message: t.message || "",
     };
-    setToasts((prev) => [toast, ...prev].slice(0, 3));
+    // No `.slice(0, 3)` here — see the overflow effect below. Slicing deleted
+    // the oldest card outright, which made the cap the one path where a toast
+    // still left without an exit even after the exit existed.
+    setToasts((prev) => [toast, ...prev]);
 
     // Errors interrupt; everything else waits for a pause. Without this the
     // whole toast system was silent to screen readers — a blind user got no
@@ -130,6 +136,28 @@ export function ToastProvider({ children }) {
     arm(id, DURATION[toast.type] ?? DURATION.info);
     return id;
   }, [arm]);
+
+  /**
+   * The cap from 26 §9 — three toasts, and a fourth commits the oldest away.
+   *
+   * It used to be `.slice(0, 3)` inside `pushToast`, which spliced the oldest
+   * out of the array in the same frame. So the exit covered the two ways a user
+   * ends a toast (the Dismiss button, the timer) and missed the third — the one
+   * they did not ask for, where a card they may still have been reading is
+   * taken off the screen to make room. That is the dismissal that most needs to
+   * be visible.
+   *
+   * Expressed as an effect rather than inside the updater because eviction has
+   * to go through `dismiss`, which is a side effect: it marks the card exiting
+   * and arms the safety net. A card already playing its exit no longer occupies
+   * a slot, so the count is of LIVE toasts, and the loop settles on the next
+   * render rather than re-firing.
+   */
+  useEffect(() => {
+    const live = toasts.filter((t) => !exiting.has(t.id));
+    if (live.length <= MAX_VISIBLE) return;
+    for (const t of live.slice(MAX_VISIBLE)) dismiss(t.id);
+  }, [toasts, exiting, dismiss]);
 
   useEffect(() => () => {
     for (const t of timers.current.values()) clearTimeout(t.handle);
@@ -167,7 +195,7 @@ export function ToastProvider({ children }) {
           return (
             <div
               key={t.id}
-              className={`tst ${ts.tone}${exiting.has(t.id) ? ' is-out' : ''}`}
+              className={`tst ${ts.tone}${exiting.has(t.id) ? ' is-closing' : ''}`}
               onMouseEnter={() => pause(t.id)}
               onMouseLeave={() => resume(t.id)}
               onFocus={() => pause(t.id)}

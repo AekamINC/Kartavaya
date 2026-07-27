@@ -163,7 +163,15 @@
  * both admin pages hand-rolled one with inline styles. One implementation,
  * focus-trapped by the same <FocusTrap> Modal and ConfirmDialog use.
  */
-.aso__scrim { position: fixed; inset: 0; z-index: 420; background: var(--scrim); border: 0; }
+/* The scrim had no animation at all: the panel slid in over 220ms while the dim
+   behind it appeared in one frame, so the console's detail panel was the only
+   overlay in the build where the two layers did not arrive together.
+   `dmFade`/`dmFadeOut` is the same pair as every other scrim (26 §6). */
+.aso__scrim {
+  position: fixed; inset: 0; z-index: 420; background: var(--scrim); border: 0;
+  animation: dmFade var(--dur-base) var(--ease-enter) both;
+}
+.aso__scrim.is-closing { animation: dmFadeOut var(--dur-fast) var(--ease-exit) both; }
 .aso {
   position: fixed; inset: 0 0 0 auto; z-index: 421;
   width: min(560px, 96vw); display: flex; flex-direction: column;
@@ -171,6 +179,14 @@
   box-shadow: var(--shadow-4);
   animation: admSlideIn var(--dur-base) var(--ease-emph) both;
 }
+/* The exit, which did not exist — `SlideOver.jsx` ended `if (!open) return
+   null`, so the panel slid in and then was deleted between two frames.
+   `dmDrawerOut` rather than an `admSlideOut`: this is a right-side panel
+   leaving to the right, which is precisely what the drawer's exit keyframe
+   already describes (16px + fade), and 26 §6 owns that registry. One step
+   faster than the entrance, per MOTION-SPEC §7.3. */
+.aso.is-closing { animation: dmDrawerOut var(--dur-fast) var(--ease-exit) both; }
+.aso.is-closing, .aso__scrim.is-closing { pointer-events: none; }
 @keyframes admSlideIn { from { transform: translateX(24px); opacity: 0 } to { transform: none; opacity: 1 } }
 
 .aso__head {

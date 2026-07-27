@@ -218,12 +218,13 @@
    so this is keyed on the pending class alone. */
 .bc.pending { opacity: .6; cursor: progress; }
 /* The settle flash — IxViews 9.1 exit, "one --primary flash so you can find it
-   in the new column". `motion.css` @keyframes kbJust, same duration and easing. */
-.bc.just { animation: bcJust calc(var(--dur-slow) * 1.5) var(--ease-exit); }
-@keyframes bcJust {
-  0%   { box-shadow: 0 0 0 2px var(--primary); }
-  100% { box-shadow: 0 0 0 0 transparent; }
-}
+   in the new column". `motion.css` @keyframes kbJust, same duration and easing.
+   `dmLanded` from the registry in components.css: this was `bcJust` here and a
+   byte-identical `ixLanded` in animations.css, for the graha board's
+   `.ix-landed`. Two boards confirming a drop differently is the bug both
+   comments named, and one keyframe is the only version of that a later edit
+   cannot break. */
+.bc.just { animation: dmLanded calc(var(--dur-slow) * 1.5) var(--ease-exit); }
 
 /* Quick complete — IxViews 9.4. One quick action, not five: the tick is the
    most common single change and everything else is a click into the drawer.
@@ -262,10 +263,12 @@
    600ms only when a click completed the task, which also satisfies 2.2's exit
    rule: "Unchecking reverses in 140ms with no spring. Undo should feel plainer
    than do." Unchecking removes `.on` and falls back to the transition. */
-.bc.tickpop .bc__tick.on { animation: bcTickPop var(--dur-slow) var(--ease-spring); }
-@keyframes bcTickPop {
-  40% { transform: scale(calc(1 + .18 * var(--motion-scale, 1))); }
-}
+/* `dmTickPop` from the registry in components.css, not a local `bcTickPop`.
+   That keyframe was declared here AND, byte-identically, as `drStPop` in
+   drawer.css — one animation under two names, on the same gesture applied to
+   the same object in two places. Keyframes are global, so there was never a
+   reason for two; there was only a reason for them to drift. */
+.bc.tickpop .bc__tick.on { animation: dmTickPop var(--dur-slow) var(--ease-spring); }
 /* 18 is `motion.css:206`'s value for this exact path in this exact viewBox —
    `M3.5 8.4l3 3 6-6.6` in `0 0 16 16`, measured by `getTotalLength()` at 13.16
    user units. `stroke-dasharray` is in the SVG's units, not CSS pixels, so the
