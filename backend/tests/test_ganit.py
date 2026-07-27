@@ -258,3 +258,55 @@ async def test_invoice_stats(api_client, mock_pool, as_admin, with_org_id):
     resp = await api_client.get("/api/v1/ganit/stats")
     assert resp.status_code == 200
     assert resp.json()["total_invoices"] == 10
+
+
+# ── Cash position ────────────────────────────────────────────────
+#
+# Today's "Cash position" card. Three things are worth asserting and none of
+# them need a database:
+#   · the range whitelist, because both accepted values are interpolated into
+#     the SQL string and a third one must never reach it;
+#   · the three footer totals, because that footer is the only place the
+#     numbers appear together, and a bucket dropped from the series is
+#     invisible in a bar chart but visible in the sum;
+#   · that net is inflow MINUS outflow and is allowed to be negative — a period
+#     that spent more than it collected has to read as a loss.
+
+async def test_cash_position_rejects_unknown_range(api_client, as_admin, with_org_id):
+    resp = await api_client.get("/api/v1/ganit/cash-position", params={"range": "year"})
+    assert resp.status_code == 400
+
+
+async def test_cash_position_totals(api_client, mock_pool, as_admin, with_org_id):
+    from datetime import date
+    mock_pool.fetch.return_value = [
+        {"idx": 1, "start_date": date(2026, 7, 1), "inflow": 100, "outflow": 40},
+        {"idx": 2, "start_date": date(2026, 7, 4), "inflow": 250, "outflow": 60},
+    ]
+    resp = await api_client.get("/api/v1/ganit/cash-position", params={"range": "30d"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["range"] == "30d"
+    assert len(body["series"]) == 2
+    assert body["series"][0]["start"] == "2026-07-01"
+    assert body["inflow"] == 350
+    assert body["outflow"] == 100
+    assert body["net"] == 250
+
+
+async def test_cash_position_net_can_be_negative(api_client, mock_pool, as_admin, with_org_id):
+    from datetime import date
+    mock_pool.fetch.return_value = [
+        {"idx": 1, "start_date": date(2026, 7, 1), "inflow": 10, "outflow": 260},
+    ]
+    resp = await api_client.get("/api/v1/ganit/cash-position", params={"range": "quarter"})
+    assert resp.json()["net"] == -250
+
+
+async def test_cash_position_empty_org(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.fetch.return_value = []
+    resp = await api_client.get("/api/v1/ganit/cash-position")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["series"] == []
+    assert body["inflow"] == 0 and body["outflow"] == 0 and body["net"] == 0

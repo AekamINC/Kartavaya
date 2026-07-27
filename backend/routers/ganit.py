@@ -659,6 +659,117 @@ async def invoice_stats(
     return dict(totals)
 
 
+#: The two windows the Today "Cash position" card offers, as (bucket count,
+#: PostgreSQL interval per bucket). 30d is twelve buckets so the chart geometry
+#: is the same in both modes — the reference draws twelve bars either way.
+_CASH_RANGES = {
+    "30d":     (12, "3 days"),
+    "quarter": (12, "8 days"),
+}
+
+
+@router.get("/cash-position")
+async def cash_position(
+    range: str = "30d",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Money in and money out, bucketed over a window — Today's Cash position card.
+
+    Inflow is `ganit_payments`: cash actually RECEIVED, not invoiced. A card
+    called "cash position" that summed invoice totals would count money the org
+    has not been paid, which is the specific thing a receivables-heavy business
+    must not be told.
+
+    Outflow is `ganit_expenses` (booked on `expense_date`) plus
+    `ganit_vendor_payments` (money actually sent against a bill). Vendor BILLS
+    are excluded for the same reason invoices are: an unpaid bill has not left
+    the bank.
+
+    Read-only. No table is written and no migration is needed — every column
+    used here has existed since `018_graha_ganit_manav.sql`,
+    `019_crm_enhancements.sql` and `035_vendor_bills.sql`.
+    """
+    if range not in _CASH_RANGES:
+        raise HTTPException(400, f"range must be one of: {', '.join(_CASH_RANGES)}")
+    buckets, step = _CASH_RANGES[range]
+
+    pool = await get_pool()
+
+    # One series query per direction, both bucketed by the same generated
+    # calendar so a period with inflow but no outflow still yields a bar rather
+    # than shifting every later bucket left by one.
+    rows = await pool.fetch(
+        f"""
+        WITH periods AS (
+            SELECT
+                gs                                   AS bucket_start,
+                gs + INTERVAL '{step}'               AS bucket_end,
+                ROW_NUMBER() OVER (ORDER BY gs)      AS idx
+            -- Ends on a bucket that CONTAINS today: the last bucket is
+            -- [tomorrow - step, tomorrow), so money received this morning is on
+            -- the chart. Ending at CURRENT_DATE instead would silently drop it.
+            FROM generate_series(
+                (CURRENT_DATE + 1 - INTERVAL '{step}' * {buckets})::date,
+                (CURRENT_DATE + 1 - INTERVAL '{step}')::date,
+                INTERVAL '{step}'
+            ) AS gs
+        ),
+        inflow AS (
+            SELECT p.idx, COALESCE(SUM(pay.amount), 0) AS amt
+            FROM periods p
+            LEFT JOIN staging.ganit_payments pay
+                   ON pay.org_id = $1::uuid
+                  AND pay.payment_date >= p.bucket_start
+                  AND pay.payment_date <  p.bucket_end
+            GROUP BY p.idx
+        ),
+        outflow AS (
+            SELECT p.idx, COALESCE(SUM(o.amt), 0) AS amt
+            FROM periods p
+            LEFT JOIN (
+                SELECT expense_date::date AS d, total AS amt
+                FROM staging.ganit_expenses
+                WHERE org_id = $1::uuid AND is_active = TRUE
+                UNION ALL
+                SELECT payment_date::date AS d, amount AS amt
+                FROM staging.ganit_vendor_payments
+                WHERE org_id = $1::uuid
+            ) o ON o.d >= p.bucket_start AND o.d < p.bucket_end
+            GROUP BY p.idx
+        )
+        SELECT p.idx,
+               p.bucket_start::date AS start_date,
+               i.amt                AS inflow,
+               f.amt                AS outflow
+        FROM periods p
+        JOIN inflow  i ON i.idx = p.idx
+        JOIN outflow f ON f.idx = p.idx
+        ORDER BY p.idx
+        """,
+        org_id,
+    )
+
+    series = [
+        {
+            "start": r["start_date"].isoformat(),
+            "inflow": float(r["inflow"] or 0),
+            "outflow": float(r["outflow"] or 0),
+        }
+        for r in rows
+    ]
+    total_in = sum(b["inflow"] for b in series)
+    total_out = sum(b["outflow"] for b in series)
+    return {
+        "range": range,
+        "series": series,
+        "inflow": round(total_in, 2),
+        "outflow": round(total_out, 2),
+        "net": round(total_in - total_out, 2),
+    }
+
+
 # ── Invoice Lifecycle ───────────────────────────────────────
 
 @router.patch("/invoices/{invoice_id}/status")

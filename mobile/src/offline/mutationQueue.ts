@@ -43,6 +43,51 @@ export function clearQueue(): void {
   writeQueue([]);
 }
 
+/**
+ * Count plus the age of the oldest item.
+ *
+ * The reference banner reads `Offline. 3 changes queued · oldest 12 min`
+ * (`Mobile.jsx:82`) — the age is half of it, and the build was showing only the
+ * count. The difference matters on this product specifically: attendance has a
+ * 72-hour ceiling, so "how long has this been waiting" is the number that says
+ * whether anything is at risk. A count alone is the same message on minute one
+ * and hour seventy-one.
+ */
+export interface QueueSummary {
+  count: number;
+  /** ISO timestamp of the oldest queued write, or null when the queue is empty. */
+  oldestAt: string | null;
+}
+
+export function getQueueSummary(): QueueSummary {
+  const q = readQueue();
+  if (q.length === 0) return { count: 0, oldestAt: null };
+  // Enqueue order is replay order, so the head IS the oldest — but a squash
+  // rewrites an entry in place and keeps the original `created_at`, so reducing
+  // is correct where `q[0]` would only usually be.
+  let oldest = q[0].created_at;
+  for (const item of q) {
+    if (new Date(item.created_at).getTime() < new Date(oldest).getTime()) oldest = item.created_at;
+  }
+  return { count: q.length, oldestAt: oldest };
+}
+
+/**
+ * Which records of a given kind have an unsent write against them.
+ *
+ * This is what lets a task row render its own pending state instead of the app
+ * asserting it globally in a banner. §7.1: never lie about state — a row showing
+ * `done` with nothing else on it claims the server agreed, and until this
+ * returns empty for that id, it has not.
+ */
+export function queuedEntityIds(entityType: string): Set<string> {
+  const ids = new Set<string>();
+  for (const item of readQueue()) {
+    if (item.entity_type === entityType && item.entity_id) ids.add(item.entity_id);
+  }
+  return ids;
+}
+
 // ── Enqueue ───────────────────────────────────────────────────────────────────
 
 export interface EnqueueOptions {
@@ -104,6 +149,10 @@ export function enqueueMutation(opts: EnqueueOptions): string {
     url:           opts.url,
     body:          safeBody,
     optimistic_id: opts.optimistic_id,
+    // Both of these were being accepted and discarded, which is why nothing in
+    // the app could ask "is this task still queued?". See MutationQueueItem.
+    entity_type:   opts.entity_type,
+    entity_id:     opts.entity_id,
     created_at:    new Date().toISOString(),
     retries:       0,
   };

@@ -30,7 +30,15 @@
   font-size: clamp(170px, 20vw, 300px);
   line-height: .8; color: #fff; opacity: .045;
   letter-spacing: -.03em; white-space: nowrap; pointer-events: none;
-  animation: auWmDrift 40s var(--ease-standard) infinite alternate;
+  /* `ease-in-out`, not a --ease-* token, and that is not a missed token.
+     Every curve in 00 §5 is asymmetric — --ease-standard is cubic-bezier(.2,0,0,1),
+     an ease-OUT. On an `alternate` animation the timing function is re-applied in
+     the direction of play, so an ease-out means the drift arrives at each end with
+     velocity ~0 and then leaves it at maximum: a visible twitch at both turnarounds,
+     every 40 seconds, forever. A ping-pong needs a curve that is flat at BOTH ends.
+     The reference agrees — design-reference/Kartavaya Redesign/auth.css:13 is
+     `animation: wmDrift 40s ease-in-out infinite alternate`. */
+  animation: auWmDrift 40s ease-in-out infinite alternate;
 }
 /* Travel rides --motion-scale so the in-app Animations preference reaches it.
    The OS setting is handled by the media query below, but CSS has no attribute
@@ -83,7 +91,31 @@
   border: 1px solid var(--side-rule);
   animation: auRotIn var(--dur-slow) var(--ease-emph);
 }
-@keyframes auRotIn { from { opacity: 0; transform: translateY(7px); } }
+/* ── Why every travel distance below is multiplied by --motion-scale ──────
+   There are TWO reduced-motion paths and they need different arithmetic.
+
+   The OS path (`prefers-reduced-motion: reduce`) can be selected in CSS, and it
+   collapses --ix, so every `var(--dur-*)` here already becomes ~0.36ms and the
+   movement is over before it can be seen.
+
+   The IN-APP path — Customization → Animations → Reduced/None — has no attribute
+   and no media query to select on. applyPrefs writes --ix-user and
+   --motion-scale-user as inline custom properties on the root, and the ONLY way a
+   stylesheet can respond is arithmetic. Duration falls out of --ix on its own;
+   DISTANCE does not, and a literal `translateY(7px)` therefore kept its full
+   travel for a user who had asked for no motion at all. At Animations = Reduced
+   that is the worst combination: half the duration, all of the distance, so the
+   movement is twice as fast as designed.
+
+   This is the same defect that was found and fixed on `.au__wm`. These six
+   keyframes were the rest of it — measured with getKeyframes() at
+   --motion-scale: 0, where auWmDrift resolved to translate3d(0,0,0) and every one
+   of these still resolved to its full literal.
+
+   Floor is 0, not .001: --ix bottoms out at .001 so `animationend` still fires and
+   exit handlers still unmount their node, but a distance of zero has no such
+   requirement — it should be exactly nothing. */
+@keyframes auRotIn { from { opacity: 0; transform: translateY(calc(7px * var(--motion-scale, 1))); } }
 .au__rot-k {
   font-size: 8.5px; letter-spacing: .2em; text-transform: uppercase;
   color: var(--primary-vivid); font-weight: 700; margin-bottom: 9px;
@@ -172,7 +204,7 @@
   font-size: 12.5px; line-height: 1.5; margin-bottom: 16px;
   animation: auBannerIn var(--dur-base) var(--ease-emph);
 }
-@keyframes auBannerIn { from { opacity: 0; transform: translateY(-4px); } }
+@keyframes auBannerIn { from { opacity: 0; transform: translateY(calc(-4px * var(--motion-scale, 1))); } }
 .au__banner svg { flex-shrink: 0; margin-top: 1px; }
 .au__banner--err  { background: var(--danger-container); color: var(--on-danger-container); }
 .au__banner--ok   { background: var(--ok-container);     color: var(--on-ok-container); }
@@ -235,7 +267,7 @@
   animation: auFldE var(--dur-base) var(--ease-emph);
 }
 .aufld__e svg { flex-shrink: 0; margin-top: 1px; }
-@keyframes auFldE { from { opacity: 0; transform: translateY(-3px); } }
+@keyframes auFldE { from { opacity: 0; transform: translateY(calc(-3px * var(--motion-scale, 1))); } }
 .aufld__hint { display: block; font-size: 11px; color: var(--on-surface-3); margin-top: 5px; line-height: 1.45; }
 
 /* The reveal control sits inside the field box, so it must clear the padding
@@ -316,7 +348,11 @@
   transition: background var(--dur-fast), transform var(--dur-fast) var(--ease-spring);
 }
 .au__btn:hover { background: var(--primary-hover); }
-.au__btn:active { transform: scale(.99); }
+/* Press feedback on --motion-scale, matching `.ix-press` in animations.css §5.
+   At Animations = None the scale is exactly 1 and the press is expressed by the
+   :hover background change alone, which is a static difference rather than
+   motion — the rule animations.css states for every press affordance. */
+.au__btn:active { transform: scale(calc(1 - .01 * var(--motion-scale, 1))); }
 .au__btn:disabled { opacity: .5; pointer-events: none; }
 .au__spin {
   width: 14px; height: 14px; border-radius: 50%;
@@ -362,7 +398,15 @@
    attribute for CSS to select on and reached this rule through neither
    duration nor distance — the same defect class as `.adm__badge-d` and
    `.au__wm`. Amplitude now rides --motion-scale, so at None the box holds
-   still and the error message carries the signal on its own. */
+   still and the error message carries the signal on its own.
+
+   ONE COUPLING to keep in view if --ix ever gains a value above 1 (the
+   reference catalogue has a 4× slow-motion toggle; this build does not):
+   useShake() in LoginPage.jsx strips `.is-shake` on a FIXED 460ms timer, which
+   is 420ms plus its own 20ms arming delay plus margin. At --ix 1 or below the
+   class always outlives the animation. At --ix 4 it would not, and the shake
+   would be cut off two thirds of the way through — the timer would have to
+   scale with it. */
 .au__box.is-shake { animation: auShake calc(420ms * var(--ix)) cubic-bezier(.36, .07, .19, .97); }
 @keyframes auShake {
   10%, 90%      { transform: translateX(calc(-1px * var(--motion-scale, 1))); }
@@ -471,7 +515,15 @@
 .ob__st.done .ob__n { background: var(--ok); color: var(--ok-container); }
 .ob__lb { font-size: 12px; color: var(--on-surface-3); }
 .ob__st.on .ob__lb { color: var(--on-surface); font-weight: 600; }
-.ob__line { flex: 1; height: 1px; background: var(--outline-variant); margin: 0 11px; min-width: 14px; }
+/* The connector transitions on the SAME --dur-base ladder as .ob__n above it.
+   Measured before this line existed: completing a step faded the number badge to
+   green over 220ms while the rail beside it snapped instantly (transition-duration
+   0s), so a single progress indicator moved at two different speeds. Colour only —
+   `all` would catch flex-basis and animate the rail re-measuring itself. */
+.ob__line {
+  flex: 1; height: 1px; background: var(--outline-variant); margin: 0 11px; min-width: 14px;
+  transition: background-color var(--dur-base) var(--ease-standard);
+}
 .ob__st.done + .ob__line { background: var(--ok); }
 /* 12 §1 collapses the rail to numbered dots and keeps only the current label,
    because "five labels on a 393px rail truncate to nonsense". Two further
@@ -495,8 +547,8 @@
    holding a twelve-card module grid is expensive to relayout. */
 .ob__pane { animation: obIn var(--dur-slow) var(--ease-emph); }
 .ob__pane.back { animation: obBack var(--dur-slow) var(--ease-emph); }
-@keyframes obIn   { from { opacity: 0; transform: translateX(22px); } }
-@keyframes obBack { from { opacity: 0; transform: translateX(-22px); } }
+@keyframes obIn   { from { opacity: 0; transform: translateX(calc(22px  * var(--motion-scale, 1))); } }
+@keyframes obBack { from { opacity: 0; transform: translateX(calc(-22px * var(--motion-scale, 1))); } }
 
 .ob__head { margin-bottom: 22px; }
 /* ── Onboarding type, measured against the rendered source ──────────────────

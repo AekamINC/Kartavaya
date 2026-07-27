@@ -17,3 +17,6 @@ export { default as ProjectStatus }  from './ProjectStatus';
 export { default as UpcomingWeek }   from './UpcomingWeek';
 export { default as TeamPulse }      from './TeamPulse';
 export { default as TodaySkeleton }  from './TodaySkeleton';
+/* The two blocks the reference dashboard has and the build never built. */
+export { default as ApprovalsCard }  from './ApprovalsCard';
+export { default as CashPosition }   from './CashPosition';

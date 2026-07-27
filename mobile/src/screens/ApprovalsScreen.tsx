@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, FlatList, Pressable, StyleSheet, TextInput, ActivityIndicator,
-  Modal, KeyboardAvoidingView, Platform, Alert,
+  View, Text, FlatList, Pressable, StyleSheet, TextInput, ActivityIndicator, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -11,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
 import { a11yButton } from '../components/a11y';
+import Sheet from '../components/Sheet';
 import SwipeRow from '../components/SwipeRow';
 import {
   approvalsApi, approvalTitle, isTaskApproval,
@@ -378,16 +378,15 @@ export default function ApprovalsScreen() {
       )}
 
       {/* ── Decline reason ── */}
-      <Modal
+      <Sheet
         visible={!!declining}
-        transparent
-        animationType="fade"
-        // Android hardware back must dismiss this, per 17's platform table.
-        onRequestClose={() => setDeclining(null)}
+        // Android hardware back must dismiss this, per 17's platform table —
+        // Sheet forwards onClose to onRequestClose.
+        onClose={() => setDeclining(null)}
+        closeLabel="Cancel decline"
+        panelStyle={[s.sheet, { backgroundColor: t.surface }]}
+        avoidKeyboard
       >
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <Pressable style={s.overlay} onPress={() => setDeclining(null)}>
-            <Pressable style={[s.sheet, { backgroundColor: t.surface }]} onPress={() => {}}>
               <Text style={[s.sheetTitle, { color: t.ink }]}>
                 Decline {declining && declining.length > 1 ? `${declining.length} requests` : 'request'}
               </Text>
@@ -439,10 +438,7 @@ export default function ApprovalsScreen() {
                     : <Text style={{ color: t.error, fontWeight: '800', fontSize: 13 }}>Decline</Text>}
                 </Pressable>
               </View>
-            </Pressable>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
+      </Sheet>
     </View>
   );
 }
@@ -484,7 +480,7 @@ const s = StyleSheet.create({
     minWidth: 88, alignItems: 'center',
   },
 
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  // overlay removed — Sheet owns the frame and fades the scrim.
   sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 32 },
   sheetTitle: { fontSize: 17, fontWeight: '800', marginBottom: 14 },
   sheetLabel: { fontSize: 10.5, fontWeight: '800', letterSpacing: 1.2, marginBottom: 6 },
