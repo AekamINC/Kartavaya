@@ -23,6 +23,7 @@ import { Route } from 'react-router-dom';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { api, _resetSessionLatch } from '../../lib/api';
+import { moduleMeta } from '../../lib/moduleColors';
 import { AcceptInvitePage, LoginPage, ResetPasswordPage } from '../../pages/LoginPage';
 import {
   installMockApi, installNetworkKillSwitch, restoreNetwork, httpError,
@@ -89,13 +90,22 @@ describe('accept-invite · what you are being asked to accept', () => {
     expect(text).toContain('rohan@aekam.co');
     // Grants by their product names, not their codes — `moduleColors.js` is the
     // one registry and this screen reads it rather than restating labels.
-    expect(text).toContain('CRM');
+    //
+    // ASSERTED THROUGH THE REGISTRY, not as literals. These were `'CRM'` and
+    // `'Invoicing'`, and `ab740fc` renamed ganit to **Finance** — the module also
+    // holds expenses, payables, bank and contracts, so "Invoicing" named a tenth
+    // of it, and the reference calls it Finance in all three places it names the
+    // module. That is `_DESIGN-GAP.md` #2, settled the way it says to settle it.
+    //
+    // That branch landed green, this test landed green, and staging went red
+    // where they met: neither could see the other. Reading the registry is the
+    // fix that holds, because the claim this line actually makes is "the screen
+    // shows the product name rather than the code" — not "the product name is
+    // Finance". A literal re-states the registry and goes stale the next time a
+    // label is settled deliberately; this cannot.
+    expect(text).toContain(moduleMeta('graha').en);
     expect(text).toContain('Editor');
-    // `Finance`, not `Invoicing` — the label moved in moduleColors.js to match
-    // the design reference, which calls ganit Finance in all three of the
-    // places it names the module. This assertion existing is the point: it is
-    // what proves the screen reads the registry instead of restating labels.
-    expect(text).toContain('Finance');
+    expect(text).toContain(moduleMeta('ganit').en);
     expect(text).toContain('Viewer');
     expect(host.$('.auinv')).toBeTruthy();
   });
