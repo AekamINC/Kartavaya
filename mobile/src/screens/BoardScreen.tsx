@@ -14,6 +14,8 @@ import { format, isToday, isPast } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
 import Sheet from '../components/Sheet';
 import Refresher from '../components/Refresher';
+import ScreenState, { resolveScreenState } from '../components/ScreenState';
+import { useOnline } from '../hooks/useOnline';
 import { tasksApi } from '../api/tasks';
 import { projectsApi } from '../api/projects';
 import { PRIORITY_COLORS, projectColor, AVATAR_COLORS, BRAND_GRADIENT_2, withAlpha } from '../theme/tokens';
@@ -274,12 +276,25 @@ export default function BoardScreen() {
   const routeParams = route.params ?? {};
   const isTabMode = !routeParams.projectId;
 
+  const online = useOnline();
+
   // ── Projects ────────────────────────────────────────────────────────────────
-  const { data: projects = [] } = useQuery<Project[]>({
+  /**
+   * `isError` was never read on any of the three queries on this screen, and
+   * `= []` gave each of them an empty array to fall back on. A 500 on
+   * `/teams` therefore rendered the "No projects yet" screen — which tells a
+   * firm mid-engagement that it has no work — and a 500 on `/tasks` rendered
+   * "No tasks yet" under a column that may be full. TanStack retries twice
+   * before surfacing `isError`, so the user waited through both to be told
+   * something false. `resolveScreenState` already separates these six cases
+   * and is what every other module screen on mobile uses.
+   */
+  const projectsQ = useQuery<Project[]>({
     queryKey: ['projects'],
     queryFn: projectsApi.list,
     staleTime: 60_000,
   });
+  const projects = projectsQ.data ?? [];
 
   const [activeProjectId, setActiveProjectId] = useState<string | null>(
     routeParams.projectId ?? null
@@ -301,19 +316,40 @@ export default function BoardScreen() {
   const colColor      = projectColor(projectId, activeProject?.color ?? undefined);
 
   // ── Data ────────────────────────────────────────────────────────────────────
-  const { data: columns = [], isLoading: colsLoading } = useQuery({
+  const columnsQ = useQuery({
     queryKey: ['columns', projectId],
     queryFn:  () => projectsApi.columns(projectId),
     enabled:  !!projectId,
   });
+  const columns = columnsQ.data ?? [];
+  const colsLoading = columnsQ.isLoading;
 
-  const { data: tasks = [], isLoading: tasksLoading, refetch, isFetching } = useQuery({
+  const tasksQ = useQuery({
     queryKey: ['tasks', projectId],
     queryFn:  () => tasksApi.list({ team_id: projectId }),
     enabled:  !!projectId,
   });
+  const tasks = tasksQ.data ?? [];
+  const { isLoading: tasksLoading, refetch, isFetching } = tasksQ;
 
   const isLoading   = colsLoading || tasksLoading;
+
+  /**
+   * The board's own state, once a project is actually selected.
+   *
+   * Both queries are `enabled: !!projectId`, and a disabled query reports no
+   * data and no loading — which `resolveScreenState` would read as `offline`
+   * for a user with no connection who has not picked a project yet. With no
+   * project there is nothing to be offline ABOUT, so this stays `ready` and
+   * lets the normal render run.
+   */
+  const boardStatus = !projectId ? 'ready' : resolveScreenState({
+    isLoading,
+    isError: columnsQ.isError || tasksQ.isError,
+    error:   columnsQ.error ?? tasksQ.error,
+    online,
+    hasData: columnsQ.data !== undefined && tasksQ.data !== undefined,
+  });
   const activeColId = activeCol ?? columns[0]?.column_id ?? null;
 
   const grouped = useMemo(() => {
@@ -474,7 +510,32 @@ export default function BoardScreen() {
     </ScrollView>
   ), [columns, grouped, tasks, t]);
 
-  // ── No projects state ────────────────────────────────────────────────────────
+  // ── No projects — or, until now, a failed read wearing its clothes ──────────
+  const projectsStatus = resolveScreenState({
+    isLoading: projectsQ.isLoading,
+    isError:   projectsQ.isError,
+    error:     projectsQ.error,
+    online,
+    hasData:   projectsQ.data !== undefined,
+    isEmpty:   projectsQ.data !== undefined && projects.length === 0,
+  });
+
+  if (projectsStatus !== 'ready' && projectsStatus !== 'empty') {
+    return (
+      <View style={[s.root, { backgroundColor: t.bg }]}>
+        <View style={[s.header, { backgroundColor: IS_ANDROID ? t.surface : t.bg, paddingTop: insets.top + (IS_ANDROID ? 8 : 54) }]}>
+          <BiLabel latinStyle={[s.kicker, { color: t.primary }]} hindiStyle={{ color: t.primary }} hindiSize={12}>
+            Boards · कार्यफलक
+          </BiLabel>
+        </View>
+        <ScreenState
+          status={projectsStatus}
+          onRetry={projectsStatus === 'error' ? () => projectsQ.refetch() : undefined}
+        />
+      </View>
+    );
+  }
+
   if (!isLoading && projects.length === 0) {
     return (
       <View style={[s.root, { backgroundColor: t.bg }]}>
@@ -588,11 +649,20 @@ export default function BoardScreen() {
         </ScrollView>
       )}
 
-      {/* ── Content ── */}
+      {/* ── Content ──
+          Loading, then failure, then the board. Every view below renders its
+          own "No tasks yet" / "No tasks in this column" copy off `tasks`, and
+          `tasks` is `[]` whenever the query rejected — so without this branch
+          all four of them state that a column is clear when nobody knows. */}
       {isLoading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={t.primary} size="large" />
         </View>
+      ) : boardStatus !== 'ready' && boardStatus !== 'empty' ? (
+        <ScreenState
+          status={boardStatus}
+          onRetry={boardStatus === 'error' ? () => { columnsQ.refetch(); tasksQ.refetch(); } : undefined}
+        />
       ) : (
         <>
           {view === 'Board'    && renderBoard()}

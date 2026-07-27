@@ -73,6 +73,10 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
   const [error,      setError]      = useState<string | null>(null);
 
   const [projects,   setProjects]   = useState<{ team_id: string; name: string; color?: string }[]>([]);
+  // The project row renders nothing at all when the list is empty, so a failed
+  // `/teams` read was indistinguishable from an org with no projects — the
+  // picker simply could not be used and never said why.
+  const [projectsErr, setProjectsErr] = useState(false);
   const [members,    setMembers]    = useState<TeamMember[]>([]);
   const [templates,  setTemplates]  = useState<TaskTemplate[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
@@ -84,7 +88,10 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
     setDueAt(null); setShowDatePicker(false); setDescription(''); setAssignees([]);
     setAttachments([]); setShowAttachPicker(false); setUploadingFiles(false);
     setTitleError(false); setError(null); setTemplates([]); setShowTemplates(false);
-    apiClient.get('/teams').then(r => setProjects(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+    setProjectsErr(false);
+    apiClient.get('/teams')
+      .then(r => { setProjects(Array.isArray(r.data) ? r.data : []); setProjectsErr(false); })
+      .catch(() => { setProjects([]); setProjectsErr(true); });
   }, [visible]);
 
   // Fetch members + templates when project changes
@@ -233,6 +240,11 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
 
             {/* Project */}
             <FieldLabel t={t}>PROJECT · परियोजना</FieldLabel>
+            {projectsErr && (
+              <Text style={[s.fieldError, { color: t.error }]}>
+                Your projects did not load, so this task can only be filed as personal.
+              </Text>
+            )}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.chipRow}>
               {projects.map(p => (
                 <TouchableOpacity

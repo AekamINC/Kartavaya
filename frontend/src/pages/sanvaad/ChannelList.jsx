@@ -49,15 +49,19 @@ function ChannelRow({ ch, on, onSelect }) {
  */
 function DmPicker({ onPick, onClose }) {
   const [q, setQ] = useState('');
-  const [people, setPeople] = useState([]);
+  // `null` while unknown — never `[]`. "Nobody else is in your organisation
+  // yet" is a claim about the firm's headcount, and a rejected directory read
+  // used to print it verbatim to someone whose colleagues are all present.
+  const [people, setPeople] = useState(null);
+  const [dirErr, setDirErr] = useState(null);
   const [busy, setBusy] = useState(null);
 
   useEffect(() => {
     let dead = false;
     const t = setTimeout(() => {
       api.get('/v1/messaging/directory', { params: q.trim() ? { q: q.trim() } : undefined })
-        .then(r => { if (!dead) setPeople(Array.isArray(r.data) ? r.data : []); })
-        .catch(() => { if (!dead) setPeople([]); });
+        .then(r => { if (!dead) { setPeople(Array.isArray(r.data) ? r.data : []); setDirErr(null); } })
+        .catch(e => { if (!dead) { setPeople(null); setDirErr(e); } });
     }, 220);
     return () => { dead = true; clearTimeout(t); };
   }, [q]);
@@ -72,12 +76,22 @@ function DmPicker({ onPick, onClose }) {
         aria-label="Search people to message"
         autoFocus
       />
-      {people.length === 0 && (
+      {dirErr ? (
+        <p className="sv__none">
+          {errorKind(dirErr) === 'offline'
+            ? 'The people list needs a connection. It loads as soon as you have one.'
+            : errorKind(dirErr) === 'denied'
+              ? 'You do not have access to the people list.'
+              : 'The people list did not load, so this is not a list of who is here.'}
+        </p>
+      ) : people === null ? (
+        <p className="sv__none">Searching…</p>
+      ) : people.length === 0 ? (
         <p className="sv__none">
           {q.trim() ? `Nobody matches “${q.trim()}”.` : 'Nobody else is in your organisation yet.'}
         </p>
-      )}
-      {people.map(p => (
+      ) : null}
+      {(people || []).map(p => (
         <button
           key={p.user_id}
           type="button"

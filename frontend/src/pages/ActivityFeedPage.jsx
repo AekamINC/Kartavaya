@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
 import { PageHeader } from '../components/editorial';
+import { ErrorState, errorKind } from '../components/ui/ErrorState';
 import { AVATAR_COLORS, relTime, userInitials, logger } from '../lib/utils';
 
 const EVENT_TYPES = [
@@ -34,7 +35,14 @@ function verbLabel(event_type) {
 }
 
 export default function ActivityFeedPage({ teamId }) {
-  const [events,      setEvents]      = useState([]);
+  // `null` until a load succeeds, never `[]`. "No activity recorded yet" is a
+  // claim about the team's week — that nobody moved a task, commented or
+  // approved anything. A rejected request used to land on exactly that
+  // sentence, because the catch below only wrote to the console and left the
+  // list at its initial `[]`. Keeping the failed state unrepresentable as an
+  // empty one is cheaper than remembering to check a flag at the call site.
+  const [events,      setEvents]      = useState(null);
+  const [err,         setErr]         = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore,     setHasMore]     = useState(false);
@@ -58,17 +66,25 @@ export default function ActivityFeedPage({ teamId }) {
     abortRef.current = ctrl;
     const off = reset ? 0 : offset;
     reset ? setLoading(true) : setLoadingMore(true);
+    if (reset) setErr(null);
     try {
       const params = { limit: LIMIT, offset: off };
       if (filterType)  params.event_type = filterType;
       if (filterActor) params.actor_id   = filterActor;
       const r = await api.get('/activity/feed', { params, signal: ctrl.signal });
       const data = Array.isArray(r.data) ? r.data : [];
-      setEvents(prev => reset ? data : [...prev, ...data]);
+      setEvents(prev => reset ? data : [...(prev || []), ...data]);
       setHasMore(data.length === LIMIT);
       setOffset(off + data.length);
     } catch (e) {
-      if (e.name !== 'CanceledError' && e.name !== 'AbortError') logger.error(e);
+      // An abort is this component superseding its own request — the filter
+      // changed and a newer load is already in flight. It is not a failure and
+      // must not paint one over the results that are about to arrive.
+      if (e.name === 'CanceledError' || e.name === 'AbortError') return;
+      logger.error(e);
+      // A failed "load more" keeps the page it already has; only a failed
+      // first page replaces the feed with the reason it is not there.
+      if (reset) setErr(e);
     } finally {
       reset ? setLoading(false) : setLoadingMore(false);
     }
@@ -131,18 +147,22 @@ export default function ActivityFeedPage({ teamId }) {
       </div>
 
       {/* Activity feed */}
+      {/* Loading, then failure, then empty — in that order. The empty branch is
+          only reachable when the request actually returned nothing. */}
       {loading ? (
         <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--ink-3)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>
           Loading activity…
         </div>
+      ) : err ? (
+        <ErrorState kind={errorKind(err)} grant="access to this team’s activity" onRetry={() => load(true)} />
       ) : (
         <div className="k-activity k-activity--full">
-          {events.length === 0 && (
+          {events?.length === 0 && (
             <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontStyle: 'italic' }}>
               No activity recorded yet.
             </div>
           )}
-          {events.map((a, i) => {
+          {(events || []).map((a, i) => {
             const actorName = a.actor_name || a.actor || 'Someone';
             const initials  = userInitials(actorName);
             const color     = AVATAR_COLORS[i % AVATAR_COLORS.length];
