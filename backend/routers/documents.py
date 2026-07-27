@@ -19,26 +19,37 @@ project report joins boards and time entries to invoices.
 
 Data that does not exist
 ------------------------
-Verified against the live catalog, not the migration ledger. Three of these
-documents need columns Kartavaya does not have:
+**Re-verified against the live catalog 2026-07-27, after the migration landed.**
+Read this section sceptically: an earlier version of it said `statement_pdf.py`
+and `tds_challan_pdf.py` were "NOT BUILT" when both existed, and that stale
+sentence is the likeliest reason nothing called them for weeks. Check the
+catalog before believing any claim here, including this one.
 
-  * **TDS challan** — `staging.organisations` has no `tan`, and there is no
-    challan table at all (BSR code, serial, tender date, deposit date, bank,
-    major head, type of payment). Non-salary deductions have no store either:
-    `ganit_vendor_bills` records no section, rate or TDS amount. So the route
-    takes the bank's own challan particulars in the request body — which is
-    where they come from anyway, off the counterfoil the bank issues — and
-    derives only the 192B salary line, from `staging.vetana_payslips`.
-  * **GSTR-3B** — reverse charge, nil/exempt, non-GST, ITC reversal and
-    ineligible-ITC flags have no columns, and `ganit_vendor_bills` has no
-    `cess`. Those rows are accepted as overrides and default to nil, which the
-    document states rather than hides.
-  * **Project report** — there is no `projects` table (two files under
-    `services/skills/data/` join one that does not exist), no milestone store
-    and no risk register.
+`PROPOSED_documents.sql` **HAS been applied** — in `documents_tan_and_challans`
+and `documents_supply_flags_and_org_fields`. So these now EXIST:
+`organisations.tan`, `ganit_tds_challans`, `ganit_vendor_bills.cess` and
+`.is_reverse_charge`, `ganit_invoices.supply_nature` and the quotation columns,
+`project_milestones`, `project_risks`, `project_baselines`.
 
-`PROPOSED_documents.sql` proposes the columns. It is NOT applied: staging and
-production share one Supabase project.
+What that does and does not change:
+
+  * **TDS challan** — the store now exists, but **nothing reads or writes
+    `ganit_tds_challans` yet**. The route still takes the bank's particulars in
+    the request body, which is where they come from anyway (off the counterfoil
+    the bank issues), and still derives only the 192B salary line from
+    `staging.vetana_payslips`. TAN reads the column, falling back to
+    `organisations.settings` for orgs recorded before the column existed.
+  * **GSTR-3B** — the flag columns exist but no UI writes them, so reverse
+    charge, nil/exempt, non-GST and the ITC reversal rows are still accepted as
+    request overrides and still default to nil. The document STATES that rather
+    than printing ₹0, because a zero asserts no such liability arose.
+  * **Project report** — `project_milestones`, `project_risks` and
+    `project_baselines` exist and **are not read yet**, so the report still
+    prints its "no milestone store" advisory. There is still no `projects`
+    table; two files under `services/skills/data/` join one that does not exist.
+
+Staging and production share one Supabase project, so every one of those
+statements is about production too.
 """
 
 from __future__ import annotations
