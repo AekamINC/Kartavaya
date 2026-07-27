@@ -176,6 +176,89 @@ from deals carrying no open follow-up.
 
 ---
 
+## What shipped
+
+Three commits, each rendered and screenshotted against the reference at 1440
+before it was pushed.
+
+### Shared chrome — reaches all eleven module pages
+
+| Change | Where |
+|---|---|
+| `More +N` overflow: six tabs inline, the rest in a popover; picking one promotes it into the strip | `components/module/ModuleTabs.jsx` |
+| Devanagari on every tab, from the reference's own `TAB_HI` | `lib/tabLabels.js` (new) |
+| Arrow-key / Home / End navigation | `ModuleTabs.jsx` |
+| Section kicker (`Revenue · राजस्व`) | `components/module/ModuleHeader.jsx` |
+| KPI strip gains `loading`, `error`, `hi`, `sub`, `tone` | `components/module/KpiStrip.jsx` |
+| `.mtw`, `.mt__pop*`, `.mt__hi`, `.mrow`, `.mwarn`, `.mk__hi/__s`, `.mk__v--*`, `.gpipe*`, `.gdeal*` | `styles/module.css` |
+
+**Roving tabindex had no arrow-key handler.** `tabIndex={-1}` on every
+unselected tab, with nothing listening for `ArrowRight` — so on eleven module
+pages exactly one tab was reachable by keyboard. Fixed with the change that
+touched the same component.
+
+### Per page
+
+| | CRM | Sales | Finance |
+|---|---|---|---|
+| Kicker | ✅ | ✅ | ✅ |
+| Header action, wired to the real create form | `+ New deal` | `+ New order` | `+ Invoice` |
+| Page KPI strip | ✅ 4 | ✅ 4 | ✅ 4 |
+| Default tab | `today` → **`pipeline`** | `dashboard` (correct) | `invoices` (correct) |
+| Tab counts | contacts, pipeline | orders | invoices, payables |
+| Name | hi `ग्राहक` → **`ग्रह`** | — | **Invoicing → Finance** |
+| Warning chip | ✅ "N deals have no next step" | — | — |
+| Pipeline board | ✅ replaced the count grid | — | — |
+
+Header buttons open the tab's existing create form through a nonce counter
+(not a boolean — a boolean is already `true` on the second press and the effect
+does not re-run). The reference's **`Filters`** on CRM and **`Scan bill`** on
+Finance are deliberately absent: there is no filter panel and no bill-scanning
+endpoint, and a button that does nothing is worse than one that is not there.
+
+The name change touched all five places the name is held — `navConfig.js`,
+`moduleColors.js`, `commands.js`, `org/catalogue.js` and the page header — plus
+the e2e spec. A module with two names is worse than one with the wrong name.
+"invoicing" and "billing" survive in the ⌘K keywords.
+
+### Two silent failures
+
+- `VikrayPage.DashboardTab` did `.catch(() => {})` above `if (!data) return
+  <Shimmer/>`. A failed request animated a skeleton forever.
+- `KpiStrip` had no error branch, so every page fetching its own KPIs rendered
+  failure as an empty row — "your pipeline is worth nothing" rather than "this
+  did not load". Now owned by the component so no caller can forget it.
+
+### e2e
+
+`ModuleTabs` puts tabs seven and beyond behind `More`, so
+`getByRole('tab', …)` finds Ganit's `products` (second) but not its `stats`
+(tenth). Eight tab-clicking tests would have failed for a reason unrelated to
+the tab. They now go through a `selectTab` helper that opens the popover when
+it has to.
+
+### Verification
+
+Vitest **433/433** (22 files). `check-tokens` 340 declared / **0 missing**.
+`check-classes` 2161 selectors / **0 missing a rule**. `vite build` clean.
+
+The 2 unhandled rejections vitest reports are in `components/TaskDrawer.jsx`
+(`r.data.forEach is not a function`), which this branch never touched —
+pre-existing, and worth someone's time separately.
+
+### Deliberately NOT done
+
+- **Vikray's `pipeline` and `customers` tabs are not restored.** `cae0e0a`
+  removed them with evidence and it is right; `Data.jsx:119` says `MODULE_TABS`
+  was lifted from the build's old staging pages, so the reference is mirroring
+  the old build rather than specifying a new one.
+- **Sales' quote-to-cash table, "Send via" and "Stalled" cards.** All three
+  need a quote object the build does not have — Vikray's entity is an order,
+  created already-agreed. That is a backend feature, not a restyle.
+- **Finance's GSTR-3B panel, ITC and bank-balance tiles.** No endpoint returns
+  reconciliation or bank balances; `/v1/ganit/bank-statements` is an import log.
+  The four tiles that shipped are the four the API can actually answer.
+
 ## Not mine, but found while looking
 
 - **`.mt` is two different components.** `styles/module.css:97` (module tab strip) and
