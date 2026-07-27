@@ -485,9 +485,15 @@
 .mt__wrap > .mt { border-bottom: 0; margin-bottom: 0; flex: 1; min-width: 0; }
 
 .mt__en { text-transform: capitalize; }
+/* The gap is not decoration. Without it the two scripts butt together and the
+   tab reads "Dashboardमुख्य" — one word in two alphabets, which is what nine
+   module pages were rendering. `.mt__b .mt__n` beside it already sets the same
+   6px for the same reason; this was the half of the pair that never got it.
+   24-bilingual-devanagari.md: the Devanagari is an apposition to the English,
+   and an apposition needs the space that makes it one. */
 .mt__hi {
   font-family: var(--font-hindi); font-size: 12px; font-weight: 400;
-  color: var(--on-surface-3);
+  color: var(--on-surface-3); margin-left: 6px;
 }
 .mt__b.on .mt__hi { color: var(--primary-text); }
 
@@ -575,7 +581,7 @@
 .vko { display: flex; flex-direction: column; }
 .vko__head, .vko__row {
   display: grid;
-  grid-template-columns: 104px minmax(0, 1.4fr) 96px minmax(120px, 1.3fr) minmax(0, 132px);
+  grid-template-columns: 104px minmax(0, 1.4fr) 96px minmax(120px, 1.3fr) minmax(0, 188px);
   gap: 12px; align-items: center;
   padding: 0 14px;
   text-align: left;
@@ -609,7 +615,9 @@
 .vko__val     { text-align: right; font-family: var(--font-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .vko__prog    { min-width: 0; }
 .vko__state   { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
-.vko__date    { font-size: 11px; color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+/* `nowrap` and a column wide enough to hold the pair. An ISO date that wraps
+   to "2026-" / "06-02" is two lines of noise beside a one-line status. */
+.vko__date    { font-size: 11px; color: var(--on-surface-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Five segments, one per lifecycle state, filled up to where the order sits.
    `--c` is the state's own colour so the bar and the tag beside it agree. */
@@ -750,7 +758,10 @@
 .vk-adj__neg   { color: var(--warn); }
 
 /* The movement history — `GET /stock/{id}/moves` had no caller until now. */
-.vk-mv      { list-style: none; margin: 0; padding: 4px 0; display: flex; flex-direction: column; gap: 5px; }
+/* Capped, because the row lives in a `colspan` cell that is as wide as the
+   whole table: without it the delta, the reason and the date end up a screen
+   apart and stop reading as one line. */
+.vk-mv      { list-style: none; margin: 0; padding: 4px 0; max-width: 520px; display: flex; flex-direction: column; gap: 5px; }
 .vk-mv__i   { display: grid; grid-template-columns: 74px minmax(0, 1fr) 92px; gap: 12px; align-items: baseline; font-size: 12px; }
 .vk-mv__d   { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ok); }
 .vk-mv__d--out { color: var(--danger); }

@@ -44,7 +44,13 @@ export default function VikrayPage() {
   const [openOrderId, setOpenOrderId] = useState(null);
 
   const meta = moduleMeta('vikray');
-  const motion = useTabPanelMotion(TABS, tab);
+  // `useTabPanelMotion` returns `{ key, style }` and every module page spreads
+  // the pair straight onto the panel. React 19 refuses a `key` inside a spread
+  // and logs an error on every tab switch — the key is silently dropped, which
+  // is the whole mechanism: without a changing key the panel is reconciled in
+  // place, the enter animation never restarts, and the motion this hook exists
+  // to produce does not happen. Destructured here rather than spread.
+  const { key: panelKey, ...panelMotion } = useTabPanelMotion(TABS, tab);
 
   // The four money figures sit above the tab bar, where they are true of the
   // module rather than of one tab — a revenue number that disappears when you
@@ -109,11 +115,12 @@ export default function VikrayPage() {
       />
 
       <div
+        key={panelKey}
         role="tabpanel"
         id={`mt-panel-${tab}`}
         aria-labelledby={`mt-tab-${tab}`}
         className="ix-panel"
-        {...motion}
+        {...panelMotion}
       >
         {tab === 'dashboard' && <DashboardTab onOpenOrder={openOrder} onFilter={goOrders} />}
         {tab === 'orders' && (

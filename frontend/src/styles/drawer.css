@@ -172,10 +172,15 @@
    `text-transform: none` stay: they are what stops the uppercase tracking on
    `.dr__lbl` above from reaching the Devanagari, which is the defect this pair
    exists to prevent. `--on-surface-faint` is a non-text token. */
+/* `margin-left`, because zeroing the tracking also removed the only thing
+   separating the two scripts: `.dr__lbl` above tracks at .15em, which puts ~1.4px
+   after its last letter, and that is the entire gap. Every one of these labels
+   rendered as "CUSTOMERग्राहक" — one word in two alphabets. 6px is the figure
+   `.mt__hi` and `.fld__hi` already use for the same apposition. */
 .dr__lbl-hi {
   font-family: var(--font-indic); font-size: 11.5px;
   letter-spacing: 0; text-transform: none; font-weight: 400;
-  color: var(--on-surface-3);
+  color: var(--on-surface-3); margin-left: 6px;
 }
 .dr__sec { margin-bottom: var(--sp-5); }
 .dr__empty { font-size: 13px; color: var(--on-surface-3); margin: 0 0 var(--sp-3); }

@@ -32,7 +32,12 @@ const REASONS = [
 ];
 
 const REASON_LABEL = Object.fromEntries(REASONS);
-const reasonLabel = r => REASON_LABEL[r] || String(r || '').replace(/_/g, ' ');
+// The backend writes two reasons this list does not offer, because they are not
+// things a person chooses: `order_confirmed` and `order_cancelled` are stamped
+// by the order lifecycle. They still have to READ as sentences in the history —
+// a raw enum reaching the user is the defect, not the missing option.
+const reasonLabel = r => REASON_LABEL[r]
+  || (r ? String(r).replace(/_/g, ' ').replace(/^./, c => c.toUpperCase()) : 'Adjustment');
 
 /** The threshold cell: an input that says whether it saved. §8, point 2. */
 function Threshold({ row, onSaved }) {
