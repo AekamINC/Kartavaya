@@ -498,9 +498,23 @@ textarea.inp { resize: vertical; min-height: 76px; }
 @keyframes dmFade    { from { opacity: 0 } to { opacity: 1 } }
 @keyframes dmFadeOut { to   { opacity: 0 } }
 /* The drawer enters at .3 opacity, not 0 — a solid panel sliding in, not one
-   materialising. */
-@keyframes dmDrawerIn  { from { transform: translateX(28px); opacity: .3 } }
-@keyframes dmDrawerOut { to   { transform: translateX(16px); opacity: 0 } }
+   materialising.
+
+   The travel rides `--motion-scale`, which animations.css §2 states as the
+   invariant for every distance in the build and this pair was escaping.
+   Measured with `getAnimations()` while stepping the Customization preference:
+   at Animations = Reduced the drawer kept its full 28px and halved its duration
+   to 180ms — it moved TWICE AS FAST for a user who asked for less motion — and
+   at None it still crossed 28px, just instantly. The opacity step is untouched
+   and carries the entrance on its own at scale 0, so the drawer still announces
+   itself as a state change rather than appearing from nowhere.
+
+   The rest of this registry — dmSheetIn/Out, dmPop, dmTip — has the identical
+   defect and is reported rather than changed here: those are the overlay
+   surface's, and their `from` values interact with per-placement
+   transform-origin in ways their owner should verify. */
+@keyframes dmDrawerIn  { from { transform: translateX(calc(28px * var(--motion-scale, 1))); opacity: .3 } }
+@keyframes dmDrawerOut { to   { transform: translateX(calc(16px * var(--motion-scale, 1))); opacity: 0 } }
 /* The only symmetric pair: a sheet that exits partway looks stuck. */
 @keyframes dmSheetIn   { from { transform: translateY(100%) } }
 @keyframes dmSheetOut  { to   { transform: translateY(100%) } }
