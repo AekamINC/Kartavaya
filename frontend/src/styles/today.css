@@ -97,9 +97,15 @@
    "A skeleton whose shape does not match the content produces a visible jump,
    which is worse than a spinner."
 
-   The body block sat at `--gap-section` (22px) while `.k-screen` separates the
-   real sections at `--sp-6` (24px), so arrival nudged the whole page up 2px. */
-.k-today .k-today__skelbody { margin-top: var(--sp-6); }
+   The body block sat at `--gap-section` (22px) while `.k-screen` separated the
+   real sections at `--sp-6` (24px), so arrival nudged the whole page up 2px.
+
+   That 2px has since been fixed at the source: `.k-screen` now uses
+   `--gap-section`, which is what the rendered reference measures and what the
+   density control drives. So this reverts to `--gap-section` — the skeleton and
+   the page agree again, and now they agree on the design's number rather than
+   on a literal that only matched at one density. */
+.k-today .k-today__skelbody { margin-top: var(--gap-section); }
 
 /* The quick-actions row had no placeholder at all, so the two columns jumped
    down by a full button row when the data landed. Same flex and `--sp-2` gap as
@@ -109,5 +115,5 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
-  margin-top: var(--sp-6);
+  margin-top: var(--gap-section);
 }

@@ -73,7 +73,11 @@ export const DEFAULTS = {
   accent:       'teal',
   customAccent: null,
   sidebar:      'wide',
-  density:      'comfy',
+  // `cozy`, which is what the design is drawn at — the reference harness ships
+  // `data-density="cozy"` on <html>. `comfy` here meant every new user got the
+  // loosest of the three tiers, and `cozy` was not reachable at all because
+  // TabLayout only offered two. See kartavaya-design.css §4.
+  density:      'cozy',
   font:         'newsreader', // display face
   uiFont:       'inter',      // body face — independent of `font` (00 §2)
   fontSize:     14,           // 12 → 20
@@ -177,8 +181,40 @@ function accentFor(prefs) {
   return deriveAccentColors(hex);
 }
 
+/**
+ * One-time density migration.
+ *
+ * `setPrefs` persists the WHOLE prefs object, so anyone who ever changed any
+ * setting — theme, accent, anything — has `density: 'comfy'` frozen in storage
+ * from when that was the default. Changing DEFAULTS alone would fix new
+ * installs and leave every existing user on a tier the design was never drawn
+ * at, which is most of the point of the change.
+ *
+ * So `comfy` is rewritten to `cozy` exactly once, guarded by its own flag.
+ * The honest cost: someone who deliberately CHOSE Comfy gets moved to Cozy one
+ * time. That is reversible in two clicks, Comfy is still offered, and the flag
+ * means their next choice sticks for good. The alternative — leaving them —
+ * cannot be distinguished from leaving everyone, because the old default and a
+ * deliberate choice are the same three bytes in storage.
+ */
+const DENSITY_MIGRATION_FLAG = 'kv.densityCozyMigrated';
+
+function migrateDensity(stored) {
+  try {
+    if (localStorage.getItem(DENSITY_MIGRATION_FLAG)) return stored;
+    localStorage.setItem(DENSITY_MIGRATION_FLAG, '1');
+    if (stored.density !== 'comfy') return stored;
+    const next = { ...stored, density: 'cozy' };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    return next;
+  } catch { return stored; }
+}
+
 function loadPrefs() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }; }
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    return { ...DEFAULTS, ...migrateDensity(stored) };
+  }
   catch { return { ...DEFAULTS }; }
 }
 

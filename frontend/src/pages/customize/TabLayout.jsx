@@ -25,14 +25,22 @@ export default function TabLayout() {
       <div className="sr">
         <div className="sr__l">
           <div className="sr__t">Density</div>
-          <div className="sr__d">Compact tightens row padding across tables and lists.</div>
+          <div className="sr__d">Cozy is the design's own spacing. Compact tightens row padding across tables and lists; Comfy loosens it.</div>
         </div>
         <div className="sr__c">
+          {/* Three tiers. `cozy` is the middle one and the default — the tokens
+              for it have always been in kartavaya-design.css §4, but it was
+              missing from this control, so the tier the product is designed at
+              was the one tier nobody could pick. */}
           <Seg
             label="Density"
             value={prefs.density}
             onChange={v => setPrefs({ density: v })}
-            options={[{ label: 'Compact', value: 'compact' }, { label: 'Comfy', value: 'comfy' }]}
+            options={[
+              { label: 'Compact', value: 'compact' },
+              { label: 'Cozy',    value: 'cozy' },
+              { label: 'Comfy',   value: 'comfy' },
+            ]}
           />
         </div>
       </div>
