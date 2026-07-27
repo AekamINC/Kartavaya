@@ -5,6 +5,7 @@ import { Section } from '../../components/editorial';
 import Note from '../../components/module/Note';
 import ErrorState from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonCard } from '../../components/ui/Skeleton';
+import Sites from './Sites';
 
 /**
  * Attendance policy — geofence, flag thresholds, retention and reports.
@@ -308,6 +309,9 @@ export default function PahchanPolicy() {
           </span>
         </label>
       </Section>
+
+      {/* Immediately after the radius that has no effect without it. */}
+      <Sites />
 
       <Section title="Retention" hi="प्रतिधारण">
         <Note variant="warn">
