@@ -361,6 +361,46 @@ Gates, from `frontend/`, unpiped: `check-tokens` 0 missing · `check-classes`
 0 missing · `vite build` clean · `vitest` **23 files, 441 tests, all passing**
 (was 22 files / 433 before my 14).
 
+---
+
+## 8 · Addendum — `--ease-emph` was retuned under me, mid-run
+
+Between my "after" measurement and the merge, a sibling changed
+`--ease-emph` from `cubic-bezier(.16, 1, .3, 1)` to `cubic-bezier(.2, 0, 0, 1)`,
+making it identical to `--ease-standard`. **They are right and I have left it
+alone.** `design-reference/Kartavaya Redesign/tokens.css:47-48` declares both as
+`cubic-bezier(.2, 0, 0, 1)`, and MOTION-SPEC.md §2 gives the same pair — the two
+names encode a ROLE, not two curves.
+
+Every `--ease-emph` figure in §3 above was measured before that landed and is
+now stale. Re-measured on the merged tree, this is the truth:
+
+| | Measured now |
+|---|---|
+| `--ease-emph` | `cubic-bezier(.2, 0, 0, 1)` — identical to `--ease-standard` |
+| `.mt__b.on::after` | `ixTabInd` 220 ms `cubic-bezier(.2,0,0,1)` |
+| `.ix-panel` | `ixPanelIn` 220 ms `cubic-bezier(.2,0,0,1)` |
+| `.ix-landed` | `ixLanded` 540 ms `cubic-bezier(.4,0,1,1)` — unchanged, it uses `--ease-exit` |
+| toast `tstIn` | 220 ms `cubic-bezier(.2,0,0,1)` |
+| `modalPanelIn` | 220 ms `cubic-bezier(.2,0,0,1)` |
+| `dmDrawerIn` | 360 ms `cubic-bezier(.2,0,0,1)` |
+| `dmSheetIn` | 302.4 ms `cubic-bezier(.05,.7,.1,1)` — `--ease-emph-in`, untouched |
+| `dmPop` | 140 ms `cubic-bezier(.34,1.36,.64,1)` — `--ease-spring`, untouched |
+| `dmTip` | 140 ms `cubic-bezier(0,0,.2,1)` — `--ease-enter`, untouched |
+
+Durations are unaffected. Anything else in this run that quoted a
+`--ease-emph` value before that commit is stale in exactly the same way, which
+is the coordination file's point about half of all claims going stale within the
+hour — including, now, half of mine.
+
+Also landed immediately after my merge: a sibling's module-tab overflow menu,
+which adds the `onKeyDown` roving-tabindex handler that §6 finding 6 asked for.
+Re-measured after their change: `.mt__b.on::after` still resolves to `ixTabInd`,
+so the indicator rule survived their `module.css` additions — verified, because
+that rule depends on import order and would have gone silent without a sound.
+
+---
+
 One thing found on the way: `origin/staging` had moved past my worktree's base
 and had already fixed a **build-breaking** JSX comment in `DristiPage.jsx:581` —
 a `{/* … */}` in the consequent position of a ternary, which parses as an object
