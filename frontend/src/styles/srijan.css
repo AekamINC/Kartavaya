@@ -1,0 +1,967 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   SRIJAN · सृजन — the AI surfaces.
+
+   Two prefixes, one file, because they are one cluster:
+
+     .hb-*   Srijan Admin (`pages/hub/`) — the per-client workspace, shared by
+             `/hub` and `/hub/clients/:id`, plus the skill-pack screen.
+     .sr-*   Srijan (`pages/srijan/`) — the org's own workspace at `/hub/org`.
+     .sk-*   Skill packs, used from both.
+
+   Four page files carried 830 inline styles between them: every card border,
+   every 13px label, every grid, every status pill was a literal object in JSX.
+   None of them tracked the Text size or Border radius settings, most hard-coded
+   a grey that is a token, several hard-coded a hex that is a STATUS colour, and
+   every two-column grid was a fixed `1fr 1fr` that did not collapse on a phone.
+
+   Everything below consumes tokens only. Sizes under the 11px metadata floor
+   are written as max(11px, calc(var(--font-size-base) * n)) so they track the
+   Text size preference and never fall beneath it.
+
+   The one exception, and it is deliberate: `--pc` on the platform cards. A
+   third-party brand colour (Facebook blue, Snapchat yellow) is not ours and must
+   NOT flip with our theme, so it has no token. It is set per element from JS and
+   read here — check-tokens deviation 2. No raw CSS property value reaches the
+   markup.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.hb-page,
+.sr-page { padding-bottom: 48px; }
+
+.hb-page__back { margin-bottom: var(--sp-2); }
+.hb-page__none { margin-top: var(--sp-5); }
+
+/* ── Card ─────────────────────────────────────────────────────────────────
+   The shape repeated ~40 times as
+   `background: var(--surface-1); border: 1px solid var(--rule-soft);
+    borderRadius: 12; padding: 24`. Radius is a token so it tracks the Border
+   radius preference; padding is --pad-card so it tracks density. */
+.hb-card {
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  padding: var(--pad-card);
+}
+/* A result panel, keyed to the accent so it reads as the answer to what was
+   just asked rather than another card in the stack. */
+.hb-card--lit { border-color: color-mix(in srgb, var(--primary) 45%, var(--outline-variant)); }
+/* For a card whose child owns the padding — a table, a divided list. */
+.hb-card--flush { padding: 0; }
+
+.hb-card__t {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--t-title);
+  font-weight: var(--t-title-w);
+  color: var(--on-surface);
+  display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap;
+}
+.hb-card__t--flush { margin-bottom: 0; }
+.hb-card__t--inset { padding: var(--pad-card) var(--pad-card) var(--sp-3); }
+
+/* Devanagari accompanies at a smaller size, per 24 §2 — the same weighting rule
+   as the module header. `lang="hi"` in the markup lets the [lang] rules for
+   leading and zero tracking fire; without it the conjuncts pull apart. */
+.hb-card__hi {
+  font-family: var(--font-hindi);
+  font-size: max(11.5px, calc(var(--font-size-base) * .84));
+  font-weight: 400;
+  color: var(--on-surface-3);
+}
+
+.hb-card__head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-3);
+}
+
+/* ── Text roles ───────────────────────────────────────────────────────── */
+
+.hb-cap {
+  font-size: max(11.5px, calc(var(--font-size-base) * .84));
+  color: var(--on-surface-3);
+  line-height: 1.5;
+}
+/* A caption that is reporting a problem. Never the only carrier — the words say
+   the same thing, per 00 §12. */
+.hb-cap--bad { color: var(--warn); }
+
+.hb-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.hb-num  { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.hb-code {
+  font-family: var(--font-mono);
+  font-size: max(11px, calc(var(--font-size-base) * .84));
+  background: var(--s-container);
+  border-radius: var(--r-xs);
+  padding: 1px 5px;
+}
+
+/* Empty / filtered-to-nothing copy. Deliberately plain: the illustrated
+   `EmptyState` is reserved for a genuinely empty collection, and reusing it for
+   "your filter matched nothing" is what made those two read the same. */
+.hb-none {
+  margin: 0; padding: var(--sp-6) var(--sp-4);
+  text-align: center; font-size: var(--t-body-sm); line-height: 1.6;
+  color: var(--on-surface-3);
+}
+
+.hb-linkbtn {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-size: inherit;
+  color: var(--primary-text); text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.hb-linkbtn:hover { color: var(--primary); }
+
+.hb-link { font-size: var(--t-body-sm); color: var(--primary-text); }
+
+/* ── Failure block ────────────────────────────────────────────────────────
+   Not the empty state. No illustration, no "get started". */
+.hb-err {
+  display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap;
+  margin: var(--sp-3) 0;
+}
+.hb-err__go { margin-left: auto; font-size: var(--t-label-sm); }
+
+.hb-note { margin-top: var(--sp-3); }
+
+/* ── Layout ───────────────────────────────────────────────────────────── */
+
+/* Was `gridTemplateColumns: '1fr 1fr'` in nine places, which on a 380px phone
+   gave two 170px columns holding a date picker and a select. */
+.hb-two {
+  display: grid; gap: var(--sp-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  align-items: start;
+}
+.hb-list { display: flex; flex-direction: column; gap: var(--sp-3); }
+.hb-cards {
+  display: grid; gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+}
+.hb-scroll { overflow-x: auto; }
+
+.hb-grid { display: grid; gap: var(--sp-3); }
+.hb-grid--2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+.hb-grid--3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
+.hb-field--wide { grid-column: 1 / -1; }
+
+/* ── Form ─────────────────────────────────────────────────────────────── */
+
+.hb-form { display: flex; flex-direction: column; gap: var(--sp-3); }
+
+.hb-field { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.hb-field__l {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
+  color: var(--on-surface-3);
+  display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap;
+}
+.hb-field__hint {
+  text-transform: none; letter-spacing: 0; font-weight: 400;
+  color: var(--on-surface-faint);
+}
+/* The required marker, in the accent rather than a bare red — a red asterisk on
+   a field that is merely required reads as an error that has already happened. */
+.hb-req { color: var(--primary-text); font-weight: 700; }
+
+.hb-ta { resize: vertical; min-height: 4.5em; }
+
+.hb-fs { border: 0; padding: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* A colour well with its value beside it. `<input type="color">` alone tells you
+   the hue and nothing you can copy, paste or check against a brand book — and
+   the stored hex is the thing a designer actually asks for. */
+.hb-colour {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: 4px 4px 4px 5px;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.hb-colour__in {
+  width: 34px; height: 28px; padding: 0; flex-shrink: 0;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-xs);
+  background: none; cursor: pointer;
+}
+.hb-colour__v {
+  font-family: var(--font-mono);
+  font-size: max(11.5px, calc(var(--font-size-base) * .84));
+  color: var(--on-surface-2);
+}
+
+.hb-form__foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap;
+  padding-top: var(--sp-2);
+}
+.hb-form__foot--end { justify-content: flex-end; }
+.hb-form__note { margin: 0; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────── */
+
+.hb-btn--sm { font-size: var(--t-label-sm); padding: 5px 13px; }
+.hb-btn--block { width: 100%; }
+/* A destructive action stays a ghost button and takes the danger colour on its
+   text only — a filled red button next to a filled primary makes the two read
+   as equal choices. */
+.hb-btn--danger { color: var(--danger); }
+.hb-btn--danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+
+/* ── Pills, chips, tags ───────────────────────────────────────────────── */
+
+/* --c is set per instance from JS; the tint is computed here rather than by
+   string-concatenating a hex-alpha suffix, which is what broke the moment the
+   colour maps became tokens. */
+.hb-pill {
+  display: inline-flex; align-items: center;
+  font-size: max(10px, calc(var(--font-size-base) * .74));
+  font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  padding: 2px 10px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--c) 14%, transparent);
+  color: var(--c);
+  white-space: nowrap;
+}
+
+.hb-filters { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-bottom: var(--sp-4); }
+.hb-chip {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  padding: 5px 13px; border-radius: var(--r-pill); cursor: pointer;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface);
+  color: var(--on-surface-2);
+  font-size: var(--t-label-sm); font-weight: 500;
+  transition: background var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard);
+}
+.hb-chip:hover { border-color: var(--outline); }
+.hb-chip.on {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary-text); font-weight: 700;
+}
+.hb-chip__n {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: max(10px, calc(var(--font-size-base) * .74));
+  color: var(--on-surface-3);
+}
+.hb-chip.on .hb-chip__n { color: inherit; }
+
+.hb-tags { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
+.hb-tag {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  font-size: max(10.5px, calc(var(--font-size-base) * .76));
+  padding: 2px 8px; border-radius: var(--r-pill);
+  background: var(--s-container); color: var(--on-surface-3);
+}
+
+/* ── Meter ────────────────────────────────────────────────────────────── */
+
+.hb-meter {
+  height: 8px; border-radius: var(--r-pill); overflow: hidden;
+  background: var(--s-container);
+  margin-top: var(--sp-3);
+}
+.hb-meter__f {
+  display: block; height: 100%; width: var(--pct);
+  background: var(--primary); border-radius: inherit;
+  transition: width var(--dur-base) var(--ease-standard);
+}
+.hb-meter__cap { margin-top: var(--sp-1); }
+
+/* ── Overview ─────────────────────────────────────────────────────────── */
+
+.hb-facts { margin: 0; display: flex; flex-direction: column; }
+.hb-facts__row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--sp-4); padding: 9px 0;
+  border-bottom: 1px solid var(--outline-variant);
+}
+.hb-facts__row:last-child { border-bottom: 0; }
+.hb-facts__k {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  letter-spacing: .08em; text-transform: uppercase; font-weight: 700;
+  color: var(--on-surface-3);
+}
+.hb-facts__v { margin: 0; font-size: var(--t-body-sm); color: var(--on-surface); text-align: right; word-break: break-word; }
+/* An absence, not a value. Italic and faint so it does not read as data. */
+.hb-facts__v--none { color: var(--on-surface-faint); font-style: italic; }
+
+.hb-iso { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); }
+.hb-iso__i {
+  position: relative; padding-left: 18px;
+  font-size: var(--t-body-sm); line-height: 1.55; color: var(--on-surface-2);
+}
+.hb-iso__i::before {
+  content: ''; position: absolute; left: 3px; top: .62em;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--ok);
+}
+
+/* ── Generate ─────────────────────────────────────────────────────────── */
+
+.hb-gen { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+/* Model output. Monospace would be wrong — this is prose the person will paste
+   into a caption — but it needs the preserved line breaks the model wrote. */
+.hb-out {
+  white-space: pre-wrap;
+  font-size: var(--t-body);
+  line-height: var(--leading-body);
+  color: var(--on-surface);
+  background: var(--s-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  margin-top: var(--sp-3);
+}
+.hb-out__foot {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap; margin-top: var(--sp-3);
+}
+.hb-out__note { color: var(--on-surface-faint); }
+
+/* ── Content item ─────────────────────────────────────────────────────── */
+
+.hb-item { display: flex; flex-direction: column; gap: var(--sp-2); }
+.hb-item__head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--sp-3);
+}
+.hb-item__id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hb-item__t { font-size: var(--t-body); font-weight: 600; }
+/* Clamped rather than `maxHeight: 120; overflow: hidden`, which cut a line in
+   half through its x-height and looked like a rendering fault. */
+.hb-item__body {
+  margin: 0; white-space: pre-wrap;
+  font-size: var(--t-body-sm); line-height: 1.6; color: var(--on-surface-2);
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical;
+  line-clamp: 5; overflow: hidden;
+}
+.hb-item__foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap;
+}
+.hb-item__act { display: flex; gap: var(--sp-2); }
+
+/* ── Credits ──────────────────────────────────────────────────────────── */
+
+.hb-credits { display: flex; flex-direction: column; gap: var(--sp-4); }
+.hb-fig {
+  font-family: var(--font-display);
+  font-size: clamp(30px, calc(var(--font-size-base) * 2.4), 40px);
+  letter-spacing: -.03em; line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-text);
+}
+
+/* ── Chat ─────────────────────────────────────────────────────────────── */
+
+.hb-chat {
+  display: grid; gap: var(--sp-3);
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+  min-height: 480px;
+}
+/* Below 760px the session rail becomes a row above the thread rather than a
+   140px column that can hold neither a title nor its delete control. */
+@media (max-width: 760px) {
+  .hb-chat { grid-template-columns: minmax(0, 1fr); }
+  .hb-chat__side { max-height: 240px; }
+}
+
+.hb-chat__side { display: flex; flex-direction: column; gap: var(--sp-2); overflow: auto; padding: var(--sp-3); }
+.hb-chat__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.hb-chat__row {
+  display: flex; align-items: center; gap: var(--sp-1);
+  border-radius: var(--r-sm);
+}
+.hb-chat__row:hover { background: var(--s-container); }
+.hb-chat__row.on { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+.hb-chat__pick {
+  flex: 1; min-width: 0; display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-2); padding: 9px 11px; cursor: pointer;
+  background: none; border: 0; text-align: left;
+  font-size: var(--t-body-sm); color: var(--on-surface);
+}
+.hb-chat__row.on .hb-chat__pick { font-weight: 600; color: var(--primary-text); }
+.hb-chat__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb-chat__n {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: max(10px, calc(var(--font-size-base) * .74));
+  color: var(--on-surface-faint);
+}
+.hb-chat__del {
+  background: none; border: 0; cursor: pointer; padding: 0 8px;
+  font-size: 16px; line-height: 1; color: var(--on-surface-faint);
+}
+.hb-chat__del:hover { color: var(--danger); }
+.hb-chat__confirm {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding: var(--sp-2) 11px var(--sp-3);
+}
+.hb-chat__confirm-act { display: flex; gap: var(--sp-2); }
+.hb-chat__msg { padding: var(--sp-3) 0; text-align: center; }
+
+.hb-chat__main { display: flex; flex-direction: column; padding: 0; min-height: 480px; }
+.hb-chat__blank {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--sp-2); padding: var(--sp-6); text-align: center; max-width: 46ch; margin: 0 auto;
+}
+.hb-chat__blank-t { margin: 0; font-size: var(--t-body); color: var(--on-surface-2); }
+.hb-chat__thread {
+  flex: 1; overflow: auto; padding: var(--sp-4);
+  display: flex; flex-direction: column; gap: var(--sp-3);
+}
+.hb-chat__compose {
+  display: flex; gap: var(--sp-2); padding: var(--sp-3);
+  border-top: 1px solid var(--outline-variant);
+}
+.hb-chat__in { flex: 1; min-width: 0; }
+
+.hb-msg { display: flex; flex-direction: column; max-width: 78%; }
+.hb-msg--me { align-self: flex-end; align-items: flex-end; }
+.hb-msg--ai { align-self: flex-start; align-items: flex-start; }
+.hb-msg__b {
+  padding: 9px 13px; border-radius: var(--r-md);
+  font-size: var(--t-body-sm); line-height: 1.6; white-space: pre-wrap;
+  background: var(--s-container); color: var(--on-surface);
+  border: 1px solid var(--outline-variant);
+}
+.hb-msg--me .hb-msg__b {
+  background: var(--primary); color: var(--on-primary); border-color: transparent;
+}
+.hb-msg__b--wait { color: var(--on-surface-3); font-style: italic; }
+/* An undelivered message is dimmed and outlined, and says so underneath. Colour
+   alone would leave it looking sent to anyone who cannot see the difference. */
+.hb-msg--failed .hb-msg__b { opacity: .6; border: 1px dashed var(--danger); }
+.hb-msg__fail {
+  margin-top: var(--sp-1);
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  color: var(--danger);
+}
+.hb-msg__src {
+  margin-top: var(--sp-2); padding-top: var(--sp-2);
+  border-top: 1px solid var(--outline-variant);
+  display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: baseline;
+}
+.hb-msg__src-l {
+  font-size: max(10px, calc(var(--font-size-base) * .74));
+  letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
+  color: var(--on-surface-faint);
+}
+.hb-msg__cite {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  color: var(--on-surface-3);
+}
+
+/* ── Knowledge base ───────────────────────────────────────────────────── */
+
+.hb-kb { display: flex; flex-direction: column; gap: var(--sp-4); }
+.hb-kb__bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap;
+}
+.hb-kb__search { display: flex; gap: var(--sp-2); flex: 1; min-width: min(100%, 260px); }
+.hb-kb__q { flex: 1; min-width: 0; }
+.hb-kb__add { display: flex; gap: var(--sp-2); }
+
+.hb-hit {
+  padding: 10px 12px; margin-top: var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--s-container);
+  border: 1px solid var(--outline-variant);
+}
+.hb-hit__t { font-size: var(--t-body-sm); font-weight: 600; }
+.hb-hit__x { margin: var(--sp-1) 0 0; font-size: var(--t-body-sm); line-height: 1.6; color: var(--on-surface-2); }
+
+.hb-doc {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap;
+  padding: 12px var(--pad-card);
+}
+.hb-doc__id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.hb-doc__t { font-size: var(--t-body); font-weight: 600; }
+.hb-doc__confirm { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+/* ── Publish ──────────────────────────────────────────────────────────── */
+
+.hb-pub { display: flex; flex-direction: column; gap: var(--sp-5); }
+.hb-sec { display: flex; flex-direction: column; gap: var(--sp-3); }
+.hb-sec__head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap;
+}
+.hb-sec__t {
+  margin: 0; font-size: var(--t-title); font-weight: var(--t-title-w);
+  display: flex; align-items: baseline; gap: var(--sp-2);
+}
+
+.hb-mgmt { display: flex; flex-direction: column; gap: var(--sp-3); }
+.hb-plats { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+/* The toggle. The unselected state is a plain outline: the previous version gave
+   every chip a 2px border in the platform's own colour whether it was on or not,
+   so a row of thirteen read as thirteen selected items. */
+.hb-ptoggle {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  padding: 6px 13px; border-radius: var(--r-sm); cursor: pointer;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface);
+  color: var(--on-surface-2);
+  font-size: var(--t-label-sm);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              background var(--dur-fast) var(--ease-standard);
+}
+.hb-ptoggle:hover { border-color: var(--outline); }
+.hb-ptoggle.on {
+  border-color: var(--pc);
+  background: color-mix(in srgb, var(--pc) 12%, transparent);
+  color: var(--on-surface); font-weight: 700;
+}
+
+/* The brand mark. Two letters at most, so a wordmark is never implied. */
+.hb-pmark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; flex-shrink: 0;
+  border-radius: var(--r-xs);
+  background: var(--pc); color: var(--k-white);
+  font-size: 8px; font-weight: 800; letter-spacing: 0;
+}
+.hb-pmark--lg { width: 34px; height: 34px; border-radius: var(--r-sm); font-size: 13px; }
+/* Snapchat yellow and anything else too light for white text. */
+.hb-pmark--ink { color: var(--ink-fixed); }
+
+.hb-pdot {
+  display: inline-block; width: 8px; height: 8px; flex-shrink: 0;
+  border-radius: 50%; background: var(--pc);
+}
+
+.hb-plat { display: flex; flex-direction: column; gap: var(--sp-3); position: relative; overflow: hidden; }
+/* A connected platform gets a keyline in its own colour along the top edge. The
+   card border stays neutral so a grid of thirteen does not turn into a rainbow. */
+.hb-plat.on::before {
+  content: ''; position: absolute; inset: 0 0 auto; height: 3px; background: var(--pc);
+}
+.hb-plat__head { display: flex; align-items: center; gap: var(--sp-3); }
+.hb-plat__id { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.hb-plat__t { font-size: var(--t-body); font-weight: 700; }
+.hb-plat__sec { display: flex; flex-direction: column; gap: var(--sp-1); }
+.hb-plat__l {
+  font-size: max(10px, calc(var(--font-size-base) * .74));
+  letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
+  color: var(--on-surface-faint);
+}
+.hb-plat__act { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: auto; }
+.hb-plat__go { flex: 1; }
+
+.hb-reqs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.hb-reqs__i {
+  position: relative; padding-left: 15px;
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  color: var(--on-surface-3); line-height: 1.5;
+}
+.hb-reqs__i::before {
+  content: ''; position: absolute; left: 2px; top: .55em;
+  width: 4px; height: 4px; border-radius: 50%; background: var(--on-surface-faint);
+}
+/* Met, once the account is connected. The shape changes as well as the colour. */
+.hb-reqs__i.ok::before {
+  background: var(--ok); width: 5px; height: 5px; top: .5em; left: 1px;
+}
+
+.hb-acct {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-2); flex-wrap: wrap;
+  padding: 8px 11px; border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--pc) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pc) 22%, transparent);
+  font-size: var(--t-body-sm);
+}
+.hb-acct__id { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+
+.hb-manual {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding: var(--sp-3); border-radius: var(--r-sm);
+  background: var(--s-container);
+}
+.hb-manual__in { font-size: var(--t-label-sm); }
+
+/* Segmented control — queue vs calendar. */
+.hb-seg {
+  display: inline-flex; padding: 3px; gap: 2px;
+  border-radius: var(--r-sm); background: var(--s-container);
+}
+.hb-seg__b {
+  padding: 5px 14px; border: 0; border-radius: calc(var(--r-sm) - 2px); cursor: pointer;
+  background: none; color: var(--on-surface-3);
+  font-size: var(--t-label-sm); font-weight: 500;
+}
+.hb-seg__b.on {
+  background: var(--surface); color: var(--on-surface); font-weight: 700;
+  box-shadow: var(--shadow-1);
+}
+
+.hb-q { display: flex; flex-direction: column; gap: var(--sp-2); }
+.hb-q__head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap;
+}
+.hb-q__id { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; min-width: 0; }
+.hb-q__t { font-size: var(--t-body); font-weight: 600; }
+.hb-q__when { font-variant-numeric: tabular-nums; }
+.hb-q__err { margin: 0; }
+.hb-q__act { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+/* ── Calendar ─────────────────────────────────────────────────────────── */
+
+.hb-cal { display: flex; flex-direction: column; gap: var(--sp-3); }
+.hb-cal__bar { display: flex; align-items: center; gap: var(--sp-3); }
+.hb-cal__m { font-size: var(--t-title); font-weight: var(--t-title-w); }
+.hb-cal__dow,
+.hb-cal__grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.hb-cal__dw {
+  text-align: center; padding: 5px 0;
+  font-size: max(10px, calc(var(--font-size-base) * .74));
+  letter-spacing: .08em; text-transform: uppercase; font-weight: 700;
+  color: var(--on-surface-3);
+}
+.hb-cal__c {
+  min-height: 78px; padding: 4px;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-xs);
+  background: var(--surface);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.hb-cal__c--pad { background: none; border-color: transparent; }
+.hb-cal__n {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  font-weight: 600; color: var(--on-surface-2);
+}
+.hb-cal__e {
+  font-size: max(10px, calc(var(--font-size-base) * .74));
+  padding: 2px 5px; border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--pc) 18%, transparent);
+  color: var(--on-surface);
+  border-left: 2px solid var(--pc);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* A 7-column grid of 78px cells is 40px per column on a phone, which fits a
+   date and nothing else. Below 640px the cells shrink and the entries become
+   colour bars — the month view becomes an at-a-glance density map, and the
+   queue list is the readable view on that width. */
+@media (max-width: 640px) {
+  .hb-cal__c { min-height: 52px; }
+  .hb-cal__e { height: 4px; padding: 0; color: transparent; border-left: 0; }
+}
+
+.hb-jump { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); }
+
+/* ═══ SKILL PACKS ══════════════════════════════════════════════════════ */
+
+.sk-glyph {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex-shrink: 0;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary-text);
+}
+
+.sk-card { display: flex; flex-direction: column; gap: var(--sp-3); }
+.sk-card__head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap;
+}
+.sk-card__id { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
+.sk-card__t { display: block; font-size: var(--t-body); font-weight: 700; }
+.sk-card__d { display: block; margin: 2px 0 0; }
+.sk-card__meta { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.sk-card__act { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-top: auto; }
+.sk-card__confirm { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.sk-card__cost { display: block; }
+.sk-card__go { flex: 1; }
+
+/* The step sequence, as a chain rather than a bullet list — the order is the
+   information. */
+.sk-flow { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
+.sk-flow__s {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  padding: 3px 9px 3px 3px; border-radius: var(--r-pill);
+  background: var(--s-container);
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  color: var(--on-surface-2);
+}
+.sk-flow__n {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; border-radius: 50%;
+  background: var(--primary); color: var(--on-primary);
+  font-family: var(--font-mono);
+  font-size: max(9.5px, calc(var(--font-size-base) * .7)); font-weight: 700;
+}
+
+.sk-run {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding: var(--sp-3); border-radius: var(--r-md);
+  background: var(--s-container);
+  border: 1px solid var(--outline-variant);
+}
+
+.sk-check {
+  display: flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--t-body-sm); color: var(--on-surface-2);
+}
+
+.sk-steps { display: flex; flex-direction: column; gap: var(--sp-3); }
+.sk-steps__add { align-self: flex-start; }
+.sk-step {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding: var(--sp-3); border-radius: var(--r-md);
+  background: var(--s-container);
+  border: 1px solid var(--outline-variant);
+}
+.sk-step__head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+.sk-step__n {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
+  color: var(--on-surface-3);
+}
+
+.sk-icons { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.sk-icon {
+  padding: 4px; border-radius: var(--r-sm); cursor: pointer;
+  border: 1px solid var(--outline-variant); background: var(--surface);
+  line-height: 0;
+}
+.sk-icon.on { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
+
+.sk-guides { display: flex; flex-direction: column; gap: var(--sp-3); }
+/* Prose is capped at a measure rather than run to the full page width — the
+   fluid-layout rule is about the LAYOUT filling the viewport, not about a
+   paragraph being 180 characters long on a wide monitor. */
+.sk-guide { max-width: 76ch; }
+.sk-guide__b { font-size: var(--t-body-sm); line-height: 1.7; color: var(--on-surface-2); }
+.sk-guide__b p { margin: 0 0 var(--sp-2); }
+.sk-guide__b p:last-child { margin-bottom: 0; }
+.sk-guide__l { margin: 0 0 var(--sp-2); padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+
+.sk-costs { margin: 0 0 var(--sp-3); display: grid; gap: 0; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+.sk-costs__r {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--sp-3); padding: 7px 0;
+  border-bottom: 1px solid var(--outline-variant);
+}
+.sk-costs__r dt { color: var(--on-surface-2); }
+.sk-costs__r dd { margin: 0; font-weight: 600; color: var(--on-surface); }
+
+/* ═══ SRIJAN (org) ═════════════════════════════════════════════════════ */
+
+/* ── Markdown ─────────────────────────────────────────────────────────── */
+
+.sr-md { font-size: var(--t-body); line-height: var(--leading-body); color: var(--on-surface); }
+.sr-md__h2 { margin: var(--sp-4) 0 var(--sp-2); font-family: var(--font-display); font-size: var(--t-headline); font-weight: var(--t-headline-w); }
+.sr-md__h3 { margin: var(--sp-4) 0 var(--sp-1); font-size: var(--t-title-lg); font-weight: var(--t-title-lg-w); }
+.sr-md__h4 { margin: var(--sp-3) 0 var(--sp-1); font-size: var(--t-title); font-weight: var(--t-title-w); color: var(--on-surface-2); }
+.sr-md__p  { margin: 2px 0; }
+.sr-md__hr { border: 0; border-top: 1px solid var(--outline-variant); margin: var(--sp-3) 0; }
+.sr-md__li { display: flex; gap: var(--sp-2); padding-left: var(--sp-2); }
+.sr-md__b  { color: var(--primary-text); font-weight: 700; flex-shrink: 0; }
+.sr-md__b--n { min-width: 18px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.sr-md__gap { height: var(--sp-2); }
+
+/* ── Content card ─────────────────────────────────────────────────────── */
+
+.sr-cc { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.sr-cc__shot {
+  display: block; width: 100%; aspect-ratio: 16 / 9;
+  padding: 0; border: 0; cursor: zoom-in;
+  background: var(--s-container);
+}
+.sr-cc__img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sr-cc__gone {
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-1);
+  padding: var(--sp-4); text-align: center; background: var(--s-container);
+}
+.sr-cc__b { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); flex: 1; }
+.sr-cc__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-2); }
+.sr-cc__t { display: block; font-size: var(--t-body-sm); font-weight: 700; margin-bottom: 3px; }
+.sr-cc__x {
+  margin: 0; white-space: pre-wrap;
+  font-size: var(--t-body-sm); line-height: 1.6; color: var(--on-surface-2);
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical;
+  line-clamp: 4; overflow: hidden;
+}
+.sr-cc__x.is-open { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
+.sr-cc__foot {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--sp-2); margin-top: auto; padding-top: var(--sp-2);
+}
+
+/* ── Lightbox ─────────────────────────────────────────────────────────── */
+
+.sr-lb {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--sp-4); cursor: zoom-out;
+  background: var(--scrim);
+}
+.sr-lb__in { display: flex; flex-direction: column; gap: var(--sp-3); align-items: center; max-width: 92vw; cursor: auto; }
+.sr-lb__img { max-width: 92vw; max-height: 78vh; object-fit: contain; border-radius: var(--r-md); }
+.sr-lb__act { display: flex; gap: var(--sp-2); flex-wrap: wrap; justify-content: center; }
+
+/* ── Generate ─────────────────────────────────────────────────────────── */
+
+.sr-gen { display: flex; flex-direction: column; gap: var(--sp-4); }
+.sr-picks {
+  display: grid; gap: var(--sp-2);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr));
+}
+.sr-pick {
+  display: flex; flex-direction: column; gap: 3px;
+  text-align: left; padding: 13px; cursor: pointer;
+  border-radius: var(--r-md);
+  border: 1px solid var(--outline-variant);
+  background: var(--surface);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              background var(--dur-fast) var(--ease-standard);
+}
+.sr-pick:hover { border-color: var(--outline); }
+/* Selected takes a tint and a keyline, NOT a solid primary fill. The previous
+   version inverted the whole card to white-on-blue, which meant the description
+   and the cost dropped to `opacity: .6` on a saturated ground and stopped being
+   readable at exactly the moment they mattered. */
+.sr-pick.on {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+.sr-pick__t { font-size: var(--t-body-sm); font-weight: 700; color: var(--on-surface); display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; }
+.sr-pick__hi { font-family: var(--font-hindi); font-size: max(11px, calc(var(--font-size-base) * .8)); font-weight: 400; color: var(--on-surface-3); }
+.sr-pick__d { font-size: max(11px, calc(var(--font-size-base) * .8)); line-height: 1.45; color: var(--on-surface-3); }
+.sr-pick__c { font-size: max(10.5px, calc(var(--font-size-base) * .76)); font-weight: 600; color: var(--on-surface-faint); margin-top: 3px; }
+
+.sr-res { padding: 0; overflow: hidden; }
+.sr-res__head { margin: 0; padding: var(--sp-4) var(--pad-card); border-bottom: 1px solid var(--outline-variant); }
+.sr-res__tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.sr-res__imgs { padding: var(--pad-card); border-bottom: 1px solid var(--outline-variant); background: var(--s-container); display: flex; flex-direction: column; gap: var(--sp-4); }
+.sr-res__fig { margin: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.sr-res__img { width: 100%; max-height: 380px; object-fit: contain; border-radius: var(--r-md); }
+.sr-res__cap { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.sr-res__body { padding: var(--pad-card); }
+.sr-res__foot {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap;
+  padding: 11px var(--pad-card); border-top: 1px solid var(--outline-variant);
+}
+
+.sr-done { margin-top: var(--sp-2); }
+
+/* ── Credits ──────────────────────────────────────────────────────────── */
+
+.sr-credits { display: flex; flex-direction: column; gap: var(--sp-4); }
+.sr-figs {
+  display: grid; gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+}
+.sr-fig {
+  padding: var(--sp-4);
+  border: 1px solid var(--outline-variant); border-radius: var(--r-md);
+  background: var(--surface);
+}
+.sr-fig__l {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2);
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  letter-spacing: .08em; text-transform: uppercase; font-weight: 700;
+  color: var(--on-surface-3);
+}
+.sr-fig__hi { font-family: var(--font-hindi); letter-spacing: 0; text-transform: none; font-weight: 400; }
+.sr-fig__v {
+  margin: var(--sp-2) 0 3px;
+  font-family: var(--font-display);
+  font-size: clamp(24px, calc(var(--font-size-base) * 1.9), 32px);
+  letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+  color: var(--on-surface);
+}
+.sr-fig__s { font-size: max(11px, calc(var(--font-size-base) * .8)); color: var(--on-surface-3); }
+
+.sr-usage { display: flex; flex-direction: column; gap: var(--sp-1); }
+.sr-costs { gap: var(--sp-2); }
+.sr-cost { gap: var(--sp-2); padding: 4px 11px; }
+
+/* ── Data catalog ─────────────────────────────────────────────────────── */
+
+.sr-cat { margin-bottom: var(--sp-6); }
+.sr-cat__t {
+  margin: 0 0 var(--sp-3);
+  font-size: max(11.5px, calc(var(--font-size-base) * .84));
+  letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
+  color: var(--on-surface-3);
+}
+.sr-tool {
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  text-align: left; cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.sr-tool:hover { border-color: var(--primary); }
+.sr-tool__t { font-size: var(--t-body); font-weight: 700; color: var(--on-surface); }
+.sr-tool__d { flex: 1; }
+.sr-tool__foot {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--sp-2); margin-top: var(--sp-2); padding-top: var(--sp-2);
+  border-top: 1px solid var(--outline-variant);
+}
+
+/* ── Modal ────────────────────────────────────────────────────────────── */
+
+.sr-modal {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--sp-4);
+  background: var(--scrim);
+}
+.sr-modal__box {
+  width: 100%; max-width: 480px; max-height: 84vh; overflow-y: auto;
+  padding: var(--sp-6);
+  border-radius: var(--r-xl);
+  border: 1px solid var(--outline-variant);
+  background: var(--surface);
+  box-shadow: var(--shadow-3);
+  display: flex; flex-direction: column; gap: var(--sp-4);
+}
+.sr-modal__head { display: flex; flex-direction: column; gap: 2px; }
+.sr-modal__t { margin: 0; font-size: var(--t-title-lg); font-weight: var(--t-title-lg-w); }
+
+.sr-runstate { display: flex; flex-direction: column; align-items: center; gap: var(--sp-2); text-align: center; padding: var(--sp-4) 0; }
+.sr-runstate__t { margin: 0; font-size: var(--t-body); font-weight: 600; }
+
+.sr-cost {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: 9px 13px; border-radius: var(--r-sm);
+  background: var(--s-container);
+}
+
+/* ── Runs ─────────────────────────────────────────────────────────────── */
+
+.sr-run {
+  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+  text-align: left; cursor: pointer; padding: 12px var(--sp-4);
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.sr-run:hover { border-color: var(--primary); }
+.sr-run__id { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 1px; }
+.sr-run__t { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); }
+.sr-run__n { font-size: var(--t-body-sm); color: var(--on-surface-2); min-width: 84px; text-align: right; }
+.sr-run__c { font-size: var(--t-body-sm); font-weight: 600; color: var(--primary-text); min-width: 56px; text-align: right; }
+
+.sr-back { margin-bottom: var(--sp-3); }
+.sr-detail { display: flex; flex-direction: column; gap: var(--sp-3); align-items: flex-start; }
+.sr-detail__head { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.sr-detail__t { margin: 0; font-size: var(--t-title-lg); font-weight: var(--t-title-lg-w); }
+.sr-detail__meta { display: flex; gap: var(--sp-4); flex-wrap: wrap; }
+.sr-detail__act { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-self: flex-end; }
+
+.sr-tblwrap {
+  width: 100%;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-md);
+}
+.sr-tbl { font-size: max(11.5px, calc(var(--font-size-base) * .84)); }
+/* A scraped cell can hold a whole address or a JSON blob. Clamped to a readable
+   width with the full value in the export, rather than one row 900px wide. */
+.sr-tbl__c {
+  max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
