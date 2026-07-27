@@ -7,10 +7,11 @@
 //    `.mh__hi` uses `--primary-text`, the measured text pair.
 //  · `PageHeader` carries no module accent; `.mh__ic` is the 38px tinted icon.
 // `.k-tabbar` also has no role="tablist"/aria-selected/aria-controls.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../components/ui/toast';
 import { StatTile, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
+import { ErrorState, errorKind } from '../components/ui/ErrorState';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import { ICONS } from '../components/layout/navIcons';
@@ -61,7 +62,17 @@ export default function VikrayPage() {
 
 function DashboardTab() {
   const [data, setData] = useState(null);
-  useEffect(() => { api.get('/v1/vikray/dashboard').then(r => setData(r.data)).catch(() => {}); }, []);
+  // `.catch(() => {})` with `if (!data) return <Shimmer/>` is worse than an
+  // empty state: on failure `data` stays null forever and the tab shows a
+  // loading shimmer that will never resolve, with no toast and no way out.
+  // A skeleton that never finishes is a lie that never stops telling itself.
+  const [err, setErr] = useState(null);
+  const load = useCallback(() => {
+    setErr(null);
+    api.get('/v1/vikray/dashboard').then(r => setData(r.data)).catch(e => setErr(e));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
   if (!data) return <Shimmer count={8} />;
   return (
     <>
@@ -96,6 +107,9 @@ function OrdersTab() {
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
+  // A failed load left `orders` at [] and painted "No orders yet — create your
+  // first sales order", which is a wrong answer offered as an invitation.
+  const [err, setErr] = useState(null);
 
   const [form, setForm] = useState({
     contact_id: '', deal_id: '', order_date: '', expected_delivery: '', is_igst: false,
@@ -106,12 +120,16 @@ function OrdersTab() {
   useEffect(() => { load(); }, [statusFilter]);
 
   async function load() {
+    setErr(null);
     try {
       let url = '/v1/vikray/orders?';
       if (statusFilter) url += `status=${statusFilter}&`;
       const r = await api.get(url);
       setOrders(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load orders', type: 'error' }); }
+    } catch (e) {
+      setErr(e);
+      pushToast({ title: 'Failed to load orders', type: 'error' });
+    }
     finally { setLoading(false); }
   }
 
@@ -428,7 +446,9 @@ function OrdersTab() {
         </form>
       )}
 
-      {loading ? <Shimmer count={4} /> : orders.length === 0 ? (
+      {loading ? <Shimmer count={4} /> : err ? (
+        <ErrorState kind={errorKind(err)} onRetry={load} />
+      ) : orders.length === 0 ? (
         <Empty icon="📦" title="No orders yet" sub="Create your first sales order to start tracking revenue and deliveries." cta="+ New Order" onCta={() => { setShowForm(true); loadOptions(); }} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -458,14 +478,21 @@ function StockTab() {
   const [loading, setLoading] = useState(true);
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [edits, setEdits] = useState({});
+  // "No stock records" on a failed load reads as "you hold no stock", which on
+  // an inventory screen is a number somebody may reorder against.
+  const [err, setErr] = useState(null);
 
   useEffect(() => { load(); }, [lowStockOnly]);
 
   async function load() {
+    setErr(null);
     try {
       const r = await api.get(`/v1/vikray/stock${lowStockOnly ? '?low_stock=true' : ''}`);
       setStock(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load stock', type: 'error' }); }
+    } catch (e) {
+      setErr(e);
+      pushToast({ title: 'Failed to load stock', type: 'error' });
+    }
     finally { setLoading(false); }
   }
 
@@ -489,6 +516,7 @@ function StockTab() {
   }
 
   if (loading) return <Shimmer count={6} />;
+  if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
 
   return (
     <div>
@@ -547,11 +575,17 @@ function TargetsTab() {
   const [editId, setEditId] = useState(null);
   const [editForm, setEditForm] = useState({});
   const [editSaving, setEditSaving] = useState(false);
+  // This one swallowed the rejection ENTIRELY — `catch {}`, no toast, no state.
+  // A 500 rendered "No targets set. Set sales targets for your team", with
+  // nothing anywhere on the page saying the request had failed.
+  const [err, setErr] = useState(null);
 
   useEffect(() => { load(); }, []);
 
   async function load() {
-    try { const r = await api.get('/v1/vikray/targets'); setTargets(r.data.data || []); } catch {}
+    setErr(null);
+    try { const r = await api.get('/v1/vikray/targets'); setTargets(r.data.data || []); }
+    catch (e) { setErr(e); pushToast({ title: 'Failed to load targets', type: 'error' }); }
     finally { setLoading(false); }
   }
 
@@ -627,7 +661,9 @@ function TargetsTab() {
         </form>
       )}
 
-      {loading ? <Shimmer count={4} /> : targets.length === 0 ? (
+      {loading ? <Shimmer count={4} /> : err ? (
+        <ErrorState kind={errorKind(err)} onRetry={load} />
+      ) : targets.length === 0 ? (
         <Empty title="No targets set" sub="Set sales targets for your team to track performance and achievement." cta="+ Set Target" onCta={() => { setShowForm(true); loadMembers(); }} />
       ) : (
         <DataTable columns={['Salesperson', 'Period', { label: 'Target', align: 'right' }, { label: 'Actual', align: 'right' }, 'Achievement', '']}>
