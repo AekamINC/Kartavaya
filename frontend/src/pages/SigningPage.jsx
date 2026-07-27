@@ -31,7 +31,7 @@
  * The narrow-viewport rule that stacks the action buttons could not have been
  * written against them at all.
  */
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import { KLogo, KWordmark } from '../lib/brand';
@@ -100,6 +100,24 @@ export default function SigningPage() {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
   const paperRef = useRef(PAPER_FALLBACK);
+  /* Did a stroke ever land? `toDataURL` on an untouched canvas returns a
+     perfectly valid PNG of blank paper, so without this the page will happily
+     submit an empty image as a signature on a document it has just told the
+     signer is binding under the IT Act, 2000. Measured: a mount → click "Sign
+     document" with the draw tab open produced
+     `{signature_data: "data:image/png;base64,…", signature_type: "draw"}` and a
+     "Document signed" screen. */
+  const hasInkRef = useRef(false);
+  /* `busy` disables the buttons, but it only does so once React has re-rendered.
+     That is enough for a real double-CLICK — the browser dispatches those in
+     separate tasks and React 18 flushes discrete updates before the second one
+     lands (measured: 1 POST) — and NOT enough for two dispatches inside one
+     task (measured: 2 POSTs). A ref is set synchronously inside the handler, so
+     the guarantee stops depending on render timing. The endpoint is not
+     idempotent: `esign.py:486` reads `signers_completed` and writes `+1`, and
+     its `status == 'signed'` guard is evaluated against a row read before any
+     concurrent write commits. */
+  const inFlightRef = useRef(false);
 
   /* This page's viewer is a stranger to the product: a client's client, with no
      session and no stored prefs, so nothing here has ever expressed a theme
@@ -149,7 +167,15 @@ export default function SigningPage() {
     };
   }, []);
 
-  useEffect(() => {
+  /* Extracted from the effect so the `server` branch of ErrorState has something
+     to retry with. Without an `onRetry` a 500 on this request left a stranger
+     looking at "Something broke on our side… Try again in a moment" above a card
+     with ZERO buttons and ZERO links — measured, the whole page had no
+     interactive element at all. This route has no nav chrome to escape through
+     either, so the only recovery was knowing to reload the browser. */
+  const loadDoc = useCallback(() => {
+    setStep('loading');
+    setError('');
     ax.get(`/v1/esign/verify/${token}`)
       .then(r => {
         if (r.data.status === 'already_signed') {
@@ -170,38 +196,65 @@ export default function SigningPage() {
       });
   }, [token]);
 
+  useEffect(() => { loadDoc(); }, [loadDoc]);
+
+  /* The server's own `detail` when it sent one, and otherwise a sentence that is
+     TRUE about what just happened. Every handler below used to fall back to a
+     fixed string, which is fine for the status the string describes and a lie
+     for every other one: a 500 or a dropped connection on OTP verify answered
+     "Invalid OTP" — accusing the signer of mistyping a code that was correct and
+     sending them round the loop again. `errorKind` already draws exactly this
+     distinction for the full-page states; these inline ones now use it too. */
+  const failMsg = (e, fallback) => {
+    const detail = e?.response?.data?.detail;
+    if (detail) return detail;
+    const kind = errorKind(e);
+    if (kind === 'offline') return 'You appear to be offline. Check your connection and try again.';
+    if (kind === 'server') return 'Something broke on our side, not yours. Try again in a moment.';
+    return fallback;
+  };
+
   const sendOtp = async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setBusy(true);
     setError('');
     try {
       const r = await ax.post(`/v1/esign/verify/${token}/otp/send`);
       setData(d => ({ ...d, maskedEmail: r.data.email }));
       setStep('otp_verify');
-    } catch (e) { setError(e.response?.data?.detail || 'Failed to send OTP'); }
-    finally { setBusy(false); }
+    } catch (e) { setError(failMsg(e, 'Failed to send the code')); }
+    finally { inFlightRef.current = false; setBusy(false); }
   };
 
   const verifyOtp = async () => {
+    if (inFlightRef.current) return;
     if (otp.length !== 6) { setError('Enter the 6-digit code'); return; }
+    inFlightRef.current = true;
     setBusy(true);
     setError('');
     try {
       await ax.post(`/v1/esign/verify/${token}/otp/verify`, { otp });
       setStep('sign');
-    } catch (e) { setError(e.response?.data?.detail || 'Invalid OTP'); }
-    finally { setBusy(false); }
+    } catch (e) { setError(failMsg(e, 'Invalid code')); }
+    finally { inFlightRef.current = false; setBusy(false); }
   };
 
   const submitSignature = async () => {
+    if (inFlightRef.current) return;
     let sigData = '';
     if (sigType === 'type') {
       if (!typedName.trim()) { setError('Type your name to sign'); return; }
       sigData = typedName.trim();
     } else if (sigType === 'draw') {
       const canvas = canvasRef.current;
-      if (!canvas) return;
+      // Bailing silently left the button inert with no explanation. It is the
+      // one control on the page and it must always answer.
+      if (!canvas) { setError('The signature pad did not load. Reload this page and try again.'); return; }
+      if (!hasInkRef.current) { setError('Draw your signature above to sign'); return; }
       sigData = canvas.toDataURL('image/png');
     }
+    inFlightRef.current = true;
     setBusy(true);
     setError('');
     try {
@@ -210,17 +263,20 @@ export default function SigningPage() {
       });
       setResult(r.data);
       setStep('done');
-    } catch (e) { setError(e.response?.data?.detail || 'Failed to submit signature'); }
-    finally { setBusy(false); }
+    } catch (e) { setError(failMsg(e, 'Your signature was not accepted. Nothing has been signed.')); }
+    finally { inFlightRef.current = false; setBusy(false); }
   };
 
   const doDecline = async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setBusy(true);
+    setError('');
     try {
       await ax.post(`/v1/esign/verify/${token}/decline`, { reason: 'Declined by signer' });
       setStep('declined');
-    } catch (e) { setError(e.response?.data?.detail || 'Failed to decline'); }
-    finally { setBusy(false); }
+    } catch (e) { setError(failMsg(e, 'Could not record your decline. Nothing has changed.')); }
+    finally { inFlightRef.current = false; setBusy(false); }
   };
 
   /* `window.confirm` on the one irreversible action on the page, on the surface
@@ -234,9 +290,29 @@ export default function SigningPage() {
     onConfirm: doDecline,
   });
 
-  const initCanvas = (canvas) => {
-    if (!canvas) return;
+  /* `useCallback`, and the identity matters more than the allocation.
+     As an inline arrow this was a NEW function on every render, and React
+     re-attaches a ref whose callback identity changed — calling it with `null`
+     and then with the same DOM node. So every re-render of this step ran the
+     body below again, which (a) `fillRect`s the whole canvas in paper, ERASING
+     a signature the signer had already drawn, and (b) adds another seven
+     listeners to a node that already had them.
+
+     Measured, on the draw tab: opening the Decline dialog took fillRect from 1
+     call to 2 and listeners from 7 to 14; cancelling it took them to 3 and 21.
+     A failed sign attempt re-renders three times (busy on, error, busy off), so
+     the sequence "draw → Sign → server error → Sign again" submitted a BLANK
+     canvas on the second press, and the server accepted it. That chain is shut
+     by this and by `hasInkRef` together.
+
+     The `null` call is now handled rather than ignored: it is the unmount, and
+     leaving `canvasRef` pointing at a detached node is how a stale canvas gets
+     read at submit time. */
+  const initCanvas = useCallback((canvas) => {
+    if (!canvas) { canvasRef.current = null; hasInkRef.current = false; return; }
+    if (canvasRef.current === canvas) return;
     canvasRef.current = canvas;
+    hasInkRef.current = false;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     // --sg-paper / --sg-ink inherit down from .sg__paper, so reading them off
@@ -261,7 +337,15 @@ export default function SigningPage() {
     };
 
     const start = (e) => { e.preventDefault(); drawingRef.current = true; ctx.beginPath(); ctx.moveTo(...getPos(e)); };
-    const move = (e) => { if (!drawingRef.current) return; e.preventDefault(); ctx.lineTo(...getPos(e)); ctx.stroke(); };
+    // `hasInkRef` is set here and not in `start`, because a bare click puts no
+    // mark on the paper and must not count as a signature.
+    const move = (e) => {
+      if (!drawingRef.current) return;
+      e.preventDefault();
+      ctx.lineTo(...getPos(e));
+      ctx.stroke();
+      hasInkRef.current = true;
+    };
     const end = () => { drawingRef.current = false; };
 
     canvas.addEventListener('mousedown', start);
@@ -271,7 +355,7 @@ export default function SigningPage() {
     canvas.addEventListener('touchstart', start, { passive: false });
     canvas.addEventListener('touchmove', move, { passive: false });
     canvas.addEventListener('touchend', end);
-  };
+  }, []);
 
   const clearCanvas = () => {
     const canvas = canvasRef.current;
@@ -283,6 +367,7 @@ export default function SigningPage() {
     // problem for anyone who draws, clears, and draws again.
     ctx.fillStyle = paperRef.current || PAPER_FALLBACK;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    hasInkRef.current = false;
   };
 
   return (
@@ -316,7 +401,25 @@ export default function SigningPage() {
           <Card className="pub__card">
             <CardBody>
               <div className="pub__pad">
-                <ErrorState kind={errKind} detail={error || undefined} />
+                {/* `offline`'s shared copy is "Changes are saved and will sync
+                    when you're back." That is true of the signed-in app and
+                    false here: this page holds no draft, saves nothing and syncs
+                    nothing, and telling a signer their work is safe on the one
+                    screen where "did my signature go through?" is the only
+                    question they have is the worst place in the product to say
+                    it. The server's own `detail` still wins when there is one —
+                    a dropped connection never has one. */}
+                <ErrorState
+                  kind={errKind}
+                  detail={error || (errKind === 'offline'
+                    ? 'Nothing has been sent. Reconnect and open this link again.'
+                    : undefined)}
+                  /* Only `server`. ErrorState also renders `onRetry` for
+                     `denied`, where it is labelled "Request access" — a button
+                     with no meaning to a signer who has no account to request
+                     it with. */
+                  onRetry={errKind === 'server' ? loadDoc : undefined}
+                />
               </div>
             </CardBody>
           </Card>
@@ -357,6 +460,16 @@ export default function SigningPage() {
                 <p className="pub__lede">
                   Sent to {data?.maskedEmail || 'your email'}. Valid for 10 minutes.
                 </p>
+                {/* Same rule as the `sign` step: whether the signer can read the
+                    document must not depend on which step they are standing on.
+                    This is the step where they are waiting on an email — the one
+                    place they have time to read it — and it was the only step in
+                    the flow with no link to the PDF at all. */}
+                {data?.file_url && (
+                  <a className="pub__link" href={data.file_url} target="_blank" rel="noopener noreferrer">
+                    View document (PDF)
+                  </a>
+                )}
                 {/* `.fldx--otp` is the system's OTP field — a 210px cap, because a
                     six-digit code in a full-width input reads as a text box. */}
                 <div className={`fldx fldx--otp${error ? ' is-error' : ''}`}>
