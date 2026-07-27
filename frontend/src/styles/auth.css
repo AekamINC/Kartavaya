@@ -349,13 +349,26 @@
   outline: 2px solid var(--primary); outline-offset: 2px;
 }
 
-/* AUTH-SPEC: invalid-credentials shakes the form. Transform only. */
-.au__box.is-shake { animation: auShake 420ms cubic-bezier(.36, .07, .19, .97); }
+/* AUTH-SPEC: invalid-credentials shakes the form. Transform only.
+   420ms cubic-bezier(.36,.07,.19,.97) is MOTION-SPEC.md §4's "form shake", and
+   the tempo is kept exactly — but as `calc(420ms * var(--ix))`, not a literal.
+   It is FINITE, so scaling it is safe; the fixed-duration rule in
+   animations.css applies to `infinite` loops, which cannot be allowed to
+   accelerate without end. 420ms is not a --dur-* rung, so the multiplication is
+   written out rather than borrowing the wrong token.
+
+   Measured before this change: 420ms and the full ±4px at Animations = None.
+   The OS media query below already stopped it, but the IN-APP preference had no
+   attribute for CSS to select on and reached this rule through neither
+   duration nor distance — the same defect class as `.adm__badge-d` and
+   `.au__wm`. Amplitude now rides --motion-scale, so at None the box holds
+   still and the error message carries the signal on its own. */
+.au__box.is-shake { animation: auShake calc(420ms * var(--ix)) cubic-bezier(.36, .07, .19, .97); }
 @keyframes auShake {
-  10%, 90% { transform: translateX(-1px); }
-  20%, 80% { transform: translateX(2px); }
-  30%, 50%, 70% { transform: translateX(-4px); }
-  40%, 60% { transform: translateX(4px); }
+  10%, 90%      { transform: translateX(calc(-1px * var(--motion-scale, 1))); }
+  20%, 80%      { transform: translateX(calc( 2px * var(--motion-scale, 1))); }
+  30%, 50%, 70% { transform: translateX(calc(-4px * var(--motion-scale, 1))); }
+  40%, 60%      { transform: translateX(calc( 4px * var(--motion-scale, 1))); }
 }
 @media (prefers-reduced-motion: reduce) { .au__box.is-shake { animation: none; } }
 
