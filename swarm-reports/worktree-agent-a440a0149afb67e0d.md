@@ -242,36 +242,62 @@ be able to see what is held and for how long without asking."
 
 Run from `frontend/`, unpiped, per `_COORDINATION.md` §2.
 
+Measured on `a2e6c804`, the merge that carried this work onto `staging`.
+
 | Gate | Result |
 |---|---|
-| `node scripts/check-tokens.mjs` | 340 declared, 234 referenced, **0 missing** |
-| `node scripts/check-classes.mjs` | 2132 selectors, 1456 classes, **0 missing a rule** |
+| `node scripts/check-tokens.mjs` | 344 declared, 239 referenced, **0 missing** |
+| `node scripts/check-classes.mjs` | 2264 selectors, 1560 classes, **0 missing a rule** |
 | `npx vite build` | **succeeds** — it did not before §3.6 |
-| `npx vitest run` | **451 passed, 1 failed** — the failure is pre-existing, see below |
-| `python -m pytest` (backend) | **1247 passed, 0 failed** |
+| `npx vitest run` | **560 passed / 34 files, 0 failed** |
+| `python -m pytest` (backend) | **1263 passed, 3 failed** — pre-existing, see §5.1 |
 
-### The one red test is `staging`'s, not this branch's
+## 5.1 · ⚠ `staging` IS RED, and it is not this branch — Sanvaad cross-org isolation
 
-`visual-regression.test.jsx > semantic-palette` fails on `--outline`:
+`backend/tests/test_separated_duty.py`, three failures:
 
 ```
-- --outline   light=#ADA692  dark=#5B626C     (the committed snapshot)
-+ --outline   light=#78725F  dark=#7E8590     (what the CSS now resolves to)
+test_cannot_add_a_user_from_another_org_to_a_channel   assert 403 == 404
+test_cannot_open_a_dm_with_a_user_from_another_org     assert 403 == 404
+test_same_org_check_queries_user_roles_with_the_callers_org
+    assert 'staging.user_roles' in
+      'SELECT role FROM staging.org_member_modules
+         WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3'
 ```
 
-`--outline` is declared in exactly one file, `kartavaya-design.css:231,327`. **This
-branch does not touch that file or the snapshot** — both are byte-identical to
-`origin/staging`, so the test fails the same way on staging alone. A sibling changed the
-token and did not re-record the baseline.
+**Not mine, and it predates my push.** Both halves were already ancestors of
+`ee89543e`, the staging tip before me — verified with `git merge-base --is-ancestor`:
 
-**Deliberately not updated here.** Re-recording someone else's visual baseline would
-silently ratify a token change I have not reviewed, and the whole point of that snapshot
-is that a palette change has to be looked at by a person. It belongs to whoever moved
-`--outline`.
+- `0e7b4bf8` *feat(sanvaad): the viewer level refuses…* changed `messaging.py`'s
+  same-org check to read `staging.org_member_modules`.
+- `fc87be50` *test: pin separated duty and cross-org refusal…* pins that it must read
+  `staging.user_roles`.
 
-The two `Unhandled Rejection`s vitest reports are also pre-existing, in
-`task-flow.test.jsx` via `TaskDrawer.jsx:168` (`r.data.forEach` on a mock that returns a
-non-array). Not on this surface.
+Two green branches, one red integration — the same shape as the invite test above, but
+this one is **a tenancy control, not a label**. `architecture_tenancy` records
+`user_roles` as the sole tenant path. A same-org check answered from a module-grant
+table is answering a different question: "does this user hold a grant on this module"
+is not "is this user in my org", and the two diverge for any member with no grant row.
+The `403 == 404` pairs suggest the refusal currently still happens — but for the module
+reason rather than the org one, which means the isolation is incidental rather than
+enforced.
+
+**Deliberately not fixed here.** It is a cross-org isolation control on a surface I do
+not own, the owning agent is active in it right now, and `_COORDINATION.md` §5 already
+records unresolved ownership in exactly this area. Guessing at a security check to turn
+a suite green is how a real hole gets papered over. **This needs the Sanvaad owner or
+the coordinator.**
+
+### The palette snapshot — resolved by a sibling mid-run
+
+`visual-regression.test.jsx > semantic-palette` failed on `--outline` for most of this
+session (`#ADA692` → `#78725F` light) because a sibling moved the token and did not
+re-record the baseline. I left it alone on purpose — re-recording someone else's visual
+baseline silently ratifies a palette change nobody reviewed, which is the one thing that
+snapshot exists to prevent. Someone else re-recorded it deliberately and it is green now.
+
+The two `Unhandled Rejection`s vitest reported earlier came from `task-flow.test.jsx` via
+`TaskDrawer.jsx:168` (`r.data.forEach` on a mock returning a non-array). Also gone.
 
 ### Two siblings fixed things this branch also fixed
 
@@ -283,7 +309,26 @@ resolutions were not symmetric:
   branch instead folded `PUNCH_*` into `STATUS_MAP`, which is what 07 asks for by name.
   **Kept both, because they are not duplicates.** `label` is the general escape hatch for
   any caller; the map is what makes the register correct with no override at all. Their
-  comments each falsified the other's and were reconciled in `2ad4c11`.
+  comments each falsified the other's and were reconciled.
+
+### One integration break, fixed: `Invoicing` → `Finance`
+
+`ab740fc` renamed Ganit to **Finance** (the module holds expenses, payables, bank and
+contracts, so "Invoicing" named a tenth of it — `_DESIGN-GAP.md` #2 settled the way it
+says to settle it). `auth-invite-expiry.test.jsx` asserted the literal `'Invoicing'`.
+Both landed green; staging went red where they met.
+
+Fixed by asserting through `moduleMeta()` rather than swapping one literal for another.
+The claim that test makes — its own comment says so — is *"the screen shows the product
+name rather than the code"*, not *"the product name is Finance"*. A literal restates the
+registry and goes stale at the next deliberate rename; reading it cannot. A sibling fixed
+the same line with a literal concurrently; the registry version won the merge and their
+reasoning was folded into the comment.
+
+**This is now the third instance of the same failure mode in one session** — two green
+branches, one red integration, nobody at fault. §5.1 is the fourth and it is a security
+control. Worth a coordinator note: the swarm has no pre-merge integration gate, and the
+per-branch gates cannot see it by construction.
 
 `frontend/node_modules` had to be installed to run the last three. **`npm install`
 rewrote both `package-lock.json` and `yarn.lock`** — restored with `git checkout --`
