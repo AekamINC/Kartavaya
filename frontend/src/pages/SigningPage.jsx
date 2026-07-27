@@ -343,6 +343,33 @@ export default function SigningPage() {
     hasInkRef.current = false;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    /* Size the backing store to what is actually on screen.
+     *
+     * The attributes said 500x160 while CSS laid the element out at 563.25x160,
+     * so the person signed in a 3.52:1 box and `toDataURL` exported a 3.125:1
+     * one — their signature squeezed ~11% horizontally. Display hid it, because
+     * the browser stretches the backing store back out to fill the element.
+     *
+     * The width is fluid, so the factor moved with the viewport: the SAME
+     * person signing on a phone and on a laptop produced two differently
+     * proportioned marks — on the one artefact here that is legally binding,
+     * and the one thing anyone would later compare against a specimen.
+     *
+     * Backing store = CSS box x devicePixelRatio, then scale the context so
+     * every drawing coordinate below stays in CSS pixels. Fixes the aspect and
+     * stops the export being soft on a retina screen.
+     */
+    const rect0 = canvas.getBoundingClientRect();
+    // A ref callback can fire before layout; fall back to the authored size
+    // rather than collapsing the canvas to zero.
+    const cssW = Math.round(rect0.width) || 500;
+    const cssH = Math.round(rect0.height) || 160;
+    const dpr = Math.min(window.devicePixelRatio || 1, 3);   // cap: 4x is a needlessly large PNG
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
     // --sg-paper / --sg-ink inherit down from .sg__paper, so reading them off
     // the canvas itself resolves the same values the stylesheet painted.
     const [paper, ink] = paperInk(canvas);
@@ -351,7 +378,9 @@ export default function SigningPage() {
     // transparent PNG dropped onto a dark viewer background hides the ink just
     // as effectively as light ink would. See paperInk above.
     ctx.fillStyle = paper;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // CSS pixels, not canvas.width/height — the context is scaled by dpr above,
+    // so the backing-store dimensions would paint dpr times too far.
+    ctx.fillRect(0, 0, cssW, cssH);
     ctx.strokeStyle = ink;
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
@@ -359,9 +388,12 @@ export default function SigningPage() {
     const getPos = (e) => {
       const rect = canvas.getBoundingClientRect();
       const touch = e.touches?.[0];
-      const x = (touch?.clientX || e.clientX) - rect.left;
-      const y = (touch?.clientY || e.clientY) - rect.top;
-      return [x * (canvas.width / rect.width), y * (canvas.height / rect.height)];
+      // Plain CSS pixels. The old scale factor (canvas.width / rect.width)
+      // existed only to bridge a backing store that no longer disagrees with
+      // the box; the context transform handles dpr now, and keeping both would
+      // apply the ratio twice.
+      return [(touch?.clientX || e.clientX) - rect.left,
+              (touch?.clientY || e.clientY) - rect.top];
     };
 
     const start = (e) => { e.preventDefault(); drawingRef.current = true; ctx.beginPath(); ctx.moveTo(...getPos(e)); };
@@ -393,8 +425,17 @@ export default function SigningPage() {
     // Repaint the paper, not clearRect — clearing back to transparent would
     // undo the fill laid down in initCanvas and reintroduce the invisible-ink
     // problem for anyone who draws, clears, and draws again.
+    //
+    // `save`/`setTransform(1,…)`/`restore` rather than fillRect over the
+    // backing-store dimensions: this context carries the dpr scale from
+    // initCanvas, so those dimensions would paint dpr times too far. It happens
+    // to work today because the overdraw is clipped, which is the kind of
+    // accident that stops being true the moment someone changes the transform.
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = paperRef.current || PAPER_FALLBACK;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
     hasInkRef.current = false;
   };
 

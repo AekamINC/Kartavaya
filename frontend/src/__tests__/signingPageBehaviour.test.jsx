@@ -128,10 +128,23 @@ const fill = async (sel, value) => {
 function stubCanvas() {
   const fillRects = [];
   const listeners = [];
+  /* `transforms` records every setTransform, because the page now scales the
+     context by devicePixelRatio: the backing store was a fixed 500x160 while
+     CSS laid the element out at 563.25x160, so `toDataURL` exported the
+     signature squeezed ~11% horizontally — and the factor moved with the
+     viewport, so one person signing on a phone and on a laptop produced two
+     differently proportioned marks on a legally binding artefact.
+
+     Stubbed rather than guarded in the product: every real 2D context has
+     setTransform/save/restore, and a `typeof ctx.setTransform === 'function'`
+     check in shipping code would exist only to accommodate this file. */
+  const transforms = [];
   const ctx = {
     fillStyle: '', strokeStyle: '', lineWidth: 0, lineCap: '',
     fillRect: (...a) => fillRects.push(a),
     beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
+    setTransform: (...a) => transforms.push(a),
+    save() {}, restore() {},
   };
   const origGet = HTMLCanvasElement.prototype.getContext;
   const origUrl = HTMLCanvasElement.prototype.toDataURL;
@@ -145,7 +158,7 @@ function stubCanvas() {
     return origAdd.call(this, type, fn, opts);
   };
   return {
-    fillRects, listeners,
+    fillRects, listeners, transforms,
     /** Drive a real stroke through the page's own handlers. */
     draw() {
       const c = container.querySelector('canvas');
@@ -547,6 +560,47 @@ describe('drawn signature', () => {
 
   beforeEach(() => { cv = stubCanvas(); });
   afterEach(() => cv.restore());
+
+  it('the exported signature has the shape the person actually drew', async () => {
+    /* The backing store was a fixed 500x160 while CSS laid the element out at
+       563.25x160. Display hid it — the browser stretches the store back out to
+       fill the box — but `toDataURL` ships the STORE, so the signature left
+       here squeezed ~11% horizontally.
+       The width is fluid, so the factor moved with the viewport: the same
+       person signing on a phone and on a laptop produced two differently
+       proportioned marks, on the one artefact on this page that is legally
+       binding and the one thing anyone would later compare to a specimen. */
+    const rect = { width: 563.25, height: 160, left: 0, top: 0, right: 563.25, bottom: 160 };
+    const orig = HTMLCanvasElement.prototype.getBoundingClientRect;
+    HTMLCanvasElement.prototype.getBoundingClientRect = () => rect;
+    const origDpr = window.devicePixelRatio;
+    Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true });
+    try {
+      await reachDraw(() => ok({ signed: true }));
+      const canvas = document.querySelector('canvas');
+      expect(canvas, 'no canvas rendered').toBeTruthy();
+
+      // Backing store is the CSS box times dpr — so the aspect matches what was
+      // drawn, and the export is not soft on a retina screen.
+      // The CSS width is rounded to a whole pixel BEFORE scaling
+      // (Math.round(563.25) = 563), so this is 1126 and not 1127. Asserting the
+      // product's actual arithmetic rather than my own reading of it: I wrote
+      // 1127 first and the test caught me, which is the whole point of it.
+      expect(canvas.width).toBe(563 * 2);
+      expect(canvas.height).toBe(160 * 2);
+
+      const drawnAspect = rect.width / rect.height;
+      const storedAspect = canvas.width / canvas.height;
+      expect(Math.abs(storedAspect - drawnAspect)).toBeLessThan(0.01);
+
+      // And the context is scaled once, so drawing coordinates stay in CSS
+      // pixels. Scaling twice would shrink the stroke instead of the canvas.
+      expect(cv.transforms.at(0)).toEqual([2, 0, 0, 2, 0, 0]);
+    } finally {
+      HTMLCanvasElement.prototype.getBoundingClientRect = orig;
+      Object.defineProperty(window, 'devicePixelRatio', { value: origDpr, configurable: true });
+    }
+  });
 
   it('an untouched canvas is not a signature', async () => {
     // `toDataURL` on blank paper is a perfectly valid PNG. Submitting it put a
