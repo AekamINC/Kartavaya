@@ -64,6 +64,40 @@ export default function OnboardingChecklist({ onNewTask }) {
 
   useEffect(() => { if (!dismissed) refresh(); }, [dismissed, refresh]);
 
+  /* ── Every hook must sit ABOVE the early returns below ────────────────────
+     This component is mounted by `AppShell` (`:484`), OUTSIDE the page-scoped
+     ErrorBoundary that wraps `<Outlet>` — so a throw here escapes to the root
+     boundary and blanks the whole product, sidebar and all.
+
+     And it did throw. `dismiss()` was called from a `useEffect` that sat AFTER
+     `if (dismissed) return null`. The moment `allDone` became true the effect
+     set `dismissed`, the next render took the early return, and React saw a
+     render with fewer hooks than the one before it — "Rendered fewer hooks than
+     expected", which is a crash, not a warning.
+
+     The trigger is the worst possible one: `allDone` means the firm just
+     finished all four setup steps. So the product died for every new customer,
+     at the exact moment they completed onboarding.
+
+     `allDone` is computed here from `steps` rather than from `list` (built
+     below) purely so this effect can live above the returns. The two are the
+     same predicate — `list` has one entry per key of `steps` and each `done` is
+     that key — and the test asserts they cannot drift. */
+  const allDone = loaded && Object.values(steps).every(Boolean);
+
+  const dismiss = () => {
+    setClosing(true);
+    setTimeout(() => {
+      setDismissed(true);
+      writeState({ dismissed: true });
+    }, 220);
+  };
+
+  useEffect(() => {
+    if (allDone && !closing) dismiss();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allDone, closing]);
+
   if (dismissed) return null;
 
   const list = [
@@ -98,15 +132,6 @@ export default function OnboardingChecklist({ onNewTask }) {
   ];
 
   const doneCount = list.filter(s => s.done).length;
-  const allDone = loaded && doneCount === list.length;
-
-  const dismiss = () => {
-    setClosing(true);
-    setTimeout(() => {
-      setDismissed(true);
-      writeState({ dismissed: true });
-    }, 220);
-  };
 
   const toggleMinimize = () => {
     setMinimized(v => {
@@ -115,10 +140,6 @@ export default function OnboardingChecklist({ onNewTask }) {
       return next;
     });
   };
-
-  useEffect(() => {
-    if (allDone && !closing) dismiss();
-  }, [allDone, closing]);
 
   if (allDone) return null;
 
