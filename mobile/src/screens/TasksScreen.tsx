@@ -13,6 +13,8 @@ import { tasksApi } from '../api/tasks';
 import { TaskCard } from '../components/TaskCard';
 import SwipeRow from '../components/SwipeRow';
 import { useOfflineMutation } from '../hooks/useOfflineMutation';
+import { useQueueStatus } from '../hooks/useQueueStatus';
+import { queuedEntityIds } from '../offline/mutationQueue';
 import type { RootStackParamList } from '../nav/RootStack';
 import type { Task } from '../api/types';
 
@@ -111,6 +113,22 @@ export default function TasksScreen() {
     };
   }, [data]);
 
+  /**
+   * Which of these rows has an unsent write against it.
+   *
+   * A swipe-to-complete on a train moves the row immediately — that is what the
+   * optimistic update is for — and then the row looks exactly like one the
+   * server has already accepted. §7.1: never lie about state. The amber clock
+   * the reference draws at `Mobile.jsx:45` is the difference between "done" and
+   * "done here, not yet there".
+   *
+   * `changes.count` drives the recompute rather than the set itself: MMKV pushes
+   * the queue write, `useQueueStatus` turns it into a count, and the ids are
+   * re-read whenever that count moves.
+   */
+  const { changes } = useQueueStatus();
+  const queuedTaskIds = useMemo(() => queuedEntityIds('task'), [changes.count]);
+
   return (
     <View style={[s.root, { backgroundColor: t.bg, paddingTop: insets.top }]}>
       <View style={s.header}>
@@ -179,6 +197,7 @@ export default function TasksScreen() {
               <TaskCard
                 task={item}
                 onPress={() => nav.navigate('TaskDetail', { taskId: item.task_id })}
+                syncing={queuedTaskIds.has(item.task_id)}
               />
             );
             // An already-done task has nothing to complete, so it gets no swipe

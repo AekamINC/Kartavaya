@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import {
-  View, Text, SectionList, Pressable, StyleSheet, Modal,
+  View, Text, SectionList, Pressable, StyleSheet,
   ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
 import { a11yButton, a11yToggle } from '../components/a11y';
 import { useOnline } from '../hooks/useOnline';
+import Sheet from '../components/Sheet';
 import ScreenState, { resolveScreenState, StaleBar } from '../components/ScreenState';
 import {
   tasksApi, REMINDER_OFFSETS, REMINDER_OFFSET_LABEL, REMINDER_CHANNEL_LABEL,
@@ -351,19 +352,16 @@ function ReminderSheet({ task, online, onClose }: {
   };
 
   return (
-    <Modal
+    <Sheet
       visible={!!task}
-      transparent
-      animationType="slide"
       // Android hardware back must dismiss every sheet — 17 §platform table.
-      onRequestClose={close}
+      onClose={close}
+      closeLabel="Dismiss"
+      panelStyle={[
+        s.sheet,
+        { backgroundColor: t.surface, borderColor: t.outlineVar, paddingBottom: insets.bottom + 20 },
+      ]}
     >
-      <View style={s.modalRoot}>
-        <Pressable style={s.scrim} onPress={close} accessibilityLabel="Dismiss" />
-        <View style={[
-          s.sheet,
-          { backgroundColor: t.surface, borderColor: t.outlineVar, paddingBottom: insets.bottom + 20 },
-        ]}>
           <View style={[s.grab, { backgroundColor: t.outline }]} />
 
           <Text style={[s.sheetTitle, { color: t.ink }]} numberOfLines={2}>
@@ -475,9 +473,7 @@ function ReminderSheet({ task, online, onClose }: {
                 : <Text style={[s.btnText, { color: dirty ? t.onPrimary : t.inkDisabled }]}>Save</Text>}
             </Pressable>
           </View>
-        </View>
-      </View>
-    </Modal>
+    </Sheet>
   );
 }
 
@@ -504,8 +500,7 @@ const s = StyleSheet.create({
   rowFired: { fontSize: 11 },
   bell: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
 
-  modalRoot: { flex: 1, justifyContent: 'flex-end' },
-  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  // modalRoot and scrim removed — Sheet owns both, and fades the scrim.
   sheet: {
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
     borderWidth: 1, borderBottomWidth: 0, padding: 18, gap: 6,
