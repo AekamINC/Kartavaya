@@ -203,7 +203,13 @@ def _build_html(payslip: dict, employee: dict, org: dict, check: DocumentCheck |
             "physical signature &middot; figures in Indian rupees"
         ),
     ])
-    return R.document([page], org, title="Payslip — Kartavaya")
+    return R.document(
+        [page], org, title="Payslip — Kartavaya",
+        running=R.running_id(
+            "Payslip", org,
+            " · ".join(p for p in (payslip.get("payslip_number") or "", month_label) if p),
+        ),
+    )
 
 
 def generate_payslip_pdf(payslip: dict, employee: dict, org: dict) -> bytes:

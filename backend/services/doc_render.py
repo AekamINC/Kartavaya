@@ -105,6 +105,63 @@ FONT_DISPLAY = DISPLAY_STACK
 
 _LOGO_MAX_BYTES = 4 * 1024 * 1024
 
+# ── The page budget ──────────────────────────────────────────────────────────
+# One place, for all nine documents. A4 is 297mm; content breaks at 285mm.
+#
+# The 12mm that the budget gives up is not decoration, it is tolerance. A PDF
+# laid out here is printed somewhere else, by a driver that applies its own
+# unprintable margin, at a font that may substitute, through a rasteriser that
+# rounds. A document laid out to the last millimetre of the sheet has no answer
+# to any of that: one substituted glyph one point taller and the final line —
+# the colophon, a signature, the closing balance — lands alone on a page of its
+# own. 12mm is roughly four lines of body text at this type size, so it absorbs
+# a whole paragraph's worth of drift before anything moves.
+#
+# It is spent as `@page` bottom margin rather than taken off `.page`, and that
+# distinction is the reason the look does not change. The top margin stays 0 and
+# `.page` keeps its `--doc-pad` inset, so the letterhead sits exactly where the
+# design puts it and every measurement down the page is unmoved. The only thing
+# that changes is where the flow is allowed to run out — 12mm sooner, into space
+# that was blank on a correctly-laid-out sheet anyway.
+#
+# The reserved strip is also where the continuation identity lives (see
+# `stylesheet`), so the running footer costs the content nothing.
+PAGE_HEIGHT_MM = 297          # A4
+CONTENT_BUDGET_MM = 285       # the owner's budget
+PAGE_TAIL_MM = PAGE_HEIGHT_MM - CONTENT_BUDGET_MM   # 12mm of headroom
+
+
+def css_string(value: str) -> str:
+    """A Python string as a CSS string literal, for a margin-box `content`.
+
+    Two distinct escapes, because this string lands somewhere no other value in
+    this module does — inside a `<style>` element:
+
+    1. **CSS-level.** A quote or a backslash would terminate the declaration
+       early and silently drop the running footer, the same silent-corruption
+       failure mode the resolved-tokens decision avoids.
+
+    2. **HTML-level, and this one is a security boundary.** `<style>` is a raw
+       text element: `html.escape` does NOT protect it, because the parser does
+       not decode entities there — it scans for `</style` and stops. An org name
+       containing `</style><script>…` would close the stylesheet and inject
+       markup into every document that firm's name appears on. `<` and `>` are
+       therefore emitted as CSS numeric escapes, which the CSS parser resolves
+       back to the original characters (so the footer still READS correctly)
+       while the HTML tokeniser never sees a tag opener at all.
+
+    The trailing space in `\\3c ` is the escape delimiter and is consumed by the
+    CSS parser, not printed.
+    """
+    out = (
+        str(value or "")
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("<", "\\3c ")
+        .replace(">", "\\3e ")
+    )
+    return '"' + out.replace("\n", " ").replace("\r", " ") + '"'
+
 
 def esc(value) -> str:
     """HTML-escape anything on its way into a template. Firm names contain `&`."""
@@ -404,10 +461,27 @@ def words_line(text_html: str) -> str:
     return f'<div class="words">{text_html}</div>'
 
 
-def block(label: str, body_html: str, top: str = "14px") -> str:
-    """brand.css `.block` + `.block__l`."""
+def block(label: str, body_html: str, top: str = "14px", flow: bool | None = None) -> str:
+    """brand.css `.block` + `.block__l`.
+
+    `.block` is `break-inside: avoid`, which is right for the short labelled
+    panels the design uses it for and catastrophic for the ones that wrap a line
+    table. A 24-row TDS deduction table inside an unbreakable block cannot be
+    split, so the whole table is pushed to the next sheet and page one keeps its
+    letterhead and 189mm of white — measured, not hypothesised.
+
+    So a block that CONTAINS A TABLE flows instead: the table's own rules take
+    over (rows are individually unbreakable and `<thead>` reprints), which is
+    the mechanism that was built for exactly this. Detected rather than declared
+    per call site, because the failure mode of forgetting the flag is an ugly
+    document rather than an error, and it only shows up at data volumes the
+    fixtures do not reach. `flow` overrides if a caller ever needs it to.
+    """
+    if flow is None:
+        flow = "<table" in body_html
+    cls = "block block--flow" if flow else "block"
     return (
-        f'<div class="block" style="margin-top:{top}">'
+        f'<div class="{cls}" style="margin-top:{top}">'
         f'<div class="block__l">{esc(label)}</div>{body_html}</div>'
     )
 
@@ -422,20 +496,55 @@ def terms_list(items: list[str], ordered: bool = False) -> str:
 
 # ── the stylesheet ───────────────────────────────────────────────────────────
 
-def stylesheet(org: dict | None = None) -> str:
+def stylesheet(org: dict | None = None, running_id: str = "") -> str:
     """brand.css, resolved for print.
 
     The page geometry is what `doc-page.js` emits for an explicitly-paginated
-    document: `@page { size: A4; margin: 0 }` and each `.page` a full-bleed
-    sheet carrying its own `--doc-pad` inset. `break-after: page` on every
-    `.page` but the last reproduces the component's
+    document: `@page { size: A4 }` and each `.page` a full-bleed sheet carrying
+    its own `--doc-pad` inset. `break-before: page` on every `.page` but the
+    first reproduces the component's
     `::slotted(.page:not(:first-child)) { break-before: page }`.
+
+    `running_id` is the continuation identity — document kind, org, and number
+    or period. It is printed in the reserved tail strip on every sheet BUT THE
+    FIRST, alongside `Page N of M`. A one-page document therefore carries no
+    running furniture at all and is pixel-identical to the design; a document
+    that legitimately spans sheets never leaves a reader holding a page with no
+    idea what it belongs to. Page one is not a continuation page, so it keeps
+    the letterhead as its identity and nothing is added to it.
     """
     a, a2, org_tint = accent(org)
+    rid = css_string(running_id)
+    # Suppressed rather than omitted when there is no identity to print, so the
+    # `Page N of M` half still appears on a continuation sheet.
+    rid_content = "none" if not str(running_id or "").strip() else rid
     return f"""
 {font_face_css()}
 *{{ box-sizing:border-box; margin:0; padding:0; }}
-@page{{ size:A4; margin:0; }}
+
+/* The page budget. `margin-bottom` is the whole of it: top stays 0 so the
+   letterhead does not move. See CONTENT_BUDGET_MM. */
+@page{{
+  size:A4; margin:0 0 {PAGE_TAIL_MM}mm 0;
+
+  /* Continuation identity, in the reserved strip — it costs content nothing.
+     Type is `.foot`'s: 7pt, INK3. No new furniture, no new rule. */
+  @bottom-left{{
+    content:{rid_content}; margin:0 0 5mm {PAD}; font-family:{FONT_UI};
+    font-size:7pt; color:{INK3}; vertical-align:bottom;
+  }}
+  @bottom-right{{
+    content:"Page " counter(page) " of " counter(pages);
+    margin:0 {PAD} 5mm 0; font-family:{FONT_UI};
+    font-size:7pt; color:{INK3}; vertical-align:bottom;
+  }}
+}}
+/* Page one is not a continuation page. */
+@page :first{{
+  @bottom-left{{ content:none; }}
+  @bottom-right{{ content:none; }}
+}}
+
 html,body{{ background:#fff; }}
 body{{ font-family:{FONT_UI}; color:{INK}; -webkit-print-color-adjust:exact; print-color-adjust:exact; }}
 
@@ -472,8 +581,58 @@ body{{ font-family:{FONT_UI}; color:{INK}; -webkit-print-color-adjust:exact; pri
  *    never drops a figure.
  */
 .page{{ padding:{PAD}; font-family:{FONT_UI}; font-size:9.5pt; line-height:1.5; color:{INK};
-       background:#fff; display:block; min-height:296mm; }}
+       background:#fff; display:block; min-height:{CONTENT_BUDGET_MM}mm; }}
 .page + .page{{ break-before:page; }}
+
+/* ── Break quality ──────────────────────────────────────────────────────────
+ * The budget decides WHERE a page ends; these decide what is allowed to be
+ * standing there when it does. Each rule below answers one named defect.
+ *
+ * `break-inside` follows the grain brand.css already set on `.gap-note`.
+ * `break-after: avoid` / `break-before: avoid` are the pair WeasyPrint honours
+ * for keeping a label with what it labels; both were checked against rendered
+ * bytes rather than assumed, because an `avoid` that is silently ignored looks
+ * exactly like one that worked until the data gets longer.
+ */
+
+/* A heading must never be the last thing on a sheet. */
+.block__l, .party__l, .meta__l, .tile__l{{ break-after:avoid; }}
+
+/* A table header must never be stranded with no rows under it, and a table
+   that legitimately spans sheets repeats it. `table-header-group` is what
+   makes WeasyPrint reprint `<thead>` after a break. */
+.lines thead{{ display:table-header-group; break-inside:avoid; break-after:avoid; }}
+.lines tbody tr{{ break-inside:avoid; }}
+/* A footer row is a total: it stays with the rows above it. */
+.lines tr.lines__foot{{ break-before:avoid; }}
+
+/* A total may not be separated from the rows it totals, nor the amount in
+   words from the figure it spells out. */
+.totals{{ break-inside:avoid; }}
+.words{{ break-inside:avoid; break-before:avoid; }}
+
+/* A signature may not be separated from what it signs off. */
+.sign{{ break-inside:avoid; break-before:avoid; }}
+
+/* Whole units: a tile, a panel, the letterhead, the meta strip. Each is bounded
+   by the design — a fixed number of short cells — so keeping it whole can never
+   cost more than its own height. */
+.tile, .panel, .meta{{ break-inside:avoid; }}
+.lh{{ break-inside:avoid; break-after:avoid; }}
+.terms li{{ break-inside:avoid; }}
+
+/* A container whose height is driven by DATA must be allowed to break, or the
+   only way it can fit is to start a fresh sheet and leave the previous one
+   empty. `.block--flow` is set on any block wrapping a table (see `block`);
+   `.parties` is two-up and carries the payslip's earnings/deductions tables. */
+.block--flow, .parties, .party{{ break-inside:auto; }}
+
+/* No page may carry only the colophon. */
+.foot{{ break-before:avoid; }}
+
+/* No single line left behind, and none carried over alone. */
+html{{ orphans:3; widows:3; }}
+.terms, .terms li, .party__a, .words, .gap-note{{ orphans:2; widows:2; }}
 
 /* ── Letterhead ─────────────────────────────────────────────────────────── */
 .lh{{ display:flex; gap:16px; align-items:flex-start; padding-bottom:13px; border-bottom:2px solid {a}; }}
@@ -544,7 +703,9 @@ td.num--left{{ text-align:left; }}
 .words{{ margin-top:9px; padding:8px 10px; background:{TINT}; border-radius:5px; font-size:8pt; }}
 
 /* ── Blocks, terms, signature ───────────────────────────────────────────── */
-.block{{ break-inside:avoid; }}
+/* `:not(.block--flow)` so a block wrapping a data-driven table can still break;
+   see `block()` and the break-quality section above. */
+.block:not(.block--flow){{ break-inside:avoid; }}
 .block__l{{ font-size:6.8pt; letter-spacing:0.13em; text-transform:uppercase; color:{INK3};
             font-weight:700; margin-bottom:5px; }}
 .block__l--accent{{ color:{a}; }}
@@ -590,12 +751,29 @@ p.terms{{ padding-left:0; }}
 """
 
 
-def document(pages: list[str], org: dict | None = None, title: str = "") -> str:
-    """Assemble one printable document from its `.page` sections."""
+def running_id(kind: str, org: dict | None = None, ref: str = "") -> str:
+    """The continuation-page identity line: kind, org, and number or period.
+
+    Plain text, not markup — it is printed by a CSS margin box, which takes a
+    string. Assembled here so all nine documents word it the same way.
+    """
+    org = org or {}
+    parts = [str(kind or "").strip(), str(org.get("name") or "").strip(), str(ref or "").strip()]
+    return "  ·  ".join(p for p in parts if p)
+
+
+def document(pages: list[str], org: dict | None = None, title: str = "",
+             running: str = "") -> str:
+    """Assemble one printable document from its `.page` sections.
+
+    `running` is the continuation identity (see `running_id`). It is printed
+    only from page two onward, so passing it never alters a one-page document.
+    """
     body = "".join(f'<section class="page">{p}</section>' for p in pages)
     return f"""<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><title>{esc(title)}</title><style>{stylesheet(org)}</style></head>
+<head><meta charset="UTF-8"><title>{esc(title)}</title>
+<style>{stylesheet(org, running)}</style></head>
 <body>{body}</body>
 </html>"""
 

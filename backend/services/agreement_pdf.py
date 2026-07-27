@@ -260,7 +260,13 @@ def _build_html(agreement: dict, org: dict, contact: dict, check: DocumentCheck 
         R.block("3 · Milestones and payment schedule", milestone_table + trigger, top="12px"),
         fee_words,
         R.block("4 · Client obligations", R.terms_list(cl["client_obligations"]), top="12px"),
-        R.foot(f"Page 1 of 2 &middot; {number} &middot; execution copy"),
+        # The colophon no longer counts the pages. It used to say "Page 1 of 2",
+        # which was true only while the agreement fitted its two AUTHORED pages:
+        # sixteen milestones spill clause 4 onto a third sheet and the assertion
+        # printed on the paper becomes false. `doc_render` now prints
+        # `Page N of M` from the real page counters in the reserved tail strip,
+        # so the count is taken from the rendered document instead of predicted.
+        R.foot(f"{number} &middot; execution copy"),
     ])
 
     page2 = "".join([
@@ -295,12 +301,15 @@ def _build_html(agreement: dict, org: dict, contact: dict, check: DocumentCheck 
         ),
         R.gap_note(check),
         R.foot(
-            f"Page 2 of 2 &middot; {number} &middot; e-signature via "
+            f"{number} &middot; e-signature via "
             f"{R.deva_span('हस्ताक्षर', 'eSign')} eSign &middot; audit trail retained"
         ),
     ])
 
-    return R.document([page1, page2], org, title="Service Agreement — Kartavaya")
+    return R.document(
+        [page1, page2], org, title="Service Agreement — Kartavaya",
+        running=R.running_id("Service agreement", org, agreement.get("agreement_number") or ""),
+    )
 
 
 def generate_agreement_pdf(agreement: dict, org: dict, contact: dict = None) -> bytes:

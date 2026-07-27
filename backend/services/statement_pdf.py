@@ -268,7 +268,10 @@ def _build_html(statement: dict, org: dict, contact: dict, check: DocumentCheck 
             "7 days of receipt."
         ),
     ])
-    return R.document([page], org, title="Statement of Account — Kartavaya")
+    return R.document(
+        [page], org, title="Statement of Account — Kartavaya",
+        running=R.running_id("Statement of Account", org, statement.get("statement_number") or ""),
+    )
 
 
 def generate_statement_pdf(statement: dict, org: dict, contact: dict = None) -> bytes:
