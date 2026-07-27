@@ -11,6 +11,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
 import { a11yButton } from '../components/a11y';
 import Refresher from '../components/Refresher';
+import PulseDot from '../components/PulseDot';
 import { getRunningTimer, clearRunningTimer, type RunningTimer } from '../lib/runningTimer';
 import { timeApi, type TimeEntry } from '../api/time';
 import { withAlpha } from '../theme/tokens';
@@ -185,7 +186,13 @@ export default function TimeScreen() {
       {running ? (
         <View style={[s.timerCard, { backgroundColor: t.primaryContainer, borderColor: t.primary }]}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={[s.timerLabel, { color: t.onPrimaryContainer }]}>RUNNING</Text>
+            <View style={s.timerLabelRow}>
+              {/* MOTION-SPEC §4's timer dot, which this card did not have. A
+                  ticking elapsed figure and a frozen one look the same in the
+                  hand; the pulse is what says the number is still moving. */}
+              <PulseDot color={t.primary} size={9} label="Timer running" />
+              <Text style={[s.timerLabel, { color: t.onPrimaryContainer }]}>RUNNING</Text>
+            </View>
             <Text style={[s.timerTask, { color: t.onPrimaryContainer }]} numberOfLines={1}>
               {running.task_title}
             </Text>
@@ -308,6 +315,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12,
     borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 4,
   },
+  timerLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   timerLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1.4 },
   timerTask: { fontSize: 14.5, fontWeight: '700', marginTop: 3 },
   timerElapsed: { fontSize: 26, fontWeight: '800', marginTop: 4, fontVariant: ['tabular-nums'] },
