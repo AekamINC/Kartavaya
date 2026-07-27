@@ -278,40 +278,46 @@ It is the drawer's shadow, so it shows on this surface, but the token is global.
 
 ---
 
-## Gates, and one that is falsely red in every worktree
+## Gates — all green at the merge point
 
-- `npm run check` — **pass** (tokens 0 missing, classes 0 missing).
-- `npm run build` — **pass** (3m06s).
-  Note: it was *failing on my branch point* on `DristiPage.jsx:581`, an
-  `{/* … */}` JSX comment used inside a ternary's parenthesised expression, which
-  is an object literal there. A sibling has since fixed it on staging; recorded
-  only so nobody re-diagnoses it.
-- `npx vitest run` — **435 passed, 1 failed.**
+Run on the tree that was merged, not on an earlier one:
 
-The one failure is **not a regression and not anyone's code**:
-`e2e · visual · the theme palette baseline` compares a snapshot string against
-`__snapshots__/visual-regression.test.jsx.snap`, and with `core.autocrlf=true`
-that file lands **CRLF in a fresh worktree** while vitest serialises LF.
+- `npm run check` — **pass**. 342 tokens declared, 0 missing; 2184 selectors,
+  0 missing a rule.
+- `npm run build` — **pass**, 1m06s.
+- `npx vitest run` — **pass, 504/504 across 28 files.**
 
-Proof, both directions:
+Two gate failures were seen and diagnosed during this run. Both are now closed;
+recorded so nobody re-diagnoses them.
+
+**`vite build` was failing at my branch point** on `DristiPage.jsx:581` — a
+`{/* … */}` JSX comment placed inside a ternary's parenthesised expression, where
+it parses as an object literal followed by an element rather than as a comment.
+Fixed on staging by a sibling before I merged.
+
+**The palette snapshot was failing in this worktree** and was *not* a
+regression. `e2e · visual · the theme palette baseline` compares a serialised
+string (LF) against `__snapshots__/visual-regression.test.jsx.snap`, and with
+`core.autocrlf=true` a fresh worktree checked that file out CRLF:
 
 ```
-worktree copy : CRLF 92, bare LF 0     -> test fails
-main checkout : CRLF  0, bare LF 92    -> test passes
+this worktree : CRLF 92, bare LF 0     -> test failed
+main checkout : CRLF  0, bare LF 92    -> test passed
 ```
 
-and the test fails **identically with all five of my files reverted to
-`origin/staging`** — verified, then restored.
+It also failed **identically with all five of my files reverted to
+`origin/staging`** — verified, then restored, which is what ruled me out. It
+stopped reproducing once the file was rewritten by a later staging commit, and
+the file is LF here now.
 
-Fix is one line in `.gitattributes`, and I have deliberately not applied it:
+That is a *symptom* clearing, not a cause. Nothing guarantees the next fresh
+worktree checks it out LF, and if this reappears the fix is one line — worth
+doing as its own coordinated commit rather than inside a design branch, because
+renormalising a tracked file dirties every other worktree at once:
 
 ```
 *.snap text eol=lf
 ```
-
-Renormalising a tracked file mid-swarm would dirty every other agent's worktree
-at once. It should be one coordinated commit. Until then, **every worktree will
-show this red, and it means nothing.**
 
 ---
 
