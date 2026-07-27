@@ -100,7 +100,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
    220ms in which a full-screen invisible sheet still eats taps. A user who
    dismisses the drawer and immediately reaches for what was underneath should
    hit it. */
-.kv__scrim[data-closing="1"] {
+.kv__scrim.is-closing {
   animation: dmFadeOut var(--dur-fast) var(--ease-exit) both;
   pointer-events: none;
 }
@@ -130,8 +130,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
   box-shadow: var(--shadow-4);
   animation: kv-drawer-in var(--dur-slow) var(--ease-emph-in) both;
 }
-.kv__drawer[data-closing="1"] {
+/* `.is-closing`, not `[data-closing="1"]`. The two select identically; the class
+   is what the other eleven leaving surfaces in the build use, and what
+   overlay-motion.test.jsx pairs an entrance with to decide whether a surface has
+   an exit at all. A private spelling makes a correct exit invisible to the test
+   that exists to find missing ones. */
+.kv__drawer.is-closing {
   animation: kv-drawer-out var(--dur-base) var(--ease-exit) both;
+  /* The panel is 300px of hit target for the whole 220ms of its exit. */
+  pointer-events: none;
 }
 @keyframes kv-drawer-in {
   from { transform: translateX(calc(-100% * var(--motion-scale, 1))); opacity: .3 }
