@@ -253,6 +253,15 @@ CREATE INDEX IF NOT EXISTS idx_pss_user
 -- places. Either that object exists and was created outside this directory, or
 -- those four Sanvaad queries are broken — worth resolving on its own account,
 -- not just for this script.
+--
+-- RESOLVED (read-only check against the live catalogue): `staging.users` does
+-- NOT exist — `to_regclass('staging.users')` is NULL. It was six join sites,
+-- not four, and `u.avatar_url` did not exist either (public.users has
+-- `avatar`). Every Sanvaad read endpoint was answering 500. `messaging.py` now
+-- joins the unqualified `users` like the rest of the backend; see its header.
+-- For THIS script the consequence is the one flagged above: §DB-5's god-mode
+-- exclusion must look the three emails up in `users`, not `staging.users`, or
+-- it will abort.
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- 5 · Product decisions this file cannot make

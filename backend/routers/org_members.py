@@ -79,7 +79,7 @@ async def list_members(
     rows = await pool.fetch("""
         SELECT ur.user_id, ur.role_code, ur.granted_at,
                u.email, COALESCE(u.full_name, u.name) AS full_name,
-               u.avatar_url, u.mobile_number
+               u.avatar AS avatar_url, u.mobile_number
         FROM staging.user_roles ur
         JOIN users u ON u.user_id = ur.user_id
         WHERE ur.org_id = $1::uuid
@@ -361,7 +361,7 @@ async def search_user(
     """Search for a user by email (for add-member flow)."""
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT user_id, email, COALESCE(full_name, name) AS full_name, avatar_url "
+        "SELECT user_id, email, COALESCE(full_name, name) AS full_name, avatar AS avatar_url "
         "FROM users WHERE LOWER(email)=LOWER($1)",
         email,
     )
