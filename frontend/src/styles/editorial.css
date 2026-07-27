@@ -782,7 +782,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
   }
 }
 .k-iconbtn {
-  width: 34px; height: 34px; border-radius: 8px;
+  /* 00-tokens.md §96 — was a literal `8px`, so the Corner radius control moved
+     cards, inputs and chips while every icon button in the toolbar, the drawer
+     and the shortcuts sheet stayed put under all three settings. `.k-iconbtn`
+     is the port of the reference's `.icobtn` (`app.css:89`), which is
+     `var(--r-sm)` — same 34x34 box, same `--on-surface-2` colour, same hover.
+     -2.2px at the Default setting; 2.3px under Sharp and 11.6px under Pill,
+     which is the point. The duplicate in kartavaya-design.css moves with it so
+     deleting one cannot reintroduce the literal. */
+  width: 34px; height: 34px; border-radius: var(--r-sm);
   background: transparent; border: 0;
   color: var(--ink-2);
   display: inline-flex; align-items: center; justify-content: center;
@@ -1188,7 +1196,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
   text-align: left;
   font-family: var(--font-ui);
   color: inherit;
-  transition: background var(--dur-fast);
+  /* Easing added: the duration was already the --dur-fast rung but the curve
+     was the browser default `ease`, so this row and the Tasks row next door
+     eased differently on the same gesture. */
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .k-taskrow:last-child { border-bottom: 0; }
 [data-density="comfy"] .k-taskrow { padding: 13px 18px; }
@@ -1258,6 +1269,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-radius: 10px;
   border-bottom: 1px dashed var(--rule-soft);
   color: inherit;
+  /* `.k-upcoming__row:hover` changed background with no transition at all,
+     while `.k-taskrow` in the column beside it faded over --dur-fast. Two
+     lists of tasks, one page, two different hover behaviours. */
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .k-upcoming__row:last-child { border-bottom: 0; }
 .k-upcoming__row:hover { background: var(--rule-soft); cursor: pointer; }
@@ -1376,6 +1391,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-size: 12.5px; font-weight: 600;
   color: var(--ink-3);
   font-family: inherit;
+  /* The Tasks filter had NO transition: hover and the active pill both snapped
+     between two states in one frame, which is the one control on the page a
+     user presses repeatedly. 26 §6 puts a colour-only change and a chip fill on
+     --dur-instant (90ms) — the same rung `.ix-state` uses. Named properties, not
+     `all`: `all` catches `width` when the count badge changes and animates the
+     whole segmented control reflowing. */
+  transition: background-color var(--dur-instant) var(--ease-standard),
+              color            var(--dur-instant) var(--ease-standard);
 }
 .k-segctrl__btn:hover { color: var(--ink-2); }
 .k-segctrl__btn.is-active {
@@ -1468,6 +1491,71 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-trow--archived { opacity: 0.52; }
 .k-trow--archived:hover { opacity: 0.8; }
 
+/* ── In-flight and just-changed rows ─────────────
+   MOTION-SPEC §7.1: an optimistic write renders at `opacity .6` until the
+   server acknowledges, then goes solid. Archive, restore and the quick-complete
+   tick all used to run with NO feedback at all — the row sat unchanged for the
+   whole round trip, so a slow archive looked like a dead button and users
+   pressed it twice.
+
+   `.is-pending` deliberately wins over `.k-trow--archived`'s own opacity by
+   being declared after it: a pending archived row is pending FIRST. */
+.k-trow.is-pending { opacity: .6; cursor: progress; }
+/* The row is `role="button" tabIndex=0` rather than a `<button>` (nested
+   buttons — see the JSX). It picks up the app-wide ring from components.css;
+   only the offset changes, because a +2px outline on a row flush against its
+   neighbours paints over their borders. */
+.k-trow:focus-visible { outline-offset: -2px; }
+/* IxViews 9.1's settle — "one --primary flash so you can find it". Boards uses
+   an outer `box-shadow: 0 0 0 2px`, which is right for a floating card; table
+   rows are flush against each other and an outer ring would paint over the
+   neighbours' borders, so this is the same flash drawn INSET. Same duration and
+   easing as `bcJust` and reference `kbJust`: --dur-slow * 1.5 = 540ms, --ease-exit. */
+.k-trow.is-just { animation: kTrowJust calc(var(--dur-slow) * 1.5) var(--ease-exit); }
+@keyframes kTrowJust {
+  0%   { box-shadow: inset 0 0 0 2px var(--k-primary); }
+  100% { box-shadow: inset 0 0 0 0 transparent; }
+}
+
+/* ── Quick-complete tick — IxViews 9.4 ───────────
+   "One quick action, not five. A complete-tick is worth surfacing because it is
+   the most common single change; everything else is a click into the drawer."
+   Same control, same tokens and the same touch rule as the board's `.bc__tick`,
+   because a tick that behaves differently on the list than on the board is two
+   features to learn.
+
+   `margin-left: auto` sits HERE and not on `.k-row-action` beside it: two auto
+   margins in one flex row split the free space and leave both controls floating
+   mid-row instead of pinned right. */
+.k-trow__tick {
+  width: 17px; height: 17px; flex-shrink: 0;
+  margin-left: auto;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--outline); border-radius: 50%;
+  background: none; color: transparent; opacity: 0; cursor: pointer;
+  transition: opacity      var(--dur-fast) var(--ease-standard),
+              background   var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard),
+              color        var(--dur-fast) var(--ease-standard);
+}
+.k-trow__tick + .k-row-action { margin-left: 6px; }
+.k-trow:hover .k-trow__tick,
+.k-trow__tick:focus-visible { opacity: 1; }
+/* --on-ok, not #fff: --ok is a fill that inverts hard, and white on the dark
+   theme's mint measures 1.79:1 — below the 3:1 floor a non-text control needs. */
+.k-trow__tick:hover,
+.k-trow__tick:focus-visible { background: var(--ok); border-color: var(--ok); color: var(--on-ok); }
+.k-trow__tick.on { opacity: 1; background: var(--ok); border-color: var(--ok); color: var(--on-ok); }
+/* No hover to reveal it on touch, so it is permanently visible there —
+   MOTION-SPEC §7.7, "every hover affordance has a touch equivalent". */
+@media (hover: none) { .k-trow__tick { opacity: 1; } }
+
+/* The table's own zero state. Was `.pb__loading` — the project board's LOADING
+   class, borrowed onto a different page, so "there is nothing here" was styled
+   as "still fetching". `.empty` centres and pads itself; this only has to give
+   it the rule that separates it from the header above. */
+.k-table__empty { border-top: 1px solid var(--rule-soft); }
+
 /* ── Row archive action button ─────────────────── */
 .k-row-action {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1475,7 +1563,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border: 1px solid var(--rule); border-radius: var(--r-sm);
   background: var(--surface); color: var(--ink-3);
   font-size: 11px; font-weight: 500;
-  cursor: pointer; opacity: 0; transition: opacity calc(0.15s * var(--ix)); white-space: nowrap;
+  /* 0.15s was off the ladder; --dur-fast (140ms) is the hover rung, and the
+     easing was the browser default rather than one of the six. */
+  cursor: pointer; opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-standard); white-space: nowrap;
 }
 .k-trow:hover .k-row-action { opacity: 1; }
 .k-row-action--unarchive { color: var(--ink-2); opacity: 1; }
@@ -1611,7 +1702,9 @@ input, textarea, select { font-family: inherit; color: inherit; }
   width: 2px; height: 14px;
   border-radius: 1px;
   background: transparent;
-  transition: background calc(0.15s * var(--ix));
+  /* Off-ladder 0.15s → the --dur-fast hover rung, same as every other hover
+     reveal on this table. */
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .k-col-resize:hover::after,
 .k-col-resize:active::after { background: var(--k-primary); }
@@ -2627,9 +2720,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
 
 /* ── Form input ─────────────────────────────────────────────────────────── */
 .k-input {
+  /* §96 again. The reference's field is `.fldx__in`, `var(--r-sm)`. */
   width: 100%; padding: 10px 12px;
   background: var(--bg-soft); border: 1px solid var(--rule);
-  border-radius: 8px; font-size: 13.5px; color: var(--ink); outline: none;
+  border-radius: var(--r-sm); font-size: 13.5px; color: var(--ink); outline: none;
   transition: border-color calc(.15s * var(--ix)), background calc(.15s * var(--ix)); font-family: inherit;
 }
 .k-input:focus { border-color: color-mix(in srgb, var(--k-primary) 60%, var(--rule)); background: var(--surface); }
@@ -2638,7 +2732,8 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-select {
   appearance: none; padding: 8px 28px 8px 10px;
   background: var(--bg-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236E7B91'/%3E%3C/svg%3E") no-repeat right 10px center;
-  border: 1px solid var(--rule); border-radius: 8px; font-size: 13px; color: var(--ink);
+  /* §96 — matched to `.k-input` above, which it sits beside in every form. */
+  border: 1px solid var(--rule); border-radius: var(--r-sm); font-size: 13px; color: var(--ink);
   cursor: pointer; outline: none; font-family: inherit;
 }
 .k-select:focus { border-color: color-mix(in srgb, var(--k-primary) 60%, var(--rule)); }

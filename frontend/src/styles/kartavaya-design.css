@@ -611,7 +611,7 @@ body {
   justify-content: center;
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);   /* 00 §96 — was a literal; editorial.css carries the same fix */
   background: transparent;
   border: 1px solid transparent;
   color: var(--ink-3);
@@ -911,7 +911,13 @@ body {
 }
 .k-trow {
   border-bottom: 1px dashed var(--rule-soft);
-  transition: background calc(.1s * var(--ix));
+  /* Was `calc(.1s * var(--ix))` with the browser's default `ease`. It scaled
+     with --ix, so it was not a strobe risk — but 100ms is not a rung on the
+     ladder and `ease` is not one of the six easings, so the busiest hover in
+     the product was the one surface measurably off-system. `--dur-fast` is the
+     hover rung (26 §6) and the reference table row is `transition: background
+     var(--dur-fast)` (motion.css `.tv__row`, IxViews §10). */
+  transition: background var(--dur-fast) var(--ease-standard);
   cursor: pointer;
 }
 .k-trow:hover { background: var(--surface); }
@@ -1149,7 +1155,7 @@ body {
   padding: 10px 12px;
   background: var(--bg-soft);
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--r-sm);   /* 00 §96 — was a literal; editorial.css carries the same fix */
   font-size: 13.5px;
   color: var(--ink);
   outline: none;
@@ -1168,7 +1174,7 @@ body {
   padding: 8px 28px 8px 10px;
   background: var(--bg-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236E7B91'/%3E%3C/svg%3E") no-repeat right 10px center;
   border: 1px solid var(--rule);
-  border-radius: 8px;
+  border-radius: var(--r-sm);   /* 00 §96 — was a literal; editorial.css carries the same fix */
   font-size: 13px;
   color: var(--ink);
   cursor: pointer;
