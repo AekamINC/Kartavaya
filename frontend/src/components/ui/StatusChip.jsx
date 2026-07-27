@@ -1,5 +1,7 @@
 import React from 'react';
-import { STATUS_COLORS, APPROVAL_COLORS } from '../../lib/statusColors';
+import {
+  STATUS_COLORS, APPROVAL_COLORS, PUNCH_COLORS, PUNCH_LABELS,
+} from '../../lib/statusColors';
 
 // Colours and labels come from lib/statusColors.js. This file used to carry its
 // own map, which disagreed with drawer/constants.js on every shared state.
@@ -14,6 +16,21 @@ const STATUS_MAP = {
   pending_client: { label: 'Client Review',     color: APPROVAL_COLORS.pending_client },
   approved:       { label: 'Approved',          color: APPROVAL_COLORS.approved },
   rejected:       { label: 'Rejected',          color: APPROVAL_COLORS.rejected },
+
+  // Attendance review flags (Pahchan) — 07-pahchan.md §"Attendance states are
+  // not in statusColors.js" asks for a sixth map "rather than a tenth private
+  // one", so the flags resolve here and the register passes the raw flag.
+  //
+  // This and the `label` prop below were two independent fixes for one bug, and
+  // they compose rather than duplicate: `label` lets ANY caller override a word
+  // while keeping the tone, and this makes the punch flags resolve correctly
+  // with no override needed. Neither is redundant — remove the spread and every
+  // punch flag falls through to FALLBACK grey with its own key as the text.
+  //
+  // No key collides with a task or approval state.
+  ...Object.fromEntries(
+    Object.keys(PUNCH_LABELS).map(k => [k, { label: PUNCH_LABELS[k], color: PUNCH_COLORS[k] }]),
+  ),
 };
 
 const FALLBACK = 'var(--on-surface-3)';
@@ -22,20 +39,23 @@ const FALLBACK = 'var(--on-surface-3)';
  * `label` overrides the word STATUS_MAP would have printed, keeping the tone —
  * the dot colour and the tint — that `status` selects.
  *
- * It was accepted by exactly one caller and honoured by none. Pahchan's
- * register passes `label={FLAG_LABEL[f]}` for every punch flag
- * (Register.jsx:419) and is the only call site in the build that passes it, so
- * the prop was dropped on the floor and its whole eight-entry table was dead
- * code. Measured in the rendered register: fourteen punches carrying eight
- * distinct flags rendered THREE distinct chips — "Requested", "In Review",
- * "Rejected". A punch that was outside its site read "Requested"; one with a
- * simulated location read "Rejected"; weak GPS read "In Review".
+ * HISTORY, because the register no longer shows it. The prop was accepted by
+ * exactly one caller and honoured by none: Pahchan's register passed
+ * `label={FLAG_LABEL[f]}` for every punch flag and was the only call site in the
+ * build that passed it, so an eight-entry table of the things that can be wrong
+ * with a punch was dead code. Measured in the rendered register, fourteen
+ * punches carrying eight distinct flags rendered THREE distinct chips —
+ * "Requested", "In Review", "Rejected". A punch outside its site read
+ * "Requested"; a simulated location read "Rejected"; weak GPS read "In Review".
  *
  * Those are workflow words for a task, and this is not a task. The reviewer's
- * whole job on this screen is to tell one kind of wrong from another, and the
- * chip was telling them a category that does not exist here instead of the one
- * that does. Additive: the other eight call sites pass no `label` and are
- * untouched.
+ * whole job on that screen is telling one kind of wrong from another, and the
+ * chip was naming a category that does not exist there instead of the one that
+ * does.
+ *
+ * The register now passes the raw flag and no label — the PUNCH_* entries in
+ * STATUS_MAP above resolve it. `label` stays because it is the general answer:
+ * additive, and the other eight call sites pass none and are untouched.
  */
 export default function StatusChip({ status, approvalStatus, columnName, columnColor, label }) {
   // Approval state takes precedence when active

@@ -5,6 +5,7 @@ import { Section } from '../../components/editorial';
 import Note from '../../components/module/Note';
 import ErrorState from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonCard } from '../../components/ui/Skeleton';
+import Sites from './Sites';
 
 /**
  * Attendance policy — geofence, flag thresholds, retention and reports.
@@ -38,6 +39,43 @@ const FIELDS = [
     help: 'Minutes after shift start before a punch is flagged late.',
   },
 ];
+
+/**
+ * The shift definition — migration 082's nine columns.
+ *
+ * They existed in the database and in `PATCH /policy` and had no UI at all, so
+ * an org could not set a shift policy and `POST /attendance/publish` computed no
+ * overtime for anyone. The defaults are statutory, not invented, and the help
+ * text says which section each comes from — a threshold nobody can trace is a
+ * threshold nobody will trust when a payslip is disputed.
+ */
+const SHIFT = [
+  {
+    key: 'standard_hours_per_day', label: 'Contracted day', unit: 'hours', min: 1, step: 0.25,
+    help: 'What a half-day or an absence is measured against. Not the overtime threshold — those are two different facts that get conflated because they are usually close.',
+  },
+  {
+    key: 'overtime_daily_threshold_hours', label: 'Overtime after', unit: 'hours in a day', min: 1, step: 0.25,
+    help: 'Factories Act 1948 §54 — nine hours. Nine and not eight: the ninth hour is ordinary time under the Act, so paying it at the overtime rate is as wrong as not paying the tenth.',
+  },
+  {
+    key: 'overtime_weekly_threshold_hours', label: 'Overtime after', unit: 'hours in a week', min: 1, step: 0.5,
+    help: 'Factories Act 1948 §51 — forty-eight hours. Crossing this earns overtime even in a week where no single day did.',
+  },
+  {
+    key: 'overtime_multiplier', label: 'Overtime rate', unit: '× ordinary wage', min: 1, step: 0.25,
+    help: 'Factories Act 1948 §59 — twice the ordinary rate. Stored rather than applied in code, because it varies by state and by contract and a rate in code is a rate nobody can audit.',
+  },
+];
+
+/** ISO-8601 weekday numbering, which is what `week_starts_on` stores. */
+const WEEK_DAYS = [
+  [1, 'Monday'], [2, 'Tuesday'], [3, 'Wednesday'], [4, 'Thursday'],
+  [5, 'Friday'], [6, 'Saturday'], [7, 'Sunday'],
+];
+
+/** A `TIME` column round-trips as `HH:MM:SS`; `<input type="time">` wants `HH:MM`. */
+const toTimeInput = v => (v ? String(v).slice(0, 5) : '');
 
 const RETENTION = [
   {
@@ -75,11 +113,39 @@ export default function PahchanPolicy() {
 
   const set = (key, value) => setPolicy(p => ({ ...p, [key]: value }));
 
+  /**
+   * The three CHECK constraints migration 082 adds, stated in English before the
+   * request goes out. Postgres would reject these too, but a reviewer would get
+   * back `pahchan_policy_ot_threshold_sane` and have to guess — and this is the
+   * screen that decides what people are paid.
+   */
+  const shiftProblem = (() => {
+    if (!policy) return null;
+    const start = toTimeInput(policy.shift_start_time);
+    const end = toTimeInput(policy.shift_end_time);
+    if (!!start !== !!end) {
+      return 'A shift is a window or it is nothing. Set both a start and an end, or clear both.';
+    }
+    if (policy.overnight_shift && !start) {
+      return 'An overnight shift needs a window — there is nothing for it to carry over without one.';
+    }
+    const std = Number(policy.standard_hours_per_day);
+    const daily = Number(policy.overtime_daily_threshold_hours);
+    if (Number.isFinite(std) && Number.isFinite(daily) && daily < std) {
+      return 'The overtime threshold is below the contracted day, so every ordinary day would earn overtime. That is always a misconfiguration.';
+    }
+    return null;
+  })();
+
   const save = async () => {
+    if (shiftProblem) {
+      pushToast({ type: 'warning', title: 'The shift policy is not valid yet', message: shiftProblem });
+      return;
+    }
     setSaving(true);
     try {
       const body = {};
-      for (const f of [...FIELDS, ...RETENTION]) {
+      for (const f of [...FIELDS, ...RETENTION, ...SHIFT]) {
         const n = Number(policy[f.key]);
         if (Number.isFinite(n) && n >= f.min) body[f.key] = n;
       }
@@ -87,6 +153,18 @@ export default function PahchanPolicy() {
       body.report_daily   = !!policy.report_daily;
       body.report_weekly  = !!policy.report_weekly;
       body.report_monthly = !!policy.report_monthly;
+
+      body.overtime_enabled = !!policy.overtime_enabled;
+      body.overnight_shift  = !!policy.overnight_shift;
+      const wk = Number(policy.week_starts_on);
+      if (Number.isInteger(wk) && wk >= 1 && wk <= 7) body.week_starts_on = wk;
+      // Empty string, not null. `PATCH /policy` drops any field that is None, so
+      // null cannot clear a window — the handler's `NULLIF($n,'')::time` is the
+      // documented way to say "no fixed shift", and 082's CHECK requires both
+      // ends to go together.
+      body.shift_start_time = toTimeInput(policy.shift_start_time);
+      body.shift_end_time   = toTimeInput(policy.shift_end_time);
+
       await api.patch('/v1/pahchan/policy', body);
       pushToast({ type: 'success', title: 'Policy saved' });
     } catch (err) {
@@ -115,6 +193,7 @@ export default function PahchanPolicy() {
           className="inp"
           type="number"
           min={f.min}
+          step={f.step}
           value={policy[f.key] ?? ''}
           onChange={e => set(f.key, e.target.value)}
           style={{ maxWidth: 120 }}
@@ -127,6 +206,89 @@ export default function PahchanPolicy() {
 
   return (
     <>
+      <Section title="Shift and overtime" hi="पारी व अतिरिक्त">
+        <Note variant="warn">
+          Turning overtime on changes what people are paid. It is off until you set
+          this, deliberately — no migration switches it on, and until it is on the
+          payroll push leaves <code>overtime_hours</code> untouched rather than
+          writing a zero, because &ldquo;0.0 overtime&rdquo; and &ldquo;overtime was
+          never computed&rdquo; look identical on a payslip and mean opposite things.
+        </Note>
+
+        <label className="fld" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 16 }}>
+          <input
+            type="checkbox"
+            checked={!!policy.overtime_enabled}
+            onChange={e => set('overtime_enabled', e.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            <span className="fld__l" style={{ marginBottom: 2 }}>Compute overtime</span>
+            <span className="fld__hint">
+              Hours beyond either threshold below are recorded as overtime when attendance
+              is pushed to payroll.
+            </span>
+          </span>
+        </label>
+
+        {SHIFT.map(numberRow)}
+
+        <label className="fld" style={{ display: 'block', marginBottom: 14 }}>
+          <span className="fld__l">Week starts on</span>
+          <select
+            className="inp"
+            style={{ maxWidth: 180 }}
+            value={policy.week_starts_on ?? 1}
+            onChange={e => set('week_starts_on', Number(e.target.value))}
+          >
+            {WEEK_DAYS.map(([n, label]) => <option key={n} value={n}>{label}</option>)}
+          </select>
+          <span className="fld__hint">
+            The weekly threshold is meaningless without knowing where the week starts,
+            and the answer differs by employer.
+          </span>
+        </label>
+
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
+          {[['shift_start_time', 'Shift starts'], ['shift_end_time', 'Shift ends']].map(([key, label]) => (
+            <label className="fld" key={key} style={{ display: 'block' }}>
+              <span className="fld__l">{label}</span>
+              <input
+                className="inp"
+                type="time"
+                style={{ maxWidth: 140 }}
+                value={toTimeInput(policy[key])}
+                onChange={e => set(key, e.target.value)}
+              />
+            </label>
+          ))}
+        </div>
+        <p className="fld__hint" style={{ marginTop: -6, marginBottom: 14 }}>
+          Leave both empty if there is no fixed shift — every day is then bounded by its
+          own punches, which is exactly today&rsquo;s behaviour. A start without an end
+          cannot bound a day, so they go together.
+        </p>
+
+        <label className="fld" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 4 }}>
+          <input
+            type="checkbox"
+            checked={!!policy.overnight_shift}
+            onChange={e => set('overnight_shift', e.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            <span className="fld__l" style={{ marginBottom: 2 }}>The shift crosses midnight</span>
+            <span className="fld__hint">
+              A punch at 01:00 then belongs to the shift that started at 22:00 the day
+              before. Without this one night is split into two half-days, and both look
+              like somebody forgot to clock out.
+            </span>
+          </span>
+        </label>
+
+        {shiftProblem && <Note variant="warn">{shiftProblem}</Note>}
+      </Section>
+
       <Section title="Geofence and flags" hi="सीमा व चिह्न">
         {FIELDS.map(numberRow)}
 
@@ -147,6 +309,9 @@ export default function PahchanPolicy() {
           </span>
         </label>
       </Section>
+
+      {/* Immediately after the radius that has no effect without it. */}
+      <Sites />
 
       <Section title="Retention" hi="प्रतिधारण">
         <Note variant="warn">
@@ -176,7 +341,7 @@ export default function PahchanPolicy() {
       </Section>
 
       <div style={{ marginTop: 20 }}>
-        <button className="btn btn--fill" onClick={save} disabled={saving}>
+        <button className="btn btn--fill" onClick={save} disabled={saving || !!shiftProblem}>
           {saving ? 'Saving…' : 'Save policy'}
         </button>
       </div>
