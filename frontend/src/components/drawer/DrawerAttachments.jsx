@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Paperclip, ExternalLink, Trash2, Upload, Image as ImageIcon, FileText, Film, Lock, Unlock, X, Eye, Check } from 'lucide-react';
 import Popover from '../ui/Popover';
 import FocusTrap from '../ui/FocusTrap';
+import { useExitAnimation } from '../../hooks/useExitAnimation';
 
 /**
  * DrawerAttachments — the largest file in the drawer, restyled to the drop-zone
@@ -111,7 +112,7 @@ function PrivacyPicker({ file, members, currentUserId, onChange }) {
   );
 }
 
-function Lightbox({ file, onClose }) {
+function Lightbox({ file, onClose, open, closing, onAnimationEnd }) {
   const name = file.name || file.url?.split('/').pop() || 'File';
   const closeRef = useRef(null);
   const [imgError, setImgError] = useState(false);
@@ -136,12 +137,17 @@ function Lightbox({ file, onClose }) {
        within the same mount left focus wherever it was; and it gave no focus
        RESTORE at all, so closing the preview dropped a keyboard user at the top
        of the document instead of back on the file row they opened. */
-    <FocusTrap active initialFocus={closeRef}>
+    /* `active={open}`, not the bare `active`: the trap must release when the
+       user dismisses, so focus returns to the file row immediately rather than
+       after the 140ms fade. */
+    <FocusTrap active={open} initialFocus={closeRef}>
     <div
-      className="dr__lb"
+      className={`dr__lb ${closing ? 'is-closing' : ''}`.trim()}
       role="dialog"
       aria-modal="true"
       aria-label={name}
+      aria-hidden={closing || undefined}
+      onAnimationEnd={onAnimationEnd}
       onClick={e => e.target === e.currentTarget && onClose()}
       onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }}
     >
@@ -194,6 +200,9 @@ function Lightbox({ file, onClose }) {
 function FileRow({ file, onRemove, members, currentUserId, onPrivacyChange }) {
   const name = file.name || file.url?.split('/').pop() || 'File';
   const [lightbox, setLightbox] = useState(false);
+  // The preview stays mounted through its fade-out. It is the largest overlay
+  // in the app and was the last one to disappear instantly.
+  const lb = useExitAnimation(lightbox);
   const previewable = hasPreview(name);
 
   return (
@@ -244,7 +253,16 @@ function FileRow({ file, onRemove, members, currentUserId, onPrivacyChange }) {
         </div>
       </div>
 
-      {lightbox && createPortal(<Lightbox file={file} onClose={() => setLightbox(false)} />, document.body)}
+      {lb.alive && createPortal(
+        <Lightbox
+          file={file}
+          open={lightbox}
+          closing={lb.closing}
+          onAnimationEnd={lb.onAnimationEnd}
+          onClose={() => setLightbox(false)}
+        />,
+        document.body,
+      )}
     </>
   );
 }

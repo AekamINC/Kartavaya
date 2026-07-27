@@ -11,7 +11,10 @@ import { useDismiss } from '../../hooks/useDismiss';
  * outside-click contract, so the three behave identically from the keyboard.
  *
  * `dmPop` grows from `transform-origin`, which must match the placement or the
- * panel appears to unfold from the wrong corner — `--right` flips it.
+ * panel appears to unfold from the wrong corner — `.pop--right` flips it. That
+ * class is applied below; it is named here because it was described in this
+ * header before it existed, so `.pop` had no `transform-origin` at all and
+ * scaled from its own centre while its corner stayed pinned to the trigger.
  *
  * The close path is `setClosing(true)` → unmount when the exit animation ends,
  * not a bare `setOpen(false)`. `.pop.is-closing { animation: dmPopOut }` has
@@ -107,7 +110,7 @@ export function Popover({ trigger, children, align = 'left', label, width }) {
       </span>
       {open && pos && createPortal(
         <div ref={panelRef} role="dialog" aria-label={label}
-          className={`pop ${closing ? 'is-closing' : ''}`.trim()}
+          className={`pop ${align === 'right' ? 'pop--right' : ''} ${closing ? 'is-closing' : ''}`.replace(/\s+/g, ' ').trim()}
           onAnimationEnd={onExitEnd}
           style={{ ...pos, ...(width ? { width } : null) }}>
           {typeof children === 'function' ? children({ close }) : children}

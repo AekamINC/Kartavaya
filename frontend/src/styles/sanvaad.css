@@ -779,6 +779,14 @@
    rather than a timer. */
 .sv__thread.is-closing {
   animation: svThreadOut var(--dur-base) var(--ease-exit) both;
+  /* Click-through while leaving, as every other overlay is (components.css §8
+     states the rule for the ones declared there). The pane is fully painted for
+     the whole 220ms and it is 324px of hit target over the channel: closing a
+     thread and immediately clicking the message behind it must hit the message.
+     Caught by overlay-motion.test.jsx the hour this rule landed — the test
+     exists because "all of them or none" is the only version of this that a
+     reader can rely on. */
+  pointer-events: none;
 }
 @keyframes svThreadIn {
   from { opacity: 0; transform: translateX(calc(100% * var(--motion-scale, 1))); }

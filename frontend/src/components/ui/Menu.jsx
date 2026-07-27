@@ -20,24 +20,68 @@ import { useDismiss } from '../../hooks/useDismiss';
  * `items` is `[{ id, label, icon, danger, disabled, onSelect }]`; a falsy entry
  * is skipped and `{ sep: true }` draws a divider, so call sites can build the
  * list with `&&` without filtering.
+ *
+ * THE EXIT. This menu used to unmount on the spot — `setOpen(false)` and the
+ * panel was gone on the next frame — which made it the only overlay on the 340
+ * rung with no motion at all, beside a Popover and a Picker that both fade and
+ * scale. `.menu--float.is-closing` now carries `dmPopOut` and the unmount waits
+ * for `animationend`, exactly as Popover does. Not a timer: the CSS side is
+ * `calc(var(--dur-fast) * .85)`, which the user's Animations preference scales
+ * and no constant can track — at "None" a hardcoded delay would make somebody
+ * who asked for no animation wait for one anyway.
  */
+const EXIT_FALLBACK_MS = 400;
+
 export function Menu({ trigger, items = [], align = 'left', label = 'More actions' }) {
   const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [pos, setPos] = useState(null);
   const [cursor, setCursor] = useState(-1);
   const triggerRef = useRef(null);
   const menuRef = useRef(null);
   const rootRef = useRef(null);
+  const timer = useRef(null);
+  // A ref beside the state: the `animationend` handler must know whether it is
+  // watching the EXIT finish or the ENTRANCE, and a closure over `closing`
+  // holds the value from the render that installed it. Without the guard
+  // `dmPop` completing on open would unmount the menu the instant it appeared.
+  const closingRef = useRef(false);
 
   const rows = items.filter(i => i && !i.sep && !i.disabled);
 
-  const close = useCallback(() => {
+  const finish = useCallback(() => {
+    clearTimeout(timer.current);
+    closingRef.current = false;
+    setClosing(false);
     setOpen(false);
-    setCursor(-1);
-    // Focus returns to the trigger, not to <body>. Without this a keyboard user
-    // who closes a row menu loses their place in the list entirely.
-    triggerRef.current?.focus?.();
+    setPos(null);
   }, []);
+
+  const close = useCallback(() => {
+    // Re-entrant: useDismiss stays armed while the panel plays its exit, so a
+    // second outside click would otherwise restart the animation.
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setClosing(true);
+    setCursor(-1);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(finish, EXIT_FALLBACK_MS);
+    // Focus returns to the trigger NOW, not when the exit ends. Without this a
+    // keyboard user who closes a row menu loses their place in the list
+    // entirely, and deferring it would leave focus inside a panel that is
+    // already leaving.
+    triggerRef.current?.focus?.();
+  }, [finish]);
+
+  // `e.target !== e.currentTarget` filters animations bubbling up from the
+  // items — a spinner or a flash inside a row must not read as the panel's exit.
+  const onExitEnd = useCallback((e) => {
+    if (e.target !== e.currentTarget) return;
+    if (!closingRef.current) return;
+    finish();
+  }, [finish]);
+
+  useEffect(() => () => clearTimeout(timer.current), []);
 
   // `useDismiss` takes ONE ref, and a portalled overlay has two roots: the
   // trigger in the React tree and the panel on document.body. This adapter
@@ -75,6 +119,17 @@ export function Menu({ trigger, items = [], align = 'left', label = 'More action
     menuRef.current?.querySelectorAll('[data-menuitem]')[cursor]?.focus();
   }, [open, cursor]);
 
+  // Opening cancels a running exit rather than queueing behind it — clicking the
+  // trigger twice in quick succession must reopen the menu, not leave it playing
+  // `dmPopOut` to completion first.
+  const openNow = useCallback((c = -1) => {
+    clearTimeout(timer.current);
+    closingRef.current = false;
+    setClosing(false);
+    setOpen(true);
+    setCursor(c);
+  }, []);
+
   const onKeyDown = (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setCursor(c => Math.min(rows.length - 1, c + 1)); }
     if (e.key === 'ArrowUp')   { e.preventDefault(); setCursor(c => Math.max(0, c - 1)); }
@@ -89,12 +144,15 @@ export function Menu({ trigger, items = [], align = 'left', label = 'More action
         role="button"
         tabIndex={0}
         aria-haspopup="menu"
-        aria-expanded={open}
+        // A menu playing its exit is closed as far as anything but the
+        // compositor is concerned, so the trigger must not still report itself
+        // as expanded to a screen reader for the 119ms it takes to leave.
+        aria-expanded={open && !closing}
         aria-label={label}
-        onClick={() => (open ? close() : setOpen(true))}
+        onClick={() => (open && !closing ? close() : openNow())}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(true); setCursor(0); }
-          if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setCursor(0); }
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNow(0); }
+          if (e.key === 'ArrowDown') { e.preventDefault(); openNow(0); }
         }}
       >
         {trigger}
@@ -105,9 +163,10 @@ export function Menu({ trigger, items = [], align = 'left', label = 'More action
           ref={menuRef}
           role="menu"
           aria-label={label}
-          className="menu menu--float"
+          className={`menu menu--float ${align === 'right' ? 'menu--right' : ''} ${closing ? 'is-closing' : ''}`.replace(/\s+/g, ' ').trim()}
           style={pos}
           onKeyDown={onKeyDown}
+          onAnimationEnd={onExitEnd}
         >
           {items.filter(Boolean).map((it, i) => it.sep
             ? <div key={`sep-${i}`} className="menu__sep" role="separator" />

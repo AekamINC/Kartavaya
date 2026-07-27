@@ -39,23 +39,36 @@
    | drawer               | dmDrawerIn  --dur-slow  --ease-emph     | dmDrawerOut --dur-base --ease-exit      |
    | sheet (mobile)       | dmSheetIn   --dur-slow  --ease-emph-in  | dmSheetOut  --dur-base --ease-exit      |
    | popover/menu/picker  | dmPop       --dur-fast  --ease-spring   | dmPopOut  calc(--dur-fast*.85) --ease-exit |
-   | modal panel          | modalPanelIn --dur-base --ease-emph     | NONE — unmounts, see below              |
-   | toast                | tstIn       --dur-base  --ease-emph     | NONE — unmounts, see below              |
-
-   The popover exit resolves to 119ms, which is MOTION-SPEC.md §3's stated
-   figure exactly. The modal and toast rows say NONE because they measure as
-   none: no `.modal__panel.is-closing` and no `.tst.is-closing` rule exists, so
-   both still leave by unmounting — the gap MOTION-SPEC §9 lists first. The
-   entrances landed and the exits did not. Stated rather than implied, because
-   the previous version of this table claimed a `dmPopOut` exit for both and
-   nothing in the build delivered it.
+   | modal panel          | modalPanelIn --dur-base --ease-emph     | dmPopOut    --dur-fast --ease-exit      |
+   | modal scrim          | dmFade      --dur-base  --ease-enter    | dmFadeOut   --dur-fast --ease-exit      |
+   | toast                | tstIn       --dur-base  --ease-emph     | tstOut  calc(--dur-base*.82) --ease-exit |
+   | command palette      | k-cmdk-in-v2 --dur-base --ease-emph     | dmPopOut calc(--dur-base*.73) --ease-exit |
+   | admin slide-over     | admSlideIn  --dur-base  --ease-emph     | dmDrawerOut --dur-fast --ease-exit      |
+   | lightbox             | dmFade      --dur-base  --ease-enter    | dmFadeOut   --dur-fast --ease-exit      |
    | tooltip              | dmTip       --dur-fast  --ease-enter    | none — instant unmount, 300ms delay in  |
    | spinner              | dmSpin      640ms linear infinite       | —                                       |
    | one-shot flash       | ixflash     calc(--dur-slow * 1.4) --ease-exit                                     |
    | list stagger         | ixFadeUp    --dur-base, 38ms step, capped at 11 steps (418ms < --dur-xslow)       |
 
-   The exit is never the reverse of the entrance: every `out` is one duration
-   step faster and travels less than its `in`.
+   Every number above is a READING, taken with `getAnimations()` /
+   `getComputedStyle` in a Playwright context under `emulateMedia`, at desktop,
+   at 390px, at `[data-toast-pos="tl"]` and under
+   `reducedMotion: 'reduce'` — not arithmetic from the source. The three
+   fractional exits resolve to 119ms, 180ms and 160ms, which are MOTION-SPEC §3's
+   stated figures for the popover, the toast and the palette exactly; each is
+   written as a fraction of the token its own entrance uses rather than as a
+   literal, so it still follows `--ix`.
+
+   The modal and toast rows previously read "NONE — unmounts", and that was an
+   honest measurement of the time: `.modal__panel.is-closing` and
+   `.tst.is-closing` did not exist, and six overlays in all entered and then
+   vanished on a frame boundary. They exist now, along with the menu, the
+   command palette, the shortcuts sheet, the admin slide-over and the drawer's
+   lightbox. `overlay-motion.test.jsx` derives this table from the stylesheets on
+   every run, so the next stale row fails CI instead of misleading a reader.
+
+   The exit is never the reverse of the entrance: every `out` is faster than its
+   `in` and travels less.
 
    ── PERFORMANCE ──────────────────────────────────────────────────────────
    Every keyframe here animates `transform` and `opacity` only. Nothing here
@@ -93,8 +106,18 @@
    ends — a strobe, delivered to the user who just asked for less motion. Every
    infinite animation here therefore keeps a FIXED duration and has its
    amplitude driven by `--motion-scale`, so it fades to a static difference
-   instead of speeding up. (See the report: three infinite loops elsewhere in
-   the build still have this defect.)
+   instead of speeding up.
+
+   That paragraph used to end "three infinite loops elsewhere in the build still
+   have this defect". They do not. MEASURED under
+   `emulateMedia({reducedMotion:'reduce'})`, every infinite animation in the
+   build now holds a fixed period: `prgSlide` 1.15s, `spin` .7s, `dmSpin` 640ms,
+   `gr-spin` .9s — and every decorative one (`k-shimmer`, `ixShimmer`,
+   `ixPulse`, `adm-pulse`, `auWmDrift`, `sndW`) stops outright. The four that
+   keep running are loading indicators, exempt by name in
+   theme-motion.test.jsx, which also asserts that no `infinite` declaration
+   anywhere multiplies by `--ix`. The claim is now enforced rather than warned
+   about.
 
    No animation here is the only signal for a state change. `.ix-press` pairs
    its scale with an opacity step, `.ix-lift` pairs its rise with a shadow, and
@@ -501,16 +524,20 @@
   z-index: 3;
 }
 /* 9.1 landing flash — "one --primary flash so you can find it in the new
-   column". Deliberately identical to boards.css `bcJust` rather than improved:
+   column". Deliberately identical to boards.css `.bc.just` rather than improved:
    two boards in one product that confirm a drop differently is the bug, and the
    fix belongs on both at once. Both lose the flash under reduced motion, where
    the card's new COLUMN is still the primary signal; noted in the report as a
-   cross-surface question rather than diverged here. */
-@keyframes ixLanded {
-  0%   { box-shadow: 0 0 0 2px var(--primary); }
-  100% { box-shadow: 0 0 0 0 transparent; }
-}
-.ix-landed { animation: ixLanded calc(var(--dur-slow) * 1.5) var(--ease-exit); }
+   cross-surface question rather than diverged here.
+
+   `dmLanded` from the registry in components.css, NOT a local `@keyframes
+   ixLanded`. That copy was byte-identical to boards.css's `bcJust` and the
+   sentence above was the argument against having two: a rule that two surfaces
+   must match is enforced by one declaration, not by two declarations and a
+   comment asking the next editor to change both. This is the only `dm*` name
+   this file references besides the `.ix-enter-*` helpers, and for the same
+   reason — the registry is where shared keyframes live. */
+.ix-landed { animation: dmLanded calc(var(--dur-slow) * 1.5) var(--ease-exit); }
 
 /* The column under the cursor. The highlight is a TINT plus an inset hairline,
    not a border, and that is deliberate: reference `.kb__col` and boards.css

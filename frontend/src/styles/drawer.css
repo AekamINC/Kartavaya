@@ -61,11 +61,19 @@
      than a panel sliding in from the side. The keyframes were already right —
      `translateX(28px)` + `opacity .3→1` in, `translateX(16px)` out — only the
      curve was the sheet's. The `.ix-enter-drawer` utility in animations.css
-     still carries `--ease-emph-in`, as does that file's own summary table;
-     both are reported rather than edited, being another surface's file. */
+     and that file's summary table both carried `--ease-emph-in`; they were
+     reported from here rather than edited, and have since been corrected to
+     match — a migration utility that produces different motion from the thing
+     it replaces is worse than no utility. */
   animation: dmDrawerIn var(--dur-slow) var(--ease-emph) both;
 }
 .dr.is-closing { animation: dmDrawerOut var(--dur-base) var(--ease-exit) forwards; }
+/* Click-through while leaving, matching every other overlay (the shared rule in
+   components.css §8 names the ones declared there; these two are declared here).
+   The drawer is painted for the full 220ms of its exit and covers 78vw of the
+   board — closing it and immediately clicking a card underneath must hit the
+   card, not the panel that is on its way out. */
+.dr.is-closing, .dr__scrim.is-closing { pointer-events: none; }
 
 .dr__scrim {
   position: fixed; inset: 0; z-index: 199;
@@ -303,10 +311,11 @@
    forbids by name: "Unchecking reverses in 140ms with no spring. Undo should
    feel plainer than do." Unchecking drops `.on` and the transition above
    carries it back at --dur-fast, which is exactly that sentence. */
-.dr__st-box.tickpop.on { animation: drStPop var(--dur-slow) var(--ease-spring); }
-@keyframes drStPop {
-  40% { transform: scale(calc(1 + .18 * var(--motion-scale, 1))); }
-}
+/* `dmTickPop` from the registry in components.css — this was `drStPop`, a
+   byte-identical twin of boards.css's `bcTickPop`. The two ticks are the same
+   confirmation on the same object; the STROKE lengths below differ because the
+   viewBoxes do, but the overshoot never had a reason to. */
+.dr__st-box.tickpop.on { animation: dmTickPop var(--dur-slow) var(--ease-spring); }
 /* 23, not the reference's 18, and the number is arithmetic rather than taste.
    `stroke-dasharray` is in the SVG's own user units, so it has to be read
    against the viewBox the icon is actually drawn in. `motion.css:206` uses 18
@@ -514,6 +523,12 @@
    lightbox chrome does not flip with the theme, because the media it frames
    does not either. */
 .dr__lb { position: fixed; inset: 0; z-index: 620; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; background: color-mix(in srgb, var(--ink-fixed) 88%, transparent); animation: dmFade var(--dur-base) var(--ease-enter) both; }
+/* The lightbox is the largest overlay in the app — full-viewport at z-620 — and
+   it was the last one that faded in over 220ms and then disappeared between two
+   frames. `dmFadeOut --dur-fast`, the same exit as every scrim in the build.
+   Nothing brighter: this surface is 88% opaque ink, so a scale on the way out
+   would read as the photograph moving rather than the frame leaving. */
+.dr__lb.is-closing { animation: dmFadeOut var(--dur-fast) var(--ease-exit) both; pointer-events: none; }
 .dr__lb-x { position: absolute; top: 16px; right: 16px; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: var(--r-sm); background: var(--s-lowest); color: var(--on-surface); cursor: pointer; }
 .dr__lb-x:hover { background: var(--s-container); }
 .dr__lb-img { max-width: 90vw; max-height: 85vh; border-radius: var(--r-md); object-fit: contain; }
