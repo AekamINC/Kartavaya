@@ -74,7 +74,27 @@ const CONFIRM_HOLD_MS = 900;
 const CONFIRM_GREEN = '#5BD98A';
 const CONFIRM_HALO  = 'rgba(91,217,138,0.35)';
 
+/**
+ * The same ring, for a punch that is on the phone and not yet on the server.
+ *
+ * `#E8A33D` is the prototype's own colour for this state — `PahchanClock.jsx:95`
+ * tints `.pc__tick` with it and swaps the tick for a clock, under the heading
+ * "Saved on this phone". The build had one confirmation for both outcomes, so a
+ * punch that had NOT been sent showed the identical green tick and the identical
+ * "Clocked in", while the sentence underneath said "Saved on this device. It will
+ * send when you have signal." Two signals, one of them wrong, and the wrong one
+ * is the big one you can read at arm's length.
+ *
+ * Amber and not red: it is recorded, and the 72-hour buffer will send it. Red
+ * would send someone hunting for signal over a punch that is already safe.
+ */
+const QUEUED_AMBER = '#E8A33D';
+const QUEUED_HALO  = 'rgba(232,163,61,0.35)';
+
 type Phase = 'idle' | 'capturing' | 'submitting' | 'done';
+
+/** Whether the punch reached the server, or is sitting on the phone. */
+type Outcome = 'sent' | 'queued' | null;
 
 interface Fix {
   lat?: number;
@@ -124,9 +144,23 @@ export default function ClockScreen() {
   const [permission, requestPermission] = useCameraPermissions();
 
   const [phase, setPhase] = useState<Phase>('idle');
+  /** Whether the punch reached the server, or is sitting on this phone. */
+  const [outcome, setOutcome] = useState<Outcome>(null);
   const [retakes, setRetakes] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const reduced = useReducedMotion();
+
+  /**
+   * The shutter flash.
+   *
+   * The only motion on this screen that carries information rather than polish:
+   * the preview does not otherwise change at the instant the frame is taken, so
+   * without it there is no moment, and someone in a hurry taps twice. It is not
+   * the ONLY signal for that moment — a light impact fires beside it and the
+   * shutter swaps to a spinner — which is exactly what lets `duration()` take it
+   * to nothing under reduced motion without taking the meaning with it.
+   */
+  const flash = useRef(new Animated.Value(0)).current;
 
   /**
    * The pending count was `useState(getPunchCount())` refreshed by an effect
@@ -151,6 +185,24 @@ export default function ClockScreen() {
   const confirm = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (phase !== 'done') { confirm.setValue(1); return; }
+
+    /**
+     * The signal that does not need eyes.
+     *
+     * There was an impact haptic at QUEUE time and none at confirmation — a
+     * different fact at a different moment. Someone punching in outdoors, in
+     * sunlight, already walking, is the case this screen exists for, and a
+     * notification haptic is the one channel that survives a screen they cannot
+     * read and a reduced-motion setting that removes everything that moves.
+     * Success and Warning are distinguishable patterns, so the two outcomes are
+     * told apart without looking at all.
+     */
+    void Haptics.notificationAsync(
+      outcome === 'queued'
+        ? Haptics.NotificationFeedbackType.Warning
+        : Haptics.NotificationFeedbackType.Success,
+    ).catch(() => {});
+
     Animated.sequence([
       Animated.timing(confirm, {
         toValue: scaleTo(1.14, reduced),
@@ -183,7 +235,7 @@ export default function ClockScreen() {
      */
     const back = setTimeout(() => setPhase('idle'), CONFIRM_HOLD_MS);
     return () => clearTimeout(back);
-  }, [phase, reduced, confirm]);
+  }, [phase, outcome, reduced, confirm]);
 
   // `Clock | My attendance`, per the reference's MPahchan. The register is a tab
   // on this screen rather than a route of its own, because it is the same
@@ -218,6 +270,7 @@ export default function ClockScreen() {
     if (!camera.current || phase !== 'idle') return;
     setPhase('capturing');
     setNotice(null);
+    setOutcome(null);
 
     try {
       const shot = await camera.current.takePictureAsync({ quality: 0.9, skipProcessing: false });
@@ -226,6 +279,21 @@ export default function ClockScreen() {
         setNotice('The camera did not return a photo. Try again.');
         return;
       }
+
+      // Fired once there IS a frame, not on the press: this marks the instant
+      // the photograph was actually taken, and a flash before or after the
+      // capture is a lie about when. `pcFlash` in the prototype is a decay from
+      // opacity .9 with `--ease-standard`; `DUR.slow` is the nearest token to
+      // its 340ms literal, and MOTION-SPEC §1 is explicit that a literal is not
+      // an option here.
+      flash.setValue(0.9);
+      Animated.timing(flash, {
+        toValue: 0,
+        duration: duration(DUR.slow, reduced),
+        easing: EASE.standard,
+        useNativeDriver: true,
+      }).start();
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
       // Compressed before it is queued, not after. A punch may sit on the device
       // for three days, and a full-resolution frame per punch fills a cheap phone.
@@ -283,6 +351,10 @@ export default function ClockScreen() {
         const { photo_key } = await pahchanApi.uploadPhoto(small.uri, 'punch');
         attachPhotoKey(clientPunchId, photo_key);
         const result = await flushPunches();
+        // Set BEFORE the phase, so the confirmation effect that reads it cannot
+        // fire against a stale `null` and paint a green tick over a punch that
+        // is still on the phone.
+        setOutcome(result.sent > 0 ? 'sent' : 'queued');
         setPhase('done');
         setNotice(
           result.sent > 0
@@ -293,6 +365,7 @@ export default function ClockScreen() {
         // Upload or send failed. The punch is already queued, so this is a
         // "saved, not sent" outcome rather than a failure — and saying so matters,
         // because "couldn't clock in" would send someone hunting for signal.
+        setOutcome('queued');
         setPhase('done');
         setNotice(
           [
@@ -309,7 +382,7 @@ export default function ClockScreen() {
       setRetakes(n => n + 1);
       setNotice('That did not work. Try again.');
     }
-  }, [direction, phase, qc]);
+  }, [direction, phase, qc, flash, reduced]);
 
   // ── The register ────────────────────────────────────────────────────────────
   // Deliberately ABOVE the camera-permission gate. Reading your own attendance
@@ -380,6 +453,16 @@ export default function ClockScreen() {
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       <CameraView ref={camera} style={StyleSheet.absoluteFill} facing="front" />
+
+      {/* `pointerEvents="none"` is load-bearing: this covers the whole screen
+          including the shutter, and an overlay that swallows the next tap would
+          eat the clock-out. */}
+      <Animated.View
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={[StyleSheet.absoluteFill, s.flash, { opacity: flash }]}
+      />
 
       <View style={[s.scrim, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 24 }]}>
         <View style={s.head}>
@@ -466,19 +549,33 @@ export default function ClockScreen() {
                 style={[
                   s.shutter,
                   {
-                    backgroundColor: phase === 'done' ? CONFIRM_GREEN
+                    // Green only for a punch that actually reached the server.
+                    // Amber when it is still on the phone — the sentence below
+                    // has always said so, and the ring used to contradict it.
+                    backgroundColor: phase === 'done'
+                      ? (outcome === 'queued' ? QUEUED_AMBER : CONFIRM_GREEN)
                       : phase === 'idle' ? '#FFFFFF'
                       : 'rgba(255,255,255,0.5)',
                     // The ring 07 §1's prototype puts round the face. `.mcam__ring.ok`
                     // is `box-shadow: 0 0 0 2px #5BD98A, 0 0 0 12px rgba(91,217,138,.2)`;
                     // RN has no box-shadow, so the outer halo is the border and the
                     // inner ring is the fill.
-                    borderColor: phase === 'done' ? CONFIRM_HALO : 'rgba(255,255,255,0.4)',
+                    borderColor: phase === 'done'
+                      ? (outcome === 'queued' ? QUEUED_HALO : CONFIRM_HALO)
+                      : 'rgba(255,255,255,0.4)',
                   },
                 ]}
               >
                 {phase === 'done' ? (
-                  <Ionicons name="checkmark" size={34} color="#06282B" />
+                  // A tick claims delivery. A queued punch has not been
+                  // delivered, so it gets the prototype's own glyph for that
+                  // state instead — the shape carries the distinction for
+                  // anyone who cannot tell the two fills apart.
+                  <Ionicons
+                    name={outcome === 'queued' ? 'cloud-upload' : 'checkmark'}
+                    size={outcome === 'queued' ? 28 : 34}
+                    color="#06282B"
+                  />
                 ) : phase === 'idle' ? (
                   <Ionicons name="finger-print" size={30} color="#111111" />
                 ) : (
@@ -489,9 +586,16 @@ export default function ClockScreen() {
           )}
 
           <Text style={s.hint} accessibilityLiveRegion="polite">
-            {phase === 'submitting' ? 'Sending…'
-              : phase === 'done' ? (direction === 'in' ? 'Clocked in' : 'Clocked out')
-              : 'Look at the camera and tap'}
+            {phase === 'capturing' ? 'Hold still…'
+              : phase === 'submitting' ? 'Sending…'
+              : phase === 'done'
+                ? (outcome === 'queued'
+                  // Says recorded, not sent. "Clocked in" over a punch sitting
+                  // in the queue is the overclaim the amber ring exists to stop,
+                  // and this line is the one a screen reader reads out.
+                  ? 'Saved on this phone — it will send itself'
+                  : direction === 'in' ? 'Clocked in' : 'Clocked out')
+                : 'Look at the camera and tap'}
           </Text>
 
           {/* The reference reaches the register from a segment; over a live
@@ -516,6 +620,7 @@ export default function ClockScreen() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000000' },
   centre: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  flash: { backgroundColor: '#FFFFFF' },
   // Over a live camera feed the palette does not apply: the background is
   // whatever the lens sees, so contrast has to come from a scrim and fixed
   // white. This is the one screen where theme tokens cannot carry the text.
@@ -526,6 +631,11 @@ const s = StyleSheet.create({
   pendingPill: {
     flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10,
     backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 99,
+    // The same amber as the queued confirmation ring. These are two indicators
+    // for one condition — "there is a punch on this phone that has not been
+    // sent" — and two indicators that disagree on colour are two conditions to
+    // whoever is reading them.
+    borderWidth: 1, borderColor: QUEUED_AMBER,
     paddingHorizontal: 10, paddingVertical: 5,
   },
   pendingText: { fontSize: 11.5, fontWeight: '600', color: '#FFFFFF' },
