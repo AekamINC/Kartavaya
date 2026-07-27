@@ -7,7 +7,13 @@ import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { RotBadge, Badge, stageColor } from './_shared';
 import { inr } from '../../lib/inr';
 
-export default function DealsTab() {
+/**
+ * `newNonce` lets the page header's "New deal" button open this tab's create
+ * form. It is a counter rather than a boolean so a second press re-opens the
+ * form after the first was cancelled — a boolean would already be `true` and
+ * the effect would not re-run.
+ */
+export default function DealsTab({ newNonce = 0 }) {
   const navigate = useNavigate();
   const { pushToast } = useToast();
   const [deals, setDeals] = useState([]);
@@ -33,6 +39,11 @@ export default function DealsTab() {
   const [noteSaving, setNoteSaving] = useState(false);
 
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (!newNonce) return;
+    setShowForm(true);
+    loadFormData();
+  }, [newNonce]);
 
   async function load() {
     setErr(null);
