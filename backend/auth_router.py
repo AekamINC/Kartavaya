@@ -5,6 +5,7 @@ Roles: admin | member | client
 """
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import uuid
@@ -249,6 +250,57 @@ async def accept_invite(request: Request, body: AcceptInviteBody):
     await pool.execute(
         "UPDATE invites SET accepted_at=NOW() WHERE token=$1", body.token
     )
+
+    # ── Org-scoped invite (migration 073) ────────────────────────────────────
+    # A platform-console invite has org_id NULL and behaves exactly as before.
+    # An org invite has to actually produce the membership, or the invitee ends
+    # up with an account belonging to nothing and no way to tell why.
+    #
+    # Grants are RE-VALIDATED here rather than trusted from the invite row: an
+    # invite is good for seven days, and a module can be deactivated in that
+    # window. Writing a grant for a module the org no longer has would hand
+    # someone access their organisation is not paying for, and it would be
+    # invisible — it only surfaces the day the module is switched back on.
+    invite_org_id = invite["org_id"] if "org_id" in invite.keys() else None
+    if invite_org_id:
+        org_role = invite["member_role"] or "org_member"
+        if org_role not in ("org_owner", "org_admin", "org_member"):
+            org_role = "org_member"
+
+        await pool.execute(
+            "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+            "VALUES ($1, $2::uuid, $3, $4) "
+            "ON CONFLICT DO NOTHING",
+            user_id, str(invite_org_id), org_role, invite["invited_by"],
+        )
+
+        raw_grants = invite["module_grants"] if "module_grants" in invite.keys() else None
+        try:
+            grants = json.loads(raw_grants) if isinstance(raw_grants, str) else (raw_grants or [])
+        except (TypeError, ValueError):
+            grants = []
+
+        if grants:
+            active = {
+                r["module_code"]
+                for r in await pool.fetch(
+                    "SELECT module_code FROM staging.module_subscriptions "
+                    "WHERE org_id=$1::uuid AND is_active = TRUE",
+                    str(invite_org_id),
+                )
+            }
+            for g in grants:
+                code = (g or {}).get("code")
+                level = (g or {}).get("role") or "viewer"
+                if not code or code not in active:
+                    continue
+                await pool.execute(
+                    "INSERT INTO staging.org_member_modules "
+                    "    (user_id, org_id, module_code, role, granted_by) "
+                    "VALUES ($1, $2::uuid, $3, $4, $5) "
+                    "ON CONFLICT DO NOTHING",
+                    user_id, str(invite_org_id), code, level, invite["invited_by"],
+                )
     # Activate any pending team invites for this email
     await pool.execute(
         "UPDATE team_members SET user_id=$1, status='active', updated_at=NOW() WHERE email=$2 AND status='invited'",
