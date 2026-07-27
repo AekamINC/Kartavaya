@@ -139,11 +139,166 @@ it is wired. The unreachable half is recorded here rather than built.
 
 ## 3 · What I changed
 
-Filled in as each lands. See the commits on this branch.
+Five structural gaps, three commits. Each is "the reference has this and the
+build does not", or "the build calls something that cannot answer it".
+
+### 3.1 Three routes the design assumed and the backend never had — `8fb8d0e`
+
+```
+GET  /api/auth/invite/{token}          backend/auth_router.py
+POST /api/auth/invite/{token}/decline
+POST /api/auth/refresh
+```
+
+`GET /auth/invite/:token` is what `auth.css:362` was waiting for, in those
+words. Returns org name and member count, inviter name, org role, module grants,
+expiry and `account_exists`.
+
+**On disclosure, since it is unauthenticated and returns an email:** the caller
+must hold a 256-bit `secrets.token_urlsafe(32)` mailed to that address, and
+`accept_invite` accepts nothing else and would let the same caller *set the
+password on the account*. A preview strictly discloses less than the accept it
+precedes. What it will not do is say **why** a token is bad — unknown, expired,
+spent and revoked are one 404 with one string, so it cannot be swept for live
+tokens, and a test asserts the three bodies are identical.
+
+Grants are re-validated against live `module_subscriptions`, matching what
+`accept_invite` does before writing them. An invite lives seven days and a
+module can be switched off inside that window; the screen must not promise
+access the acceptance will then silently drop.
+
+`SELECT *` on the invite row, not a column list — `org_id` and `module_grants`
+arrive with `PROPOSED_073`, which is a **proposal**. Naming them would raise
+`UndefinedColumnError` on an unmigrated database instead of degrading to the
+platform-invite shape. Same guard `accept_invite` already uses.
+
+**`/auth/refresh` is a sliding window, not a resurrection**, and the docstring
+says so first. `require_user` rejects an expired JWT, so the route only ever
+sees a live one. There is no refresh token in `auth_router.py` and no table to
+hold one, so this is the honest ceiling — anything more needs the same token
+store `reset_password` would need to revoke other sessions. A test pins the
+expired-token 401, because the frontend now treats a 401 as "the session is
+over" and that has to stay true.
+
+### 3.2 `api.js` had no 401 branch at all — `1a49ea2`
+
+There was no 401 handling of any kind. An expired token produced whatever error
+each caller happened to render, the stale `Kartavaya_user` stayed in
+localStorage, and the nav kept drawing modules for a session that no longer
+existed.
+
+Now a 401 from anywhere **except** `POST /auth/login`, and not while the user is
+on a public page, ends the session and redirects to `/login?expired=1` with the
+path they were on. `/auth/login` is the whole exception list: it is the only
+route that answers 401 to an unauthenticated caller *by design*. Everything else
+answering 401 does so from `require_user`, whose three causes all mean the
+session is over.
+
+The login screen reads `expired` and explains the empty form. `from` is
+validated as a same-origin absolute path — `//evil.example` is pathname-shaped
+and the browser reads it as protocol-relative; there is a test.
+
+**Deliberately not a refresh attempt on 401.** `/auth/refresh` needs a token
+`require_user` still accepts, so by the time a 401 arrived the token it would
+send is the rejected one. Refresh is proactive and lives in `Protected`, every
+six hours while a tab is open.
+
+### 3.3 `Protected` treated a dead network as a sign-out — `1a49ea2`
+
+Every `/auth/me` failure deleted `auth_token` and bounced to `/login`. `api.js`
+retries a dead network three times at 800/1600/2400ms and then rejects, so a
+lift, a tunnel or a Railway restart ended with the user signed out and their
+token destroyed — with nothing to tell that apart from a real expiry. Only a 401
+is the session now; anything else gets a screen that says the session is still
+valid and offers a retry.
+
+The 401 eviction is repeated in `Protected` rather than left to the interceptor,
+so the gate is correct without it. Both agree on destination and query, so
+whichever runs first the outcome is the same.
+
+### 3.4 The accept-invite context panel, decline, and two dead ends — `1a49ea2`
+
+`InviteContext` renders org · inviter · role · grants · expiry above the fields,
+because the decision comes before the typing. Grants render through
+`lib/moduleColors.js`, the one registry, so this screen names no module and no
+colour of its own. A platform-console invite (`org_id` NULL) is described as
+what it is — an account on Kartavaya — rather than given an invented workspace.
+
+Three states became screens instead of banners over a form the user cannot
+submit:
+
+| Was | Now |
+|---|---|
+| accept-invite, dead token → banner after typing a password | dead-end screen, checked before any form is drawn |
+| accept-invite, server unreachable → same as "expired" | its own screen, so nobody asks an admin to reissue a link that was fine |
+| reset-password, rejected token → banner over the filled form | the "Expired link" screen `AU_SCREENS` lists, with *Request a new link* |
+
+Decline had no route at all. Someone who did not want an invitation could only
+close the tab and leave a live token in their inbox for a week.
+
+### 3.5 Onboarding's Team step 403'd for everyone it was written for — `b2a9ca3`
+
+**The largest live defect I found.** `sendInvites` posted to `/admin/invites` —
+`invite_router.py`, behind `require_platform_role(*CONSOLE_ROLES)`, which reads
+`staging.user_roles WHERE org_id IS NULL`. A customer's `org_owner` has no such
+row, so the one step of the wizard that sends mail answered **403 for exactly
+the people the wizard exists for**. Aekam's own staff were the only ones it
+worked for, and for them it wrote `org_id NULL` — an account belonging to no
+organisation, which is not what "invite your team" means.
+
+Now `POST /v1/org/invites`, which writes `user_roles` and `org_member_modules`
+on acceptance, counts the seat against the org's cap before promising anything,
+and refuses to let an admin mint an owner.
+
+The role vocabulary had to move with it. `StepInvite` offered `member` / `admin`
+— `users.role` account types from a different ladder — and the endpoint
+validates `org_role` against `org_owner` / `org_admin` / `org_member`, so the
+old values would have returned "Invalid role: member" even once the path was
+right. Now `org_member` / `org_admin`, which is what the reference uses verbatim
+(`Onboarding.jsx`: `OB_ROLES`). `kv_onboarding` outlives a release, so a list
+saved under the old vocabulary is upgraded on read.
+
+`noRetry` carries over unchanged and now has a test: this endpoint sends an
+email, and `api.js` retries a 503 three times.
+
+### Gates
+
+| Gate | Result |
+|---|---|
+| `cd frontend && node scripts/check-tokens.mjs` | 341 declared · 235 referenced · **0 missing** · exit 0 |
+| `cd frontend && node scripts/check-classes.mjs` | 2134 selectors · 1457 classes · **0 missing a rule** · exit 0 |
+| `npx vite build` | clean |
+| `npx vitest run` | **453 passed / 0 failed** (was 449; +20 mine, and 16 of them are new files) |
+| `pytest tests/` | **1256 passed / 0 failed** (+10 mine) |
+
+Run bare from `frontend/`, unpiped, per `_COORDINATION.md` §2.
+
+**No email, invite or reset was ever sent.** Backend tests run under
+`OUTBOUND_MODE=dry`; the frontend suites install the network kill switch and
+mock the API. Nothing was written to the database and no migration was run.
 
 ---
 
-## 4 · Gaps confirmed and left alone
+## 4 · For whoever owns onboarding next — two structural questions I did not settle
+
+Neither is a defect. Both are places where the build and the reference disagree
+on purpose, and the disagreement should be *decided* rather than drifted into.
+
+1. **`StepOrg` is the reference's signup step 2, living in the wizard.** It has
+   no endpoint (`AUTH-SPEC` §API lists `POST /v1/auth/orgs`; it does not exist),
+   so it collects a name, an industry and a size and writes them to
+   localStorage. The industry does real work — it drives module preselection —
+   but the org name is typed into a field that reaches nothing, on a screen
+   whose organisation was created by Aekam's console and already has a name.
+   Either give it `PATCH /v1/org/profile` (which exists) or drop the name field.
+2. **`Done` is a rail step in the reference and not in the build.** The
+   reference's rail is `Welcome · Modules · Team · First project · Done` with a
+   `step/5` progress bar; the build's is five entries ending at `Project`, with
+   `StepDone` rendered after it. A five-step rail whose fifth step you never see
+   yourself reach is a small honesty gap in a wizard that is otherwise careful
+   about them.
+
+## 5 · Gaps confirmed and left alone
 
 - **No `GET/PATCH /v1/onboarding`.** Resume is `localStorage.kv_onboarding` only,
   and the footer says "Saved on this device" rather than claiming a handoff.
@@ -154,3 +309,18 @@ Filled in as each lands. See the commits on this branch.
 - **No `emails/` directory** — the four templates in AUTH-SPEC §"Email templates"
   are built inline in `email_service.py`. Belongs to the email agent.
 - **Existing-user invite** — §2.3, unreachable, not built.
+- **Sign-up, Google OAuth and magic link** — three reference surfaces the build
+  omits. All three are signup/OAuth and no endpoint backs any of them; the
+  invite-only decision (AUTH-SPEC:11) removes the first outright. Correct as
+  built. An unwired button is worse than an absent one.
+
+## 6 · Claims from my brief: held vs stale
+
+| Claim | Verdict |
+|---|---|
+| There is no `/auth/refresh` endpoint anywhere | **HELD, now closed.** §3.1 |
+| `api.js` has no 401 handling at all | **HELD, now closed.** §3.2 |
+| Check the accept-invite screen against the reference | **HELD — it was missing every context field the reference has.** §2, §3.4 |
+| Login submits correctly and was never broken | **STALE, confirmed stale.** Unchanged. |
+| Onboarding is wired to every endpoint that exists | **STALE AS WRITTEN, and it hid a live defect.** Every endpoint it called was real; the Team step called the *wrong* real endpoint and 403'd for every org owner. §3.5 |
+| Dark mode is correct in both themes | **STALE.** Not re-litigated. |
