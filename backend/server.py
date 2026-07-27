@@ -63,6 +63,7 @@ from routers.templates   import router as templates_router
 from routers.time_entries import router as time_router
 from routers.uploads     import router as uploads_router   # R2-backed upload
 from routers.reports        import router as reports_router
+from routers.documents      import router as documents_router  # generated PDFs
 from routers.task_reminders import router as task_reminders_router
 from routers.subscription   import router as subscription_router
 from routers.hub            import router as hub_router
@@ -3080,6 +3081,7 @@ app.include_router(templates_router)
 app.include_router(time_router)
 app.include_router(uploads_router)   # R2-backed file upload (replaces old base64 /api/upload)
 app.include_router(reports_router)
+app.include_router(documents_router)  # quotation / statement / GSTR-3B / TDS / agreement / project report
 app.include_router(task_reminders_router)
 app.include_router(subscription_router)
 app.include_router(hub_router)
