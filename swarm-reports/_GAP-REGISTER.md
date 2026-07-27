@@ -229,3 +229,26 @@ const page = document.querySelector('.page'), toPx = m => m * 96 / 25.4;
 page.setAttribute('style', `width:${toPx(210)}px!important;height:${toPx(297)}px!important;aspect-ratio:auto!important;container-type:size;overflow:visible;box-sizing:border-box;`);
 page.scrollHeight * 25.4 / 96;   // content height in mm, against a 297mm sheet
 ```
+
+### Correction: `#0082c6` is not a retired colour
+
+Two reports called it "the retired brand blue" and flagged
+`doc_render.ACCENT2_DEFAULT` as a loaded gun. It is neither. `brand.css:31`
+defines the aekam tenant as `--org-accent: #04837A; --org-accent-2: #0082c6`, and
+the logo mark is `linear-gradient(140deg, var(--org-accent-2), var(--org-accent))`
+— so the blue is the live SECONDARY accent.
+
+The real defect on the invoice and payslip was narrower and still real: the
+secondary was used where the PRIMARY belongs. `brand.css` closes the letterhead
+with `2px solid var(--org-accent)`, so a document-kind heading is `#04837A`.
+
+Checked, and left alone deliberately:
+- `doc_render.py:122-123` — `accent or #04837A` / `accent_2 or #0082c6`. Mirrors
+  `brand.css` exactly. **Correct.**
+- `report_generator.py` — pairs `_TEAL` with `_DEEP` in gradients, which is what
+  the design does for the logo mark. **Correct.**
+- `cost_report_pdf.py:88,234` — secondary on a heading, where `brand.css` uses
+  the primary. This is the only questionable use left, and it is the internal
+  admin cost report, which is **not one of the nine specified documents**. There
+  is no spec to conform it to, so changing it days before delivery would be
+  inventing a design decision. Flagged, not changed.
