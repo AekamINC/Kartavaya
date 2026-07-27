@@ -376,6 +376,29 @@ Run after the two fix commits. `REF | BUILD`:
 | wordmark / label / crumb-current sizes | literals | tokens, ≤1.06px off | the Text-size control reaches tokens and not literals |
 | `--primary`, `--primary-text` | `#04837A` / `#046B64` | `#00897f` / `#005650` | accent-ramp owner |
 
+### Re-verified after rebasing onto staging
+
+Staging moved 20 commits under me, including a sibling's `feat(nav)` on this exact
+file. `editorial.css` conflicted twice — both additive, both kept in full: their
+`.side__me-r` ellipsis merged with my colour change, their new `.crumb__org`
+segment merged with my `gap: 9px`. I then **re-rendered and re-measured the
+rebased tree** rather than trusting the resolution:
+
+```
+build density=cozy  --pad-page=28px  --radius-base=12px  --row-h=44px
+OK mark · OK nav icon · OK sidebar (width/glass/ink/border) · OK topbar
+   (height/background/position/gap/padding) · badges teal 700 on both sides
+nav item radius 6.96px == 6.96px   active item radius 6.96px == 6.96px
+```
+
+Everything held. The remaining `DIFF` lines are rect widths (different UI face,
+see §6) and the deltas explained in the table above.
+
+One caution for whoever re-runs this probe: on a cold load the poll fires before
+`applyPrefs`, and the first table reads `density=null`, `--radius-base=10px` —
+the CSS `:root` values, not the applied ones. That is trap 2 from §0 biting the
+probe I wrote to avoid it. Call `run()` a second time.
+
 ## 8. One thing I could not reproduce
 
 `_DESIGN-GAP.md` lists scrolling as "not working at all, not yet diagnosed". In
