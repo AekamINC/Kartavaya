@@ -1216,3 +1216,31 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   border: 1px solid var(--outline-variant); border-radius: var(--r-sm);
   background: var(--s-container); font-size: var(--t-body-sm); color: var(--on-surface-2);
 }
+
+/* ── Document refusal ──────────────────────────────────────────────────────
+ * `components/ui/DocumentError.jsx`. The document endpoints answer 422 with the
+ * list of mandatory fields they will not invent; this is where that list lands.
+ *
+ * Tinted --warn rather than --danger on purpose. Nothing broke: the backend
+ * declined to emit a document that would have LOOKED complete, and the user's
+ * next move is to go and fill a field in. Painting it as an error teaches them
+ * to retry the button instead.
+ */
+.docerr {
+  display: flex; align-items: flex-start; gap: var(--sp-3);
+  margin: var(--sp-3) 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--warn);
+  border-radius: var(--r-sm);
+  background: var(--warn-container);
+  color: var(--on-warn-container);
+}
+.docerr__body { flex: 1; min-width: 0; }
+.docerr__t { margin: 0; font-size: var(--t-body-sm); font-weight: 600; }
+.docerr__m { margin: 2px 0 0; font-size: var(--t-label); }
+.docerr__x {
+  flex-shrink: 0;
+  border: 0; background: none; color: inherit;
+  font-size: var(--t-body); line-height: 1; cursor: pointer;
+  padding: 0 var(--sp-1);
+}

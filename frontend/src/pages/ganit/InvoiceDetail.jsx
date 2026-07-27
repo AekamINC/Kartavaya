@@ -24,6 +24,8 @@ import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import { describeDocumentError } from '../../lib/docErrors';
+import { useDocumentDownload } from '../../lib/documents';
+import DocumentError from '../../components/ui/DocumentError';
 import {
   safeArray, Badge, UpiPayBlock, waLink, waInvoiceText,
   INV_TYPE_LABELS, STATUS_COLORS, DOC_STATUS_COLORS, PAY_METHODS,
@@ -37,6 +39,12 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
   const [detail, setDetail] = useState(null);
   const [err, setErr] = useState(null);
   const [downloading, setDownloading] = useState(false);
+  // A quotation rendered through the INVOICE route comes out as a tax invoice
+  // wearing another name — an HSN column no offer needs, no validity date, and
+  // the supplier's signature where the design has the client's acceptance
+  // block. `/v1/documents/quotations/{id}/pdf` renders it against its own
+  // specification; see `services/quotation_pdf.py`.
+  const quote = useDocumentDownload();
   const [busy, setBusy] = useState('');
   const [showPay, setShowPay] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', payment_method: 'bank_transfer', reference: '', notes: '' });
@@ -147,6 +155,9 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
   const wa = inv ? waLink(inv.contact_phone, waInvoiceText(inv)) : null;
   const items = safeArray(inv?.line_items);
   const settled = inv?.payment_status === 'paid' || inv?.payment_status === 'cancelled';
+  // The quotation route accepts exactly these two types and answers 409 for
+  // anything else, so the button is not offered where it cannot work.
+  const isOffer = inv?.invoice_type === 'quotation' || inv?.invoice_type === 'proforma';
 
   const panel = (
     <div
@@ -206,6 +217,22 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                   {downloading ? 'Generating…' : 'Download PDF'}
                 </button>
 
+                {isOffer && (
+                  <button
+                    type="button"
+                    className="btn btn--tonal btn--sm"
+                    disabled={quote.busy === 'quotation'}
+                    title="The offer rendered against the quotation specification — validity date, payment schedule and the client's acceptance block"
+                    onClick={() => quote.run('quotation', {
+                      url: `/v1/documents/quotations/${inv.id}/pdf`,
+                      filename: `${inv.invoice_number || 'quotation'}.pdf`,
+                      fallback: 'Could not generate the quotation',
+                    })}
+                  >
+                    {quote.busy === 'quotation' ? 'Generating…' : 'Download quotation'}
+                  </button>
+                )}
+
                 <button
                   type="button"
                   className="btn btn--out btn--sm gnd__wa"
@@ -248,6 +275,8 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                   </button>
                 )}
               </div>
+
+              <DocumentError error={quote.error} onDismiss={quote.clear} />
 
               <div className="dr__body">
                 {inv.contact_name && (

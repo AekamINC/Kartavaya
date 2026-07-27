@@ -29,6 +29,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api }         from '../lib/api';
 import { currentUser } from '../lib/auth';
 import { AVATAR_COLORS, logger } from '../lib/utils';
+import { useDocumentDownload } from '../lib/documents';
+import DocumentError from '../components/ui/DocumentError';
 
 import KanbanView   from '../components/views/KanbanView';
 import TableView    from '../components/views/TableView';
@@ -55,6 +57,15 @@ import {
 
 import AutomationsPage from './AutomationsPage';
 
+/** Month to date — the window a status report is usually asked for. */
+function monthToDate(today = new Date()) {
+  const iso = d => d.toISOString().slice(0, 10);
+  return {
+    start: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`,
+    end: iso(today),
+  };
+}
+
 export default function ProjectBoardPage() {
   const { projectId } = useParams();
   const navigate      = useNavigate();
@@ -74,6 +85,9 @@ export default function ProjectBoardPage() {
   const [showArchived,  setShowArchived]  = useState(false);
   const [showFieldMgr,  setShowFieldMgr]  = useState(false);
   const [showAutomations, setShowAutomations] = useState(false);
+  const [showReport,    setShowReport]    = useState(false);
+  const report = useDocumentDownload();
+  const [reportPeriod, setReportPeriod] = useState(monthToDate);
   const [newFieldName,  setNewFieldName]  = useState('');
   const [newFieldType,  setNewFieldType]  = useState('text');
   const [newTaskEditor, setNewTaskEditor] = useState({ open: false, columnId: null, dueAt: '' });
@@ -173,7 +187,7 @@ export default function ProjectBoardPage() {
               type="button"
               className="k-btn k-btn--ghost k-btn--sm pb__toggle"
               aria-pressed={showFieldMgr}
-              onClick={() => { setShowFieldMgr(v => !v); setShowAutomations(false); }}
+              onClick={() => { setShowFieldMgr(v => !v); setShowAutomations(false); setShowReport(false); }}
             >
               Fields
             </button>
@@ -181,9 +195,17 @@ export default function ProjectBoardPage() {
               type="button"
               className="k-btn k-btn--ghost k-btn--sm pb__toggle"
               aria-pressed={showAutomations}
-              onClick={() => { setShowAutomations(v => !v); setShowFieldMgr(false); }}
+              onClick={() => { setShowAutomations(v => !v); setShowFieldMgr(false); setShowReport(false); }}
             >
               Automations
+            </button>
+            <button
+              type="button"
+              className="k-btn k-btn--ghost k-btn--sm pb__toggle"
+              aria-pressed={showReport}
+              onClick={() => { setShowReport(v => !v); setShowFieldMgr(false); setShowAutomations(false); }}
+            >
+              Report
             </button>
             <button
               type="button"
@@ -232,6 +254,64 @@ export default function ProjectBoardPage() {
           </>
         }
       />
+
+      {showReport && (
+        <section className="k-card">
+          <header className="k-card__head">
+            <div className="k-card__titles">
+              <h3 className="k-card__title">Status report</h3>
+              <span className="k-card__sans">प्रतिवेदन</span>
+            </div>
+          </header>
+          <div className="k-card__body">
+            <p className="pb__none">
+              Tasks, overdue tasks and hours logged are measured from this board over
+              the period. Milestones, risks and the planned side of each measure are
+              not stored anywhere yet, so the report prints actuals alone rather than
+              a variance against a plan of zero — which would show every project as
+              catastrophically over.
+            </p>
+            <div className="pb__fieldadd">
+              <label className="fld">
+                <span className="fld__l">From</span>
+                <input
+                  className="inp" type="date" value={reportPeriod.start}
+                  onChange={e => setReportPeriod({ ...reportPeriod, start: e.target.value })}
+                />
+              </label>
+              <label className="fld">
+                <span className="fld__l">To</span>
+                <input
+                  className="inp" type="date" value={reportPeriod.end}
+                  onChange={e => setReportPeriod({ ...reportPeriod, end: e.target.value })}
+                />
+              </label>
+              <button
+                type="button"
+                className="btn btn--fill btn--sm"
+                disabled={report.busy === 'report' || reportPeriod.start > reportPeriod.end}
+                onClick={() => report.run('report', {
+                  method: 'post',
+                  url: `/v1/documents/projects/${projectId}/report/pdf`,
+                  params: { period_start: reportPeriod.start, period_end: reportPeriod.end },
+                  // The plan side, milestones and risks have no store to read
+                  // from. An empty body is the honest payload; the route reports
+                  // actual-only rather than inventing a baseline.
+                  data: {},
+                  filename: `${projectName || 'project'}-report.pdf`,
+                  fallback: 'Could not generate the report',
+                })}
+              >
+                {report.busy === 'report' ? 'Generating…' : 'Download report'}
+              </button>
+            </div>
+            {reportPeriod.start > reportPeriod.end && (
+              <p className="pb__none">The start date is after the end date.</p>
+            )}
+            <DocumentError error={report.error} onDismiss={report.clear} />
+          </div>
+        </section>
+      )}
 
       {showFieldMgr && (
         <section className="k-card">

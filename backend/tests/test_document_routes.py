@@ -425,3 +425,177 @@ async def test_a_challan_with_no_tan_anywhere_is_refused_with_422(
     assert "org.tan" in {g["field"] for g in detail["blocking"]}
     # And it must say where to fix it, not merely that it is missing.
     assert all(g["fix"] for g in detail["blocking"])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GSTR-3B as JSON — the filing screen's figures
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _org_row(**over) -> dict:
+    # A GSTIN that actually passes its own checksum. The older fixtures in this
+    # file use `…1Z8`, which does NOT — harmless there because only blankness is
+    # checked, but it would silently defeat the check-digit assertions below.
+    row = {
+        "name": "Aekam Inc", "gstin": "27AAACA1234M1ZV", "pan": "AAACA1234M",
+        "billing_address": json.dumps({"city": "Mumbai", "state": "Maharashtra"}),
+        "logo_url": "", "logo_key": "", "email": "", "phone": "", "website": "",
+        "bank_details": "{}", "invoice_note": "", "settings": "{}",
+        "authorized_signatory_name": "Keval Shah",
+        "authorized_signatory_designation": "Partner",
+    }
+    row.update(over)
+    return row
+
+
+def _wire_gstr3b_pool(mock_pool, *, invoices, parties=(), no_pos=0, bills=None):
+    """Route every query the JSON summary makes.
+
+    The counterparty query joins `ganit_invoices` to `graha_contacts`, so it
+    must be matched BEFORE the plain invoice scan or it never fires.
+    """
+    async def _fetch(query, *args):
+        if "graha_contacts" in query:
+            return list(parties)
+        if "ganit_vendor_bills" in query:
+            return [bills or {"igst": 0, "cgst": 0, "sgst": 0, "n": 0}]
+        if "ganit_invoices" in query:
+            return list(invoices)
+        return []
+
+    async def _fetchval(query, *args):
+        if "place_of_supply" in query:
+            return no_pos
+        return 0
+
+    mock_pool.fetch = AsyncMock(side_effect=_fetch)
+    mock_pool.fetchval = AsyncMock(side_effect=_fetchval)
+    mock_pool.fetchrow = AsyncMock(return_value=_org_row())
+
+
+async def test_the_json_summary_reports_the_same_outward_tax_the_paper_would(
+    api_client, as_admin, with_org_id, gate_open, mock_pool
+):
+    """The screen and the document must never state different tax.
+
+    Both read `_assemble_gstr3b` and `gstr3b_pdf.compute`, so this asserts the
+    JSON actually goes through them rather than re-deriving 3.1 in the route.
+    """
+    _wire_gstr3b_pool(mock_pool, invoices=[{
+        "invoice_number": "INV-1", "invoice_type": "tax_invoice",
+        "is_igst": False, "is_export": False,
+        "line_items": json.dumps([{"description": "Audit", "hsn_code": "998221"}]),
+        "subtotal": 100000, "cgst": 9000, "sgst": 9000, "igst": 0, "cess": 0,
+        "total": 118000,
+    }])
+
+    r = await api_client.get(f"{DOCS}/gst/gstr3b/2026-07")
+    assert r.status_code == 200, r.text
+    b = r.json()
+
+    rows = {row["key"]: row for row in b["rows"]}
+    assert rows["outward_taxable"]["taxable"] == 100000
+    assert rows["outward_taxable"]["tax"] == 18000
+    assert b["outward_count"] == 1
+    # Statutory due date, not a hard-coded string in the UI.
+    assert b["due_date"] == "2026-08-20"
+
+
+async def test_reverse_charge_is_reported_unrecorded_not_as_a_confident_zero(
+    api_client, as_admin, with_org_id, gate_open, mock_pool
+):
+    """Kartavaya has no reverse-charge store. A screen printing a bare 0 there
+    asserts that no reverse-charge liability arose, which it cannot know."""
+    _wire_gstr3b_pool(mock_pool, invoices=[])
+
+    r = await api_client.get(f"{DOCS}/gst/gstr3b/2026-07")
+    assert r.status_code == 200, r.text
+    b = r.json()
+
+    rcm = next(row for row in b["rows"] if row["key"] == "inward_reverse_charge")
+    assert rcm["recorded"] is False
+    assert any("reverse charge" in n.lower() for n in b["not_recorded"])
+
+
+async def test_a_counterparty_gstin_failing_its_check_digit_is_blocking(
+    api_client, as_admin, with_org_id, gate_open, mock_pool
+):
+    """The check digit exists so a typo is catchable at entry. Uncaught, the
+    recipient's credit is refused months after the return is filed."""
+    _wire_gstr3b_pool(
+        mock_pool,
+        invoices=[],
+        # Valid layout, deliberately wrong final check character.
+        parties=[{"name": "Nirmal Exports", "company": "Nirmal Exports Pvt Ltd",
+                  "gstin": "27AAACA1234M1Z9"}],
+    )
+
+    r = await api_client.get(f"{DOCS}/gst/gstr3b/2026-07")
+    assert r.status_code == 200, r.text
+    checks = {c["code"]: c for c in r.json()["checks"]}
+
+    assert "counterparty_gstin_invalid" in checks
+    bad = checks["counterparty_gstin_invalid"]
+    assert bad["severity"] == "blocking"
+    # It must NAME the party — "2 blockers" alone is not actionable.
+    assert any("Nirmal Exports" in item for item in bad["items"])
+
+
+async def test_a_valid_counterparty_gstin_raises_no_finding(
+    api_client, as_admin, with_org_id, gate_open, mock_pool
+):
+    """The counterpart assertion: the check must not flag correct data, or the
+    panel cries wolf and gets ignored."""
+    _wire_gstr3b_pool(
+        mock_pool, invoices=[],
+        parties=[{"name": "Acme", "company": "Acme Ltd", "gstin": "27AAACA1234M1ZV"}],
+    )
+
+    r = await api_client.get(f"{DOCS}/gst/gstr3b/2026-07")
+    assert r.status_code == 200, r.text
+    codes = {c["code"] for c in r.json()["checks"]}
+    assert "counterparty_gstin_invalid" not in codes
+
+
+async def test_a_held_back_invoice_becomes_a_named_prefiling_blocker(
+    api_client, as_admin, with_org_id, gate_open, mock_pool
+):
+    """The same rule 46(g) hold-back the paper prints, surfaced on the screen
+    BEFORE the preparer generates anything."""
+    _wire_gstr3b_pool(mock_pool, invoices=[{
+        "invoice_number": "INV-2604", "invoice_type": "tax_invoice",
+        "is_igst": False, "is_export": False,
+        "line_items": json.dumps([{"description": "Advisory"}]),  # no HSN, no SAC
+        "subtotal": 50000, "cgst": 4500, "sgst": 4500, "igst": 0, "cess": 0,
+        "total": 59000,
+    }])
+
+    r = await api_client.get(f"{DOCS}/gst/gstr3b/2026-07")
+    assert r.status_code == 200, r.text
+    checks = {c["code"]: c for c in r.json()["checks"]}
+
+    assert checks["hsn_missing"]["severity"] == "blocking"
+    assert "INV-2604" in checks["hsn_missing"]["items"]
+    # Held back means EXCLUDED from the figures, not counted anyway.
+    rows = {row["key"]: row for row in r.json()["rows"]}
+    assert rows["outward_taxable"]["tax"] == 0
+
+
+async def test_a_missing_supplier_gstin_is_reported_before_the_paper_refuses(
+    api_client, as_admin, with_org_id, gate_open, mock_pool
+):
+    """`validate_gstr3b` blocks on this. The screen should say so up front
+    rather than letting the preparer discover it via a 422."""
+    _wire_gstr3b_pool(mock_pool, invoices=[])
+    mock_pool.fetchrow = AsyncMock(return_value=_org_row(gstin=""))
+
+    r = await api_client.get(f"{DOCS}/gst/gstr3b/2026-07")
+    assert r.status_code == 200, r.text
+    codes = {c["code"] for c in r.json()["checks"]}
+    assert "supplier_gstin_missing" in codes
+
+
+async def test_the_json_summary_rejects_a_malformed_period(
+    api_client, as_admin, with_org_id, gate_open, mock_pool
+):
+    r = await api_client.get(f"{DOCS}/gst/gstr3b/July-2026")
+    assert r.status_code == 400, r.text
