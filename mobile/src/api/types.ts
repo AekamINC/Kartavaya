@@ -236,6 +236,18 @@ export interface MutationQueueItem {
   url:          string;
   body?:        unknown;
   optimistic_id?: string;
+  /**
+   * What this write is ABOUT, so a row can show that it is still queued.
+   *
+   * `enqueueMutation` has accepted both of these since it was written and threw
+   * them both away — the item it built never carried them. So `TaskCard`'s
+   * `syncing` prop, which draws the amber clock the reference has at
+   * `Mobile.jsx:45`, had no way to be told which task it applied to and was
+   * passed by nothing. A queued write was invisible until it either landed or
+   * failed, which is the exact opposite of MOTION-SPEC §7.1.
+   */
+  entity_type?: string;
+  entity_id?:   string;
   created_at:   string;
   retries:      number;
 }

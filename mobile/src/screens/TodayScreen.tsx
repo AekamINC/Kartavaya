@@ -9,9 +9,12 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import { format, isToday, isTomorrow, isThisWeek, isPast } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
+import { FAMILY } from '../theme/fonts';
 import { useAuth } from '../hooks/useAuth';
 import { tasksApi } from '../api/tasks';
 import { TaskCard } from '../components/TaskCard';
+import { useQueueStatus } from '../hooks/useQueueStatus';
+import { queuedEntityIds } from '../offline/mutationQueue';
 import type { Task } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
 
@@ -75,6 +78,11 @@ export default function TodayScreen() {
     () => user ? bucketTasks(tasks, user.user_id) : [],
     [tasks, user?.user_id]
   );
+
+  // Same reason as TasksScreen: an optimistically-completed row is
+  // indistinguishable from an acknowledged one without this. See §7.1.
+  const { changes } = useQueueStatus();
+  const queuedTaskIds = useMemo(() => queuedEntityIds('task'), [changes.count]);
 
   const sections = useMemo(() => {
     if (filter === 'today')     return allSections.filter(s => s.title === 'Due today');
@@ -216,7 +224,11 @@ export default function TodayScreen() {
         )}
         renderItem={({ item }) => (
           <View style={s.cardWrap}>
-            <TaskCard task={item} onPress={() => openTask(item.task_id)} />
+            <TaskCard
+              task={item}
+              onPress={() => openTask(item.task_id)}
+              syncing={queuedTaskIds.has(item.task_id)}
+            />
           </View>
         )}
       />
@@ -246,7 +258,7 @@ const s = StyleSheet.create({
   kickerHi: {
     fontSize: 12,
     fontWeight: '400',
-    fontFamily: 'TiroDevanagariHindi',
+    fontFamily: FAMILY.devanagari,
   },
   titleRow: {
     flexDirection: 'row',
@@ -259,7 +271,7 @@ const s = StyleSheet.create({
     lineHeight: IS_ANDROID ? 36 : 40,
     letterSpacing: -0.5,
     flex: 1,
-    fontFamily: IS_ANDROID ? undefined : 'Newsreader',
+    fontFamily: IS_ANDROID ? undefined : FAMILY.display,
   },
 
   chipsRow: {
@@ -298,7 +310,7 @@ const s = StyleSheet.create({
   },
   sectionLabelHi: {
     fontSize: 12,
-    fontFamily: 'TiroDevanagariHindi',
+    fontFamily: FAMILY.devanagari,
     fontWeight: '400',
     textTransform: 'none' as any,
     letterSpacing: 0,
@@ -306,7 +318,7 @@ const s = StyleSheet.create({
   sectionCount: {
     marginLeft: 'auto' as any,
     fontSize: 12,
-    fontFamily: 'SpaceMono',
+    fontFamily: FAMILY.mono,
   },
 
   cardWrap: { paddingHorizontal: 16 },

@@ -61,8 +61,8 @@
  * cannot express "loop, but shortened" without writing that phrase out.
  */
 
-import { useEffect, useState } from 'react';
-import { AccessibilityInfo, Easing, type EasingFunction } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, Animated, Easing, type EasingFunction } from 'react-native';
 
 /**
  * MOTION-SPEC §1. The same five numbers as `--dur-instant` … `--dur-xslow`.
@@ -70,6 +70,21 @@ import { AccessibilityInfo, Easing, type EasingFunction } from 'react-native';
  * `EXIT` is not in the token list but is in §3 and §7.3 — "exits are faster than
  * entrances, decisive out, gentle in" — and the table gives 180ms for it
  * repeatedly. It is a token here so that rule survives the next call site.
+ *
+ * `SHEET` is §3's bottom-sheet entrance. It is its own number rather than
+ * `slow`, and the reference disagrees with itself about which:
+ *
+ *   · MOTION-SPEC §3           `300ms` `--ease-emph-in`
+ *   · motion.css:97  `.dm-sheet`  `calc(--dur-slow * .84)` = 302.4ms `--ease-emph-in`
+ *   · mobile.css:279 `.msheet`    the same 302.4ms `--ease-emph-in`
+ *   · mobile.css:431 `.msheet`    `--dur-slow` (360ms) `--ease-emph`   ← outlier
+ *
+ * The last one is a second `.msheet` block later in the same file, so it SHADOWS
+ * the first and is what the rendered `Mobile App.html` actually plays — measured
+ * at `animationDuration: 0.36s`, `animationTimingFunction: cubic-bezier(.2,0,0,1)`.
+ * Three sources to one, and `--ease-emph-in`'s own token comment reads "bottom
+ * sheets rising", so the shadowing rule is taken as the defect and 300 / emphIn
+ * as the intent.
  */
 export const DUR = {
   instant: 90,
@@ -78,6 +93,28 @@ export const DUR = {
   slow:    360,
   xslow:   520,
   exit:    180,
+  sheet:   300,
+} as const;
+
+/**
+ * Durations for animations that REPEAT, kept apart from `DUR` on purpose.
+ *
+ * Nothing in this object may ever be passed through `duration()`. That is the
+ * whole point of the separation: `duration()` collapses to 0, and a 0ms loop is
+ * an infinite loop running as fast as the display can composite. The measured
+ * consequence of doing this on the web side is recorded at the top of this file.
+ *
+ * Both numbers are literals in `mobile.css` rather than `--dur-*` tokens, which
+ * is why they are the two animations on the mobile reference that do NOT strobe
+ * under `--ix: .001` — measured, they stay at 2s and 1.4s. They also therefore do
+ * not STOP, which contradicts MOTION-SPEC §4's own "disabled under reduced
+ * motion" for the shimmer. `useLoop` fixes that half here.
+ */
+export const LOOP = {
+  /** `mobile.css:63` `.mpulse` — the clocked-in / running-timer dot. */
+  pulse:   2000,
+  /** `mobile.css:446` `.msk` — skeleton shimmer. §4: disabled under reduced motion. */
+  shimmer: 1400,
 } as const;
 
 /**
@@ -105,6 +142,66 @@ export const EASE: Record<string, EasingFunction> = {
 
 /** MOTION-SPEC §4: the form shake is 420ms at ±4px. Both were wrong in the build. */
 export const SHAKE = { duration: 420, amplitude: 4 } as const;
+
+/**
+ * Bottom-sheet presentation, as one object so a sheet cannot get half of it.
+ *
+ * Four values, and the pairing is the part that matters: §7.3 says exits are
+ * faster than entrances, and the scrim's exit is faster still so the panel is
+ * never left sliding over an already-clear background.
+ *
+ * `React Native's <Modal animationType="slide"> cannot express any of this.` It
+ * is a fixed platform animation with no duration, no curve and — the reason it
+ * had to go — no reduced-motion behaviour at all: it slides the full height of
+ * the screen whatever the OS accessibility setting says. Every sheet in this app
+ * used it. See `components/Sheet.tsx`.
+ */
+export const SHEET = {
+  /** MOTION-SPEC §3, `translateY(100%) → 0`. */
+  in:        DUR.sheet,
+  inEase:    EASE.emphIn,
+  /** §3, `translateY(100%)`. Decisive out. */
+  out:       DUR.base,
+  outEase:   EASE.exit,
+  /** `mobile.css:278` `.msheet__scrim` — `dmFade --dur-base --ease-enter`, measured 0.22s. */
+  scrimIn:      DUR.base,
+  scrimInEase:  EASE.enter,
+  /** `motion.css:89` `.dm-scrim.out` — the fade reversed at `--dur-fast`. */
+  scrimOut:     DUR.fast,
+  scrimOutEase: EASE.exit,
+} as const;
+
+/**
+ * Tab-panel change. `motion.css:186` `.dm-tabs__p` / `@keyframes dmPanel`:
+ * `opacity 0→1` plus `translateX(var(--dx))` over `--dur-base` `--ease-emph`,
+ * with `IxDrawer.jsx:373` setting `--dx` to `±10px` from the direction of travel.
+ *
+ * The sign is the information. A panel that always enters from the same side
+ * says nothing about which way you moved through the tabs.
+ *
+ * `indicator` is `motion.css:185` `.dm-tabs__ind`, which slides `left` and
+ * `width` over the same `--dur-base` `--ease-emph`. `mobile.css:297`
+ * `.mnav2__ind` — the 30×3px bar the mobile bar draws — has no transition at
+ * all, so the reference's own mobile indicator jumps. The shared tabs primitive
+ * is the one that got this right, so its numbers are the ones taken.
+ */
+export const TAB = {
+  panel:     DUR.base,
+  panelEase: EASE.emph,
+  /** `IxDrawer.jsx:373`. Signed by the caller; this is the magnitude. */
+  panelDx:   10,
+  indicator:     DUR.base,
+  indicatorEase: EASE.emph,
+} as const;
+
+/**
+ * Press feedback. MOTION-SPEC §1 names `--dur-instant` for exactly this.
+ *
+ * The scale is per call site — `motion.css:424` `.kb__card.press` uses `.985`
+ * for a dense kanban card, the camera shutter wants more — so only the TIME is
+ * fixed here. Collapse the scale with `scaleTo`, never by shortening the press.
+ */
+export const PRESS = { duration: DUR.instant, ease: EASE.emph } as const;
 
 /**
  * Live reduced-motion state.
@@ -166,11 +263,111 @@ export function amplitude(px: number, reduced: boolean): number {
 }
 
 /**
+ * A scale factor, collapsed to 1 under reduced motion.
+ *
+ * `amplitude()` for `transform: scale`. A scale is a distance measured from 1,
+ * not from 0, so passing `0.96` to `amplitude()` would return 0 and shrink the
+ * element to nothing. This does the arithmetic once, here, rather than leaving
+ * `1 - amplitude(1 - x, reduced)` to be written correctly at every call site.
+ *
+ * Works in both directions: `scaleTo(1.22, r)` for an overshoot, `scaleTo(.96, r)`
+ * for a press. Both land on 1 when reduced, which is the element not moving.
+ */
+export function scaleTo(target: number, reduced: boolean): number {
+  return reduced ? 1 : target;
+}
+
+/**
  * Whether a REPEATING animation may run.
  *
  * Always consult this instead of shortening the loop. See the note at the top:
  * a shortened infinite animation is a strobe, not a reduced one.
+ *
+ * Prefer `useLoop`, which consults this for you and cannot be told to ignore it.
  */
 export function shouldLoop(reduced: boolean): boolean {
   return !reduced;
+}
+
+/**
+ * A 0→1 driver for a REPEATING animation, or a dead value if motion is reduced.
+ *
+ * This is the only place in the app that calls `Animated.loop`, and it exists so
+ * that "loop, but shortened" is not merely discouraged but unreachable: the
+ * duration goes in as a `LOOP` constant and never passes through `duration()`,
+ * and when `useReducedMotion()` is true the loop is not started at all. The
+ * caller gets a value pinned at 0 — the loop's own resting frame — and renders
+ * the static appearance it would have had at t=0.
+ *
+ * Contrast with what the reference does, which is the defect this app is
+ * deliberately not inheriting:
+ *
+ *   · `motion.css:117` `.dm-spin` — `calc(.7s * var(--ix)) linear infinite`.
+ *     Measured in the rendered catalogue with `--ix: .001`: `animationDuration
+ *     0.0007s`, `animationIterationCount infinite`. That is 0.7ms per rotation,
+ *     ≈1429 Hz, for the user who asked for LESS motion. `16-animations.md:44`
+ *     gives this as its worked example, so it is the spec and not a slip.
+ *   · `mobile.css:63` `.mpulse` and `mobile.css:446` `.msk` — 2s and 1.4s
+ *     literals, so they do not strobe, but they also do not stop. Measured at
+ *     `--ix: .001` they are still `2s infinite` and `1.4s infinite`, which
+ *     contradicts MOTION-SPEC §4's "disabled under reduced motion".
+ *
+ * Native-driven by default: every current caller drives opacity or transform, and
+ * a loop on the JS thread is the one animation guaranteed to be running while
+ * something else is trying to scroll. Pass `useNativeDriver: false` for a colour
+ * or layout property.
+ */
+export function useLoop(
+  durationMs: number,
+  reduced: boolean,
+  opts?: { useNativeDriver?: boolean; easing?: EasingFunction },
+): Animated.Value {
+  const value = useRef(new Animated.Value(0)).current;
+  const useNativeDriver = opts?.useNativeDriver ?? true;
+  const easing = opts?.easing ?? EASE.standard;
+
+  useEffect(() => {
+    if (!shouldLoop(reduced)) {
+      // Not "stopped after one frame" — never started, and parked on the frame
+      // the keyframe list calls 0%. A running-but-invisible native animation
+      // still wakes the compositor every frame for the life of the screen.
+      value.setValue(0);
+      return;
+    }
+    const anim = Animated.loop(
+      Animated.timing(value, { toValue: 1, duration: durationMs, easing, useNativeDriver }),
+    );
+    anim.start();
+    return () => { anim.stop(); value.setValue(0); };
+  }, [durationMs, reduced, useNativeDriver, easing, value]);
+
+  return value;
+}
+
+/**
+ * The settle used by every gesture that springs back — swipe rows, sheets
+ * dragged and released, a card returning to its column.
+ *
+ * A timing with `EASE.spring` rather than `Animated.spring`, because that is
+ * what the reference is: `mobile.css:72/86/237` all read
+ * `transition: transform var(--dur-base) var(--ease-spring)`, i.e. a 220ms
+ * curve with an overshoot built into the bezier, not a physics simulation.
+ *
+ * `Animated.spring` was what the build used and it cannot express this. Its
+ * `tension`/`friction` pair has no duration to collapse, so a spring is the one
+ * animation shape that silently ignores reduced motion — which is exactly what
+ * `SwipeRow` and `NotificationBanner` were each doing, with two different pairs
+ * of magic numbers (`9/90` and `12/80`) that appear in no spec.
+ */
+export function settle(
+  value: Animated.Value,
+  toValue: number,
+  reduced: boolean,
+): Animated.CompositeAnimation {
+  return Animated.timing(value, {
+    toValue,
+    duration: duration(DUR.base, reduced),
+    easing: EASE.spring,
+    useNativeDriver: true,
+  });
 }

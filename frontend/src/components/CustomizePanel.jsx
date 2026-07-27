@@ -118,8 +118,53 @@ function accentFor(prefs) {
   return deriveAccentColors(hex);
 }
 
+/**
+ * One-time migration for the two settings whose VALUE SET changed.
+ *
+ * `setPrefs` persists the WHOLE prefs object, so anyone who ever changed any
+ * setting — theme, accent, anything — has the old defaults frozen in storage.
+ * Changing DEFAULTS alone fixes new installs and leaves every existing user
+ * behind, which is most of the point of both changes.
+ *
+ * DENSITY: `comfy` → `cozy`. `comfy` is the LOOSEST of the three tiers, not the
+ * middle one, and the design is drawn at cozy.
+ *
+ * RADIUS: the options moved from `4 | 10 | 20` to `8 | 12 | 20` when the scale
+ * was matched to the harness. A stored `4` or `10` now matches NO option, so
+ * the control renders with nothing selected and the user's corners are stuck at
+ * a value they cannot see or change. Each old value maps to its nearest new
+ * one. `20` was in both sets and is left alone.
+ *
+ * The honest cost, for both: someone who deliberately chose the old value is
+ * moved once. Reversible in two clicks, and the flag means their next choice
+ * sticks for good. There is no version of this that touches only the users who
+ * never chose — a default and a deliberate choice are the same bytes in storage.
+ */
+const PREFS_MIGRATION_FLAG = 'kv.densityCozyMigrated';
+const RADIUS_REMAP = { 4: 8, 10: 12 };
+
+function migrateStoredPrefs(stored) {
+  try {
+    if (localStorage.getItem(PREFS_MIGRATION_FLAG)) return stored;
+    localStorage.setItem(PREFS_MIGRATION_FLAG, '1');
+
+    const next = { ...stored };
+    let changed = false;
+
+    if (stored.density === 'comfy') { next.density = 'cozy'; changed = true; }
+    if (RADIUS_REMAP[stored.radius])  { next.radius  = RADIUS_REMAP[stored.radius]; changed = true; }
+
+    if (!changed) return stored;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    return next;
+  } catch { return stored; }
+}
+
 function loadPrefs() {
-  try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') }; }
+  try {
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    return { ...DEFAULTS, ...migrateStoredPrefs(stored) };
+  }
   catch { return { ...DEFAULTS }; }
 }
 

@@ -14,7 +14,21 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-button { font-family: inherit; cursor: pointer; }
+/* The reference's reset is five declarations (`app.css:7`); this had two, and
+   the three missing ones are the three that matter. Without them a <button>
+   whose class sets no background/border/colour of its own falls through to the
+   user-agent stylesheet: `buttonface` #F0F0F0, a 2px `outset` border and
+   `buttontext` black — a light-grey slab with black text, IN BOTH THEMES.
+   In dark that is a pale rectangle on a near-black page.
+   Measured, not assumed: `.k-btn` (editorial.css:702) declares `border: 0`
+   but no background and no colour, and `PracharPage.jsx` renders it bare at
+   ten call sites (297, 433, 492, 915, 956, 957, 958, 978, 988, 1005). The
+   probe read them as rgb(240,240,240) / rgb(0,0,0) in dark.
+   An element selector is specificity 0,0,1 and loses to every class rule
+   regardless of document order, so this cannot override a styled button — it
+   only catches the ones nothing styles. `input, textarea, select` below
+   already inherits colour for exactly this reason; `button` was the omission. */
+button { font-family: inherit; cursor: pointer; border: 0; background: none; color: inherit; }
 a { color: inherit; text-decoration: none; cursor: pointer; }
 input, textarea, select { font-family: inherit; color: inherit; }
 ::selection { background: color-mix(in srgb, var(--k-primary) 30%, transparent); }
@@ -146,7 +160,17 @@ input, textarea, select { font-family: inherit; color: inherit; }
   padding: var(--pad-page);
   scroll-behavior: smooth;
 }
-.k-screen { display: flex; flex-direction: column; gap: var(--sp-6); width: 100%; }
+/* `--gap-section`, not `--sp-6`. Measured against the rendered reference:
+   `.screen` is `gap: var(--gap-section)` — 22px at the design's density, and it
+   MOVES with the density control. `--sp-6` is a fixed 24px, so this page was 2px
+   loose at every tier and identical at all three, which is the one thing a
+   density control exists to prevent. All three tiers already define
+   `--gap-section` and, before this line, nothing consumed it.
+
+   `today.css` had already found the 2px — and worked around it, pinning the
+   loading skeleton to `--sp-6` so the page would not jump on arrival. That
+   workaround is now the thing that would jump, so it moves with this. */
+.k-screen { display: flex; flex-direction: column; gap: var(--gap-section); width: 100%; }
 
 .kv__content::-webkit-scrollbar { width: 11px; }
 .kv__content::-webkit-scrollbar-track { background: transparent; }
@@ -768,7 +792,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
   }
 }
 .k-iconbtn {
-  width: 34px; height: 34px; border-radius: 8px;
+  /* 00-tokens.md §96 — was a literal `8px`, so the Corner radius control moved
+     cards, inputs and chips while every icon button in the toolbar, the drawer
+     and the shortcuts sheet stayed put under all three settings. `.k-iconbtn`
+     is the port of the reference's `.icobtn` (`app.css:89`), which is
+     `var(--r-sm)` — same 34x34 box, same `--on-surface-2` colour, same hover.
+     -2.2px at the Default setting; 2.3px under Sharp and 11.6px under Pill,
+     which is the point. The duplicate in kartavaya-design.css moves with it so
+     deleting one cannot reintroduce the literal. */
+  width: 34px; height: 34px; border-radius: var(--r-sm);
   background: transparent; border: 0;
   color: var(--ink-2);
   display: inline-flex; align-items: center; justify-content: center;
@@ -974,6 +1006,16 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-hero__samvat {
   font-family: var(--font-indic);
   font-size: 12.5px; letter-spacing: 0; text-transform: none;
+  /* 400, and it is the third reset here rather than an afterthought.
+     `.k-hero__meta` above is 600, and this rule reset the family, the tracking
+     and the case but not the weight — so गुरुवार and विक्रम संवत् were rendering
+     at 600 in a face that ships at 400 only. Measured in the browser: computed
+     font-weight 600, resolved family Tiro Devanagari Hindi. The rasteriser
+     answers a weight the font does not have by smearing the glyph, which
+     thickens the शिरोरेखा unevenly — the same faux-bold defect the
+     §Devanagari-metrics block further down documents for four other label
+     classes, on a fifth it does not name. */
+  font-weight: 400;
   color: var(--primary-text);
 }
 
@@ -1057,18 +1099,32 @@ input, textarea, select { font-family: inherit; color: inherit; }
    label; only the `info` tile has to split them. Custom properties substitute
    lazily, so `--c-text: var(--c)` on the base resolves against whichever `--c`
    the variant set. */
+/* Measured against the rendered reference (`app.css` `.stats` / `.stat`).
+   Every literal here was within 2px of the design and none of them moved with
+   the density control, which is the actual defect: `--gap-tight` and
+   `--pad-card` are defined by all three tiers and were being ignored.
+
+   `margin-top: 0` is not tidying. `kartavaya-design.css` also declares
+   `.k-stats`, and while this block overrides its `display` and `gap`, it never
+   touched its `margin-top: var(--sp-5)` — so 20px leaked through on top of
+   `.k-screen`'s own gap and the stat row sat further from the hero than every
+   other section on the page. Two rules, one gap. */
 .k-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
-  gap: 11px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--gap-tight);
+  margin-top: 0;
 }
 .k-stat {
   --c: var(--on-surface-3);
   --c-text: var(--c);
   position: relative;
   overflow: hidden;
-  padding: 16px 17px;
-  border-radius: var(--r-md);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--pad-card);
+  border-radius: var(--r-lg);
   background: var(--surface);
   border: 1px solid var(--outline-variant);
 }
@@ -1089,21 +1145,29 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-stat--amber, .k-stat--orange { --c: var(--warn); }
 .k-stat--red { --c: var(--danger); }
 
+/* Type scale measured off the rendered reference, not transcribed from prose.
+   `justify-content: space-between` is what pushes the Devanagari to the far
+   edge of the tile in the design — `gap` alone left it hugging the Latin label.
+   9.5px was also below the 11px metadata floor the rest of this sheet keeps. */
 .k-stat__lbl {
-  display: flex; align-items: baseline; gap: 7px;
-  font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font-size: 10px; letter-spacing: .15em; text-transform: uppercase;
   color: var(--on-surface-3); font-weight: 700;
 }
+/* 12px, and the two resets stay: Tiro is a single 400 weight and tracking
+   splits its conjuncts, so neither the parent's 700 nor its .15em may reach it.
+   `--font-indic` rather than `--font-hindi` — this label follows the user's
+   language, per 24 §129. */
 .k-stat__hi {
   font-family: var(--font-indic);
-  font-size: 11px; text-transform: none; letter-spacing: 0;
+  font-size: 12px; text-transform: none; letter-spacing: 0;
   color: var(--c-text); font-weight: 400;
 }
 .k-stat__val {
   font-family: var(--font-display);
-  font-size: 31px; font-weight: 400; line-height: 1.1;
-  letter-spacing: -.03em;
-  margin-top: 8px;
+  font-size: 34px; font-weight: 400; line-height: 1.16;
+  letter-spacing: -.025em;
+  margin-top: 6px;
   color: var(--on-surface);
   font-variant-numeric: tabular-nums;
 }
@@ -1112,18 +1176,44 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-size: 36px; font-weight: 400; line-height: 1;
   color: var(--on-surface);
 }
+/* `.k-stat` is a flex column with a 3px gap now, so `.k-stat__sub` gets its
+   spacing from the parent — the 3px margin was stacking on top of it. The value
+   above keeps its own 6px, which is what the reference measures: 9px from the
+   label, 3px to the sub. `.k-stat__lbl-sub` appears outside `.k-stat` and keeps
+   the margin it needs. */
 .k-stat__sub, .k-stat__lbl-sub { font-size: 11.5px; color: var(--on-surface-3); margin-top: 3px; }
+.k-stat__sub { margin-top: 0; }
 .k-stat__sans { font-family: var(--font-hindi); font-size: 11px; color: var(--ink-faint); }
 .k-stat__bar { height: 3px; background: var(--rule-soft); border-radius: 99px; overflow: hidden; margin-top: 6px; }
 .k-stat__bar-fill { height: 100%; background: var(--k-grad); border-radius: 99px; transition: width calc(.6s * var(--ix)) cubic-bezier(.25,.8,.25,1); }
 
 /* ── Two-column layout ────────────────────────────────────────────────── */
+/* Both gaps are `--gap-section` in the reference (`app.css` `.two` / `.col`),
+   and the column ratio is 1.65fr — measured, not guessed. `--sp-5` was 20px
+   against the design's 22px and, again, did not move with density. */
 .k-twocol {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
-  gap: var(--sp-5);
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr);
+  gap: var(--gap-section);
 }
-.k-col { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; }
+/* The three resets are load-bearing, not defensive.
+   `kartavaya-design.css` also declares `.k-col` — a KANBAN column, with
+   `background: var(--bg-soft)`, `border-radius: var(--r-lg)` and
+   `min-height: 200px`, sitting beside a `.k-col__head` that no JSX in the build
+   renders (the boards use `.k-bcol`). It is dead code that still paints: this
+   block redeclared `display`, `flex-direction`, `gap` and `min-width` but none
+   of those three, so every live `.k-col` — Today's two layout columns and both
+   skeletons — was drawing a tinted rounded 200px-tall panel behind content that
+   is meant to sit directly on the page. The reference's `.col` is a bare flex
+   column. Measured: background `#F5F1E7` against transparent, radius 17.4px
+   against 0. */
+.k-col {
+  display: flex; flex-direction: column;
+  gap: var(--gap-section); min-width: 0;
+  background: transparent;
+  border-radius: 0;
+  min-height: 0;
+}
 
 /* ── Generic card ──────────────────────────────────────────────────────── */
 .k-card {
@@ -1132,17 +1222,47 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-radius: var(--r-lg);
   overflow: hidden;
 }
+/* DOUBLE PADDING. `kartavaya-design.css` also declares `.k-card`, with
+   `padding: var(--sp-5)`. The block above overrides its background, border and
+   radius but never its padding, so 20px survives and STACKS with
+   `.k-card__head` / `.k-card__body`, which carry the card's real padding — a
+   card built from those parts was inset ~38px instead of 18px, and the head's
+   hairline stopped short of the card edge instead of spanning it. The
+   reference is unambiguous: `app.css` `.card` has no padding at all, which is
+   also what lets a flush body bleed to the edge.
+
+   Scoped with `:has()` rather than zeroed outright, because BOTH shapes exist
+   in this build: twelve call sites render `.k-card` around bare content
+   (`TimeReportPage`'s filter row, `AutomationsPage`'s form, …) and those
+   legitimately want the 20px. Only a card that brings its own padded parts
+   gives it up. `:has()` is already used in `mobile-responsive.css`, so it is
+   not a new dependency. */
+.k-card:has(> .k-card__head),
+.k-card:has(> .k-card__body) { padding: 0; }
+/* `--pad-card`, with the reference's `× .7` bottom. In the reference the card's
+   padding is ONE value with one deliberate exception — the head's bottom is
+   tightened so the title sits closer to what it labels than to the card edge.
+   The build used two unrelated steps (`--sp-4` / `--sp-5`), which lost that
+   relationship and, again, ignored the density control.
+
+   The build keeps its hairline under the head, which the reference does not
+   have; the `× .7` is therefore mirrored onto the body's top so the rule sits
+   centred in the gap rather than hard against the content below it. */
 .k-card__head {
   display: flex; align-items: baseline; justify-content: space-between;
   gap: 12px;
-  padding: var(--sp-4) var(--sp-5);
+  padding: var(--pad-card) var(--pad-card) calc(var(--pad-card) * .7);
   border-bottom: 1px solid var(--rule-soft);
 }
 .k-card__titles { display: flex; align-items: baseline; gap: 10px; }
+/* `--t-title-lg` (20px at the default font size, and it scales with the user's
+   control) with the reference's −.01em and 1.4 leading. 18px/−.005em was a
+   literal that matched nothing in the scale. */
 .k-card__title {
   font-family: var(--font-display);
-  font-size: 18px; font-weight: 500;
-  letter-spacing: -0.005em;
+  font-size: var(--t-title-lg); font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
   margin: 0;
   color: var(--ink);
 }
@@ -1151,15 +1271,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-size: 14px;
   color: var(--ink-3);
 }
-.k-card__body { padding: var(--sp-4) var(--sp-5) var(--sp-5); }
+.k-card__body { padding: calc(var(--pad-card) * .7) var(--pad-card) var(--pad-card); }
 
 /* ── Task row ──────────────────────────────────────────────────────────────
    The list bleeds to the card edge so each row's hairline is a full-width rule.
-   `.k-card__body`'s padding is `--sp-4 --sp-5 --sp-5`; this cancels exactly
-   that, so the two cannot drift. */
+   `.k-card__body`'s padding is now `calc(--pad-card * .7) --pad-card
+   --pad-card`; this cancels exactly that, so the two cannot drift. */
 .k-tasklist {
   display: flex; flex-direction: column;
-  margin: calc(var(--sp-4) * -1) calc(var(--sp-5) * -1) calc(var(--sp-5) * -1);
+  margin: calc(var(--pad-card) * -.7) calc(var(--pad-card) * -1) calc(var(--pad-card) * -1);
 }
 /* 05 §1. Flex, not a six-column grid: the project tag and the due chip are both
    optional, and a fixed track list left a hole wherever one was absent. */
@@ -1174,7 +1294,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
   text-align: left;
   font-family: var(--font-ui);
   color: inherit;
-  transition: background var(--dur-fast);
+  /* Easing added: the duration was already the --dur-fast rung but the curve
+     was the browser default `ease`, so this row and the Tasks row next door
+     eased differently on the same gesture. */
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .k-taskrow:last-child { border-bottom: 0; }
 [data-density="comfy"] .k-taskrow { padding: 13px 18px; }
@@ -1244,6 +1367,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-radius: 10px;
   border-bottom: 1px dashed var(--rule-soft);
   color: inherit;
+  /* `.k-upcoming__row:hover` changed background with no transition at all,
+     while `.k-taskrow` in the column beside it faded over --dur-fast. Two
+     lists of tasks, one page, two different hover behaviours. */
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .k-upcoming__row:last-child { border-bottom: 0; }
 .k-upcoming__row:hover { background: var(--rule-soft); cursor: pointer; }
@@ -1362,6 +1489,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-size: 12.5px; font-weight: 600;
   color: var(--ink-3);
   font-family: inherit;
+  /* The Tasks filter had NO transition: hover and the active pill both snapped
+     between two states in one frame, which is the one control on the page a
+     user presses repeatedly. 26 §6 puts a colour-only change and a chip fill on
+     --dur-instant (90ms) — the same rung `.ix-state` uses. Named properties, not
+     `all`: `all` catches `width` when the count badge changes and animates the
+     whole segmented control reflowing. */
+  transition: background-color var(--dur-instant) var(--ease-standard),
+              color            var(--dur-instant) var(--ease-standard);
 }
 .k-segctrl__btn:hover { color: var(--ink-2); }
 .k-segctrl__btn.is-active {
@@ -1405,11 +1540,22 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-radius: var(--r-lg);
   overflow: hidden;
 }
+/* Measured off the rendered reference (`app.css` `.tbl__head`): a 38px band
+   with NO vertical padding, 16px inline, a 14px track gap and a 10px/.14em
+   eyebrow. `align-items: center` was missing entirely, so the labels sat at the
+   top of the band instead of on its centre line — the header and the rows it
+   heads were using different rules for the same job.
+
+   `min-height` rather than the reference's fixed `height`: the columns here are
+   user-resizable, and a hard height clips a label the moment someone drags a
+   column narrow enough to wrap it. */
 .k-table__head {
   display: grid;
-  gap: 16px;
-  padding: 10px 18px;
-  font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  min-height: 38px;
+  font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
   color: var(--ink-3); font-weight: 700;
   border-bottom: 1px solid var(--rule);
   background: var(--bg-soft);
@@ -1422,25 +1568,56 @@ input, textarea, select { font-family: inherit; color: inherit; }
   grid-template-columns: 4px auto auto 1fr;
   align-items: center;
   gap: 10px;
-  padding: 10px 18px;
+  padding: 9px 16px;
   background: var(--bg);
   border-bottom: 1px dashed var(--rule-soft);
 }
 .k-group__bar { width: 4px; height: 18px; border-radius: 2px; background: var(--group-color); }
-.k-group__title { font-family: var(--font-display); font-size: 16px; font-weight: 500; color: var(--ink); }
-.k-group__sans { font-family: var(--font-hindi); font-size: 14px; color: var(--ink-3); }
-.k-group__count { margin-left: auto; font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); }
+/* The reference draws this as a tracked uppercase EYEBROW at 11px/700
+   (`app.css` `.tbl__group`), not as a heading. At 16px display serif the band
+   read as another row rather than as the rule between two runs of rows, which
+   is the one job a group header has.
 
+   Tracking a label that sits beside Devanagari is only safe because the
+   Devanagari carries `lang="hi"` — `[lang="hi"] { letter-spacing: 0 !important }`
+   further down this file. TasksListPage.jsx did not have that attribute until
+   this change, so `.1em` here would have split अत्यावश्यक's क्ष. The two edits
+   are one edit. */
+.k-group__title {
+  font-family: var(--font-ui);
+  font-size: 11px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-2);
+}
+/* 12px beside an 11px Latin eyebrow — the same pairing `.k-stat__hi` uses, and
+   above the 11px floor 00 §12 sets for metadata. `text-transform: none` because
+   the sibling is uppercase and Devanagari has no case. */
+.k-group__sans {
+  font-family: var(--font-hindi);
+  font-size: 12px; font-weight: 400; text-transform: none;
+  color: var(--ink-3);
+}
+.k-group__count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: none;
+  color: var(--ink-3);
+}
+
+/* 16px inline and a 14px track gap, matching `.k-table__head` above and the
+   reference's `.tbl__row`. The `--row-h` fallback was 48px — the COMFY row
+   height — so any surface that lost the token silently got the loosest tier;
+   44px is the design's own value and what `:root` declares. */
 .k-trow {
   display: grid;
   align-items: center;
-  padding: 0 18px;
+  padding: 0 16px;
   background: var(--surface); border: 0;
   border-bottom: 1px solid var(--rule-soft);
   font-family: inherit; color: inherit;
   text-align: left;
-  min-height: var(--row-h, 48px);
-  gap: 16px;
+  min-height: var(--row-h, 44px);
+  gap: 14px;
   cursor: pointer;
   width: 100%;
 }
@@ -1454,6 +1631,71 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-trow--archived { opacity: 0.52; }
 .k-trow--archived:hover { opacity: 0.8; }
 
+/* ── In-flight and just-changed rows ─────────────
+   MOTION-SPEC §7.1: an optimistic write renders at `opacity .6` until the
+   server acknowledges, then goes solid. Archive, restore and the quick-complete
+   tick all used to run with NO feedback at all — the row sat unchanged for the
+   whole round trip, so a slow archive looked like a dead button and users
+   pressed it twice.
+
+   `.is-pending` deliberately wins over `.k-trow--archived`'s own opacity by
+   being declared after it: a pending archived row is pending FIRST. */
+.k-trow.is-pending { opacity: .6; cursor: progress; }
+/* The row is `role="button" tabIndex=0` rather than a `<button>` (nested
+   buttons — see the JSX). It picks up the app-wide ring from components.css;
+   only the offset changes, because a +2px outline on a row flush against its
+   neighbours paints over their borders. */
+.k-trow:focus-visible { outline-offset: -2px; }
+/* IxViews 9.1's settle — "one --primary flash so you can find it". Boards uses
+   an outer `box-shadow: 0 0 0 2px`, which is right for a floating card; table
+   rows are flush against each other and an outer ring would paint over the
+   neighbours' borders, so this is the same flash drawn INSET. Same duration and
+   easing as `bcJust` and reference `kbJust`: --dur-slow * 1.5 = 540ms, --ease-exit. */
+.k-trow.is-just { animation: kTrowJust calc(var(--dur-slow) * 1.5) var(--ease-exit); }
+@keyframes kTrowJust {
+  0%   { box-shadow: inset 0 0 0 2px var(--k-primary); }
+  100% { box-shadow: inset 0 0 0 0 transparent; }
+}
+
+/* ── Quick-complete tick — IxViews 9.4 ───────────
+   "One quick action, not five. A complete-tick is worth surfacing because it is
+   the most common single change; everything else is a click into the drawer."
+   Same control, same tokens and the same touch rule as the board's `.bc__tick`,
+   because a tick that behaves differently on the list than on the board is two
+   features to learn.
+
+   `margin-left: auto` sits HERE and not on `.k-row-action` beside it: two auto
+   margins in one flex row split the free space and leave both controls floating
+   mid-row instead of pinned right. */
+.k-trow__tick {
+  width: 17px; height: 17px; flex-shrink: 0;
+  margin-left: auto;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--outline); border-radius: 50%;
+  background: none; color: transparent; opacity: 0; cursor: pointer;
+  transition: opacity      var(--dur-fast) var(--ease-standard),
+              background   var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard),
+              color        var(--dur-fast) var(--ease-standard);
+}
+.k-trow__tick + .k-row-action { margin-left: 6px; }
+.k-trow:hover .k-trow__tick,
+.k-trow__tick:focus-visible { opacity: 1; }
+/* --on-ok, not #fff: --ok is a fill that inverts hard, and white on the dark
+   theme's mint measures 1.79:1 — below the 3:1 floor a non-text control needs. */
+.k-trow__tick:hover,
+.k-trow__tick:focus-visible { background: var(--ok); border-color: var(--ok); color: var(--on-ok); }
+.k-trow__tick.on { opacity: 1; background: var(--ok); border-color: var(--ok); color: var(--on-ok); }
+/* No hover to reveal it on touch, so it is permanently visible there —
+   MOTION-SPEC §7.7, "every hover affordance has a touch equivalent". */
+@media (hover: none) { .k-trow__tick { opacity: 1; } }
+
+/* The table's own zero state. Was `.pb__loading` — the project board's LOADING
+   class, borrowed onto a different page, so "there is nothing here" was styled
+   as "still fetching". `.empty` centres and pads itself; this only has to give
+   it the rule that separates it from the header above. */
+.k-table__empty { border-top: 1px solid var(--rule-soft); }
+
 /* ── Row archive action button ─────────────────── */
 .k-row-action {
   display: inline-flex; align-items: center; gap: 4px;
@@ -1461,7 +1703,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border: 1px solid var(--rule); border-radius: var(--r-sm);
   background: var(--surface); color: var(--ink-3);
   font-size: 11px; font-weight: 500;
-  cursor: pointer; opacity: 0; transition: opacity calc(0.15s * var(--ix)); white-space: nowrap;
+  /* 0.15s was off the ladder; --dur-fast (140ms) is the hover rung, and the
+     easing was the browser default rather than one of the six. */
+  cursor: pointer; opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-standard); white-space: nowrap;
 }
 .k-trow:hover .k-row-action { opacity: 1; }
 .k-row-action--unarchive { color: var(--ink-2); opacity: 1; }
@@ -1474,12 +1719,17 @@ input, textarea, select { font-family: inherit; color: inherit; }
   padding-left: 10px; color: var(--ink-3);
 }
 .k-segctrl__btn--archive.is-active { color: var(--ink); background: var(--rule-soft); }
-.k-trow__cell { display: flex; align-items: center; gap: 10px; min-width: 0; overflow: hidden; }
+/* 9px — the reference's `.tbl__c`. `.k-c-task` keeps its wider 12px below,
+   which is the one cell holding three things (dot, id, title). */
+.k-trow__cell { display: flex; align-items: center; gap: 9px; min-width: 0; overflow: hidden; }
 .k-c-task { gap: 12px; }
 .k-c-project .k-ptag { min-width: 0; overflow: hidden; }
 .k-c-project .k-ptag__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.k-trow__id { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); flex-shrink: 0; }
-.k-trow__title { font-size: 13.5px; color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* 10.5px mono and `--t-body-sm` — the reference's `.tbl__id` and `.tbl__t`.
+   13.5px was a literal beside a scale that already has a 13px step, so the row
+   title stopped tracking the user's font-size control. */
+.k-trow__id { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-3); flex-shrink: 0; }
+.k-trow__title { font-size: var(--t-body-sm); color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .k-trow__attach { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--ink-3); flex-shrink: 0; margin-left: 4px; }
 .k-trow__due { font-size: 12px; color: var(--ink-3); }
 
@@ -1597,7 +1847,9 @@ input, textarea, select { font-family: inherit; color: inherit; }
   width: 2px; height: 14px;
   border-radius: 1px;
   background: transparent;
-  transition: background calc(0.15s * var(--ix));
+  /* Off-ladder 0.15s → the --dur-fast hover rung, same as every other hover
+     reveal on this table. */
+  transition: background var(--dur-fast) var(--ease-standard);
 }
 .k-col-resize:hover::after,
 .k-col-resize:active::after { background: var(--k-primary); }
@@ -2613,9 +2865,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
 
 /* ── Form input ─────────────────────────────────────────────────────────── */
 .k-input {
+  /* §96 again. The reference's field is `.fldx__in`, `var(--r-sm)`. */
   width: 100%; padding: 10px 12px;
   background: var(--bg-soft); border: 1px solid var(--rule);
-  border-radius: 8px; font-size: 13.5px; color: var(--ink); outline: none;
+  border-radius: var(--r-sm); font-size: 13.5px; color: var(--ink); outline: none;
   transition: border-color calc(.15s * var(--ix)), background calc(.15s * var(--ix)); font-family: inherit;
 }
 .k-input:focus { border-color: color-mix(in srgb, var(--k-primary) 60%, var(--rule)); background: var(--surface); }
@@ -2624,7 +2877,8 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-select {
   appearance: none; padding: 8px 28px 8px 10px;
   background: var(--bg-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236E7B91'/%3E%3C/svg%3E") no-repeat right 10px center;
-  border: 1px solid var(--rule); border-radius: 8px; font-size: 13px; color: var(--ink);
+  /* §96 — matched to `.k-input` above, which it sits beside in every form. */
+  border: 1px solid var(--rule); border-radius: var(--r-sm); font-size: 13px; color: var(--ink);
   cursor: pointer; outline: none; font-family: inherit;
 }
 .k-select:focus { border-color: color-mix(in srgb, var(--k-primary) 60%, var(--rule)); }

@@ -23,6 +23,7 @@ import { api } from '../lib/api';
 import {
   apiLogin,
   apiLogout,
+  apiAcceptInvite,
   currentUser,
   apiResetPassword,
   apiForgotPassword,
@@ -64,13 +65,18 @@ describe('apiLogin()', () => {
     expect(result.user).toEqual(FAKE_USER);
   });
 
-  it('calls the correct endpoint', async () => {
+  it('calls the correct endpoint, and opts out of the retry interceptor', async () => {
     api.post.mockResolvedValue({ data: { token: FAKE_TOKEN, user: FAKE_USER } });
     await apiLogin('admin@test.com', 'password123');
-    expect(api.post).toHaveBeenCalledWith('/auth/login', {
-      email: 'admin@test.com',
-      password: 'password123',
-    });
+    // The third argument is not incidental. `lib/api.js` retries 502/503/504 up
+    // to three more times, and measured in the browser that turned one press
+    // into four requests on a non-idempotent POST. Pinned so a later refactor
+    // that drops the config silently cannot pass.
+    expect(api.post).toHaveBeenCalledWith(
+      '/auth/login',
+      { email: 'admin@test.com', password: 'password123' },
+      { noRetry: true },
+    );
   });
 
   it('propagates API errors', async () => {
@@ -143,8 +149,49 @@ describe('apiForgotPassword()', () => {
   it('calls the forgot-password endpoint', async () => {
     api.post.mockResolvedValue({ data: { ok: true } });
     const result = await apiForgotPassword('user@test.com');
-    expect(api.post).toHaveBeenCalledWith('/auth/forgot-password', { email: 'user@test.com' });
+    expect(api.post).toHaveBeenCalledWith(
+      '/auth/forgot-password',
+      { email: 'user@test.com' },
+      { noRetry: true },
+    );
     expect(result.ok).toBe(true);
+  });
+});
+
+// ── The retry opt-out, stated once for the whole set ──────────────────────────
+//
+// This endpoint SENDS AN EMAIL and this one CONSUMES A SINGLE-USE TOKEN. The
+// response interceptor in `lib/api.js` retries 502/503/504 three more times, and
+// a 502/504 does not mean the request was not processed — it means the answer
+// did not come back. Measured in the browser against a 503: four requests per
+// press before `noRetry`, one after.
+describe('auth mutations opt out of the retry interceptor', () => {
+  it('accept-invite is not retried', async () => {
+    api.post.mockResolvedValue({ data: { token: FAKE_TOKEN, user: FAKE_USER } });
+    await apiAcceptInvite('tok', 'Someone', 'NewPass123!');
+    expect(api.post).toHaveBeenCalledWith(
+      '/auth/accept-invite',
+      { token: 'tok', name: 'Someone', password: 'NewPass123!' },
+      { noRetry: true },
+    );
+  });
+
+  it('reset-password is not retried', async () => {
+    api.post.mockResolvedValue({ data: { token: FAKE_TOKEN, user: FAKE_USER } });
+    await apiResetPassword('reset-token-xyz', 'NewPass123!');
+    expect(api.post).toHaveBeenCalledWith(
+      '/auth/reset-password',
+      { token: 'reset-token-xyz', password: 'NewPass123!' },
+      { noRetry: true },
+    );
+  });
+
+  it('logout is not retried, and still sends no body', async () => {
+    api.post.mockResolvedValue({ data: { ok: true } });
+    await apiLogout();
+    // `null`, not `{}` — axios omits the body and the Content-Type for null, so
+    // this stays the request the endpoint has always received.
+    expect(api.post).toHaveBeenCalledWith('/auth/logout', null, { noRetry: true });
   });
 });
 
