@@ -545,6 +545,11 @@ async def register(
     rows = await pool.fetch(
         """SELECT p.id, p.direction, p.captured_at, p.received_at, p.source,
                   p.flags, p.accuracy_m, p.distance_m, p.mock_location,
+                  -- The detail states the coordinates (07 §3). They are behind
+                  -- `_review_gate` like the rest of this row, and they go no
+                  -- further: the client draws the accuracy radius itself rather
+                  -- than putting them in a tile URL to a third-party map host.
+                  p.lat, p.lng,
                   (p.photo_key IS NOT NULL) AS has_photo,
                   p.review_verdict, p.reviewed_at, p.reviewed_by,
                   e.id AS employee_id, e.name AS employee_name, e.employee_code,

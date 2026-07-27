@@ -56,7 +56,12 @@ class RegularisationCreate(BaseModel):
 
 
 class RegularisationDecision(BaseModel):
-    status: str = Field(..., pattern="^(approved|rejected)$")
+    # `declined`, not `rejected`. Migration 064's CHECK is
+    # `status IN ('pending','approved','declined')`, so every decline this
+    # endpoint has ever accepted was refused by the database as a constraint
+    # violation and surfaced as a 500. Approving worked; declining did not, and
+    # nothing noticed because no screen called this.
+    status: str = Field(..., pattern="^(approved|declined)$")
     decision_note: Optional[str] = Field(None, max_length=500)
 
 
@@ -122,7 +127,14 @@ async def list_regularisations(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT r.id, r.employee_id, e.full_name, r.for_date, "
+        # `e.name`, not `e.full_name`. `staging.manav_employees` has no
+        # `full_name` column and never has — migration 018 names it `name`, and
+        # `full_name` exists only on `manav_candidates` in the recruitment
+        # tables. So this SELECT raised UndefinedColumnError and this endpoint
+        # returned 500 on every call since it was written. Aliased to
+        # `employee_name`, which is what every other join on this table in the
+        # codebase calls it, including `/register` two files over.
+        "SELECT r.id, r.employee_id, e.name AS employee_name, r.for_date, "
         "       r.requested_direction, r.requested_at_time, r.reason, "
         "       r.status, r.decided_by, r.decided_at, r.decision_note, r.created_at "
         "  FROM staging.pahchan_regularisations r "
@@ -150,7 +162,18 @@ async def decide_regularisation(
     Only a PENDING request can be decided. Allowing a settled one to be decided
     again would let a rejection be flipped to an approval afterwards, and the
     audit trail would carry only the second decision.
+
+    A decline is gated on a reason — 064's `pahchan_reg_decline_needs_reason`
+    CHECK and `17-mobile-app.md`'s approval row both say so. Checked here as well
+    so the caller gets that sentence rather than a constraint name inside a 500.
     """
+    if body.status == "declined" and not (body.decision_note or "").strip():
+        raise HTTPException(
+            400,
+            "A decline needs a reason. The employee is being told their record of a "
+            "day is wrong, and 'declined' on its own is not something they can act on.",
+        )
+
     pool = await get_pool()
     row = await pool.fetchrow(
         "UPDATE staging.pahchan_regularisations "

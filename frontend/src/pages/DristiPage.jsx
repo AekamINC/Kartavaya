@@ -577,7 +577,14 @@ function PivotTab() {
             /* `cols` was the prop name here and DataTable takes `columns`, so
                it destructured to undefined and `columns.map` threw the moment a
                pivot query returned an array — i.e. on every successful grouped
-               query. The other 26 DataTable call sites all pass `columns`. */
+               query. The other 26 DataTable call sites all pass `columns`.
+
+               NO BRACES. This sits inside a ternary branch, which is an
+               EXPRESSION position, not a JSX children position — the braced
+               form parses as an object literal there and `vite build` fails
+               with "Expected ) but found columns", taking the whole bundle
+               down rather than this page. Braces are only correct for a
+               comment sitting between JSX children. */
             <DataTable columns={['Label', { label: 'Value', align: 'right' }]}>
               {result.data.map((r, i) => (
                 <tr key={i}><Td>{String(r.label ?? '—')}</Td><Td>{typeof r.value === 'number' && r.value > 100 ? FMT(r.value) : r.value}</Td></tr>
