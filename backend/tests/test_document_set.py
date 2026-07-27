@@ -78,6 +78,12 @@ CLIENT = {
 # Transcribed from `docs/GSTR-3B Summary.html` Tables 3.1 and 4 ONLY. Table 6.1
 # and the four totals are deliberately NOT transcribed as inputs — they are what
 # the implementation has to reproduce.
+#
+# The design's own Table 4 figures are used UNCHANGED. What changed is WHERE the
+# section 17(5) figure is reported: the design printed it as a standalone
+# "(D) Ineligible ITC" memo outside the reversal, and the notified form reports
+# it as a reversal inside 4(B)(1) (Circular 170/02/2022-GST, para 4.4). The
+# amount is the design's ₹6,240 CGST + ₹6,240 SGST; only its row moved.
 SPEC_GSTR3B_INPUTS = {
     "period": "2026-07",
     "outward_taxable": {"taxable": 4218600, "igst": 374220, "cgst": 190674, "sgst": 190674, "cess": 0},
@@ -85,11 +91,11 @@ SPEC_GSTR3B_INPUTS = {
     "outward_nil_exempt": {"taxable": 112000},
     "inward_reverse_charge": {"taxable": 84000, "cgst": 7560, "sgst": 7560},
     "outward_non_gst": {},
-    "itc_import_goods": {"igst": 18400},
-    "itc_reverse_charge": {"cgst": 7560, "sgst": 7560},
-    "itc_all_other": {"igst": 142180, "cgst": 96412, "sgst": 96412},
-    "itc_reversed": {"cgst": 4820, "sgst": 4820},
-    "itc_ineligible": {"cgst": 6240, "sgst": 6240},
+    "itc_import_goods": {"igst": 18400},          # 4(A)(1)
+    "itc_reverse_charge": {"cgst": 7560, "sgst": 7560},  # 4(A)(3)
+    "itc_all_other": {"igst": 142180, "cgst": 96412, "sgst": 96412},  # 4(A)(5)
+    "itc_reversed": {"cgst": 4820, "sgst": 4820},        # 4(B)(1), rules 42/43
+    "itc_blocked_17_5": {"cgst": 6240, "sgst": 6240},    # 4(B)(1), section 17(5)
     "outward_count": 47,
     "inward_count": 61,
     "gstr2b_date": "2026-07-14",
@@ -102,18 +108,87 @@ SPEC_GSTR3B_INPUTS = {
     ],
 }
 
-# The specification's PRINTED Table 6.1 and totals — the expected output.
+# The expected output, DERIVED BY HAND from the inputs above so a reader can
+# check it without running the code. Nothing here is copied out of the
+# implementation. The working, head by head:
+#
+#   4(A) = (1) import goods + (3) reverse charge + (5) all other
+#       IGST  18,400 +      0 + 1,42,180 = 1,60,580
+#       CGST       0 +  7,560 +   96,412 = 1,03,972
+#       SGST       0 +  7,560 +   96,412 = 1,03,972
+#   4(B) = (1) [rules 42/43 + section 17(5)] + (2) others
+#       CGST  4,820 + 6,240 + 0 = 11,060      IGST 0      SGST 11,060
+#   4(C) = 4(A) − 4(B)                    [Circular 170/02/2022 para 4.3(D)]
+#       IGST 1,60,580   CGST 1,03,972 − 11,060 = 92,912   SGST 92,912
+#
+#   6.1 payable = 3.1(a) outward tax + 3.1(d) reverse-charge tax
+#       IGST 3,74,220   CGST 1,90,674 + 7,560 = 1,98,234   SGST 1,98,234
+#   Reverse charge is cash-only (s.49(4), rule 85(4)), so 7,560 CGST and
+#   7,560 SGST leave the ITC-payable base before any credit is applied:
+#       ITC-payable  IGST 3,74,220   CGST 1,90,674   SGST 1,90,674
+#   Rule 88A order — IGST credit first and fully, then own-head credit:
+#       IGST credit 1,60,580 -> IGST liability, exhausted. Cash 3,74,220 −
+#           1,60,580 = 2,13,640.
+#       CGST credit 92,912 -> CGST liability. Cash 1,90,674 − 92,912 = 97,762,
+#           plus the 7,560 carved out = 1,05,322.
+#       SGST identical: via ITC 92,912, cash 1,05,322.
+#
+#   Totals  payable 3,74,220 + 1,98,234 + 1,98,234           = 7,70,688
+#           via ITC 1,60,580 +   92,912 +   92,912           = 3,46,404
+#           cash    2,13,640 + 1,05,322 + 1,05,322 + 0 int.  = 4,24,284
+#
+# Against the design's printed 6.1 this is 12,480 less credit and 12,480 more
+# cash — exactly the 6,240 + 6,240 of section 17(5) credit that the design left
+# outside the reversal and the notified form takes out of Net ITC.
 SPEC_GSTR3B_PRINTED = {
-    "net_itc": {"igst": 160580, "cgst": 99152, "sgst": 99152, "cess": 0},
+    "itc_available": {"igst": 160580, "cgst": 103972, "sgst": 103972, "cess": 0},
+    "itc_reversed": {"igst": 0, "cgst": 11060, "sgst": 11060, "cess": 0},
+    "net_itc": {"igst": 160580, "cgst": 92912, "sgst": 92912, "cess": 0},
     "set_off": {
         "igst": {"payable": 374220, "via_itc": 160580, "in_cash": 213640},
-        "cgst": {"payable": 198234, "via_itc": 99152, "in_cash": 99082},
-        "sgst": {"payable": 198234, "via_itc": 99152, "in_cash": 99082},
+        "cgst": {"payable": 198234, "via_itc": 92912, "in_cash": 105322},
+        "sgst": {"payable": 198234, "via_itc": 92912, "in_cash": 105322},
         "cess": {"payable": 0, "via_itc": 0, "in_cash": 0},
     },
     "total_payable": 770688,
-    "total_itc": 358884,
-    "total_cash": 411804,
+    "total_itc": 346404,
+    "total_cash": 424284,
+}
+
+# A second fixture with EVERY Table 4 row populated, so the rows the design
+# never exercised are not merely present but arithmetically live. Amounts are
+# obviously synthetic round numbers and belong to no real firm.
+FULL_TABLE_4_INPUTS = {
+    "period": "2026-08",
+    "outward_taxable": {"taxable": 1000000, "igst": 0, "cgst": 90000, "sgst": 90000},
+    "inward_reverse_charge": {"taxable": 100000, "cgst": 9000, "sgst": 9000},
+    "itc_import_goods": {"igst": 50000},                        # 4(A)(1)
+    "itc_import_services": {"igst": 20000},                     # 4(A)(2)
+    "itc_reverse_charge": {"cgst": 9000, "sgst": 9000},         # 4(A)(3)
+    "itc_isd": {"igst": 10000, "cgst": 5000, "sgst": 5000},     # 4(A)(4)
+    "itc_all_other": {"igst": 40000, "cgst": 30000, "sgst": 30000},  # 4(A)(5)
+    "itc_reversed": {"cgst": 2000, "sgst": 2000},               # 4(B)(1) rules
+    "itc_blocked_17_5": {"igst": 5000},                         # 4(B)(1) s.17(5)
+    "itc_reversed_other": {"cgst": 1000, "sgst": 1000},         # 4(B)(2)
+    "itc_reclaimed": {"cgst": 3000, "sgst": 3000},              # 4(D)(1) memo
+    "itc_ineligible_16_4_pos": {"cgst": 4000, "sgst": 4000},    # 4(D)(2) memo
+}
+
+# Derived by hand from FULL_TABLE_4_INPUTS:
+#   4(A) IGST 50,000 + 20,000 + 0 + 10,000 + 40,000 = 1,20,000
+#        CGST      0 +      0 + 9,000 + 5,000 + 30,000 = 44,000   SGST 44,000
+#   4(B)(1) IGST 0 + 5,000 = 5,000        CGST 2,000        SGST 2,000
+#   4(B)(2) CGST 1,000  SGST 1,000
+#   4(B)    IGST 5,000  CGST 3,000  SGST 3,000
+#   4(C)    IGST 1,15,000  CGST 41,000  SGST 41,000
+FULL_TABLE_4_EXPECTED = {
+    "itc_available": {"igst": 120000, "cgst": 44000, "sgst": 44000, "cess": 0},
+    "itc_reversed_b1": {"igst": 5000, "cgst": 2000, "sgst": 2000, "cess": 0},
+    "itc_reversed_b2": {"igst": 0, "cgst": 1000, "sgst": 1000, "cess": 0},
+    "itc_reversed": {"igst": 5000, "cgst": 3000, "sgst": 3000, "cess": 0},
+    "net_itc": {"igst": 115000, "cgst": 41000, "sgst": 41000, "cess": 0},
+    "itc_reclaimed": {"igst": 0, "cgst": 3000, "sgst": 3000, "cess": 0},
+    "itc_ineligible_16_4_pos": {"igst": 0, "cgst": 4000, "sgst": 4000, "cess": 0},
 }
 
 
@@ -269,21 +344,68 @@ class TestGstr3bAgainstSpec:
     set-off cannot be papered over by copying the answer.
     """
 
-    def test_net_itc_matches_table_4c(self):
+    @pytest.mark.parametrize("key", ["itc_available", "itc_reversed", "net_itc"])
+    def test_table_4_matches_the_hand_derivation(self, key):
         from services.gstr3b_pdf import compute
-        assert compute(SPEC_GSTR3B_INPUTS)["net_itc"] == SPEC_GSTR3B_PRINTED["net_itc"]
+        assert compute(SPEC_GSTR3B_INPUTS)[key] == SPEC_GSTR3B_PRINTED[key]
+
+    @pytest.mark.parametrize("head", ["igst", "cgst", "sgst", "cess"])
+    def test_net_itc_is_exactly_4a_minus_4b(self, head):
+        """Circular 170/02/2022-GST para 4.3(D): `4C = 4A − [4B(1) + 4B(2)]`.
+        Asserted as an IDENTITY rather than against fixed numbers, so it holds
+        for any figures a firm puts in, not only the design's."""
+        from services.gstr3b_pdf import compute
+        c = compute(SPEC_GSTR3B_INPUTS)
+        assert c["net_itc"][head] == c["itc_available"][head] - c["itc_reversed"][head]
 
     @pytest.mark.parametrize("head", ["igst", "cgst", "sgst", "cess"])
     @pytest.mark.parametrize("column", ["payable", "via_itc", "in_cash"])
-    def test_table_6_1_matches_the_design(self, head, column):
+    def test_table_6_1_matches_the_hand_derivation(self, head, column):
         from services.gstr3b_pdf import compute
         got = compute(SPEC_GSTR3B_INPUTS)["set_off"][head][column]
         assert got == SPEC_GSTR3B_PRINTED["set_off"][head][column]
 
     @pytest.mark.parametrize("key", ["total_payable", "total_itc", "total_cash"])
-    def test_the_four_totals_match_the_design(self, key):
+    def test_the_four_totals_match_the_hand_derivation(self, key):
         from services.gstr3b_pdf import compute
         assert compute(SPEC_GSTR3B_INPUTS)[key] == SPEC_GSTR3B_PRINTED[key]
+
+    @pytest.mark.parametrize("head", ["igst", "cgst", "sgst", "cess"])
+    def test_6_1_consumes_exactly_the_credit_4c_makes_available(self, head):
+        """The join between the two tables. Credit utilised may never exceed
+        4(C), and on these figures every rupee of 4(C) that CAN be used IS —
+        an implementation that quietly under-utilised would overstate the cash
+        a firm deposits and would otherwise pass every other assertion here."""
+        from services.gstr3b_pdf import compute
+        c = compute(SPEC_GSTR3B_INPUTS)
+        s = c["set_off"][head]
+        assert s["via_itc"] <= c["net_itc"][head]
+        assert s["via_itc"] + s["credit_left"] == c["net_itc"][head]
+
+    def test_section_17_5_credit_is_reversed_not_merely_disclosed(self):
+        """The compliance fix, stated as the difference it makes.
+
+        On the design's own figures, moving section 17(5) blocked credit from a
+        standalone (D) memo into the 4(B)(1) reversal takes 12,480 out of Net
+        ITC — which is 6,240 CGST + 6,240 SGST. If a future change puts it back
+        outside the reversal, Net ITC rises by exactly that and this fails."""
+        from services.gstr3b_pdf import compute
+        c = compute(SPEC_GSTR3B_INPUTS)
+        without = compute({**SPEC_GSTR3B_INPUTS, "itc_blocked_17_5": {}})
+        assert c["itc_blocked_17_5"] == {"igst": 0, "cgst": 6240, "sgst": 6240, "cess": 0}
+        delta = sum(without["net_itc"][h] - c["net_itc"][h] for h in ("igst", "cgst", "sgst", "cess"))
+        assert delta == 12480
+        assert c["total_cash"] - without["total_cash"] == 12480
+
+    def test_the_deprecated_ineligible_key_still_reverses_section_17_5(self):
+        """`itc_ineligible` used to carry the section 17(5) figure. A caller
+        still sending it must get that figure REVERSED, not dropped and not
+        re-read as the new 4(D)(2), which means something else entirely."""
+        from services.gstr3b_pdf import compute
+        legacy = {k: v for k, v in SPEC_GSTR3B_INPUTS.items() if k != "itc_blocked_17_5"}
+        legacy["itc_ineligible"] = {"cgst": 6240, "sgst": 6240}
+        assert compute(legacy)["net_itc"] == SPEC_GSTR3B_PRINTED["net_itc"]
+        assert compute(legacy)["total_cash"] == SPEC_GSTR3B_PRINTED["total_cash"]
 
     def test_the_words_agree_with_the_cash_figure(self):
         """The same reservation the invoice makes: a words line that disagrees
@@ -291,8 +413,8 @@ class TestGstr3bAgainstSpec:
         whole purpose is to be reconciled."""
         from services.gstr3b_pdf import _build_html, compute
         doc = _build_html(SPEC_GSTR3B_INPUTS, ORG)
-        assert "Rupees Four Lakh Eleven Thousand Eight Hundred Four Only" in doc
-        assert compute(SPEC_GSTR3B_INPUTS)["total_cash"] == 411804
+        assert "Rupees Four Lakh Twenty Four Thousand Two Hundred Eighty Four Only" in doc
+        assert compute(SPEC_GSTR3B_INPUTS)["total_cash"] == 424284
 
     def test_reverse_charge_is_never_paid_from_credit(self):
         """Section 49(4) with rule 85(4). Constructed so the constraint BITES:
@@ -353,6 +475,229 @@ class TestGstr3bAgainstSpec:
         from services.gstr3b_pdf import statutory_due_date
         assert statutory_due_date("2026-07") == "2026-08-20"
         assert statutory_due_date("2026-12") == "2027-01-20", "December rolls the year"
+
+
+class TestGstr3bTable4AgainstTheNotifiedForm:
+    """Table 4 as notified by Notification 14/2022-CT, live on the portal from
+    01.09.2022 for periods from August 2022.
+
+    The design mock this product was built from prints a six-row Table 4 that
+    omits three availment rows, does not split the reversal, and reports section
+    17(5) blocked credit in the wrong place. These tests pin the form, not the
+    mock. Authorities: the notification, the GSTN advisory of 02.09.2022, and
+    Circular 170/02/2022-GST (para 4.3 and its worked Annexure).
+    """
+
+    @pytest.mark.parametrize("key", [
+        "itc_available", "itc_reversed_b1", "itc_reversed_b2", "itc_reversed",
+        "net_itc", "itc_reclaimed", "itc_ineligible_16_4_pos",
+    ])
+    def test_every_row_of_a_fully_populated_table_4(self, key):
+        from services.gstr3b_pdf import compute
+        assert compute(FULL_TABLE_4_INPUTS)[key] == FULL_TABLE_4_EXPECTED[key]
+
+    @pytest.mark.parametrize("head", ["igst", "cgst", "sgst", "cess"])
+    def test_4c_still_reconciles_with_every_row_populated(self, head):
+        from services.gstr3b_pdf import compute
+        c = compute(FULL_TABLE_4_INPUTS)
+        assert c["net_itc"][head] == c["itc_available"][head] - c["itc_reversed"][head]
+
+    @pytest.mark.parametrize("key,label", [
+        ("itc_import_goods", "(A)(1) Import of goods"),
+        ("itc_import_services", "(A)(2) Import of services"),
+        ("itc_reverse_charge", "(A)(3) Inward supplies liable to reverse charge"),
+        ("itc_isd", "(A)(4) Inward supplies from ISD"),
+        ("itc_all_other", "(A)(5) All other ITC"),
+    ])
+    def test_each_availment_row_is_printed_and_adds_to_net_itc(self, key, label):
+        """Two assertions per row because either alone is satisfiable by a
+        mistake: a row can be printed and not counted, or counted and not
+        printed. The form needs both."""
+        from services.gstr3b_pdf import _build_html, compute
+        assert label in _build_html(FULL_TABLE_4_INPUTS, ORG)
+        without = compute({**FULL_TABLE_4_INPUTS, key: {}})
+        full = compute(FULL_TABLE_4_INPUTS)
+        dropped = sum(
+            full["itc_available"][h] - without["itc_available"][h]
+            for h in ("igst", "cgst", "sgst", "cess")
+        )
+        assert dropped == sum(FULL_TABLE_4_INPUTS[key].values()), (
+            f"{label} is printed but does not reach 4(A)"
+        )
+
+    @pytest.mark.parametrize("key,label", [
+        ("itc_reversed", "(B)(1) ITC reversed — rules 38, 42, 43 and section 17(5)"),
+        ("itc_blocked_17_5", "(B)(1) ITC reversed — rules 38, 42, 43 and section 17(5)"),
+        ("itc_reversed_other", "(B)(2) ITC reversed — others"),
+    ])
+    def test_each_reversal_input_reduces_net_itc(self, key, label):
+        from services.gstr3b_pdf import _build_html, compute
+        assert label in _build_html(FULL_TABLE_4_INPUTS, ORG)
+        without = compute({**FULL_TABLE_4_INPUTS, key: {}})
+        full = compute(FULL_TABLE_4_INPUTS)
+        restored = sum(
+            without["net_itc"][h] - full["net_itc"][h]
+            for h in ("igst", "cgst", "sgst", "cess")
+        )
+        assert restored == sum(FULL_TABLE_4_INPUTS[key].values()), (
+            f"{label} is printed but does not reduce 4(C)"
+        )
+
+    def test_b1_prints_as_one_row_carrying_both_its_inputs(self):
+        """The notified form has ONE 4(B)(1) row. Circular 170/02/2022's own
+        Annexure sums rule 42/43 reversals and section 17(5) into a single
+        figure there (1,25,500 = 75,500 + 50,000)."""
+        from services.gstr3b_pdf import compute
+        c = compute(FULL_TABLE_4_INPUTS)
+        # IGST: 0 under the rules + 5,000 section 17(5); CGST: 2,000 + 0.
+        assert c["itc_reversed_b1"]["igst"] == 5000
+        assert c["itc_reversed_b1"]["cgst"] == 2000
+
+    @pytest.mark.parametrize("key", ["itc_reclaimed", "itc_ineligible_16_4_pos"])
+    def test_table_4d_is_disclosure_and_never_touches_net_itc(self, key):
+        """Circular 170/02/2022 para 4.3(D) computes 4(C) as 4A − [4B(1)+4B(2)].
+        Para 4.2 is the reason: 4(C) is what reaches the electronic credit
+        ledger. A (D) row that moved 4(C) would misstate the ledger."""
+        from services.gstr3b_pdf import compute
+        full = compute(FULL_TABLE_4_INPUTS)
+        without = compute({**FULL_TABLE_4_INPUTS, key: {}})
+        assert full["net_itc"] == without["net_itc"]
+        assert full["itc_available"] == without["itc_available"]
+        assert full["total_itc"] == without["total_itc"]
+        assert full["total_cash"] == without["total_cash"]
+
+    @pytest.mark.parametrize("label", [
+        "(D)(1) ITC reclaimed, reversed under 4(B)(2) earlier",
+        "(D)(2) Ineligible ITC — section 16(4), place-of-supply",
+    ])
+    def test_the_two_other_details_rows_are_printed(self, label):
+        from services.gstr3b_pdf import _build_html
+        assert label in _build_html(FULL_TABLE_4_INPUTS, ORG)
+
+    def test_the_paper_names_where_section_17_5_went_and_why(self):
+        """A CA reading a smaller 4(C) than the old form gave must be able to
+        see the authority for it without opening the code."""
+        from services.gstr3b_pdf import _build_html
+        doc = _build_html(SPEC_GSTR3B_INPUTS, ORG)
+        assert "Circular 170/02/2022-GST" in doc
+        assert "4(B)(1)" in doc
+        assert "Notification 14/2022-CT" in doc
+
+    def test_the_working_paper_framing_survives_the_table_4_change(self):
+        """The framing is what makes any residual divergence tolerable. It is
+        asserted here as well as above because Table 4 is the part being
+        changed, and the framing is the part that must not be lost with it."""
+        from services.gstr3b_pdf import _build_html
+        doc = _build_html(FULL_TABLE_4_INPUTS, ORG)
+        assert "not a filed return" in doc
+        assert "Working — not filed" in doc
+        assert "Not generated" in doc
+
+
+class TestGstr3bTable4Validation:
+    def test_reclaimed_credit_exceeding_all_other_itc_is_refused(self):
+        """4(D)(1) is the break-up of credit availed inside 4(A)(5), so it
+        cannot exceed it. A paper that says otherwise would have a preparer
+        claim the same credit twice."""
+        from services.doc_validation import validate_gstr3b
+        from services.gstr3b_pdf import compute
+        bad = {**FULL_TABLE_4_INPUTS, "itc_reclaimed": {"cgst": 999999}}
+        chk = validate_gstr3b(bad, ORG, compute(bad))
+        assert "gstr3b.reclaimed.cgst" in {g.field for g in chk.blocking}
+
+    def test_reclaimed_credit_within_all_other_itc_is_accepted(self):
+        """The contrast, without which the test above is satisfiable by
+        refusing every reclaim."""
+        from services.doc_validation import validate_gstr3b
+        from services.gstr3b_pdf import compute
+        chk = validate_gstr3b(FULL_TABLE_4_INPUTS, ORG, compute(FULL_TABLE_4_INPUTS))
+        assert not [g for g in chk.blocking if g.field.startswith("gstr3b.reclaimed")]
+
+    def test_a_table_4_that_does_not_reconcile_is_refused(self):
+        """4(C) = 4(A) − 4(B). Fed a `computed` whose net ITC disagrees with its
+        own (A) and (B), the validator must refuse rather than print it."""
+        from services.doc_validation import validate_gstr3b
+        chk = validate_gstr3b(
+            SPEC_GSTR3B_INPUTS, ORG,
+            computed={
+                "itc_available": {"cgst": 100000},
+                "itc_reversed": {"cgst": 10000},
+                "net_itc": {"cgst": 95000},   # should be 90,000
+                "set_off": {},
+            },
+        )
+        assert "gstr3b.net_itc.cgst" in {g.field for g in chk.blocking}
+
+    def test_a_negative_net_itc_is_flagged_but_not_refused(self):
+        """Reversals legitimately can exceed availment in a period. The figure
+        is not wrong, so it is advisory — but a preparer must be told, because
+        the whole liability then falls into cash."""
+        from services.doc_validation import validate_gstr3b
+        from services.gstr3b_pdf import compute
+        over = {**FULL_TABLE_4_INPUTS, "itc_reversed": {"cgst": 500000}}
+        c = compute(over)
+        assert c["net_itc"]["cgst"] < 0
+        chk = validate_gstr3b(over, ORG, c)
+        assert "gstr3b.net_itc_negative.cgst" in {g.field for g in chk.advisory}
+        assert not [g for g in chk.blocking if g.field.startswith("gstr3b.net_itc.")]
+
+    def test_cross_utilised_igst_credit_is_not_mistaken_for_an_overdraw(self):
+        """Rule 88A lets IGST credit pay a CGST or SGST liability once the IGST
+        liability is met. The validator therefore may NOT compare the credit
+        applied to a liability head against that head's own pool.
+
+        This is a real refusal that was reachable in production: any firm whose
+        IGST credit exceeds its IGST liability — an importer, or an inter-State
+        buyer selling intra-State — spills IGST credit onto CGST, and a correct
+        return was refused for it. `FULL_TABLE_4_INPUTS` has no IGST liability
+        at all and 1,15,000 of IGST credit, so the spill is total."""
+        from services.doc_validation import validate_gstr3b
+        from services.gstr3b_pdf import compute
+        c = compute(FULL_TABLE_4_INPUTS)
+        # The condition that makes this bite: credit applied to the CGST
+        # liability exceeds the CGST pool, because IGST credit paid it.
+        assert c["set_off"]["cgst"]["via_itc"] > c["net_itc"]["cgst"]
+        assert c["set_off"]["igst"]["credit_left"] == 0, "IGST credit spent first"
+        chk = validate_gstr3b(FULL_TABLE_4_INPUTS, ORG, c)
+        assert not [g for g in chk.blocking if g.field.startswith("gstr3b.itc.")], (
+            f"correct rule 88A cross-utilisation refused: {[g.field for g in chk.blocking]}"
+        )
+
+    def test_an_overdrawn_credit_pool_is_still_refused(self):
+        """The contrast, without which the test above is satisfiable by never
+        checking anything. Here the SGST pool itself is overdrawn."""
+        from services.doc_validation import validate_gstr3b
+        chk = validate_gstr3b(
+            SPEC_GSTR3B_INPUTS, ORG,
+            computed={
+                "net_itc": {"sgst": 1000},
+                "set_off": {"sgst": {"payable": 9000, "via_itc": 9000,
+                                     "in_cash": 0, "credit_left": -8000}},
+            },
+        )
+        assert "gstr3b.itc.sgst" in {g.field for g in chk.blocking}
+
+    def test_credit_conjured_between_pools_is_refused(self):
+        """Applied and drawn must balance. A set-off that pays a liability
+        without any pool falling is creating credit."""
+        from services.doc_validation import validate_gstr3b
+        chk = validate_gstr3b(
+            SPEC_GSTR3B_INPUTS, ORG,
+            computed={
+                "net_itc": {"cgst": 5000},
+                "set_off": {"cgst": {"payable": 5000, "via_itc": 5000,
+                                     "in_cash": 0, "credit_left": 5000}},
+            },
+        )
+        assert "gstr3b.itc.balance" in {g.field for g in chk.blocking}
+
+    def test_negative_credit_is_never_utilised(self):
+        """The safety property behind the advisory above: a negative 4(C) must
+        pay nothing, not wrap around into a credit."""
+        from services.gstr3b_pdf import compute_set_off
+        out = compute_set_off(payable={"cgst": 10000}, credit={"cgst": -5000})
+        assert out["cgst"]["via_itc"] == 0
+        assert out["cgst"]["in_cash"] == 10000
 
 
 class TestTdsChallanStatutoryShape:
@@ -824,8 +1169,10 @@ GENERATORS = [
 #: transform is the design's; the comparison bends around it rather than the
 #: document being changed to satisfy a test.
 EXPECTED_IN_PDF = {
-    "gstr3b": ["GSTR-3B summary", "27AAACA1234M1Z8", "4,11,804", "7,70,688",
-               "Payable in cash", "Before you file", "not a filed return"],
+    "gstr3b": ["GSTR-3B summary", "27AAACA1234M1Z8", "4,24,284", "7,70,688",
+               "Payable in cash", "Before you file", "not a filed return",
+               "(A)(2) Import of services", "(A)(4) Inward supplies from ISD",
+               "(B)(2) ITC reversed", "(D)(1) ITC reclaimed"],
     "tds_challan": ["TDS challan", "ITNS-281", "MUMA12345B", "0510308", "04412",
                     "194C", "192B", "1,00,000", "Total deposited",
                     "verify against the bank challan"],

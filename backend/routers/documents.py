@@ -394,14 +394,36 @@ class Gstr3bOverrides(BaseModel):
     Each defaults to nil and each is stated on the face of the document, so a
     firm that leaves them empty gets a paper that visibly reports nil rather
     than one that quietly omits the row. See `PROPOSED_documents.sql`.
+
+    Every Table 4 row of the notified form is reachable from here. None of them
+    needs a new DB column: like the three that came before, they are figures a
+    preparer ascertains (imports, ISD credit, reversals, reclaims) and which no
+    table in Kartavaya records. `PROPOSED_documents.sql` section 3 is the place
+    that would change if that stopped being true.
     """
 
     outward_nil_exempt: dict = Field(default_factory=dict)
     outward_non_gst: dict = Field(default_factory=dict)
     inward_reverse_charge: dict = Field(default_factory=dict)
-    itc_import_goods: dict = Field(default_factory=dict)
-    itc_reverse_charge: dict = Field(default_factory=dict)
-    itc_reversed: dict = Field(default_factory=dict)
+    # Table 4(A) — availment. `itc_all_other` (4(A)(5)) is derived from
+    # `ganit_vendor_bills` below and is deliberately not an override.
+    itc_import_goods: dict = Field(default_factory=dict)          # 4(A)(1)
+    itc_import_services: dict = Field(default_factory=dict)       # 4(A)(2)
+    itc_reverse_charge: dict = Field(default_factory=dict)        # 4(A)(3)
+    itc_isd: dict = Field(default_factory=dict)                   # 4(A)(4)
+    # Table 4(B) — reversal. `itc_reversed` and `itc_blocked_17_5` are two
+    # inputs to the ONE row the form prints at 4(B)(1).
+    itc_reversed: dict = Field(default_factory=dict)              # 4(B)(1), rules 38/42/43
+    itc_blocked_17_5: dict = Field(default_factory=dict)          # 4(B)(1), section 17(5)
+    itc_reversed_other: dict = Field(default_factory=dict)        # 4(B)(2)
+    # Table 4(D) — disclosure only. Neither figure changes Net ITC at 4(C).
+    itc_reclaimed: dict = Field(default_factory=dict)             # 4(D)(1)
+    itc_ineligible_16_4_pos: dict = Field(default_factory=dict)   # 4(D)(2)
+    # DEPRECATED spelling of `itc_blocked_17_5`, kept because a caller that
+    # still sends it means section 17(5) blocked credit and Pydantic would
+    # otherwise DROP the field silently — losing a reversal is the one failure
+    # mode worse than reporting it in the old place. It is resolved below, not
+    # re-read as the new 4(D)(2).
     itc_ineligible: dict = Field(default_factory=dict)
     interest: float = 0
     late_fee: float = 0
@@ -520,7 +542,9 @@ async def download_gstr3b_pdf(
         "inward_reverse_charge": overrides.inward_reverse_charge,
         "outward_non_gst": overrides.outward_non_gst,
         "itc_import_goods": overrides.itc_import_goods,
+        "itc_import_services": overrides.itc_import_services,
         "itc_reverse_charge": overrides.itc_reverse_charge,
+        "itc_isd": overrides.itc_isd,
         # `ganit_vendor_bills` has no `cess` column, so inward cess credit is
         # not derivable and is left nil rather than guessed.
         "itc_all_other": {
@@ -528,7 +552,12 @@ async def download_gstr3b_pdf(
             "sgst": _f(bill_row["sgst"]), "cess": 0,
         },
         "itc_reversed": overrides.itc_reversed,
-        "itc_ineligible": overrides.itc_ineligible,
+        # The current key wins; the deprecated one is honoured with its original
+        # meaning so an existing caller's section 17(5) figure still reverses.
+        "itc_blocked_17_5": overrides.itc_blocked_17_5 or overrides.itc_ineligible,
+        "itc_reversed_other": overrides.itc_reversed_other,
+        "itc_reclaimed": overrides.itc_reclaimed,
+        "itc_ineligible_16_4_pos": overrides.itc_ineligible_16_4_pos,
         "interest": overrides.interest,
         "late_fee": overrides.late_fee,
         "outward_count": counted,

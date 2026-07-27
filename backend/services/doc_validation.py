@@ -458,15 +458,105 @@ def validate_gstr3b(gstr: dict, org: dict, computed: dict | None = None) -> Docu
                     "table does not discharge the liability it states.",
                     _RETURN_FIX,
                 ))
-        # Credit can never be utilised beyond what Table 4(C) makes available.
+        # Table 4 must reconcile: 4(C) = 4(A) − [4(B)(1) + 4(B)(2)].
+        #
+        # Circular 170/02/2022-GST para 4.3(D) states the formula in exactly
+        # that shape, and its Annexure works an example that obeys it. Table
+        # 4(D) is DELIBERATELY not in the identity: para 4.2 makes 4(C) the
+        # figure credited to the electronic credit ledger, and 4(D) is
+        # disclosure. A (D) row that leaked into (C) would either overstate a
+        # firm's claimable credit or understate the cash it must deposit, and
+        # both are errors the portal will not catch for it.
+        available = computed.get("itc_available") or {}
+        reversed_total = computed.get("itc_reversed") or {}
         net_itc = computed.get("net_itc") or {}
+        for head in ("igst", "cgst", "sgst", "cess"):
+            if head not in net_itc:
+                continue
+            expected = available.get(head, 0) - reversed_total.get(head, 0)
+            if net_itc[head] != expected:
+                chk.blocking.append(Gap(
+                    f"gstr3b.net_itc.{head}", f"{head.upper()} Table 4(C)",
+                    f"Net ITC of {net_itc[head]:,} does not equal 4(A) "
+                    f"({available.get(head, 0):,}) less 4(B) "
+                    f"({reversed_total.get(head, 0):,}) = {expected:,}. Table 4 "
+                    "does not reconcile, so the credit carried into Table 6.1 is "
+                    "not the credit Table 4 states.",
+                    _RETURN_FIX,
+                ))
+
+        # 4(D)(1) is a BREAK-UP of credit already availed inside 4(A)(5), not a
+        # sixth availment row — GSTN advisory of 02.09.2022, note 3(II).
+        # Reclaimed credit exceeding "all other ITC" is therefore an internal
+        # contradiction: the paper discloses more reclaimed credit than the row
+        # it was supposedly reclaimed in. Blocking, because a preparer who
+        # trusts it will claim the same credit twice.
+        reclaimed = computed.get("itc_reclaimed") or {}
+        all_other = gstr.get("itc_all_other") or {}
+        for head in ("igst", "cgst", "sgst", "cess"):
+            claimed = reclaimed.get(head, 0)
+            if not claimed:
+                continue
+            try:
+                other = int(round(float((all_other or {}).get(head) or 0)))
+            except (TypeError, ValueError):
+                other = 0
+            if claimed > other:
+                chk.blocking.append(Gap(
+                    f"gstr3b.reclaimed.{head}", f"{head.upper()} ITC reclaimed",
+                    f"Table 4(D)(1) discloses {claimed:,} of reclaimed {head.upper()} "
+                    f"credit but 4(A)(5) avails only {other:,}. 4(D)(1) is the "
+                    "break-up of credit taken within 4(A)(5), so it cannot exceed "
+                    "it — one of the two rows is wrong.",
+                    _RETURN_FIX,
+                ))
+
+        # Credit can never be utilised beyond what Table 4(C) makes available.
+        #
+        # The comparison is per CREDIT head, not per LIABILITY head, and the two
+        # are not the same thing. `set_off[h]["via_itc"]` is credit that
+        # discharged the liability of head `h` FROM ANY POOL — rule 88A requires
+        # IGST credit to be exhausted first and lets it pay CGST and SGST — so a
+        # CGST liability can legitimately be discharged with more credit than
+        # the CGST pool holds. Comparing those two figures directly refuses a
+        # correct return, and does so precisely for the common case of an
+        # importer or inter-State buyer whose IGST credit exceeds its IGST
+        # liability. What must hold is that each POOL is not overdrawn, which
+        # `credit_left` states directly.
         for head, s in set_off.items():
-            if s["via_itc"] > net_itc.get(head, 0):
+            available = net_itc.get(head, 0)
+            # A caller that supplies no `credit_left` is asserting the simple
+            # case — the head's own pool paid its own liability — so fall back
+            # to that reading rather than skipping the check entirely.
+            consumed = available - s["credit_left"] if "credit_left" in s else s["via_itc"]
+            if consumed > max(0, available):
                 chk.blocking.append(Gap(
                     f"gstr3b.itc.{head}", f"{head.upper()} credit utilisation",
-                    f"The paper utilises {s['via_itc']:,} of {head.upper()} credit but "
-                    f"Table 4(C) makes only {net_itc.get(head, 0):,} available. "
+                    f"The paper draws {consumed:,} from the {head.upper()} credit pool "
+                    f"but Table 4(C) makes only {available:,} available. "
                     "Utilising credit that does not exist overstates the ledger.",
+                    _RETURN_FIX,
+                ))
+            elif consumed < 0:
+                chk.blocking.append(Gap(
+                    f"gstr3b.itc.{head}", f"{head.upper()} credit utilisation",
+                    f"The {head.upper()} credit pool ends with more credit than it "
+                    "started with. A set-off may consume credit, never create it.",
+                    _RETURN_FIX,
+                ))
+
+        # Credit consumed from the pools must equal credit applied to the
+        # liabilities. This is the invariant that survives cross-utilisation:
+        # it says nothing about WHICH pool paid which head, only that the two
+        # sides balance, so it catches credit conjured between them.
+        if all("credit_left" in s for s in set_off.values()) and set_off:
+            applied = sum(s["via_itc"] for s in set_off.values())
+            drawn = sum(net_itc.get(h, 0) - s["credit_left"] for h, s in set_off.items())
+            if applied != drawn:
+                chk.blocking.append(Gap(
+                    "gstr3b.itc.balance", "Credit ledger balance",
+                    f"{applied:,} of credit is applied against the liabilities but "
+                    f"{drawn:,} is drawn from the pools. The set-off does not balance.",
                     _RETURN_FIX,
                 ))
         # Reverse-charge liability may not be discharged from the credit ledger —
@@ -490,6 +580,21 @@ def validate_gstr3b(gstr: dict, org: dict, computed: dict | None = None) -> Docu
                 ))
 
     # ── advisory ────────────────────────────────────────────────────────────
+    # A negative 4(C) is legitimate — reversals in a period can exceed availment
+    # — and `compute_set_off` correctly utilises nothing from a negative
+    # balance. But it means credit must be made good in cash, which is the sort
+    # of thing a preparer should be told rather than left to infer from a minus
+    # sign in a table. Advisory, not blocking: the figure is not wrong.
+    for head, value in (computed.get("net_itc") or {}).items():
+        if value < 0:
+            chk.advisory.append(Gap(
+                f"gstr3b.net_itc_negative.{head}", f"{head.upper()} Net ITC is negative",
+                f"Table 4(C) shows {value:,} of {head.upper()} credit — reversals in "
+                "this period exceed availment. No credit is utilised from a negative "
+                "balance, so the whole liability on this head falls into cash.",
+                _RETURN_FIX,
+            ))
+
     if _blank(gstr.get("arn")):
         chk.advisory.append(Gap(
             "gstr3b.arn", "ARN",

@@ -230,6 +230,7 @@ def letterhead(
     doc_no: str = "",
     chip_html: str = "",
     show_tan: bool = False,
+    ids_html: str | None = None,
 ) -> str:
     """brand.css `.lh` — the block every specification document opens with.
 
@@ -241,6 +242,14 @@ def letterhead(
     which has no GSTIN.
 
     `show_tan` adds the TAN, which only the TDS challan's letterhead needs.
+
+    `ids_html` replaces that identifier line outright. Only `invoice_pdf` passes
+    it, and only because ONE document in the set has a statutory reason to leave
+    a missing GSTIN unmarked: a quotation or proforma is an offer, not a tax
+    document, and is perfectly valid without one. Marking it would put a red
+    warning on correct paperwork and teach people to ignore the mark — see
+    `invoice_pdf._org_gstin_line`, which owns that decision. The default marks,
+    so every other document keeps the honesty rule unchanged.
     """
     org = org or {}
     logo = embed_logo(org.get("logo_url") or "") or (
@@ -252,6 +261,7 @@ def letterhead(
            f'PAN <b>{esc(org["pan"]) if org.get("pan") else unset("PAN")}</b>']
     if show_tan:
         ids.append(f'TAN <b>{esc(org["tan"]) if org.get("tan") else unset("TAN")}</b>')
+    id_line = ids_html if ids_html is not None else " &middot; ".join(ids)
 
     contacts = "".join(
         f"<span>{esc(v)}</span>"
@@ -266,7 +276,7 @@ def letterhead(
   <div class="lh__who">
     <div class="lh__name">{esc(org.get("name")) if org.get("name") else unset("Organisation name")}</div>
     <div class="lh__legal">{addr}</div>
-    <div class="lh__ids">{" &middot; ".join(ids)}</div>
+    {f'<div class="lh__ids">{id_line}</div>' if id_line else ''}
     {f'<div class="lh__contact">{contacts}</div>' if contacts else ''}
   </div>
   <div class="lh__doc">

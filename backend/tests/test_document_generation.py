@@ -146,10 +146,15 @@ def test_the_mark_survives_into_the_rendered_document(invoice_type):
 
 def test_the_mark_is_visually_loud_not_a_quiet_blank():
     """It has to be unpleasant enough that nobody sends the document without
-    noticing, so it carries its own class rather than sitting in body text."""
+    noticing, so it carries its own class rather than sitting in body text.
+
+    The class is brand.css's `.unset`, shared with the other seven documents,
+    rather than this document's former bespoke `.pdf__unset`. Same intent, same
+    two assertions — the mark is classed, and the class is declared — against
+    the one stylesheet the whole set is now painted from."""
     doc = _build_html(_invoice(), ORG_NO_IDENTITY_AT_ALL, CONTACT)
-    assert 'class="pdf__unset"' in doc
-    assert ".pdf__unset" in doc, "the class is used but never declared"
+    assert 'class="unset"' in doc
+    assert ".unset{" in doc, "the class is used but never declared"
 
 
 @pytest.mark.parametrize("invoice_type", ["quotation", "proforma", "estimate", ""])

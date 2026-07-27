@@ -192,6 +192,26 @@ COMMENT ON COLUMN staging.ganit_vendor_bills.is_reverse_charge IS
 -- `ganit_invoices` has a `cess` column; `ganit_vendor_bills` does not. So the
 -- outward cess in Table 3.1 is real and the inward cess credit in Table 4 is
 -- always nil, which understates credit for anyone dealing in cess goods.
+--
+-- Table 4 was rebuilt onto the NOTIFIED form (Notification 14/2022-CT) and
+-- gained five rows: 4(A)(2) import of services, 4(A)(4) ISD credit, 4(B)(2)
+-- other reversals, 4(D)(1) ITC reclaimed and 4(D)(2) ineligible under section
+-- 16(4)/PoS. NONE of them proposes a column here, and that is a decision
+-- rather than an omission:
+--
+--   * 4(A)(2) and 4(A)(4) would need an import/ISD classification on
+--     `ganit_vendor_bills`, which has neither, and inventing one would mean
+--     guessing at the classification for every bill already recorded.
+--   * 4(B)(2), 4(D)(1) and 4(D)(2) are figures a preparer ASCERTAINS — rule 37
+--     reversals, reclaims, and section 16(4)/place-of-supply ineligibility that
+--     comes from GSTR-2B rather than from anything Kartavaya holds. A column
+--     would not populate itself; it would only move the typing.
+--
+-- All five therefore arrive as request-body overrides on `Gstr3bOverrides`,
+-- default to nil, and print as nil on the face of the paper — the same
+-- treatment the three earlier override rows already get. If a firm later
+-- records vendor bills with a supply classification, 4(A)(2) and 4(A)(4)
+-- become derivable and belong in this section.
 
 ALTER TABLE staging.ganit_vendor_bills
   ADD COLUMN IF NOT EXISTS cess NUMERIC(14,2) NOT NULL DEFAULT 0;
