@@ -37,8 +37,9 @@ import TimelineView from '../components/views/TimelineView';
 import WorkloadView from '../components/views/WorkloadView';
 import PriorityView from '../components/views/PriorityView';
 import MyTasksView  from '../components/views/MyTasksView';
-import ViewToolbar  from '../components/views/ViewToolbar';
-import { VIEWS, FIELD_TYPES, IcArchive, IcPlus } from '../components/views/viewDefs';
+import BoardToolbar from '../components/views/BoardToolbar';
+import useBoardView from '../components/views/useBoardView';
+import { FIELD_TYPES, IcArchive, IcPlus } from '../components/views/viewDefs';
 import NewTaskModal from '../components/NewTaskModal';
 
 import { useFields, useFieldValueMap } from '../hooks/useFields';
@@ -48,6 +49,9 @@ import { usePresence }      from '../hooks/usePresence';
 
 import { PageHeader, AvatarStack } from '../components/editorial';
 import { useToast } from '../components/ui/toast';
+import {
+  ErrorState, errorKind, SkeletonBoard, SkeletonList, SkeletonRegion,
+} from '../components/ui';
 
 import AutomationsPage from './AutomationsPage';
 
@@ -62,6 +66,11 @@ export default function ProjectBoardPage() {
   const [teamMembers,   setTeamMembers]   = useState([]);
   const [view,          setView]          = useState('kanban');
   const [loading,       setLoading]       = useState(true);
+  // A failed load left `columns` and `tasks` empty, which renders exactly like
+  // a project nobody has put work in yet — and there was no way back short of a
+  // full page reload. `BoardsPage` was fixed for this; this page is the other
+  // half of the same defect.
+  const [loadError,     setLoadError]     = useState(null);
   const [showArchived,  setShowArchived]  = useState(false);
   const [showFieldMgr,  setShowFieldMgr]  = useState(false);
   const [showAutomations, setShowAutomations] = useState(false);
@@ -80,6 +89,7 @@ export default function ProjectBoardPage() {
   const load = useCallback(async (archived = false) => {
     if (!projectId) return;
     setLoading(true);
+    setLoadError(null);
     try {
       const [projR, colR, taskR] = await Promise.all([
         api.get(`/teams/${projectId}`),
@@ -92,6 +102,9 @@ export default function ProjectBoardPage() {
       setTeamMembers(projR.data.members || []);
     } catch (e) {
       logger.error('Board load failed', e);
+      setLoadError(e);
+      setColumns([]);
+      setRawTasks([]);
     } finally {
       setLoading(false);
     }
@@ -113,6 +126,10 @@ export default function ProjectBoardPage() {
   // the same matrix in a single query, already keyed by task.
   const { map: fieldValueMap } = useFieldValueMap(projectId, (fieldDefs || []).length > 0);
 
+  // Search, filter, group and sort — in the URL, so a narrowed board is a link
+  // (IxViews 10.4). Every view renders `board.filtered`.
+  const board = useBoardView({ tasks, columns, fieldDefs, boardKey: projectId });
+
   const addField = async () => {
     if (!newFieldName.trim()) return;
     try {
@@ -124,12 +141,11 @@ export default function ProjectBoardPage() {
     }
   };
 
-  if (loading) return (
-    <div className="k-screen">
-      <p className="pb__loading">Loading board…</p>
-    </div>
-  );
-
+  // The old early return replaced the WHOLE page — header, toolbar and all —
+  // with one italic line, so every load tore the chrome down and rebuilt it and
+  // the view you were on was forgotten on screen while the request was open.
+  // The header and toolbar are stable; only the content region below them
+  // swaps, and its skeleton is shaped like the view it stands in for (26 §9).
   const projectName = project?.team?.name || project?.name || '…';
   const presenceUsers = onlineUsers.map((u, i) => ({
     name: u.name || u.email || '?',
@@ -137,7 +153,7 @@ export default function ProjectBoardPage() {
   }));
 
   const viewProps = {
-    tasks,
+    tasks: board.filtered,
     columns,
     teamMembers,
     onTasksChange: setTasks,
@@ -183,11 +199,13 @@ export default function ProjectBoardPage() {
         }
       />
 
-      {/* One toolbar, shared with every other view surface (04 §2). */}
-      <ViewToolbar
-        views={VIEWS}
+      {/* One toolbar, shared with every other view surface (04 §2) — and it
+          now carries search, filter, group and fields, so Table view no longer
+          stacks a second bar of its own beneath this one. */}
+      <BoardToolbar
         view={view}
         onView={setView}
+        board={board}
         end={
           <>
             <button
@@ -295,9 +313,20 @@ export default function ProjectBoardPage() {
         </div>
       )}
 
+      {loading ? (
+        <SkeletonRegion label="Loading board…">
+          {view === 'kanban' ? <SkeletonBoard columns={4} cards={3} /> : <SkeletonList rows={8} />}
+        </SkeletonRegion>
+      ) : loadError ? (
+        // `errorKind` separates offline / 403 / 404 / 500 — a 403 on a project
+        // board is a real answer and not the same instruction as "try again".
+        <ErrorState kind={errorKind(loadError)} onRetry={() => load(showArchived)} />
+      ) : (
+        <>
       {view === 'kanban' && (
         <KanbanView
           {...viewProps}
+          allTasks={tasks}
           fieldDefs={fieldDefs}
           fieldValueMap={fieldValueMap}
           teamId={projectId}
@@ -315,12 +344,18 @@ export default function ProjectBoardPage() {
           boardId={projectId}
           fieldDefs={fieldDefs}
           fieldValueMap={fieldValueMap}
+          sort={board.sort}
+          onSort={board.setSort}
+          groupBy={board.groupBy}
+          shownFields={board.shownFields}
+          isFiltered={board.isFiltered}
+          onClearFilters={board.clearFilters}
         />
       )}
 
       {view === 'calendar' && (
         <CalendarView
-          tasks={tasks}
+          tasks={board.filtered}
           teamMembers={teamMembers}
           onTasksChange={setTasks}
           onDayClick={date => {
@@ -335,9 +370,11 @@ export default function ProjectBoardPage() {
       )}
 
       {view === 'timeline' && <TimelineView {...viewProps} />}
-      {view === 'workload' && <WorkloadView tasks={tasks} teamMembers={teamMembers} />}
+      {view === 'workload' && <WorkloadView tasks={board.filtered} teamMembers={teamMembers} />}
       {view === 'priority' && <PriorityView {...viewProps} />}
-      {view === 'mytasks'  && <MyTasksView tasks={tasks} teamMembers={teamMembers} onTasksChange={setTasks} />}
+      {view === 'mytasks'  && <MyTasksView tasks={board.filtered} teamMembers={teamMembers} onTasksChange={setTasks} />}
+        </>
+      )}
 
       <NewTaskModal
         open={newTaskEditor.open}
