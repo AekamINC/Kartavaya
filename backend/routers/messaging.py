@@ -1,6 +1,35 @@
 """
 messaging.py — Sanvaad · संवाद (Internal Messaging) Router
 Channels, messages, threads, reactions, read state.
+
+── The user join: `users`, and `avatar`, not `staging.users` / `avatar_url`
+
+Every query below joined `staging.users` and selected `u.avatar_url`. Checked
+against the live catalogue, read-only, on the database the app actually runs on
+(`SET search_path TO staging, public`, db.py:44):
+
+    to_regclass('staging.users')                                   → NULL
+    column `avatar_url` on public.users                            → absent
+    public.users has `avatar`                                      → present
+
+So `staging.users` did not resolve and `u.avatar_url` did not exist. Both are
+hard errors at execution, not silent nulls — UndefinedTableError and
+UndefinedColumnError — which means every read endpoint in this router answered
+500 against a real database: the member directory, the channel member list,
+message listing (both the paged and unpaged arm), and the thread view. Sanvaad
+could not load a single message.
+
+`routers/search.py:386` already recorded that `staging.users` "does not exist on
+this database" and deliberately joined the unqualified `users` for its Sanvaad
+group; `migrations/PROPOSED_065_module_role_levels.sql:248-255` recorded the
+same doubt and left it open — "Either that object exists and was created outside
+this directory, or those four Sanvaad queries are broken." It is the latter, and
+it was six places rather than four. This file now joins `users` like every other
+router (auth_router, approvals_router, invite_router, server.py).
+
+`u.avatar AS avatar_url` / `u.avatar AS sender_avatar` keep the WIRE names the
+frontend already reads (`Avatar.jsx:49`, `org/MemberTable.jsx:87-89`,
+sanvaad message components), so only the SQL changes and no client does.
 """
 import logging
 from typing import Optional
@@ -181,9 +210,9 @@ async def directory(
     pool = await get_pool()
     needle = f"%{(q or '').strip()}%"
     rows = await pool.fetch("""
-        SELECT DISTINCT u.user_id, u.full_name, u.avatar_url
+        SELECT DISTINCT u.user_id, u.full_name, u.avatar AS avatar_url
         FROM staging.user_roles ur
-        JOIN staging.users u ON u.user_id = ur.user_id
+        JOIN users u ON u.user_id = ur.user_id
         WHERE ur.org_id = $1::uuid
           AND ur.role_code IN ('org_owner','org_admin','org_member')
           AND ur.user_id <> $2
@@ -364,9 +393,9 @@ async def list_members(
     # use; this is the third caller it was written for.
     await _assert_channel_access(pool, channel_id, org_id, user["user_id"])
     rows = await pool.fetch("""
-        SELECT cm.*, u.full_name, u.email, u.avatar_url
+        SELECT cm.*, u.full_name, u.email, u.avatar AS avatar_url
         FROM staging.samvada_channel_members cm
-        JOIN staging.users u ON u.user_id = cm.user_id
+        JOIN users u ON u.user_id = cm.user_id
         WHERE cm.channel_id = $1::uuid
     """, channel_id)
     return [dict(r) for r in rows]
@@ -478,7 +507,7 @@ async def list_messages(
                    (SELECT COALESCE(json_agg(x.full_name), '[]') FROM (
                         SELECT u2.full_name
                         FROM staging.samvada_channel_members cm
-                        JOIN staging.users u2 ON u2.user_id = cm.user_id
+                        JOIN users u2 ON u2.user_id = cm.user_id
                         WHERE cm.channel_id = m.channel_id
                           AND cm.user_id <> m.sender_id
                           AND cm.last_read_at IS NOT NULL
@@ -491,7 +520,7 @@ async def list_messages(
                       AND cm2.last_read_at IS NOT NULL
                       AND cm2.last_read_at >= m.created_at) AS seen_count"""
 
-    _COLS = """m.*, u.full_name AS sender_name, u.avatar_url AS sender_avatar,
+    _COLS = """m.*, u.full_name AS sender_name, u.avatar AS sender_avatar,
                    (SELECT COUNT(*) FROM staging.samvada_messages t
                     WHERE t.parent_message_id = m.id AND t.is_deleted = FALSE) AS thread_count,
                    (SELECT MAX(t2.created_at) FROM staging.samvada_messages t2
@@ -503,7 +532,7 @@ async def list_messages(
         rows = await pool.fetch(f"""
             SELECT {_COLS}
             FROM staging.samvada_messages m
-            JOIN staging.users u ON u.user_id = m.sender_id
+            JOIN users u ON u.user_id = m.sender_id
             WHERE m.channel_id = $1::uuid AND m.is_deleted = FALSE
               AND m.parent_message_id IS NULL
               AND m.created_at < (SELECT created_at FROM staging.samvada_messages WHERE id=$3::uuid)
@@ -513,7 +542,7 @@ async def list_messages(
         rows = await pool.fetch(f"""
             SELECT {_COLS}
             FROM staging.samvada_messages m
-            JOIN staging.users u ON u.user_id = m.sender_id
+            JOIN users u ON u.user_id = m.sender_id
             WHERE m.channel_id = $1::uuid AND m.is_deleted = FALSE
               AND m.parent_message_id IS NULL
             ORDER BY m.created_at DESC LIMIT $2
@@ -645,9 +674,9 @@ async def get_thread(
         raise HTTPException(404, "Message not found")
     await _assert_channel_access(pool, parent["channel_id"], org_id, user["user_id"])
     rows = await pool.fetch("""
-        SELECT m.*, u.full_name AS sender_name, u.avatar_url AS sender_avatar
+        SELECT m.*, u.full_name AS sender_name, u.avatar AS sender_avatar
         FROM staging.samvada_messages m
-        JOIN staging.users u ON u.user_id = m.sender_id
+        JOIN users u ON u.user_id = m.sender_id
         WHERE m.parent_message_id = $1::uuid AND m.is_deleted = FALSE
         ORDER BY m.created_at ASC
     """, message_id)

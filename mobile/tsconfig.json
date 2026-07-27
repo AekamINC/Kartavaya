@@ -2,6 +2,12 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // The test files are run by `node --test`, not by a bundler, and Node's
+    // ESM resolver needs the explicit `.ts` on the specifier. tsc rejects that
+    // extension unless it is told the build never emits — which it never does
+    // here: Metro compiles the app, and `npm run typecheck` is --noEmit.
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "paths": {
       "@/*": ["./src/*"]
     }

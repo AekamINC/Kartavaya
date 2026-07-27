@@ -62,9 +62,26 @@
 .adm-rows tbody tr { cursor: pointer; }
 
 /* A suspended org still appears in the list, because hiding it is how an
-   operator concludes the record was deleted. It reads as withdrawn: dimmed,
-   with a danger keyline on the leading cell. */
-.adm-sus { opacity: .6; }
+   operator concludes the record was deleted. It reads as withdrawn: tinted,
+   with a danger keyline on the leading cell.
+
+   It was `opacity: .6`, which is the wrong mechanism on a row that is
+   `tabIndex={0}` and opens the org on Enter (OrgTable.jsx:96-99). A fade
+   composites the GLYPH as well as the fill, so measured live at 1280 the whole
+   row fell under AA in light — the org name, plan, credits, MRR, storage, seat
+   count and status all at 4.38:1 against 4.5, and the owner's email at 2.40:1;
+   in dark the email sat at 2.77:1. WCAG's "inactive component" exemption does
+   not cover this: the row is live, focusable and clickable, and a suspended
+   org is precisely the row an operator has come to read.
+
+   A tint carries the same "withdrawn" reading without touching the text.
+   8% is the strongest mix that still clears AA in BOTH themes, and the
+   binding constraint is the owner's email — `.adm-name i`, 11px at
+   --on-surface-3, the lowest-contrast text in the row. Measured on the
+   rendered page with the fill resolved: 18% → 3.83 light / 4.10 dark (fails),
+   12% → 4.25 light (fails), 8% → clean in both
+   (light rgb(244,230,223) · dark rgb(36,30,34)). */
+.adm-sus > td { background-color: color-mix(in srgb, var(--danger) 8%, var(--surface-1)); }
 .adm-sus td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
 
 .adm-name { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }

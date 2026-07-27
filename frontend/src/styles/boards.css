@@ -242,6 +242,23 @@
               border-color var(--dur-fast) var(--ease-standard),
               color var(--dur-fast) var(--ease-standard);
 }
+/* The list's `.k-trow__tick` states the rule these two share: same control,
+   same touch behaviour, or it is two features to learn. 17×17 is under WCAG
+   2.5.8 (AA) 24×24, so the hit area grows to 24×32 through a pseudo-element
+   while the circle stays 17px. This one has more room than the list's — its
+   only neighbours in `.bc__foot` are non-interactive meta — but it takes the
+   same numbers rather than a more generous set, because the two must not
+   diverge. Measured on a rendered card: 24×32, inside the card box, no
+   overlap with the card's own click target beyond what the tick already had. */
+.bc__tick { position: relative; }
+.bc__tick::after {
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 24px; min-height: 32px;
+  width: 100%; height: 100%;
+}
 .bc__tick svg { width: 11px; height: 11px; }
 .bc:hover .bc__tick, .bc__tick:focus-visible { opacity: 1; }
 

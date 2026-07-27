@@ -5,76 +5,20 @@ import { useTheme } from '../theme/ThemeProvider';
 import { a11yButton } from './a11y';
 
 /**
- * The four states every fetched screen has, plus the two this product needs on
- * top of them.
- *
- * Loading / empty / error are the usual three. Offline is the fourth and is a
- * first-class state here rather than a flavour of error: an Indian site office
- * or a client's basement meeting room is a normal place to open this app, not
- * an edge case, and "check your connection" is a different instruction from
- * "try again". The distinction is not cosmetic — TanStack Query retries twice
- * before surfacing `isError`, so an offline screen that renders the error state
- * makes the user wait through two doomed retries to be told the wrong thing.
- *
- * `forbidden` is the sixth, and it exists because of how the backend gates
- * modules. `require_module(code)` raises **403** both when the org has not
- * subscribed to a module and when this particular user holds no grant for it
- * (middleware/subscription.py). On a module surface that is not an error at
- * all — it is the answer. Rendering it as "something went wrong" would have
- * every user without a Vetana grant filing a bug against a screen that is
- * working exactly as designed.
+ * The decision lives in `screenStatus.ts`, which imports nothing — see the
+ * header there for why (this file cannot be loaded outside a bundler, so the
+ * one primitive every module screen renders through had no test). Re-exported
+ * here so every existing `from '../components/ScreenState'` import is unchanged.
  *
  * `stale` is not a state but a modifier: when the cache has data and the device
  * is offline, the screen shows the DATA with a stale marker rather than an
  * offline placeholder. Query results are persisted to MMKV, so yesterday's
- * outstanding total is far more useful than a cloud icon.
+ * outstanding total is far more useful than a cloud icon. See `StaleBar` below.
  */
-export type ScreenStatus =
-  | 'loading'
-  | 'offline'
-  | 'forbidden'
-  | 'error'
-  | 'empty'
-  | 'ready';
+export type { ScreenStatus, ResolveArgs } from './screenStatus';
+export { statusOf, resolveScreenState, isRequestFault } from './screenStatus';
 
-interface ResolveArgs {
-  isLoading: boolean;
-  isError:   boolean;
-  error?:    unknown;
-  online:    boolean;
-  /** True when the query has usable data — including data restored from cache. */
-  hasData:   boolean;
-  /** True when the query succeeded but returned nothing to show. */
-  isEmpty?:  boolean;
-}
-
-/** HTTP status off an axios error, if this was one. */
-export function statusOf(error: unknown): number | undefined {
-  return (error as { response?: { status?: number } } | undefined)?.response?.status;
-}
-
-/**
- * Decide what a screen should render.
- *
- * Order matters and is deliberate:
- *
- *  1. Data wins over everything. A persisted cache is why this app is usable on
- *     a train, and blanking it to show an error would throw away the one thing
- *     offline support bought.
- *  2. `forbidden` beats `offline`, because a 403 is a real answer that arrived —
- *     the request reached the server. Losing the connection afterwards does not
- *     make the answer less true.
- *  3. `offline` beats `error`, because with no connection the error is a symptom
- *     rather than a cause, and the actionable instruction is the connection one.
- */
-export function resolveScreenState(a: ResolveArgs): ScreenStatus {
-  if (a.hasData) return a.isEmpty ? 'empty' : 'ready';
-  if (a.isError && statusOf(a.error) === 403) return 'forbidden';
-  if (a.isLoading) return 'loading';
-  if (!a.online) return 'offline';
-  if (a.isError) return 'error';
-  return a.isEmpty ? 'empty' : 'ready';
-}
+import type { ScreenStatus } from './screenStatus';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -108,6 +52,17 @@ const DEFAULTS: Record<Exclude<ScreenStatus, 'ready' | 'loading'>, {
     icon:  'alert-circle-outline',
     title: "Couldn't load",
     body:  'Something went wrong on our end. Pull down or tap retry.',
+  },
+  /* A 4xx. The wording is the web's, verbatim (`ui/ErrorState.jsx` COPY.request)
+     so the two products say the same sentence about the same condition. It does
+     NOT claim the server broke, and it does not invite a retry that will be
+     refused identically — `ScreenState` omits the retry button for this status
+     unless a caller passes one, because pulling to refresh a 422 just replays
+     it. */
+  request: {
+    icon:  'close-circle-outline',
+    title: 'That request wasn’t accepted',
+    body:  'Nothing was changed. Going back and starting again usually clears it.',
   },
   empty: {
     icon:  'file-tray-outline',
@@ -144,6 +99,8 @@ export default function ScreenState({ status, title, body, onRetry, icon }: Prop
         size={30}
         // A 403 is not a failure, so it does not get the alarm colour. Offline
         // is not one either — the app is behaving correctly with no network.
+        // Nor is `request`: the server answered, and it answered about the
+        // request. `error` is the only status that means WE broke.
         color={status === 'error' ? t.error : t.ink3}
       />
       <Text style={[s.title, { color: t.ink }]}>{heading}</Text>

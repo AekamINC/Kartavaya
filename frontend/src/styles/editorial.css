@@ -826,6 +826,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .adm__ic { display: inline-flex; flex-shrink: 0; opacity: .82; }
 .adm__l { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
 .adm__l-hi { font-family: var(--font-indic); font-size: var(--t-label-sm); color: var(--side-fg-mute); }
+/* The active row lightens its own background (`.adm__item.on` above), so the
+   muted tone chosen against the UNLIT rail no longer clears AA on it: measured
+   on the rendered console, dark --side-fg-mute (rgba(255,255,255,.46)) on the
+   lit rgb(40,33,63) is 4.36:1 against 4.5. Light passes at .5 on rgb(51,44,71),
+   so this is dark-only in effect but written once for both. The EN label
+   already steps to #fff on this row; the Devanagari steps with it, to the
+   rail's own --side-fg, which keeps the two-level hierarchy and adds no
+   literal. */
+.adm__item.on .adm__l-hi { color: var(--side-fg); }
 .adm__count {
   margin-left: auto; flex-shrink: 0;
   background: color-mix(in srgb, var(--pf-keyline) 34%, transparent);
@@ -1821,6 +1830,38 @@ input, textarea, select { font-family: inherit; color: inherit; }
               color        var(--dur-fast) var(--ease-standard);
 }
 .k-trow__tick + .k-row-action { margin-left: 6px; }
+
+/* ── Hit area, WITHOUT either control swallowing its neighbour ──────────────
+   Measured on the rendered list at 1280: the tick is 17×17, the archive chip
+   beside it is 28×18, their edges are 18px apart, and the row is 44px tall.
+   Both are under WCAG 2.5.8 (AA) Target Size (Minimum), which is 24×24 — and
+   the spacing exception does not rescue them, because 24px undisplaced circles
+   at those centres intersect.
+
+   A 44×44 area on each is NOT available and should not be forced: the centres
+   are 40.5px apart, so two 44px-wide areas would overlap by 3.5px and each
+   control would start taking taps meant for the other. On a pair that is
+   "complete this task" and "archive this task" that is worse than a small
+   target — a mis-hit is a silent, wrong write.
+
+   So the areas grow to 24 wide (the AA bar exactly) and 32 tall. Width is the
+   constrained axis; height is free, because nothing is stacked above or below
+   inside a 44px row, and 32 leaves 6px of clearance to the rows either side so
+   no tap is ambiguous about WHICH row it hit. Measured after: tick 24×32 at
+   570.5–594.5, chip 28×32 at 609–637 — 14.5px of clearance between them, and
+   neither overflows the row.
+
+   The overlay is a pseudo-element so the visual geometry is untouched: the
+   circle is still 17px and the chip is still 28×18. */
+.k-trow__tick, .k-row-action { position: relative; }
+.k-trow__tick::after, .k-row-action::after {
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 24px; min-height: 32px;
+  width: 100%; height: 100%;
+}
 .k-trow:hover .k-trow__tick,
 .k-trow__tick:focus-visible { opacity: 1; }
 /* --on-ok, not #fff: --ok is a fill that inverts hard, and white on the dark
