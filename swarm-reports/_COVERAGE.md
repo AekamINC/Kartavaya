@@ -116,10 +116,49 @@ Two defects it found that the measurement could never have shown:
   re-running a month rebuilds them — so a second click is a second round of mail
   to everybody. It fired on one unconfirmed click.
 
+**dristi — DONE, verified on the directory.** `DristiPage.jsx` 603 / 75 → **153 /
+0**; `dristi/` is 9 tab files carrying **3**, and all three are `--h`/`--w`
+custom properties feeding a rule in `module.css` — the same pattern
+`graha/PipelineTab` uses for `--c`, so they are not hardcoded values at all.
+Charts are CSS, so they inherit theme, density and type scale.
+
+Its findings, none of which the inline-style metric could see:
+- **Both list endpoints were unreadable.** `/scheduled-reports` and `/dashboards`
+  answer `{"data":[…]}`; both call sites tested `Array.isArray(r.data)` against
+  the **envelope**, so both rendered `[]` unconditionally. Every saved dashboard
+  and scheduled report an org had was invisible, under a page offering to make
+  another.
+- **All five export buttons were dead** — `window.open` on a site-relative path,
+  wrong origin in every environment, no bearer token.
+- **`/pipeline` and `/sales` had no source-module check** — same class as the
+  already-fixed `/overview` bug. A `dristi` grant alone read the full CRM
+  pipeline, named customers, the order book, and every salesperson's target vs
+  actual.
+- **`.mt__b` had no `display`/`gap`**, so the two scripts were glued in every
+  module tab — "Overviewसारांश". **Nine pages render that strip; all nine had
+  it.** This is part of what the owner meant by "things are not in line". Fixed
+  in shared CSS, so the remaining agents inherit it.
+
+## Cross-cutting, and confirmed twice
+
+- **The :5173 dev server runs from `D:\Projects\Kartavya`, not from any
+  worktree.** `preview_start` reuses it, so an agent screenshotting through it is
+  looking at whatever code the main checkout has — possibly another agent's.
+  The shared Playwright browser was also navigated away mid-session by a peer
+  agent. Any agent verifying via the shared browser may be reporting someone
+  else's page; only a private port on the agent's own worktree is trustworthy.
+- **Worktrees keep seeding from a 710-commit-old commit** (`1aa49855`, unrelated
+  R2/CORS work). Six worktrees sit on it. An agent that doesn't check builds
+  against a pre-design-run codebase and "cannot find" files that exist.
+- `useTabPanelMotion` returns `{key, style}` spread as `{...motion}`; React warns
+  on `key` in a spread. Identical across graha/ganit/manav/vikray/dristi — **one
+  shared fix, not five**, and deliberately left so five agents don't each edit
+  the others' files.
+
 ## In flight
 
-Three agents, one per module, briefed to build rather than audit: **prachar,
-vikray, dristi**. Each carries split-then-style, `vite build` in the
+Two agents, one per module, briefed to build rather than audit: **prachar,
+vikray**. Each carries split-then-style, `vite build` in the
 gate, and its verified reference file — `ScreenPrachar`, `ScreenDristi` and
 `ScreenVetana` are all in `ScreensMore.jsx`; `ScreenVikray` is in `ScreensBiz.jsx`;
 `ScreenGraha` is in `ScreensCore.jsx`. Three briefs this week sent an agent to the
