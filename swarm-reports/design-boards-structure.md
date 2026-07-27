@@ -125,17 +125,128 @@ order. Everything left in the drawer is pixels and motion, which two siblings ow
 
 ---
 
-## B · Still open, by how structural it is
+## B · What was changed
 
-1. Toolbar: filter / group / search / fields reach only Table (A2).
-2. Two stacked toolbars in Table view (A2.1).
-3. Column-header ⋯ menu absent; rename is double-click-only (A3).
-4. `/boards` has no Archived toggle; `/projects/:id` does (A2).
-5. Filter, sort and column widths are not in the URL. `IxViews 10.4`: *"Filters
-   serialise into the URL so a filtered view is a shareable link"*; `10.1`:
-   *"Sort and widths persist per view in the URL and per user."* Today all three
-   are `useState` + `localStorage`, so a filtered board cannot be sent to anyone.
-6. `ProjectBoardPage` has no error state and no skeleton — `load()` is
-   `catch (e) { logger.error(e) }` and loading is a bare `<p>Loading board…</p>`.
-   Both are the defects a sibling fixed on `BoardsPage` and left here.
-7. Devanagari second line on view tabs and column headers (A1, A3).
+### B0 · A build break that predates this branch — `594eb06`
+
+`npm run build` failed for the **whole app** on `staging`. `DristiPage.jsx:577`
+had a `{/* … */}` sitting directly inside a ternary's expression branch, which
+is an object literal, not a comment, so esbuild read the next line's
+`<DataTable columns` as a syntax error. Not this surface; landed in its own
+commit so it can be dropped if the file's owner fixes it too. Worth noting that
+**`npm run check` passes on this file** — neither gate parses JSX, so a syntax
+error reaches `staging` with all gates green. Flagged as a follow-up task.
+
+### B1 · Archived on `/boards`, and the column-header ⋯ — `334ab2c`
+
+`/boards` now carries the Archived toggle `/projects/:id` already had, in the
+same trailing slot, and `loadBoard` sends `archived=true` (`GET /tasks` takes
+it — `server.py:2185`).
+
+The column header's bare ✕ became a `Menu`: Rename, Add task, ─, Delete. Rename
+was previously reachable **only** by double-clicking the name, an affordance
+documented in a `title` attribute, so no keyboard or touch user could reach it
+at all. Double-click still works; it is a shortcut now rather than the route.
+
+### B2 · One toolbar for all seven views — `ae208be`
+
+`useBoardView` (new) owns `q` / `filter` / `group` / `sort` in the **URL** and
+field visibility + column widths in `localStorage`. `BoardToolbar` (new) is the
+one bar both routes render. `TableView` lost its second `ViewToolbar`, its
+search, its clauses and its field-visibility state, and renders a table.
+
+Consequences worth stating plainly:
+
+- Kanban, Calendar, Timeline, Workload, Priority and My Tasks can be searched
+  and filtered. None of them could be before.
+- Table view no longer stacks two `.vtb` bars.
+- A filtered board is a link.
+- **Drag had to follow.** `destination.index` is an index into what is
+  *visible*. Once a column can show 3 of 11 cards that is not the server's
+  index — dropping a card second would file it second among all eleven, and it
+  would move once the filter cleared. The index now resolves through the card
+  it lands above, in both lists taken without the dragged one, which returns
+  `destination.index` exactly when nothing is filtered. `KanbanView` takes
+  `allTasks` for this and falls back to `tasks`, so the one call site that does
+  not pass it (`task-flow.test.jsx`) is unaffected.
+
+`ProjectBoardPage` also gained the `ErrorState` and the shaped skeleton
+`BoardsPage` already had. Its load was `catch { logger.error }` — a failed
+board looked like an empty project — and its loading state replaced the entire
+page, header and toolbar included, with one italic line.
+
+### B3 · Thirteen tests, and the tilde they caught — `820f4fc`, `7dc6c9e`
+
+`__tests__/e2e/board-toolbar.test.jsx` asserts the structural claims rather
+than describing them: one `.vtb` in each of the seven views, search and the
+filter builder present in all of them, group-by and Fields only where they can
+act, and the URL contract from `IxViews` 10.1/10.4.
+
+Two real bugs came out of writing them:
+
+1. **`~` is not escaped by `encodeURIComponent`.** It is an unreserved mark,
+   alongside `- _ . ! * ' ( )`. `~` is also the clause separator, so a title
+   filter typed as `a~b` came back out of the URL as two half-clauses and the
+   second was dropped silently. Escaped to `%7E` by hand.
+2. **A `column_id` clause survived a project switch.** `/boards` changes board
+   without leaving the route, so a filter naming a column of the previous
+   project emptied the next one and showed a chip for a column it does not
+   have. Clauses whose column is unknown are dropped from what the UI reads,
+   guarded on the column list having loaded. The URL is left intact.
+
+### Gates
+
+`check-tokens: 0 missing` · `check-classes: 0 missing a rule` · `vite build`
+green · **444 tests pass** (433 + 13, less the 2 that split). The two unhandled
+rejections vitest reports come from an unstubbed `/fields/task/:id/values` in
+`task-flow.test.jsx`; `git diff staging` over that file and `TaskDrawer.jsx` is
+empty, so they are not this branch's.
+
+---
+
+## C · Still open, by how structural it is
+
+Items 1–6 of the original list are closed by §B. What is left is either
+somebody else's surface or a decision that is not mine to take alone.
+
+1. **Devanagari second line on the view tabs.** The reference's `TabBar` draws
+   a Latin line and a Devanagari line per tab — Kanban फलक, Table सूची,
+   Calendar पंचांग, Timeline कालरेखा, Workload भार, Priority प्राथमिकता,
+   Mytasks मेरे कार्य. `ViewToolbar` draws one line. This is a missing element
+   seven times, but it is also a type-and-layout change inside `.k-segctrl`,
+   which the pixels sibling owns. **Not changed. Needs a call on `Board`
+   vs `Kanban` and `List` vs `Table` at the same time** — those are the
+   designer's words against somebody's paraphrase, the same class of decision
+   as Finance-vs-Invoicing in `_DESIGN-GAP.md` §2.
+
+2. **Column headers have no Devanagari.** They cannot: real column names come
+   from `projects/:id/columns` and carry no second field. Only the two
+   synthetic columns have one, hard-coded. Giving real columns a Devanagari
+   name is a schema change, not a UI one.
+
+3. **The page header is inverted against the reference.** The reference titles
+   the page with the MODULE (`फलक` / `Boards`), puts the project in the lede
+   (`Quarterly GST filing — Aekam Inc.`), and gives the project chips **their
+   own full-width row** below the header (`.chips`). The build titles the page
+   with the project name and nests the chips inside the header's right rail
+   (`.k-projectpicker`, right-aligned, capped at 560px and wrapping). With six
+   projects that rail wraps into the avatars. Placement is the pixels sibling's
+   file (`editorial.css`) — reported, not moved.
+
+4. **Kicker text and spelling.** Reference `Workspace · कार्यक्षेत्र`; build
+   `AEKAM INC · फ़लक`. Note `फ़लक` (with nukta) against the reference's `फलक`.
+   `24-bilingual-devanagari.md` should settle it; both spellings are currently
+   in the tree.
+
+5. **Kanban has no filtered-empty state.** Filtering to nothing now leaves N
+   empty columns rather than the "no tasks match" state the table gets. The
+   count and the filter chips are both visible in the toolbar above, so it is
+   discoverable, but `02 §Two empty states` wants the sentence.
+
+6. **WIP limits.** `IxViews 9.3` — *"WIP limit warns rather than blocks"*.
+   Nothing in `columns` stores one; a backend field first.
+
+7. **Fractional move ordering.** `IxViews 9.1` asks for *"a fractional position
+   so one row is written"*. The server takes an integer index and re-sequences
+   the whole column under an advisory lock (`server.py:395`). Works, and is
+   safe; it is more writes than the reference wants. Backend surface.
