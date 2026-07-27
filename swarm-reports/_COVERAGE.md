@@ -222,12 +222,25 @@ response-wrapping middleware; the shape is decided per route, and `fields.py`
 returns **bare arrays** at `:105` and `:194`. So `r.data.forEach(…)` there is
 correct, and "fixing" it to `r.data.data` would break a working drawer.
 
-There IS a real defect at that spot, smaller and different: the two inner
-`api.get(…).then(…)` chains carry **no `.catch`** — the trailing
-`.catch(logger.error)` belongs to the outer chain — so a failed fields fetch
-rejects unhandled and the drawer silently renders no custom fields. That is what
-`task-flow.test.jsx` is surfacing. The report's point about a green suite
-hiding it stands; the diagnosis does not.
+**RESOLVED `56123a79`.** The `TypeError` was real, but it came from the TEST
+FIXTURE, not the endpoint: `task-flow.test.jsx` returned `{}` for a route that
+returns a list, and the component called `.forEach` on it. A fixture that does
+not match its route turns a green suite into false comfort — which is exactly
+what happened, since an unhandled rejection is not a failed assertion.
+
+There was also a second, real defect at that spot: those two inner
+`api.get(…).then(…)` chains carried **no `.catch`** — the trailing
+`.catch(logger.error)` belongs to the outer chain — so a 403 or 500 on either
+became an unhandled rejection and the custom-field section silently stayed empty
+rather than saying it had failed. Both now catch.
+
+Proven by A/B rather than argued: original component + bad fixture → **2**
+unhandled rejections with exactly the reported `TypeError`; fixed component +
+the *same* bad fixture → **0**. So the component fix is what did it, and the
+fixture correction is not masking anything.
+
+The report's point about a green suite hiding this stands, and is the more
+valuable half. The diagnosis did not.
 
 **2. "codebase-wide shape problem" — overstated as a live bug, understated as a
 design flaw.** I scanned every `api.get` call site against its resolved backend
@@ -252,6 +265,12 @@ The genuine finding underneath is a design inconsistency worth fixing on its own
 schedule: **99 GET routes return `{"data": […]}` and 28 return a bare list, with
 no rule.** Every call site has to remember which. That is what produced eight
 real bugs across two modules, and it will keep producing them.
+
+**Partly addressed `56123a79`:** `rows()` / `body()` were promoted out of
+`prachar/_shared.jsx` into `lib/api.js`, next to the client that creates the
+ambiguity. Reads routed through `rows()` are indifferent to which shape a route
+uses. That does not fix the backend inconsistency — it makes the frontend stop
+caring, which is the cheaper half. The 99-vs-28 split is still worth settling.
 
 ## In flight
 
