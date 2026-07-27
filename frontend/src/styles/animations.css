@@ -451,6 +451,86 @@
   animation: ixTabInd var(--dur-base) var(--ease-emph) backwards;
 }
 
+/* ── 9e · Drag surfaces — IxViews 9.1, 9.2, 9.4 ───────────────────────────
+   `boards.css` already encodes all of this for the TASK board, on `.bc` and
+   `.bd__col`. Those two selectors also carry that board's geometry — a 288px
+   column, an 11px/12px card — so a second board cannot borrow the motion
+   without inheriting the pixels, and the pixels belong to a sibling.
+
+   These are the same numbers with the layout left out, so the CRM deal board
+   gets identical behaviour and keeps its own dimensions. Values are boards.css's
+   and, behind it, reference `motion.css` `.kb__card` / `.kb__col`:
+
+     grab     scale(1.02) rotate(.6deg) --shadow-2      transform  90ms
+     press    scale(.985)                               transform  90ms
+     hover    border warms to --primary 46%             border    140ms
+     over     --primary 9% tint + dashed 48% border     bg/border 140ms
+     landed   box-shadow ring --primary → transparent   540ms --ease-exit
+
+   Every travel rides `--motion-scale`, so at Animations = None a press is a
+   pure opacity step, a lift is a pure shadow, and a drop target is a pure tint.
+   None of the three loses its signal — that is why each pairs its transform
+   with something that is not a transform.
+
+   `rotate` is `.6deg`, not 04's `2deg`: on a narrow column 2deg clips the
+   neighbouring card's corner. boards.css records the same conflict and resolves
+   it the same way. */
+.ix-drag-card {
+  cursor: grab;
+  transition: box-shadow    var(--dur-fast)    var(--ease-standard),
+              border-color  var(--dur-fast)    var(--ease-standard),
+              opacity       var(--dur-fast)    var(--ease-standard),
+              transform     var(--dur-instant) var(--ease-standard);
+}
+.ix-drag-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 46%, var(--outline-variant));
+}
+/* IxViews 9.2 — "enough to feel the target without looking like a drag has
+   begun". The opacity step is what survives --motion-scale: 0. */
+.ix-drag-card:active {
+  transform: scale(calc(1 - .015 * var(--motion-scale, 1)));
+  opacity: .92;
+}
+/* 9.1 grab. `.is-dragging` and not `:active`, because the library owns the
+   drag state and a press that never became a drag must not lift. */
+.ix-drag-card.is-dragging {
+  transform: scale(calc(1 + .02 * var(--motion-scale, 1)))
+             rotate(calc(.6deg * var(--motion-scale, 1)));
+  box-shadow: var(--shadow-2);
+  cursor: grabbing;
+  z-index: 3;
+}
+/* 9.1 landing flash — "one --primary flash so you can find it in the new
+   column". Deliberately identical to boards.css `bcJust` rather than improved:
+   two boards in one product that confirm a drop differently is the bug, and the
+   fix belongs on both at once. Both lose the flash under reduced motion, where
+   the card's new COLUMN is still the primary signal; noted in the report as a
+   cross-surface question rather than diverged here. */
+@keyframes ixLanded {
+  0%   { box-shadow: 0 0 0 2px var(--primary); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.ix-landed { animation: ixLanded calc(var(--dur-slow) * 1.5) var(--ease-exit); }
+
+/* The column under the cursor. The highlight is a TINT plus an inset hairline,
+   not a border, and that is deliberate: reference `.kb__col` and boards.css
+   both use `1px dashed transparent` → `--primary 48%`, but the CRM column
+   already carries a solid `--rule-soft` border as an inline style, and an
+   inline shorthand outranks any class. Restyling that border is a pixel
+   decision and belongs to the sibling who owns them, so this expresses the same
+   SIGNAL — 9% tint, 48% keyline — through a property that composes with
+   whatever border is there instead of fighting it. Recorded in the report:
+   the reference wants the resting border dashed, which is one line for whoever
+   owns that file. */
+.ix-drop-target {
+  transition: background-color var(--dur-fast) var(--ease-standard),
+              box-shadow       var(--dur-fast) var(--ease-standard);
+}
+.ix-drop-target.is-over {
+  background-color: color-mix(in srgb, var(--primary) 9%, var(--surface-1));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 48%, transparent);
+}
+
 /* ── 10 · Legacy utility names ────────────────────────────────────────────
    Kept, not deleted: nothing in the app references them today, but they are
    public-looking names and an in-flight component may pick one up. Every one is
