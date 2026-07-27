@@ -1,0 +1,206 @@
+/* approvals.css — the internal Approvals queue (`/approvals`).
+ *
+ * The staff-side counterpart to the public `/approve` landing: the same
+ * decision, made by someone with a session. `public.css` owns the stranger's
+ * view; this owns the reviewer's.
+ *
+ * OWNERSHIP. The page previously rendered `.k-approval-row*` and
+ * `.k-approvals__counter` out of `editorial.css`, which is shared by most of
+ * the app and has been a collision point for concurrent work. Those rules are
+ * left untouched and unread; everything approvals-specific is `apv-*` and lives
+ * here, so this page can be changed without reaching into a file five other
+ * surfaces depend on. `k-screen` and `k-stats` are still used from the shared
+ * layer because they are page-archetype rules, not approvals rules.
+ *
+ * The only inline style permitted in the JSX is a custom property feeding a
+ * rule here — check-tokens.mjs deviation 2. Everything else is a class.
+ *
+ * No literal hex. All values resolve through tokens, so both themes, the
+ * density scale and the radius setting reach this page.
+ */
+
+/* ── Segmented tab row ──────────────────────────────────────────────────────
+ * Task requests vs Work approvals. flex-wrap because the two labels plus their
+ * counts plus the Devanagari overflow a 360px phone, and the second tab would
+ * otherwise be unreachable.
+ */
+.apv-seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  padding: 3px;
+  border-radius: var(--r-md);
+  background: var(--s-container);
+  align-self: flex-start;
+}
+
+.apv-seg__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 7px 13px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--on-surface-3);
+  font: inherit;
+  font-size: var(--t-label);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-standard),
+              background var(--dur-fast) var(--ease-standard);
+}
+.apv-seg__btn:hover { color: var(--on-surface-2); }
+.apv-seg__btn.is-active {
+  background: var(--surface);
+  color: var(--on-surface);
+  box-shadow: var(--shadow-1);
+}
+
+/* The count beside a tab label. Tabular so the pill does not resize between
+   9 and 10 and nudge the tab beside it. */
+.apv-seg__n {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--s-highest);
+  color: var(--on-surface-2);
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.apv-seg__btn.is-active .apv-seg__n { background: var(--primary); color: var(--on-primary); }
+
+.apv-seg__hi { font-family: var(--font-hindi); font-size: var(--t-micro); color: var(--on-surface-faint); }
+
+/* ── Counter in the page header ─────────────────────────────────────────── */
+.apv-counter { text-align: right; line-height: 1.1; }
+
+.apv-counter__n {
+  font-family: var(--font-display);
+  font-size: 34px;
+  font-weight: 500;
+  color: var(--on-surface);
+  font-variant-numeric: tabular-nums;
+}
+
+.apv-counter__l {
+  font-size: var(--t-micro);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+
+/* ── A queue row ────────────────────────────────────────────────────────────
+ * Grid rather than flex: the actions column must keep its width while the title
+ * truncates, and `1fr auto` does that without a magic min-width on the body.
+ */
+.apv-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--sp-4);
+  align-items: center;
+  padding: var(--pad-card);
+  border-bottom: 1px solid var(--outline-variant);
+}
+.apv-row:last-child { border-bottom: 0; }
+
+.apv-row__main { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
+
+/* min-width:0 is load-bearing — without it a long title refuses to shrink
+   inside the grid track and pushes the action buttons off the row. */
+.apv-row__body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+
+.apv-row__t {
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+  color: var(--on-surface);
+  overflow-wrap: anywhere;
+}
+
+/* Only the rows that actually open a drawer get affordance. Previously EVERY
+   title carried `cursor:pointer` through an inline ternary that also set
+   text-decoration to 'none' — so a non-clickable title still looked clickable
+   in the hover state. A button element also makes it reachable by keyboard,
+   which a clickable <div> never was. */
+.apv-row__t--link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+  color: var(--on-surface);
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--outline);
+  text-underline-offset: 2px;
+}
+.apv-row__t--link:hover { text-decoration-color: var(--primary); }
+
+.apv-row__desc {
+  font-size: var(--t-label);
+  color: var(--on-surface-2);
+  line-height: var(--line-height-base);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.apv-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--t-micro);
+  color: var(--on-surface-3);
+}
+.apv-row__meta strong { color: var(--on-surface-2); font-weight: 600; }
+
+.apv-row__actions { display: flex; gap: var(--sp-2); flex-shrink: 0; }
+
+/* ── Modal internals ────────────────────────────────────────────────────── */
+
+/* The "send for client approval" panel inside the approve modal. */
+.apv-send {
+  padding: var(--sp-4);
+  background: var(--s-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.apv-send__t { font-size: var(--t-label); font-weight: 600; color: var(--on-surface-2); }
+.apv-send__d { font-size: var(--t-label); color: var(--on-surface-3); line-height: var(--line-height-base); }
+
+/* An empty client list is a STATE, not a disabled control: the reviewer has to
+   know the project has no clients rather than wondering why the select is
+   missing. */
+.apv-send__none { font-size: var(--t-label); color: var(--on-surface-3); font-style: italic; }
+
+.apv-modal__stack { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+/* Devanagari apposition in a modal title. */
+.apv-modal__hi {
+  font-family: var(--font-hindi);
+  font-weight: 400;
+  color: var(--on-surface-3);
+  margin-left: 6px;
+}
+
+/* ── Narrow viewport ────────────────────────────────────────────────────────
+ * Below 640px the actions drop under the row body and go full width. At the old
+ * `1fr auto` grid a 360px phone gave the two buttons about 60px each and both
+ * labels truncated to an ellipsis — two identical-looking buttons, one of which
+ * rejects the work.
+ */
+@media (max-width: 640px) {
+  .apv-row { grid-template-columns: 1fr; gap: var(--sp-3); }
+  .apv-row__actions > .btn { flex: 1; justify-content: center; }
+  .apv-counter { text-align: left; }
+}

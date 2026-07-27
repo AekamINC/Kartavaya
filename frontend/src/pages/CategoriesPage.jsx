@@ -1,89 +1,181 @@
 /**
- * CategoriesPage.jsx — k-* design system.
+ * CategoriesPage.jsx — task categories (`/categories`).
+ *
+ * Small page, three real defects:
+ *
+ *  · `.catch(() => {})` on the only fetch, then `cats.length === 0` rendering
+ *    "No categories yet". A failed request therefore claimed the firm had no
+ *    categories — and this page is reached from Settings, where the natural
+ *    next action on that sentence is to create duplicates of the ones that are
+ *    already there.
+ *  · 13 inline styles, several on the retired `--ink` / `--rule-soft` names.
+ *  · The colour swatch, the hex field and the row dot each hard-coded their own
+ *    geometry inline, so none of them followed the radius or density settings.
+ *
+ * `/categories` (server.py:2162) is `List[CategoryOut]` — a bare array, which
+ * `rows()` handles alongside the `{data:[…]}` envelope used elsewhere.
  */
-import React, { useState, useEffect } from 'react';
-import { api } from '../lib/api';
+import React, { useState, useEffect, useCallback } from 'react';
+import { api, rows as asRows, body } from '../lib/api';
 import { useToast } from '../components/ui/toast';
 import { PageHeader } from '../components/editorial';
+import { Card, CardHead, CardBody } from '../components/ui/Card';
+import { Input } from '../components/ui/Field';
+import Button from '../components/ui/Button';
+import { EmptyState } from '../components/ui/EmptyState';
+import { ErrorState, errorKind } from '../components/ui/ErrorState';
+import { SkeletonText } from '../components/ui/Skeleton';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 
+/* The seed colour for a new category. A concrete hex rather than a token
+   because <input type="color"> cannot accept a CSS custom property — it needs a
+   literal #rrggbb — and because this value is written to the database as the
+   category's own colour, i.e. it is DATA the user then edits, not chrome. */
 const DEFAULT_COLOR = '#05b7aa';
+
+const TRASH = <path d="M3 4h10M5 4V3h6v1M6 7v5M10 7v5M4 4l1 9h6l1-9" />;
 
 export default function CategoriesPage() {
   const { pushToast } = useToast();
-  const [cats,  setCats]  = useState([]);
-  const [name,  setName]  = useState('');
+  const [cats, setCats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState(null);
+  const [name, setName] = useState('');
   const [color, setColor] = useState(DEFAULT_COLOR);
+  const [creating, setCreating] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
 
-  useEffect(() => {
-    api.get('/categories').then(r => setCats(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadErr(null);
+    try {
+      const r = await api.get('/categories');
+      setCats(asRows(r));
+    } catch (e) {
+      setLoadErr(errorKind(e));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => { load(); }, [load]);
+
   const create = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || creating) return;
+    setCreating(true);
     try {
       const r = await api.post('/categories', { name: name.trim(), color });
-      setCats(p => [r.data, ...p]);
+      setCats(p => [body(r), ...p]);
       setName('');
-    } catch (_) { pushToast({ type: 'error', title: 'Could not create' }); }
+    } catch {
+      pushToast({ type: 'error', title: 'Could not create category' });
+    } finally {
+      setCreating(false);
+    }
   };
 
   const remove = (c) => {
     setConfirmState({
-      message: `Delete "${c.name}"?`,
+      title: 'Delete category?',
+      message: `"${c.name}" will be removed from every task that carries it.`,
       confirmLabel: 'Delete',
+      intent: 'danger',
       onConfirm: async () => {
         try {
           await api.delete(`/categories/${c.category_id}`);
           setCats(p => p.filter(x => x.category_id !== c.category_id));
-        } catch (_) { pushToast({ type: 'error', title: 'Could not delete' }); }
+        } catch {
+          pushToast({ type: 'error', title: 'Could not delete category' });
+        }
       },
     });
   };
 
   return (
     <div className="k-screen">
-      <PageHeader kicker="SETTINGS" title="Categories" sanskrit="वर्ग" lede="Tags you can drop on any task. Used in filters, reports, and automations." />
+      <PageHeader
+        kicker="SETTINGS"
+        title="Categories"
+        sanskrit="वर्ग"
+        lede="Tags you can drop on any task. Used in filters, reports, and automations."
+      />
 
-      <div className="k-card" style={{ marginBottom: 'var(--sp-5)' }}>
-        <div className="k-card__head">
-          <span className="k-card__title">New category</span>
-          <span className="k-card__sans">नई श्रेणी</span>
-        </div>
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input className="k-input" style={{ flex: '1 1 180px' }} value={name}
-            onChange={e => setName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && create()}
-            placeholder="Category name" />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <input type="color" value={color} onChange={e => setColor(e.target.value)}
-              style={{ width: 36, height: 36, border: '2px solid var(--rule-soft)', borderRadius: 8, cursor: 'pointer', padding: 2, background: 'transparent' }} />
-            <input className="k-input" style={{ width: 90, fontFamily: 'var(--font-mono)', fontSize: 12 }}
-              value={color} onChange={e => { if (/^#[0-9A-Fa-f]{0,6}$/.test(e.target.value)) setColor(e.target.value); }} />
+      <Card>
+        <CardHead title="New category" sanskrit="नई श्रेणी" />
+        <CardBody>
+          <div className="wf-row">
+            <Input
+              className="wf-row__grow"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && create()}
+              placeholder="Category name"
+              aria-label="Category name"
+            />
+            <div className="wf-row">
+              <input
+                type="color"
+                className="cat-swatch"
+                value={color}
+                onChange={e => setColor(e.target.value)}
+                aria-label="Category colour"
+              />
+              <Input
+                className="cat-hex"
+                value={color}
+                aria-label="Category colour hex"
+                onChange={e => { if (/^#[0-9A-Fa-f]{0,6}$/.test(e.target.value)) setColor(e.target.value); }}
+              />
+            </div>
+            <Button variant="fill" loading={creating} disabled={!name.trim()} onClick={create}>
+              Create
+            </Button>
           </div>
-          <button className="k-btn k-btn--primary" onClick={create}>Create</button>
-        </div>
-      </div>
+        </CardBody>
+      </Card>
 
-      <div className="k-card" style={{ padding: 0, overflow: 'hidden' }}>
-        {cats.length === 0 ? (
-          <div className="k-empty" style={{ padding: 'var(--sp-8)' }}>
-            <div className="k-empty__icon">🏷</div>
-            <div className="k-empty__title">No categories yet</div>
-            <div className="k-empty__sub">Tag tasks with custom categories.</div>
-          </div>
-        ) : cats.map(c => (
-          <div key={c.category_id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: '1px dashed var(--rule-soft)' }}>
-            <div style={{ width: 14, height: 14, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
-            <div style={{ flex: 1, fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{c.name}</div>
-            <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--ink-faint)' }}>{c.color}</div>
-            <button className="k-iconbtn" style={{ color: 'var(--danger)' }} onClick={() => remove(c)} title="Delete">
-              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M3 4h10M5 4V3h6v1M6 7v5M10 7v5M4 4l1 9h6l1-9"/></svg>
-            </button>
-          </div>
-        ))}
-      </div>
+      <Card>
+        <CardBody flush>
+          {loading && (
+            <div className="cat-row" aria-busy="true" aria-label="Loading categories">
+              <SkeletonText width="14px" height={14} />
+              <SkeletonText width="40%" height={13} />
+            </div>
+          )}
+
+          {/* Error outranks empty. "No categories yet" on a failed fetch invites
+              the user to recreate categories that already exist. */}
+          {!loading && loadErr && <ErrorState kind={loadErr} onRetry={load} />}
+
+          {!loading && !loadErr && cats.length === 0 && (
+            <EmptyState
+              illustration="generic"
+              title={{ en: 'No categories yet', hi: 'अभी कोई वर्ग नहीं' }}
+              description="Tag tasks with custom categories to filter and report on them."
+            />
+          )}
+
+          {!loading && !loadErr && cats.map(c => (
+            <div key={c.category_id} className="cat-row">
+              <span className="cat-row__dot" style={{ '--c': c.color }} aria-hidden="true" />
+              <span className="cat-row__name">{c.name}</span>
+              <span className="cat-row__hex">{c.color}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => remove(c)}
+                title={`Delete ${c.name}`}
+                aria-label={`Delete ${c.name}`}
+              >
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4">
+                  {TRASH}
+                </svg>
+              </Button>
+            </div>
+          ))}
+        </CardBody>
+      </Card>
+
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
     </div>
   );

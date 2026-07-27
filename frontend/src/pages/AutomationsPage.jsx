@@ -5,9 +5,12 @@
  *   embedded — when true, strips k-screen wrapper + PageHeader (used inside ProjectBoardPage)
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import { api } from '../lib/api';
+import { api, rows as asRows, body as asBody } from '../lib/api';
 import { PageHeader } from '../components/editorial';
-import { ErrorState, errorKind } from '../components/ui';
+import { ErrorState, errorKind, EmptyState, SkeletonText } from '../components/ui';
+import { Card, CardHead, CardBody } from '../components/ui/Card';
+import { Field, Input, Select } from '../components/ui/Field';
+import Button from '../components/ui/Button';
 import { useToast } from '../components/ui/toast';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 
@@ -67,10 +70,10 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
   useEffect(() => {
     if (propTeamId) { setTeamId(propTeamId); return; }
     api.get('/teams').then(r => {
-      const data = Array.isArray(r.data) ? r.data : [];
+      const data = asRows(r);
       setTeams(data);
       if (data.length > 0 && !teamId) setTeamId(data[0].team_id);
-    }).catch(() => {});
+    }).catch(() => setTeams([]));
   }, [propTeamId]); // eslint-disable-line
 
   // ── Load automations for selected project ────────────────────────────────
@@ -83,7 +86,7 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
     setLoading(true);
     setErr(null);
     api.get(`/automations/team/${teamId}`)
-       .then(r => setAutomations(Array.isArray(r.data) ? r.data : []))
+       .then(r => setAutomations(asRows(r)))
        .catch(e => { setErr(e); setAutomations([]); })
        .finally(() => setLoading(false));
   }, [teamId]);
@@ -165,7 +168,7 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
         enabled: true,
       };
       const r = await api.post('/automations/', payload);
-      setAutomations(prev => [r.data, ...prev]);
+      setAutomations(prev => [asBody(r), ...prev]);
       setCreating(false);
       setForm(EMPTY_FORM);
       pushToast({ type: 'success', title: 'Automation created' });
@@ -182,114 +185,177 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
     <>
       {/* Project picker — always visible when not embedded (embedded gets it from board) */}
       {!propTeamId && teams.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 'var(--sp-5)', padding: '10px 14px', background: 'var(--bg-soft)', borderRadius: 'var(--r-md)', border: '1px solid var(--rule)' }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', whiteSpace: 'nowrap' }}>Project</span>
-          <select className="k-select" value={teamId} onChange={e => setTeamId(e.target.value)} style={{ flex: 1, maxWidth: 320 }}>
+        <div className="aut-bar">
+          <label className="aut-bar__l" htmlFor="aut-project">Project</label>
+          <select
+            id="aut-project"
+            className="k-select aut-bar__sel"
+            value={teamId}
+            onChange={e => setTeamId(e.target.value)}
+          >
             {teams.map(t => <option key={t.team_id} value={t.team_id}>{t.name}</option>)}
           </select>
           {activeProject && (
-            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{automations.length} rule{automations.length !== 1 ? 's' : ''}</span>
+            <span className="aut-bar__n">{automations.length} rule{automations.length !== 1 ? 's' : ''}</span>
           )}
-          <button className="k-btn k-btn--primary k-btn--sm" onClick={() => setCreating(true)} style={{ marginLeft: 'auto' }}>
+          <Button variant="fill" size="sm" className="aut-bar__sp" onClick={() => setCreating(true)}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3v10M3 8h10"/></svg>
             New rule
-          </button>
+          </Button>
         </div>
       )}
 
       {/* Embedded header row */}
       {propTeamId && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--sp-4)' }}>
-          <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+        <div className="aut-head">
+          <div className="aut-head__n">
             {automations.length} automation rule{automations.length !== 1 ? 's' : ''} for this project
           </div>
           {!creating && (
-            <button className="k-btn k-btn--primary k-btn--sm" onClick={() => setCreating(true)}>
+            <Button variant="fill" size="sm" onClick={() => setCreating(true)}>
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3v10M3 8h10"/></svg>
               New rule
-            </button>
+            </Button>
           )}
         </div>
       )}
 
       {/* Builder form */}
       {creating && (
-        <form onSubmit={handleCreate} className="k-card" style={{ marginBottom: 'var(--sp-5)' }}>
-          <div className="k-card__head">
-            <span className="k-card__title">New Automation Rule</span>
-          </div>
-          <div className="k-card__body">
-            <div style={{ display: 'grid', gap: 'var(--sp-4)', gridTemplateColumns: '2fr 1.5fr 1.5fr', marginBottom: 'var(--sp-4)' }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: 5 }}>Rule name</label>
-                <input className="k-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required placeholder="e.g. Notify on done" />
+        <Card>
+          <CardHead title="New automation rule" sanskrit="नया नियम" />
+          <CardBody>
+            {/* A real <form>, so Enter submits and the browser runs `required`.
+                Every label below is now wired to its control through Field —
+                they were bare <label> elements with no htmlFor, which means a
+                screen reader read nine unlabelled inputs. */}
+            <form onSubmit={handleCreate} className="aut-form">
+              <div className="aut-grid3">
+                <Field label="Rule name" required htmlFor="aut-name">
+                  <Input
+                    id="aut-name"
+                    required
+                    value={form.name}
+                    placeholder="e.g. Notify on done"
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                  />
+                </Field>
+                <Field label="When (trigger)" htmlFor="aut-trigger">
+                  <Select
+                    id="aut-trigger"
+                    value={form.trigger_event}
+                    onChange={e => setForm(f => ({ ...f, trigger_event: e.target.value }))}
+                  >
+                    {TRIGGERS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Then (action)" htmlFor="aut-action">
+                  <Select
+                    id="aut-action"
+                    value={form.action_type}
+                    onChange={e => setForm(f => ({ ...f, action_type: e.target.value }))}
+                  >
+                    {ACTIONS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                  </Select>
+                </Field>
               </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: 5 }}>When (trigger)</label>
-                <select className="k-select" value={form.trigger_event} onChange={e => setForm(f => ({ ...f, trigger_event: e.target.value }))}>
-                  {TRIGGERS.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: 5 }}>Then (action)</label>
-                <select className="k-select" value={form.action_type} onChange={e => setForm(f => ({ ...f, action_type: e.target.value }))}>
-                  {ACTIONS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
-                </select>
-              </div>
-            </div>
 
-            <div style={{ marginBottom: 'var(--sp-4)' }}>
-              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em', display: 'block', marginBottom: 5 }}>
-                {form.action_type === 'change_status' ? 'Target status' :
-                 form.action_type === 'assign_to'     ? 'User email' :
-                 form.action_type === 'set_field'     ? 'Field value' : 'Message (optional)'}
-              </label>
-              <input className="k-input" value={form.action_config} onChange={e => setForm(f => ({ ...f, action_config: e.target.value }))}
-                placeholder={form.action_type === 'change_status' ? 'done' : form.action_type === 'assign_to' ? 'user@example.com' : 'Optional message…'} />
-            </div>
+              <Field
+                htmlFor="aut-config"
+                label={
+                  form.action_type === 'change_status' ? 'Target status'
+                    : form.action_type === 'assign_to' ? 'User email'
+                      : form.action_type === 'set_field' ? 'Field value'
+                        : 'Message'
+                }
+              >
+                <Input
+                  id="aut-config"
+                  value={form.action_config}
+                  onChange={e => setForm(f => ({ ...f, action_config: e.target.value }))}
+                  placeholder={
+                    form.action_type === 'change_status' ? 'done'
+                      : form.action_type === 'assign_to' ? 'name@example.com'
+                        : 'Optional message…'
+                  }
+                />
+              </Field>
 
-            <div style={{ marginBottom: 'var(--sp-5)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Conditions (AND)</span>
-                <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={addCondition}>+ Add condition</button>
-              </div>
-              {form.conditions.length === 0 ? (
-                <p style={{ color: 'var(--ink-faint)', fontSize: 12, margin: 0 }}>No conditions — rule fires on every trigger event.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {form.conditions.map((cond, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      {i > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', width: 30, textAlign: 'center' }}>AND</span>}
-                      {i === 0 && <span style={{ width: 30 }} />}
-                      <select className="k-select" style={{ width: 120 }} value={cond.field} onChange={e => updateCondition(i, { field: e.target.value })}>
-                        {CONDITION_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-                      </select>
-                      <select className="k-select" style={{ width: 60 }} value={cond.op} onChange={e => updateCondition(i, { op: e.target.value })}>
-                        {CONDITION_OPS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
-                      <select className="k-select" style={{ width: 130 }} value={cond.value} onChange={e => updateCondition(i, { value: e.target.value })}>
-                        {(cond.field === 'priority' ? PRIORITY_OPTS : STATUS_OPTS).map(v => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                      <button type="button" onClick={() => removeCondition(i)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', fontSize: 18, lineHeight: 1, padding: '0 4px' }}>×</button>
-                    </div>
-                  ))}
+              <div>
+                <div className="aut-cond__head">
+                  <span className="aut-cond__t">Conditions (AND)</span>
+                  <Button variant="ghost" size="sm" onClick={addCondition}>+ Add condition</Button>
                 </div>
-              )}
-            </div>
+                {form.conditions.length === 0 ? (
+                  <p className="aut-cond__none">No conditions — the rule fires on every trigger event.</p>
+                ) : (
+                  <div className="aut-cond__list">
+                    {form.conditions.map((cond, i) => (
+                      <div key={i} className="aut-cond__row">
+                        <span className="aut-cond__and" aria-hidden={i === 0 || undefined}>
+                          {i > 0 ? 'AND' : ''}
+                        </span>
+                        <select
+                          className="k-select aut-cond__f"
+                          aria-label={`Condition ${i + 1} field`}
+                          value={cond.field}
+                          onChange={e => updateCondition(i, { field: e.target.value })}
+                        >
+                          {CONDITION_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                        </select>
+                        <select
+                          className="k-select aut-cond__o"
+                          aria-label={`Condition ${i + 1} operator`}
+                          value={cond.op}
+                          onChange={e => updateCondition(i, { op: e.target.value })}
+                        >
+                          {CONDITION_OPS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                        <select
+                          className="k-select aut-cond__v"
+                          aria-label={`Condition ${i + 1} value`}
+                          value={cond.value}
+                          onChange={e => updateCondition(i, { value: e.target.value })}
+                        >
+                          {(cond.field === 'priority' ? PRIORITY_OPTS : STATUS_OPTS).map(v => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Remove condition ${i + 1}`}
+                          onClick={() => removeCondition(i)}
+                        >
+                          ×
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Creating…' : 'Create rule'}</button>
-              <button type="button" className="k-btn k-btn--ghost" onClick={() => { setCreating(false); setForm(EMPTY_FORM); }}>Cancel</button>
-            </div>
-          </div>
-        </form>
+              <div className="aut-acts">
+                <Button type="submit" variant="fill" loading={saving} disabled={!form.name.trim()}>
+                  Create rule
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => { setCreating(false); setForm(EMPTY_FORM); }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </CardBody>
+        </Card>
       )}
 
       {/* Loading */}
       {loading && (
-        <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontStyle: 'italic', fontSize: 13 }}>
-          Loading automations…
+        <div className="k-rules" aria-busy="true" aria-label="Loading automations">
+          <SkeletonText width="40%" height={14} />
+          <SkeletonText width="90%" height={12} />
         </div>
       )}
 
@@ -304,11 +370,13 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
 
       {/* Empty state */}
       {!loading && !err && automations.length === 0 && !creating && (
-        <div className="k-empty">
-          <div className="k-empty__icon">⚡</div>
-          <div className="k-empty__title">No automations yet</div>
-          <div className="k-empty__sub">Create a rule to automate repetitive work on this project.</div>
-        </div>
+        <EmptyState
+          illustration="generic"
+          title={{ en: 'No automations yet', hi: 'अभी कोई नियम नहीं' }}
+          description="Create a rule to automate repetitive work on this project."
+          action="New rule"
+          onAction={() => setCreating(true)}
+        />
       )}
 
       {/* Rules list */}
@@ -333,7 +401,7 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
                     <span className="k-rule__status-dot" />
                     {auto.enabled ? 'Active' : 'Paused'}
                   </span>
-                  <span className="k-mute" style={{ marginLeft: 0 }}>
+                  <span className="k-mute">
                     {auto.run_count > 0 ? `${auto.run_count} run${auto.run_count !== 1 ? 's' : ''}` : '0 runs'}
                   </span>
                 </div>
@@ -362,41 +430,35 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
 
                 <div className="k-rule__foot">
                   {/* Test run */}
-                  <button
-                    className="k-btn k-btn--ghost k-btn--sm"
-                    onClick={() => handleTestRun(auto)}
-                    disabled={isTesting}
+                  {/* Button's own `loading` renders `.spin` and kills pointer
+                      events — the spinner the design system already owns,
+                      reachable by the reduced-motion block, which an inline
+                      `animation:` never was. */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    loading={isTesting}
                     title="Run this automation now with a test context"
-                    style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                    onClick={() => handleTestRun(auto)}
                   >
-                    {isTesting ? (
-                      <>
-                        {/* `.spin`, not a bespoke SVG with an inline
-                            `animation:`. An inline style is invisible to every
-                            stylesheet rule — including the reduced-motion
-                            block — so this was the one loop in the build that
-                            no CSS could reach, and it duplicated a spinner the
-                            design system already owns. */}
-                        <span className="spin" aria-hidden="true" />
-                        Running…
-                      </>
-                    ) : (
+                    {isTesting ? 'Running…' : (
                       <>
                         <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M4 3l10 5-10 5V3z"/></svg>
                         Test run
                       </>
                     )}
-                  </button>
-                  <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => handleToggle(auto)}>
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => handleToggle(auto)}>
                     {auto.enabled ? 'Pause' : 'Resume'}
-                  </button>
-                  <button
-                    className="k-btn k-btn--ghost k-btn--sm"
-                    style={{ marginLeft: 'auto', color: 'var(--danger)' }}
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    className="aut-del"
                     onClick={() => handleDelete(auto.automation_id)}
                   >
                     Delete
-                  </button>
+                  </Button>
                 </div>
               </div>
             );
@@ -409,7 +471,7 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
   // ── Render ────────────────────────────────────────────────────────────────
   if (embedded) {
     return (
-      <div style={{ paddingTop: 'var(--sp-4)' }}>
+      <div className="aut-embed">
         {body}
       </div>
     );

@@ -21,3 +21,10 @@
 @import './srijan.css';
 @import './graha.css';
 @import './ganit.css';
+/* The two unauthenticated routes, /approve and /sign/:token. Global rather than
+   page-local: both render with no session, and a lazily-imported stylesheet
+   would leave the first paint unstyled on the one surface strangers see. */
+@import './public.css';
+@import './approvals.css';
+@import './workflow.css';
+@import './reports.css';

@@ -1,69 +1,130 @@
 /**
- * ApprovalsPage.jsx — editorial Approvals screen.
- * Stat row (Pending / Approved today / Rejected today) + pending card.
- * All API calls unchanged.
+ * ApprovalsPage.jsx — the internal Approvals queue (`/approvals`).
+ *
+ * The staff-side counterpart to the public `/approve` landing: the same
+ * decision, made by someone who has a session.
+ *
+ * WHAT CHANGED:
+ *
+ *  · 470 lines in one file, rendering the same queue row inline three times
+ *    with drifting action sets. Split into `pages/approvals/` following the
+ *    `pages/ganit/` precedent — the route file keeps its path, the parts move.
+ *
+ *  · 32 inline styles, several on the RETIRED token names (`--ink-2`,
+ *    `--ink-3`, `--ink-faint`, `--bg-soft`, `--rule`). They now resolve only
+ *    because `00` aliased the legacy layer; the aliases are not a design.
+ *
+ *  · LOADING, EMPTY and ERROR were not three states. This is the file the
+ *    defect is named after — see QueuePanel's docblock. `load()` swallowed
+ *    every failure into a transient toast and left the list at `[]`, so a
+ *    failed fetch rendered "No pending approvals — you are all caught up" on a
+ *    queue nobody had read. On this screen an empty queue is a reason to stop
+ *    looking, which makes that sentence the most expensive false statement in
+ *    the product.
+ *
+ *  · `/approvals/history` and `/approvals/stats` were fetched with
+ *    `.catch(() => {})` — rejections swallowed with no state written at all.
+ *
+ * RESPONSE SHAPES, checked in `backend/server.py`:
+ *   · `/approvals/pending`  (:1418) → bare array
+ *   · `/approvals/history`  (:1456) → bare array
+ *   · `/approvals/stats`    (:1483) → bare object
+ * `rows()` accepts a bare array and a `{data:[…]}` envelope both, so it is
+ * correct here and stays correct if these routes are ever wrapped. The page
+ * previously inlined `Array.isArray(r.data) ? r.data : []` at three call sites.
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import { api } from '../lib/api';
+import { api, rows as asRows, body } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import { navContext } from '../components/layout/navConfig';
 import { useToast } from '../components/ui/toast';
-import { PageHeader, StatTile, DueChip, PriorityDot } from '../components/editorial';
-import { relTime } from '../lib/utils';
+import { PageHeader, StatTile } from '../components/editorial';
+import { errorKind } from '../components/ui/ErrorState';
 import TaskDrawer from '../components/TaskDrawer';
-import { EmptyState } from '../components/ui/EmptyState';
-import { Modal } from '../components/ui/modal';
-import { approvalColor, APPROVAL_LABELS } from '../lib/statusColors';
+import QueuePanel from './approvals/QueuePanel';
+import HistoryPanel from './approvals/HistoryPanel';
+import { ApproveModal, ClientApproveModal, RejectModal } from './approvals/ApprovalModals';
 
 export default function ApprovalsPage() {
   const { pushToast } = useToast();
-  const [requests,    setRequests]    = useState([]);
-  const [history,     setHistory]     = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [deciding,    setDeciding]    = useState({});
-  const [adminTab,    setAdminTab]    = useState('requests'); // 'requests' | 'work'
-  // Client-send modal state
-  const [clientModal,   setClientModal]   = useState(null); // { approvalId, team_id } | null
-  const [clientList,    setClientList]    = useState([]);
-  const [clientUserId,  setClientUserId]  = useState('');
-  const [sendNotes,     setSendNotes]     = useState('');
-  const [rejectModal, setRejectModal] = useState(null); // { approvalId } | null
-  const [rejectNote,  setRejectNote]  = useState('');
-  const [clientApproveModal, setClientApproveModal] = useState(null); // { approvalId } | null
-  const [clientApproveNote,  setClientApproveNote]  = useState('');
+  const [requests, setRequests] = useState([]);
+  const [history, setHistory] = useState([]);
   const [stats, setStats] = useState(null);
+
+  // Three states, three variables. `null` means "no failure"; a set value is an
+  // errorKind() string that ErrorState turns into the one correct action.
+  const [loading, setLoading] = useState(true);
+  const [queueErr, setQueueErr] = useState(null);
+  const [histLoading, setHistLoading] = useState(false);
+  const [histErr, setHistErr] = useState(null);
+  const [statsErr, setStatsErr] = useState(false);
+
+  const [deciding, setDeciding] = useState({});
+  const [adminTab, setAdminTab] = useState('requests'); // 'requests' | 'work'
+
+  const [clientModal, setClientModal] = useState(null);
+  const [clientList, setClientList] = useState([]);
+  const [clientUserId, setClientUserId] = useState('');
+  const [sendNotes, setSendNotes] = useState('');
+  const [rejectModal, setRejectModal] = useState(null);
+  const [rejectNote, setRejectNote] = useState('');
+  const [clientApproveModal, setClientApproveModal] = useState(null);
+  const [clientApproveNote, setClientApproveNote] = useState('');
   const [drawerTaskId, setDrawerTaskId] = useState(null);
-  const user     = currentUser();
+
+  const user = currentUser();
   // The SAME predicate as the route guard. `Protected.jsx` confines
   // `navContext().isClient` to `/client/*`, so a portal client never renders
   // this page; bare `role === 'client'` was a wider set that also caught staff
-  // carrying the client flag beside an org role — people the guard
-  // deliberately does not confine. They reached this page and took the client
-  // branch, fetching `/client/approvals`, which is `List[ClientApprovalOut]`
-  // (camelCase `approvalId`/`requestedBy`/`requestedAt`, and no status field at
-  // all) into rows that read `approval_id`, `approval_status`,
-  // `requested_by_name`, `task_title` and `request_data`.
+  // carrying the client flag beside an org role — people the guard deliberately
+  // does not confine. They reached this page and took the client branch,
+  // fetching `/client/approvals`, which is `List[ClientApprovalOut]` (camelCase
+  // `approvalId`/`requestedBy`/`requestedAt`, and no status field at all) into
+  // rows that read `approval_id`, `approval_status`, `requested_by_name`,
+  // `task_title` and `request_data`.
   const isClient = navContext(user).isClient;
 
   const load = useCallback(async () => {
     setLoading(true);
+    setQueueErr(null);
     try {
       // Staff endpoint only — see the note on `isClient`. A portal client's
       // approvals screen is `pages/client/ClientApprovals.jsx`, which reads the
       // client shape through `clientShape.js`.
       const r = await api.get('/approvals/pending');
-      setRequests(Array.isArray(r.data) ? r.data : []);
-      if (!isClient) {
-        api.get('/approvals/history').then(h => setHistory(Array.isArray(h.data) ? h.data : [])).catch(() => {});
-        // Counted server-side. Deriving these from /approvals/history was wrong
-        // because that endpoint is capped at 50 rows, so a day with more than
-        // 50 decisions under-reported with a plausible-looking number.
-        api.get('/approvals/stats').then(st => setStats(st.data)).catch(() => {});
-      }
-    } catch (_) {
+      setRequests(asRows(r));
+    } catch (e) {
+      // Recorded in state, not only shouted at a toast that disappears. The
+      // panel has to be able to say "this did not load" for as long as it is
+      // true, which is the whole point.
+      setQueueErr(errorKind(e));
       pushToast({ type: 'error', title: 'Could not load approvals' });
     } finally {
       setLoading(false);
+    }
+
+    if (isClient) return;
+
+    setHistLoading(true);
+    setHistErr(null);
+    try {
+      const h = await api.get('/approvals/history');
+      setHistory(asRows(h));
+    } catch (e) {
+      setHistErr(errorKind(e));
+    } finally {
+      setHistLoading(false);
+    }
+
+    setStatsErr(false);
+    try {
+      // Counted server-side. Deriving these from /approvals/history was wrong
+      // because that endpoint is capped at 50 rows, so a day with more than 50
+      // decisions under-reported with a plausible-looking number.
+      const st = await api.get('/approvals/stats');
+      setStats(body(st));
+    } catch {
+      setStatsErr(true);
     }
   }, [isClient, pushToast]);
 
@@ -73,7 +134,27 @@ export default function ApprovalsPage() {
     setDeciding(d => ({ ...d, [approvalId]: true }));
     try {
       await api.post(`/approvals/${approvalId}/review`, { status, notes: extra.notes || '', ...extra });
-      pushToast({ type: 'success', title: status === 'approved' ? 'Approved ✓' : status === 'rejected' ? 'Rejected' : 'Sent to client ✓' });
+      pushToast({
+        type: 'success',
+        title: status === 'approved' ? 'Approved' : status === 'rejected' ? 'Rejected' : 'Sent to client',
+      });
+      load();
+    } catch (e) {
+      pushToast({ type: 'error', title: 'Action failed', message: e?.response?.data?.detail || 'Try again' });
+    } finally {
+      setDeciding(d => { const n = { ...d }; delete n[approvalId]; return n; });
+    }
+  };
+
+  const clientDecideTask = async (approvalId, status, notes = '') => {
+    const taskId = approvalId.replace('task_approval--', '');
+    setDeciding(d => ({ ...d, [approvalId]: true }));
+    try {
+      const endpoint = status === 'approved'
+        ? `/tasks/${taskId}/client-approve`
+        : `/tasks/${taskId}/client-reject`;
+      await api.post(endpoint, { notes });
+      pushToast({ type: 'success', title: status === 'approved' ? 'Approved' : 'Rejected' });
       load();
     } catch (e) {
       pushToast({ type: 'error', title: 'Action failed', message: e?.response?.data?.detail || 'Try again' });
@@ -83,49 +164,36 @@ export default function ApprovalsPage() {
   };
 
   const openApproveFlow = (approvalId, teamId) => {
-    // Only task-level approvals get the client-send choice
+    if (isClient) { setClientApproveNote(''); setClientApproveModal({ approvalId }); return; }
+    // Only task-level approvals get the client-send choice.
     if (approvalId.startsWith('task_approval--')) {
       setClientUserId(''); setSendNotes(''); setClientList([]);
       setClientModal({ approvalId, teamId });
       if (teamId) {
         api.get(`/teams/${teamId}/clients`)
-          .then(r => setClientList(Array.isArray(r.data) ? r.data : []))
-          .catch(() => {});
+          .then(r => setClientList(asRows(r)))
+          .catch(() => setClientList([]));
       }
     } else {
       decide(approvalId, 'approved');
     }
   };
 
-  const openRejectFlow = (approvalId) => {
-    setRejectNote('');
-    setRejectModal({ approvalId });
-  };
+  const openRejectFlow = (approvalId) => { setRejectNote(''); setRejectModal({ approvalId }); };
 
-  // A client could decline with a reason but approve only silently — the
-  // approve button posted no notes at all. "Fine, but make the logo smaller
-  // next time" is the commonest thing a client wants to say, and there was
-  // nowhere to say it. Same modal shape as reject, comment optional.
-  const openClientApproveFlow = (approvalId) => {
-    setClientApproveNote('');
-    setClientApproveModal({ approvalId });
+  const confirmApproveWithClient = async () => {
+    const { approvalId } = clientModal;
+    const selected = clientList.find(c => c.user_id === clientUserId);
+    setClientModal(null);
+    await decide(approvalId, 'approved', selected
+      ? { send_to_client: true, client_email: selected.email, notes: sendNotes }
+      : { send_to_client: false, notes: sendNotes });
   };
 
   const confirmClientApprove = async () => {
     const { approvalId } = clientApproveModal;
     setClientApproveModal(null);
     await clientDecideTask(approvalId, 'approved', clientApproveNote);
-  };
-
-  const confirmApproveWithClient = async () => {
-    const { approvalId } = clientModal;
-    const selected = clientList.find(c => c.user_id === clientUserId);
-    setClientModal(null);
-    if (selected) {
-      await decide(approvalId, 'approved', { send_to_client: true, client_email: selected.email, notes: sendNotes });
-    } else {
-      await decide(approvalId, 'approved', { send_to_client: false, notes: sendNotes });
-    }
   };
 
   const confirmReject = async () => {
@@ -138,30 +206,21 @@ export default function ApprovalsPage() {
     }
   };
 
-  const clientDecideTask = async (approvalId, status, notes = '') => {
-    const taskId = approvalId.replace('task_approval--', '');
-    setDeciding(d => ({ ...d, [approvalId]: true }));
-    try {
-      const endpoint = status === 'approved'
-        ? `/tasks/${taskId}/client-approve`
-        : `/tasks/${taskId}/client-reject`;
-      await api.post(endpoint, { notes });
-      pushToast({ type: 'success', title: status === 'approved' ? 'Approved ✓' : 'Rejected' });
-      load();
-    } catch (e) {
-      pushToast({ type: 'error', title: 'Action failed', message: e?.response?.data?.detail || 'Try again' });
-    } finally {
-      setDeciding(d => { const n = { ...d }; delete n[approvalId]; return n; });
-    }
-  };
-
-  const approved = stats?.approved_today ?? null;
-  const rejected = stats?.rejected_today ?? null;
-
-  // Split admin requests into task-creation requests vs work approvals
+  // Split staff requests into task-creation requests vs work approvals.
   const taskRequestRows = requests.filter(r => !r.approval_id?.startsWith('task_approval--'));
   const workApprovalRows = requests.filter(r => r.approval_id?.startsWith('task_approval--'));
-  const activeTab = adminTab === 'requests' ? taskRequestRows : workApprovalRows;
+  const visibleRows = isClient
+    ? requests
+    : (adminTab === 'requests' ? taskRequestRows : workApprovalRows);
+
+  // '—' when the count genuinely failed, so a broken tile never reads as a real
+  // zero. `stats?.x ?? null` alone could not tell those apart.
+  const statValue = (key) => (statsErr ? '—' : stats?.[key] ?? '—');
+
+  const TABS = [
+    ['requests', 'Task requests', 'अनुरोध', taskRequestRows.length],
+    ['work', 'Work approvals', 'कार्य', workApprovalRows.length],
+  ];
 
   return (
     <div className="k-screen">
@@ -169,252 +228,101 @@ export default function ApprovalsPage() {
         kicker="REVIEW"
         title={isClient ? 'My Approvals' : 'Approvals'}
         sanskrit="अनुमोदन"
-        lede={isClient ? 'Tasks sent to you for approval + your submitted requests.' : 'Items waiting on you. Review, approve, or send back.'}
-        right={
-          !isClient && (
-            <div className="k-approvals__counter">
-              <div className="k-approvals__counter-num">{requests.length}</div>
-              <div className="k-approvals__counter-lbl">awaiting<br/>your nod</div>
-            </div>
-          )
-        }
+        lede={isClient
+          ? 'Tasks sent to you for approval, and your submitted requests.'
+          : 'Items waiting on you. Review, approve, or send back.'}
+        right={!isClient && (
+          <div className="apv-counter">
+            {/* The queue count is only honest once the queue has actually been
+                read. While it is loading or after it failed this shows '—'
+                rather than a confident 0. */}
+            <div className="apv-counter__n">{loading || queueErr ? '—' : requests.length}</div>
+            <div className="apv-counter__l">awaiting<br />your nod</div>
+          </div>
+        )}
       />
 
-      {/* Stat row (admin only) */}
       {!isClient && (
         <div className="k-stats">
-          <StatTile variant="amber" label="PENDING"  sanskrit="लंबित"    value={requests.length}  sub="awaiting your call" />
-          <StatTile variant="teal"  label="APPROVED" sanskrit="स्वीकृत"  value={approved ?? '—'}   sub="today" />
-          <StatTile variant="red"   label="REJECTED" sanskrit="अस्वीकृत" value={rejected ?? '—'}   sub="today" />
+          <StatTile variant="amber" label="PENDING" sanskrit="लंबित"
+            value={loading || queueErr ? '—' : requests.length} sub="awaiting your call" />
+          <StatTile variant="teal" label="APPROVED" sanskrit="स्वीकृत"
+            value={statValue('approved_today')} sub="today" />
+          <StatTile variant="red" label="REJECTED" sanskrit="अस्वीकृत"
+            value={statValue('rejected_today')} sub="today" />
         </div>
       )}
 
-      {/* Admin tabs */}
+      {!isClient && statsErr && (
+        <div className="note note--warn" role="status">
+          <b>Today&rsquo;s decision counts did not load.</b> The queue below is unaffected.
+        </div>
+      )}
+
       {!isClient && (
-        <div className="k-segctrl" style={{ marginBottom: 16 }}>
-          <button
-            className={'k-segctrl__btn' + (adminTab === 'requests' ? ' is-active' : '')}
-            onClick={() => setAdminTab('requests')}
-          >
-            Task requests
-            {taskRequestRows.length > 0 && <span className="k-segctrl__count">{taskRequestRows.length}</span>}
-            <span style={{ fontFamily: 'var(--font-hindi)', fontSize: 11, marginLeft: 4, color: 'var(--ink-faint)' }}>अनुरोध</span>
-          </button>
-          <button
-            className={'k-segctrl__btn' + (adminTab === 'work' ? ' is-active' : '')}
-            onClick={() => setAdminTab('work')}
-          >
-            Work approvals
-            {workApprovalRows.length > 0 && <span className="k-segctrl__count">{workApprovalRows.length}</span>}
-            <span style={{ fontFamily: 'var(--font-hindi)', fontSize: 11, marginLeft: 4, color: 'var(--ink-faint)' }}>कार्य</span>
-          </button>
-        </div>
-      )}
-
-      {loading && (
-        <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--ink-3)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>
-          Loading approvals…
-        </div>
-      )}
-
-      {!loading && (isClient ? requests : activeTab).length === 0 && (
-        <EmptyState
-          illustration="success"
-          title={{ en: 'No pending approvals', hi: 'कोई लंबित अनुमोदन नहीं' }}
-          description={isClient ? 'No tasks awaiting your review right now.' : 'Nothing pending right now — you are all caught up.'}
-        />
-      )}
-
-      {/* Pending approvals card */}
-      {!loading && (isClient ? requests : activeTab).length > 0 && (
-        <section className="k-card" style={{ padding: 0, overflow: 'hidden' }}>
-          <header className="k-card__head" style={{ padding: '16px 24px' }}>
-            <div className="k-card__titles">
-              <h3 className="k-card__title">{isClient ? 'Pending approval' : adminTab === 'requests' ? 'Pending task requests' : 'Pending work approvals'}</h3>
-              <span className="k-card__sans">लंबित अनुमोदन</span>
-            </div>
-          </header>
-          <div className="k-card__body" style={{ padding: 0 }}>
-            {(isClient ? requests : activeTab).map((r) => {
-              const data      = typeof r.request_data === 'string' ? JSON.parse(r.request_data) : (r.request_data || {});
-              const title     = data?.title || r.task_title || 'Untitled task';
-              const desc      = data?.description || r.notes || '';
-              const priority  = data?.priority || r.priority || 'medium';
-              const requester = r.requester_name || r.requested_by_name || (isClient ? 'You' : 'Client');
-              const isDeciding = deciding[r.approval_id];
-              return (
-                <div key={r.approval_id} className="k-approval-row">
-                  <div className="k-approval-row__main">
-                    <PriorityDot priority={priority} />
-                    <div className="k-approval-row__body">
-                      <div
-                        className="k-approval-row__title"
-                        style={{ cursor: r.task_id ? 'pointer' : 'default', textDecoration: r.task_id ? 'underline' : 'none', textDecorationColor: 'var(--rule)' }}
-                        onClick={() => r.task_id && setDrawerTaskId(r.task_id)}
-                      >{title}</div>
-                      {desc && <div className="k-approval-row__desc">{desc}</div>}
-                      <div className="k-approval-row__meta">
-                        <span className="k-mute">
-                          Requested by <strong style={{ color: 'var(--ink-2)' }}>{requester}</strong>
-                        </span>
-                        {r.created_at && (
-                          <span className="k-mute"> · {relTime(r.created_at)}</span>
-                        )}
-                        {r.task_due_at && (
-                          <> · <DueChip date={r.task_due_at} /></>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  {!isClient && (
-                    <div className="k-approval-row__actions">
-                      <button
-                        className="k-btn k-btn--primary k-btn--sm"
-                        onClick={() => openApproveFlow(r.approval_id, r.team_id)}
-                        disabled={isDeciding}
-                      >
-                        {isDeciding ? '…' : '✓ Approve'}
-                      </button>
-                      <button
-                        className="k-btn k-btn--ghost k-btn--sm"
-                        onClick={() => openRejectFlow(r.approval_id)}
-                        disabled={isDeciding}
-                        style={{ color: 'var(--danger)' }}
-                      >
-                        ✕ Reject
-                      </button>
-                    </div>
-                  )}
-                  {isClient && r.approval_id?.startsWith('task_approval--') && r.approval_status === 'pending_client' && (
-                    <div className="k-approval-row__actions">
-                      <button
-                        className="k-btn k-btn--primary k-btn--sm"
-                        onClick={() => openClientApproveFlow(r.approval_id)}
-                        disabled={isDeciding}
-                      >
-                        {isDeciding ? '…' : '✓ Approve'}
-                      </button>
-                      <button
-                        className="k-btn k-btn--ghost k-btn--sm"
-                        onClick={() => openRejectFlow(r.approval_id)}
-                        disabled={isDeciding}
-                        style={{ color: 'var(--danger)' }}
-                      >
-                        ✕ Reject
-                      </button>
-                    </div>
-                  )}
-                  {isClient && !r.approval_id?.startsWith('task_approval--') && (
-                    <span className="k-statuschip" style={{ '--c': approvalColor('pending') }}>
-                      <span className="k-statuschip__dot" />
-                      Pending admin review
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* History (admin only, if loaded) */}
-      {!isClient && history.length > 0 && (
-        <section className="k-card" style={{ padding: 0, overflow: 'hidden' }}>
-          <header className="k-card__head" style={{ padding: '16px 24px' }}>
-            <div className="k-card__titles">
-              <h3 className="k-card__title">Recent decisions</h3>
-              <span className="k-card__sans">हाल के निर्णय</span>
-            </div>
-          </header>
-          <div className="k-card__body" style={{ padding: 0 }}>
-            {history.slice(0, 8).map((h, i) => (
-              <div key={h.approval_id || i} className="k-approval-row">
-                <div className="k-approval-row__main">
-                  <span
-                    className="k-statuschip"
-                    style={{ '--c': approvalColor(h.status) }}
-                  >
-                    <span className="k-statuschip__dot" />
-                    {APPROVAL_LABELS[h.status] || h.status}
-                  </span>
-                  <div className="k-approval-row__body">
-                    <div className="k-approval-row__title">{h.task_title || 'Untitled'}</div>
-                    <div className="k-approval-row__meta">
-                      <span className="k-mute">{relTime(h.updated_at || h.created_at)}</span>
-                      {h.notes && <span className="k-mute"> · {h.notes}</span>}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-      {/* Approve modal — option to send to client.
-          Was a bare fixed-position div: no focus trap, no Escape, no
-          role="dialog", no scroll lock. A keyboard user could Tab straight out
-          of it into the list behind and act on the wrong row. */}
-      <Modal
-        open={!!clientModal}
-        onOpenChange={o => { if (!o) setClientModal(null); }}
-        dataTestId="approve-modal"
-        size="sm"
-        title={<>Approve task <span lang="hi" style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, color: 'var(--on-surface-3)', marginLeft: 6 }}>स्वीकृत करें</span></>}
-        footer={
-          <>
-            <button className="k-btn k-btn--ghost" onClick={() => setClientModal(null)}>Cancel</button>
-            <button className="k-btn k-btn--primary" onClick={confirmApproveWithClient}>
-              {clientUserId ? '✓ Approve & Send to Client' : '✓ Approve & Mark Done'}
+        <div className="apv-seg" role="tablist" aria-label="Approval type">
+          {TABS.map(([id, label, hi, n]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={adminTab === id}
+              className={`apv-seg__btn${adminTab === id ? ' is-active' : ''}`}
+              onClick={() => setAdminTab(id)}
+            >
+              {label}
+              {n > 0 && <span className="apv-seg__n">{n}</span>}
+              <span className="apv-seg__hi" lang="hi" aria-hidden="true">{hi}</span>
             </button>
-          </>
-        }
-      >
-        {clientModal && (
-          <>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)', display: 'block', marginBottom: 6 }}>
-                Notes (optional)
-              </label>
-              <textarea
-                value={sendNotes}
-                onChange={e => setSendNotes(e.target.value)}
-                placeholder="Add a note for the requester…"
-                rows={2}
-                className="k-input"
-                style={{ width: '100%', resize: 'none', boxSizing: 'border-box' }}
-              />
-            </div>
+          ))}
+        </div>
+      )}
 
-            <div style={{ padding: '14px 16px', background: 'var(--bg-soft)', borderRadius: 'var(--r-md)', border: '1px solid var(--rule)', marginBottom: 20 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)', marginBottom: 6 }}>Send for client approval?</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 10 }}>
-                Select a client to send them an approval link, or leave blank to mark as Done.
-              </div>
-              {clientList.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--ink-3)', fontStyle: 'italic' }}>
-                  No clients added to this project yet.
-                </div>
-              ) : (
-                <select
-                  value={clientUserId}
-                  onChange={e => setClientUserId(e.target.value)}
-                  className="k-input"
-                  style={{ width: '100%', boxSizing: 'border-box', fontSize: 13 }}
-                >
-                  <option value="">— Skip client approval —</option>
-                  {clientList.map(c => (
-                    <option key={c.user_id} value={c.user_id}>
-                      {c.display_name}{c.email ? ` (${c.email})` : ''}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-          </>
-        )}
-      </Modal>
+      <QueuePanel
+        title={isClient ? 'Pending approval' : adminTab === 'requests' ? 'Pending task requests' : 'Pending work approvals'}
+        sanskrit="लंबित अनुमोदन"
+        rows={visibleRows}
+        loading={loading}
+        error={queueErr}
+        onRetry={load}
+        isClient={isClient}
+        deciding={deciding}
+        onOpenTask={setDrawerTaskId}
+        onApprove={openApproveFlow}
+        onReject={openRejectFlow}
+      />
 
-      {/* Task drawer */}
+      {!isClient && (
+        <HistoryPanel rows={history} loading={histLoading} error={histErr} onRetry={load} />
+      )}
+
+      <ApproveModal
+        open={!!clientModal}
+        onClose={() => setClientModal(null)}
+        notes={sendNotes}
+        setNotes={setSendNotes}
+        clients={clientList}
+        clientUserId={clientUserId}
+        setClientUserId={setClientUserId}
+        onConfirm={confirmApproveWithClient}
+      />
+
+      <ClientApproveModal
+        open={!!clientApproveModal}
+        onClose={() => setClientApproveModal(null)}
+        note={clientApproveNote}
+        setNote={setClientApproveNote}
+        onConfirm={confirmClientApprove}
+      />
+
+      <RejectModal
+        open={!!rejectModal}
+        onClose={() => setRejectModal(null)}
+        note={rejectNote}
+        setNote={setRejectNote}
+        onConfirm={confirmReject}
+      />
+
       <TaskDrawer
         taskId={drawerTaskId}
         open={!!drawerTaskId}
@@ -422,73 +330,6 @@ export default function ApprovalsPage() {
         onSaved={() => { setDrawerTaskId(null); load(); }}
         onDeleted={() => { setDrawerTaskId(null); load(); }}
       />
-
-      {/* Client approve modal — the comment box that did not exist */}
-      <Modal
-        open={!!clientApproveModal}
-        onOpenChange={o => { if (!o) setClientApproveModal(null); }}
-        dataTestId="client-approve-modal"
-        size="sm"
-        title={<>Approve <span lang="hi" style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, color: 'var(--on-surface-3)', marginLeft: 6 }}>स्वीकृत</span></>}
-        footer={
-          <>
-            <button className="k-btn k-btn--ghost" onClick={() => setClientApproveModal(null)}>Cancel</button>
-            <button className="k-btn k-btn--primary" onClick={confirmClientApprove}>✓ Approve</button>
-          </>
-        }
-      >
-        <label htmlFor="client-approve-note" style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--on-surface-3)', display: 'block', marginBottom: 6 }}>
-          Comment (optional)
-        </label>
-        <textarea
-          id="client-approve-note"
-          value={clientApproveNote}
-          onChange={e => setClientApproveNote(e.target.value)}
-          placeholder="Anything to pass back with the approval…"
-          rows={3}
-          className="k-input"
-          style={{ width: '100%', resize: 'none', boxSizing: 'border-box' }}
-        />
-      </Modal>
-
-      {/* Reject modal */}
-      <Modal
-        open={!!rejectModal}
-        onOpenChange={o => { if (!o) setRejectModal(null); }}
-        dataTestId="reject-modal"
-        size="sm"
-        title={<>Reject task <span lang="hi" style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, color: 'var(--on-surface-3)', marginLeft: 6 }}>अस्वीकृत करें</span></>}
-        footer={
-          <>
-            <button className="k-btn k-btn--ghost" onClick={() => setRejectModal(null)}>Cancel</button>
-            {/* --danger, matching the row action. This read --k-danger while the
-                row's Reject read --danger — two names for one colour, 200 lines
-                apart. Both resolve today, but only because 00 aliased the legacy
-                name; using one name is the actual fix. */}
-            <button
-              className="k-btn k-btn--ghost"
-              onClick={confirmReject}
-              disabled={!rejectNote.trim()}
-              style={{ color: 'var(--danger)', borderColor: 'var(--danger)' }}
-            >
-              ✕ Confirm Reject
-            </button>
-          </>
-        }
-      >
-        <label htmlFor="reject-reason" style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--on-surface-3)', display: 'block', marginBottom: 6 }}>
-          Reason (required)
-        </label>
-        <textarea
-          id="reject-reason"
-          value={rejectNote}
-          onChange={e => setRejectNote(e.target.value)}
-          placeholder="Why is this being rejected?"
-          rows={3}
-          className="k-input"
-          style={{ width: '100%', resize: 'none', boxSizing: 'border-box' }}
-        />
-      </Modal>
     </div>
   );
 }

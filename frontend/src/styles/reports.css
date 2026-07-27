@@ -1,0 +1,314 @@
+/* reports.css — the two reporting pages: Reports and Time Report.
+ *
+ * Both draw charts, and both drew them entirely from inline styles: a bar's
+ * height, its gradient, its colour and its transition were all written into the
+ * style attribute, so the charts were the one part of the product that no
+ * stylesheet could reach. Concretely, that meant:
+ *
+ *   · `transition: height 0.4s ease` and `width 0.4s ease` were invisible to
+ *     the `prefers-reduced-motion` block in motion.css. A user who has asked
+ *     their OS to stop animation still got animated bars.
+ *   · `color: #fff` on the member initials ignored the theme, and
+ *     `background: var(--bg-soft)` for an empty track used a retired name.
+ *   · Nothing was responsive: the day column labels were absolutely positioned
+ *     against a 160px fixed height with no narrow-viewport rule at all.
+ *
+ * Per-bar geometry IS per-instance data, so it stays in the markup — but as
+ * custom properties (`--h`, `--w`, `--c`) feeding the rules below, which is the
+ * one inline form this codebase permits (check-tokens.mjs deviation 2).
+ *
+ *     trp-  Time Report        rep-  Reports
+ *
+ * No literal hex. Nothing here is added to a shared stylesheet.
+ */
+
+/* ══ TIME REPORT ═══════════════════════════════════════════════════════════ */
+
+/* ── Daily distribution (vertical bars) ─────────────────────────────────── */
+.trp-daily {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  height: 160px;
+  padding-bottom: 24px;
+  position: relative;
+}
+
+.trp-daily__col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: 1;
+  height: 100%;
+  min-width: 0;
+}
+
+.trp-daily__v {
+  font-size: var(--t-micro);
+  font-weight: 700;
+  font-family: var(--font-mono);
+  letter-spacing: -.02em;
+  color: var(--primary-text);
+}
+
+/* --h is the bar's height as a percentage of the tallest day. */
+.trp-daily__bar {
+  width: 100%;
+  height: var(--h, 2%);
+  min-height: 4px;
+  border-radius: 4px 4px 0 0;
+  background: var(--s-highest);
+  transition: height var(--dur-slow) var(--ease-standard);
+}
+.trp-daily__bar--on { background: color-mix(in srgb, var(--primary) 60%, var(--k-mid)); }
+.trp-daily__bar--today { background: linear-gradient(180deg, var(--primary) 0%, var(--k-mid) 100%); }
+
+.trp-daily__d {
+  position: absolute;
+  bottom: 0;
+  font-size: var(--t-micro);
+  color: var(--on-surface-3);
+}
+.trp-daily__d--today { color: var(--primary-text); font-weight: 700; }
+
+/* ── By member (horizontal bars) ────────────────────────────────────────── */
+.trp-mem { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+.trp-mem__row { display: flex; align-items: center; gap: var(--sp-3); }
+
+/* --c is the member's avatar colour, from AVATAR_COLORS. --on-primary rather
+   than #fff: the avatar palette includes light hues on which white initials
+   fall under 2:1. */
+.trp-mem__av {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--c, var(--primary));
+  color: var(--on-primary);
+  font-size: var(--t-micro);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.trp-mem__n {
+  width: 56px;
+  flex-shrink: 0;
+  font-size: var(--t-label);
+  font-weight: 500;
+  color: var(--on-surface-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trp-mem__track {
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--s-highest);
+  overflow: hidden;
+}
+
+.trp-mem__fill {
+  height: 100%;
+  width: var(--w, 0%);
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--c, var(--primary)) 0%,
+    color-mix(in srgb, var(--c, var(--primary)) 60%, var(--k-mid)) 100%);
+  transition: width var(--dur-slow) var(--ease-standard);
+}
+
+.trp-mem__v {
+  width: 36px;
+  flex-shrink: 0;
+  text-align: right;
+  font-family: var(--font-display);
+  font-size: var(--t-label);
+  font-weight: 700;
+  color: var(--on-surface-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Filter row ─────────────────────────────────────────────────────────── */
+.trp-filter__acts { display: flex; gap: var(--sp-2); align-self: flex-end; flex-wrap: wrap; }
+
+/* The member <select> is a chooser, so it takes the pointer a chooser gets. */
+.trp-filter__sel { cursor: pointer; }
+
+/* ── Avatar colour inside the entries table ─────────────────────────────── */
+.trp-av { background: var(--c, var(--primary)); }
+
+/* ══ REPORTS ═══════════════════════════════════════════════════════════════ */
+
+.rep-page { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+.rep-acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
+
+.rep-bar { display: flex; gap: var(--sp-4); align-items: flex-end; flex-wrap: wrap; }
+.rep-bar__grow { flex: 1 1 200px; min-width: 0; }
+
+/* A chooser gets the pointer a chooser gets. */
+.rep-sel { cursor: pointer; }
+.rep-sel--time { width: 130px; margin-top: 6px; }
+.rep-num { width: 80px; margin-top: 6px; }
+.rep-ta { margin-top: 6px; resize: vertical; }
+
+.rep-form { display: flex; flex-direction: column; gap: var(--sp-5); }
+.rep-hint { font-size: var(--t-micro); color: var(--on-surface-3); margin-top: 4px; }
+
+/* ── Segmented choices (frequency, day-of-week) ─────────────────────────────
+ * Both were a row of buttons carrying seven inline declarations each, with the
+ * selected state expressed by rewriting the border, background and colour in
+ * the style attribute. `aria-pressed` now carries the state for assistive
+ * technology — the previous version signalled selection by colour alone, which
+ * 00 §12 forbids — and `.is-on` carries it visually.
+ */
+.rep-seg { display: flex; gap: var(--sp-2); margin-top: 6px; flex-wrap: wrap; }
+
+.rep-seg__btn {
+  padding: 8px 16px;
+  border: 1.5px solid var(--outline);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--on-surface-2);
+  font: inherit;
+  font-size: var(--t-label);
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              background var(--dur-fast) var(--ease-standard);
+}
+.rep-seg__btn:hover { border-color: var(--on-surface-3); }
+.rep-seg__btn.is-on {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--primary-text);
+}
+
+.rep-seg__hi {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--font-hindi);
+  font-size: var(--t-micro);
+  font-weight: 400;
+  color: var(--on-surface-3);
+}
+
+/* The day-of-week variant is a fixed square. */
+.rep-seg__btn--day {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  font-size: var(--t-micro);
+  font-weight: 700;
+  color: var(--on-surface-3);
+}
+
+/* ── Format checkboxes ──────────────────────────────────────────────────── */
+.rep-fmt { display: flex; gap: var(--sp-3); margin-top: 6px; flex-wrap: wrap; }
+
+.rep-fmt__l {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: var(--t-label);
+  font-weight: 500;
+  color: var(--on-surface-2);
+}
+
+/* accent-color, in CSS rather than inline, so it follows the chosen accent
+   instead of being pinned to the old static teal. */
+.rep-fmt__cb { accent-color: var(--primary); }
+
+/* ── Quiet inline notes ─────────────────────────────────────────────────── */
+.rep-note {
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  font-style: italic;
+}
+.rep-note--pad { padding: var(--sp-4); }
+.rep-note--cell { grid-column: 1/-1; text-align: center; padding: var(--sp-2) 0; font-size: var(--t-micro); }
+
+/* ── Scheduled-sends section head ───────────────────────────────────────── */
+.rep-sched {
+  margin-top: var(--sp-8);
+  padding-top: var(--sp-6);
+  border-top: 1px solid var(--outline-variant);
+}
+
+.rep-sched__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-5);
+  flex-wrap: wrap;
+}
+
+.rep-sched__t {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-title-lg);
+  font-weight: 500;
+  letter-spacing: -.005em;
+  color: var(--on-surface);
+}
+
+.rep-sched__hi { font-family: var(--font-hindi); font-size: var(--t-body-sm); color: var(--on-surface-3); }
+
+/* Capitalises the schedule frequency inside a StatusChip. */
+.rep-chip--cap { text-transform: capitalize; }
+
+/* Per-person colour on the report's member chips and avatars. The `gr__*`
+   classes in generate-report.css own the geometry; this only supplies the hue,
+   which is per-instance. */
+.rep-swatch { background: var(--c, var(--primary)); }
+
+/* Per-series and per-slice colour in the report charts. */
+.rep-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--c, var(--primary));
+  flex-shrink: 0;
+}
+
+.rep-bar__track {
+  flex: 1;
+  min-width: 0;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--s-highest);
+  overflow: hidden;
+}
+
+.rep-bar__fill {
+  height: 100%;
+  width: var(--w, 0%);
+  border-radius: 4px;
+  background: var(--c, var(--primary));
+  transition: width var(--dur-slow) var(--ease-standard);
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────────
+ * The whole reason these rules had to leave the style attribute. A bar growing
+ * from zero is decoration; the number it lands on is the information, and it is
+ * already printed beside it.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .trp-daily__bar,
+  .trp-mem__fill,
+  .rep-bar__fill { transition: none; }
+}
+
+@media (max-width: 640px) {
+  .trp-daily { height: 130px; }
+  .trp-mem__n { width: 44px; }
+  .trp-filter__acts { align-self: stretch; }
+}

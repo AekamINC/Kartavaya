@@ -1,0 +1,445 @@
+/* workflow.css — the top-level workflow pages that are not a module and not
+ * public: Projects, Categories, Templates, Automations, Hub Clients.
+ *
+ * These live at the root of `pages/` rather than in a module folder, and each
+ * had accumulated its own private inline vocabulary — 47 inline styles on
+ * Projects, 60 on Templates, 31 on Hub Clients — none of it reachable from a
+ * media query, a theme or the density scale.
+ *
+ * One file rather than five because these five pages share a shape (header,
+ * optional create form, a grid or list of records) and because five more
+ * imports into `styles/index.css` buys nothing. Each page owns a prefix:
+ *
+ *     prj-  Projects        cat-  Categories      hcl-  Hub Clients
+ *     tpl-  Templates       aut-  Automations
+ *
+ * Deliberately NOT added to `editorial.css` or `components.css`: those are
+ * shared by most of the app and have been a collision point for concurrent
+ * work. Nothing below is reachable from another surface, so nothing below can
+ * break one.
+ *
+ * The only inline style permitted in the JSX is a custom property feeding a
+ * rule here — check-tokens.mjs deviation 2. Per-record colour (a project's
+ * avatar hue, a category's swatch, a progress width) is genuinely per-instance
+ * data and arrives as `--c` / `--w`.
+ *
+ * No literal hex. The hard-coded `#e53e3e`, `#c53030`, `#f59e0b` and `#05b7aa`
+ * that Projects carried are gone — they were a second, private semantic palette
+ * that ignored the theme and disagreed with `--danger` / `--warn` / `--ok`.
+ */
+
+/* ══ Shared ════════════════════════════════════════════════════════════════ */
+
+/* A right-aligned action cluster in a PageHeader slot. */
+.wf-acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+/* A form row that puts a grown input beside a fixed control. */
+.wf-row { display: flex; gap: var(--sp-3); flex-wrap: wrap; align-items: center; }
+.wf-row__grow { flex: 1 1 180px; min-width: 0; }
+
+/* ══ PROJECTS ══════════════════════════════════════════════════════════════ */
+
+/* Count pill on the Bin toggle. */
+.prj-bin__n {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: var(--on-primary);
+  font-size: var(--t-micro);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.prj-bin { border-color: color-mix(in srgb, var(--danger) 20%, transparent); }
+
+.prj-bin__note { font-size: var(--t-label); color: var(--on-surface-3); margin-left: auto; }
+
+.prj-bin__row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--outline-variant);
+  flex-wrap: wrap;
+}
+.prj-bin__row:last-child { border-bottom: 0; }
+
+.prj-bin__main { flex: 1 1 200px; min-width: 0; }
+.prj-bin__name { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); }
+.prj-bin__meta { font-size: var(--t-micro); color: var(--on-surface-3); margin-top: 2px; }
+
+/* The restore countdown goes --danger inside five days. Colour is not the only
+   carrier — the text beside it says "3d left to restore" in words. */
+.prj-bin__left { color: var(--on-surface-3); }
+.prj-bin__left--soon { color: var(--danger); font-weight: 700; }
+
+.prj-bin__meter {
+  width: 80px;
+  height: 4px;
+  background: var(--s-highest);
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+/* --w is the remaining fraction, set per row in the JSX. */
+.prj-bin__fill {
+  height: 100%;
+  width: var(--w, 0%);
+  background: var(--c, var(--ok));
+  border-radius: 4px;
+  transition: width var(--dur-slow) var(--ease-standard);
+}
+
+/* Brand-kit disclosure inside the new-project form. */
+.prj-bk {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: fit-content;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-label);
+  font-weight: 600;
+  color: var(--primary-text);
+}
+
+.prj-bk__panel { border-top: 1px solid var(--outline-variant); padding-top: var(--sp-4); }
+.prj-bk__hint { font-size: var(--t-label); color: var(--on-surface-3); margin-bottom: var(--sp-4); }
+
+.prj-form { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+/* Per-project accent, from AVATAR_COLORS. */
+.prj-card__bar { background: var(--c, var(--primary)); }
+.prj-card__kick { color: var(--c, var(--on-surface-3)); }
+.prj-card__fill { width: var(--w, 0%); background: var(--c, var(--primary)); }
+
+/* The delete affordance on a project card — quiet until the card is hovered,
+   so a grid of twelve projects is not a grid of twelve delete buttons. */
+.prj-card__del { margin-left: auto; opacity: .45; }
+.prj-card__del:hover, .prj-card__del:focus-visible { opacity: 1; color: var(--danger); }
+
+/* ══ CATEGORIES ════════════════════════════════════════════════════════════ */
+
+.cat-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px dashed var(--outline-variant);
+}
+.cat-row:last-child { border-bottom: 0; }
+
+/* The swatch shows the category's stored colour, which is user data. */
+.cat-row__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--c, var(--on-surface-faint));
+  flex-shrink: 0;
+}
+
+.cat-row__name { flex: 1; min-width: 0; font-size: var(--t-body-sm); font-weight: 500; color: var(--on-surface); }
+.cat-row__hex { font-size: var(--t-micro); font-family: var(--font-mono); color: var(--on-surface-faint); }
+
+/* The native colour well. Sized to match a 36px control so it lines up with the
+   text input beside it. */
+.cat-swatch {
+  width: 36px;
+  height: 36px;
+  padding: 2px;
+  border: 2px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.cat-hex { width: 90px; font-family: var(--font-mono); font-size: var(--t-label); }
+
+/* ══ HUB CLIENTS ═══════════════════════════════════════════════════════════ */
+
+.hcl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--sp-4);
+}
+
+/* A real <button>, so it is reachable by keyboard. This was a <div onClick>
+   with two onMouse* handlers writing style.borderColor directly — a hover
+   effect implemented in JavaScript, which never fired for a keyboard user and
+   left the card with no focus state at all. */
+.hcl-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  font: inherit;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              box-shadow var(--dur-fast) var(--ease-standard);
+}
+.hcl-card:hover { border-color: var(--primary); }
+.hcl-card:focus-visible { border-color: var(--primary); box-shadow: 0 0 0 3px var(--focus-ring); }
+
+.hcl-card__head { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+
+.hcl-card__mono {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-weight: 700;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+/* display:block on both — they are spans inside a <button>, because a <div>
+   cannot legally nest in one, and they still have to stack. */
+.hcl-card__name { display: block; font-weight: 700; font-size: var(--t-body-sm); color: var(--on-surface); }
+.hcl-card__slug { display: block; font-size: var(--t-micro); color: var(--on-surface-3); font-family: var(--font-mono); }
+
+.hcl-card__foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+}
+
+.hcl-form { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
+
+/* ══ TEMPLATES ═════════════════════════════════════════════════════════════ */
+
+/* Per-template accent on the card kicker and its Devanagari counterpart. */
+.tpl-card__kick { color: var(--c, var(--on-surface-3)); }
+
+.tpl-card__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+  font-size: var(--t-micro);
+  color: var(--on-surface-3);
+}
+
+.tpl-card__row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+/* Pushes the delete affordance to the trailing edge of a card footer. */
+.tpl-card__spacer { margin-left: auto; }
+
+.tpl-default {
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font-size: var(--t-micro);
+  font-weight: 700;
+}
+
+/* ── Forms ──────────────────────────────────────────────────────────────── */
+.tpl-form { display: flex; flex-direction: column; gap: var(--sp-5); }
+
+.tpl-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
+.tpl-grid3 { display: grid; grid-template-columns: auto 1fr 1fr; gap: var(--sp-3); align-items: end; }
+
+.tpl-hint { font-size: var(--t-micro); color: var(--on-surface-3); margin-top: 4px; }
+
+.tpl-stack { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* A toggle and its wording on one baseline. */
+.tpl-switch { display: flex; align-items: center; gap: var(--sp-3); font-size: var(--t-label); color: var(--on-surface-2); }
+
+.tpl-foot {
+  display: flex;
+  gap: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--outline-variant);
+  flex-wrap: wrap;
+}
+
+/* ── Icon picker ────────────────────────────────────────────────────────── */
+.tpl-ico { position: relative; }
+
+.tpl-ico__btn {
+  width: 42px;
+  height: 42px;
+  font-size: 22px;
+  line-height: 1;
+  border-radius: var(--r-md);
+  border: 1px solid var(--outline);
+  background: var(--s-container);
+  cursor: pointer;
+}
+
+.tpl-ico__pop {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  /* --z-picker is the system's "small chooser floating over a form" layer, which
+     is exactly what this is. There is no --z-popover token. */
+  z-index: var(--z-picker);
+  width: 220px;
+  padding: var(--sp-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--outline);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-2);
+}
+
+.tpl-ico__opt {
+  font-size: 20px;
+  line-height: 1;
+  padding: 2px 4px;
+  background: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.tpl-ico__opt:hover { background: var(--s-container); }
+
+/* ── Subtask and attachment chips ───────────────────────────────────────── */
+.tpl-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 7px var(--sp-3);
+  background: var(--s-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+}
+
+.tpl-item__t { flex: 1; min-width: 0; font-size: var(--t-label); color: var(--on-surface); }
+
+/* The attachment link truncates rather than wrapping: these are Drive and
+   Figma URLs, which are long and uninformative past the first few words. */
+.tpl-item__link {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-label);
+  color: var(--primary-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.tpl-item__ic { color: var(--primary); flex-shrink: 0; }
+
+.tpl-url { display: flex; gap: var(--sp-2); align-items: flex-end; }
+.tpl-url__col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* The file input is driven by a styled button beside it. */
+.tpl-file { display: none; }
+
+/* ══ AUTOMATIONS ═══════════════════════════════════════════════════════════ */
+
+/* The project picker strip above the rules. */
+.aut-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--s-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+}
+
+.aut-bar__l {
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+  white-space: nowrap;
+}
+
+.aut-bar__sel { flex: 1 1 200px; max-width: 320px; min-width: 0; }
+.aut-bar__n { font-size: var(--t-label); color: var(--on-surface-3); }
+.aut-bar__sp { margin-left: auto; }
+
+/* The embedded header row, used when this page renders inside a board. */
+.aut-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4);
+}
+.aut-head__n { font-size: var(--t-label); color: var(--on-surface-3); }
+
+.aut-embed { padding-top: var(--sp-4); }
+
+/* ── Rule builder ───────────────────────────────────────────────────────── */
+.aut-form { display: flex; flex-direction: column; gap: var(--sp-4); }
+.aut-grid3 { display: grid; gap: var(--sp-4); grid-template-columns: 2fr 1.5fr 1.5fr; }
+
+.aut-cond__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+
+.aut-cond__t {
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+
+.aut-cond__none { margin: 0; font-size: var(--t-label); color: var(--on-surface-3); }
+
+.aut-cond__list { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+.aut-cond__row { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+
+/* Fixed 30px gutter so every condition's field select starts on the same
+   x-position whether or not it carries the AND. */
+.aut-cond__and {
+  width: 30px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: var(--t-micro);
+  font-weight: 700;
+  color: var(--on-surface-3);
+}
+
+.aut-cond__f { width: 120px; }
+.aut-cond__o { width: 60px; }
+.aut-cond__v { width: 130px; }
+
+.aut-acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+/* Pushes Delete to the trailing edge of a rule's footer. */
+.aut-del { margin-left: auto; }
+
+@media (max-width: 640px) {
+  .hcl-form { grid-template-columns: 1fr; }
+  .prj-bin__row { gap: var(--sp-2); }
+  .tpl-grid2, .tpl-grid3 { grid-template-columns: 1fr; }
+  .tpl-url { flex-direction: column; align-items: stretch; }
+  .aut-grid3 { grid-template-columns: 1fr; }
+  /* The condition row becomes a stack: three selects at 120/60/130px plus a
+     gutter do not fit 360px, and the value select was the one pushed off. */
+  .aut-cond__f, .aut-cond__o, .aut-cond__v { width: 100%; }
+  .aut-cond__and { width: 100%; text-align: left; }
+  .aut-del { margin-left: 0; }
+}

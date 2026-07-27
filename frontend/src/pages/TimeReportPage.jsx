@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from '../lib/api';
 import { PageHeader, DataTable, Td } from '../components/editorial';
-import { ErrorState, errorKind } from '../components/ui';
+import { ErrorState, errorKind, EmptyState, SkeletonCard } from '../components/ui';
 import { AVATAR_COLORS, userInitials } from '../lib/utils';
 
 function fmtHours(mins) {
@@ -66,28 +66,23 @@ function DailyChart({ entries, from, to }) {
   const max = Math.max(...days.map(d => dayMins[d.toDateString()] || 0), 1);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 160, paddingBottom: 24, position: 'relative' }}>
+    <div className="trp-daily">
       {days.map((d) => {
-        const mins   = dayMins[d.toDateString()] || 0;
-        const pct    = (mins / max) * 100;
+        const mins = dayMins[d.toDateString()] || 0;
+        const pct = (mins / max) * 100;
         const isToday = d.toDateString() === new Date().toDateString();
+        // --h is the only per-bar value; the tone is a modifier class, so the
+        // gradient and the empty-track colour live in the stylesheet where
+        // prefers-reduced-motion and the theme can both reach them.
+        const tone = mins > 0 ? (isToday ? ' trp-daily__bar--today' : ' trp-daily__bar--on') : '';
         return (
-          <div key={d.toISOString()} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, height: '100%', justifyContent: 'flex-end', gap: 4 }}>
-            {mins > 0 && (
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--k-primary)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.02em' }}>
-                {fmtHours(mins)}
-              </div>
-            )}
-            <div style={{
-              width: '100%', background: mins > 0
-                ? (isToday ? 'linear-gradient(180deg, var(--k-primary) 0%, var(--k-mid) 100%)' : 'color-mix(in srgb, var(--k-primary) 60%, var(--k-mid))')
-                : 'var(--bg-soft)',
-              borderRadius: '4px 4px 0 0',
-              height: `${Math.max(pct, mins > 0 ? 6 : 2)}%`,
-              transition: 'height 0.4s ease',
-              minHeight: 4,
-            }} />
-            <div style={{ fontSize: 10, color: isToday ? 'var(--k-primary)' : 'var(--ink-3)', fontWeight: isToday ? 700 : 400, position: 'absolute', bottom: 0 }}>
+          <div key={d.toISOString()} className="trp-daily__col">
+            {mins > 0 && <div className="trp-daily__v">{fmtHours(mins)}</div>}
+            <div
+              className={`trp-daily__bar${tone}`}
+              style={{ '--h': `${Math.max(pct, mins > 0 ? 6 : 2)}%` }}
+            />
+            <div className={`trp-daily__d${isToday ? ' trp-daily__d--today' : ''}`}>
               {d.getDate()}
             </div>
           </div>
@@ -101,24 +96,21 @@ function DailyChart({ entries, from, to }) {
 function MemberChart({ byMember }) {
   const max = Math.max(...byMember.map(m => m.minutes), 1);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div className="trp-mem">
       {byMember.map((m, i) => {
-        const color    = AVATAR_COLORS[i % AVATAR_COLORS.length];
+        const color = AVATAR_COLORS[i % AVATAR_COLORS.length];
         const initials = userInitials(m.label);
         return (
-          <div key={m.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ width: 26, height: 26, borderRadius: '50%', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
-              {initials}
-            </span>
-            <span style={{ width: 56, fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {m.label.split(' ')[0]}
-            </span>
-            <div style={{ flex: 1, height: 6, background: 'var(--bg-soft)', borderRadius: 3, overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${(m.minutes / max) * 100}%`, background: `linear-gradient(90deg, ${color} 0%, color-mix(in srgb, ${color} 60%, var(--k-mid)) 100%)`, borderRadius: 3, transition: 'width 0.4s ease' }} />
+          <div key={m.label} className="trp-mem__row">
+            <span className="trp-mem__av" style={{ '--c': color }} aria-hidden="true">{initials}</span>
+            <span className="trp-mem__n">{m.label.split(' ')[0]}</span>
+            <div className="trp-mem__track">
+              <div
+                className="trp-mem__fill"
+                style={{ '--w': `${(m.minutes / max) * 100}%`, '--c': color }}
+              />
             </div>
-            <span style={{ width: 36, fontSize: 13, fontWeight: 700, color: 'var(--ink-2)', textAlign: 'right', flexShrink: 0, fontFamily: 'var(--font-display)' }}>
-              {fmtHours(m.minutes)}
-            </span>
+            <span className="trp-mem__v">{fmtHours(m.minutes)}</span>
           </div>
         );
       })}
@@ -205,12 +197,12 @@ export default function TimeReportPage({ teamId }) {
           </div>
           <div>
             <div className="k-fld-label">MEMBER</div>
-            <select className="k-input" style={{ cursor: 'pointer' }} value={memberF} onChange={e => setMemberF(e.target.value)}>
+            <select className="k-input trp-filter__sel" value={memberF} onChange={e => setMemberF(e.target.value)}>
               <option value=''>All members</option>
               {members.map(m => <option key={m.user_id} value={m.user_id}>{m.display_name || m.full_name || m.email}</option>)}
             </select>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignSelf: 'flex-end' }}>
+          <div className="trp-filter__acts">
             <button className="k-btn k-btn--ghost k-btn--sm" onClick={() => { setFrom(weekAgoISO); setTo(todayISO); setMemberF(''); }}>
               Reset
             </button>
@@ -223,8 +215,9 @@ export default function TimeReportPage({ teamId }) {
       </section>
 
       {loading && (
-        <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--ink-3)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>
-          Loading…
+        <div className="k-twocol" aria-busy="true" aria-label="Loading time entries">
+          <SkeletonCard lines={4} />
+          <SkeletonCard lines={4} />
         </div>
       )}
 
@@ -271,14 +264,14 @@ export default function TimeReportPage({ teamId }) {
 
           {/* Entries table */}
           {data.entries.length === 0 ? (
-            <div className="k-empty">
-              <div className="k-empty__icon">⏱</div>
-              <div className="k-empty__title">No entries for this period</div>
-              <div className="k-empty__sub">Adjust the date range or member filter.</div>
-            </div>
+            <EmptyState
+              illustration="generic"
+              title={{ en: 'No entries for this period', hi: 'इस अवधि में कोई प्रविष्टि नहीं' }}
+              description="Adjust the date range or the member filter."
+            />
           ) : (
-            <section className="k-card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div className="k-card__head" style={{ padding: '16px 24px' }}>
+            <section className="k-card">
+              <div className="k-card__head">
                 <div className="k-card__titles">
                   <h3 className="k-card__title">Entries</h3>
                   <span className="k-card__sans">विवरण</span>
@@ -301,7 +294,7 @@ export default function TimeReportPage({ teamId }) {
                     <tr key={e.entry_id || i}>
                       <Td color="var(--ink-3)" mono>{dateStr}</Td>
                       <Td className="trp__member">
-                        <span className="trp__avatar" style={{ background: color }}>{initials}</span>
+                        <span className="trp__avatar trp-av" style={{ '--c': color }}>{initials}</span>
                         <span className="trp__name">{(e.user_name || '—').split(' ')[0]}</span>
                       </Td>
                       <Td className="trp__task">
