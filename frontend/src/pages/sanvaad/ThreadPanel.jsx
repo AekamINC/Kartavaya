@@ -21,7 +21,9 @@ import Composer from './Composer';
 import { SvIcons } from './icons';
 import { isContinuation, parseReactions, toggleReactionLocal } from './messageUtils';
 
-export default function ThreadPanel({ channelId, root, me, meId, meName, onClose, onReplied }) {
+export default function ThreadPanel({
+  channelId, root, me, meId, meName, onClose, onReplied, closing = false, onAnimationEnd,
+}) {
   const { pushToast } = useToast();
   const [replies, setReplies] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -99,7 +101,16 @@ export default function ThreadPanel({ channelId, root, me, meId, meName, onClose
   };
 
   return (
-    <aside className="sv__thread" aria-label="Thread">
+    /* `svThreadIn` / `svThreadOut` live on this element; `ChannelsTab` owns the
+       `closing` flag and unmounts on the exit's `animationend`. `aria-hidden`
+       while closing so a screen reader is not still being offered a panel that
+       is on its way out. */
+    <aside
+      className={`sv__thread${closing ? ' is-closing' : ''}`}
+      aria-label="Thread"
+      aria-hidden={closing || undefined}
+      onAnimationEnd={onAnimationEnd}
+    >
       <div className="sv__thread-hd">
         <span className="sv__thread-t">Thread</span>
         <span className="sv__thread-n">
