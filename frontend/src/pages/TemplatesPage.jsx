@@ -35,7 +35,7 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../components/ui/ErrorState';
 import { SkeletonCardGrid } from '../components/ui/Skeleton';
-import { AVATAR_COLORS } from '../lib/utils';
+import { avatarBg } from '../components/ui/Avatar';
 import TemplateCard from './templates/TemplateCard';
 import TaskTemplateForm from './templates/TaskTemplateForm';
 import ApplyTemplateModal from './templates/ApplyTemplateModal';
@@ -220,7 +220,7 @@ export default function TemplatesPage() {
                   tmpl={t}
                   cfg={cfg}
                   kind={tab}
-                  color={cfg.color || AVATAR_COLORS[idx % AVATAR_COLORS.length]}
+                  color={cfg.color || avatarBg(t.name || t.template_id || String(idx))}
                   sans={KICKER_SANS[idx % KICKER_SANS.length]}
                   kicker={kickerFor(t)}
                   applying={applying}

@@ -6,7 +6,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
 import { PageHeader } from '../components/editorial';
 import { ErrorState, errorKind } from '../components/ui/ErrorState';
-import { AVATAR_COLORS, relTime, userInitials, logger } from '../lib/utils';
+import { relTime, userInitials, logger } from '../lib/utils';
+import { avatarBg } from '../components/ui/Avatar';
 
 const EVENT_TYPES = [
   { value: '',               label: 'All events' },
@@ -165,7 +166,7 @@ export default function ActivityFeedPage({ teamId }) {
           {(events || []).map((a, i) => {
             const actorName = a.actor_name || a.actor || 'Someone';
             const initials  = userInitials(actorName);
-            const color     = AVATAR_COLORS[i % AVATAR_COLORS.length];
+            const color     = avatarBg(a.actor_name || a.actor_id || String(i));
             return (
               <div key={a.event_id || i} className="k-activity__row">
                 <span

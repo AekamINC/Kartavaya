@@ -1,5 +1,6 @@
 import React from 'react';
-import { AVATAR_COLORS, userInitials } from '../../lib/utils';
+import { userInitials } from '../../lib/utils';
+import { avatarBg } from '../ui/Avatar';
 
 export default function AvatarStack({ users = [], max = 3, size = 22 }) {
   const shown = users.slice(0, max);
@@ -14,7 +15,8 @@ export default function AvatarStack({ users = [], max = 3, size = 22 }) {
             width: size,
             height: size,
             fontSize: Math.round(size * 0.4),
-            background: u.color || AVATAR_COLORS[i % AVATAR_COLORS.length],
+            // See avatarBg — the legacy palette failed behind white initials.
+            background: u.color || avatarBg(u.name || String(i)),
           }}
           title={u.name || ''}
         >

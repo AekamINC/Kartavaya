@@ -28,7 +28,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 
 import { api }         from '../lib/api';
 import { currentUser } from '../lib/auth';
-import { AVATAR_COLORS, logger } from '../lib/utils';
+import { logger } from '../lib/utils';
+import { avatarBg } from '../components/ui/Avatar';
 import { useDocumentDownload } from '../lib/documents';
 import DocumentError from '../components/ui/DocumentError';
 
@@ -163,7 +164,7 @@ export default function ProjectBoardPage() {
   const projectName = project?.team?.name || project?.name || '…';
   const presenceUsers = onlineUsers.map((u, i) => ({
     name: u.name || u.email || '?',
-    color: AVATAR_COLORS[i % AVATAR_COLORS.length],
+    color: avatarBg(m.name || m.user_id || String(i)),
   }));
 
   const viewProps = {

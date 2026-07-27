@@ -15,15 +15,13 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { AVATAR_COLORS, logger } from '../lib/utils';
+import { logger } from '../lib/utils';
+import { avatarBg } from '../components/ui/Avatar';
 
-function colorForUser(userId = '') {
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) {
-    hash = userId.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-}
+// Deterministic per user, and now shares one palette with every other avatar
+// in the product — the same person was a different colour here than in the
+// task drawer, because this hashed into a different list.
+const colorForUser = (userId = '') => avatarBg(userId);
 
 function initialsFor(name = '') {
   const parts = name.trim().split(/\s+/);

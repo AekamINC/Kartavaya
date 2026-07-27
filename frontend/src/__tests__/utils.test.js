@@ -5,6 +5,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   cn,
   userInitials,
@@ -194,5 +196,46 @@ describe('PRIORITY_COLOR object', () => {
     Object.values(PRIORITY_COLOR).forEach((v) => {
       expect(v).not.toMatch(/#[0-9a-f]{3,8}/i);
     });
+  });
+});
+
+/* ── The legacy avatar palette must not come back ─────────────────────────────
+ *
+ * `AVATAR_COLORS` and `avatarColor` hash into seven colours that ALL fail
+ * behind the white initials drawn on them — 2.15:1 at worst, 4.47:1 at best,
+ * none reaching 4.5. `components/ui/Avatar` has carried the replacement for a
+ * while (`AV_BG`, six hues at 5.87–7.73:1) and its docblock already called this
+ * "the legacy list"; the migration was simply never finished, so eight files
+ * kept importing it and every avatar in them was unreadable.
+ *
+ * A source guard, because the failure is an import rather than a behaviour: no
+ * rendering test would notice a legible avatar becoming an illegible one, and
+ * the contrast gate reads stylesheets, not JS arrays.
+ */
+describe('the legacy avatar palette stays retired', () => {
+  const SRC = path.resolve(__dirname, '..');
+
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) return e.name === '__tests__' ? [] : walk(full);
+    return /\.(jsx?|tsx?)$/.test(e.name) ? [full] : [];
+  });
+
+  it('is imported by nothing in src/ outside lib/utils itself', () => {
+    const offenders = walk(SRC)
+      .filter((f) => !f.endsWith(path.join('lib', 'utils.js')))
+      .filter((f) => {
+        const src = fs.readFileSync(f, 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')      // block comments
+          .replace(/^\s*\/\/.*$/gm, '');          // line comments
+        return /\b(AVATAR_COLORS|avatarColor)\b/.test(src);
+      })
+      .map((f) => path.relative(SRC, f));
+
+    expect(offenders,
+      'These import the retired avatar palette, whose every colour fails behind ' +
+      'the white initials on it. Use `avatarBg` from components/ui/Avatar:\n  ' +
+      offenders.join('\n  '),
+    ).toEqual([]);
   });
 });

@@ -44,7 +44,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../components/ui/ErrorState';
 import { SkeletonCardGrid } from '../components/ui/Skeleton';
 import BrandKit from '../components/BrandKit';
-import { AVATAR_COLORS } from '../lib/utils';
+import { avatarBg } from '../components/ui/Avatar';
 
 const BIN_DAYS = 30;
 const TRASH = <path d="M3 4h10M5 4V2.5h6V4M6 7v5M10 7v5M4 4l.8 10h6.4L12 4" />;
@@ -335,7 +335,9 @@ export default function ProjectsPage() {
       {!loading && !loadErr && projects.length > 0 && (
         <div className="k-pgrid">
           {projects.map((p, idx) => {
-            const color = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+            // Keyed on the project, not its position: index-keyed colour reshuffles
+            // every card the moment one project is added or filtered out.
+            const color = avatarBg(p.name || p.team_id || String(idx));
             const taskCount = p.task_count || 0;
             const doneCount = p.done_count || 0;
             const openCount = taskCount - doneCount;

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { PageHeader, PriorityDot } from '../components/editorial';
-import { AVATAR_COLORS, userInitials } from '../lib/utils';
+import { userInitials } from '../lib/utils';
+import { avatarBg } from '../components/ui/Avatar';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../components/ui/ErrorState';
@@ -174,7 +175,7 @@ export default function TeamsPage() {
       {members.length > 0 && (
         <div className="k-teamgrid">
           {members.map((m, idx) => {
-            const color    = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+            const color    = avatarBg(m.display_name || m.full_name || m.email || String(idx));
             const initials = userInitials(m.display_name || m.full_name || m.email);
             const name     = m.display_name || m.full_name || m.email || '?';
             const role     = m.role || 'member';

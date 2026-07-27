@@ -6,7 +6,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { api } from '../lib/api';
 import { PageHeader, DataTable, Td } from '../components/editorial';
 import { ErrorState, errorKind, EmptyState, SkeletonCard } from '../components/ui';
-import { AVATAR_COLORS, userInitials } from '../lib/utils';
+import { userInitials } from '../lib/utils';
+import { avatarBg } from '../components/ui/Avatar';
 
 function fmtHours(mins) {
   if (!mins) return '0h';
@@ -98,7 +99,7 @@ function MemberChart({ byMember }) {
   return (
     <div className="trp-mem">
       {byMember.map((m, i) => {
-        const color = AVATAR_COLORS[i % AVATAR_COLORS.length];
+        const color = avatarBg(m.label || String(i));
         const initials = userInitials(m.label);
         return (
           <div key={m.label} className="trp-mem__row">
@@ -164,7 +165,10 @@ export default function TimeReportPage({ teamId }) {
   }, [data.entries]);
 
   const memberColorMap = useMemo(() =>
-    Object.fromEntries(byMember.map((m, i) => [m.label, AVATAR_COLORS[i % AVATAR_COLORS.length]])),
+    // Keyed on the member, so the swatch in the chart matches the swatch in the
+    // list above it — and stays the same person's colour when the range changes
+    // the order.
+    Object.fromEntries(byMember.map((m, i) => [m.label, avatarBg(m.label || String(i))])),
   [byMember]);
 
   /**
