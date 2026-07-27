@@ -483,7 +483,13 @@ export default function TasksListPage() {
               <div className="k-group__head" style={{ '--group-color': g.color }}>
                 <span className="k-group__bar" />
                 <span className="k-group__title">{g.title}</span>
-                {g.sans && <span className="k-group__sans">{g.sans}</span>}
+                {/* lang="hi". The group header is uppercase and tracked (see
+                    editorial.css), and tracking is exactly what breaks a
+                    conjunct — अत्यावश्यक loses its क्ष. editorial.css guards
+                    that with `[lang="hi"] { letter-spacing: 0 !important }`,
+                    but the guard is keyed on the attribute and this span did
+                    not carry it. */}
+                {g.sans && <span className="k-group__sans" lang="hi">{g.sans}</span>}
                 <span className="k-group__count">{g.items.length}</span>
               </div>
               {g.items.map((t, idx) => {

@@ -21,7 +21,13 @@
 /* ── 1 · Runtime-tunable roots (§1) ─────────────────────────────────────────
    Set by Customization via applyPrefs. Everything else derives from these. */
 :root {
-  --radius-base:      10px;   /* user: 4 | 10 | 20 — default IS an option */
+  /* 12px — the harness's own value (`design-reference/…/tokens.css:30`,
+     `App.jsx:3` radius: 12) and now DEFAULTS.radius in CustomizePanel.
+     It was 10px while the default moved to 12, which is a first-paint jump:
+     applyPrefs writes --radius-base as an inline style, so every corner in the
+     product rendered at 10px until React mounted and then snapped to 12px.
+     The comment was stale on both counts — the options are 8 | 12 | 20. */
+  --radius-base:      12px;   /* user: 8 | 12 | 20 — default IS an option */
   --glass-mix:        .6;     /* user: 0 → 1 */
   --font-size-base:   14px;   /* user: 12 → 20 */
   --line-height-base: 1.5;    /* user: 1.3 | 1.5 | 1.7 */
@@ -1183,19 +1189,25 @@ body {
 }
 .k-select:focus { border-color: color-mix(in srgb, var(--k-primary) 60%, var(--rule)); }
 
-/* ── Density overrides (set via data-density on <html>) ────────────────── */
+/* ── Density overrides (set via data-density on <html>) ──────────────────
+   These are per-component escapes from the token system, and each one that
+   names a component whose padding IS `--pad-card` beats that token on
+   specificity — `[data-density=…] .k-stat` is (0,2,0) against `.k-stat`'s
+   (0,1,0), so the literal wins at two of the three tiers no matter which file
+   loads last. `.k-stat` and `.k-card` now read `--pad-card`, which is what the
+   rendered reference measures and what the three tiers already define, so their
+   overrides are removed rather than kept and re-tuned: a token and an override
+   of that token in the same stylesheet is how the two drift.
+
+   The rest stay. `.k-page`, `.k-pageh`, `.k-hero` and `.k-wday` do not consume
+   `--pad-card` and are outside this change. */
 [data-density="compact"] .k-page          { padding: 12px 16px; }
 [data-density="compact"] .k-pageh         { margin-bottom: 10px; }
-[data-density="compact"] .k-card          { padding: 12px 14px; }
-[data-density="compact"] .k-card__head    { padding: 10px 14px; margin-bottom: 8px; }
-[data-density="compact"] .k-stat          { padding: 10px 14px; }
 [data-density="compact"] .k-hero          { padding: 20px 22px; }
 [data-density="compact"] .k-wday          { min-width: 46px; padding: 8px 4px; }
 
 [data-density="comfy"] .k-page            { padding: var(--sp-6); }
 [data-density="comfy"] .k-pageh           { margin-bottom: var(--sp-5); }
-[data-density="comfy"] .k-card            { padding: 20px 22px; }
-[data-density="comfy"] .k-stat            { padding: 16px 18px; }
 
 /* ── Language show/hide (set via data-language on <html>) ───────────────── */
 /* Default (en+sa): show both */
