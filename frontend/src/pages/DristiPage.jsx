@@ -574,10 +574,10 @@ function PivotTab() {
       {result && (
         <div style={{ marginTop: 8 }}>
           {Array.isArray(result.data) ? (
-            {/* `cols` was the prop name here and DataTable takes `columns`, so
-                it destructured to undefined and `columns.map` threw the moment a
-                pivot query returned an array — i.e. on every successful grouped
-                query. The other 26 DataTable call sites all pass `columns`. */}
+            /* `cols` was the prop name here and DataTable takes `columns`, so
+               it destructured to undefined and `columns.map` threw the moment a
+               pivot query returned an array — i.e. on every successful grouped
+               query. The other 26 DataTable call sites all pass `columns`. */
             <DataTable columns={['Label', { label: 'Value', align: 'right' }]}>
               {result.data.map((r, i) => (
                 <tr key={i}><Td>{String(r.label ?? '—')}</Td><Td>{typeof r.value === 'number' && r.value > 100 ? FMT(r.value) : r.value}</Td></tr>
