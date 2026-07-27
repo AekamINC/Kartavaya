@@ -4,8 +4,10 @@
  * `MESSAGING-ATTENDANCE-SPEC.md:73`: "viewer reads channels, editor sends
  * messages, admin manages channels". `ScreensSanvaad.jsx:286-294` is what that
  * looks like — a composer replaced by a locked bar reading "Your Sanvaad access
- * is **Viewer**: you can read every channel you are a member of, but not send",
- * with a `Request Editor` button.
+ * is **Viewer**: you can read every channel you are a member of, but not send".
+ * The reference pairs that with a `Request Editor` button; `LockedComposer.jsx`
+ * deliberately names who can grant the level instead, because there is no
+ * request-approval flow behind such a button. See its header.
  *
  * None of it was buildable. `GET /v1/me` returns `module_grants[]`, which is a
  * list of module CODES — it answers whether Messaging belongs in the sidebar and

@@ -23,6 +23,7 @@ export default function ChannelsTab() {
   const [channels, setChannels] = useState([]);
   const [archived, setArchived] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState(null);
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState(null);
   const [thread, setThread] = useState(null);
@@ -99,12 +100,24 @@ export default function ChannelsTab() {
   const openThread = useCallback(msg => setThreadNow(msg), [setThreadNow]);
   const dropThread = useCallback(() => setThreadNow(null), [setThreadNow]);
 
+  /**
+   * Three states, not two.
+   *
+   * This used to `catch { setChannels([]) }`, and an empty rail says something
+   * specific: "No channels yet. Create one to start messaging." A member of nine
+   * channels whose list request 500s or who is on a train was told they belong
+   * to none, and offered the one action — create a channel — that is wrong in
+   * every failure case. Loading, empty and failed are three different sentences
+   * and the rail now knows which one it is in.
+   */
   const loadChannels = useCallback(async () => {
     try {
       const r = await api.get('/v1/messaging/channels');
       setChannels(Array.isArray(r.data) ? r.data : []);
-    } catch {
+      setListError(null);
+    } catch (e) {
       setChannels([]);
+      setListError(e);
     } finally {
       setLoading(false);
     }
@@ -222,6 +235,8 @@ export default function ChannelsTab() {
         onOpenDm={openDm}
         canPost={access.canPost}
         creating={creating}
+        error={listError}
+        onRetry={() => { setLoading(true); loadChannels(); }}
       />
 
       {selected ? (

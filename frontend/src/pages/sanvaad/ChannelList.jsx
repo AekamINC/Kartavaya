@@ -3,7 +3,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
-import { Avatar, Input, Select, SkeletonList } from '../../components/ui';
+import { Avatar, ErrorState, errorKind, Input, Select, SkeletonList } from '../../components/ui';
 import { relTime } from '../../lib/utils';
 import { channelIcon, SvIcons } from './icons';
 
@@ -100,7 +100,7 @@ function DmPicker({ onPick, onClose }) {
 
 export default function ChannelList({
   channels, archived = [], showAll, onToggleAll, loading, selectedId,
-  onSelect, onCreate, onOpenDm, canPost = true, creating,
+  onSelect, onCreate, onOpenDm, canPost = true, creating, error = null, onRetry,
 }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
@@ -189,10 +189,24 @@ export default function ChannelList({
       <div className="sv__scroll">
         {loading && <SkeletonList rows={6} showAvatar={false} />}
 
+        {/* A failed list is not an empty one. Both section empties below make a
+            claim about this person's membership — "No channels yet", "You are
+            not in any channels yet" — and neither is knowable from a request
+            that did not answer. The rail says so once, in place of both. */}
+        {!loading && error && (
+          <ErrorState
+            kind={errorKind(error)}
+            detail={errorKind(error) === 'offline'
+              ? 'Your channels need a connection to load. Nothing has been lost — messages sent while you were away are waiting.'
+              : 'Your channel list did not load. This is a read failure; no channel or message was removed.'}
+            onRetry={onRetry}
+          />
+        )}
+
         {/* The Channels and Direct sections are both always rendered, because
             each carries the control that creates its own first row. A whole-rail
             "nothing here" would hide them. */}
-        {!loading && (
+        {!loading && !error && (
           <>
             <h2 className="sv__sec">Channels</h2>
             {rooms.map(c => (
@@ -210,7 +224,7 @@ export default function ChannelList({
           </>
         )}
 
-        {!loading && (
+        {!loading && !error && (
           <>
             <h2 className="sv__sec">
               Direct messages
@@ -241,7 +255,7 @@ export default function ChannelList({
           </>
         )}
 
-        {!loading && showAll && gone.length > 0 && (
+        {!loading && !error && showAll && gone.length > 0 && (
           <>
             <h2 className="sv__sec">Archived <span className="sv__hi" lang="hi">संग्रहित</span></h2>
             {gone.map(c => (
@@ -249,7 +263,7 @@ export default function ChannelList({
             ))}
           </>
         )}
-        {!loading && showAll && gone.length === 0 && (
+        {!loading && !error && showAll && gone.length === 0 && (
           <>
             <h2 className="sv__sec">Archived <span className="sv__hi" lang="hi">संग्रहित</span></h2>
             <p className="sv__none">No archived channels.</p>

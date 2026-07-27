@@ -5,10 +5,13 @@
  * as subtext: "WhatsApp is what a user is looking for; Varta is the internal
  * module name and rides beneath it."
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
-import { Avatar, Chip, ChipRow, EmptyState, SkeletonList, StatusChip, Toggle } from '../../../components/ui';
+import {
+  Avatar, Chip, ChipRow, EmptyState, ErrorState, errorKind, SkeletonList, StatusChip, Toggle,
+} from '../../../components/ui';
 import { relTime } from '../../../lib/utils';
+import { currentUser } from '../../../lib/auth';
 import { ChatArt, SvIcons } from '../icons';
 import WAChat from './WAChat';
 
@@ -69,10 +72,38 @@ const CONV_FILTERS = [
   { value: 'resolved', label: 'Done' },
 ];
 
+/**
+ * Whose row is this — without printing a database identifier at somebody.
+ *
+ * `varta_conversations.assigned_to` is `TEXT` holding a user id, and
+ * `list_conversations` is `SELECT c.*` with no join to a name
+ * (`058_sanvaad_messaging.sql:120`, `routers/whatsapp.py:121-131`), so the id is
+ * the only thing the row carries. It was being rendered verbatim —
+ * `Assigned · 7f3c…` beside a customer's name in the shared inbox, which tells
+ * an operator nothing except that the row is not blank.
+ *
+ * Two readings are available without a backend change and both are worth more
+ * than the id: whether it is MINE, which decides whether I open it, and whether
+ * it is claimed at all, which decides whether anyone should. A name needs either
+ * a join in `list_conversations` or a directory fetch this surface does not
+ * otherwise make — noted, not smuggled in here.
+ */
+function assignedLabel(assignedTo, meId) {
+  if (!assignedTo) return 'Unassigned';
+  if (meId && String(assignedTo) === String(meId)) return 'Assigned to you';
+  return 'Assigned to a teammate';
+}
+
 export default function WhatsAppTab() {
   const [sub, setSub] = useState('conversations');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Three states, not two. A failed fetch used to `setRows([])`, which put the
+  // reader in front of "No open conversations. They appear here when a customer
+  // messages your WhatsApp number." — a confident statement about the customers
+  // that is false, and unfalsifiable from the screen. A shared inbox that
+  // reports a 500 as silence is one nobody checks twice.
+  const [error, setError] = useState(null);
   const [selected, setSelected] = useState(null);
   const [pane, setPane] = useState('list');
   // `06` §2's tree gives the conversation list a "status filter". The endpoint
@@ -80,17 +111,23 @@ export default function WhatsAppTab() {
   // showed resolved threads mixed in with the ones still waiting on somebody.
   const [status, setStatus] = useState('open');
 
+  const meId = currentUser()?.user_id ?? null;
+
+  const [reloadAt, setReloadAt] = useState(0);
+  const retry = useCallback(() => setReloadAt(n => n + 1), []);
+
   useEffect(() => {
     let dead = false;
     setLoading(true);
     setRows([]);
+    setError(null);
     const params = sub === 'conversations' && status ? { params: { status } } : undefined;
     api.get(ENDPOINT[sub], params)
       .then(r => { if (!dead) setRows(Array.isArray(r.data) ? r.data : []); })
-      .catch(() => { if (!dead) setRows([]); })
+      .catch(e => { if (!dead) { setRows([]); setError(e); } })
       .finally(() => { if (!dead) setLoading(false); });
     return () => { dead = true; };
-  }, [sub, status]);
+  }, [sub, status, reloadAt]);
 
   // The selected conversation must survive a filter change only while it is
   // still in the list; resolving a thread should not leave a chat pane open on
@@ -144,14 +181,26 @@ export default function WhatsAppTab() {
             </div>
             <div className="sv__scroll">
               {loading && <SkeletonList rows={6} showAvatar />}
-              {!loading && rows.length === 0 && (
+              {!loading && error && (
+                <ErrorState
+                  kind={errorKind(error)}
+                  detail={errorKind(error) === 'offline'
+                    ? 'The inbox needs a connection to load. Nothing was lost — incoming messages keep arriving and appear when you reconnect.'
+                    : 'The conversation list did not load. This is a read failure — no message was missed or deleted.'}
+                  onRetry={retry}
+                />
+              )}
+              {!loading && !error && rows.length === 0 && (
                 <p className="sv__none">
                   {status === 'open'
                     ? 'No open conversations. They appear here when a customer messages your WhatsApp number.'
-                    : `No ${status} conversations.`}
+                    : /* The reader picked a chip labelled "Done"; echoing the raw
+                         column value back at them as "No resolved conversations"
+                         names a state they were never shown. */
+                      `No ${(CONV_FILTERS.find(f => f.value === status)?.label || status).toLowerCase()} conversations.`}
                 </p>
               )}
-              {!loading && rows.map(c => {
+              {!loading && !error && rows.map(c => {
                 const name = c.contact_name || c.phone_number;
                 return (
                   <button
@@ -173,7 +222,7 @@ export default function WhatsAppTab() {
                       {/* The shared inbox is the point of Varta — a row that does
                           not say whose it is gets answered twice. */}
                       <span className={`wa__asg${c.assigned_to ? '' : ' wa__asg--none'}`}>
-                        {c.assigned_to ? `Assigned · ${c.assigned_to}` : 'Unassigned'}
+                        {assignedLabel(c.assigned_to, meId)}
                       </span>
                     </span>
                     <VartaChip map={CONV_STATUS} status={c.status} />
