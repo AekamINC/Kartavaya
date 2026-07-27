@@ -75,7 +75,16 @@
   cursor:pointer; padding:4px 6px;
 }
 .gr__block-action + .gr__block-action{ margin-left:0; }
-.gr__block-action:hover{ color:var(--k-deep); }
+/* --primary-text, not --k-deep. The stylesheet declares --k-deep as
+   var(--primary-hover), which IS theme-varying, but applyPrefs overwrites it
+   inline with acc.deep and does NOT branch on theme (CustomizePanel.jsx:192).
+   So --k-deep renders #005650 in BOTH themes, and in dark that is 2.13:1 on
+   --surface. A checker reading the stylesheet sees the theme-varying
+   declaration and measures 12.20 — this pair was reported clean and was not.
+   --primary-text is the token 00 §7 designates for primary-coloured TEXT and
+   applyPrefs DOES branch it by theme. It is #005650 in light, identical to
+   --k-deep, so light is unchanged; dark becomes 7.28:1. */
+.gr__block-action:hover{ color:var(--primary-text); }
 
 /* Type segmented control */
 .gr__seg{
@@ -524,7 +533,12 @@
   border-radius:50%;
   background:var(--surface-2);
   border:1px solid var(--rule);
-  color:var(--k-deep);
+  /* See .gr__block-action:hover for why this is --primary-text and not
+     --k-deep. This one carries the export Arrow glyph, so it is a non-text
+     graphic under 1.4.11 and needs 3:1, not 4.5 — it measured 2.31:1 in dark
+     and failed even the lower bar. Light is unchanged (both are #005650),
+     dark goes to 7.89:1. */
+  color:var(--primary-text);
   flex-shrink:0;
 }
 .gr__export-btn.is-busy .gr__export-go{
@@ -610,8 +624,12 @@
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .gr__hrow-meta{ font-size:11px; color:var(--ink-3); margin-top:2px; }
+/* Same --k-deep defect as .gr__block-action:hover, moved to --primary-text for
+   the same reason. ReportsPage renders .gr__hrow with fmt/body/name/meta and no
+   `-go` child, so this rule paints nothing today; it is corrected with its two
+   live siblings rather than left as a trap for whoever adds the link. */
 .gr__hrow-go{
-  font-size:11.5px; color:var(--k-deep); text-decoration:none;
+  font-size:11.5px; color:var(--primary-text); text-decoration:none;
   font-weight:600; letter-spacing:0.01em; flex-shrink:0;
 }
 .gr__hrow-go:hover{ text-decoration:underline; }

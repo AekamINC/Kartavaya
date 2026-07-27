@@ -153,12 +153,50 @@ function parseColor(raw, vars, depth = 0) {
   if (mixM) {
     const args = splitTop(mixM[1]);
     if (args.length !== 2) return null;
+    /**
+     * The percentage may be a TOKEN, not a literal: this codebase writes
+     * `color-mix(in srgb, var(--ok) var(--tint-mid), transparent)` in twelve
+     * rules that also state a `color`, which is exactly the shape pass 3
+     * exists to measure.
+     *
+     * Matching only a trailing literal `%` left the whole component as
+     * `var(--ok) var(--tint-mid)`, which is not a colour, so parseColor
+     * returned null, so the color-mix returned null, so `bgRes` was null and
+     * the rule hit `continue`. Those twelve rules were not passing this gate —
+     * they were never REACHED by it, which reads identically in a green
+     * report. Five of them measure 4.13–4.37:1 in light and were invisible
+     * for as long as this regex has been here.
+     *
+     * Resolving the token first is enough; --tint-* and --focus-mix are plain
+     * percentages declared per theme.
+     */
+    const asPct = (tok) => {
+      let t = tok.trim();
+      const m = /^var\(\s*(--[\w-]+)\s*(?:,([\s\S]*))?\)$/.exec(t);
+      if (m) {
+        const [, name, fallback] = m;
+        if (Object.prototype.hasOwnProperty.call(vars, name)) t = String(vars[name]).trim();
+        else if (fallback != null) t = String(fallback).trim();
+        else return null;
+      }
+      return /^-?[\d.]+%$/.test(t) ? parseFloat(t) / 100 : null;
+    };
     const side = (s) => {
-      const pct = /(-?[\d.]+)%\s*$/.exec(s.trim());
-      return {
-        color: parseColor(pct ? s.slice(0, pct.index).trim() : s.trim(), vars, depth + 1),
-        pct: pct ? parseFloat(pct[1]) / 100 : null,
-      };
+      const str = s.trim();
+      const lit = /(-?[\d.]+)%\s*$/.exec(str);
+      if (lit) {
+        return { color: parseColor(str.slice(0, lit.index).trim(), vars, depth + 1),
+                 pct: parseFloat(lit[1]) / 100 };
+      }
+      // trailing var() that resolves to a percentage
+      const tail = /\s(var\(\s*--[\w-]+\s*(?:,[^()]*(?:\([^()]*\)[^()]*)*)?\))\s*$/.exec(str);
+      if (tail) {
+        const p = asPct(tail[1]);
+        if (p != null) {
+          return { color: parseColor(str.slice(0, tail.index).trim(), vars, depth + 1), pct: p };
+        }
+      }
+      return { color: parseColor(str, vars, depth + 1), pct: null };
     };
     const A = side(args[0]);
     const B = side(args[1]);
