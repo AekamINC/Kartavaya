@@ -15,7 +15,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { pahchanApi, enrollmentApi, type PunchDirection } from '../../api/pahchan';
 import { enqueuePunch, attachPhotoKey, flushPunches } from '../../offline/punchQueue';
 import { useQueueStatus } from '../../hooks/useQueueStatus';
-import { duration, scaleTo, useReducedMotion, DUR, EASE } from '../../theme/motion';
+import { duration, scaleTo, usePressScale, useReducedMotion, DUR, EASE } from '../../theme/motion';
 
 /**
  * Clock in / clock out. 07-pahchan.md, and the prototype at `Pahchan v1.html` §01.
@@ -145,6 +145,7 @@ export default function ClockScreen() {
    * colour and the tick, which is where the meaning was. §4 gives spring to
    * confirmations only, and a punch landing is exactly that.
    */
+  const shutter = usePressScale(0.96, reduced);
   const confirm = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     if (phase !== 'done') { confirm.setValue(1); return; }
@@ -410,9 +411,17 @@ export default function ClockScreen() {
               You have retaken this {MAX_RETAKES} times. Ask your manager to add the time manually.
             </Text>
           ) : (
-            <Animated.View style={{ transform: [{ scale: confirm }] }}>
+            // Two scales composed: `confirm` is the one-shot landing pop,
+            // `shutter.scale` is the press. Separate values so an interrupted
+            // press cannot cancel a confirmation the employee is reading.
+            //
+            // A `{/* */}` comment here rather than a `//` one is a build error —
+            // a ternary branch needs an expression, and a JSX comment is not one.
+            // That is what broke staging at 8ad2890.
+            <Animated.View style={{ transform: [{ scale: confirm }, { scale: shutter.scale }] }}>
               <Pressable
                 onPress={submit}
+                {...shutter.handlers}
                 // `mineFetching` closes the window the confirmation hold opens.
                 // `direction` is derived from the last punch, so between handing
                 // the shutter back and the refetch landing it would still read
@@ -422,7 +431,7 @@ export default function ClockScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={direction === 'in' ? 'Clock in now' : 'Clock out now'}
                 accessibilityState={{ disabled: phase !== 'idle' || mineFetching }}
-                style={({ pressed }) => [
+                style={[
                   s.shutter,
                   {
                     backgroundColor: phase === 'done' ? CONFIRM_GREEN
@@ -434,12 +443,6 @@ export default function ClockScreen() {
                     // inner ring is the fill.
                     borderColor: phase === 'done' ? CONFIRM_HALO : 'rgba(255,255,255,0.4)',
                   },
-                  // §1 gives press feedback --dur-instant; a Pressable style
-                  // callback has no duration to give it, so what is left to get
-                  // right is the amplitude — and that is the half reduced motion
-                  // cares about. `scaleTo` takes it to 1, so the button responds
-                  // in colour alone.
-                  pressed && { transform: [{ scale: scaleTo(0.96, reduced) }] },
                 ]}
               >
                 {phase === 'done' ? (

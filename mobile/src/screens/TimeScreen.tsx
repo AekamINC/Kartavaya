@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
 import { a11yButton } from '../components/a11y';
+import Refresher from '../components/Refresher';
 import { getRunningTimer, clearRunningTimer, type RunningTimer } from '../lib/runningTimer';
 import { timeApi, type TimeEntry } from '../api/time';
 import { withAlpha } from '../theme/tokens';
@@ -277,8 +278,7 @@ export default function TimeScreen() {
           renderItem={renderEntry}
           ListHeaderComponent={header}
           contentContainerStyle={s.listPad}
-          onRefresh={refetch}
-          refreshing={isRefetching}
+          refreshControl={<Refresher refreshing={isRefetching} onRefresh={refetch} />}
           ListEmptyComponent={
             <View style={[s.centre, { paddingVertical: 40 }]}>
               <Ionicons name="time-outline" size={28} color={t.ink3} />
