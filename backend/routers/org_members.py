@@ -13,7 +13,8 @@ from db import get_pool
 from middleware.roles import require_org_role
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import (
-    ALL_MODULES, SENSITIVE_MODULES, DEFAULT_GRANT_LEVEL, valid_levels_for,
+    ALL_MODULES, SENSITIVE_MODULES, DEFAULT_GRANT_LEVEL, default_level_for,
+    valid_levels_for,
 )
 
 router = APIRouter(prefix="/api/v1/org/members", tags=["org-members"])
@@ -35,10 +36,14 @@ def _normalise_grant(g) -> tuple[str, str]:
     deploys, and a level-aware API that no client can call is not an improvement.
     """
     if isinstance(g, str):
-        return g, DEFAULT_GRANT_LEVEL
+        # `default_level_for`, not the flat default: Sanvaad starts at editor,
+        # because a viewer in a messaging module cannot post and an invitation
+        # to a chat you cannot speak in is a broken one. Every other module is
+        # unchanged at viewer. See role_tiers.NEW_GRANT_LEVEL_BY_MODULE.
+        return g, default_level_for(g)
     if isinstance(g, dict):
         code = g.get("code") or g.get("module_code")
-        level = g.get("role") or g.get("level") or DEFAULT_GRANT_LEVEL
+        level = g.get("role") or g.get("level") or (default_level_for(code) if code else DEFAULT_GRANT_LEVEL)
         if code:
             return code, level
     raise HTTPException(400, f"Malformed module grant: {g!r}")
@@ -218,11 +223,11 @@ async def add_member(
         # modules entirely. Payroll, personnel files and the books are granted
         # on purpose or not at all — never by omission.
         grants = [
-            (r["module_code"], DEFAULT_GRANT_LEVEL)
+            (r["module_code"], default_level_for(r["module_code"]))
             for r in enabled
             if r["module_code"] not in SENSITIVE_MODULES
             and r["module_code"] in ALL_MODULES
-            and DEFAULT_GRANT_LEVEL in valid_levels_for(r["module_code"])
+            and default_level_for(r["module_code"]) in valid_levels_for(r["module_code"])
         ]
 
     for code, level in grants:

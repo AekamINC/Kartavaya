@@ -1,6 +1,7 @@
-"""The 285mm page budget, and what is allowed to be standing at a page break.
+"""The page budget, and what is allowed to be standing at a page break.
 
-A4 is 297mm. Every generated document breaks at **285mm**, leaving 12mm of
+A4 is 297mm. Every generated document breaks at **`CONTENT_BUDGET_MM`** (290mm
+today, raised from 285 by the owner), leaving 7mm of
 headroom so that no rounding, font substitution or printer margin can push a
 stray line onto a sheet of its own. `doc_render.CONTENT_BUDGET_MM` owns that
 number for all eight documents; these tests are what stop it drifting back.
@@ -325,13 +326,16 @@ def _pdf_pages_text(pdf_bytes: bytes) -> list[str]:
 # one-page invoice into two pages is exactly the regression this file exists to
 # catch, and an assertion of "<= 3" would sail past it.
 #
-# `tds_challan` at spec volume is the one document the budget costs a page: its
-# content measures ~287mm against a 285mm budget, so a three-line challan takes
-# two sheets. The break is placed at the boundary between the money and the
-# attestation — page one carries the letterhead through the amount in words,
-# page two the CIN, the signature and the notes — so neither sheet is a scrap.
-# Raising CONTENT_BUDGET_MM to 290 in `doc_render` would return it to one page;
-# that is the owner's call, not this file's.
+# `tds_challan` at spec volume was the one document the budget cost a page: its
+# content measures ~287mm, which cleared 285 by less than 2mm and so broke onto
+# a second sheet carrying the CIN, the signature and the notes — orphaning the
+# identity of the deposit from the money, on a counterfoil of three lines.
+# The owner raised CONTENT_BUDGET_MM to 290 rather than accept that, and it is
+# back to one page. 7mm of headroom remains.
+#
+# These counts are read from the constant, not from 290: lower the budget again
+# and this case flips back to 2, which is the correct behaviour and not a
+# failure of this file.
 CASES = [
     ("invoice",        "spec",  1),
     ("invoice",        "large", 2),
@@ -339,7 +343,7 @@ CASES = [
     ("payslip",        "large", 1),
     ("gstr3b",         "spec",  2),
     ("gstr3b",         "large", 3),
-    ("tds_challan",    "spec",  2),
+    ("tds_challan",    "spec",  1),
     ("tds_challan",    "large", 2),
     ("statement",      "spec",  1),
     ("statement",      "large", 2),
@@ -498,8 +502,26 @@ class TestBreakMechanics:
         assert "\\3c " in css_string("<")
 
     def test_the_budget_leaves_real_headroom_on_a4(self):
-        assert PAGE_HEIGHT_MM - CONTENT_BUDGET_MM == 12
-        assert CONTENT_BUDGET_MM == 285
+        """Pinned so the budget cannot drift without someone meaning it.
+
+        290 is the owner's decision, raised from 285 after seeing that a
+        three-line TDS challan measured 286.9mm and so broke onto a second sheet
+        carrying the CIN, the signature and the notes — orphaning the identity of
+        the deposit from the money on a counterfoil of three lines.
+
+        The lower bound is the part that is not merely an echo of the constant:
+        a typical printer's unprintable bottom edge is 5–6mm, so a budget that
+        leaves less than that would silently clip on paper while looking correct
+        on screen. 7mm clears it. These documents are emailed far more often than
+        printed, which is what makes 7 an acceptable trade where 0 would not be.
+        """
+        headroom = PAGE_HEIGHT_MM - CONTENT_BUDGET_MM
+        assert CONTENT_BUDGET_MM == 290, "the budget changed — was that deliberate?"
+        assert headroom == 7
+        assert headroom >= 6, (
+            "headroom is below a printer's unprintable bottom edge; the last line "
+            "of every document would clip on paper while looking fine on screen"
+        )
 
     def test_the_budget_is_declared_once(self):
         """The page geometry belongs to the shared layer, not to eight copies.

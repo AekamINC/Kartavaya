@@ -42,6 +42,7 @@ from middleware.role_tiers import (
     ALL_MODULES,
     APPROVER,
     DEFAULT_GRANT_LEVEL,
+    default_level_for,
     ORG_SETTINGS_ROLES,
     SEPARATED_DUTY_MODULES,
     valid_levels_for,
@@ -63,7 +64,12 @@ INVITE_TTL_DAYS = 7
 
 class GrantIn(BaseModel):
     code: str
-    role: str = DEFAULT_GRANT_LEVEL
+    #: Empty, NOT `DEFAULT_GRANT_LEVEL`. A concrete default here is truthy, so
+    #: the `g.role or …` below could never fire and the per-module default was
+    #: unreachable — an omitted level would silently become `viewer` even for a
+    #: module whose new grants start higher. Resolved at the call site instead,
+    #: where the module code is in hand.
+    role: str = ""
 
 
 class InviteCreate(BaseModel):
@@ -139,7 +145,10 @@ async def _validate_grants(pool, org_id: str, grants: List[GrantIn],
 
     out: list[dict] = []
     for g in grants:
-        code, level = g.code, (g.role or DEFAULT_GRANT_LEVEL)
+        # Module-aware: Sanvaad starts at editor because a viewer there cannot
+        # post, and inviting someone to a chat they cannot speak in is a broken
+        # invitation. See role_tiers.NEW_GRANT_LEVEL_BY_MODULE.
+        code, level = g.code, (g.role or default_level_for(g.code))
 
         if code not in ALL_MODULES:
             raise HTTPException(400, f"Unknown module: {code}")

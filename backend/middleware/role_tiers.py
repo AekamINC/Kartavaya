@@ -344,6 +344,42 @@ def valid_levels_for(module_code: str) -> tuple[str, ...]:
 DEFAULT_GRANT_LEVEL: str = VIEWER
 
 
+#: Modules whose NEW grants start higher than `DEFAULT_GRANT_LEVEL`.
+#:
+#: Sanvaad is `editor` on the owner's decision. The reasoning is specific to it
+#: and does not generalise: Sanvaad is a MESSAGING module, and a `viewer` there
+#: cannot post. Adding a colleague to the team chat and having them silently
+#: unable to speak is not a narrow permission, it is a broken invitation — the
+#: module's whole purpose is the thing a viewer is denied. Everywhere else,
+#: viewer is a useful state: reading invoices, payslips or the CRM without
+#: writing is a real job.
+#:
+#: This is deliberately a per-module table and NOT a change to
+#: `DEFAULT_GRANT_LEVEL`. Raising the global default would make every new grant
+#: in every module a writer, which is the opposite of why RBAC exists here and
+#: would deepen the open finding that `require_module` gates reach rather than
+#: depth. One module moved on its merits; the ladder is untouched.
+#:
+#: Only consulted when a grant is CREATED with no level. It is not a fallback
+#: for a malformed row — `module_levels.held_level` still reads an unknown value
+#: as `DEFAULT_GRANT_LEVEL`, because failing upward there would hand control to
+#: every legacy row.
+NEW_GRANT_LEVEL_BY_MODULE: dict[str, str] = {
+    "sanvaad": EDITOR,
+}
+
+
+def default_level_for(module_code: str) -> str:
+    """The level a NEW grant on this module starts at when none is given.
+
+    Falls back to `DEFAULT_GRANT_LEVEL`, and refuses to return a level the
+    module has no use for — a per-module default that is not in
+    `valid_levels_for` would create grants that silently do nothing.
+    """
+    level = NEW_GRANT_LEVEL_BY_MODULE.get(module_code, DEFAULT_GRANT_LEVEL)
+    return level if level in valid_levels_for(module_code) else DEFAULT_GRANT_LEVEL
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Tier 4, part two — resolving what a caller actually holds
 #

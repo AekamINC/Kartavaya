@@ -127,8 +127,21 @@ _LOGO_MAX_BYTES = 4 * 1024 * 1024
 # The reserved strip is also where the continuation identity lives (see
 # `stylesheet`), so the running footer costs the content nothing.
 PAGE_HEIGHT_MM = 297          # A4
-CONTENT_BUDGET_MM = 285       # the owner's budget
-PAGE_TAIL_MM = PAGE_HEIGHT_MM - CONTENT_BUDGET_MM   # 12mm of headroom
+# 290, raised from 285 on the owner's decision after seeing the output.
+#
+# At 285 the TDS challan measured 286.9mm with three deduction lines — over by
+# 1.9mm — so it broke onto a second sheet that carried the CIN block, the two
+# verification notes and the signature, and was otherwise 80% white. The CIN is
+# the identity of the deposit; orphaning it from the money is precisely the
+# "broken or ugly" the budget exists to prevent, and an accounting firm would
+# notice a two-page counterfoil for three lines.
+#
+# 7mm is still real headroom against rounding, font substitution and a
+# printer's unprintable edge. These documents are emailed far more often than
+# they are printed, which is what makes 7 an acceptable trade where 0 would not
+# be. Every other document sat well inside 285 and is unaffected.
+CONTENT_BUDGET_MM = 290
+PAGE_TAIL_MM = PAGE_HEIGHT_MM - CONTENT_BUDGET_MM   # 7mm of headroom
 
 
 def css_string(value: str) -> str:
