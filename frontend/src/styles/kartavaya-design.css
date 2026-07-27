@@ -21,7 +21,10 @@
 /* ── 1 · Runtime-tunable roots (§1) ─────────────────────────────────────────
    Set by Customization via applyPrefs. Everything else derives from these. */
 :root {
-  --radius-base:      10px;   /* user: 4 | 10 | 20 — default IS an option */
+  /* 12px is the reference's --radius-base (tokens.css:28). At 10 the whole
+     --r-* ladder rendered at 83% of the drawn radius: --r-lg, which carries
+     cards, stat tiles and the table shell, came out 14.5px against 17.4px. */
+  --radius-base:      12px;   /* user: 4 | 12 | 20 — default IS an option */
   --glass-mix:        .6;     /* user: 0 → 1 */
   --font-size-base:   14px;   /* user: 12 → 20 */
   --line-height-base: 1.5;    /* user: 1.3 | 1.5 | 1.7 */
@@ -94,8 +97,36 @@
   --sp-5: 20px; --sp-6: 24px; --sp-7: 32px;  --sp-8: 44px;
   --sp-10: 40px;   /* legacy, 1 use — not part of §4 */
 }
-[data-density="compact"] { --row-h:38px; --pad-page:16px; --pad-card:14px; --gap-section:16px; --gap-tight:8px }
-[data-density="comfy"]   { --row-h:48px; --pad-page:32px; --pad-card:20px; --gap-section:26px; --gap-tight:12px }
+/* Three steps, and the numbers are the reference's, measured out of
+   `design-reference/Kartavaya Redesign/tokens.css:228-230` by rendering the
+   harness rather than by reading it.
+ *
+ * The middle step is `cozy` and it is what `:root` above already carried —
+ * 44 / 28 / 18 / 22 / 10 is the design's baseline, and the redesign harness
+ * ships `data-density="cozy"` on `<html>`. The build had no `cozy` at all and
+ * defaulted the preference to `comfy`, so every shipping page was measured
+ * against a scale (48 / 32 / 20 / 26 / 12) that exists nowhere in the design:
+ * it sits between the reference's cozy and its comfy and matches neither. That
+ * is invisible in a screenshot and fatal to any spacing comparison, which is
+ * why it is fixed here before anything downstream of it.
+ *
+ * `compact` also carries the two type steps the reference gives it. Density is
+ * meant to move text as well as padding; without them the compact rows tighten
+ * around body copy that never shrinks. */
+[data-density="compact"] {
+  --row-h: 34px; --pad-page: 18px; --pad-card: 12px;
+  --gap-section: 14px; --gap-tight: 7px;
+  --t-body: 13px; --t-body-sm: 12px;
+}
+[data-density="cozy"] {
+  --row-h: 44px; --pad-page: 28px; --pad-card: 18px;
+  --gap-section: 22px; --gap-tight: 10px;
+}
+[data-density="comfy"] {
+  --row-h: 54px; --pad-page: 38px; --pad-card: 24px;
+  --gap-section: 30px; --gap-tight: 14px;
+  --t-body: 15px;
+}
 
 /* ── 5 · Motion (§5) ────────────────────────────────────────────────────────
    applyPrefs writes --ix-user, NEVER --ix. An inline style on the root beats

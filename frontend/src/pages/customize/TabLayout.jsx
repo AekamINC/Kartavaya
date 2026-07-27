@@ -25,14 +25,22 @@ export default function TabLayout() {
       <div className="sr">
         <div className="sr__l">
           <div className="sr__t">Density</div>
-          <div className="sr__d">Compact tightens row padding across tables and lists.</div>
+          <div className="sr__d">Cozy is the drawn baseline. Compact tightens row padding across tables and lists; Comfy loosens it and raises body text a step.</div>
         </div>
         <div className="sr__c">
+          {/* Three steps, matching the three the token layer defines. `cozy`
+              was missing from this control even though it is the design's
+              baseline, so the only way to reach it was to have no stored
+              preference at all. */}
           <Seg
             label="Density"
             value={prefs.density}
             onChange={v => setPrefs({ density: v })}
-            options={[{ label: 'Compact', value: 'compact' }, { label: 'Comfy', value: 'comfy' }]}
+            options={[
+              { label: 'Compact', value: 'compact' },
+              { label: 'Cozy',    value: 'cozy' },
+              { label: 'Comfy',   value: 'comfy' },
+            ]}
           />
         </div>
       </div>
@@ -45,11 +53,11 @@ export default function TabLayout() {
         <div className="sr__c">
           <Seg
             label="Corner radius"
-            value={String(prefs.radius || 10)}
+            value={String(prefs.radius || 12)}
             onChange={v => setPrefs({ radius: parseInt(v, 10) })}
             options={[
               { label: 'Sharp',   value: '4' },
-              { label: 'Default', value: '10' },
+              { label: 'Default', value: '12' },
               { label: 'Round',   value: '20' },
             ]}
           />

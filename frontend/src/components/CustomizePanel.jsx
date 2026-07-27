@@ -73,12 +73,20 @@ export const DEFAULTS = {
   accent:       'teal',
   customAccent: null,
   sidebar:      'wide',
-  density:      'comfy',
+  // compact | cozy | comfy. `cozy` is the design's baseline — the redesign
+  // harness carries data-density="cozy" on <html>, and kartavaya-design.css's
+  // bare :root has always held the cozy numbers. The default was `comfy`,
+  // which meant no user ever saw the spacing the design was drawn at.
+  density:      'cozy',
   font:         'newsreader', // display face
   uiFont:       'inter',      // body face — independent of `font` (00 §2)
   fontSize:     14,           // 12 → 20
   lineHeight:   1.5,          // 1.3 | 1.5 | 1.7
-  radius:       10,           // 4 | 10 | 20 — default IS one of the options
+  // 4 | 12 | 20 — default IS one of the options. 12px is --radius-base in the
+  // reference's tokens.css; at 10 every corner in the product rendered at 83%
+  // of the drawn radius, and --r-lg (cards, stat tiles, tables) at 14.5px
+  // instead of 17.4px.
+  radius:       12,
   anim:         'full',       // full | reduced | none
   language:     'en+sa',
   sideBg:       'dark',       // dark | light | accent
@@ -239,7 +247,10 @@ export function applyPrefs(prefs) {
   document.body.style.fontSize = 'var(--t-body)';
 
   // ── Shape and motion ────────────────────────────────────────────────────
-  root.style.setProperty('--radius-base', (prefs.radius || 10) + 'px');
+  // 12px, matching the reference's --radius-base. The `|| 12` fallback and
+  // DEFAULTS.radius must agree — when they disagreed at 10, a user with no
+  // stored radius got a scale the design never draws.
+  root.style.setProperty('--radius-base', (prefs.radius || 12) + 'px');
 
   // --ix-user, NOT --ix. An inline style on the root outranks a media query,
   // so writing --ix directly let this preference silently defeat the OS

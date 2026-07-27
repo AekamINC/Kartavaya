@@ -1174,6 +1174,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-size: 0.7em;
   color: var(--primary-text);
   font-weight: 400;
+  /* `.k-pageh__h1` sets -0.02em and letter-spacing inherits as an absolute
+     length, so this Devanagari line was carrying the h1's negative tracking —
+     measured -0.88px at a 1440px viewport, where the h1 clamps to 44px.
+     24-bilingual-devanagari.md forbids tracking on Devanagari. */
+  letter-spacing: normal;
 }
 .k-pageh__lede {
   font-size: 14px;

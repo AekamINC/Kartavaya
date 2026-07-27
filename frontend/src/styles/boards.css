@@ -51,7 +51,18 @@
 .bd__ch { display: flex; align-items: center; gap: 8px; padding: 2px 4px 8px; }
 .bd__cdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--c); }
 .bd__cn { font-size: 13px; font-weight: 800; letter-spacing: -.005em; color: var(--on-surface); }
-.bd__cn-hi { font-family: var(--font-indic); font-size: 11px; font-weight: 400; color: var(--on-surface-3); margin-left: 5px; }
+/* `letter-spacing: normal` is load-bearing, not tidying. `.bd__cn` above sets
+   -.005em for the Latin column name and letter-spacing INHERITS as the
+   resolved absolute value — measured -0.065px on this element before the
+   reset. 24-bilingual-devanagari.md forbids tracking on Devanagari outright:
+   the script hangs its letters off a continuous shirorekha, and any tracking
+   at all opens gaps in a stroke that is meant to be unbroken. The same shape
+   of leak is why `.k-stat__hi` carries an explicit `letter-spacing: 0`. */
+.bd__cn-hi {
+  font-family: var(--font-indic); font-size: 11px; font-weight: 400;
+  letter-spacing: normal;
+  color: var(--on-surface-3); margin-left: 5px;
+}
 .bd__cc { font-family: var(--font-mono); font-size: 11px; color: var(--on-surface-faint); margin-left: auto; }
 .bd__cx {
   display: grid; place-items: center; width: 20px; height: 20px; flex: none;
