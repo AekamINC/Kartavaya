@@ -60,5 +60,144 @@ to it, so reviewers approved against two boxes showing a loading ellipsis foreve
   as a permanent spinner.
 - `EnrollQueue.jsx:46` uses the same endpoint, so HR now sees the face it is vouching for.
 
-No regression. The effect-dependency `[(referenceIds || []).join(',')]` is also still
-in place, which is what stops 36 signed-URL requests per keystroke on a 12-row day.
+No regression. The per-image fetch is now a shared `usePhotoUrl` hook so the row triple
+and the detail cannot drift apart, and each slot keeps its four-state machine —
+`load | ok | gone | err` — so a retention-deleted photo never reads as a permanent
+spinner.
+
+---
+
+## 3 · Live defects found, all in code nothing had ever called
+
+### 3.1 · Every flag chip in the register showed the wrong word
+
+`StatusChip`'s signature is `({ status, approvalStatus, columnName, columnColor })`.
+There is no `label` prop. The register called:
+
+```jsx
+<StatusChip status={FLAG_TONE[f] || 'todo'} label={FLAG_LABEL[f] || f} />
+```
+
+so `label` was dropped on the floor and the chip rendered whatever `FLAG_TONE` mapped
+to. The reviewer's only per-row summary of **why** a punch needed a look was:
+
+| The flag | What rendered |
+|---|---|
+| `geo` — outside the site | **Requested** |
+| `mock` — simulated location | **Rejected** |
+| `accuracy` — weak GPS | **In Review** |
+| `noref` — nothing to compare against | **Requested** |
+| `reuse` — same photo on two punches | **Rejected** |
+
+Four task-tracker nouns standing in for six attendance conditions, two of which
+(`mock`, `reuse`) imply intent and two of which (`accuracy`, `noref`) explicitly do not.
+`EnrollQueue` lost its two labels the same way, so an employee nobody has photographed
+yet was being shown to HR as **Rejected**.
+
+Fixed where `07 §"Attendance states are not in statusColors.js"` says to fix it — a
+sixth map, `PUNCH_COLORS` / `PUNCH_LABELS`, folded into `StatusChip`'s own map. The two
+private maps on the register are deleted and the raw flag is passed through. No punch
+key collides with a task or approval state.
+
+### 3.2 · `GET /regularisations` returned 500 on every call
+
+```sql
+SELECT r.id, r.employee_id, e.full_name, …
+  FROM staging.pahchan_regularisations r
+  LEFT JOIN staging.manav_employees e ON e.id = r.employee_id
+```
+
+`staging.manav_employees` has no `full_name`. Migration 018:181 names it `name`;
+`full_name` exists only on `staging.manav_candidates` (migration 037:19, recruitment).
+`UndefinedColumnError` on every request. `/register` two files over already does
+`e.name AS employee_name`, which is now what this does too.
+
+### 3.3 · A correction could be approved but never declined
+
+`RegularisationDecision.status` matched `^(approved|rejected)$`. Migration 064:170:
+
+```sql
+status TEXT NOT NULL DEFAULT 'pending'
+       CHECK (status IN ('pending', 'approved', 'declined'))
+```
+
+`rejected` is not a value the table can hold, so `PATCH` with it was a CHECK violation
+surfacing as a 500. Approve worked; decline did not. Now `declined`.
+
+### 3.4 · A decline with no reason was a 500, not a sentence
+
+064's `pahchan_reg_decline_needs_reason` requires a non-empty `decision_note` on a
+decline. `decision_note` was `Optional` and unvalidated, so the constraint name reached
+the caller inside a 500. `17-mobile-app.md:130` asks for "decline gated on a reason".
+Now a 400 with the sentence, and the UI gates on it too.
+
+**3.2, 3.3 and 3.4 are all in `routers/pahchan_attendance.py`, which no client had ever
+called.** They were found by building the screen, not by reading the file — reading it
+shows three plausible handlers.
+
+---
+
+## 4 · What was built
+
+| Screen | File | Endpoint |
+|---|---|---|
+| Register detail — three photos full size, accuracy geometry, metadata | `pages/pahchan/Register.jsx` | `/punches/{id}/photo`, `/enrollment/photos/{id}/url` |
+| Shift and overtime policy | `pages/pahchan/PahchanPolicy.jsx` | `PATCH /policy` |
+| Corrections | `pages/pahchan/Corrections.jsx` | `GET`/`PATCH /regularisations` |
+| Payroll push | `pages/pahchan/PublishPayroll.jsx` | `POST /attendance/publish` |
+| History — month calendar, states, legend, day detail, retention promise | `pages/pahchan/History.jsx` | `GET /me` |
+
+Web tabs: **register · corrections · payroll · my attendance · enrollment · policy**.
+
+### The detail draws its own geometry rather than loading a map
+
+The prototype (`PahchanReview.jsx:58-75`) uses Leaflet against
+`tile.openstreetmap.org`. This does not, and the reason is not that the dependency was
+inconvenient. **A tile request puts the employee's punch coordinates in a URL path to a
+third-party host, on every detail open.** §7 will not let Aekam — who runs the product —
+resolve a location; shipping the same coordinates to a public tile server would be a
+strictly worse leak than the one the spec forbids.
+
+What survives is what the map was FOR. §3: *"the accuracy figure is drawn as a radius on
+the map, not a dot — a dot makes a ±184m fix look like proof of presence, which is the
+one thing it is not."* The SVG puts the site at one end of a scaled baseline and the
+punch at its distance, with the accuracy as a filled circle underneath the marker, so a
+±184m fix at 412m visibly overlaps the site and settles nothing either way. Which is
+the honest reading.
+
+`GET /register` now also returns `lat`/`lng`, behind the same reviewer gate as the rest
+of the row.
+
+### The payroll push will not write before it has been previewed
+
+`dry_run` is the endpoint's own idea and this screen enforces the order: Publish is
+disabled until a preview of **that exact range** has come back, and editing either date
+re-arms it. A preview whose figures the operator never saw is not a preview.
+
+Withheld days get their own table with the reason. A day whose punches are flagged and
+unreviewed builds no row at all — the bridge refuses, because emitting `absent` would
+assert somebody did not work on the strength of a punch nobody has looked at, which is
+07 §3's manufactured verification pointed at payroll instead of at a checkmark.
+
+### History never renders "absent"
+
+`/me` returns punches, not a muster roll. An empty day can be leave, a weekly off, or a
+punch still queued inside the 72-hour offline buffer. Colouring it red would be the same
+manufactured fact, with the employee on the wrong side of the argument. Days with no
+punch read "nothing recorded", which is what is actually known.
+
+§9's retention promise is on the same screen, from the same request — 90 days for punch
+selfies, 45 after leaving for the reference pair, 3 years for the record because the
+register is a statutory document. "Someone whose face is photographed twice a day should
+be able to see what is held and for how long without asking."
+
+---
+
+## 5 · Still open on this surface
+
+| # | Gap | Why it was left |
+|---|---|---|
+| 13 | **Sites / geofence.** `GET`/`POST /sites` exist; no UI. The policy screen sets a default radius, but an org cannot name a location, so `_nearest_site` finds nothing and every punch outside a fence it cannot see is compared against `None`. | Out of the four named in the brief; it is the next one to build |
+| 3b | The detail re-signs its three photos rather than reusing the row's URLs | Each view is audited `severity=warn` on purpose. A second, larger viewing IS a second viewing, and recording it is right |
+| 7 | Privacy notice (§05 `PhNotice`) on web | Mobile owns the first-run notice; not audited here |
+| — | `Seg` on the register offers All / Needs a look; the reference also lets a reviewer pick a DATE. `GET /register?on=` accepts one and no UI sends it | The register is today-only. A reviewer cannot look at yesterday |

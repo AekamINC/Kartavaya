@@ -341,10 +341,20 @@ export default function Register() {
   // as offline rather than blaming us for the user's train tunnel.
   const [errKind, setErrKind] = useState('server');
 
-  const load = useCallback(async () => {
+  /**
+   * Which day. `GET /register` has always taken `?on=`, and nothing sent it, so
+   * the register was today or nothing — a reviewer who was away on Friday had no
+   * way back to Friday, and the punches sat unreviewed until the 7-day
+   * auto-accept swallowed them. The reference header names the day for the same
+   * reason, and its empty state offers "View yesterday".
+   */
+  const [day, setDay] = useState(() => new Date().toISOString().slice(0, 10));
+  const isToday = day === new Date().toISOString().slice(0, 10);
+
+  const load = useCallback(async (on) => {
     setState('loading');
     try {
-      const r = await api.get('/v1/pahchan/register');
+      const r = await api.get('/v1/pahchan/register', { params: on ? { on } : undefined });
       setRows(r.data.punches || []);
       setState('ready');
     } catch (err) {
@@ -353,7 +363,7 @@ export default function Register() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(day); }, [load, day]);
 
   // Just the retention window, for the detail's "photo deleted on" row. Failing
   // to read it must not break the register — the whole page is not worth losing
@@ -465,17 +475,41 @@ export default function Register() {
     <Section
       title="Register"
       hi="उपस्थिति पंजी"
-      right={
-        <Seg
-          label="Which punches to show"
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: 'needs', label: 'Needs a look', count: flaggedCount },
-            { value: 'all',   label: 'All',          count: rows.length },
-          ]}
-        />
-      }
+      right={(
+        <span style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span className="k-sr-only">Which day&rsquo;s register</span>
+            <input
+              className="inp"
+              type="date"
+              style={{ maxWidth: 160 }}
+              value={day}
+              // Not into the future. A register for tomorrow is always empty and
+              // the empty state would tell a reviewer that nobody has clocked in,
+              // which would be true and useless.
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={e => { if (e.target.value) setDay(e.target.value); }}
+            />
+          </label>
+          {!isToday && (
+            <button
+              className="btn btn--ghost" style={{ fontSize: 12 }}
+              onClick={() => setDay(new Date().toISOString().slice(0, 10))}
+            >
+              Today
+            </button>
+          )}
+          <Seg
+            label="Which punches to show"
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: 'needs', label: 'Needs a look', count: flaggedCount },
+              { value: 'all',   label: 'All',          count: rows.length },
+            ]}
+          />
+        </span>
+      )}
     >
       {/* Persistent while the connection is down, not just on the failed request
           that revealed it. A reviewer clearing a day needs to know saves are not
@@ -512,7 +546,7 @@ export default function Register() {
               // HR admin into a panic about attendance records that are perfectly safe.
               : 'Punches are safe — this is a read failure, not data loss.'
           }
-          onRetry={load}
+          onRetry={() => load(day)}
         />
       )}
 
@@ -526,14 +560,35 @@ export default function Register() {
               icon="check"
               tone="ok"
               title={{ en: 'Nothing needs a look', hi: 'सब ठीक है' }}
-              description="Every punch today cleared the checks."
+              description={`Every punch ${isToday ? 'today' : 'that day'} cleared the checks.`}
+              action="Show all"
+              onAction={() => setFilter('all')}
             />
           )
-          : (
+          : isToday ? (
             <EmptyState
               icon="clock"
               title={{ en: 'Nobody has clocked in yet', hi: 'अभी कोई नहीं' }}
               description="On a normal weekday the first punches land between 9:00 and 9:40."
+              // §3's own empty state offers this, and it is only offerable now
+              // that the register can be pointed at a day other than today.
+              action="View yesterday"
+              onAction={() => {
+                const d = new Date();
+                d.setDate(d.getDate() - 1);
+                setDay(d.toISOString().slice(0, 10));
+              }}
+            />
+          ) : (
+            // A past day with no punches is not "nobody has clocked in YET" —
+            // nobody is going to. Saying "yet" to a reviewer looking at last
+            // Tuesday reads as a page that has not finished loading.
+            <EmptyState
+              icon="clock"
+              title={{ en: 'No punches on this day', hi: 'कोई उपस्थिति नहीं' }}
+              description="Nothing was recorded. A holiday, a weekly off, or a day the team was not on the clock."
+              action="Back to today"
+              onAction={() => setDay(new Date().toISOString().slice(0, 10))}
             />
           )
       )}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Section, DataTable, Td, StatusChip } from '../../components/editorial';
@@ -81,10 +81,19 @@ export default function Corrections() {
 
   useEffect(() => { load(filter); }, [load, filter]);
 
-  const pendingCount = useMemo(
-    () => rows.filter(r => r.status === 'pending').length,
-    [rows],
-  );
+  /**
+   * How many are waiting, regardless of which filter is open. Derived from
+   * `rows` it would read zero the moment somebody switched to Approved — and
+   * the count exists precisely so a reviewer looking at settled corrections
+   * still sees that three people are waiting on them.
+   */
+  const [pendingCount, setPendingCount] = useState(null);
+  const countPending = useCallback(() => {
+    api.get('/v1/pahchan/regularisations', { params: { status: 'pending' } })
+      .then(r => setPendingCount(Array.isArray(r.data) ? r.data.length : null))
+      .catch(() => setPendingCount(null));
+  }, []);
+  useEffect(() => { countPending(); }, [countPending]);
 
   const decide = async (row, status, decisionNote) => {
     if (status === 'declined' && !(decisionNote || '').trim()) {
@@ -113,6 +122,7 @@ export default function Corrections() {
       setDeclining(null);
       setNote('');
       load(filter);
+      countPending();
     } catch (err) {
       pushToast({
         type: 'error',
@@ -131,9 +141,7 @@ export default function Corrections() {
       value={filter}
       onChange={setFilter}
       options={FILTERS.map(f => (
-        f.value === 'pending' && state === 'ready' && filter === 'pending'
-          ? { ...f, count: pendingCount }
-          : f
+        f.value === 'pending' && pendingCount != null ? { ...f, count: pendingCount } : f
       ))}
     />
   );
