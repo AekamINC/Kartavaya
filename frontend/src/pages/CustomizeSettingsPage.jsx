@@ -27,7 +27,10 @@ const TABS = [
   { value: 'layout',        label: 'Layout',        content: <TabLayout /> },
   { value: 'language',      label: 'Language',      content: <TabLanguage /> },
   { value: 'notifications', label: 'Notifications', content: <TabNotifications /> },
-  { value: 'data',          label: 'Data',          content: <TabData /> },
+  // `Data & privacy` · गोपनीयता, not `Data` — the tab holds active sessions, a
+  // data export and account deletion, and the reference names it for the half
+  // the short label drops (`SetCustomize.jsx:469`).
+  { value: 'data',          label: 'Data & privacy', content: <TabData /> },
 ];
 
 export default function CustomizeSettingsPage() {
@@ -39,8 +42,11 @@ export default function CustomizeSettingsPage() {
     <div className="st">
       <PageHeader
         kicker="SETTINGS"
-        title="Customize"
-        sanskrit="सजावट"
+        // `Customization` · रूपांकन are the designer's words (`Chrome.jsx:36`).
+        // `Customize` / सजावट — "decoration" — was a paraphrase, and the nav row
+        // now carries the reference's pair, so the page title matches it.
+        title="Customization"
+        sanskrit="रूपांकन"
         lede="Appearance, typography, layout, language and notifications."
       />
 

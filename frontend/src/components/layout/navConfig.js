@@ -11,6 +11,8 @@
 // derives its title from this list rather than maintaining a second lookup,
 // so the pair cannot drift again.
 
+import { ADMIN_SURFACE_ROLES } from '../admin/adminNav';
+
 export const NAV_FULL = [
   {
     section: 'workspace', sans: 'कार्यक्षेत्र', gu: 'કાર્યક્ષેત્ર',
@@ -147,16 +149,45 @@ export const NAV_FULL = [
     ],
   },
   {
+    // ── Settings · व्यवस्था ──────────────────────────────────────────────────
+    //
+    // Reconciled against `Chrome.jsx:36`, the NAV the Settings.html harness
+    // actually renders, by RUNNING it rather than reading the prose. The design
+    // has four rows here — Roles & access, Customization, Organisation, Aekam
+    // admin — and the build had four different ones: Categories, Customize,
+    // Organisation, Billing. Two of the design's four had no row at all, and
+    // one of the build's was a link into a sibling row's tab.
+    //
+    //   Roles & access  the roster, the access matrix and the invitation list
+    //                   were only reachable as a TAB of Organisation. The
+    //                   design gives them a destination, so `/settings/roles`
+    //                   is one — mounting the same wired component, not a copy.
+    //   Aekam admin     the console was fully built, fully guarded and listed
+    //                   in EXTRA_ROUTES, which is the set of routes that have
+    //                   NO sidebar entry. So the only way an Aekam operator
+    //                   reached their own console was to type the URL.
+    //   Billing         removed. It pointed at `/settings/organisation?tab=
+    //                   billing`, a tab of the row directly above it, and the
+    //                   design has no such row. `/billing` still redirects
+    //                   there for bookmarks and emailed links.
+    //   Categories      kept. Build-only — the design has no equivalent — but
+    //                   it is a real page against a real `/categories`
+    //                   endpoint, and dropping the row would strand it.
+    //
+    // `Customization` / `रूपांकन` and `संस्था` are the designer's words. The
+    // build's `Customize` / `सजावट` and `संगठन` were a paraphrase; _DESIGN-GAP
+    // asks for each of these to be settled deliberately rather than silently,
+    // and the reference wins.
     section: 'settings', sans: 'व्यवस्था', gu: 'સેટિંગ્સ',
     items: [
-      { to: '/settings/categories',    icon: 'categories',    en: 'Categories',    hi: 'वर्ग',   gu: 'વર્ગ' },
-      { to: '/settings/customize',     icon: 'customize',     en: 'Customize',     hi: 'सजावट',  gu: 'સજાવટ' },
-      { to: '/settings/organisation',  icon: 'org',           en: 'Organisation',  hi: 'संगठन',  gu: 'સંગઠન', orgAdminOnly: true },
-      // Points at the tab, not at `/billing`. `10-org-settings.md` folded
-      // BillingPage.jsx into `org/TabBilling.jsx`; `/billing` survives in
-      // App.jsx only as a redirect for bookmarks and emailed links, and a nav
-      // item that routes through a redirect flashes the wrong screen first.
-      { to: '/settings/organisation?tab=billing', icon: 'billing', en: 'Billing', hi: 'बिलिंग', gu: 'બિલિંગ' },
+      { to: '/settings/roles',         icon: 'users',         en: 'Roles & access', hi: 'अधिकार',  gu: 'અધિકાર', orgAdminOnly: true },
+      { to: '/settings/customize',     icon: 'customize',     en: 'Customization',  hi: 'रूपांकन', gu: 'રૂપાંકન' },
+      { to: '/settings/organisation',  icon: 'org',           en: 'Organisation',   hi: 'संस्था',  gu: 'સંસ્થા', orgAdminOnly: true },
+      { to: '/settings/categories',    icon: 'categories',    en: 'Categories',     hi: 'वर्ग',    gu: 'વર્ગ' },
+      // The console is a different SURFACE — it replaces the sidebar and owns
+      // the window — but the door to it belongs on the sidebar, which is where
+      // the design puts it. `consoleOnly` is NOT `adminOnly`: see canSeeNavItem.
+      { to: '/admin',                  icon: 'admin',         en: 'Aekam admin',    hi: 'ऐकम',     gu: 'ઐકમ', consoleOnly: true },
     ],
   },
 ];
@@ -211,11 +242,24 @@ export function navContext(user) {
    * an empty breadcrumb segment reading "—" is worse than no segment.
    */
   const orgName = orgRoles[0]?.org_name || null;
+  // Who may open `/admin`, transcribed from `Protected.jsx`'s own test and
+  // built on the SAME exported role set, so the sidebar row and the route guard
+  // cannot disagree about who the console is for.
+  //
+  // "Holds any platform role" — which is what `isPlatform` means — is too wide
+  // to hang this row on. `srijan_admin` belongs at `/hub`, and
+  // `platform_support` reaches nothing until an org admin approves a time-boxed
+  // session. Offering either of them a console row is the greyed-out row that
+  // advertises what is missing, which RBAC-SPEC's first denied-state rule
+  // forbids: no access means absent from the sidebar.
+  const canOpenAdmin =
+    user?.role === 'admin' || platformRoles.some(r => ADMIN_SURFACE_ROLES.includes(r));
   return {
     isPlatform,
     isOrgOwner,
     isOrgAdmin,
     isClient,
+    canOpenAdmin,
     moduleGrants,
     orgName,
     // Legacy `role` column is still the only signal for orgs that predate
@@ -227,6 +271,12 @@ export function navContext(user) {
 /** Whether one nav entry is visible to the context `navContext()` returned. */
 export function canSeeNavItem(item, ctx) {
   if (item.adminOnly && !ctx.isPlatform) return false;
+  // `consoleOnly` is the narrower of the two platform predicates and the
+  // difference matters — `adminOnly` admits any platform role, `consoleOnly`
+  // admits only the roles `ADMIN_SURFACE_ROLES` names. The Aekam admin row is
+  // the second kind: a row that resolves to a console where every screen 403s
+  // is worse than no row.
+  if (item.consoleOnly && !ctx.canOpenAdmin) return false;
   if (item.orgAdminOnly && !ctx.isOrgAdmin) return false;
   if (item.ownerOnly && !ctx.isOwnerish) return false;
   // `module` was declared on all ten module entries and read by nothing — the
@@ -298,7 +348,9 @@ export const NAV_CLIENT = [
 // breadcrumb falls through to the app name — PAGE_META had 21 entries against
 // far more live routes, so eleven pages read "कर्तव्य / Kartavaya".
 const EXTRA_ROUTES = [
-  { to: '/admin',                 en: 'Admin',           hi: 'प्रशासन' },
+  // `/admin` is no longer here: it is a sidebar row now, so NAV_FULL claims the
+  // key first and this entry could only ever be dead weight that disagreed with
+  // the row's own label.
   { to: '/admin/billing',         en: 'Admin Billing',   hi: 'बिलिंग प्रशासन' },
   { to: '/admin/orgs',            en: 'Organisations',   hi: 'संस्थाएँ' },
   { to: '/admin/costs',           en: 'Cost Dashboard',  hi: 'लागत' },

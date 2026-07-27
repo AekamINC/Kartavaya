@@ -134,7 +134,17 @@ function GrantRow({ mod, grant, levelsEditable, onToggle, onLevel }) {
   );
 }
 
-export default function TabMembers({ isOwner, selfUserId }) {
+/**
+ * `defaultView` is which of the two halves this mount opens on.
+ *
+ * The design splits them across two destinations and says so in as many words
+ * (`SetOrg.jsx:130`): "The full permission matrix lives in Roles & access. This
+ * tab is the roster; that one is the grid." Both are this one wired component,
+ * so `/settings/roles` mounts it on `matrix` and Organisation ▸ Members mounts
+ * it on `list`. A second copy of a screen that adds, invites, revokes and
+ * regrants would be two code paths for one set of writes.
+ */
+export default function TabMembers({ isOwner, selfUserId, defaultView = 'list' }) {
   const { pushToast } = useToast();
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -159,7 +169,7 @@ export default function TabMembers({ isOwner, selfUserId }) {
   // rather than on mount: the list view does not use it, and a parallel request
   // whose result is never rendered is the exact defect 10 §"What's wrong today"
   // opens with.
-  const [view, setView] = useState('list');
+  const [view, setView] = useState(defaultView === 'matrix' ? 'matrix' : 'list');
   const [activeModules, setActiveModules] = useState(null);
 
   const load = useCallback(() => {
@@ -185,15 +195,26 @@ export default function TabMembers({ isOwner, selfUserId }) {
 
   useEffect(() => { load(); loadInvites(); }, [load, loadInvites]);
 
+  // A failure leaves it null, so the matrix draws every column at full
+  // strength rather than dimming all twelve. Nothing here is worth a toast:
+  // the dimming is a hint about the subscription, not about access.
+  const loadActiveModules = useCallback(() => (
+    api.get('/v1/subscription/current')
+      .then(r => setActiveModules(r.data.active_modules || []))
+      .catch(() => {})
+  ), []);
+
+  // Mounting straight onto the matrix has to fetch what the click that never
+  // happened would have fetched, or `/settings/roles` opens with all twelve
+  // columns dimmed and reads as "nothing is subscribed".
+  useEffect(() => {
+    if (defaultView === 'matrix') loadActiveModules();
+  }, [defaultView, loadActiveModules]);
+
   const showMatrix = () => {
     setView('matrix');
     if (activeModules != null) return;
-    // A failure leaves it null, so the matrix draws every column at full
-    // strength rather than dimming all twelve. Nothing here is worth a toast:
-    // the dimming is a hint about the subscription, not about access.
-    api.get('/v1/subscription/current')
-      .then(r => setActiveModules(r.data.active_modules || []))
-      .catch(() => {});
+    loadActiveModules();
   };
 
   /**

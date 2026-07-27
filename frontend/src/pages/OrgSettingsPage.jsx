@@ -43,7 +43,10 @@ export default function OrgSettingsPage() {
     { value: 'billing',  label: 'Billing',  content: <TabBilling /> },
     { value: 'modules',  label: 'Modules',  content: <TabModules /> },
     { value: 'security', label: 'Security', content: <TabSecurity /> },
-    { value: 'danger',   label: 'Danger',   content: <TabDanger orgName={orgRole?.org_name} /> },
+    // `Danger zone`, not `Danger` — the reference's label (`SetOrg.jsx:343`).
+    // The word the short form drops is the one that says this is a place you
+    // enter rather than a state you are in.
+    { value: 'danger',   label: 'Danger zone', content: <TabDanger orgName={orgRole?.org_name} /> },
   ]), [isOwner, user?.user_id, orgRole?.org_name]);
 
   // Denial names the grant, never the record (02 §Revision). "You are not an
@@ -51,7 +54,7 @@ export default function OrgSettingsPage() {
   if (!orgRole) {
     return (
       <div className="st">
-        <PageHeader kicker="SETTINGS" title="Organisation" sanskrit="संगठन" />
+        <PageHeader kicker="SETTINGS" title="Organisation" sanskrit="संस्था" />
         <ErrorState kind="denied" grant="org admin or org owner on this organisation" />
       </div>
     );
@@ -65,7 +68,9 @@ export default function OrgSettingsPage() {
       <PageHeader
         kicker="SETTINGS"
         title="Organisation"
-        sanskrit="संगठन"
+        // संस्था is the design's word for this destination (Chrome.jsx:36).
+        // संगठन reads as "organising" rather than as the institution itself.
+        sanskrit="संस्था"
         lede={orgRole.org_name
           ? `${orgRole.org_name} — company details, members, billing and access.`
           : 'Company details, members, billing and access.'}
