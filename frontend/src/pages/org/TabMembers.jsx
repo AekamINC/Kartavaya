@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import {
   Button, Checkbox, ConfirmDialog, ErrorState, Sheet, SkeletonTable, useToast,
@@ -144,7 +144,7 @@ function GrantRow({ mod, grant, levelsEditable, onToggle, onLevel }) {
  * it on `list`. A second copy of a screen that adds, invites, revokes and
  * regrants would be two code paths for one set of writes.
  */
-export default function TabMembers({ isOwner, selfUserId, defaultView = 'list' }) {
+export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', onCount }) {
   const { pushToast } = useToast();
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -210,6 +210,14 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list' }
   useEffect(() => {
     if (defaultView === 'matrix') loadActiveModules();
   }, [defaultView, loadActiveModules]);
+
+  // The tab bar wants the count and this is where the list is. Through a ref,
+  // and keyed on the NUMBER rather than on the callback: parents pass an inline
+  // arrow, whose identity changes every render, so a dependency on the function
+  // itself would be a loop with a fresh request in it.
+  const onCountRef = useRef(onCount);
+  onCountRef.current = onCount;
+  useEffect(() => { onCountRef.current?.(members.length); }, [members.length]);
 
   const showMatrix = () => {
     setView('matrix');
