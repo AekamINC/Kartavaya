@@ -15,6 +15,8 @@ import { useTheme } from '../theme/ThemeProvider';
 import { tasksApi } from '../api/tasks';
 import { projectsApi } from '../api/projects';
 import { PRIORITY_COLORS, projectColor, AVATAR_COLORS, BRAND_GRADIENT_2, withAlpha } from '../theme/tokens';
+import { FAMILY } from '../theme/fonts';
+import BiLabel from '../theme/BiLabel';
 import type { Task, ProjectColumn, TeamMember, Project } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
 
@@ -61,7 +63,11 @@ function ProjectPicker({
           })}
         </ScrollView>
         <TouchableOpacity onPress={onClose} style={[ps.cancelBtn, { borderColor: t.outline }]}>
-          <Text style={[ps.cancelText, { color: t.ink3 }]}>Cancel · रद्द करें</Text>
+          {/* fontWeight '700' on `रद्द करें` has no Tiro to apply it to, so the
+              Hindi half renders in a synthesised bold or the system face. */}
+          <BiLabel latinStyle={[ps.cancelText, { color: t.ink3 }]} hindiStyle={{ color: t.ink3 }} hindiSize={13}>
+            Cancel · रद्द करें
+          </BiLabel>
         </TouchableOpacity>
       </View>
     </Modal>
@@ -468,7 +474,14 @@ export default function BoardScreen() {
     return (
       <View style={[s.root, { backgroundColor: t.bg }]}>
         <View style={[s.header, { backgroundColor: IS_ANDROID ? t.surface : t.bg, paddingTop: insets.top + (IS_ANDROID ? 8 : 54) }]}>
-          <Text style={[s.kicker, { color: t.primary }]}>Boards · कार्यफलक</Text>
+          {/* Split: `s.kicker` carries letterSpacing 1.4 and fontWeight '700',
+              both of which damage Devanagari — tracking is applied after shaping
+              and breaks the shirorekha and the repha in `कार्यफलक`, and there is
+              no bold Tiro to weight it with. The loaded header below already
+              splits these into two <Text>s; only this empty state did not. */}
+          <BiLabel latinStyle={[s.kicker, { color: t.primary }]} hindiStyle={{ color: t.primary }} hindiSize={12}>
+            Boards · कार्यफलक
+          </BiLabel>
         </View>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <Ionicons name="grid-outline" size={40} color={t.ink3} />
@@ -649,7 +662,7 @@ const s = StyleSheet.create({
   backBtn:      { width: 32, flexShrink: 0, marginBottom: 4 },
   kickerRow:    { flexDirection: 'row', alignItems: 'baseline', gap: 8, marginBottom: 4 },
   kicker:       { fontSize: 11, fontWeight: '700', letterSpacing: 1.4, textTransform: 'uppercase' },
-  kickerHi:     { fontSize: 12, fontFamily: 'TiroDevanagariHindi' },
+  kickerHi:     { fontSize: 12, fontFamily: FAMILY.devanagari },
   screenTitle:  { fontSize: IS_ANDROID ? 30 : 34, fontWeight: IS_ANDROID ? '500' : '400', lineHeight: IS_ANDROID ? 36 : 40, letterSpacing: -0.5, marginBottom: 10, fontFamily: IS_ANDROID ? undefined : 'Newsreader' },
   projectBtn:   { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, paddingHorizontal: 14, marginBottom: 4 },
   projDot:      { width: 12, height: 12, flexShrink: 0 },

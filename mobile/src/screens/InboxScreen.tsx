@@ -12,6 +12,7 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
 import { notificationsApi } from '../api/notifications';
 import { avatarColor, userInitials } from '../theme/tokens';
+import { FAMILY } from '../theme/fonts';
 import type { Notification, NotifKind } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
 
@@ -354,7 +355,7 @@ const s = StyleSheet.create({
   },
   kickerHi: {
     fontSize: 12,
-    fontFamily: 'TiroDevanagariHindi',
+    fontFamily: FAMILY.devanagari,
   },
   screenTitle: {
     fontSize: IS_ANDROID ? 30 : 34,
@@ -410,7 +411,7 @@ const s = StyleSheet.create({
   },
   dayHi: {
     fontSize: 12,
-    fontFamily: 'TiroDevanagariHindi',
+    fontFamily: FAMILY.devanagari,
     textTransform: 'none' as any,
     letterSpacing: 0,
   },
