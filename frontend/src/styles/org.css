@@ -306,7 +306,9 @@
 
 /* ── Credit meter ──────────────────────────────────────────────────────── */
 .omtr { background: var(--s-container); border-radius: var(--r-pill); height: 8px; overflow: hidden; }
-.omtr__f { height: 100%; background: var(--primary); border-radius: var(--r-pill); transition: width var(--dur-slow) var(--ease-standard); }
+/* `--pct` is set per instance from TabBilling; 0% is the honest default, since a
+   meter with no figure behind it must not paint a full bar. */
+.omtr__f { width: var(--pct, 0%); height: 100%; background: var(--primary); border-radius: var(--r-pill); transition: width var(--dur-slow) var(--ease-standard); }
 .omtr__f.over { background: var(--danger); }
 .omtr__lg { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--on-surface-3); }
 
@@ -338,3 +340,86 @@
 }
 .opend svg { flex-shrink: 0; margin-top: 2px; color: var(--on-surface-3); }
 .opend code { font-family: var(--font-mono); font-size: 11.5px; color: var(--on-surface); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Conversion round — the last of the inline styles on this hub.
+
+   Everything below replaces a `style={{…}}` object that was sitting in
+   `TabMembers`, `TabBilling`, `TabProfile`, `AccessMatrix` or `MemberTable`.
+   Same argument as everywhere else in this codebase: a literal `fontSize: 12`
+   ignores the Text size control, a literal `marginTop: 10` is a spacing-ramp
+   step retyped by hand, and neither can be corrected in one place.
+
+   Nothing here is a new visual decision. Each rule is the value that was
+   already being applied, moved to where the rest of the hub's design lives.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* A section heading with a control at the trailing edge — "Members · 12" with
+   the List / Access matrix switch beside it. Wraps rather than compressing the
+   segmented control, which is what keeps it usable on a narrow window. */
+.ohd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+/* `.st__gt` carries its own bottom margin for the stacked case; inside `.ohd`
+   the flex gap owns the spacing and the margin would push the heading off the
+   control's centre line. */
+.ohd > .st__gt { margin-bottom: 0; }
+
+/* The explanatory line under a section heading, before its form. `.of__h` is
+   the hint type; these are only the gaps that separate it from what follows. */
+.of__h--lede  { margin-bottom: var(--sp-3); }
+/* The same hint used as a trailing footnote under a table or a plan grid. */
+.of__h--foot  { margin-top: var(--sp-3); }
+/* Inside a pending-invite row the hint is the second line of a stacked pair,
+   so it carries no margin of its own. */
+.of__h--flush { margin: 0; }
+
+/* A second form grid directly under another one — address lines 1–2 followed by
+   city / state / pincode. They are one address, so they take the field gap
+   between them rather than the larger gap between sections. */
+.of--stacked { margin-top: var(--sp-4); }
+
+/* A field cell holding a button rather than an input: it aligns to the bottom
+   of the row so the button sits on the inputs' baseline, not their labels'. */
+.of__f--act  { justify-content: flex-end; }
+/* A field that spans the whole form grid — an address line, a long note. */
+.of__f--wide { grid-column: 1 / -1; }
+
+/* One pending invitation: who, and the revoke control. A row rather than the
+   column `.of__f` normally is, because it is a record and an action rather
+   than a labelled input. */
+.of__f--row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.oinv__e { font-weight: 600; }
+
+/* The name-and-email stack beside a member's avatar. `min-width: 0` is what
+   lets `.omt__n` / `.omt__e` ellipsis instead of forcing the row wider — a long
+   address on a narrow window otherwise pushes the role and action columns off
+   the table. */
+.omt__id { min-width: 0; }
+
+/* The grant sheet's footer, and the notices stacked above it. */
+.ogr__acts    { display: flex; gap: var(--sp-2); margin-top: var(--sp-4); }
+.opend--stack { margin-bottom: var(--sp-3); }
+
+/* ── Billing ──────────────────────────────────────────────────────────────
+   The stat row above the credit meter, and the retry beneath a failed read. */
+.ostats--gap  { margin-bottom: var(--sp-4); }
+.ocred__retry { margin-top: var(--sp-3); }
+
+/* The usage-report period buttons. */
+.orep { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+/* An invoice number. Mono because a column of them is scanned vertically and
+   read against each other — the same argument `.rv__t` makes for a column of
+   times, and that `Cell num` already makes for the money columns beside it. */
+.oinv__n { font-family: var(--font-mono); font-size: var(--t-label); }

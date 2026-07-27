@@ -89,7 +89,7 @@ export default function MemberTable({ members, isOwner, selfUserId, onEditGrants
                         ? <img src={m.avatar_url} alt="" />
                         : userInitials(m.full_name || m.email || '?')}
                     </span>
-                    <span style={{ minWidth: 0 }}>
+                    <span className="omt__id">
                       <span className="omt__n">{m.full_name || m.email}</span>
                       <span className="omt__e">
                         {m.email}{m.mobile_number ? ` · ${m.mobile_number}` : ''}

@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { api } from '../../lib/api';
+import { api, body as unwrap } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Section } from '../../components/editorial';
 import Note from '../../components/module/Note';
-import ErrorState from '../../components/ui/ErrorState';
+import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonCard } from '../../components/ui/Skeleton';
 import Sites from './Sites';
 
@@ -97,14 +97,22 @@ export default function PahchanPolicy() {
   const [state, setState] = useState('loading');
   const [policy, setPolicy] = useState(null);
   const [saving, setSaving] = useState(false);
+  // Which KIND of failure. This screen was hardcoded to `kind="server"`, so a
+  // reviewer on a train was told the fault was ours and sent to report a bug
+  // that was their own signal. `errorKind` treats a rejection with no response
+  // as offline, which is the honest reading.
+  const [errKind, setErrKind] = useState('server');
 
   const load = useCallback(async () => {
     setState('loading');
     try {
       const r = await api.get('/v1/pahchan/policy');
-      setPolicy(r.data);
+      // `body()` (imported as `unwrap`, since `body` is the name this file's
+      // `save()` already gives the PATCH payload it builds).
+      setPolicy(unwrap(r));
       setState('ready');
-    } catch {
+    } catch (err) {
+      setErrKind(errorKind(err));
       setState('error');
     }
   }, []);
@@ -182,13 +190,23 @@ export default function PahchanPolicy() {
     return <SkeletonRegion label="Loading the policy…"><SkeletonCard lines={6} /></SkeletonRegion>;
   }
   if (state === 'error') {
-    return <ErrorState kind="server" detail="The policy did not load." onRetry={load} />;
+    return (
+      <ErrorState
+        kind={errKind}
+        detail={
+          errKind === 'offline'
+            ? 'The policy needs a connection to load. Nothing already saved has changed.'
+            : 'The policy did not load. This is a read failure — no setting was changed.'
+        }
+        onRetry={load}
+      />
+    );
   }
 
   const numberRow = (f) => (
-    <label className="fld" key={f.key} style={{ display: 'block', marginBottom: 14 }}>
+    <label className="fld ph__f ph__fld--num" key={f.key}>
       <span className="fld__l">{f.label}</span>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span className="ph__inline">
         <input
           className="inp"
           type="number"
@@ -196,9 +214,8 @@ export default function PahchanPolicy() {
           step={f.step}
           value={policy[f.key] ?? ''}
           onChange={e => set(f.key, e.target.value)}
-          style={{ maxWidth: 120 }}
         />
-        <span style={{ fontSize: 12.5, color: 'var(--on-surface-2)' }}>{f.unit}</span>
+        <span className="ph__unit">{f.unit}</span>
       </span>
       <span className="fld__hint">{f.help}</span>
     </label>
@@ -215,15 +232,14 @@ export default function PahchanPolicy() {
           never computed&rdquo; look identical on a payslip and mean opposite things.
         </Note>
 
-        <label className="fld" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 16 }}>
+        <label className="fld ph__check">
           <input
             type="checkbox"
             checked={!!policy.overtime_enabled}
             onChange={e => set('overtime_enabled', e.target.checked)}
-            style={{ marginTop: 3 }}
           />
           <span>
-            <span className="fld__l" style={{ marginBottom: 2 }}>Compute overtime</span>
+            <span className="fld__l ph__check-l">Compute overtime</span>
             <span className="fld__hint">
               Hours beyond either threshold below are recorded as overtime when attendance
               is pushed to payroll.
@@ -233,11 +249,10 @@ export default function PahchanPolicy() {
 
         {SHIFT.map(numberRow)}
 
-        <label className="fld" style={{ display: 'block', marginBottom: 14 }}>
+        <label className="fld ph__f ph__fld--week">
           <span className="fld__l">Week starts on</span>
           <select
             className="inp"
-            style={{ maxWidth: 180 }}
             value={policy.week_starts_on ?? 1}
             onChange={e => set('week_starts_on', Number(e.target.value))}
           >
@@ -249,35 +264,33 @@ export default function PahchanPolicy() {
           </span>
         </label>
 
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div className="ph__times">
           {[['shift_start_time', 'Shift starts'], ['shift_end_time', 'Shift ends']].map(([key, label]) => (
-            <label className="fld" key={key} style={{ display: 'block' }}>
+            <label className="fld ph__fld ph__fld--time" key={key}>
               <span className="fld__l">{label}</span>
               <input
                 className="inp"
                 type="time"
-                style={{ maxWidth: 140 }}
                 value={toTimeInput(policy[key])}
                 onChange={e => set(key, e.target.value)}
               />
             </label>
           ))}
         </div>
-        <p className="fld__hint" style={{ marginTop: -6, marginBottom: 14 }}>
+        <p className="fld__hint ph__times-note">
           Leave both empty if there is no fixed shift — every day is then bounded by its
           own punches, which is exactly today&rsquo;s behaviour. A start without an end
           cannot bound a day, so they go together.
         </p>
 
-        <label className="fld" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 4 }}>
+        <label className="fld ph__check ph__check--tight">
           <input
             type="checkbox"
             checked={!!policy.overnight_shift}
             onChange={e => set('overnight_shift', e.target.checked)}
-            style={{ marginTop: 3 }}
           />
           <span>
-            <span className="fld__l" style={{ marginBottom: 2 }}>The shift crosses midnight</span>
+            <span className="fld__l ph__check-l">The shift crosses midnight</span>
             <span className="fld__hint">
               A punch at 01:00 then belongs to the shift that started at 22:00 the day
               before. Without this one night is split into two half-days, and both look
@@ -292,15 +305,14 @@ export default function PahchanPolicy() {
       <Section title="Geofence and flags" hi="सीमा व चिह्न">
         {FIELDS.map(numberRow)}
 
-        <label className="fld" style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <label className="fld ph__check ph__check--tight">
           <input
             type="checkbox"
             checked={!!policy.allow_outside_geofence}
             onChange={e => set('allow_outside_geofence', e.target.checked)}
-            style={{ marginTop: 3 }}
           />
           <span>
-            <span className="fld__l" style={{ marginBottom: 2 }}>Count punches made outside a site</span>
+            <span className="fld__l ph__check-l">Count punches made outside a site</span>
             <span className="fld__hint">
               {/* The clarification that stops a reasonable misreading. */}
               Turning this off does not reject those punches — they are still recorded,
@@ -333,14 +345,14 @@ export default function PahchanPolicy() {
           ['report_weekly', 'Weekly summary'],
           ['report_monthly', 'Monthly summary'],
         ].map(([key, label]) => (
-          <label key={key} className="fld" style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+          <label key={key} className="fld ph__check ph__check--row">
             <input type="checkbox" checked={!!policy[key]} onChange={e => set(key, e.target.checked)} />
-            <span className="fld__l" style={{ marginBottom: 0 }}>{label}</span>
+            <span className="fld__l">{label}</span>
           </label>
         ))}
       </Section>
 
-      <div style={{ marginTop: 20 }}>
+      <div className="ph__save">
         <button className="btn btn--fill" onClick={save} disabled={saving || !!shiftProblem}>
           {saving ? 'Saving…' : 'Save policy'}
         </button>

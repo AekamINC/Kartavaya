@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { api } from '../../lib/api';
+import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Section, DataTable, Td, StatusChip } from '../../components/editorial';
 import EmptyState from '../../components/ui/EmptyState';
@@ -31,13 +31,12 @@ import Note from '../../components/module/Note';
 
 function CoordField({ label, value, onChange, placeholder }) {
   return (
-    <label className="fld" style={{ display: 'block' }}>
+    <label className="fld ph__fld ph__fld--coord">
       <span className="fld__l">{label}</span>
       <input
         className="inp"
         type="number"
         step="0.000001"
-        style={{ maxWidth: 170 }}
         value={value}
         placeholder={placeholder}
         onChange={e => onChange(e.target.value)}
@@ -61,7 +60,13 @@ export default function Sites() {
     setState('loading');
     try {
       const r = await api.get('/v1/pahchan/sites');
-      setSites(r.data?.data || []);
+      // `rows()`, not `r.data.data`. This route answers `{"data": [...]}` today
+      // (pahchan.py `list_sites`), but 28 of the 127 GET routes in this codebase
+      // answer a bare array instead and there is no rule about which. Reading
+      // the envelope by hand is how a list endpoint that changes shape renders
+      // as EMPTY rather than failing — and an empty site list is what silently
+      // turns the geofence off for a whole org.
+      setSites(rows(r));
       setState('ready');
     } catch (err) {
       setErrKind(errorKind(err));
@@ -150,7 +155,7 @@ export default function Sites() {
       title="Sites"
       hi="स्थान"
       right={!adding && state === 'ready' && (
-        <button className="btn btn--fill" style={{ fontSize: 12 }} onClick={() => setAdding(true)}>
+        <button className="btn btn--fill btn--sm" onClick={() => setAdding(true)}>
           Add a site
         </button>
       )}
@@ -178,17 +183,11 @@ export default function Sites() {
       )}
 
       {adding && (
-        <div style={{
-          padding: '14px 16px 16px', marginBottom: 16,
-          background: 'var(--s-low)', borderRadius: 'var(--r-sm)',
-          border: '1px solid var(--outline-variant)',
-        }}
-        >
-          <label className="fld" style={{ display: 'block', marginBottom: 12 }}>
+        <div className="ph__form">
+          <label className="fld ph__f ph__fld--name">
             <span className="fld__l">Name</span>
             <input
               className="inp"
-              style={{ maxWidth: 320 }}
               value={form.name}
               placeholder="Fort office"
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
@@ -196,45 +195,45 @@ export default function Sites() {
             <span className="fld__hint">What a reviewer sees beside a punch. Use the name the team uses.</span>
           </label>
 
-          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div className="ph__form-row">
             <CoordField label="Latitude" value={form.lat} placeholder="18.933300" onChange={v => setForm(f => ({ ...f, lat: v }))} />
             <CoordField label="Longitude" value={form.lng} placeholder="72.833600" onChange={v => setForm(f => ({ ...f, lng: v }))} />
-            <label className="fld" style={{ display: 'block' }}>
+            <label className="fld ph__fld ph__fld--radius">
               <span className="fld__l">Radius</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="ph__inline">
                 <input
-                  className="inp" type="number" min={10} style={{ maxWidth: 110 }}
+                  className="inp" type="number" min={10}
                   value={form.radius_m}
                   onChange={e => setForm(f => ({ ...f, radius_m: e.target.value }))}
                 />
-                <span style={{ fontSize: 12.5, color: 'var(--on-surface-2)' }}>metres</span>
+                <span className="ph__unit">metres</span>
               </span>
             </label>
-            <button className="btn btn--ghost" style={{ fontSize: 12 }} disabled={locating} onClick={useMyLocation}>
+            <button className="btn btn--ghost btn--sm" disabled={locating} onClick={useMyLocation}>
               {locating ? 'Reading…' : 'Use this device'}
             </button>
           </div>
 
           {fix != null && (
-            <p className="fld__hint" style={{ marginTop: 8 }}>
+            <p className="fld__hint ph__hint-top">
               This device reports ±{fix}m. {fix > 60
                 ? 'That is loose for a fence centre — a desktop fix is often trilaterated from wi-fi and can be streets out. Check the coordinates before saving.'
                 : 'Good enough for a fence centre if you are standing at the site.'}
             </p>
           )}
 
-          <p className="fld__hint" style={{ marginTop: 10, maxWidth: '64ch' }}>
+          <p className="fld__hint ph__hint-wide">
             150m is the default because a gate 60m from the pin is still at work. Once
             saved, a site cannot be moved from here — moving it would change whether
             punches already reviewed were inside it.
           </p>
 
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button className="btn btn--fill" style={{ fontSize: 12 }} disabled={saving} onClick={save}>
+          <div className="ph__acts">
+            <button className="btn btn--fill btn--sm" disabled={saving} onClick={save}>
               {saving ? 'Saving…' : 'Add site'}
             </button>
             <button
-              className="btn btn--ghost" style={{ fontSize: 12 }}
+              className="btn btn--ghost btn--sm"
               onClick={() => { setAdding(false); setFix(null); }}
             >
               Cancel
@@ -257,7 +256,7 @@ export default function Sites() {
         <DataTable columns={['Site', 'Coordinates', 'Radius', 'Status']}>
           {sites.map(s => (
             <tr key={s.id}>
-              <Td><strong style={{ fontSize: 13.5 }}>{s.name}</strong></Td>
+              <Td><strong className="ph__name">{s.name}</strong></Td>
               <Td mono>{Number(s.lat).toFixed(4)}, {Number(s.lng).toFixed(4)}</Td>
               <Td mono>{s.radius_m} m</Td>
               <Td>

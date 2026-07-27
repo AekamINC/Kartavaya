@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { api } from '../../lib/api';
+import { api, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Section, DataTable, Td, StatusChip } from '../../components/editorial';
 import EmptyState from '../../components/ui/EmptyState';
@@ -22,8 +22,9 @@ import Note from '../../components/module/Note';
  *   easy to leave out and is the more important one: an empty approval queue looks
  *   like success while twenty people remain unverifiable.
  */
-const THUMB_W = 58;
-const THUMB_H = 72;
+/* The thumbnail size lives in `.ph__thumb` (styles/pahchan.css) rather than in
+   two constants here, so it follows the Corner radius and density settings like
+   every other surface. */
 
 /**
  * The photograph being approved.
@@ -51,26 +52,28 @@ function RefThumb({ photoId, name }) {
     return () => { alive = false; };
   }, [photoId]);
 
+  const failed = s.st === 'err';
   return (
     <div
-      style={{
-        width: THUMB_W, height: THUMB_H,
-        background: s.st === 'ok' ? 'var(--s-low)' : 'var(--s-container)',
-        border: '1px solid var(--outline-variant)',
-        borderRadius: 'var(--r-sm)',
-        overflow: 'hidden', flexShrink: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}
+      className={`ph__thumb${s.st === 'ok' ? ' ph__thumb--ok' : ''}`}
+      /* Labelled only when there is nothing to see. The <img> carries its own
+         alt in the resolved case, and a second label on the wrapper would have
+         a screen reader announce the same photograph twice. */
+      aria-label={s.st === 'ok' ? undefined : `Reference photo from ${name} — ${
+        s.st === 'load' ? 'loading' : failed ? 'failed to load' : 'deleted'}`}
     >
       {s.st === 'ok' ? (
-        <img
-          src={s.url}
-          alt={`Reference photo submitted by ${name}`}
-          style={{ objectFit: 'cover', width: '100%', height: '100%' }}
-        />
+        <img src={s.url} alt={`Reference photo submitted by ${name}`} />
+      ) : s.st === 'load' ? (
+        /* The SHAPE is the loading signal, and it survives the sweep being
+           switched off under reduced motion. An ellipsis does not: "…" is a
+           glyph that means "nearly there", so a photo that never arrives reads
+           as one that is about to — and approving is the act of vouching that
+           this face belongs to this employee. */
+        <span className="ix-skeleton rv__sk" aria-hidden="true" />
       ) : (
-        <span style={{ fontSize: 'var(--t-label-sm)', color: 'var(--on-surface-3)', textAlign: 'center', padding: 2 }}>
-          {s.st === 'load' ? '…' : s.st === 'err' ? 'failed' : 'deleted'}
+        <span className={`ph__thumb-w${failed ? ' ph__thumb-w--err' : ''}`}>
+          {failed ? 'failed' : 'deleted'}
         </span>
       )}
     </div>
@@ -88,7 +91,17 @@ export default function EnrollQueue() {
     setState('loading');
     try {
       const r = await api.get('/v1/pahchan/enrollment/queue/pending');
-      setData(r.data);
+      // This route answers a bespoke object — `{pending_approval, incomplete}`,
+      // not an envelope and not a bare array — so `body()` rather than `rows()`.
+      // Each half is defaulted because a response missing a key would otherwise
+      // reach `pending.length` as undefined and take the whole tab down; an
+      // enrollment queue that throws is one nobody can clear, and every punch by
+      // an unenrolled employee stays unverifiable until they do.
+      const out = body(r);
+      setData({
+        pending_approval: Array.isArray(out.pending_approval) ? out.pending_approval : [],
+        incomplete: Array.isArray(out.incomplete) ? out.incomplete : [],
+      });
       setState('ready');
     } catch (err) {
       setErrKind(errorKind(err));
@@ -152,9 +165,9 @@ export default function EnrollQueue() {
               <tr key={p.id}>
                 <Td><RefThumb photoId={p.id} name={p.employee_name} /></Td>
                 <Td>
-                  <strong style={{ fontSize: 13.5 }}>{p.employee_name}</strong>
+                  <strong className="ph__name">{p.employee_name}</strong>
                   {p.employee_code && (
-                    <span style={{ display: 'block', fontSize: 11, color: 'var(--on-surface-3)' }}>
+                    <span className="ph__sub">
                       {p.employee_code}
                     </span>
                   )}
@@ -163,8 +176,7 @@ export default function EnrollQueue() {
                 <Td mono>{new Date(p.captured_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</Td>
                 <Td>
                   <button
-                    className="btn btn--fill"
-                    style={{ fontSize: 12 }}
+                    className="btn btn--fill btn--sm"
                     disabled={busy === p.id}
                     onClick={() => approve(p.id, p.employee_name)}
                   >
@@ -195,9 +207,9 @@ export default function EnrollQueue() {
             {incomplete.map(e => (
               <tr key={e.employee_id}>
                 <Td>
-                  <strong style={{ fontSize: 13.5 }}>{e.employee_name}</strong>
+                  <strong className="ph__name">{e.employee_name}</strong>
                   {e.employee_code && (
-                    <span style={{ display: 'block', fontSize: 11, color: 'var(--on-surface-3)' }}>
+                    <span className="ph__sub">
                       {e.employee_code}
                     </span>
                   )}

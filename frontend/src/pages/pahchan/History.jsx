@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api } from '../../lib/api';
+import { api, body } from '../../lib/api';
 import { Section, DataTable, Td, StatusChip } from '../../components/editorial';
 import EmptyState from '../../components/ui/EmptyState';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
@@ -79,7 +79,8 @@ export default function History() {
       // 120 is the endpoint's own ceiling. Asking for it once covers four
       // months of paging back with no further request per month.
       const r = await api.get('/v1/pahchan/me', { params: { days: 120 } });
-      setData(r.data);
+      // `{employee, punches, retention}` — a bespoke object, so `body()`.
+      setData(body(r));
       setState('ready');
     } catch (err) {
       setErrKind(errorKind(err));
@@ -183,15 +184,15 @@ export default function History() {
         title={monthLabel}
         hi="मासिक"
         right={(
-          <span style={{ display: 'flex', gap: 6 }}>
+          <span className="ph__navbtns">
             <button
-              className="btn btn--ghost" style={{ fontSize: 12 }}
+              className="btn btn--ghost btn--sm"
               onClick={() => { setOpenDay(null); setMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1)); }}
             >
               ← Earlier
             </button>
             <button
-              className="btn btn--ghost" style={{ fontSize: 12 }}
+              className="btn btn--ghost btn--sm"
               disabled={month.getFullYear() === new Date().getFullYear() && month.getMonth() === new Date().getMonth()}
               onClick={() => { setOpenDay(null); setMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1)); }}
             >
@@ -220,14 +221,15 @@ export default function History() {
                 <button
                   key={k}
                   type="button"
-                  className={`pcal__d${openDay === k ? ' is-open' : ''}${k === today ? ' is-today' : ''}`}
-                  style={{
-                    // A tint of the state colour, and the number in the colour
-                    // itself — never colour alone, which 23-accessibility.md
-                    // rules out. The label is on the button's accessible name.
-                    background: st === 'none' ? 'transparent' : `color-mix(in srgb, ${colour} 18%, transparent)`,
-                    color: st === 'none' ? 'var(--on-surface-3)' : colour,
-                  }}
+                  className={`pcal__d${st === 'none' ? ' pcal__d--none' : ''}${openDay === k ? ' is-open' : ''}${k === today ? ' is-today' : ''}`}
+                  /* A tint of the state colour, and the number in the colour
+                     itself — never colour alone, which 23-accessibility.md
+                     rules out. The label is on the button's accessible name.
+                     The colour is genuinely per-day, so it arrives as `--c` and
+                     pahchan.css does the mixing; "nothing recorded" is the
+                     absence of a state rather than a state, so it takes a
+                     modifier instead of a colour. */
+                  style={st === 'none' ? undefined : { '--c': colour }}
                   aria-label={`${d} ${monthLabel} — ${label}`}
                   aria-pressed={openDay === k}
                   onClick={() => setOpenDay(openDay === k ? null : k)}
@@ -240,14 +242,14 @@ export default function History() {
           <div className="pcal__legend">
             {Object.entries(DAY_STATE).map(([k2, [label, colour]]) => (
               <span key={k2} className="pcal__key">
-                <i style={{ background: `color-mix(in srgb, ${colour} 45%, transparent)` }} />
+                <i style={{ '--c': colour }} />
                 {label}
               </span>
             ))}
           </div>
         </div>
 
-        <p style={{ fontSize: 12, color: 'var(--on-surface-3)', marginTop: 14, lineHeight: 1.7, maxWidth: '70ch' }}>
+        <p className="ph__cal-note">
           {totals.present} day{totals.present === 1 ? '' : 's'} with a punch this month · {totals.hours} between
           first clock-in and last clock-out{totals.flagged ? ` · ${totals.flagged} awaiting or under review` : ''}.
           A day with no punch reads as nothing recorded, not as an absence — this page shows
@@ -273,7 +275,7 @@ export default function History() {
                     <Td mono>
                       {hhmm(p.captured_at)}
                       {p.direction === 'out' && prevIn && (
-                        <span style={{ display: 'block', fontSize: 11, color: 'var(--on-surface-3)' }}>
+                        <span className="ph__sub">
                           {hoursBetween(prevIn.captured_at, p.captured_at)}
                         </span>
                       )}
@@ -286,13 +288,13 @@ export default function History() {
                           hidden, because it is also the only honest place to see
                           a device clock that has been moved. */}
                       {p.source === 'offline' && p.received_at && (
-                        <span style={{ display: 'block', fontSize: 11, color: 'var(--on-surface-3)' }}>
+                        <span className="ph__sub">
                           arrived {hhmm(p.received_at)}
                         </span>
                       )}
                     </Td>
                     <Td>
-                      <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      <span className="rv__flags">
                         {(p.flags || []).length
                           ? (p.flags || []).map(f => <StatusChip key={f} status={f} />)
                           : <StatusChip status="clean" />}
@@ -301,7 +303,7 @@ export default function History() {
                     <Td>
                       {p.review_verdict
                         ? <StatusChip status={p.review_verdict === 'ok' ? 'done' : 'rejected'} />
-                        : <span style={{ fontSize: 11.5, color: 'var(--on-surface-3)' }}>Not yet reviewed</span>}
+                        : <span className="ph__unrev">Not yet reviewed</span>}
                     </Td>
                   </tr>
                 );

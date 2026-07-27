@@ -50,7 +50,7 @@ function CreditUsage() {
             Couldn’t load credit usage. Your credits are unaffected — this is a display
             problem, not a billing one.
           </p>
-          <Button variant="out" onClick={load} style={{ marginTop: 10 }}>Try again</Button>
+          <Button variant="out" onClick={load} className="ocred__retry">Try again</Button>
         </CardBody>
       </Card>
     );
@@ -73,7 +73,7 @@ function CreditUsage() {
     <Card>
       <CardHead title="Credits this month" sanskrit="श्रेय" />
       <CardBody>
-        <div className="ostats" style={{ marginBottom: 16 }}>
+        <div className="ostats ostats--gap">
           <StatTile label="Plan credits" value={grouped(data.plan_credits)} />
           <StatTile label="Used" value={grouped(data.total_credits_used)}
             variant={data.is_over_plan ? 'danger' : 'neutral'} />
@@ -87,7 +87,9 @@ function CreditUsage() {
 
         <div className="omtr" role="progressbar" aria-valuenow={pct} aria-valuemin={0}
           aria-valuemax={100} aria-label="Plan credits used">
-          <div className={`omtr__f${over ? ' over' : ''}`} style={{ width: `${pct}%` }} />
+          {/* The fill is the one genuinely per-instance value on this card, so
+              it arrives as a custom property and `.omtr__f` owns the width. */}
+          <div className={`omtr__f${over ? ' over' : ''}`} style={{ '--pct': `${pct}%` }} />
         </div>
         <div className="omtr__lg">
           <span>AI {grouped(data.ai_credits_used)} · Scrapers {grouped(data.scraper_credits_used)}</span>
@@ -175,7 +177,7 @@ export default function TabBilling() {
       <section className="st__group">
         <h2 className="st__gt">Plans</h2>
         <PlanComparison plans={plans} currentPlanName={sub?.plan_name} currentPlanCode={sub?.plan_code} />
-        <p className="of__h" style={{ marginTop: 10 }}>
+        <p className="of__h of__h--foot">
           Changing plan is handled by your account manager at Aekam — there is no
           self-serve upgrade, and pricing is agreed per organisation.
         </p>
@@ -183,7 +185,7 @@ export default function TabBilling() {
 
       <section className="st__group">
         <h2 className="st__gt">Usage report</h2>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <div className="orep">
           {[['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['90d', 'Last 90 days'], ['ytd', 'Year to date']]
             .map(([p, label]) => (
               <Button key={p} variant="out" size="sm" onClick={() => downloadReport(p)}>{label}</Button>
@@ -210,7 +212,7 @@ export default function TabBilling() {
             <TableBody>
               {invoices.map(iv => (
                 <Row key={iv.id}>
-                  <Cell><span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{iv.invoice_number}</span></Cell>
+                  <Cell><span className="oinv__n">{iv.invoice_number}</span></Cell>
                   {/* "Jul 2026", not "2026-07-01 → 2026-07-31". */}
                   <Cell>{formatPeriod(iv.period_start, iv.period_end)}</Cell>
                   <Cell num>{inr(iv.total)}</Cell>
