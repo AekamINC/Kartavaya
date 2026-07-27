@@ -91,7 +91,11 @@ describe('accept-invite · what you are being asked to accept', () => {
     // one registry and this screen reads it rather than restating labels.
     expect(text).toContain('CRM');
     expect(text).toContain('Editor');
-    expect(text).toContain('Invoicing');
+    // `Finance`, not `Invoicing` — the label moved in moduleColors.js to match
+    // the design reference, which calls ganit Finance in all three of the
+    // places it names the module. This assertion existing is the point: it is
+    // what proves the screen reads the registry instead of restating labels.
+    expect(text).toContain('Finance');
     expect(text).toContain('Viewer');
     expect(host.$('.auinv')).toBeTruthy();
   });
