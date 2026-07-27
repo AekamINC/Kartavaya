@@ -69,6 +69,11 @@
   background: color-mix(in srgb, var(--c) 14%, transparent);
   color: var(--c);
 }
+/* Section kicker. Tracked uppercase Latin; the Devanagari half of the string is
+   NOT tracked, which is why 24-bilingual-devanagari.md's rule is applied by
+   tagging the span rather than by letter-spacing the whole line. */
+.mh__kick { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .15em; text-transform: uppercase; color: var(--on-surface-3); margin-bottom: 5px; }
+.mh__kick .mh__kick-hi { font-family: var(--font-indic); letter-spacing: normal; text-transform: none; }
 .mh__t   { display: flex; align-items: baseline; gap: 9px; }
 /* margin:0 because this is an <h1> — the module title is the page heading, and
    a page with no h1 gives screen-reader users nothing to jump to. The UA
@@ -160,14 +165,104 @@
   color: var(--on-surface-3); margin-left: 6px;
 }
 
+/* ── Tab row with a trailing control ───────────────────────────────────────
+   Graha puts its "deals with no next step" warning on the tab line, so the tab
+   strip has to share the row rather than own it. `.mt__wrap` inside `.mrow` keeps
+   its own flex:1 and the warning sits at the trailing edge; below 720px the
+   warning drops under the tabs rather than squeezing them. */
+.mrow { display: flex; align-items: flex-end; gap: 12px; }
+.mrow > .mt__wrap { flex: 1 1 auto; min-width: 0; }
+
+/* Not `.note--warn`: this is an action, not a statement. It is the only
+   route to the deals that have gone quiet, so it is a button and says so. */
+.mwarn {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  margin-bottom: 18px; padding: 6px 12px;
+  border: none; border-radius: var(--r-sm);
+  background: var(--warn-container); color: var(--on-surface);
+  font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.mwarn:hover { background: color-mix(in srgb, var(--warn) 22%, transparent); }
+.mwarn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.mwarn__do { font-weight: 700; color: var(--warn); text-decoration: underline; text-underline-offset: 2px; }
+
+@media (max-width: 720px) {
+  .mrow { flex-wrap: wrap; }
+  .mwarn { margin-bottom: 18px; width: 100%; justify-content: space-between; }
+}
+
 /* ── KPI strip ─────────────────────────────────────────────────────────── */
 .mk    { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 10px; margin-bottom: 18px; }
 .mk__c { padding: 13px 15px; border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--outline-variant); }
-.mk__l { font-size: var(--t-label-sm); letter-spacing: .15em; text-transform: uppercase; color: var(--on-surface-3); font-weight: 700; }
+.mk__l { display: flex; align-items: baseline; gap: 8px; font-size: var(--t-label-sm); letter-spacing: .15em; text-transform: uppercase; color: var(--on-surface-3); font-weight: 700; }
+/* Devanagari to the trailing edge, untracked and not uppercased —
+   24-bilingual-devanagari.md forbids tracking on Devanagari, and the tracking
+   on .mk__l would otherwise be inherited straight into it. */
+.mk__hi { margin-left: auto; font-family: var(--font-indic); font-size: 11.5px; font-weight: 400; letter-spacing: normal; text-transform: none; }
+/* The caption under the figure. A number with no unit is not a KPI. */
+.mk__s { font-size: 11.5px; color: var(--on-surface-3); margin-top: 3px; }
+.mk-load { margin-bottom: 18px; }
+.mk-err  { margin-bottom: 18px; }
 .mk__v { font-family: var(--font-display); font-size: 25px; font-weight: 400; letter-spacing: -.028em; margin-top: 6px; font-variant-numeric: tabular-nums; }
+/* Tints the figure, never the tile — a row of five tinted cards stops reading
+   as one object. Mirrors `app.css:170-174` in the reference. */
+.mk__v--p      { color: var(--primary-text); }
+.mk__v--ok     { color: var(--ok); }
+.mk__v--warn   { color: var(--warn); }
+.mk__v--danger { color: var(--danger); }
 .mk__d { font-size: 11px; margin-top: 3px; display: flex; align-items: center; gap: 4px; }
 .mk__d--up { color: var(--ok); }
 .mk__d--dn { color: var(--danger); }
+
+/* ── Graha pipeline board ──────────────────────────────────────────────────
+   Measurements from the reference's `.pipe` / `.deal` (`app.css:350-361`):
+   a column grid at minmax(232px, 1fr) that scrolls sideways, columns aligned to
+   the top so a short column does not stretch its cards.
+
+   `gpipe`/`gdeal`, not `pipe`/`deal`: `.pipe` is already taken in
+   components.css:161 by the horizontal status stepper, which is a different
+   object with a `__seg` of its own. The reference has no such clash because it
+   has no stepper. */
+.gpipe {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(232px, 1fr);
+  gap: 10px; overflow-x: auto; padding-bottom: 6px; align-items: start;
+}
+.gpipe__lede { font-size: 12.5px; color: var(--on-surface-2); margin: 0 0 12px; }
+.gpipe__col  { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+/* The stage colour is a 3px cap, not a fill — six filled headers turn a board
+   into a colour chart and stop the cards being the thing you look at. */
+.gpipe__head {
+  padding: 10px 12px; background: var(--s-container);
+  border-radius: var(--r-md); border-top: 3px solid var(--c);
+}
+.gpipe__t   { display: flex; align-items: baseline; gap: 7px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.gpipe__hi  { font-family: var(--font-indic); font-size: 12.5px; color: var(--on-surface-3); letter-spacing: 0; text-transform: none; font-weight: 400; }
+.gpipe__sum { font-family: var(--font-display); font-size: 19px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.gpipe__n   { font-size: 11px; color: var(--on-surface-3); }
+.gpipe__empty {
+  padding: 18px; text-align: center; font-family: var(--font-display);
+  font-style: italic; font-size: 12.5px; color: var(--on-surface-3);
+  border: 1px dashed var(--outline-variant); border-radius: var(--r-md);
+}
+
+.gdeal {
+  background: var(--surface); border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md); padding: 11px 12px;
+  display: flex; flex-direction: column; gap: 5px; min-width: 0;
+}
+/* A deal nobody has planned a next move for. The border carries it AND the
+   card says "No next step" in words — 00 §12: colour is never the only
+   signal, and this one has to survive a monochrome print of the board. */
+.gdeal--stale { border-color: color-mix(in srgb, var(--warn) 55%, var(--outline-variant)); }
+.gdeal__co   { font-size: var(--t-body-sm); font-weight: 600; overflow-wrap: anywhere; }
+.gdeal__who  { font-size: 11.5px; color: var(--on-surface-3); overflow-wrap: anywhere; }
+.gdeal__v    { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--primary-text); font-variant-numeric: tabular-nums; }
+.gdeal__next { font-size: 11.5px; color: var(--on-surface-2); }
+.gdeal__soon { color: var(--warn); }
+.gdeal__late { color: var(--danger); }
+.gdeal__none { font-size: 11.5px; font-weight: 600; color: var(--warn); }
+.gdeal__own  { font-size: 11px; color: var(--on-surface-3); margin-top: 2px; }
 
 /* ── Module tables ─────────────────────────────────────────────────────────
    Numeric columns right-align: a left-aligned column of rupee amounts cannot
