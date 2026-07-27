@@ -1,8 +1,9 @@
 /**
  * ChannelList.jsx — search, create, and the two sections (channels · DMs).
  */
-import React, { useMemo, useState } from 'react';
-import { Input, Select, SkeletonList } from '../../components/ui';
+import React, { useEffect, useMemo, useState } from 'react';
+import { api } from '../../lib/api';
+import { Avatar, Input, Select, SkeletonList } from '../../components/ui';
 import { relTime } from '../../lib/utils';
 import { channelIcon, SvIcons } from './icons';
 
@@ -14,7 +15,7 @@ function ChannelRow({ ch, on, onSelect }) {
   return (
     <button
       type="button"
-      className={`ch${on ? ' on' : ''}${unread > 0 ? ' unread' : ''}`}
+      className={`ch${on ? ' on' : ''}${unread > 0 ? ' unread' : ''}${ch.is_archived ? ' arch' : ''}`}
       onClick={() => onSelect(ch)}
       aria-current={on ? 'true' : undefined}
     >
@@ -27,6 +28,10 @@ function ChannelRow({ ch, on, onSelect }) {
             : `${members} member${members === 1 ? '' : 's'}`}
         </span>
       </span>
+      {/* `ScreensSanvaad.jsx:172` — an archived row keeps its own word rather
+          than only a dimmed treatment, because dimming alone reads as disabled
+          and these are still readable. */}
+      {ch.is_archived && <span className="ch__arch">archived</span>}
       {unread > 0 && (
         <span className="ch__badge" aria-label={`${unread} unread`}>{unread > 99 ? '99+' : unread}</span>
       )}
@@ -34,23 +39,85 @@ function ChannelRow({ ch, on, onSelect }) {
   );
 }
 
+/**
+ * The people picker behind "New direct message".
+ *
+ * Reads `GET /v1/messaging/directory`. The only other user list in the API is
+ * `GET /v1/org/members`, gated on `require_org_role("org_admin","org_owner")`,
+ * so an ordinary member had no way to name anybody — which is half the reason
+ * `POST /v1/messaging/dm` never acquired a caller.
+ */
+function DmPicker({ onPick, onClose }) {
+  const [q, setQ] = useState('');
+  const [people, setPeople] = useState([]);
+  const [busy, setBusy] = useState(null);
+
+  useEffect(() => {
+    let dead = false;
+    const t = setTimeout(() => {
+      api.get('/v1/messaging/directory', { params: q.trim() ? { q: q.trim() } : undefined })
+        .then(r => { if (!dead) setPeople(Array.isArray(r.data) ? r.data : []); })
+        .catch(() => { if (!dead) setPeople([]); });
+    }, 220);
+    return () => { dead = true; clearTimeout(t); };
+  }, [q]);
+
+  return (
+    <div className="sv__lnew">
+      <Input
+        type="search"
+        value={q}
+        onChange={e => setQ(e.target.value)}
+        placeholder="Search people"
+        aria-label="Search people to message"
+        autoFocus
+      />
+      {people.length === 0 && (
+        <p className="sv__none">
+          {q.trim() ? `Nobody matches “${q.trim()}”.` : 'Nobody else is in your organisation yet.'}
+        </p>
+      )}
+      {people.map(p => (
+        <button
+          key={p.user_id}
+          type="button"
+          className="ch"
+          disabled={busy === p.user_id}
+          onClick={async () => {
+            setBusy(p.user_id);
+            const made = await onPick(p);
+            setBusy(null);
+            if (made) onClose();
+          }}
+        >
+          <Avatar name={p.full_name} src={p.avatar_url} size={24} />
+          <span className="ch__txt"><span className="ch__n">{p.full_name}</span></span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function ChannelList({
-  channels, loading, selectedId, onSelect, onCreate, creating,
+  channels, archived = [], showAll, onToggleAll, loading, selectedId,
+  onSelect, onCreate, onOpenDm, canPost = true, creating,
 }) {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
+  const [dmOpen, setDmOpen] = useState(false);
   const [name, setName] = useState('');
   const [type, setType] = useState('public');
 
-  const { rooms, dms } = useMemo(() => {
+  const { rooms, dms, gone } = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const match = c => !needle || (c.name || 'direct message').toLowerCase().includes(needle);
     const hit = channels.filter(match);
     return {
       rooms: hit.filter(c => c.type !== 'dm'),
       dms: hit.filter(c => c.type === 'dm'),
+      gone: (showAll ? archived : []).filter(match),
     };
-  }, [channels, q]);
+  }, [channels, archived, showAll, q]);
 
   const submit = async () => {
     const n = name.trim();
@@ -63,15 +130,28 @@ export default function ChannelList({
     <div className="sv__list">
       <div className="sv__lhd">
         <span className="sv__lt">Channels <span className="sv__hi" lang="hi">चैनल</span></span>
+        {/* `ScreensSanvaad.jsx:231` — the rail's own All/Unread switch. Without
+            it the archived section has no way to appear, which is why the
+            archived state was unreachable in both directions. */}
         <button
           type="button"
-          className="svbtn"
-          onClick={() => setOpen(o => !o)}
-          aria-label="New channel"
-          aria-expanded={open}
+          className="sv__ltog"
+          onClick={onToggleAll}
+          aria-pressed={!!showAll}
         >
-          {SvIcons.plus}
+          {showAll ? 'Active' : 'All'}
         </button>
+        {canPost && (
+          <button
+            type="button"
+            className="svbtn"
+            onClick={() => { setOpen(o => !o); setDmOpen(false); }}
+            aria-label="New channel"
+            aria-expanded={open}
+          >
+            {SvIcons.plus}
+          </button>
+        )}
       </div>
 
       <div className="sv__lsearch">
@@ -109,29 +189,70 @@ export default function ChannelList({
       <div className="sv__scroll">
         {loading && <SkeletonList rows={6} showAvatar={false} />}
 
-        {!loading && rooms.length === 0 && dms.length === 0 && (
-          <p className="sv__none">
-            {q.trim()
-              ? `No channels match “${q.trim()}”.`
-              : 'No channels yet. Create one to start messaging.'}
-          </p>
-        )}
-
-        {!loading && rooms.length > 0 && (
+        {/* The Channels and Direct sections are both always rendered, because
+            each carries the control that creates its own first row. A whole-rail
+            "nothing here" would hide them. */}
+        {!loading && (
           <>
             <h2 className="sv__sec">Channels</h2>
             {rooms.map(c => (
               <ChannelRow key={c.id} ch={c} on={String(c.id) === String(selectedId)} onSelect={onSelect} />
             ))}
+            {rooms.length === 0 && (
+              <p className="sv__none">
+                {q.trim()
+                  ? `No channels match “${q.trim()}”.`
+                  : canPost
+                    ? 'No channels yet. Create one to start messaging.'
+                    : 'You are not in any channels yet.'}
+              </p>
+            )}
           </>
         )}
 
-        {!loading && dms.length > 0 && (
+        {!loading && (
           <>
-            <h2 className="sv__sec">Direct messages</h2>
+            <h2 className="sv__sec">
+              Direct messages
+              {/* `POST /v1/messaging/dm` exists and had no caller, and
+                  `create_channel` refuses `type='dm'`, so this heading has
+                  always sat over a list that could not be non-empty. */}
+              {canPost && onOpenDm && (
+                <button
+                  type="button"
+                  className="sv__secb"
+                  onClick={() => { setDmOpen(o => !o); setOpen(false); }}
+                  aria-label="New direct message"
+                  aria-expanded={dmOpen}
+                >
+                  {SvIcons.plus}
+                </button>
+              )}
+            </h2>
+            {dmOpen && <DmPicker onPick={onOpenDm} onClose={() => setDmOpen(false)} />}
             {dms.map(c => (
               <ChannelRow key={c.id} ch={c} on={String(c.id) === String(selectedId)} onSelect={onSelect} />
             ))}
+            {!dmOpen && dms.length === 0 && (
+              <p className="sv__none">
+                {q.trim() ? `No direct messages match “${q.trim()}”.` : 'No direct messages yet.'}
+              </p>
+            )}
+          </>
+        )}
+
+        {!loading && showAll && gone.length > 0 && (
+          <>
+            <h2 className="sv__sec">Archived <span className="sv__hi" lang="hi">संग्रहित</span></h2>
+            {gone.map(c => (
+              <ChannelRow key={c.id} ch={c} on={String(c.id) === String(selectedId)} onSelect={onSelect} />
+            ))}
+          </>
+        )}
+        {!loading && showAll && gone.length === 0 && (
+          <>
+            <h2 className="sv__sec">Archived <span className="sv__hi" lang="hi">संग्रहित</span></h2>
+            <p className="sv__none">No archived channels.</p>
           </>
         )}
       </div>

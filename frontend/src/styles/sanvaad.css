@@ -822,6 +822,180 @@
 .wa__row-t { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); }
 .wa__row-s { font-size: var(--t-label); color: var(--on-surface-3); margin-top: 2px; }
 
+/* ── Archived channels ───────────────────────────────────────────────────── */
+
+/* `ScreensSanvaad.jsx:172` gives an archived row its own word, and `:166` dims
+   it. The word does the work: `opacity` alone reads as "disabled", and these
+   channels are still fully readable — only closed to writing. */
+.ch.arch { opacity: .62; }
+.ch.arch:hover, .ch.arch.on { opacity: 1; }
+.ch__arch,
+.sv__hd .ch__arch {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--outline-variant);
+  font-size: var(--t-label-sm);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+  background: var(--s-low);
+}
+
+/* `ScreensSanvaad.jsx:260` — the banner that explains why the composer is gone. */
+.sv__banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--outline-variant);
+  background: var(--s-low);
+  font-size: var(--t-label);
+  color: var(--on-surface-2);
+  flex-shrink: 0;
+}
+
+/* The rail's All/Active switch. */
+.sv__ltog {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--on-surface-3);
+  font: inherit;
+  font-size: var(--t-label-sm);
+  cursor: pointer;
+}
+.sv__ltog:hover { color: var(--on-surface); border-color: var(--outline); }
+.sv__ltog[aria-pressed="true"] {
+  background: var(--s-high);
+  color: var(--on-surface);
+  border-color: var(--outline);
+}
+
+/* A section heading that carries its own create button. */
+.sv__sec { display: flex; align-items: center; gap: var(--sp-2); }
+.sv__secb {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--on-surface-3);
+  cursor: pointer;
+}
+.sv__secb:hover { background: var(--s-high); color: var(--on-surface); }
+
+.sv__hd-mem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--on-surface-3);
+  font: inherit;
+  font-size: var(--t-label);
+  cursor: pointer;
+}
+.sv__hd-mem:hover { background: var(--s-high); color: var(--on-surface); }
+
+/* ── Locked composer ─────────────────────────────────────────────────────── */
+
+/* `ScreensSanvaad.jsx:287` — `composer--locked`. It occupies the composer's
+   slot so the log does not grow into the space and the reason sits exactly
+   where the answer to "why can't I type" is looked for. */
+.cmp--locked {
+  align-items: center;
+  gap: var(--sp-2);
+  background: var(--s-low);
+  color: var(--on-surface-2);
+  font-size: var(--t-label);
+  line-height: 1.5;
+}
+.cmp__locked-t { min-width: 0; }
+.cmp__locked-m { color: var(--on-surface-3); }
+
+/* ── System messages ─────────────────────────────────────────────────────── */
+
+/* `MESSAGING-ATTENDANCE-SPEC.md:20` — "no avatar, a module glyph, and a muted
+   tonal background". The glyph square stands in the avatar's column so the row
+   still aligns with every human message around it. */
+.msg--sys .msg__glyph {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--glyph, var(--primary)) 14%, transparent);
+  color: var(--glyph, var(--primary));
+}
+.msg__systag {
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--outline-variant);
+  font-size: var(--t-label-sm);
+  letter-spacing: .04em;
+  color: var(--on-surface-3);
+}
+.msg__sysb {
+  margin-top: 3px;
+  padding: 8px 11px;
+  border-radius: var(--r-md);
+  background: var(--s-low);
+  border: 1px solid var(--outline-variant);
+  font-size: var(--t-body-sm);
+  line-height: 1.55;
+  color: var(--on-surface-2);
+}
+.msg__sysa {
+  display: block;
+  margin-top: 6px;
+  font-size: var(--t-label);
+  font-weight: 600;
+  color: var(--primary-text);
+}
+
+/* ── Channel settings sheet ──────────────────────────────────────────────── */
+
+.svd { display: flex; flex-direction: column; gap: var(--sp-6); }
+.svd__sec { display: flex; flex-direction: column; gap: var(--sp-3); }
+.svd__t {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--t-label);
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+.svd__n { font-weight: 500; letter-spacing: 0; }
+.svd__row { display: flex; align-items: center; gap: var(--sp-3); }
+.svd__rn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--t-body-sm);
+  color: var(--on-surface);
+}
+.svd__tag {
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--outline-variant);
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
 /* Below 900px the three-pane grid cannot hold a 264px rail, a message log and a

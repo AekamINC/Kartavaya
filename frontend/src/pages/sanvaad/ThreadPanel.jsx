@@ -18,10 +18,14 @@ import { api } from '../../lib/api';
 import { ErrorState, errorKind, SkeletonChat, useToast } from '../../components/ui';
 import Message from './Message';
 import Composer from './Composer';
+import LockedComposer from './LockedComposer';
 import { SvIcons } from './icons';
 import { isContinuation, parseReactions, toggleReactionLocal } from './messageUtils';
 
-export default function ThreadPanel({ channelId, root, me, meId, meName, onClose, onReplied }) {
+export default function ThreadPanel({
+  channelId, root, me, meId, meName, onClose, onReplied,
+  canPost = true, lockReason = 'viewer',
+}) {
   const { pushToast } = useToast();
   const [replies, setReplies] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +80,48 @@ export default function ThreadPanel({ channelId, root, me, meId, meName, onClose
   };
 
   /**
+   * A reply is an ordinary row in `samvada_messages`, so `PATCH` and `DELETE`
+   * on `/v1/messaging/messages/:id` apply to it exactly as they do in the log.
+   * The panel simply never passed the handlers, so `Message` rendered no More
+   * menu and a reply — once sent — could not be corrected or withdrawn. A typo
+   * in a thread was permanent while the same typo in the channel was not.
+   *
+   * `get_thread` returns `m.*`, so `is_edited` comes back and the `(edited)`
+   * marker is correct here without any further change.
+   */
+  const editReply = async (msg, content) => {
+    try {
+      const r = await api.patch(`/v1/messaging/messages/${msg.id}`, { content });
+      const next = {
+        content: r.data?.content ?? content,
+        is_edited: true,
+        updated_at: r.data?.updated_at,
+      };
+      const hit = m => (String(m.id) === String(msg.id) ? { ...m, ...next } : m);
+      setReplies(prev => prev.map(hit));
+      setRootMsg(prev => hit(prev));
+      return r.data;
+    } catch (e) {
+      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to save the edit' });
+      throw e;
+    }
+  };
+
+  const deleteReply = async (msg) => {
+    try {
+      await api.delete(`/v1/messaging/messages/${msg.id}`);
+      // `get_thread` filters `is_deleted = FALSE`, so the row is gone from the
+      // server's answer already; dropping it locally keeps the count honest
+      // rather than leaving a tombstone the next load would not reproduce.
+      setReplies(prev => prev.filter(m => String(m.id) !== String(msg.id)));
+      onReplied?.(root.id);
+    } catch (e) {
+      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to delete the message' });
+      throw e;
+    }
+  };
+
+  /**
    * `get_thread` does not select reactions, so a reply's chips are whatever the
    * user has done in this session — the write still goes through, and the next
    * full load of the channel picks the rest up.
@@ -111,7 +157,15 @@ export default function ThreadPanel({ channelId, root, me, meId, meName, onClose
       </div>
 
       <div className="sv__thread-root">
-        <Message msg={rootMsg} meId={meId} meName={meName} names={names} onReact={react} />
+        <Message
+          msg={rootMsg}
+          meId={meId}
+          meName={meName}
+          names={names}
+          onReact={canPost ? react : undefined}
+          onEdit={canPost ? editReply : undefined}
+          onDelete={canPost ? deleteReply : undefined}
+        />
       </div>
 
       <div className="sv__log">
@@ -130,16 +184,22 @@ export default function ThreadPanel({ channelId, root, me, meId, meName, onClose
             meId={meId}
             meName={meName}
             names={names}
-            onReact={react}
+            onReact={canPost ? react : undefined}
+            onEdit={canPost ? editReply : undefined}
+            onDelete={canPost ? deleteReply : undefined}
           />
         ))}
       </div>
 
-      <Composer
-        onSend={send}
-        label="Reply in thread"
-        placeholder="Reply…"
-      />
+      {canPost ? (
+        <Composer
+          onSend={send}
+          label="Reply in thread"
+          placeholder="Reply…"
+        />
+      ) : (
+        <LockedComposer reason={lockReason} />
+      )}
     </aside>
   );
 }

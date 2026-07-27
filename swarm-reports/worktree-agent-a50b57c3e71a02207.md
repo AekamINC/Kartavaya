@@ -178,4 +178,73 @@ outbound path was added by this agent.
 
 ## Changes made
 
-_(appended as each unit lands)_
+### Backend — `backend/routers/messaging.py`
+
+| Change | Why |
+|---|---|
+| `_require_editor()` on send, edit, delete, add-reaction, create-channel, update-channel, add-member, find-or-create-dm | `MESSAGING-ATTENDANCE-SPEC.md:73`. `require_module` checked only that a grant ROW EXISTS, so `viewer` — the level every new grant starts at — could do everything `editor` could. The level was decorative. |
+| `GET /v1/messaging/me` | returns `{level, can_post, can_manage}`. Nothing in `frontend/src` could learn the level: `/v1/me` carries module CODES, not levels. |
+| `GET /v1/messaging/directory` | org people, identity fields only. `add_member` and `find_or_create_dm` both need a `user_id` the caller had nowhere to get — `/v1/org/members` is gated on org_admin. |
+| `list_channels?archived=true` | `is_archived = FALSE` was hard-coded, so archiving a channel deleted it from the UI's world: no history, no unarchive. |
+| `send_message` refuses an archived channel | now that a client can reach one. `ScreensSanvaad.jsx:290` — "nobody can post, including admins". |
+| `list_members` uses `_assert_channel_access` | **security.** It checked the channel was in the caller's org, not that the caller could see it — any org member could enumerate a private channel's members, and a DM's, which names who is talking to whom. |
+| `remove_reaction` deliberately NOT gated | it deletes only the caller's own row; gating it would strand a demoted user with a reaction they cannot withdraw. |
+
+Level checks sit **after** each org-scoped 404. Putting them first would have let
+`test_add_reaction_404_for_other_org_message` pass on a 403 raised before the org
+filter ran — the test would then hold even with cross-tenant scoping deleted.
+
+### Backend — `backend/tests/test_messaging_security.py`
+
+`_grant_level()` helper; `test_add_reaction_succeeds_own_org` now states the
+editor grant it needs (it previously passed with **no grant at all**, which was
+the bug). Five new tests: viewer cannot react, viewer cannot send, editor can
+send, nobody posts to an archived channel, and the two `list_members` access
+cases. **18 passed.**
+
+### Frontend
+
+| File | Change |
+|---|---|
+| `useSanvaadAccess.js` *(new)* | reads `GET /v1/messaging/me`. Fails **closed** on 403 (the module gate), **open** on any other error — the server refuses the send itself, so a blip must not take the module away from an editor. |
+| `LockedComposer.jsx` *(new)* | the two locked bars. Viewer and archived are different sentences on purpose; one shared "you cannot post here" would imply an archived channel is a permissions problem. |
+| `ChannelDetails.jsx` *(new)* | the `⋯` sheet. Rename, topic, member list, add, remove, archive, unarchive — the surface for four dead routes. |
+| `ChannelList.jsx` | All/Active toggle, Archived section, `archived` row tag, **New direct message** picker. |
+| `ChannelsTab.jsx` | archived list as a second lazy call, `openDm`, `channelChanged`, access threaded down. |
+| `ChatPane.jsx` | settings `⋯`, member-count button, archived banner, locked composer, and the whole hover tray withdrawn from a viewer (`ScreensSanvaad.jsx:153` gates the tray, not just the composer). |
+| `Message.jsx` | `SystemMsg` — `type='system'` rendered with a module glyph, `system` tag, tonal panel and optional deep link from `metadata`. It previously rendered as an ordinary message, so a task update from Kartavya looked like a person had typed it. |
+| `messageUtils.js` | a system row never joins a continuation run — it carries the triggering user's `sender_id` and would otherwise group under their message and lose its header. |
+| `ThreadPanel.jsx` | edit and delete on the root and on every reply. The endpoints always applied to replies; the panel simply never passed the handlers, so a typo in a thread was permanent while the same typo in the channel was not. |
+| `icons.jsx`, `sanvaad.css` | `bolt` glyph; archived, banner, toggle, locked-composer, system-message and settings-sheet rules. |
+
+---
+
+## Risks and side effects — read before merging
+
+1. **The editor gate is a live behaviour change.** Any org member whose Sanvaad
+   grant sits at the default `viewer` **loses the ability to post, react, edit,
+   delete and create channels**. That is what the spec asks for and what the
+   reference draws, and the UI now explains it in place rather than failing
+   silently — but it is a real change in what existing users can do. It is safe
+   here only because migration 058 was applied today and this module has never
+   run in anger. Raising someone is `org_member_modules.role` → `editor`, through
+   the member editor that already exists.
+2. **`list_channels` default is unchanged** (live channels only), so no existing
+   caller sees different rows. `?archived=true` is opt-in.
+3. **No DB writes were made.** Staging and production share one Supabase
+   instance; everything here is code.
+4. **No outbound message of any kind was sent.** `send_wa_message` still carries
+   its `TODO: Call Meta Cloud API` and only writes a `pending` row — no Meta path
+   exists in the repo and none was added.
+5. **`Request Editor` is not built.** `ScreensSanvaad.jsx:293` draws the button;
+   there is no endpoint to request a grant, and a button that does nothing is
+   worse than none. The locked bar names the level and what Editor adds instead.
+6. **`ConfirmDialog` was not used for archiving.** It portals to `document.body`
+   while `Sheet` traps focus in its own subtree, so the dialog would open outside
+   the trap and be pulled back out of it. Confirmed inline instead; archiving is
+   reversible from the same panel.
+7. **Deleted messages still vanish for everyone but the deleter.**
+   `list_messages` filters `is_deleted = FALSE`, so the tombstone in `Message.jsx`
+   is visible only to the person who deleted, until they switch channels. The
+   design shows a tombstone every member sees; reaching it needs the server to
+   return deleted rows with content stripped. Unchanged here, and still open.

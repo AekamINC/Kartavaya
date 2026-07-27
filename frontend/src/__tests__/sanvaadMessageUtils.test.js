@@ -14,7 +14,7 @@
  *    nothing throws.
  */
 import { describe, it, expect } from 'vitest';
-import { dayLabel, splitMentions } from '../pages/sanvaad/messageUtils';
+import { dayLabel, isContinuation, splitMentions } from '../pages/sanvaad/messageUtils';
 
 const NAMES = ['Keval Shah', 'Keval', 'Rohan Iyer'];
 
@@ -87,5 +87,40 @@ describe('dayLabel()', () => {
     const d = new Date();
     d.setDate(d.getDate() - 40);
     expect(dayLabel(d.toISOString()).hi).toBeNull();
+  });
+});
+
+/**
+ * Grouping decides whether a row keeps its header. A `type='system'` row carries
+ * the `sender_id` of whoever triggered it — a task moved by Aanya produces a
+ * Kartavya event stamped with Aanya's id — so without an explicit guard the
+ * module event groups under her message and loses the header naming the module.
+ * `MESSAGING-ATTENDANCE-SPEC.md:20` requires that header.
+ */
+describe('isContinuation()', () => {
+  const at = (min, extra = {}) => ({
+    sender_id: 'u1',
+    created_at: new Date(Date.UTC(2026, 6, 27, 10, min)).toISOString(),
+    ...extra,
+  });
+
+  it('groups two close messages from the same sender', () => {
+    expect(isContinuation(at(2), at(0))).toBe(true);
+  });
+
+  it('does not group across senders', () => {
+    expect(isContinuation(at(2, { sender_id: 'u2' }), at(0))).toBe(false);
+  });
+
+  it('never groups a system message under the message that triggered it', () => {
+    expect(isContinuation(at(2, { type: 'system' }), at(0))).toBe(false);
+  });
+
+  it('never groups a human message under a system message', () => {
+    expect(isContinuation(at(2), at(0, { type: 'system' }))).toBe(false);
+  });
+
+  it('has no opinion without a previous row', () => {
+    expect(isContinuation(at(0), null)).toBe(false);
   });
 });
