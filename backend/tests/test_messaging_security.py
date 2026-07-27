@@ -21,6 +21,28 @@ def _bypass_module_gate(app):
     app.dependency_overrides.pop(_gate, None)
 
 
+def _grant_level(mock_pool, level: str):
+    """Make `held_level()` report `level` for the caller.
+
+    `_require_editor` reads the ladder through `module_levels.held_level`, which
+    asks `fetchval` three questions: platform role, org role, then the
+    `org_member_modules` grant. `make_pool` answers every `fetchval` with `0`,
+    which is not a valid level, so `held_level` falls to `DEFAULT_GRANT_LEVEL`
+    (`viewer`) — correct, and the reason the tests below have to say what they
+    want.
+    """
+    async def _fetchval(query, *args):
+        if "org_id IS NULL" in query:
+            return None                      # no platform role
+        if "role_code IN ('org_owner','org_admin')" in query:
+            return None                      # not an org admin
+        if "org_member_modules" in query:
+            return level
+        return 0
+
+    mock_pool.fetchval = AsyncMock(side_effect=_fetchval)
+
+
 # ── Auth required ──────────────────────────────────────────────
 
 
@@ -175,9 +197,105 @@ async def test_add_reaction_succeeds_own_org(api_client, as_member, with_org_id,
         {"channel_id": CHANNEL_ID},   # message, in this org
         {"type": "public"},           # channel is public -> reactable
     ])
+    # An editor grant is now required to write into a channel, and a reaction is
+    # a write. Before `_require_editor` existed this test passed with no grant at
+    # all, which is precisely what was wrong: the viewer level was decorative.
+    _grant_level(mock_pool, "editor")
     mock_pool.execute = AsyncMock()
     r = await api_client.post(
         f"/api/v1/messaging/messages/{MESSAGE_ID}/reactions",
         params={"emoji": "thumbsup"},
     )
     assert r.status_code == 200
+
+
+# ── The viewer level actually refuses ──────────────────────────
+#
+# `MESSAGING-ATTENDANCE-SPEC.md:73` — "viewer reads channels, editor sends
+# messages". `require_module` only ever checked that a grant ROW EXISTS, so
+# every one of these succeeded for a viewer until `_require_editor` landed.
+
+
+@pytest.mark.anyio
+async def test_viewer_cannot_react(api_client, as_member, with_org_id, mock_pool):
+    mock_pool.fetchrow = AsyncMock(side_effect=[
+        {"channel_id": CHANNEL_ID},
+        {"type": "public"},
+    ])
+    _grant_level(mock_pool, "viewer")
+    r = await api_client.post(
+        f"/api/v1/messaging/messages/{MESSAGE_ID}/reactions",
+        params={"emoji": "thumbsup"},
+    )
+    assert r.status_code == 403
+    assert "Viewer" in r.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_viewer_cannot_send_message(api_client, as_member, with_org_id, mock_pool):
+    mock_pool.fetchrow = AsyncMock(return_value={"type": "public", "is_archived": False})
+    _grant_level(mock_pool, "viewer")
+    r = await api_client.post(
+        f"/api/v1/messaging/channels/{CHANNEL_ID}/messages",
+        json={"content": "hello"},
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_editor_can_send_message(api_client, as_member, with_org_id, mock_pool):
+    mock_pool.fetchrow = AsyncMock(side_effect=[
+        {"type": "public", "is_archived": False},   # channel
+        {"1": 1},                                   # caller is a member
+        {"id": MESSAGE_ID, "content": "hello"},     # RETURNING *
+    ])
+    _grant_level(mock_pool, "editor")
+    mock_pool.execute = AsyncMock()
+    r = await api_client.post(
+        f"/api/v1/messaging/channels/{CHANNEL_ID}/messages",
+        json={"content": "hello"},
+    )
+    assert r.status_code == 201
+
+
+@pytest.mark.anyio
+async def test_nobody_can_post_to_an_archived_channel(
+    api_client, as_member, with_org_id, mock_pool
+):
+    """`ScreensSanvaad.jsx:290` — "nobody can post, including admins".
+
+    `list_channels?archived=true` can now return these rows, so the refusal has
+    to be enforced rather than implied by the channel being absent from the list.
+    """
+    mock_pool.fetchrow = AsyncMock(return_value={"type": "public", "is_archived": True})
+    _grant_level(mock_pool, "admin")
+    r = await api_client.post(
+        f"/api/v1/messaging/channels/{CHANNEL_ID}/messages",
+        json={"content": "hello"},
+    )
+    assert r.status_code == 403
+    assert "archived" in r.json()["detail"].lower()
+
+
+@pytest.mark.anyio
+async def test_channel_members_404_for_other_org(
+    api_client, as_member, with_org_id, mock_pool
+):
+    """`list_members` checked only that the channel was in the caller's org, not
+    that the caller could see it — so any org member could enumerate the members
+    of any private channel, and of any DM, which names who is talking to whom."""
+    mock_pool.fetchrow = AsyncMock(return_value=None)
+    r = await api_client.get(f"/api/v1/messaging/channels/{CHANNEL_ID}/members")
+    assert r.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_non_member_cannot_list_private_channel_members(
+    api_client, as_member, with_org_id, mock_pool
+):
+    mock_pool.fetchrow = AsyncMock(side_effect=[
+        {"type": "private"},   # channel exists, private
+        None,                  # caller is not a member
+    ])
+    r = await api_client.get(f"/api/v1/messaging/channels/{CHANNEL_ID}/members")
+    assert r.status_code == 403
