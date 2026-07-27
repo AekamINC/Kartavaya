@@ -285,9 +285,20 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
                   accessibilityState={{ expanded: showTemplates }}
                 >
                   <Ionicons name={showTemplates ? 'chevron-down' : 'copy-outline'} size={14} color={t.primary} accessibilityElementsHidden />
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: t.primary, letterSpacing: 0.5 }}>
+                  {/* The last bilingual label in this file still rendered as a
+                      single <Text>, so `fontWeight: '700'` and
+                      `letterSpacing: 0.5` landed on `टेम्पलेट` as well as on the
+                      Latin. There is no bold Tiro for the weight to resolve to,
+                      and RN applies tracking after shaping, so the spacing
+                      breaks the shirorekha. Every other label here already went
+                      through BiLabel; this one was missed. */}
+                  <BiLabel
+                    latinStyle={{ fontSize: 12, fontWeight: '700', color: t.primary, letterSpacing: 0.5 }}
+                    hindiStyle={{ color: t.primaryText }}
+                    hindiSize={12}
+                  >
                     USE A TEMPLATE · टेम्पलेट
-                  </Text>
+                  </BiLabel>
                 </TouchableOpacity>
                 {showTemplates && (
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles(t).chipRow}>

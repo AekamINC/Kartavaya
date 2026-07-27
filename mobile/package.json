@@ -10,8 +10,8 @@
     "build:preview": "eas build --platform all --profile preview",
     "build:production": "eas build --platform all --profile production",
     "tokens": "node scripts/gen-tokens.mjs",
-    "typecheck": "tsc --noEmit",
-    "test": "node --test \"src/**/*.test.ts\""
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./src/test/register.mjs --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@expo-google-fonts/newsreader": "^0.4.1",
