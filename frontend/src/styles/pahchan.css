@@ -1,0 +1,379 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PAHCHAN · पहचान — attendance surfaces.
+
+   Why this file exists: the six Pahchan tabs carried 120 inline `style={{…}}`
+   objects between them, 39 of them in `Register.jsx` alone. An inline style on
+   this module is not a cosmetic problem. Every literal `fontSize: 13` ignores
+   the Text size control in the customize hub, every `borderRadius: 8` ignores
+   Corner radius, and every hardcoded `gap: 6` is a spacing-ramp step retyped by
+   hand. Pahchan is also the one module read on a phone in a stairwell by
+   somebody clocking in, so the density and radius settings are not decoration
+   here — they are how the screen stays legible at arm's length.
+
+   VOCABULARY. Two prefixes, deliberately:
+
+     `.rv__*` / `.rv-*`  the attendance register. These names are the reference
+                         implementation's own (`design-reference/Kartavaya
+                         Redesign/pahchan.css`), and `module.css` already owns
+                         the core of them — the row, the cursor tint, the 50×62
+                         slot, the inline detail. This file EXTENDS that block
+                         and never restates it. Where a rule below shares a
+                         selector with module.css it is a deliberate override
+                         and says so; `index.css` imports this file last, so
+                         equal specificity resolves here.
+
+     `.ph__*`            everything else on the module — the policy form, the
+                         sites panel, the corrections table, the payroll
+                         figures, the enrollment thumbnails.
+
+   Nothing here restates a primitive. `.btn`, `.btn--sm`, `.inp`, `.fld`,
+   `.fld__l`, `.fld__hint`, `.note`, `.seg`, `.k-statuschip` and the `.pcal__*`
+   month grid are all used as they are. The rules below are only for the objects
+   Pahchan has and nothing else does.
+
+   COLOUR THAT VARIES PER INSTANCE arrives as `--c`, set from JSX. That is the
+   one inline form this module keeps, because a per-row verdict tone and a
+   per-day attendance state are genuinely per-element and cannot be enumerated
+   in CSS. Everything else is a token.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The page box. Same value `.pr__page` carries, for the same reason: the
+   trailing space is what stops the last row of a long tab sitting flush against
+   the viewport edge with no room to scroll past it. */
+.ph__page { padding: 0 0 var(--sp-8); }
+
+/* ══ Register · the comparison slot ═══════════════════════════════════════
+   `module.css` pins `.rv__slot` at 50×62, which is the row size and the only
+   size it had. The detail renders the SAME component at 132×164 — that is the
+   whole point of having a detail, and it was being driven by an inline width
+   and height. The size now arrives as two custom properties defaulting to the
+   row size, so the row needs no style attribute at all and the detail sets two
+   numbers instead of eight declarations. */
+.rv__slot {
+  width: var(--slot-w, 50px);
+  height: var(--slot-h, 62px);
+}
+
+/* A slot that has not resolved is a DIFFERENT surface from one holding a face:
+   `--s-container` reads as an empty well, `--s-low` as a photograph's mount.
+   module.css sets the resolved case; these two are the unresolved ones. */
+.rv__slot--pending { background: var(--s-container); }
+
+/* Failure is the state this screen exists to make visible. A reviewer who
+   cannot tell "still loading" from "never arrived" confirms against three grey
+   rectangles, which manufactures a record of a verification that did not
+   happen — the exact failure 07 §3 is written against. So the border goes red
+   and the word inside goes red and bold; neither is the only signal. */
+.rv__slot--err { border-color: var(--danger); }
+
+/* The sweep fills the slot edge to edge. Radius 0 because the slot already
+   clips to `--r-sm` and a second radius inside it reads as a gap. */
+.rv__sk { width: 100%; height: 100%; border-radius: 0; }
+
+/* The word inside an unresolved slot. */
+.rv__word {
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+  text-align: center;
+  padding: 2px;
+  line-height: 1.2;
+}
+.rv__word--err { color: var(--danger); font-weight: 600; }
+
+/* A divider, not a gap: the left image is the claim and the right two are the
+   evidence, and the reviewer is comparing across that line. It tracks the slot
+   height so it stays proportional when the detail scales the triple up. */
+.rv__div {
+  width: 1px;
+  height: calc(var(--slot-h, 62px) - 12px);
+  background: var(--outline-variant);
+  flex-shrink: 0;
+}
+
+/* ══ Register · toolbar ═══════════════════════════════════════════════════ */
+/* The cursor row's outline. `module.css` already reasons about this row — "the
+   cursor row, OUTLINED rather than filled: a fill would sit behind the three
+   photographs the reviewer is comparing and change how the faces read" — and
+   then only declares the tint, because the outline itself was an inline style
+   on the <tr>. It is the same state, so it belongs on the same selector.
+   `outline`, not `border`: a border on a table row changes the row height and
+   the whole column would shift by 2px each time J moved the cursor. */
+.rv__r.is-cursor { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.rv__tools { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
+.rv__day   { display: flex; gap: var(--sp-2); align-items: center; }
+.rv__day .inp { max-width: 160px; }
+
+/* The keyboard hint. module.css sizes it; this is the only thing it was still
+   using a style attribute for. */
+.rv__hint { margin: 0 0 var(--sp-3); color: var(--on-surface-3); }
+
+/* ══ Register · row cells ═════════════════════════════════════════════════ */
+.rv__who-b { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rv__name  { font-size: var(--t-body-sm); font-weight: 600; }
+.rv__flags { display: flex; gap: var(--sp-1); flex-wrap: wrap; }
+
+.rv__tb   { display: flex; flex-direction: column; }
+.rv__dir  { font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.rv__acc  { display: block; font-size: var(--t-label-sm); color: var(--on-surface-3); }
+
+.rv__flash { display: inline-block; border-radius: var(--r-pill); }
+
+/* The verdict controls. Confirm is disabled until the comparison is READY and
+   Flag never is — that asymmetry is behavioural and lives in Register.jsx, not
+   here. This only lays them out. */
+.rv__acts { display: flex; align-items: center; gap: var(--sp-2); }
+
+/* Why the row cannot be confirmed yet, beside the buttons rather than inside a
+   tooltip nobody opens. `--c` carries the tone: the BROKEN case is --danger and
+   the pending case is a caption grey, and those must not look alike. */
+.rv__cmp { font-size: var(--t-label-sm); color: var(--c, var(--on-surface-3)); }
+
+/* ══ Register · the inline detail ═════════════════════════════════════════ */
+/* module.css already zeroes the cell padding; the ground colour belongs with
+   it so the detail reads as a drawer rather than as another row. */
+.rv-det__row > td { background: var(--s-low); }
+
+.rv-det__labels { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); }
+.rv-det__lbl {
+  width: 132px;
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+  line-height: 1.5;
+}
+.rv-det__lbl b { color: var(--on-surface-2); font-weight: 600; }
+/* Holds the triple's divider column so the three captions sit under the three
+   photographs rather than drifting one gap to the left. */
+.rv-det__gap  { width: 1px; flex-shrink: 0; }
+.rv-det__note { margin-top: var(--sp-4); }
+
+.rv-meta__k { flex: 1; font-size: var(--t-label); color: var(--on-surface-3); }
+/* Mono because these are coordinates, metres and timestamps read against each
+   other down a column. `--c` is the tone: an unbounded accuracy figure and a
+   detected mock location are the two that must not read as ordinary metadata. */
+.rv-meta__v {
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  color: var(--c, var(--on-surface));
+}
+
+/* The accuracy drawing. A radius, never a dot — 07 §3's one non-negotiable
+   about the detail: "a dot makes a ±184m fix look like proof of presence,
+   which is the one thing it is not". */
+.rv__fig   { margin: 0 0 var(--sp-4); }
+.rv__figc  { font-size: var(--t-label); color: var(--on-surface-3); line-height: 1.6; }
+.rv__nogeo {
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  margin: 0 0 var(--sp-3);
+  line-height: 1.6;
+}
+
+/* ══ Shared small parts ═══════════════════════════════════════════════════ */
+/* The secondary line under a name — an employee code, a "asked 3 Jul", an
+   arrival time. One rule, used on four screens. */
+.ph__sub {
+  display: block;
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+}
+.ph__name { font-size: var(--t-body-sm); font-weight: 600; }
+.ph__mono { display: block; font-family: var(--font-mono); font-size: var(--t-label); }
+
+/* A unit beside a number field — "metres", "hours in a day", "× ordinary wage". */
+.ph__unit { font-size: var(--t-label); color: var(--on-surface-2); }
+/* A number input and its unit on one baseline. */
+.ph__inline { display: flex; align-items: center; gap: var(--sp-2); }
+
+.ph__acts { display: flex; gap: var(--sp-2); margin-top: var(--sp-3); }
+.ph__lede {
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  line-height: 1.7;
+  max-width: 68ch;
+}
+
+/* The expanded row under a table row — a decline reason, a detail panel. */
+.ph__expand > td { background: var(--s-low); }
+
+/* ══ Corrections ══════════════════════════════════════════════════════════ */
+.ph__reason   { font-size: var(--t-label); color: var(--on-surface-2); }
+.ph__decision {
+  display: block;
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  margin-top: 3px;
+}
+.ph__rowacts { display: flex; gap: 7px; }
+/* Bounded, because the reason is the only thing the employee will see and a
+   full-width textarea invites a paragraph nobody reads. */
+.ph__declpanel { padding: var(--sp-3) var(--sp-1) var(--sp-4); max-width: 560px; }
+
+/* ══ Sites ════════════════════════════════════════════════════════════════ */
+.ph__form {
+  padding: var(--sp-4) var(--sp-4) var(--sp-4);
+  margin-bottom: var(--sp-4);
+  background: var(--s-low);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+}
+/* Fields that wrap rather than scroll. At 393px this becomes one column, which
+   is the only reason the panel is usable on the phone it is configured from. */
+.ph__form-row {
+  display: flex;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.ph__fld       { display: block; }
+.ph__fld--name   .inp { max-width: 320px; }
+.ph__fld--coord  .inp { max-width: 170px; }
+.ph__fld--radius .inp { max-width: 110px; }
+.ph__fld--date   .inp { max-width: 170px; }
+.ph__fld--time   .inp { max-width: 140px; }
+.ph__fld--num    .inp { max-width: 120px; }
+.ph__fld--week   .inp { max-width: 180px; }
+
+.ph__hint-top  { margin-top: var(--sp-2); }
+.ph__hint-wide { margin-top: var(--sp-3); max-width: 64ch; }
+
+/* ══ Policy ═══════════════════════════════════════════════════════════════ */
+.ph__f { display: block; margin-bottom: var(--sp-4); }
+
+/* A checkbox whose label is two lines — a title and the sentence explaining
+   what the setting does NOT do. `align-items: flex-start` and the box's own
+   nudge are what keep the tick on the title's baseline rather than centred
+   against a three-line paragraph. */
+.ph__check { display: flex; gap: var(--sp-3); align-items: flex-start; margin-bottom: var(--sp-4); }
+.ph__check input[type="checkbox"] { margin-top: 3px; flex-shrink: 0; }
+.ph__check--tight { margin-bottom: var(--sp-1); }
+/* A single-line checkbox row — the three report toggles. */
+.ph__check--row { align-items: center; margin-bottom: var(--sp-2); }
+.ph__check--row .fld__l { margin-bottom: 0; }
+.ph__check-l { margin-bottom: 2px; }
+
+.ph__times { display: flex; gap: var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-4); }
+/* Sits directly under `.ph__times`, so it pulls up into the field's own bottom
+   gap rather than opening a second one. */
+.ph__times-note { margin-top: calc(var(--sp-2) * -0.75); margin-bottom: var(--sp-4); }
+.ph__save { margin-top: var(--sp-5); }
+
+/* ══ Payroll ══════════════════════════════════════════════════════════════ */
+.ph__range {
+  display: flex;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin: var(--sp-1) 0 var(--sp-4);
+}
+.ph__figs { display: flex; gap: var(--sp-3); flex-wrap: wrap; margin-bottom: var(--sp-4); }
+.ph__fig {
+  flex: 1 1 150px;
+  min-width: 130px;
+  padding: var(--sp-3);
+  background: var(--s-low);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+}
+.ph__fig-l { font-size: var(--t-label); color: var(--on-surface-3); }
+/* Mono and large: these five numbers are the whole screen, and four of them are
+   read against each other. `--c` tones the two that mean something is wrong —
+   a withheld day and an overtime figure that was never computed. */
+.ph__fig-v {
+  font-family: var(--font-mono);
+  font-size: calc(var(--font-size-base) * 1.43);
+  margin-top: 2px;
+  color: var(--c, var(--on-surface));
+}
+.ph__fig-h {
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+  margin-top: 3px;
+  line-height: 1.5;
+}
+
+/* ══ Enrollment ═══════════════════════════════════════════════════════════ */
+/* Same construction as `.rv__slot` at the queue's own size. Not the same class:
+   the register's slot carries a comparison verdict and this one does not, and
+   collapsing them would put the danger border on a surface that has no verdict
+   to report. */
+.ph__thumb {
+  width: 58px;
+  height: 72px;
+  flex-shrink: 0;
+  background: var(--s-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ph__thumb--ok { background: var(--s-low); }
+.ph__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ph__thumb-w {
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+  text-align: center;
+  padding: 2px;
+}
+.ph__thumb-w--err { color: var(--danger); font-weight: 600; }
+
+/* ══ History ══════════════════════════════════════════════════════════════ */
+.ph__navbtns { display: flex; gap: var(--sp-2); }
+
+/* The month grid's per-day tint. `.pcal__d` itself is in module.css; the colour
+   is per-day and therefore per-instance, so it arrives as `--c` and the tint is
+   mixed here rather than being a second hardcoded color-mix in the markup.
+   Colour is never the only signal — the number takes the state colour too and
+   the accessible name carries the state in words (23-accessibility.md). */
+.pcal__d {
+  background: color-mix(in srgb, var(--c, transparent) 18%, transparent);
+  color: var(--c, var(--on-surface-3));
+}
+/* "Nothing recorded" is the absence of a state, not a state. No tint at all,
+   and the caption grey rather than a colour that would imply a verdict. */
+.pcal__d--none { background: transparent; color: var(--on-surface-3); }
+.pcal__key i { background: color-mix(in srgb, var(--c, var(--outline)) 45%, transparent); }
+
+.ph__cal-note {
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  margin-top: var(--sp-4);
+  line-height: 1.7;
+  max-width: 70ch;
+}
+.ph__unrev { font-size: var(--t-label); color: var(--on-surface-3); }
+
+/* ══ Narrow viewport ══════════════════════════════════════════════════════
+   Pahchan is a PWA and the phone is the primary device, not an afterthought.
+   Checked at 393px, which is the reference's own device width
+   (`pahchan.css` `.ph-dev`) and the iPhone 14/15 logical width.
+
+   Everything above already wraps, so this block only handles the two things
+   wrapping cannot fix: a fixed max-width that is wider than the viewport, and
+   the detail's three 132px captions, which at 393px are 396px plus gaps and are
+   the one genuine overflow on the module. */
+@media (max-width: 520px) {
+  .ph__fld--name .inp,
+  .ph__fld--coord .inp,
+  .ph__fld--radius .inp,
+  .ph__fld--date .inp,
+  .ph__fld--time .inp,
+  .ph__fld--num .inp,
+  .ph__fld--week .inp,
+  .rv__day .inp { max-width: 100%; }
+
+  .ph__form-row { gap: var(--sp-3); }
+  .ph__form-row > .ph__fld { flex: 1 1 100%; }
+
+  /* The captions stack with their photographs rather than running off the
+     edge. The divider column has nothing to align to once they wrap, so it
+     goes with them. */
+  .rv-det__labels { flex-wrap: wrap; }
+  .rv-det__lbl { width: auto; flex: 1 1 45%; }
+  .rv-det__gap { display: none; }
+
+  .ph__figs { gap: var(--sp-2); }
+  .ph__fig  { flex: 1 1 100%; }
+}

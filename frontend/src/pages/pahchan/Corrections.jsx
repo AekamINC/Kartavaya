@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { api } from '../../lib/api';
+import { api, rows as unwrap } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Section, DataTable, Td, StatusChip } from '../../components/editorial';
 import Seg from '../../components/customize/Seg';
@@ -71,7 +71,13 @@ export default function Corrections() {
     setState('loading');
     try {
       const r = await api.get('/v1/pahchan/regularisations', { params: { status } });
-      setRows(Array.isArray(r.data) ? r.data : []);
+      // `rows()` (imported as `unwrap`, since `rows` is this component's state).
+      // The route answers a BARE ARRAY today — `list_regularisations` returns
+      // `[dict(r) for r in rows]` — and the hand-rolled `Array.isArray` test
+      // would render an empty table if it were ever wrapped in an envelope,
+      // which on this screen reads as "nobody has asked for a correction"
+      // rather than as a failure.
+      setRows(unwrap(r));
       setState('ready');
     } catch (err) {
       setErrKind(errorKind(err));
@@ -90,7 +96,10 @@ export default function Corrections() {
   const [pendingCount, setPendingCount] = useState(null);
   const countPending = useCallback(() => {
     api.get('/v1/pahchan/regularisations', { params: { status: 'pending' } })
-      .then(r => setPendingCount(Array.isArray(r.data) ? r.data.length : null))
+      .then(r => setPendingCount(unwrap(r).length))
+      // null, not 0. The count rides on the "Pending" tab, and a 0 there is a
+      // claim that nobody is waiting — which is the opposite of "we could not
+      // find out". `Seg` drops the badge entirely when it is null.
       .catch(() => setPendingCount(null));
   }, []);
   useEffect(() => { countPending(); }, [countPending]);
@@ -201,8 +210,8 @@ export default function Corrections() {
               <React.Fragment key={r.id}>
                 <tr>
                   <Td>
-                    <strong style={{ fontSize: 13.5 }}>{r.employee_name || 'Unknown employee'}</strong>
-                    <span style={{ display: 'block', fontSize: 11, color: 'var(--on-surface-3)' }}>
+                    <strong className="ph__name">{r.employee_name || 'Unknown employee'}</strong>
+                    <span className="ph__sub">
                       asked {dayOf(r.created_at)}
                     </span>
                   </Td>
@@ -210,33 +219,31 @@ export default function Corrections() {
                   <Td>
                     {r.requested_direction === 'in' ? 'Clock in' : 'Clock out'}
                     {at && (
-                      <span style={{ display: 'block', fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                      <span className="ph__mono">
                         {at}
                       </span>
                     )}
                   </Td>
                   <Td>
-                    <span style={{ fontSize: 12.5, color: 'var(--on-surface-2)' }}>{r.reason}</span>
+                    <span className="ph__reason">{r.reason}</span>
                     {r.decision_note && (
-                      <span style={{ display: 'block', fontSize: 11.5, color: 'var(--on-surface-3)', marginTop: 3 }}>
+                      <span className="ph__decision">
                         Decision: {r.decision_note}
                       </span>
                     )}
                   </Td>
                   <Td>
                     {r.status === 'pending' ? (
-                      <span style={{ display: 'flex', gap: 7 }}>
+                      <span className="ph__rowacts">
                         <button
-                          className="btn btn--ghost"
-                          style={{ fontSize: 12 }}
+                          className="btn btn--ghost btn--sm"
                           disabled={busy === r.id}
                           onClick={() => { setDeclining(open ? null : r.id); setNote(''); }}
                         >
                           Decline
                         </button>
                         <button
-                          className="btn btn--fill"
-                          style={{ fontSize: 12 }}
+                          className="btn btn--fill btn--sm"
                           disabled={busy === r.id}
                           onClick={() => decide(r, 'approved')}
                         >
@@ -250,10 +257,10 @@ export default function Corrections() {
                 </tr>
 
                 {open && (
-                  <tr>
-                    <td colSpan={5} style={{ background: 'var(--s-low)' }}>
-                      <div style={{ padding: '12px 4px 16px', maxWidth: 560 }}>
-                        <label className="fld" style={{ display: 'block' }}>
+                  <tr className="ph__expand">
+                    <td colSpan={5}>
+                      <div className="ph__declpanel">
+                        <label className="fld ph__fld">
                           <span className="fld__l">Why are you declining?</span>
                           <textarea
                             className="inp"
@@ -267,18 +274,16 @@ export default function Corrections() {
                             they have to go on.
                           </span>
                         </label>
-                        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                        <div className="ph__acts">
                           <button
-                            className="btn btn--fill"
-                            style={{ fontSize: 12 }}
+                            className="btn btn--fill btn--sm"
                             disabled={busy === r.id || !note.trim()}
                             onClick={() => decide(r, 'declined', note)}
                           >
                             {busy === r.id ? 'Saving…' : 'Decline this correction'}
                           </button>
                           <button
-                            className="btn btn--ghost"
-                            style={{ fontSize: 12 }}
+                            className="btn btn--ghost btn--sm"
                             onClick={() => { setDeclining(null); setNote(''); }}
                           >
                             Cancel

@@ -66,31 +66,31 @@ export default function Hero() {
               <span className="lframe__dot" /><span className="lframe__dot" /><span className="lframe__dot" />
             </div>
             <div className="lframe__body">
-              <article className="k-card" style={{ padding: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <article className="k-card lfrag">
+                <div className="lfrag__row">
                   <span className="k-statuschip" style={{ '--c': 'var(--st-in-progress)' }}>
                     <span className="k-statuschip__dot" />In progress
                   </span>
-                  <span style={{ fontSize: 11, color: 'var(--on-surface-3)' }}>GST · Q2</span>
+                  <span className="lfrag__meta">GST · Q2</span>
                 </div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--on-surface)' }}>
+                <div className="lfrag__t">
                   GSTR-3B — Nirmal Exports
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--on-surface-3)', marginTop: 4 }}>
+                <div className="lfrag__d">
                   Due in 3 days · assigned to Rhea
                 </div>
               </article>
 
-              <article className="k-card" style={{ padding: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <article className="k-card lfrag">
+                <div className="lfrag__row">
                   <span className="k-statuschip" style={{ '--c': 'var(--ap-pending-client)' }}>
                     <span className="k-statuschip__dot" />Awaiting client
                   </span>
                 </div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--on-surface)' }}>
+                <div className="lfrag__t">
                   Invoice INV-2043 — ₹1,24,500
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--on-surface-3)', marginTop: 4 }}>
+                <div className="lfrag__d">
                   Sent for approval · 2 days ago
                 </div>
               </article>

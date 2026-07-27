@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { api } from '../../lib/api';
+import { api, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Section, DataTable, Td } from '../../components/editorial';
 import Note from '../../components/module/Note';
@@ -43,26 +43,16 @@ function defaultRange() {
 
 function Figure({ label, value, hint, tone }) {
   return (
-    <div
-      style={{
-        flex: '1 1 150px', minWidth: 130, padding: '11px 13px',
-        background: 'var(--s-low)', borderRadius: 'var(--r-sm)',
-        border: '1px solid var(--outline-variant)',
-      }}
-    >
-      <div style={{ fontSize: 11.5, color: 'var(--on-surface-3)' }}>{label}</div>
-      <div style={{
-        fontFamily: 'var(--font-mono)', fontSize: 20, marginTop: 2,
-        color: tone || 'var(--on-surface)',
-      }}
-      >
+    <div className="ph__fig">
+      <div className="ph__fig-l">{label}</div>
+      {/* The tone is per-figure and means something: a withheld count above zero
+          is --warn, and an overtime figure that was never computed is the
+          caption grey rather than the ink of a real number. Both are the
+          difference between a figure and a warning, so they ride `--c`. */}
+      <div className="ph__fig-v" style={tone ? { '--c': tone } : undefined}>
         {value}
       </div>
-      {hint && (
-        <div style={{ fontSize: 11, color: 'var(--on-surface-3)', marginTop: 3, lineHeight: 1.5 }}>
-          {hint}
-        </div>
-      )}
+      {hint && <div className="ph__fig-h">{hint}</div>}
     </div>
   );
 }
@@ -80,7 +70,10 @@ export default function PublishPayroll() {
   useEffect(() => {
     let alive = true;
     api.get('/v1/pahchan/policy')
-      .then(r => { if (alive) setOvertimeOn(!!r.data?.overtime_enabled); })
+      .then(r => { if (alive) setOvertimeOn(!!body(r).overtime_enabled); })
+      // Stays null on failure, which is neither true nor false: the "overtime is
+      // off" warning below is only shown for an explicit false, so a policy read
+      // that failed never claims overtime is off when it may well be on.
       .catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -96,13 +89,14 @@ export default function PublishPayroll() {
       // Stamped with the range it was built for. Without this, changing the
       // dates after a preview leaves Publish enabled against figures the
       // operator never saw — which is the one thing the preview exists to stop.
-      setResult({ ...r.data, __from: range.from, __to: range.to });
+      const out = body(r);
+      setResult({ ...out, __from: range.from, __to: range.to });
       if (!dryRun) {
         pushToast({
           type: 'success',
-          title: `${r.data.rows_written} attendance rows written`,
-          message: r.data.skipped_manual_rows
-            ? `${r.data.skipped_manual_rows} days HR entered by hand were left alone.`
+          title: `${out.rows_written} attendance rows written`,
+          message: out.skipped_manual_rows
+            ? `${out.skipped_manual_rows} days HR entered by hand were left alone.`
             : 'Payroll can now price this period.',
         });
       }
@@ -136,14 +130,13 @@ export default function PublishPayroll() {
         </Note>
       )}
 
-      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', margin: '4px 0 16px' }}>
+      <div className="ph__range">
         {[['from', 'From'], ['to', 'To']].map(([key, label]) => (
-          <label className="fld" key={key} style={{ display: 'block' }}>
+          <label className="fld ph__fld ph__fld--date" key={key}>
             <span className="fld__l">{label}</span>
             <input
               className="inp"
               type="date"
-              style={{ maxWidth: 170 }}
               value={range[key]}
               onChange={e => setRange(r => ({ ...r, [key]: e.target.value }))}
             />
@@ -169,7 +162,7 @@ export default function PublishPayroll() {
       </div>
 
       {!result && (
-        <p style={{ fontSize: 12.5, color: 'var(--on-surface-3)', lineHeight: 1.7, maxWidth: '68ch' }}>
+        <p className="ph__lede">
           Preview first. It returns exactly what would be written without writing it —
           including the days it refuses to build, which are the ones worth reading.
         </p>
@@ -177,7 +170,7 @@ export default function PublishPayroll() {
 
       {result && (
         <>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+          <div className="ph__figs">
             <Figure
               label={result.dry_run ? 'Days that would be built' : 'Days built'}
               value={result.days_built ?? 0}

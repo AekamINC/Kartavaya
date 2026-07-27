@@ -55,7 +55,13 @@
 .lnav__in {
   display: flex; align-items: center; justify-content: space-between;
   gap: 20px; padding: 14px 0;
+  /* The containing block for `.lnav__links` when it drops to the burger menu
+     below 860px — that rule positions absolutely and needs an ancestor to
+     resolve against, or the panel escapes to the viewport. */
+  position: relative;
 }
+/* The logo and wordmark as one target back to the top. */
+.lnav__brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
 .lnav__links { display: flex; align-items: center; gap: 26px; }
 .lnav__a {
   font-size: 13.5px; color: var(--on-surface-2); text-decoration: none;
@@ -103,6 +109,9 @@
 }
 .lcta--fill { background: var(--primary); color: var(--on-primary); }
 .lcta--fill:hover { background: var(--primary-hover); }
+/* The same CTA inside the nav bar, where the hero's 13px/26px would set a
+   44px-tall button in a 14px-padded bar and push the whole nav taller. */
+.lcta--nav { padding: 9px 18px; font-size: 13px; }
 .lcta--out {
   background: transparent; color: var(--on-surface);
   border-color: var(--outline);
@@ -195,6 +204,64 @@
 
 /* Devanagari inside a product fragment — same reasoning, smaller. */
 .lfrag__hi { font-family: var(--font-hindi); }
+
+/* ── Product fragments ────────────────────────────────────────────────────
+   The little screenshots inside `.lframe` — a task card, a tax summary, an
+   access list. They are REAL product markup (`.k-card`, `.k-statuschip`,
+   `.k-btn`) rendered small, not illustrations: an illustration of a UI is a
+   promise the product has to keep, and it usually differs in a way that reads
+   as bait. That is also why they are worth styling properly rather than with
+   inline objects — it makes this page a consumer of the design system, so a
+   token change reaches the marketing site too.
+
+   All decorative: every fragment sits inside `aria-hidden="true"` on `.lframe`,
+   so none of this text is in the accessibility tree and the surrounding prose
+   carries the actual claim. */
+.lfrag { padding: 14px; }
+.lfrag__row  { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.lfrag__t    { font-size: 14px; font-weight: 600; color: var(--on-surface); }
+.lfrag__t--sp { font-size: 13.5px; margin-bottom: 10px; }
+.lfrag__d    { font-size: 12px; color: var(--on-surface-3); margin-top: 4px; }
+.lfrag__meta { font-size: 11px; color: var(--on-surface-3); }
+.lfrag__acts { display: flex; gap: 8px; }
+/* Decline is the destructive half of an approval pair, so it takes --danger as
+   TEXT on a ghost button rather than a red fill — the same rule `.btn--danger`
+   follows in components.css, for the same reason. */
+.lfrag__decline { color: var(--danger); }
+
+/* The GST breakdown. Tabular figures because the whole point of the fragment is
+   that a column of rupee amounts lines up on the decimal. */
+.lfrag--tax { font-size: 12.5px; }
+.lfrag__tr {
+  display: flex; justify-content: space-between;
+  padding: 5px 0;
+  color: var(--on-surface-2);
+  font-variant-numeric: tabular-nums;
+}
+.lfrag__tr--total {
+  font-weight: 700;
+  color: var(--on-surface);
+  border-top: 1px solid var(--outline-variant);
+  margin-top: 4px;
+  padding-top: 8px;
+}
+
+/* The per-module access list. */
+.lfrag--acl { display: flex; flex-direction: column; gap: 7px; }
+.lfrag__acl {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12.5px; padding: 6px 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--outline-variant);
+  color: var(--on-surface-3);
+}
+.lfrag__acl--on { border-color: var(--primary); color: var(--on-surface); }
+/* --primary-text, not --primary: this is text on a surface, and --primary is a
+   FILL at 4.04:1 (00 §12). --on-surface-3 for the off state, not
+   --on-surface-faint, which is 2.3:1 and declared NON-TEXT in
+   kartavaya-design.css. */
+.lfrag__grant { font-size: 10px; font-weight: 700; color: var(--on-surface-3); }
+.lfrag__grant--on { color: var(--primary-text); }
 
 /* ── Feature rows ─────────────────────────────────────────────────────── */
 .lfeat {

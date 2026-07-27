@@ -119,7 +119,7 @@ export default function AccessMatrix({ members = [], activeCodes = null }) {
         </table>
       </div>
 
-      <p className="of__h" style={{ marginTop: 10 }}>
+      <p className="of__h of__h--foot">
         <strong>· sep</strong> marks Vetana and Ganit, where <strong>Admin does not
         include Approver</strong> — admin is breadth (salary structures, chart of
         accounts), approver is depth (release payments, close periods). A cell

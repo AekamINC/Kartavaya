@@ -39,7 +39,7 @@ const EMPTY = {
 /** label + input + persistent hint + stacked error (26 §3). */
 function F({ id, label, hint, error, mono, wide, value, onChange, onBlur, ...rest }) {
   return (
-    <div className="of__f" style={wide ? { gridColumn: '1 / -1' } : undefined}>
+    <div className={`of__f${wide ? ' of__f--wide' : ''}`}>
       <label className="of__l" htmlFor={id}>{label}</label>
       <input
         id={id}
@@ -207,7 +207,7 @@ export default function TabProfile() {
           <F id="org-l2" label="Address line 2" value={profile.billing_address.line2}
             onChange={e => setAddr('line2', e.target.value)} />
         </div>
-        <div className="of of--3" style={{ marginTop: 14 }}>
+        <div className="of of--3 of--stacked">
           <F id="org-city" label="City" value={profile.billing_address.city}
             onChange={e => setAddr('city', e.target.value)} />
           <F id="org-state" label="State" value={profile.billing_address.state}
@@ -221,7 +221,7 @@ export default function TabProfile() {
 
       <section className="st__group">
         <h2 className="st__gt">Bank details</h2>
-        <p className="of__h" style={{ marginBottom: 12 }}>
+        <p className="of__h of__h--lede">
           Printed on every invoice so a client can pay without asking for them.
         </p>
         <div className="of">

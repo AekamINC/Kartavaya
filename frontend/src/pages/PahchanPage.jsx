@@ -55,7 +55,7 @@ export default function PahchanPage() {
   const [tab, setTab] = useState('register');
   const meta = moduleMeta('pahchan');
   return (
-    <div style={{ padding: '0 0 48px' }}>
+    <div className="ph__page">
       <ModuleHeader
         module="pahchan"
         en={meta.en}

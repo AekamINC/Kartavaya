@@ -23,8 +23,8 @@ export default function Nav() {
 
   return (
     <nav className={`lnav${solid ? ' solid' : ''}`}>
-      <div className="lwrap lnav__in" style={{ position: 'relative' }}>
-        <a href="#top" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
+      <div className="lwrap lnav__in">
+        <a href="#top" className="lnav__brand">
           <KLogo size={28} /><KWordmark />
         </a>
 
@@ -34,7 +34,7 @@ export default function Nav() {
           ))}
           <a className="lnav__a" href={SECONDARY_CTA.href}>{SECONDARY_CTA.label}</a>
           {ctaReady && (
-            <a className="lcta lcta--fill" style={{ padding: '9px 18px', fontSize: 13 }} href={PRIMARY_CTA.href}>
+            <a className="lcta lcta--fill lcta--nav" href={PRIMARY_CTA.href}>
               {PRIMARY_CTA.label}
             </a>
           )}

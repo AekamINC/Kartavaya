@@ -36,13 +36,13 @@ export default function Features() {
             </p>
           </div>
           <Frame>
-            <div className="k-card" style={{ padding: 14 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--on-surface)', marginBottom: 10 }}>
+            <div className="k-card lfrag">
+              <div className="lfrag__t lfrag__t--sp">
                 Balance sheet FY25 — draft
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div className="lfrag__acts">
                 <span className="k-btn k-btn--primary k-btn--sm">✓ Approve</span>
-                <span className="k-btn k-btn--ghost k-btn--sm" style={{ color: 'var(--danger)' }}>✕ Decline</span>
+                <span className="k-btn k-btn--ghost k-btn--sm lfrag__decline">✕ Decline</span>
               </div>
             </div>
           </Frame>
@@ -59,16 +59,13 @@ export default function Features() {
             </p>
           </div>
           <Frame>
-            <div className="k-card" style={{ padding: 14, fontSize: 12.5 }}>
+            {/* The total is the only row that differs, and it differs in five
+                declarations at once — weight, ink, rule, and the two spacings
+                that separate it from the components above it. One modifier
+                rather than five ternaries. */}
+            <div className="k-card lfrag lfrag--tax">
               {[['Taxable value', '₹1,05,508'], ['CGST 9%', '₹9,496'], ['SGST 9%', '₹9,496'], ['Total', '₹1,24,500']].map(([k, v], i, a) => (
-                <div key={k} style={{
-                  display: 'flex', justifyContent: 'space-between', padding: '5px 0',
-                  fontWeight: i === a.length - 1 ? 700 : 400,
-                  color: i === a.length - 1 ? 'var(--on-surface)' : 'var(--on-surface-2)',
-                  borderTop: i === a.length - 1 ? '1px solid var(--outline-variant)' : 'none',
-                  marginTop: i === a.length - 1 ? 4 : 0, paddingTop: i === a.length - 1 ? 8 : 5,
-                  fontVariantNumeric: 'tabular-nums',
-                }}>
+                <div key={k} className={`lfrag__tr${i === a.length - 1 ? ' lfrag__tr--total' : ''}`}>
                   <span>{k}</span><span>{v}</span>
                 </div>
               ))}
@@ -87,23 +84,19 @@ export default function Features() {
             </p>
           </div>
           <Frame>
-            <div className="k-card" style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <div className="k-card lfrag lfrag--acl">
               {/* The Devanagari carries lang="hi" and .lfrag__hi so it renders in
                   --font-hindi. Without a font that covers the script the browser
                   falls back per glyph and the word arrives in mixed weights —
                   which is what --font-ui alone was doing here. */}
               {[['गणित', 'Invoicing', true], ['वेतन', 'Payroll', false], ['ग्राहक', 'CRM', true]].map(([hi, en, on]) => (
-                <div key={en} style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  fontSize: 12.5, padding: '6px 9px', borderRadius: 'var(--r-sm)',
-                  border: `1px solid ${on ? 'var(--primary)' : 'var(--outline-variant)'}`,
-                  color: on ? 'var(--on-surface)' : 'var(--on-surface-3)',
-                }}>
+                <div key={en} className={`lfrag__acl${on ? ' lfrag__acl--on' : ''}`}>
                   <span><span className="lfrag__hi" lang="hi">{hi}</span> · {en}</span>
-                  {/* --primary-text, not --primary: this is text on a surface.
-                      And --on-surface-3, not --on-surface-faint, which is 2.3:1
-                      and declared NON-TEXT ONLY in kartavaya-design.css. */}
-                  <span style={{ fontSize: 10, fontWeight: 700, color: on ? 'var(--primary-text)' : 'var(--on-surface-3)' }}>
+                  {/* The colour reasoning — --primary-text rather than the
+                      --primary fill, and --on-surface-3 rather than the
+                      non-text --on-surface-faint — now lives with the rules in
+                      landing.css. */}
+                  <span className={`lfrag__grant${on ? ' lfrag__grant--on' : ''}`}>
                     {on ? 'GRANTED' : 'NO ACCESS'}
                   </span>
                 </div>

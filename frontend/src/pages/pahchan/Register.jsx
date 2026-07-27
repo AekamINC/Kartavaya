@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '../../lib/api';
+import { api, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Section, DataTable, Td, StatusChip } from '../../components/editorial';
 import Seg from '../../components/customize/Seg';
@@ -129,7 +129,7 @@ function usePhotoUrl(path, enabled = true) {
     const settle = (next) => { if (!alive) return; clearTimeout(deadline); setS(next); };
 
     api.get(path)
-      .then(r => settle({ st: 'ok', url: r.data.url }))
+      .then(r => settle({ st: 'ok', url: body(r).url }))
       // 404 is the retention case and is not an error: the punch record outlives
       // the photo by law (07 §5/§8), so a missing photo on an old row is expected.
       .catch(err => settle({ st: err?.response?.status === 404 ? 'gone' : 'err' }));
@@ -139,28 +139,27 @@ function usePhotoUrl(path, enabled = true) {
   return s;
 }
 
-function PhotoSlot({ state, alt, emptyWord, w, h }) {
+function PhotoSlot({ state, alt, emptyWord }) {
   const failed = state?.st === 'err';
   const word = failed ? 'failed to load' : state?.st === 'load' ? 'loading' : emptyWord;
+  const resolved = state?.st === 'ok';
   return (
     <div
-      className="rv__slot"
+      /* No style attribute at all. The mount colour, the failure border and the
+         clip are classes; the SIZE is inherited from `.rv__trip`, which is the
+         only place it varies — the row renders at 50×62 and the detail at
+         132×164, and those two are the same component. It has to be set on the
+         container rather than here because the divider between the claim and
+         the evidence is a sibling of these slots and sizes off the same value. */
+      className={`rv__slot${resolved ? '' : ' rv__slot--pending'}${failed ? ' rv__slot--err' : ''}`}
       /* Labelled, not a live region. Three slots per row across a dozen rows is
          thirty-six nodes; `role="status"` on each would fire thirty-six
          announcements as the page settles and bury the one sentence that
          matters. The verdict cell carries the row's state as text. */
-      aria-label={state?.st === 'ok' ? undefined : `${alt} — ${word}`}
-      style={{
-        width: w, height: h,
-        background: state?.st === 'ok' ? 'var(--s-low)' : 'var(--s-container)',
-        border: `1px solid ${failed ? 'var(--danger)' : 'var(--outline-variant)'}`,
-        borderRadius: 'var(--r-sm)',
-        overflow: 'hidden', flexShrink: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}
+      aria-label={resolved ? undefined : `${alt} — ${word}`}
     >
-      {state?.st === 'ok'
-        ? <img src={state.url} alt={alt} style={{ objectFit: 'cover', width: '100%', height: '100%' }} />
+      {resolved
+        ? <img src={state.url} alt={alt} />
         : state?.st === 'load'
           /* `.ix-skeleton`, not `.k-skeleton`: its sweep is a translated overlay
              rather than an animated `background-position`, and this is the one
@@ -168,19 +167,12 @@ function PhotoSlot({ state, alt, emptyWord, w, h }) {
              under reduced motion; only this one is free per frame while running.
              The SHAPE is the loading signal, so it survives the sweep being off —
              which an ellipsis, being a glyph that means "nearly there", did not. */
-          ? <span className="ix-skeleton" aria-hidden="true"
-                  style={{ width: '100%', height: '100%', borderRadius: 0 }} />
+          ? <span className="ix-skeleton rv__sk" aria-hidden="true" />
           : (
-            <span style={{
-              fontSize: 'var(--t-label-sm)',
-              // The state colour from MOTION-SPEC §6's meaning table. This is the
-              // word that has to stop a reviewer and it is the only signal here
-              // that does not move; it must not read as another grey caption.
-              color: failed ? 'var(--danger)' : 'var(--on-surface-3)',
-              fontWeight: failed ? 600 : 400,
-              textAlign: 'center', padding: 2, lineHeight: 1.2,
-            }}
-            >
+            // The state colour from MOTION-SPEC §6's meaning table. This is the
+            // word that has to stop a reviewer and it is the only signal here
+            // that does not move; it must not read as another grey caption.
+            <span className={`rv__word${failed ? ' rv__word--err' : ''}`}>
               {failed ? 'failed' : emptyWord}
             </span>
           )}
@@ -213,13 +205,19 @@ function Triple({ hasPhoto, referenceIds, punchId, name, w = PHOTO_W, h = PHOTO_
   useEffect(() => { if (onStatus) onStatus(punchId, status); }, [onStatus, punchId, status]);
 
   return (
-    <div className="rv__trip" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-      <PhotoSlot state={punch} alt={`Clock-in photo for ${name}`} emptyWord="deleted" w={w} h={h} />
+    /* The size lands here, once, and the three slots and the divider all inherit
+       it. Two custom properties instead of the eight declarations that used to
+       be retyped across four elements. */
+    <div
+      className="rv__trip"
+      style={(w !== PHOTO_W || h !== PHOTO_H) ? { '--slot-w': `${w}px`, '--slot-h': `${h}px` } : undefined}
+    >
+      <PhotoSlot state={punch} alt={`Clock-in photo for ${name}`} emptyWord="deleted" />
       {/* A divider, not a gap: the left image is the claim and the right two are
           the evidence, and the reviewer is comparing across that line. */}
-      <span aria-hidden="true" style={{ width: 1, height: h - 12, background: 'var(--outline-variant)' }} />
-      <PhotoSlot state={ref1} alt={`Reference 1 for ${name}`} emptyWord="none" w={w} h={h} />
-      <PhotoSlot state={ref2} alt={`Reference 2 for ${name}`} emptyWord="none" w={w} h={h} />
+      <span className="rv__div" aria-hidden="true" />
+      <PhotoSlot state={ref1} alt={`Reference 1 for ${name}`} emptyWord="none" />
+      <PhotoSlot state={ref2} alt={`Reference 2 for ${name}`} emptyWord="none" />
     </div>
   );
 }
@@ -244,7 +242,7 @@ function Triple({ hasPhoto, referenceIds, punchId, name, w = PHOTO_W, h = PHOTO_
 function AccuracyScale({ distanceM, accuracyM, siteName }) {
   if (distanceM == null) {
     return (
-      <p style={{ fontSize: 12, color: 'var(--on-surface-3)', margin: '0 0 12px', lineHeight: 1.6 }}>
+      <p className="rv__nogeo">
         No location was recorded for this punch, so there is no distance to draw. The
         punch still counts — §2 — but there is nothing here to place it.
       </p>
@@ -261,7 +259,7 @@ function AccuracyScale({ distanceM, accuracyM, siteName }) {
   const r = Math.max(3, Math.min(px(acc), 150));
 
   return (
-    <figure style={{ margin: '0 0 14px' }}>
+    <figure className="rv__fig">
       <svg viewBox="0 0 320 108" width="100%" height="108" role="img"
         aria-label={
           `The punch was recorded ${Math.round(dist)} metres from ${siteName || 'the site'}, `
@@ -285,7 +283,7 @@ function AccuracyScale({ distanceM, accuracyM, siteName }) {
           {dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist)} m`}
         </text>
       </svg>
-      <figcaption style={{ fontSize: 11.5, color: 'var(--on-surface-3)', lineHeight: 1.6 }}>
+      <figcaption className="rv__figc">
         {acc > 0
           ? `The shaded circle is the ±${Math.round(acc)}m the device reported. Anywhere inside it is consistent with this fix.`
           : 'No accuracy figure was reported, so the position cannot be bounded at all.'}
@@ -297,8 +295,11 @@ function AccuracyScale({ distanceM, accuracyM, siteName }) {
 function MetaRow({ k, v, tone }) {
   return (
     <div className="rv-meta__r">
-      <span style={{ flex: 1, fontSize: 12, color: 'var(--on-surface-3)' }}>{k}</span>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: tone || 'var(--on-surface)' }}>{v}</span>
+      <span className="rv-meta__k">{k}</span>
+      {/* The tone is genuinely per-row — an unbounded accuracy figure and a
+          detected mock location are the two that must not read as ordinary
+          metadata — so it arrives as `--c` and the rule picks it up. */}
+      <span className="rv-meta__v" style={tone ? { '--c': tone } : undefined}>{v}</span>
     </div>
   );
 }
@@ -335,21 +336,24 @@ function Detail({ row, photoRetentionDays }) {
           w={132}
           h={164}
         />
-        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-          <span style={{ width: 132, fontSize: 11, color: 'var(--on-surface-3)' }}>
-            Punch<br /><b style={{ color: 'var(--on-surface-2)' }}>{timeOf(row.captured_at)}</b>
+        {/* The captions sit under the three photographs, and the empty span
+            holds the divider's column so they do not drift one gap left. Below
+            520px they wrap and that spacer is hidden — see pahchan.css. */}
+        <div className="rv-det__labels">
+          <span className="rv-det__lbl">
+            Punch<br /><b>{timeOf(row.captured_at)}</b>
           </span>
-          <span style={{ width: 1 }} />
-          <span style={{ width: 132, fontSize: 11, color: 'var(--on-surface-3)' }}>
-            Reference 1<br /><b style={{ color: 'var(--on-surface-2)' }}>{refCount > 0 ? 'Straight on' : 'Not captured'}</b>
+          <span className="rv-det__gap" aria-hidden="true" />
+          <span className="rv-det__lbl">
+            Reference 1<br /><b>{refCount > 0 ? 'Straight on' : 'Not captured'}</b>
           </span>
-          <span style={{ width: 132, fontSize: 11, color: 'var(--on-surface-3)' }}>
-            Reference 2<br /><b style={{ color: 'var(--on-surface-2)' }}>{refCount > 1 ? 'Three-quarter' : 'Not captured'}</b>
+          <span className="rv-det__lbl">
+            Reference 2<br /><b>{refCount > 1 ? 'Three-quarter' : 'Not captured'}</b>
           </span>
         </div>
 
         {refCount < 2 && (
-          <div className="note note--warn" style={{ marginTop: 14 }}>
+          <div className="note note--warn rv-det__note">
             <b>{refCount === 0 ? 'No reference pair.' : 'Only one reference.'}</b> There is
             nothing to compare against, so this punch cannot be verified — only accepted on
             trust. Send an enrollment request rather than confirming it.
@@ -446,7 +450,9 @@ export default function Register() {
     setState('loading');
     try {
       const r = await api.get('/v1/pahchan/register', { params: on ? { on } : undefined });
-      setRows(r.data.punches || []);
+      // `{punches: [...]}` — a bespoke key, so `body()` rather than `rows()`.
+      const list = body(r).punches;
+      setRows(Array.isArray(list) ? list : []);
       setState('ready');
     } catch (err) {
       setErrKind(errorKind(err));
@@ -463,7 +469,7 @@ export default function Register() {
   useEffect(() => {
     let alive = true;
     api.get('/v1/pahchan/policy')
-      .then(r => { if (alive) setPhotoRetentionDays(r.data?.punch_photo_retention_days ?? null); })
+      .then(r => { if (alive) setPhotoRetentionDays(body(r).punch_photo_retention_days ?? null); })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -602,13 +608,12 @@ export default function Register() {
       title="Register"
       hi="उपस्थिति पंजी"
       right={(
-        <span style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <span className="rv__tools">
+          <label className="rv__day">
             <span className="k-sr-only">Which day&rsquo;s register</span>
             <input
               className="inp"
               type="date"
-              style={{ maxWidth: 160 }}
               value={day}
               // Not into the future. A register for tomorrow is always empty and
               // the empty state would tell a reviewer that nobody has clocked in,
@@ -619,7 +624,7 @@ export default function Register() {
           </label>
           {!isToday && (
             <button
-              className="btn btn--ghost" style={{ fontSize: 12 }}
+              className="btn btn--ghost btn--sm"
               onClick={() => setDay(new Date().toISOString().slice(0, 10))}
             >
               Today
@@ -721,7 +726,7 @@ export default function Register() {
 
       {state === 'ready' && visible.length > 0 && (
         <>
-          <p className="rv__hint" style={{ fontSize: 12, color: 'var(--on-surface-3)', margin: '0 0 10px' }}>
+          <p className="rv__hint">
             <kbd>J</kbd>/<kbd>K</kbd> move · <kbd>↵</kbd> confirm · <kbd>F</kbd> flag · <kbd>O</kbd> detail
           </p>
 
@@ -751,14 +756,13 @@ export default function Register() {
                      cursor rather than building a selection, which is what
                      aria-current means and where it is valid. */
                   aria-current={i === cursor ? 'true' : undefined}
-                  style={i === cursor ? { outline: '2px solid var(--primary)', outlineOffset: -2 } : undefined}
                 >
                   <Td className="rv__n">{i + 1}</Td>
 
                   <Td className="rv__who">
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-                      <strong style={{ fontSize: 13.5 }}>{p.employee_name}</strong>
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    <div className="rv__who-b">
+                      <strong className="rv__name">{p.employee_name}</strong>
+                      <div className="rv__flags">
                         {(p.flags || []).map(f => <StatusChip key={f} status={f} />)}
                       </div>
                     </div>
@@ -775,9 +779,12 @@ export default function Register() {
                   </Td>
 
                   <Td className="rv__t">
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{timeOf(p.captured_at)}</span>
-                      <span style={{ fontSize: 11, color: 'var(--on-surface-3)' }}>
+                    {/* `.rv__t` already carries the mono face and tabular
+                        figures for the whole cell — module.css sets it so a
+                        column of times scans without walking. */}
+                    <div className="rv__tb">
+                      <span>{timeOf(p.captured_at)}</span>
+                      <span className="rv__dir">
                         {p.direction === 'in' ? 'in' : 'out'}
                       </span>
                     </div>
@@ -786,7 +793,7 @@ export default function Register() {
                   <Td className="rv__loc">
                     {p.site_name || '—'}
                     {p.accuracy_m != null && (
-                      <span style={{ display: 'block', fontSize: 11, color: 'var(--on-surface-3)' }}>
+                      <span className="rv__acc">
                         ±{Math.round(p.accuracy_m)}m
                       </span>
                     )}
@@ -802,8 +809,7 @@ export default function Register() {
                          ~0.5ms under `prefers-reduced-motion`, so the animation
                          goes, and it must not take the confirmation with it. */
                       ? (
-                        <span key={mine} className="ix-flash"
-                              style={{ display: 'inline-block', borderRadius: 'var(--r-pill)' }}>
+                        <span key={mine} className="ix-flash rv__flash">
                           {/* The tone comes from `status`; the WORD is named,
                               because the affordance and its result have to agree.
                               The help line above this table says "↵ confirm · F
@@ -822,7 +828,7 @@ export default function Register() {
                         // §3: no reference pair suppresses the confirm affordance
                         // and offers enrollment instead. Confirming here would be
                         // trust with a checkmark on it.
-                        ? <button className="btn btn--ghost" style={{ fontSize: 11 }}
+                        ? <button className="btn btn--ghost btn--sm"
                             onClick={(e) => { e.stopPropagation(); pushToast({
                               type: 'info',
                               title: 'Enrollment request',
@@ -857,11 +863,10 @@ export default function Register() {
                              F is ungated: a reviewer who cannot see the faces
                              still has an opinion, and gating it strands the queue
                              on exactly the rows that need a person. */
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div className="rv__acts">
                             <button
                               type="button"
-                              className="btn btn--ghost"
-                              style={{ fontSize: 11 }}
+                              className="btn btn--ghost btn--sm"
                               disabled={compare[p.id] !== COMPARE.READY}
                               title={compare[p.id] === COMPARE.BROKEN
                                 ? 'The photos did not load, so there is nothing to compare'
@@ -874,18 +879,21 @@ export default function Register() {
                             </button>
                             <button
                               type="button"
-                              className="btn btn--ghost"
-                              style={{ fontSize: 11 }}
+                              className="btn btn--ghost btn--sm"
                               title={`Flag ${p.employee_name}'s punch for a second look`}
                               onClick={(e) => { e.stopPropagation(); seek(i); record('flagged'); }}
                             >
                               Flag
                             </button>
                             {compare[p.id] !== COMPARE.READY && (
-                              <span style={{
-                                fontSize: 11,
-                                color: compare[p.id] === COMPARE.BROKEN ? 'var(--danger)' : 'var(--on-surface-3)',
-                              }}>
+                              /* BROKEN and PENDING must not read alike — one is
+                                 "wait" and the other is "this will never
+                                 arrive". The tone is the per-row difference, so
+                                 it rides `--c`. */
+                              <span
+                                className="rv__cmp"
+                                style={compare[p.id] === COMPARE.BROKEN ? { '--c': 'var(--danger)' } : undefined}
+                              >
                                 {compare[p.id] === COMPARE.BROKEN ? 'Cannot compare' : 'Loading photos'}
                               </span>
                             )}
@@ -899,7 +907,7 @@ export default function Register() {
                     the ones above and below it, and a dialog takes those away. */}
                 {openId === p.id && (
                   <tr className="rv-det__row">
-                    <td colSpan={6} style={{ background: 'var(--s-low)' }}>
+                    <td colSpan={6}>
                       <Detail row={p} photoRetentionDays={photoRetentionDays} />
                     </td>
                   </tr>

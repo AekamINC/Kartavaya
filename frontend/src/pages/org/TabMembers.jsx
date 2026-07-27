@@ -365,8 +365,8 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
   return (
     <div>
       <section className="st__group">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
-          <h2 className="st__gt" style={{ marginBottom: 0 }}>Members · {members.length}</h2>
+        <div className="ohd">
+          <h2 className="st__gt">Members · {members.length}</h2>
           {/* The list answers "what can this person reach". The matrix answers
               the transpose — "who can reach payroll" — which is the question an
               audit actually asks and which three chips and a +n cannot answer. */}
@@ -406,7 +406,7 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
 
       <section className="st__group">
         <h2 className="st__gt">Add or invite a member</h2>
-        <p className="of__h" style={{ marginBottom: 12 }}>
+        <p className="of__h of__h--lede">
           If they already have a Kartavaya account they join straight away. If they
           do not, we send them an invitation. Either way they arrive with no module
           access until you grant it.
@@ -429,7 +429,7 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
               {ROLE_OPTIONS.map(r => <option key={r.code} value={r.code}>{r.label}</option>)}
             </select>
           </div>
-          <div className="of__f" style={{ justifyContent: 'flex-end' }}>
+          <div className="of__f of__f--act">
             <Button variant="fill" onClick={addMember} disabled={adding || !addEmail.trim()}>
               {adding ? 'Working…' : 'Add or invite'}
             </Button>
@@ -443,17 +443,16 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
       {invites.length > 0 && (
         <section className="st__group">
           <h2 className="st__gt">Invited · {invites.length}</h2>
-          <p className="of__h" style={{ marginBottom: 12 }}>
+          <p className="of__h of__h--lede">
             Sent but not yet accepted. Each one holds a seat until it is accepted
             or revoked.
           </p>
           <div className="of">
             {invites.map(inv => (
-              <div key={inv.invite_id} className="of__f"
-                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div key={inv.invite_id} className="of__f of__f--row">
                 <div>
-                  <div style={{ fontWeight: 600 }}>{inv.email}</div>
-                  <div className="of__h" style={{ margin: 0 }}>
+                  <div className="oinv__e">{inv.email}</div>
+                  <div className="of__h of__h--flush">
                     {String(inv.org_role || 'org_member').replace('org_', '')}
                     {inv.expires_at ? ` · expires ${new Date(inv.expires_at).toLocaleDateString()}` : ''}
                   </div>
@@ -480,7 +479,7 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
                 — the alternative is an owner tightening an admin's access and
                 believing it took effect. */}
             {editing.member.role_code === 'org_admin' && (
-              <p className="opend" style={{ marginBottom: 12 }}>
+              <p className="opend opend--stack">
                 {Info}
                 <span>
                   An org admin reaches <strong>every active module by role</strong> today.
@@ -492,7 +491,7 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
             )}
 
             {!grantsCarryLevels && (
-              <p className="opend" style={{ marginBottom: 12 }}>
+              <p className="opend opend--stack">
                 {Info}
                 <span>
                   This server is running a build from before levels were stored, so every
@@ -515,7 +514,7 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
               ))}
             </div>
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+            <div className="ogr__acts">
               <Button variant="fill" onClick={saveGrants} disabled={savingGrants}>
                 {savingGrants ? 'Saving…' : 'Save access'}
               </Button>
