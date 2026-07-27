@@ -28,7 +28,7 @@ import { Check, ChevLeft } from './icons';
  *    write that the same paragraph asks for — and only that. Dropping off on a
  *    phone does NOT resume on a laptop yet; nothing here claims it does.
  *
- * 2. Two of the five steps can be applied for real (`POST /admin/invites`,
+ * 2. Two of the five steps can be applied for real (`POST /v1/org/invites`,
  *    `POST /teams` + `/projects/:id/columns`) and three cannot: there is no
  *    endpoint for a user profile, an organisation record, or an org's enabled
  *    module set. Those three save locally, and StepDone reports them in the
@@ -37,8 +37,10 @@ import { Check, ChevLeft } from './icons';
  *
  * An invited member skips Organisation and Modules — AUTH-SPEC: "An invited
  * user must not see module selection — the org already decided" — and skips
- * Team, because `POST /admin/invites` requires admin and offering a form that will
- * 403 is worse than not offering it.
+ * Team, because `POST /v1/org/invites` is `require_org_role('org_admin',
+ * 'org_owner')` and offering a form that will 403 is worse than not offering
+ * it. The filter key is `isOrgOwner`, so an invited ADMIN does still get the
+ * step.
  */
 
 const KEY = 'kv_onboarding';
@@ -69,10 +71,28 @@ function blankState(user) {
   };
 }
 
+/**
+ * `kv_onboarding` is written by whichever version of this wizard the user last
+ * opened, and the invite roles changed vocabulary — `member`/`admin` (account
+ * types) to `org_member`/`org_admin` (what `staging.user_roles` stores and what
+ * `POST /v1/org/invites` validates). A half-finished list from before the change
+ * would otherwise be sent as `Invalid role: member`, one 400 per person.
+ */
+function normaliseInvites(list) {
+  if (!Array.isArray(list)) return [];
+  return list.map((x) => ({
+    ...x,
+    role: x?.role === 'admin' ? 'org_admin' : x?.role === 'member' ? 'org_member' : (x?.role || 'org_member'),
+  }));
+}
+
 function load(user) {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (saved && typeof saved === 'object') return { ...blankState(user), ...saved };
+    if (saved && typeof saved === 'object') {
+      const merged = { ...blankState(user), ...saved };
+      return { ...merged, invites: normaliseInvites(merged.invites) };
+    }
   } catch { /* corrupt entry is the same as no entry */ }
   return blankState(user);
 }
@@ -173,24 +193,39 @@ export default function OnboardingPage() {
     const failed = [];
     for (const inv of state.invites) {
       try {
-        // The path is `/admin/invites`, not `/invites`. `invite_router.py:274`
-        // declares `@router.post("/invites")` under `APIRouter(prefix="/api/admin")`,
-        // and `AdminPage.jsx:547` has always called it by its real name — this
-        // was the one caller that did not, so every invite sent from onboarding
-        // 404'd. The loop reports per-invite failures rather than throwing, so it
-        // surfaced as "all invites failed" instead of as an error.
-        //
-        // `noRetry` is load-bearing, not caution. The response interceptor in
-        // lib/api.js retries 502/503/504 up to three times, and this endpoint
-        // SENDS AN EMAIL. Measured in the browser: one call against a 503 put
-        // FOUR requests on the wire. A gateway 503 in the Railway restart
-        // window — the exact case that retry was written for — arrives after
-        // the backend has already created the invite and emailed the person,
-        // so each retry mails them again. Four identical invitations to a
-        // client is not a transient failure the user can undo.
-        // api.js documents this opt-out for uploads "to avoid double-sending";
-        // an invite is the same hazard with a person on the other end.
-        await api.post('/admin/invites', { email: inv.email, role: inv.role }, { noRetry: true });
+        /**
+         * `POST /v1/org/invites` — the ORGANISATION's own invite endpoint, not
+         * Aekam's platform console.
+         *
+         * This step used to post to `/admin/invites`, which is
+         * `invite_router.py` behind `require_platform_role(*CONSOLE_ROLES)`.
+         * That dependency reads `staging.user_roles WHERE org_id IS NULL`, and
+         * a customer's org_owner has no such row — so the invite step **403'd
+         * for exactly the people who run onboarding**. Aekam staff were the
+         * only ones it worked for, and for them it wrote `org_id NULL`, which
+         * creates an account belonging to no organisation.
+         *
+         * `routers/org_invites.py` is the endpoint that produces an actual
+         * membership: it writes `user_roles` and `org_member_modules` on
+         * acceptance, counts the seat against the org's cap, and refuses to let
+         * an admin mint an owner. It is guarded by `require_org_role`, which
+         * the owner running this wizard passes.
+         *
+         * `noRetry` is load-bearing, not caution, and it carries over. The
+         * response interceptor in lib/api.js retries 502/503/504 up to three
+         * times, and this endpoint SENDS AN EMAIL. Measured in the browser: one
+         * call against a 503 put FOUR requests on the wire. A gateway 503 in
+         * the Railway restart window — the exact case that retry was written
+         * for — arrives after the backend has already created the invite and
+         * emailed the person, so each retry mails them again. Four identical
+         * invitations to a colleague is not a transient failure the user can
+         * undo.
+         */
+        await api.post(
+          '/v1/org/invites',
+          { email: inv.email, org_role: inv.role },
+          { noRetry: true },
+        );
         sent += 1;
       } catch (err) {
         failed.push(`${inv.email}${err?.response?.data?.detail ? ` — ${err.response.data.detail}` : ''}`);

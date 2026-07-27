@@ -1,11 +1,12 @@
-import React from 'react';
-import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
+import { duration, usePressScale, useReducedMotion, TAB } from '../theme/motion';
 
 /**
  * The five-tab bar: Today · Tasks · ＋ · Messages · More.
@@ -58,12 +59,74 @@ export interface BottomBarProps extends BottomTabBarProps {
   badges?: Record<string, number>;
 }
 
+/**
+ * The active-tab indicator, and why it slides.
+ *
+ * `mobile.css:297` draws `.mnav2__ind` — a 30×3px bar along the top edge of the
+ * active tab — and `Mobile App.html:177` renders it **only on Android**
+ * (`screen === k && d.os === 'android'`). That is right: an indicator bar is
+ * Material's convention and iOS tab bars do not have one, so this follows the
+ * platform rather than the file.
+ *
+ * The reference gives it no transition, so the reference's own bar jumps. Its
+ * shared tabs primitive does not — `motion.css:185` `.dm-tabs__ind` transitions
+ * `left` and `width` over `--dur-base` `--ease-emph` — and that is the version
+ * taken here, because a jumping indicator is indistinguishable from two
+ * separate indicators appearing and disappearing.
+ *
+ * `left` is animated rather than `transform: translateX` so the bar tracks tab
+ * boundaries measured in layout units. That means it cannot use the native
+ * driver; it is a 3px bar moving once per press, which is the one case where
+ * that is an acceptable trade.
+ */
+function Indicator({ count, index, color, reduced }: {
+  count: number; index: number; color: string; reduced: boolean;
+}) {
+  const pos = useRef(new Animated.Value(index)).current;
+
+  useEffect(() => {
+    Animated.timing(pos, {
+      toValue: index,
+      duration: duration(TAB.indicator, reduced),
+      easing: TAB.indicatorEase,
+      useNativeDriver: false,
+    }).start();
+  }, [index, reduced, pos]);
+
+  const tabWidth = 100 / count;
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        s.indicator,
+        {
+          backgroundColor: color,
+          width: 30,
+          left: pos.interpolate({
+            inputRange:  [0, 1],
+            outputRange: [`${tabWidth / 2}%`, `${tabWidth * 1.5}%`],
+            // Beyond index 1 the same step repeats, so extrapolation is exactly
+            // right and avoids listing every tab.
+            extrapolate: 'extend',
+          }),
+          marginLeft: -15,
+        },
+      ]}
+    />
+  );
+}
+
 export default function BottomBar({
   state, descriptors, navigation, actionRoute, onAction, badges,
 }: BottomBarProps) {
   const { t } = useTheme();
   const insets = useSafeAreaInsets();
   const isIOS = Platform.OS === 'ios';
+  const reduced = useReducedMotion();
+  // The ＋ is a 56px gradient circle with a shadow and, until now, no press
+  // state whatsoever — the most prominent control in the app and the only one
+  // that gave nothing back on touch.
+  const action = usePressScale(0.94, reduced);
 
   return (
     <View
@@ -80,6 +143,15 @@ export default function BottomBar({
         },
       ]}
     >
+      {!isIOS && (
+        <Indicator
+          count={state.routes.length}
+          index={state.index}
+          color={t.primaryText}
+          reduced={reduced}
+        />
+      )}
+
       {state.routes.map((route, index) => {
         const focused = state.index === index;
         const label = LABELS[route.name] ?? { en: route.name, hi: '' };
@@ -98,19 +170,22 @@ export default function BottomBar({
             <Pressable
               key={route.key}
               onPress={onPress}
+              {...action.handlers}
               accessibilityRole="button"
               accessibilityLabel="Create"
               style={s.actionWrap}
               hitSlop={8}
             >
-              <LinearGradient
-                colors={t.gradient as [string, string, string]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[s.actionPill, { shadowColor: t.primary }]}
-              >
-                <Ionicons name="add" size={26} color={t.onPrimary} />
-              </LinearGradient>
+              <Animated.View style={{ transform: [{ scale: action.scale }] }}>
+                <LinearGradient
+                  colors={t.gradient as [string, string, string]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[s.actionPill, { shadowColor: t.primary }]}
+                >
+                  <Ionicons name="add" size={26} color={t.onPrimary} />
+                </LinearGradient>
+              </Animated.View>
             </Pressable>
           );
         }
@@ -158,6 +233,15 @@ const s = StyleSheet.create({
     alignItems: 'flex-start',
     paddingTop: 8,
     paddingHorizontal: 4,
+  },
+  // mobile.css:297 — `position: absolute; top: 0; width: 30px; height: 3px;
+  // border-radius: 0 0 3px 3px`. Android only; see Indicator.
+  indicator: {
+    position: 'absolute',
+    top: 0,
+    height: 3,
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 3,
   },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'flex-start', gap: 1 },
   // 00 §12 puts the metadata floor at 11px. The Devanagari sub-label sits at

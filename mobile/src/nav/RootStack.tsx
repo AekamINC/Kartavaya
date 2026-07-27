@@ -3,9 +3,11 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../theme/ThemeProvider';
+import { DUR, useReducedMotion } from '../theme/motion';
 import { linking } from './linking';
 import { navigationRef } from './navigationRef';
 import BottomBar from './BottomBar';
+import { withTabTransition } from './TabScene';
 
 // ── Screens ──────────────────────────────────────────────────────────────────
 import TodayScreen       from '../screens/TodayScreen';
@@ -115,6 +117,21 @@ const PahchanTab = createBottomTabNavigator<PahchanTabParamList>();
  */
 const CreateStub = () => null;
 
+/**
+ * Each tab screen wrapped once, at module scope.
+ *
+ * Wrapping inline in the render — `component={withTabTransition(TodayScreen)}` —
+ * would build a NEW component type on every render of MainTabs, and React
+ * remounts on a changed type. Every tab would lose its scroll position and
+ * refetch its list each time the badge count changed.
+ */
+const TodayTab    = withTabTransition(TodayScreen);
+const TasksTab    = withTabTransition(TasksScreen);
+const MessagesTab = withTabTransition(MessagesScreen);
+const MoreTab     = withTabTransition(MoreScreen);
+const ClockTab    = withTabTransition(ClockScreen);
+const MeTab       = withTabTransition(MeScreen);
+
 // ── Main tabs ─────────────────────────────────────────────────────────────────
 function MainTabs() {
   const { unread } = useNotifications();
@@ -133,11 +150,11 @@ function MainTabs() {
           />
         )}
       >
-        <Tab.Screen name="Today"    component={TodayScreen} />
-        <Tab.Screen name="Tasks"    component={TasksScreen} />
+        <Tab.Screen name="Today"    component={TodayTab} />
+        <Tab.Screen name="Tasks"    component={TasksTab} />
         <Tab.Screen name="Create"   component={CreateStub} />
-        <Tab.Screen name="Messages" component={MessagesScreen} />
-        <Tab.Screen name="More"     component={MoreScreen} />
+        <Tab.Screen name="Messages" component={MessagesTab} />
+        <Tab.Screen name="More"     component={MoreTab} />
       </Tab.Navigator>
       <NewTaskSheet visible={showNewTask} onClose={() => setShowNewTask(false)} />
     </>
@@ -161,8 +178,8 @@ function PahchanTabs() {
       {/* Clock is the attendance-only user's whole app: 07 §9. 
           Me is not a reduced Settings — it carries their own reference pair,
           their register, and the retention promise in plain words. */}
-      <PahchanTab.Screen name="Clock" component={ClockScreen} />
-      <PahchanTab.Screen name="Me"    component={MeScreen} />
+      <PahchanTab.Screen name="Clock" component={ClockTab} />
+      <PahchanTab.Screen name="Me"    component={MeTab} />
     </PahchanTab.Navigator>
   );
 }
@@ -182,6 +199,32 @@ function isAttendanceOnly(role?: string | null): boolean {
 export default function RootStack() {
   const { user, loading, logout } = useAuth();
   const { t, scheme }     = useTheme();
+  const reduced           = useReducedMotion();
+
+  /**
+   * Screen push and pop, and the reduced-motion path they never had.
+   *
+   * `createNativeStackNavigator` defaults to the platform push — a full-width
+   * horizontal slide on both iOS and Android — and it does NOT consult
+   * `AccessibilityInfo.isReduceMotionEnabled`. (iOS dims some of its own system
+   * transitions under Reduce Motion; a React Navigation native-stack push is not
+   * one of them.) So every screen in the app slid the width of the display for a
+   * user who had asked it not to.
+   *
+   * The answer is `fade`, not `none`, and `theme/motion.ts` is explicit about
+   * why: `amplitude()` "removes the MOVEMENT while leaving the opacity or colour
+   * change that carried the actual information". A cross-fade has no translation
+   * and no scale. `none` would also be defensible, but it throws away the one
+   * cue that says a NEW screen arrived rather than this one re-rendering.
+   *
+   * `animationDuration` is iOS-only on native-stack. `DUR.slow` is 360ms, which
+   * is within a few ms of UIKit's own push and is now a token rather than the
+   * platform default nobody could name.
+   */
+  const screenAnimation = {
+    animation: (reduced ? 'fade' : 'default') as 'fade' | 'default',
+    animationDuration: DUR.slow,
+  };
 
   if (loading) return <Splash />;
 
@@ -201,7 +244,7 @@ export default function RootStack() {
         },
       }}
     >
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator screenOptions={{ headerShown: false, ...screenAnimation }}>
         {!user ? (
           <Stack.Screen name="Login"  component={LoginScreen} />
         ) : user.role === 'client' ? (
@@ -212,8 +255,16 @@ export default function RootStack() {
               name="Main"
               component={isAttendanceOnly(user.role) ? PahchanTabs : MainTabs}
             />
+            {/* The one screen presented as a sheet rather than pushed, so it
+                keeps `slide_from_bottom` — but reduced motion overrides it to
+                the same cross-fade as everything else. The presentation style
+                is unchanged; only the travel goes. */}
             <Stack.Screen name="TaskDetail" component={TaskDetailScreen}
-              options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+              options={{
+                presentation: 'modal',
+                animation: reduced ? 'fade' : 'slide_from_bottom',
+                animationDuration: DUR.sheet,
+              }} />
             <Stack.Screen name="Board"     component={BoardScreen} />
             <Stack.Screen name="Chat"      component={ChatScreen} />
             {/* Both reached from More. Approvals and Time were tiles that showed
