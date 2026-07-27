@@ -111,20 +111,38 @@ browser is shared — tabs get stolen mid-task. Headless Chrome
 (`chrome.exe --headless=new --screenshot=… --virtual-time-budget=7000`) is
 contention-free.
 
-## Not yet diagnosed — scrolling
+## Scrolling — DIAGNOSED AND FIXED (`699d51f`)
 
-Reported as "not working at all". First hypothesis — `.kv` grid had no
-`grid-template-rows`, so the row sized to content — was **measured and proved
-wrong**: an `auto` row in a definite-height grid still stretches, and
-`.kv__content` scrolls correctly in isolation. That change was reverted rather
-than shipped, because a wrong fix with a confident comment is worse than none.
+**`.kv` had no `grid-template-rows`.** It is `display:grid` with `height:100vh`,
+so the single implicit row was `auto` and sized to its TALLEST ITEM rather than
+to the 100vh box. Measured on a 720px viewport with a long page and a long nav:
+the row computed to **3078px**. `.kv__main` and `.side` inherited it, so
+`.kv__content` and `.side__nav` were each exactly as tall as their own content —
+their `overflow-y: auto` had nothing left to scroll — while `overflow: hidden` on
+`.kv` silently clipped everything past the fold.
 
-Ruled out so far:
-- `.kv` / `.kv__main` / `.kv__content` in isolation — scrolls (probe measured
-  `contentScrollH 3000` vs `clientH 720`).
-- The landing page — the document scrolls normally.
-- `document.body` scroll locks in `modal.jsx`, `Sheet.jsx`, `SlideOver.jsx` —
-  the shell scrolls `.kv__content`, not body, so a body lock cannot cause it.
+Measured A/B on one loaded page:
 
-Needs reproduction inside the authenticated shell — which page, which viewport
-width, and whether a drawer or sheet had been opened first.
+| `grid-template-rows` | `.kv__content` | `.side__nav` |
+|---|---|---|
+| `auto` → 3078px | **cannot scroll** | **cannot scroll** |
+| `minmax(0, 1fr)` → 720px | 699 / 3056 ✓ | 666 / 3024 ✓ |
+
+`minmax(0, 1fr)` and not a bare `1fr` — `1fr` floors at min-content, which is the
+same bug wearing a different hat.
+
+### The methodology lesson, which is the reusable part
+
+**This exact diagnosis was made, shipped, and then REVERTED** — because a probe
+reported the row already resolving to 720px on its own. The probe was the thing
+that was wrong: it loaded **two of the four stylesheets** `App.jsx` imports and
+left the sidebar **empty**, so nothing was tall enough to stretch the row and the
+bug could not appear. A reassuring measurement beat a correct hypothesis.
+
+What made it reproducible was the owner saying the **sidebar** would not scroll
+either. One clipped region can be a page bug; two is the shell.
+
+If you build a probe, make it faithful: **all four stylesheets in `App.jsx` order**
+(`index.css`, `kartavaya-design.css`, `editorial.css`, `settings.css`) and real
+content in every region you are not testing. An unfaithful probe does not fail
+loudly — it agrees with you.
