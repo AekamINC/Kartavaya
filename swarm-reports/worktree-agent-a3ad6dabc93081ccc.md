@@ -259,7 +259,7 @@ four-second auto-dismiss ended as a disappearance rather than a departure.
 
 | | BEFORE | AFTER |
 |---|---|---|
-| entrance | `tstIn` `0.22s` `--ease-emph` | unchanged |
+| entrance | `tstIn` `0.22s` `var(--ease-emph)` | unchanged (the curve it resolves to moved — §7.4) |
 | exit | **none — removed in one frame** | `tstOut` `0.14s` `cubic-bezier(.4,0,1,1)` (`--dur-fast` `--ease-exit`) |
 | exit travel | — | `translateX(12px)` — less than the 16px entrance (§7.3) |
 | pointer events during exit | — | `none` |
@@ -323,11 +323,16 @@ Two traps, both found by measuring:
    explicit that rows reorder with **no animation** — "animating a 40-row reorder is nausea, not
    polish."
 
-4. **`--ease-emph` diverges from the spec.** Build: `cubic-bezier(.16, 1, .3, 1)`. `MOTION-SPEC.md`
-   §2 and reference `motion.css:31`: `cubic-bezier(.2, 0, 0, 1)` — which the build declares as
-   `--ease-standard`. So the build has the spec's `--ease-emph` under a different name and an
-   expo-out curve under the real one. Everything is internally consistent, so this is a decision for
-   the token owner, not a defect I should have silently "corrected".
+4. ~~**`--ease-emph` diverges from the spec.**~~ **STALE — fixed on staging while I was working.**
+   I measured `cubic-bezier(.16, 1, .3, 1)` against `MOTION-SPEC.md` §2's `cubic-bezier(.2, 0, 0, 1)`
+   and filed it as a decision for the token owner rather than correcting it. A sibling landed
+   `eb07394 fix(motion): the emphasised curve was expo-out, and the tick never drew` in the meantime.
+   Re-measured after rebasing onto `origin/staging`: `--ease-emph` now resolves to
+   `cubic-bezier(.2, 0, 0, 1)`. **Left in this report rather than deleted** — the ledger's own rule is
+   that half of all claims go stale, and a finding that was true when measured and false an hour
+   later is worth showing as exactly that. It also moves the toast entrance in §5: `tstIn` measured
+   `cubic-bezier(0.16, 1, 0.3, 1)` before the rebase and `cubic-bezier(.2, 0, 0, 1)` after, from the
+   same unchanged declaration of `var(--ease-emph)`.
 
 5. **`.k-stackbar__seg` transitions `flex` over `--dur-slow`** (Today, Project status). `flex-grow`
    is a layout property: every frame re-runs layout for the whole bar. `animations.css`'s own
@@ -351,6 +356,31 @@ Two traps, both found by measuring:
 | `--motion-scale` is a build invention and better than the reference | **HELD, kept** | the split is what lets amplitude collapse while `animationend` still fires — now demonstrated by the toast exit under reduce |
 | Reading CSS gives the wrong answer here | **HELD, twice** | `.k-trow`'s transition is in a different file from its rules; `.k-col-resize`'s is on a pseudo-element |
 | The reference HTML files are runnable harnesses | **HELD** | rendered; `IxViews.jsx` §9–10 is the source for the tick, the settle flash and the pending state |
+
+---
+
+## 8b · Gates, rebased onto `origin/staging` @ `17d8998`
+
+Run from `frontend/`, unpiped, exit codes captured separately:
+
+```
+check-tokens          340 declared, 234 referenced, 0 missing                    exit 0
+check-classes         2130 selectors, 1453 classes used, 0 missing a rule        exit 0
+check-accent-contrast ok                                                          exit 0
+check-component-parity                                                            exit 0
+check-touch-targets   3245 rules, no control under 44px without a mobile raise    exit 0
+check-contrast        FAILED                                                      exit 1
+```
+
+**`check-contrast` fails on clean `origin/staging` too — it is not mine.** Verified rather than
+assumed: `git archive origin/staging frontend/src/styles` into a scratch tree and ran the script
+there — same exit 1. The ten failing roots are `.av`, `.cbx`, `.k-actitem__verb--approved`,
+`--assigned`, `--attached`, `.k-apcard__kind--creative`, `.k-badge`, `.k-pill-high`,
+`.k-rule__status--on`, `.wahdr__ic`. None is a selector this branch adds or edits, and every rule I
+added (`.k-trow__tick`, `.k-trow.is-*`, `.k-table__empty`, `.tst.is-out`, `.k-segctrl__btn`) is
+absent from the failure list. Unowned — worth someone's morning.
+
+All measurements in §2–§5 were **re-taken after the rebase** and hold unchanged.
 
 ---
 
