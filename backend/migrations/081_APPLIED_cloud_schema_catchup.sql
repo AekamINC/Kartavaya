@@ -1,0 +1,64 @@
+-- APPLIED to the live Supabase project (toacecaewujfxjfrjwco) on 2026-07-27.
+-- Recorded here so the change is not undocumented drift. Do not re-run blindly;
+-- every statement was written IF NOT EXISTS, so a re-run is a no-op.
+--
+-- WHY: comparing the live cloud schema against both the local database and the
+-- backend's own queries found tables that live handlers SELECT from and INSERT
+-- into which existed in no schema at all. Each would have been a 500 the first
+-- time a tester opened the feature.
+--
+-- Part A — 9 tables that existed locally (built from migrations 023, 024, 059)
+-- but were never applied to cloud. DDL was dumped from the local database
+-- rather than re-derived, so the shape matches what the code was written
+-- against exactly:
+--
+--     graha_automations, graha_automation_logs, graha_custom_fields,
+--     graha_scoring_rules, graha_territories, graha_web_forms,
+--     graha_web_form_submissions, graha_contact_merges, hub_skill_feedback
+--
+-- Part B — the columns those same migrations add to EXISTING tables. Ten of
+-- eleven were missing; only hub_client_skills.org_id was already present:
+--
+--     graha_contacts  custom_data, territory_id, merged_into_id,
+--                     email_norm and phone_norm (both GENERATED ALWAYS STORED)
+--     graha_deals     custom_data, territory_id
+--     hub_skill_templates  skill_type, scope
+--     hub_client_skills    last_run_at, and client_id DROP NOT NULL
+--
+-- Part C — 5 tables referenced by live code and present in NO schema, local or
+-- cloud, and in no migration. Their columns are taken from the queries that use
+-- them, which state the contract exactly; nothing was invented:
+--
+--     staging.projects            graha.py:1438  SELECT p.id,name,status,created_at
+--                                                WHERE org_id, contact_id, is_active
+--     staging.approval_requests   reminder_service.py:68  SELECT id, org_id, title,
+--                                                current_step_approver_id, status, created_at
+--     staging.graha_inbound_emails graha.py:1490 INSERT (org_id, sender, subject,
+--                                                body_text, parsed_data, status)
+--     staging.hub_oauth_states    hub_publish.py:92 INSERT (state, data) with
+--                                                ON CONFLICT (state) — hence state is the PK
+--     staging.graha_tickets       dristi.py:944 report source; columns priority,
+--                                                status, category, created_at, resolved_at
+--
+-- None of these handlers guards with `to_regclass`, so all five were hard
+-- failures rather than degraded behaviour. Creating them empty turns a 500 into
+-- a correct empty result.
+--
+-- SAFETY: every statement is additive. No existing row was read, modified or
+-- deleted. Production (`main`) has no Graha, Srijan or Dristi module and does
+-- not touch `staging.*`, so production behaviour is unchanged.
+--
+-- STILL ABSENT AND DELIBERATELY SO — do not create these without a decision:
+--     staging.org_module_approvers      PROPOSED_074, awaiting approval
+--     staging.org_security              org_security.py already treats it as absent
+--     staging.platform_support_sessions org_resolver.py documents it as not existing
+--     staging.user_totp / user_mfa_factors  probed via TOTP_TABLES, MFA not shipped
+--     staging.account_requests          referenced only in a comment
+--
+-- Verified after applying: staging 200 -> 214 tables, all 14 present, all 5
+-- graha_contacts columns present.
+--
+-- The exact DDL executed is in the two Supabase migrations named
+-- `add_missing_graha_and_skill_feedback_tables` and
+-- `add_missing_graha_dedupe_and_skill_columns` and
+-- `add_five_tables_referenced_by_code_but_absent`.
