@@ -9,7 +9,7 @@ import React, { useState } from 'react';
 import { api } from '../../../lib/api';
 import { useToast } from '../../../components/ui/toast';
 import { Empty } from '../../../components/editorial';
-import { Resource, StatusPill, errText, words } from '../_shared';
+import { Resource, StatusPill, errText, words, creditLabel } from '../_shared';
 import { SkillGlyph, CATEGORY_TONE, CATEGORY_LABELS, parseSteps, estimateCredits } from './_shared';
 
 export default function CatalogTab({ clientId, state, available, costs, canManage, onCreate, onChanged }) {
@@ -84,7 +84,7 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
 
                 <div className="hb-cap hb-mono sk-card__cost">
                   {steps.length} {steps.length === 1 ? 'step' : 'steps'}
-                  {est != null && <> · ~{est} credits per run</>}
+                  {est != null && <> · ~{creditLabel(est)} per run</>}
                 </div>
 
                 <div className="sk-card__act">

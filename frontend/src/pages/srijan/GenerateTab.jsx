@@ -4,7 +4,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { errText } from '../hub/_shared';
 import {
-  QUICK_SKILLS, PLATFORMS, TONES, LANGUAGES, PLATFORM_HINTS, Markdown,
+  QUICK_SKILLS, PLATFORMS, TONES, LANGUAGES, PLATFORM_HINTS, Markdown, creditLabel,
 } from './_shared';
 
 const BLANK = { topic: '', platform: 'Instagram', tone: 'Professional', language: 'en', extra: '', with_image: true };
@@ -41,7 +41,7 @@ export default function GenerateTab({ credits, costs, onSpent }) {
       });
       setResult(r.data);
       onSpent?.();
-      pushToast({ title: `Generated — ${r.data.credits_used} credits`, type: 'success' });
+      pushToast({ title: `Generated — ${creditLabel(r.data.credits_used)}`, type: 'success' });
     } catch (err) {
       setError(errText(err, 'Generation failed.'));
     } finally { setBusy(false); }
@@ -64,7 +64,7 @@ export default function GenerateTab({ credits, costs, onSpent }) {
                 </span>
                 <span className="sr-pick__d">{s.desc}</span>
                 <span className="sr-pick__c hb-mono">
-                  {c != null ? `${c} credits` : 'cost unavailable'}
+                  {c != null ? creditLabel(c) : 'cost unavailable'}
                   {s.hasImage && ' · image optional'}
                 </span>
               </button>
@@ -249,7 +249,7 @@ function Result({ result }) {
       <div className="sr-res__body"><Markdown text={result.text} /></div>
 
       <div className="sr-res__foot">
-        <span className="hb-cap hb-mono">{result.credits_used} credits used</span>
+        <span className="hb-cap hb-mono">{creditLabel(result.credits_used)} used</span>
         <span className="hb-cap">Saved to the Content tab.</span>
       </div>
     </section>

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { api } from '../../../lib/api';
 import { useToast } from '../../../components/ui/toast';
 import { Empty } from '../../../components/editorial';
-import { Resource, StatusPill, errText, words } from '../_shared';
+import { Resource, StatusPill, errText, words, creditLabel } from '../_shared';
 import { SkillGlyph, CATEGORY_TONE, CATEGORY_LABELS, parseSteps, extractVariables, estimateCredits } from './_shared';
 
 export default function AssignedTab({ clientId, state, costs, onBrowse, onRan }) {
@@ -27,7 +27,7 @@ export default function AssignedTab({ clientId, state, costs, onBrowse, onRan })
     try {
       const r = await api.post(`/v1/hub/clients/${clientId}/skills/${skill.id}/run`, { variables: vars });
       pushToast({
-        title: `${skill.template_name} finished — ${r.data.steps_completed} items, ${r.data.credits_used} credits`,
+        title: `${skill.template_name} finished — ${r.data.steps_completed} items, ${creditLabel(r.data.credits_used)}`,
         type: 'success',
       });
       onRan?.();
@@ -81,7 +81,7 @@ export default function AssignedTab({ clientId, state, costs, onBrowse, onRan })
                       tone={CATEGORY_TONE[skill.category]} />
                   )}
                   <span className="hb-cap hb-mono">
-                    {est != null ? `~${est} credits` : 'cost unavailable'}
+                    {est != null ? `~${creditLabel(est)}` : 'cost unavailable'}
                   </span>
                 </span>
               </div>
@@ -119,7 +119,7 @@ export default function AssignedTab({ clientId, state, costs, onBrowse, onRan })
                   <div className="hb-form__foot hb-form__foot--end">
                     <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={() => setRunFor(null)}>Cancel</button>
                     <button type="submit" className="k-btn k-btn--primary hb-btn--sm">
-                      {est != null ? `Run · ${est} credits` : 'Run'}
+                      {est != null ? `Run · ${creditLabel(est)}` : 'Run'}
                     </button>
                   </div>
                 </form>

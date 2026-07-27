@@ -72,6 +72,7 @@ export default function TodayPage({ teams = [] }) {
   const [loading,  setLoading]  = useState(true);
   const [tasks,    setTasks]    = useState([]);
   const [activity, setActivity] = useState([]);
+  const [activityErr, setActivityErr] = useState(null);
   const [verse,    setVerse]    = useState(null);
   const [finStats, setFinStats] = useState(null);
   // A FAILED LOAD IS NOT AN EMPTY BOARD. `/tasks` rejecting used to land in a
@@ -129,11 +130,18 @@ export default function TodayPage({ teams = [] }) {
   // visibility from team_members UNION project_assignments, and platform staff
   // from the org's teams — a user with project assignments but no team row has
   // a feed and was shown "No activity in the last few days" instead of it.
-  useEffect(() => {
+  // The `.catch(() => {})` this replaces left `activity` at `[]`, and TeamPulse
+  // reads an empty list as "No activity in the last few days." — a statement
+  // about the team derived from a rejected promise. Every other panel in this
+  // column already distinguishes its three states; this one silently did not.
+  const loadActivity = useCallback(() => {
+    setActivityErr(null);
     api.get('/activity/feed', { params: { limit: 6 } })
        .then(r => setActivity(Array.isArray(r.data) ? r.data : []))
-       .catch(() => {});
+       .catch(e => { setActivity([]); setActivityErr(e); });
   }, []);
+
+  useEffect(() => { loadActivity(); }, [loadActivity]);
 
   // team_id → name. `/api/tasks` returns `team_id` and never `team_name`
   // (`server.py` list_tasks selects column_name and assignee_names, not the
@@ -408,7 +416,8 @@ export default function TodayPage({ teams = [] }) {
               <ApprovalsCard onOpenApprovals={() => navigate('/approvals')} />
 
               {!error && <UpcomingWeek tasks={withTeam(derived.upcoming)} onOpenTask={openTask} />}
-              <TeamPulse activity={activity} onOpenActivity={() => navigate('/activity')} />
+              <TeamPulse activity={activity} error={activityErr} onRetry={loadActivity}
+                onOpenActivity={() => navigate('/activity')} />
               <Citation
                 sanskrit={verse?.sanskrit || 'कर्मण्येवाधिकारस्ते मा फलेषु कदाचन'}
                 english={verse?.english || 'You have a right to action alone, never to its fruits.'}

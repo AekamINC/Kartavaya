@@ -5,7 +5,7 @@ import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import { Resource, StatusPill, useList, errText } from '../hub/_shared';
 import { SkillGlyph, CATEGORY_TONE, CATEGORY_LABELS, parseSteps, extractVariables, estimateCredits } from '../hub/skills/_shared';
-import { AGENT_LABELS, LANGUAGES, words } from './_shared';
+import { AGENT_LABELS, LANGUAGES, words, creditLabel } from './_shared';
 
 export default function SkillsTab({ canAssign, costs, onSpent }) {
   const { pushToast } = useToast();
@@ -150,7 +150,7 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
 
                       <div className="hb-form__foot">
                         <span className="hb-cap">
-                          {est != null ? `About ${est} credits${withImages ? ', more with images' : ''}` : 'Cost table unavailable'}
+                          {est != null ? `About ${creditLabel(est)}${withImages ? ', more with images' : ''}` : 'Cost table unavailable'}
                         </span>
                         <button type="submit" className="k-btn k-btn--primary" disabled={busyId === skill.id}>
                           {busyId === skill.id ? 'Running…' : 'Run now'}
@@ -159,7 +159,7 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
 
                       {result?.id === skill.id && (
                         <div className="note note--info sr-done" role="status">
-                          <b>Finished — {result.steps_completed} steps, {result.credits_used} credits.</b>{' '}
+                          <b>Finished — {result.steps_completed} steps, {creditLabel(result.credits_used)}.</b>{' '}
                           {result.content_ids?.length || 0} items are waiting in the Content tab.
                         </div>
                       )}
@@ -200,7 +200,7 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
                     <p className="hb-cap sk-card__d">{t.description || 'No description.'}</p>
                     <div className="hb-cap hb-mono sk-card__cost">
                       {steps.length} {steps.length === 1 ? 'step' : 'steps'}
-                      {est != null && <> · ~{est} credits per run</>}
+                      {est != null && <> · ~{creditLabel(est)} per run</>}
                     </div>
                     <div className="sk-card__act">
                       <button type="button" className="k-btn k-btn--primary hb-btn--sm sk-card__go"

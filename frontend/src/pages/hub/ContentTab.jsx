@@ -12,6 +12,7 @@ import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import {
   AGENT_LABELS, Resource, StatusPill, useList, errText, shortStamp, words,
+  creditLabel,
 } from './_shared';
 
 const FILTERS = [
@@ -104,7 +105,7 @@ export default function ContentTab({ clientId, onReviewed }) {
 
                 <div className="hb-item__foot">
                   <span className="hb-cap hb-mono">
-                    {item.credits_used != null ? `${item.credits_used} credits` : ''}
+                    {item.credits_used != null ? creditLabel(item.credits_used) : ''}
                   </span>
                   {(item.status === 'draft' || item.status === 'pending_review') && (
                     <span className="hb-item__act">

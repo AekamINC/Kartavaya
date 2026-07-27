@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card } from '../../components/editorial';
 import { Avatar } from '../../components/ui';
+import { errorKind } from '../../components/ui/ErrorState';
 import { relTime } from '../../lib/utils';
 
 /**
@@ -29,7 +30,15 @@ import { relTime } from '../../lib/utils';
  */
 const verbLabel = t => (t ? String(t).replace(/_/g, ' ') : 'updated');
 
-export default function TeamPulse({ activity = [], onOpenActivity }) {
+/**
+ * `error` is not decoration. `/activity/feed` was fetched with a bare
+ * `.catch(() => {})`, so a failed request left `activity` at its initial `[]`
+ * and this card stated "No activity in the last few days." — a claim about the
+ * team, made from a rejected promise, sitting beside three panels on the same
+ * page that each say plainly that they could not load. Wording and markup are
+ * `ApprovalsCard`'s, so the two failures on this column read as one voice.
+ */
+export default function TeamPulse({ activity = [], error = null, onRetry, onOpenActivity }) {
   return (
     <Card
       title="Team pulse"
@@ -37,7 +46,20 @@ export default function TeamPulse({ activity = [], onOpenActivity }) {
       right={<button className="k-link" onClick={onOpenActivity}>All activity →</button>}
     >
       <div className="k-activity">
-        {activity.length === 0 ? (
+        {error ? (
+          <div className="k-approvals__failed" role="alert">
+            <p className="k-today__quiet">
+              {errorKind(error) === 'offline'
+                ? 'We could not reach the server, so we cannot say what the team has been doing.'
+                : errorKind(error) === 'denied'
+                  ? 'You do not have access to the activity feed in this workspace.'
+                  : 'Activity did not load. This is not a claim that nothing happened.'}
+            </p>
+            {onRetry && errorKind(error) !== 'denied' && (
+              <button className="k-link" onClick={onRetry}>Try again</button>
+            )}
+          </div>
+        ) : activity.length === 0 ? (
           <p className="k-today__quiet">No activity in the last few days.</p>
         ) : activity.slice(0, 6).map((a, i) => {
           const actor = a.actor_name || a.actor || 'Someone';

@@ -87,6 +87,40 @@ export const QUICK_SKILLS = [
 /** `social_media` → `social media`. */
 export const words = s => String(s ?? '').replace(/_/g, ' ');
 
+/**
+ * `1 credit` / `3 credits`.
+ *
+ * The served cost table has a single-credit entry in it, so the bare
+ * `${n} credits` template printed "1 credits" on the WhatsApp preset every time
+ * the Generate tab loaded. Mirrors the helper of the same name in `hub/_shared`.
+ *
+ * NOT called `credits`: `GenerateTab` and `CreditsTab` both take a prop by that
+ * name, and a destructured parameter shadows a module import silently — the
+ * helper would become whatever object the parent passed.
+ */
+export const creditLabel = n => `${n} credit${Math.abs(Number(n)) === 1 ? '' : 's'}`;
+
+/**
+ * A scraper's `input_schema` as an array, whatever shape it arrives in.
+ *
+ * The column is jsonb and comes back EITHER decoded or as a JSON string —
+ * `routers/scrapers.py:159` guards for exactly that (`if isinstance(schema,
+ * str): schema = json.loads(schema)`) before it iterates. The catalog did not,
+ * so `(s.input_schema || []).filter(...)` threw `filter is not a function` the
+ * moment such a row was clicked, and because the throw happened during render
+ * it unmounted the whole Srijan page rather than just the dialog.
+ *
+ * Same contract as `parseSteps` in `hub/skills/_shared` — array, string, or
+ * anything else, out comes an array.
+ */
+export function parseSchema(schema) {
+  if (Array.isArray(schema)) return schema;
+  if (typeof schema === 'string') {
+    try { const v = JSON.parse(schema); return Array.isArray(v) ? v : []; } catch { return []; }
+  }
+  return [];
+}
+
 export function stamp(iso) {
   if (!iso) return '—';
   const d = new Date(iso);

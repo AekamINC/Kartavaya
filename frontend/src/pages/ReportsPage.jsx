@@ -349,6 +349,18 @@ function SchedulesPanel({ teams }) {
 export default function ReportsPage({ teams: propTeams }) {
   const [teams,      setTeams]      = useState(Array.isArray(propTeams) ? propTeams : []);
   const [allMembers, setAllMembers] = useState({});   // { team_id: [{user_id, display_name}] }
+  /**
+   * Project ids whose `/teams/{id}/members` call FAILED, kept apart from ids
+   * that simply have not answered yet.
+   *
+   * Without this the catch below folded a failure into `members: []`, and the
+   * panel's only non-empty branch was `uniqueMembers.length === 0 ? 'Loading
+   * members…'` — so a 500 left "Loading members…" on screen permanently, and a
+   * project that genuinely has no members said the same thing. A spinner that
+   * never resolves is the one failure mode a person will wait through instead
+   * of retrying.
+   */
+  const [memberErrs, setMemberErrs] = useState({});   // { team_id: true }
   const [kind,       setKind]       = useState('weekly');
   const [from,       setFrom]       = useState(WEEK_AGO);
   const [to,         setTo]         = useState(TODAY);
@@ -385,22 +397,38 @@ export default function ReportsPage({ teams: propTeams }) {
   }, [kind]);
 
   // Fetch members for any newly-selected projects
-  useEffect(() => {
-    const unloaded = projectIds.filter(id => !allMembers[id]);
-    if (!unloaded.length) return;
+  const loadMembers = useCallback((ids) => {
+    if (!ids.length) return;
+    setMemberErrs(prev => {
+      const next = { ...prev };
+      ids.forEach(id => { delete next[id]; });
+      return next;
+    });
     Promise.all(
-      unloaded.map(id =>
+      ids.map(id =>
         api.get(`/teams/${id}/members`)
           .then(r => ({ id, members: Array.isArray(r.data) ? r.data : [] }))
-          .catch(() => ({ id, members: [] }))
+          .catch(() => ({ id, failed: true }))
       )
     ).then(results => {
       setAllMembers(prev => {
         const next = { ...prev };
-        results.forEach(({ id, members }) => { next[id] = members; });
+        results.forEach(({ id, members, failed }) => { if (!failed) next[id] = members; });
         return next;
       });
+      const failedIds = results.filter(r => r.failed).map(r => r.id);
+      if (failedIds.length) {
+        setMemberErrs(prev => {
+          const next = { ...prev };
+          failedIds.forEach(id => { next[id] = true; });
+          return next;
+        });
+      }
     });
+  }, []);
+
+  useEffect(() => {
+    loadMembers(projectIds.filter(id => !allMembers[id] && !memberErrs[id]));
   }, [projectIds]); // eslint-disable-line
 
   // Init member selection once members load
@@ -454,6 +482,11 @@ export default function ReportsPage({ teams: propTeams }) {
       projectIds.flatMap(id => allMembers[id] || []).map(m => [m.user_id, m])
     ).values(),
   ];
+
+  // A selected project that has neither answered nor failed is still in flight;
+  // one that failed is not going to arrive on its own.
+  const membersFailed  = projectIds.some(id => memberErrs[id]);
+  const membersPending = projectIds.some(id => !allMembers[id] && !memberErrs[id]);
 
   const rangeLabel    = from === to ? fmtDate(from) : `${fmtDate(from)} — ${fmtDate(to)}`;
   const sectionsOn    = Object.values(sections).filter(Boolean).length;
@@ -600,10 +633,24 @@ export default function ReportsPage({ teams: propTeams }) {
               <button className="gr__block-action" onClick={() => setMemberIds(uniqueMembers.map(m => m.user_id))}>All</button>
               <button className="gr__block-action" onClick={() => setMemberIds([])}>None</button>
             </div>
+            {/* Four outcomes, not two: nothing chosen · still arriving ·
+                failed · genuinely nobody. The last three all read "Loading
+                members…" before, so a failure was indistinguishable from a
+                slow network and from an empty project. */}
             {projectIds.length === 0 ? (
               <p className="rep-note">Select a project above first.</p>
-            ) : uniqueMembers.length === 0 ? (
+            ) : membersFailed ? (
+              <p className="rep-note" role="alert">
+                The member list did not load, so this report cannot be scoped by person yet.{' '}
+                <button type="button" className="k-link"
+                  onClick={() => loadMembers(projectIds.filter(id => memberErrs[id]))}>
+                  Try again
+                </button>
+              </p>
+            ) : membersPending ? (
               <p className="rep-note">Loading members…</p>
+            ) : uniqueMembers.length === 0 ? (
+              <p className="rep-note">No members on the selected projects.</p>
             ) : (
               <div className="gr__people">
                 {uniqueMembers.map((m, i) => (
