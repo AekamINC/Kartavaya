@@ -149,6 +149,11 @@ export default function TabMembers({ isOwner, selfUserId }) {
   const [addRole, setAddRole] = useState('org_member');
   const [adding, setAdding] = useState(false);
 
+  // Invitations sent but not yet accepted. They occupy a seat, so they belong
+  // beside the member list rather than on a screen of their own — an org at its
+  // limit needs to see why without going looking.
+  const [invites, setInvites] = useState([]);
+
   // `null` means "not looked up", which is what the matrix needs to tell apart
   // from "nothing is subscribed". Fetched on the first switch to the matrix
   // rather than on mount: the list view does not use it, and a parallel request
@@ -169,7 +174,16 @@ export default function TabMembers({ isOwner, selfUserId }) {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // A failure leaves the list empty rather than raising: pending invites are
+  // context for the member list, not the point of the screen, and an org that
+  // has never invited anyone is the common case and looks identical.
+  const loadInvites = useCallback(() => (
+    api.get('/v1/org/invites')
+      .then(r => setInvites(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setInvites([]))
+  ), []);
+
+  useEffect(() => { load(); loadInvites(); }, [load, loadInvites]);
 
   const showMatrix = () => {
     setView('matrix');
@@ -223,6 +237,17 @@ export default function TabMembers({ isOwner, selfUserId }) {
     },
   });
 
+  /**
+   * Add if they already have an account, invite if they do not.
+   *
+   * `POST /v1/org/members` refuses an email with no account, and until now that
+   * was the end of the road: the only invite endpoint was Aekam's platform
+   * console, so bringing in a genuinely new person meant asking Aekam. The 404
+   * is the signal that this is a new person, not an error to report.
+   *
+   * The two outcomes are told apart in the toast, because they are genuinely
+   * different — one person can sign in now, the other has mail waiting.
+   */
   const addMember = async () => {
     if (!addEmail.trim()) return;
     setAdding(true);
@@ -233,9 +258,35 @@ export default function TabMembers({ isOwner, selfUserId }) {
       pushToast({ type: 'success', title: `${addEmail} added as ${String(res.data.role).replace('_', ' ')}` });
       setAddEmail(''); setAddMobile('');
       load();
+      loadInvites();
     } catch (err) {
-      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to add member' });
+      if (err?.response?.status !== 404) {
+        pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to add member' });
+        setAdding(false);
+        return;
+      }
+      try {
+        await api.post('/v1/org/invites', { email: addEmail.trim(), org_role: addRole });
+        pushToast({ type: 'success', title: `Invitation sent to ${addEmail}` });
+        setAddEmail(''); setAddMobile('');
+        loadInvites();
+      } catch (inviteErr) {
+        pushToast({
+          type: 'error',
+          title: inviteErr?.response?.data?.detail || 'Failed to invite',
+        });
+      }
     } finally { setAdding(false); }
+  };
+
+  const revokeInvite = async (inv) => {
+    try {
+      await api.delete(`/v1/org/invites/${inv.invite_id}`);
+      pushToast({ type: 'success', title: `Invitation to ${inv.email} revoked` });
+      loadInvites();
+    } catch (err) {
+      pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to revoke' });
+    }
   };
 
   const openGrants = (m) => setEditing({ member: m, draft: m.grants.map(g => ({ ...g })) });
@@ -325,10 +376,11 @@ export default function TabMembers({ isOwner, selfUserId }) {
       </section>
 
       <section className="st__group">
-        <h2 className="st__gt">Add a member</h2>
+        <h2 className="st__gt">Add or invite a member</h2>
         <p className="of__h" style={{ marginBottom: 12 }}>
-          They need a Kartavaya account already. Adding them here places them in this
-          organisation with no module access until you grant it.
+          If they already have a Kartavaya account they join straight away. If they
+          do not, we send them an invitation. Either way they arrive with no module
+          access until you grant it.
         </p>
         <div className="of">
           <div className="of__f">
@@ -350,11 +402,39 @@ export default function TabMembers({ isOwner, selfUserId }) {
           </div>
           <div className="of__f" style={{ justifyContent: 'flex-end' }}>
             <Button variant="fill" onClick={addMember} disabled={adding || !addEmail.trim()}>
-              {adding ? 'Adding…' : 'Add member'}
+              {adding ? 'Working…' : 'Add or invite'}
             </Button>
           </div>
         </div>
       </section>
+
+      {/* Pending invitations sit beside the members because they OCCUPY A SEAT.
+          An org at its limit needs to see the three unaccepted invitations that
+          are holding places, without going to look for them. */}
+      {invites.length > 0 && (
+        <section className="st__group">
+          <h2 className="st__gt">Invited · {invites.length}</h2>
+          <p className="of__h" style={{ marginBottom: 12 }}>
+            Sent but not yet accepted. Each one holds a seat until it is accepted
+            or revoked.
+          </p>
+          <div className="of">
+            {invites.map(inv => (
+              <div key={inv.invite_id} className="of__f"
+                style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{inv.email}</div>
+                  <div className="of__h" style={{ margin: 0 }}>
+                    {String(inv.org_role || 'org_member').replace('org_', '')}
+                    {inv.expires_at ? ` · expires ${new Date(inv.expires_at).toLocaleDateString()}` : ''}
+                  </div>
+                </div>
+                <Button variant="ghost" onClick={() => revokeInvite(inv)}>Revoke</Button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <Sheet
         open={Boolean(editing)}
