@@ -122,10 +122,16 @@ test('the regression screens do not default data to an empty array', () => {
   // `const { data = [] }` is the exact shape that erased the failure. `?? []`
   // applied to `query.data` keeps `query.data === undefined` observable, which
   // is what `hasData` is computed from.
+  //
+  // Both spellings are caught. The renamed form `{ data: tasks = [] }` is the
+  // one that actually appears in this codebase's style and the first version of
+  // this guard missed it — the A/B run reverted the fix in exactly that shape
+  // and the suite stayed green.
+  const destructuredDefault = /\{[^{}]*\bdata\s*(?::\s*[A-Za-z_$][\w$]*)?\s*=\s*\[\s*\]/;
   for (const file of REGRESSION_SCREENS) {
     const code = readCode(file);
     assert.doesNotMatch(
-      code, /\{[^}]*\bdata\s*=\s*\[\s*\][^}]*\}\s*=\s*use(Query|InfiniteQuery)/,
+      code, destructuredDefault,
       `${file} destructures data with an [] default, which hides a failed fetch`,
     );
   }
