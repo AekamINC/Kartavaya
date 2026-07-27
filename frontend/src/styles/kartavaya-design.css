@@ -233,10 +233,19 @@
   --primary:              #04837A;
   --primary-hover:        #026B64;
   /* --primary is 4.04:1 on --bg. It is a FILL — buttons, toggles, checkboxes,
-     active bars — where it pairs with --on-primary at 5.1:1. Any primary-
-     coloured TEXT uses --primary-text at 5.2:1 (00 §7, 23 contrast table).
-     applyPrefs overwrites this per accent with a measured value; the literal
-     here is the default teal, and the value that applies before JS runs. */
+     active bars — where it pairs with --on-primary at 4.63:1. Any primary-
+     coloured TEXT uses --primary-text, 5.56:1 (00 §7).
+     TWO NUMBERS HERE WERE WRONG, and `23-accessibility.md`'s contrast table is
+     where both came from. It claims 5.1 for the --on-primary pair (measured
+     4.63 — it overstates by 0.47, so the margin is half what the table says)
+     and 5.2 for --primary-text (measured 5.56 — it understates). Recorded as a
+     spec defect rather than quietly corrected in one place, because the table
+     is what the next person will read.
+     And the caveat below matters more than either: applyPrefs overwrites BOTH
+     --primary and --on-primary per accent, so every ratio on this line
+     describes the pre-JS default and nothing else. The pair that actually
+     renders at the default teal is white on acc.mid #00897f, which is 4.30.
+     scripts/check-accent-contrast.mjs measures the 48 that ship. */
   --primary-text:         #046B64;
   --on-primary:           #FFFFFF;
   --primary-container:    #B4F1E8;
