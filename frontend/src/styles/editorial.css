@@ -923,9 +923,27 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-btn:active { transform: translateY(1px); }
 .k-btn--sm { padding: 7px 12px; font-size: 12.5px; }
 .k-btn--primary {
-  background: var(--k-grad);
-  /* Was #fff. --on-primary is white in light and #00332F in dark, and the
-     accent gradient is the light mint there — white on it is 1.8:1. */
+  /* FLAT, because that is what the design says and because the gradient failed
+     contrast at its own right-hand end.
+     `app.css:99` — the reference's ordinary primary button — is
+     `background: var(--primary)`, used 96 times. A gradient appears on exactly
+     two reference classes, `.au-btn--fill` and `.lbtn--fill`, which are the
+     auth and landing hero CTAs: 4 uses, large text, and even there the design
+     CLAMPS the ramp with `color-mix(in srgb, var(--primary-vivid) 72%,
+     var(--primary))` rather than letting it reach the vivid stop.
+     `--k-grad` ran all the way to `var(--primary-vivid)` on EVERY primary
+     button. Measured against white at each stop in light:
+       --primary-hover #026B64  6.38:1   pass
+       --primary       #04837A  4.63:1   pass
+       --primary-vivid #05b7aa  2.51:1   FAIL
+     so the right-hand third of every primary button in the product's DEFAULT
+     theme carried white text at 2.51:1. Dark was never the problem — it runs
+     5.52:1 to 9.25:1, because `--on-primary` is #00332F there.
+     Flat `--primary` gives 4.63:1 light and 7.93:1 dark, and matches the
+     reference. `--k-grad` is untouched and still used by `.k-mark`,
+     `.k-avatar` and `.k-progress-fill`, where nothing sits on top of it. */
+  background: var(--primary);
+  /* White in light, #00332F in dark — both measured above. */
   color: var(--on-primary);
   box-shadow: 0 1px 0 rgba(255,255,255,.15) inset, 0 4px 14px -4px color-mix(in srgb, var(--k-deep) 60%, transparent);
 }
@@ -933,6 +951,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
    shadow is kartavaya-design.css's, and because they set DIFFERENT properties
    neither ever overrode the other. Dropping either one is a visible change. */
 .k-btn--primary:hover {
+  /* `app.css:100` — the reference darkens the fill on hover. It was omitted
+     here because the gradient made a flat hover colour look wrong; now that the
+     base is flat it is both correct and the only colour feedback the button
+     has. 6.38:1 light, 9.25:1 dark. */
+  background: var(--primary-hover);
   transform: translateY(-1px);
   box-shadow: 0 4px 14px color-mix(in srgb, var(--primary-vivid) 38%, transparent);
 }
