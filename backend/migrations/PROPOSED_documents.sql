@@ -2,11 +2,22 @@
 -- and Kartavaya does not have.
 --
 -- ############################################################################
--- #  THIS FILE HAS NOT BEEN APPLIED AND MUST NOT BE APPLIED CASUALLY.        #
+-- #  APPLIED 2026-07-27 on the owner's explicit instruction, in two           #
+-- #  migrations: `documents_tan_and_challans` (sections 1-2) and              #
+-- #  `documents_supply_flags_and_org_fields` (sections 3-7).                  #
 -- #                                                                          #
--- #  Staging and production SHARE one Supabase project (toacecaewujfxjfrjwco,#
--- #  schema `staging`). Every statement below therefore lands in production   #
--- #  the moment it runs. Read the rollback at the foot of this file first.    #
+-- #  The owner's basis: production today runs project management only, with   #
+-- #  no finance or CRM in use, so these tables are unreachable from anything  #
+-- #  a customer sees.                                                         #
+-- #                                                                          #
+-- #  Verified before and after. Every pre-existing row count UNCHANGED:       #
+-- #  organisations 2, ganit_invoices 10, ganit_vendor_bills 0,                #
+-- #  ganit_contracts 1. Added 12 columns and 4 tables, all four empty, and    #
+-- #  0 invoices reclassified (supply_nature defaults to 'taxable').           #
+-- #                                                                          #
+-- #  Staging and production still SHARE one Supabase project                  #
+-- #  (toacecaewujfxjfrjwco, schema `staging`). The rollback at the foot of    #
+-- #  this file is live and untested — read its DATA LOSS warning first.       #
 -- ############################################################################
 --
 -- Provenance
