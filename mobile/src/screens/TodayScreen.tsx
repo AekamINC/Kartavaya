@@ -12,6 +12,8 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useAuth } from '../hooks/useAuth';
 import { tasksApi } from '../api/tasks';
 import { TaskCard } from '../components/TaskCard';
+import { useQueueStatus } from '../hooks/useQueueStatus';
+import { queuedEntityIds } from '../offline/mutationQueue';
 import type { Task } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
 
@@ -75,6 +77,11 @@ export default function TodayScreen() {
     () => user ? bucketTasks(tasks, user.user_id) : [],
     [tasks, user?.user_id]
   );
+
+  // Same reason as TasksScreen: an optimistically-completed row is
+  // indistinguishable from an acknowledged one without this. See §7.1.
+  const { changes } = useQueueStatus();
+  const queuedTaskIds = useMemo(() => queuedEntityIds('task'), [changes.count]);
 
   const sections = useMemo(() => {
     if (filter === 'today')     return allSections.filter(s => s.title === 'Due today');
@@ -216,7 +223,11 @@ export default function TodayScreen() {
         )}
         renderItem={({ item }) => (
           <View style={s.cardWrap}>
-            <TaskCard task={item} onPress={() => openTask(item.task_id)} />
+            <TaskCard
+              task={item}
+              onPress={() => openTask(item.task_id)}
+              syncing={queuedTaskIds.has(item.task_id)}
+            />
           </View>
         )}
       />
