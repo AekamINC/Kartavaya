@@ -67,6 +67,32 @@
   color: var(--on-surface-3);
 }
 
+/* The kicker is simultaneously uppercase, tracked AND semibold, and ApprovePage
+ * writes `<span lang="hi">अनुमोदन</span>` straight into it. That is the same
+ * three-part defect editorial.css documents at `.k-lbl__in`, and the global
+ * `[lang="hi"]` rule only fixes one third of it — MEASURED on /approve:
+ *
+ *     letter-spacing  normal      ← the global guard works
+ *     font-family     Inter       ← no Devanagari coverage at all
+ *     font-weight     600         ← Tiro ships 400 only
+ *     text-transform  uppercase
+ *
+ * Inter has no Devanagari glyphs, so every character drops through the fallback
+ * chain and the conjuncts come apart mid-word; the inherited 600 then makes the
+ * rasteriser synthesise a bold it has no face for, smearing the शिरोरेखा. Both
+ * are on 24-bilingual-devanagari.md's absolute No list, as is the uppercase —
+ * a no-op on unicase Devanagari, which is the problem, because the Latin beside
+ * it changes case and the pair stops matching.
+ *
+ * --font-hindi, not --font-indic: these are fixed Devanagari literals in JSX,
+ * and --font-indic repoints to Noto Sans Gujarati under EN+GU, which has zero
+ * Devanagari coverage. Same fixed-glyph exception as `.card__hi`'s siblings. */
+.pub__kick [lang] {
+  font-family: var(--font-hindi);
+  font-weight: 400;
+  text-transform: none;
+}
+
 /* ── Body slot ──────────────────────────────────────────────────────────────
  * width:100% so a card fills the fluid page instead of shrink-wrapping to its
  * text. `flex: 1` pins the footer to the bottom on a short state (loading,
