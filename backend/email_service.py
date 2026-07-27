@@ -1013,7 +1013,7 @@ def send_report_email(
     excel_fname = f"Kartavaya-{safe_name}-{period_from}-{period_to}.xlsx"
     pdf_fname   = f"Kartavaya-{safe_name}-{period_from}-{period_to}.pdf"
 
-    # ── Kicker / headline copy ─���────────────────────────────────────
+    # ── Kicker / headline copy ────────────────────────────────────────
     done_count = data_summary.get("done", 0)
     overdue    = data_summary.get("overdue", 0)
     in_prog    = data_summary.get("in_progress", 0)
@@ -1073,7 +1073,7 @@ def send_report_email(
         + f'</tr></table></td></tr>'
     )
 
-    # ── Section header helper ──────────��────────────────────────────
+    # ── Section header helper ────────────────────────────────────────
     def _sec_h(title, hindi):
         return (
             f'<tr><td style="padding:20px 36px 10px;">'
@@ -1123,7 +1123,7 @@ def send_report_email(
         f'</tr></tbody></table></td></tr>'
     )
 
-    # ── Champion callout ────────────────────��───────────────────────
+    # ── Champion callout ─────────────────────────────────────────────
     champ_block = ""
     if by_member_tasks:
         top = by_member_tasks[0]
@@ -1172,7 +1172,7 @@ def send_report_email(
             f'</td></tr></table></td></tr>'
         )
 
-    # ── Sparkline (throughput bars) ─��───────────────────────────────
+    # ── Sparkline (throughput bars) ──────────────────────────────────
     spark_block = ""
     if daily_throughput and frequency in ("weekly", "monthly"):
         max_val = max((r.get("done_count", 0) for r in daily_throughput), default=1) or 1
@@ -1201,7 +1201,7 @@ def send_report_email(
             f'</table></td></tr></table></td></tr>'
         )
 
-    # ── Leaderboard (monthly only) ────────────────────────��─────────
+    # ── Leaderboard (monthly only) ───────────────────────────────────
     board_block = ""
     if frequency == "monthly" and by_member_tasks:
         max_t = max((r.get("tasks_done", 0) for r in by_member_tasks), default=1) or 1
@@ -1238,7 +1238,7 @@ def send_report_email(
             f'</table></td></tr></table></td></tr>'
         )
 
-    # ── Excel attachment row ───────────────────────��────────────────
+    # ── Excel attachment row ─────────────────────────────────────────
     attach_block = ""
     if excel_bytes or pdf_bytes:
         import os as _os
@@ -1267,7 +1267,7 @@ def send_report_email(
             f'</td></tr></table></td></tr>'
         )
 
-    # ── Meta footer line ──────────────────────────────────��─────────
+    # ── Meta footer line ─────────────────────────────────────────────
     meta_line = (
         f'<tr><td style="padding:12px 36px 0;border-top:1px dashed {_RULE};">'
         f'<p style="margin:0;font-family:{_FONT_UI};font-size:12.5px;color:{_INK3};">'

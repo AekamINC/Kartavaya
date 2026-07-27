@@ -1,3 +1,4 @@
+import html
 import logging
 from datetime import datetime, timedelta
 from email_service import send_email
@@ -45,10 +46,21 @@ async def process_expiry(pool, org_id: str, module: str = "esign") -> dict:
                 try:
                     # Sync — see campaign_sender.py. Awaiting it raised after
                     # the send had already been dispatched.
+                    # Escaped. A contract title and a creator name are both
+                    # user-supplied and both land inside HTML, so a contract
+                    # named `<img src=x onerror=…>` executed in the recipient's
+                    # inbox. This template hand-writes its markup and so never
+                    # passed through `_base()`, which is where the product's
+                    # escaping lives — `scripts/preview_emails.py` flags all
+                    # nine such templates. The SUBJECT is plain text and must
+                    # NOT be escaped: entities there render literally as
+                    # "&lt;" in the inbox.
                     send_email(
                         doc["creator_email"],
                         f"Contract expiring soon: {doc['title']}",
-                        f"<p>Hi {doc['creator_name']},</p><p>Your contract <b>{doc['title']}</b> is expiring within {REMIND_DAYS_BEFORE} days. Please review and renew if needed.</p>",
+                        f"<p>Hi {html.escape(str(doc['creator_name'] or ''))},</p>"
+                        f"<p>Your contract <b>{html.escape(str(doc['title'] or ''))}</b> is expiring within "
+                        f"{REMIND_DAYS_BEFORE} days. Please review and renew if needed.</p>",
                     )
                     reminded += 1
                 except Exception:
@@ -93,7 +105,8 @@ async def process_expiry(pool, org_id: str, module: str = "esign") -> dict:
                     send_email(
                         asset["email"],
                         f"Asset warranty expiring: {asset['name']}",
-                        f"<p>The warranty for asset <b>{asset['name']}</b> is expiring soon.</p>",
+                        f"<p>The warranty for asset <b>{html.escape(str(asset['name'] or ''))}</b> "
+                        f"is expiring soon.</p>",
                     )
                     reminded += 1
                 except Exception:

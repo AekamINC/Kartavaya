@@ -1,3 +1,4 @@
+import html
 import logging
 from services.web_push_service import fan_out_web_push
 from email_service import send_email
@@ -36,7 +37,11 @@ async def notify_multi(
         for r in rows:
             try:
                 # Sync — see campaign_sender.py.
-                send_email(r["email"], title, f"<p>{body}</p>")
+                # Escaped: `body` is the caller's text and lands inside HTML.
+                # This is the widest of the nine unshelled templates — a
+                # notification fan-out reaches every user in the list, so one
+                # crafted body would execute in all their inboxes at once.
+                send_email(r["email"], title, f"<p>{html.escape(str(body or ''))}</p>")
                 sent += 1
             except Exception:
                 log.warning("Email send failed for %s", r["user_id"])

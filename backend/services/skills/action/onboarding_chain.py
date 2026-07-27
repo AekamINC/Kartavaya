@@ -1,3 +1,4 @@
+import html
 import logging
 from email_service import send_email
 
@@ -36,10 +37,17 @@ async def execute_onboarding(pool, employee_id: str, org_id: str) -> dict:
         try:
             # Sync — see campaign_sender.py. The await raised, so
             # "welcome_email" was never recorded as a completed step.
+            # Escaped: an employee name is user-supplied and lands inside HTML.
+            # This template hand-writes its markup and never passes through
+            # `_base()`, where the product's escaping lives — one of the nine
+            # `scripts/preview_emails.py` flags. The SUBJECT stays raw: it is
+            # plain text, and an entity there renders literally as "&lt;".
             send_email(
                 emp["email"],
                 f"Welcome to the team, {emp['name']}!",
-                f"<p>Hello {emp['name']},</p><p>Welcome aboard! Your joining date is {emp['date_of_joining']}.</p>",
+                f"<p>Hello {html.escape(str(emp['name'] or ''))},</p>"
+                f"<p>Welcome aboard! Your joining date is "
+                f"{html.escape(str(emp['date_of_joining'] or ''))}.</p>",
             )
             completed.append("welcome_email")
         except Exception:

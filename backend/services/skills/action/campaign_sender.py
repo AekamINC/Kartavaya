@@ -1,3 +1,4 @@
+import html
 import logging
 from email_service import send_email
 
@@ -53,8 +54,18 @@ async def send_campaign(pool, campaign_id: str) -> dict:
     failed = 0
 
     for r in recipients:
+        # The campaign BODY is the org's own authored HTML and stays raw — that
+        # is the feature. The substituted CONTACT NAME is not: it is third-party
+        # data landing inside that HTML, so a contact named `<img src=x
+        # onerror=…>` had their own markup rendered live in the mail. Escaped
+        # here rather than at the campaign, so the distinction between "markup
+        # we authored" and "text someone gave us" stays visible at the join.
+        #
+        # The SUBJECT is plain text and must NOT be escaped: an entity there
+        # renders literally as "&amp;" in the inbox.
+        safe_name = html.escape(r["name"] or "")
         subject = (campaign["subject"] or "").replace("{{name}}", r["name"] or "")
-        body = (campaign["html_content"] or "").replace("{{name}}", r["name"] or "")
+        body = (campaign["html_content"] or "").replace("{{name}}", safe_name)
         try:
             # NOT awaited. `send_email` is sync — it threads internally and
             # returns bool. Awaiting it raised TypeError AFTER the send thread

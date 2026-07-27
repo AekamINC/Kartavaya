@@ -352,22 +352,33 @@ def _unshelled():
         return ("<p>Your one-time verification code is: <strong>418205</strong></p>"
                 "<p>This code is valid for 10 minutes.</p>")
 
+    # ── A weakness of this harness, stated where it will be read ─────────────
+    # Every fixture below REPRODUCES its template by hand rather than calling
+    # the code that sends it. That means a verdict here is about this copy, not
+    # about the product: when the four skill templates were escaped, this file
+    # went on reporting them as injectable, and it would equally have missed a
+    # regression. Whenever you change one of these templates you must change
+    # its twin here, and the only durable fix is to lift the markup into a
+    # named function both sides call. Recorded rather than quietly patched,
+    # because a harness that cannot fail is worse than no harness.
     def onboarding():
-        """services/skills/action/onboarding_chain.py"""
-        return f"<p>Hello {PERSON},</p><p>Welcome aboard! Your joining date is 2026-08-01.</p>"
+        """services/skills/action/onboarding_chain.py — escaped."""
+        return (f"<p>Hello {html.escape(PERSON)},</p>"
+                f"<p>Welcome aboard! Your joining date is 2026-08-01.</p>")
 
     def contract_expiry():
-        """services/skills/action/document_expiry.py — contract"""
-        return (f"<p>Hi {PERSON},</p><p>Your contract <b>{TASK}</b> is expiring within "
+        """services/skills/action/document_expiry.py — contract, escaped."""
+        return (f"<p>Hi {html.escape(PERSON)},</p>"
+                f"<p>Your contract <b>{html.escape(TASK)}</b> is expiring within "
                 f"30 days. Please review and renew if needed.</p>")
 
     def asset_expiry():
-        """services/skills/action/document_expiry.py — asset warranty"""
-        return f"<p>The warranty for asset <b>{TASK}</b> is expiring soon.</p>"
+        """services/skills/action/document_expiry.py — asset warranty, escaped."""
+        return f"<p>The warranty for asset <b>{html.escape(TASK)}</b> is expiring soon.</p>"
 
     def fan_out():
-        """services/skills/action/notification_fan_out.py"""
-        return f"<p>{NOTE}</p>"
+        """services/skills/action/notification_fan_out.py — escaped."""
+        return f"<p>{html.escape(NOTE)}</p>"
 
     return [
         ("30-unshelled-dristi-report", "30 · Scheduled report run-now — NO SHELL", dristi_report),
