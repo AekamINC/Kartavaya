@@ -2,6 +2,19 @@
 
 **Measured 2026-07-27. Ship date 15 August — 19 days.**
 
+> **Updated after the conversion round: 3,215 → 613 real inline styles.**
+> srijan/hub 830→8 · graha 648→9 · manav 609→14 · ganit 548→7, all verified on
+> the tab directory and all survivors the permitted `--c` custom-property form.
+> Two agents now running on the remainder (top-level workflow pages, and
+> pahchan/org/marketing); the documents agent is still running.
+>
+> **This does NOT mean pixel-perfect.** Converting inline styles to tokens makes
+> a page themeable and density-aware; it does not prove it matches the mockup.
+> Every one of the four agents failed to get a browser tab — the pane was at its
+> cap with every tab held by a peer — so **visual fidelity remains unverified
+> across all four modules**. That gap closes only with the owner's eye or a real
+> e2e pass.
+
 This is the document that should have existed before any agent ran. Every gap
 the owner has found by opening a page is in here, plus the ones nobody has
 opened yet. Regenerate every number; never transcribe.
