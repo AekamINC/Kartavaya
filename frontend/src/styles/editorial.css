@@ -1477,12 +1477,22 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-bottom: 1px solid var(--rule);
 }
 .k-pageh__txt { min-width: 0; }
-/* BoardsPage passes kicker="AEKAM INC · फ़लक" — two scripts, one node. */
+/* The kicker is TRACKED (.22em) and UPPERCASED, so no Devanagari may pass
+   through it — 24-bilingual-devanagari.md forbids both on Devanagari, and the
+   measured render put फ़लक here at 2.42px of tracking. The fallback family was
+   an attempt to make the wrong node draw the glyphs; the fix is that the glyphs
+   do not come here. `BoardsPage` now passes its term as `sanskrit`, which is
+   where the reference renders it (`.ph__hi`, beside the title). If a caller
+   still passes mixed script, the :lang guard below catches it. */
 .k-pageh__kicker {
-  font-family: var(--font-ui), var(--font-hindi);
+  font-family: var(--font-ui);
   font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
   color: var(--primary-text); font-weight: 700;
   margin-bottom: 6px;
+}
+.k-pageh__kicker:lang(hi), .k-pageh__kicker :lang(hi),
+.k-pageh__kicker:lang(sa), .k-pageh__kicker :lang(sa) {
+  font-family: var(--font-hindi); letter-spacing: 0; text-transform: none;
 }
 .k-pageh__h1 {
   font-family: var(--font-display);
@@ -1503,9 +1513,16 @@ input, textarea, select { font-family: inherit; color: inherit; }
   line-height: 1.1;
   margin: 0;
 }
+/* `letter-spacing: normal`, declared rather than inherited. `.k-pageh__h1`
+   carries −.02em for the display face, and without this the Devanagari term
+   inherited it: measured at −0.56px in the reference's own render, which is the
+   recurring "shared heading style leaks tracking onto Devanagari" defect.
+   Tiro is a single-weight face designed on its own fit; negative tracking
+   collapses the conjuncts. Reported as a defect in the reference too. */
 .k-pageh__sans {
   font-family: var(--font-hindi);
   font-size: 0.7em;
+  letter-spacing: normal;
   color: var(--primary-text);
   font-weight: 400;
   /* `.k-pageh__h1` sets -0.02em, and letter-spacing inherits as a resolved

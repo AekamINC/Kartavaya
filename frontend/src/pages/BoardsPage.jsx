@@ -170,8 +170,17 @@ export default function BoardsPage() {
   return (
     <div className="k-screen">
 
+      {/* The Devanagari term goes in `sanskrit`, not in the kicker. The kicker
+          is tracked at .22em and uppercased, and 24-bilingual-devanagari.md
+          forbids both on Devanagari — measured, फ़लक was rendering at 2.42px of
+          tracking. `sanskrit` is also where the reference puts it: `.ph__hi`
+          sits beside the title at headline size in --primary-text, and the
+          build had no equivalent node on this page at all.
+          `फलक`, not `फ़लक` — the nuqta on फ़ is the Perso-Arabic /f/ and does not
+          belong in phalak. `navConfig` and the reference both spell it फलक. */}
       <PageHeader
-        kicker="AEKAM INC · फ़लक"
+        kicker="AEKAM INC"
+        sanskrit="फलक"
         title={project?.name || activeProject?.name || 'Select a project'}
         lede="Move work across the board. Click any card to open."
         right={

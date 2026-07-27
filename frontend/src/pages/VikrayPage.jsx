@@ -14,6 +14,7 @@ import { StatTile, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTabl
 import { ErrorState, errorKind } from '../components/ui/ErrorState';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
 import { moduleMeta } from '../lib/moduleColors';
@@ -29,20 +30,69 @@ const FMT = inr;
 
 const TABS = ['dashboard', 'orders', 'stock', 'targets'];
 
+const lakh = n => {
+  const v = Number(n) || 0;
+  if (v >= 10000000) return `₹${(v / 10000000).toFixed(2)} Cr`;
+  if (v >= 100000) return `₹${(v / 100000).toFixed(1)} L`;
+  return `₹${v.toLocaleString('en-IN')}`;
+};
+
 export default function VikrayPage() {
   const [tab, setTab] = useState('dashboard');
+  const [newOrderNonce, setNewOrderNonce] = useState(0);
   const meta = moduleMeta('vikray');
   const motion = useTabPanelMotion(TABS, tab);
+
+  // The four money figures move up here from DashboardTab. Every module screen
+  // in the reference carries its figures above the tab bar, where they are true
+  // of the module rather than of one tab — a revenue number that disappears
+  // when you click "Orders" was never about the dashboard.
+  const [kpi, setKpi] = useState(null);
+  const [kpiErr, setKpiErr] = useState('');
+  const [counts, setCounts] = useState({});
+
+  useEffect(() => { loadSummary(); }, []);
+
+  async function loadSummary() {
+    setKpiErr('');
+    try {
+      const r = await api.get('/v1/vikray/dashboard');
+      const d = r.data;
+      setKpi([
+        { label: 'Pipeline value', hi: 'प्रवाह', tone: 'p', value: lakh(d.pipeline_value), sub: `${d.open_deals} open ${Number(d.open_deals) === 1 ? 'deal' : 'deals'}` },
+        { label: 'Order value', hi: 'आदेश', value: lakh(d.order_value), sub: `${d.total_orders} ${Number(d.total_orders) === 1 ? 'order' : 'orders'}` },
+        { label: 'Revenue', hi: 'राजस्व', tone: 'ok', value: lakh(d.total_revenue), sub: 'invoiced' },
+        { label: 'Collected', hi: 'प्राप्त', tone: 'ok', value: lakh(d.collected), sub: 'payments received' },
+      ]);
+      setCounts({ orders: Number(d.total_orders) || undefined });
+    } catch (e) {
+      setKpi(null);
+      setKpiErr(e.response?.status === 403 ? 'You do not have access to Sales figures.' : 'Retry, or check your connection.');
+    }
+  }
+
   return (
     <div style={{ padding: '0 0 48px' }}>
       <ModuleHeader
         module="vikray"
+        kick={<>Revenue <span className="mh__kick-hi" lang="hi">· राजस्व</span></>}
         en={meta.en}
         hi={meta.hi}
         sub="Orders, stock and targets. Customers and pipeline live in Graha (CRM)."
         icon={ICONS.vikray}
+        actions={
+          <button
+            type="button"
+            className="k-btn k-btn--primary"
+            style={{ fontSize: 13 }}
+            onClick={() => { setTab('orders'); setNewOrderNonce(n => n + 1); }}
+          >
+            + New order
+          </button>
+        }
       />
-      <ModuleTabs tabs={TABS.map(id => ({ id, label: id }))} value={tab} onChange={setTab} label="Vikray sections" />
+      <KpiStrip items={kpi} loading={!kpi && !kpiErr} error={kpiErr} count={4} />
+      <ModuleTabs tabs={TABS.map(id => ({ id, label: id, count: counts[id] }))} value={tab} onChange={setTab} label="Vikray sections" />
       <div
         role="tabpanel"
         id={`mt-panel-${tab}`}
@@ -51,7 +101,7 @@ export default function VikrayPage() {
         {...motion}
       >
         {tab === 'dashboard' && <DashboardTab />}
-        {tab === 'orders' && <OrdersTab />}
+        {tab === 'orders' && <OrdersTab newNonce={newOrderNonce} />}
         {tab === 'stock' && <StockTab />}
         {tab === 'targets' && <TargetsTab />}
       </div>
@@ -73,31 +123,23 @@ function DashboardTab() {
   }, []);
   useEffect(() => { load(); }, [load]);
   if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
-  if (!data) return <Shimmer count={8} />;
+  if (!data) return <Shimmer count={4} />;
   return (
-    <>
-      <Section title="Revenue" hi="राजस्व">
-        <div className="k-stats">
-          <StatTile label="Pipeline Value" value={FMT(data.pipeline_value)} variant="blue" />
-          <StatTile label="Revenue" value={FMT(data.total_revenue)} variant="teal" />
-          <StatTile label="Order Value" value={FMT(data.order_value)} />
-          <StatTile label="Collected" value={FMT(data.collected)} variant="teal" />
-        </div>
-      </Section>
-      <Section title="Orders" hi="आदेश">
-        <div className="k-stats">
-          <StatTile label="Total Orders" value={data.total_orders} />
-          <StatTile label="Open Deals" value={data.open_deals} />
-          <StatTile label="Draft" value={data.draft_orders} />
-          <StatTile label="Dispatched" value={data.dispatched_orders} />
-        </div>
-      </Section>
-    </>
+    <Section title="Orders" hi="आदेश">
+      <div className="k-stats">
+        <StatTile label="Total Orders" value={data.total_orders} />
+        <StatTile label="Open Deals" value={data.open_deals} />
+        <StatTile label="Draft" value={data.draft_orders} />
+        <StatTile label="Dispatched" value={data.dispatched_orders} />
+      </div>
+    </Section>
   );
 }
 
 
-function OrdersTab() {
+/** `newNonce` — the page header's "+ New order" opens this tab's create form.
+ *  A counter, not a boolean, so a second press re-opens it after a cancel. */
+function OrdersTab({ newNonce = 0 }) {
   const { pushToast } = useToast();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -118,6 +160,11 @@ function OrdersTab() {
   });
 
   useEffect(() => { load(); }, [statusFilter]);
+  useEffect(() => {
+    if (!newNonce) return;
+    setShowForm(true);
+    loadOptions();
+  }, [newNonce]);
 
   async function load() {
     setErr(null);
