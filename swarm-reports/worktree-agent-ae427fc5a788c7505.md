@@ -9,6 +9,28 @@ dev server, driven by `SetOrg.jsx`, `SetCustomize.jsx`, `SetAdmin.jsx`,
 > and no `swarm-reports/` at all. Reset to `origin/staging` (`e9134b2`) first.
 > Any other agent handed this worktree should check that before anything else.
 
+> It also had **no `node_modules`**, so nothing could be built or tested in it.
+> Junctioned from the main checkout to verify:
+> `cmd //c "mklink /J node_modules D:\Projects\Kartavya\frontend\node_modules"`.
+> Removed again at the end — leave it in place and an `npm install` run from
+> this worktree writes into the main checkout that every other worktree shares.
+
+---
+
+## 0 · Two things that are true regardless of this surface
+
+**`staging` did not compile.** `vite build` has been failing since `8131f24`:
+`pages/DristiPage.jsx` carries a `{/* … */}` comment in the consequent of a
+ternary, where the braces are an object literal rather than a JSX child. Nothing
+caught it because the page is lazily imported — the dev server only parses it
+when someone navigates to Dristi, and no gate runs a build. Fixed on its own
+commit (`5976e4e`) so it can be taken ahead of everything else here. **Any agent
+who has not been running `vite build` has been verifying against a bundle that
+cannot be produced.**
+
+**The gates do not cover this.** `check-tokens` and `check-classes` both passed
+on a tree that would not build. Worth someone adding a build step.
+
 ---
 
 ## 1 · Sidebar section `Settings · व्यवस्था`
@@ -35,9 +57,10 @@ Reference `Chrome.jsx:36` against build `components/layout/navConfig.js:121`.
 | 5 | Notifications · सूचना | Notifications | match |
 | 6 | Data & privacy · गोपनीयता | Data | match; label truncated |
 
-**Six for six.** The only header gap: the reference's `PH` carries a
-`Reset to defaults` + `Done` action pair; the build's `PageHeader` has no
-actions slot in use here.
+**Six for six on tabs** — but see §6: every one of them was missing its
+Devanagari, which is not visible in `SetCustomize.jsx` at all. Header gap: the
+reference's `PH` carries a `Reset to defaults` + `Done` action pair; the build's
+`PageHeader` has no actions slot in use here.
 
 ## 3 · Organisation hub — `SetOrg.jsx:343` vs `pages/OrgSettingsPage.jsx:40`
 
@@ -50,9 +73,9 @@ actions slot in use here.
 | 5 | Security | Security | `org/TabSecurity.jsx` | match |
 | 6 | Danger zone | Danger | `org/TabDanger.jsx` | match; label truncated |
 
-**Six for six.** `TabBar … counts={{ members, modules }}` in the reference;
-`components/ui/Tabs.jsx:72` already renders `tab.count`, the caller just never
-supplies one.
+**Six for six on tabs**, but neither the counts nor the Devanagari were there —
+both now shipped, see §6. `components/ui/Tabs.jsx:72` already rendered
+`tab.count`; the caller simply never supplied one.
 
 ### Section inventory inside each Organisation tab (reference)
 
@@ -119,3 +142,77 @@ before either surface can honestly persist.
 `Add a member` falling back to an invitation, and pending invitations rendering
 beside the roster because they hold a seat — both confirmed live at
 `org/TabMembers.jsx:378` and `:411`. Left alone.
+
+---
+
+## 6 · What only the RENDER showed — and where reading the JSX misled me
+
+I enumerated §2 and §3 above from the tab arrays and called both hubs
+"six for six". Then I drove the harness. Two corrections and one whole missing
+element came out of it, and none of them were legible in the source.
+
+**Every tab carries its Devanagari beside the word.** `SetOrg.jsx:351` and
+`SetCustomize.jsx:495` pass `TabBar` a list of bare KEYS; the Devanagari is
+looked up two files away in `Data.jsx:134` (`TAB_HI`). Reading either file shows
+a plain tab bar. The rendered DOM is
+`<span class="tabs__en">members</span><span class="tabs__hi">सदस्य</span>`.
+Both hubs were missing this entirely. Now shipped, through a shared `.tabs__hi`
+matching `app.css:136`.
+
+**Counts render on Members and Modules**, and — importantly — they are on screen
+while *Profile* is the open tab. `Tabs` mounts one panel at a time, so a count
+reported by the panel that owns the list is a count nobody ever sees. The shell
+fetches them; the panels report again as their lists change.
+
+**Where the render is WRONG and the source is right.** The harness renders
+`Danger` with no Devanagari, and `Data`. But `ORG_TABS` labels the tab
+`'Danger zone'`, and `TAB_HI` keys its Devanagari under `'danger zone'` — the
+key passed to `TabBar` is `'danger'`, so it renders the key and then misses its
+own Devanagari entry. Same shortcut gives `Data` where `CUST_TABS` says
+`'Data & privacy'`. A label written out longhand next to the key it belongs to
+is a decision, not a duplicate, so the labels win and `संकट` is restored.
+
+The lesson generalises: **render first to find what is missing, then read to
+find what it should say.** Neither alone was sufficient here.
+
+---
+
+## 7 · Shipped
+
+| Commit | What |
+|---|---|
+| `5976e4e` | `staging` compiles again (see §0) |
+| `fa10d5f` | `Roles & access` and `Aekam admin` destinations; Billing row removed; admin `Overview` → `Users`; nav wording |
+| `446247b` | 12 nav tests, incl. the console's role gate |
+| `40b4384` | Devanagari tab labels on both hubs; Members/Modules counts; 6 tests |
+
+`/settings/roles` mounts the existing wired `TabMembers` on its matrix half
+rather than duplicating a screen that adds, invites, revokes and regrants. The
+`Aekam admin` row is gated on `ADMIN_SURFACE_ROLES` — the set `Protected.jsx`
+tests, not "any platform role", so `srijan_admin` and `platform_support` do not
+get a row into a console where every screen 403s.
+
+The count test caught a real defect the moment it was written: the shell's
+effect was keyed on `orgRole`, which `currentUser()` rebuilds on every call, so
+it re-fired on every render and fetched both lists twice on arrival.
+
+---
+
+## 8 · Deliberately NOT done, with reasons
+
+- **The other seven `Roles & access` tabs.** Four (role levels, denied states,
+  client portal, module rules) are explanatory screens needing no endpoint —
+  cheap, and genuinely worth building. Three cannot be built honestly:
+  `support access` and `audit log` have no table, `projects` has no read
+  endpoint.
+- **Admin Dashboard, Support sessions, System settings.** No endpoints, and two
+  of the three have no table. Rows documented in place at `adminNav.js:45`.
+- **The two spec defects.** Recorded above, not designed around. Both need the
+  owner to decide the field shape before anything on those cards can persist.
+- **`Categories`.** Build-only, no reference equivalent, but a real page against
+  a real endpoint. Kept rather than stranded.
+- **The hub header action slots.** The reference's `PH` carries
+  `Reset to defaults`/`Done` (Customization) and an `All changes saved` tag plus
+  `Done` (Organisation). The build's `PageHeader` supports a `right` slot and
+  neither hub uses it. Left for the pixel sibling — it is chrome, and the
+  "all changes saved" tag would need a real dirty-state signal to not be a lie.
