@@ -61,6 +61,8 @@ import SkipLink from '../ui/SkipLink';
 import MobileDrawer from './MobileDrawer';
 import MobileNav from './MobileNav';
 import { ICONS } from './navIcons';
+import { resolveRouteMeta } from './navConfig';
+import { useCustomize } from '../CustomizePanel';
 import { urlBase64ToUint8Array } from '../../lib/push';
 import { playNotifSound } from '../../lib/notifSound';
 import {
@@ -116,6 +118,33 @@ function fireBrowserNotif(title, body) {
       new Notification(title, { body, icon: '/icon-192.png' });
     }
   } catch (_) {}
+}
+
+/**
+ * The compact bar's page label — the mobile counterpart of `Topbar`'s crumb.
+ *
+ * Split out rather than inlined because it needs `useLocation` and
+ * `useCustomize`, and AppShell already reads both for other reasons; a separate
+ * component keeps the language branch in ONE place instead of a second copy of
+ * the `showGu` ternary that Topbar owns.
+ *
+ * The Devanagari carries `lang` for the same reason it does in the crumb:
+ * `--font-indic` is repointed to Noto Sans Gujarati under an EN+GU preference,
+ * which has no Devanagari coverage, so a span whose script varies per row must
+ * declare which script it actually holds.
+ */
+function MobileCrumb() {
+  const location = useLocation();
+  const meta = resolveRouteMeta(location.pathname);
+  const { prefs } = useCustomize();
+  const showGu = prefs.language === 'gu' || prefs.language === 'en+gu';
+  const indic = (showGu && meta.gu) ? meta.gu : meta.hi;
+  return (
+    <div className="kv__mobbar-crumb">
+      <div className="kv__mobbar-hi" lang={(showGu && meta.gu) ? 'gu' : 'hi'} aria-hidden="true">{indic}</div>
+      <div className="kv__mobbar-en">{meta.en}</div>
+    </div>
+  );
 }
 
 export default function AppShell() {
@@ -345,7 +374,16 @@ export default function AppShell() {
             <button type="button" className="k-iconbtn" onClick={() => setSidebarOpen(true)} aria-label="Open menu" aria-expanded={sidebarOpen}>
               {ICONS.burger}
             </button>
-            <span className="kv__mobbar-brand">Kartavaya</span>
+            {/* The bar names the PAGE, not the product.
+                It read "Kartavaya" on all thirty screens — the one fact a
+                phone user already knows, in the one slot they have. The
+                desktop breadcrumb is `display:none` at this width
+                (`editorial.css` · the 1023px block), so below it there was no
+                page identity anywhere on screen.
+                `Chrome.jsx:288-291`'s MobileTop is the shape: the module's own
+                Devanagari over its English. Same `resolveRouteMeta` the
+                breadcrumb uses, so the two cannot disagree. */}
+            <MobileCrumb />
             <div className="kv__mobbar-actions">
               {/* Its own anchor. The panel hangs off whichever bell was
                   pressed; anchoring both to the desktop topbar would open it
@@ -376,6 +414,7 @@ export default function AppShell() {
               onNotifOpenChange={setNotifOpen}
               onNewTask={() => setNewTaskOpen(true)}
               onOpenCmdk={() => setCmdkOpen(true)}
+              onOpenShortcuts={() => setShortcutsOpen(true)}
             />
           </div>
 

@@ -36,6 +36,26 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .kv {
   display: grid;
   grid-template-columns: auto 1fr;
+  /* LOAD-BEARING. Without this NOTHING SCROLLS — not a page, not the sidebar.
+     There was no `grid-template-rows`, so the single implicit row was `auto` and
+     sized itself to its TALLEST ITEM rather than to this 100vh box. Measured on
+     a 720px viewport with a long page and a long nav: the row computed to
+     3078px. `.kv__main` and `.side` then inherited that height, so
+     `.kv__content` and `.side__nav` were each exactly as tall as their own
+     content and their `overflow-y: auto` had nothing left to scroll — while
+     `overflow: hidden` here silently clipped everything past the fold.
+
+     After: the row is 720px, `.kv__content` 699 vs 3056 scrollable, and
+     `.side__nav` 666 vs 3024. One declaration, both scrollers.
+
+     `minmax(0, 1fr)` and not a bare `1fr`: `1fr` floors at min-content, which
+     reintroduces the same bug the moment the content is tall.
+
+     A first attempt at this was reverted because a probe said the row already
+     resolved to 720px. That probe loaded two of the four stylesheets App.jsx
+     imports and left the sidebar empty, so nothing was tall enough to stretch
+     the row and the bug could not appear. Reproduce with a FAITHFUL probe. */
+  grid-template-rows: minmax(0, 1fr);
   height: 100vh;
   width: 100vw;
   background: var(--bg);
@@ -61,7 +81,12 @@ input, textarea, select { font-family: inherit; color: inherit; }
 /* Compact top bar — burger + brand + actions. Shown wherever .kv__side is not. */
 .kv__mobbar {
   display: none;
-  align-items: center; justify-content: space-between;
+  /* flex-start + `margin-left:auto` on the actions, not `space-between`.
+     With three children space-between parks the middle one in the centre of
+     the bar, which was invisible while that slot held the product name and
+     wrong the moment it started holding the page's — `Chrome.jsx`'s MobileTop
+     sets the label beside the burger and pushes the actions right. */
+  align-items: center; justify-content: flex-start;
   gap: var(--sp-2);
   padding: 10px 16px;
   border-bottom: 1px solid var(--outline-variant);
@@ -71,14 +96,29 @@ input, textarea, select { font-family: inherit; color: inherit; }
   flex-shrink: 0;
 }
 [data-platform="win"] .kv__mobbar { background: var(--s-low); }
-.kv__mobbar-brand {
-  font-family: var(--font-display);
-  font-size: var(--t-title);
-  font-weight: 500;
-  color: var(--on-surface);
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* The compact bar's page label. This slot used to hold `.kv__mobbar-brand`,
+   the product name in the display face — the same six letters on every screen,
+   in the only line of chrome a phone has. `.kv__top` is display:none below
+   1023px, so nothing else named the page. Replaced with the module's own pair,
+   which is what `Chrome.jsx`'s MobileTop renders. */
+.kv__mobbar-crumb { min-width: 0; }
+.kv__mobbar-hi {
+  font-family: var(--font-hindi);
+  font-size: var(--t-body); line-height: 1.1;
+  color: var(--primary-text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.kv__mobbar-actions { display: flex; align-items: center; gap: 6px; }
+/* Same exception as `.crumb__hi[lang="gu"]`: --font-indic is repointed per
+   language, so it is the Gujarati face under EN+GU and must only be used on a
+   span that really holds Gujarati. */
+.kv__mobbar-hi[lang="gu"] { font-family: var(--font-indic); }
+.kv__mobbar-en {
+  font-size: var(--t-label-sm); font-weight: 600;
+  letter-spacing: .08em; text-transform: uppercase;
+  color: var(--on-surface-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.kv__mobbar-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 /* Desktop topbar slot */
 .kv__top { display: block; flex-shrink: 0; }
 
@@ -303,7 +343,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .side--rail .side__foot { justify-content: center; padding: 12px 0; }
 .side__me { flex: 1; min-width: 0; }
 .side__me-n { font-size: var(--t-body-sm); font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.side__me-r { font-size: var(--t-label-sm); color: var(--side-fg-mute); margin-top: 1px; text-transform: capitalize; }
+/* Ellipsis, like `.side__me-n` above it. The line now carries "role · org"
+   rather than a single word, and a registered company name is as long as it
+   likes — without this it wrapped and pushed the sign-out button out of the
+   252px column. */
+.side__me-r { font-size: var(--t-label-sm); color: var(--side-fg-mute); margin-top: 1px; text-transform: capitalize; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side__foot-btn {
   background: transparent; border: 0; padding: 6px;
   color: var(--side-fg-mute);
@@ -341,6 +385,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 [data-platform="win"] .top { background: var(--s-low); }
 .crumb { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; min-width: 0; }
+/* The organisation, first segment. Quieter than `.crumb__cur` on purpose — it
+   is the context for the trail, not the destination, and it is the same string
+   on every page of a session, so it must not compete with the part that
+   changes. Capped so a long registered name cannot push the page out of a
+   narrow window; the full string is in the title attribute. */
+.crumb__org {
+  font-size: var(--t-body-sm); color: var(--on-surface-3);
+  max-width: 20ch; overflow: hidden; text-overflow: ellipsis;
+}
 /* --primary-text, not --primary: 00 §12 makes --primary a 4.04:1 fill and
    --primary-text the 5.2:1 text value. 01 §1 predates that split. */
 /* --font-hindi is the DEFAULT, and the [lang="gu"] rule below is the exception.
@@ -387,7 +440,6 @@ input, textarea, select { font-family: inherit; color: inherit; }
   background: var(--surface); color: var(--on-surface-3);
   border: 1px solid var(--outline-variant);
 }
-
 .top__right { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
 
 /* Inline search FIELD, for filter bars. Distinct from `.top__search`, which is
@@ -3462,6 +3514,22 @@ select.k-formpanel__input { appearance: none;
   border-radius: 4px;
   box-shadow: 0 1px 0 var(--rule-soft);
   color: var(--ink-2);
+}
+/* A key glyph used AS an icon, inside a button that already draws the chrome —
+   the shortcuts trigger in the topbar. Two nested boxes read as a key on a key.
+   `Chrome.jsx:271` spells it the same way, with the kbd's own background and
+   padding stripped.
+
+   It has to sit HERE, after the second `.k-kbd`, and that is a symptom rather
+   than a preference: `.k-kbd` is declared twice in this file — once at the
+   topbar block and again above — and the later declaration silently wins every
+   property the two share. A modifier placed beside the first one lost its
+   background, border and padding to the second and rendered as an ordinary key.
+   The two blocks should be merged; until they are, nothing may assume the
+   earlier one is in effect. */
+.k-kbd--bare {
+  background: none; border: 0; padding: 0;
+  box-shadow: none; min-width: 0; color: inherit;
 }
 
 /* ── Glass card effect ────────────────────────────────────────────────── */

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Check, X } from 'lucide-react';
 import Picker from '../ui/Picker';
 import Lbl from './DrawerLabel';
@@ -26,6 +26,36 @@ export default function DrawerSubtasks({
 }) {
   const subtasks = task.subtasks || [];
   const done = subtasks.filter(s => s.is_done).length;
+
+  // ── The 2.2 checkbox animation, armed for one completing click ────────────
+  // The stroke draw and the box overshoot live in drawer.css behind `.tickpop`.
+  // The class cannot key off `is_done` alone: `toggleSubtask` awaits the PATCH
+  // and replaces the whole task, so every done subtask re-renders — and on the
+  // first render of an open drawer they would ALL spring at once. Arming here
+  // scopes it to the row the user actually clicked.
+  //
+  // Armed only when the box is about to turn ON. 2.2's exit is explicit:
+  // "Unchecking reverses in 140ms with no spring. Undo should feel plainer than
+  // do." Unchecking drops `.on` and the transition carries it, unanimated.
+  //
+  // 1.2s, not the animation's own 360ms: `.on` does not arrive until the server
+  // answers, so the window has to cover the round trip too. A save slower than
+  // that skips its celebration, which is the right way round — a request that
+  // took over a second should not then congratulate itself.
+  const [armed, setArmed] = useState(null);
+  const armTimer = useRef(null);
+  useEffect(() => () => clearTimeout(armTimer.current), []);
+
+  const toggle = useCallback((s) => {
+    clearTimeout(armTimer.current);
+    if (!s.is_done) {
+      setArmed(s.subtask_id);
+      armTimer.current = setTimeout(() => setArmed(null), 1200);
+    } else {
+      setArmed(null);
+    }
+    toggleSubtask(s.subtask_id);
+  }, [toggleSubtask]);
 
   // The leading '' row is how a subtask gets UNASSIGNED again. Picker's
   // single-select path sets the value it was given rather than toggling, so
@@ -55,10 +85,10 @@ export default function DrawerSubtasks({
             <div key={s.subtask_id} className={`dr__st${s.is_done ? ' done' : ''}`}>
               <button
                 type="button"
-                className={`dr__st-box${s.is_done ? ' on' : ''}`}
+                className={`dr__st-box${s.is_done ? ' on' : ''}${armed === s.subtask_id ? ' tickpop' : ''}`}
                 aria-pressed={!!s.is_done}
                 aria-label={s.is_done ? `Mark "${s.title}" not done` : `Mark "${s.title}" done`}
-                onClick={() => toggleSubtask(s.subtask_id)}
+                onClick={() => toggle(s)}
               >
                 {/* 10px at stroke-width 3 — at 10px a 2px stroke reads grey, not white. */}
                 {s.is_done && <Check size={10} strokeWidth={3} />}
