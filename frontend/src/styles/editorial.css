@@ -910,18 +910,31 @@ input, textarea, select { font-family: inherit; color: inherit; }
    label; only the `info` tile has to split them. Custom properties substitute
    lazily, so `--c-text: var(--c)` on the base resolves against whichever `--c`
    the variant set. */
+/* Scale measured off the rendered reference (`.stats` / `.stat` in
+   `design-reference/Kartavaya Redesign/app.css:162-171`), not transcribed:
+   180px track, --gap-tight between tiles, --pad-card inside one, --r-lg on the
+   corner. The literals here were 196 / 11 / 16px 17px / --r-md, which is four
+   independent numbers where the design has two tokens, so the tile drifted
+   from the cards beside it every time density or radius moved.
+ *
+ * What deliberately does NOT change: the fill. The reference tile is
+ * --s-container with no border; this one is --surface with a hairline and the
+ * 2px --c bar below, which is how the build carries the semantic tone while
+ * leaving the VALUE as ink (see StatTile.jsx). That is a look decision with a
+ * rationale, not a measurement error, and it is not this pass's to overturn.
+ * Reported with numbers instead. */
 .k-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
-  gap: 11px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--gap-tight);
 }
 .k-stat {
   --c: var(--on-surface-3);
   --c-text: var(--c);
   position: relative;
   overflow: hidden;
-  padding: 16px 17px;
-  border-radius: var(--r-md);
+  padding: var(--pad-card);
+  border-radius: var(--r-lg);
   background: var(--surface);
   border: 1px solid var(--outline-variant);
 }
@@ -942,21 +955,28 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-stat--amber, .k-stat--orange { --c: var(--warn); }
 .k-stat--red { --c: var(--danger); }
 
+/* 10px / .15em / gap 8, matching `.stat__lbl`. The label is also
+   justify-content: space-between so the Devanagari sits at the tile's right
+   edge rather than trailing the English — the reference puts the two scripts
+   at opposite ends of the label line, and at `normal` they bunched together on
+   the left with the whole right half of the tile empty. */
 .k-stat__lbl {
-  display: flex; align-items: baseline; gap: 7px;
-  font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font-size: 10px; letter-spacing: .15em; text-transform: uppercase;
   color: var(--on-surface-3); font-weight: 700;
 }
+/* `letter-spacing: 0` and `text-transform: none` are the reset that keeps the
+   .15em uppercase above off this Devanagari line. Both are load-bearing. */
 .k-stat__hi {
   font-family: var(--font-indic);
-  font-size: 11px; text-transform: none; letter-spacing: 0;
+  font-size: 12px; text-transform: none; letter-spacing: 0;
   color: var(--c-text); font-weight: 400;
 }
 .k-stat__val {
   font-family: var(--font-display);
-  font-size: 31px; font-weight: 400; line-height: 1.1;
-  letter-spacing: -.03em;
-  margin-top: 8px;
+  font-size: 34px; font-weight: 400; line-height: 1.16;
+  letter-spacing: -.025em;
+  margin-top: 6px;
   color: var(--on-surface);
   font-variant-numeric: tabular-nums;
 }
