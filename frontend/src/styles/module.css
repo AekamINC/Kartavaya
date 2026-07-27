@@ -534,3 +534,212 @@
   margin-left: auto; font-family: var(--font-hindi); font-size: 12px;
   color: var(--on-surface-3);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Dristi · दृष्टि — analytics surface
+   ══════════════════════════════════════════════════════════════════════════
+
+   The d* set. DristiPage carried seventy-five inline styles — every card
+   border, every grid, every bar and every form row — which is why the module
+   ignored the token system, the density control and the theme: an inline
+   hex colour cannot respond to any of them.
+
+   The only style attributes left in the module are the two data-driven
+   dimensions below, --h and --w. Those are custom properties carrying a datum,
+   not styling: the RULE stays here, where the theme can reach it.
+   ────────────────────────────────────────────────────────────────────────── */
+
+.dpage { padding: 0 0 48px; }
+
+/* Vertical rhythm between panels — one owner, so tabs stop each inventing a
+   marginTop of their own. */
+.dstack { display: flex; flex-direction: column; gap: 18px; }
+.dstats--next { margin-top: 12px; }
+
+/* Main + side panel. Collapses before the side panel gets too narrow to hold a
+   select, which is the width the Configure and Build panels need. */
+.dtwo { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; align-items: start; }
+.dtwo--wide { grid-template-columns: minmax(0, 1fr) 320px; }
+@media (max-width: 1000px) { .dtwo, .dtwo--wide { grid-template-columns: minmax(0, 1fr); } }
+
+.dgal {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px; align-content: start;
+}
+@media (max-width: 560px) { .dgal { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── Card ───────────────────────────────────────────────────────────────── */
+.dcard {
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  min-width: 0;
+}
+.dcard--wide { grid-column: 1 / -1; }
+.dcard__h {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 13px 16px; border-bottom: 1px solid var(--outline-variant);
+}
+.dcard__b { padding: 16px; min-width: 0; }
+.dcard__r { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.dcard__meta { font-size: 11.5px; color: var(--on-surface-3); }
+
+/* Bilingual label. Devanagari is never tracked or uppercased — the conjuncts
+   come apart. lang="hi" on the span is what lets the [lang] leading rule fire. */
+.dbi { display: inline-flex; align-items: baseline; gap: 7px; min-width: 0; }
+.dbi__en { font-size: 13.5px; font-weight: 600; color: var(--on-surface); }
+.dbi__hi {
+  font-family: var(--font-hindi); font-size: 12px; font-weight: 400;
+  letter-spacing: normal; text-transform: none; color: var(--on-surface-3);
+}
+
+/* ── Chart card, selectable ─────────────────────────────────────────────── */
+.dchart {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 14px 16px 16px; text-align: left; width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  cursor: pointer; font-family: inherit;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              background var(--dur-fast) var(--ease-standard);
+}
+.dchart:hover { background: var(--s-low); }
+.dchart--on { border-color: var(--primary); }
+.dchart:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.dchart__h { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.dchart__err { font-size: 12.5px; color: var(--on-surface-3); }
+
+/* ── Bars ───────────────────────────────────────────────────────────────── */
+.dbars { display: flex; align-items: flex-end; gap: 6px; min-height: 116px; }
+.dbars__c {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  flex: 1; min-width: 0; height: 116px; justify-content: flex-end;
+}
+.dbars__v {
+  font-size: 10.5px; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  color: var(--on-surface-3); white-space: nowrap;
+}
+/* --h is the datum, resolved against the fixed-height column above. */
+.dbars__b {
+  width: 100%; height: var(--h, 0%); min-height: 2px;
+  background: var(--primary-container); border-radius: 3px 3px 0 0;
+}
+/* The most recent period is the one being asked about. */
+.dbars__b--now { background: var(--primary); }
+.dbars__x {
+  font-size: 11px; color: var(--on-surface-3); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+
+/* ── Funnel ─────────────────────────────────────────────────────────────── */
+.dfun { display: flex; flex-direction: column; gap: 9px; }
+.dfun__r {
+  display: grid; grid-template-columns: minmax(0, 118px) minmax(0, 1fr) auto;
+  align-items: center; gap: 10px;
+}
+.dfun__l {
+  font-size: 12px; color: var(--on-surface-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dfun__t { height: 16px; background: var(--s-container); border-radius: 3px; overflow: hidden; }
+.dfun__f { display: block; height: 100%; width: var(--w, 0%); background: var(--primary); border-radius: 3px; }
+.dfun__v {
+  font-size: 12px; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  color: var(--on-surface); white-space: nowrap;
+}
+.dfun__n { grid-column: 2 / -1; font-size: 11px; color: var(--on-surface-3); }
+
+/* ── Meters ─────────────────────────────────────────────────────────────── */
+.dmet { display: flex; flex-direction: column; gap: 9px; }
+.dmet__r {
+  display: grid; grid-template-columns: minmax(0, 104px) minmax(0, 1fr) auto;
+  align-items: center; gap: 10px;
+}
+.dmet__n {
+  font-size: 12px; color: var(--on-surface-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dmet__t { height: 7px; background: var(--s-container); border-radius: var(--r-pill); overflow: hidden; }
+.dmet__f {
+  display: block; height: 100%; width: var(--w, 0%);
+  background: var(--primary); border-radius: var(--r-pill);
+}
+/* Semantic, and never the only signal — the printed figure beside it says the
+   same thing in words and numerals. */
+.dmet__f--ok { background: var(--ok); }
+.dmet__f--warn { background: var(--warn); }
+.dmet__v {
+  font-size: 11.5px; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  color: var(--on-surface-2); white-space: nowrap;
+}
+
+/* ── Prose, notes and states ────────────────────────────────────────────── */
+.dnone { font-size: 12.5px; color: var(--on-surface-3); margin: 0; padding: 6px 0; }
+.dnote { font-size: 12.5px; color: var(--on-surface-3); margin: 0 0 12px; }
+/* Withheld is not an error and is not styled as one: no red, no triangle. */
+.dwith {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 11px 13px; border-radius: var(--r-sm);
+  background: var(--s-container); color: var(--on-surface-2);
+  font-size: 12.5px; line-height: 1.45;
+}
+.dwith svg { flex-shrink: 0; margin-top: 1px; color: var(--on-surface-3); }
+.dret { margin-left: auto; flex-shrink: 0; }
+.ddanger { color: var(--danger); }
+.dneg { color: var(--danger); }
+.dpos { color: var(--ok); }
+.dzero { color: var(--on-surface-3); }
+.drule { height: 1px; background: var(--outline-variant); margin: 2px 0; }
+.dseg { width: 100%; }
+.dseg .seg__b { flex: 1; justify-content: center; }
+.dtag {
+  margin-left: 7px; padding: 1px 7px; border-radius: var(--r-xs);
+  background: var(--primary-container); color: var(--on-primary-container);
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+}
+
+/* ── Forms ──────────────────────────────────────────────────────────────── */
+.dform { display: flex; flex-direction: column; gap: 13px; }
+.dform__row { display: flex; flex-wrap: wrap; gap: 12px; }
+.dform__row > .fld { flex: 1; min-width: 140px; }
+.dform__row--add { align-items: flex-end; margin-bottom: 14px; }
+.dform__act { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dfieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.dgrow { flex: 1; min-width: 180px; }
+
+/* ── Row list ───────────────────────────────────────────────────────────── */
+.dlist { display: flex; flex-direction: column; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.dlist__i {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 11px 13px; border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm); background: var(--surface);
+}
+.dlist__main {
+  display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0;
+  text-align: left; background: none; border: 0; padding: 0;
+  font-family: inherit; color: inherit; cursor: pointer;
+}
+.dlist__main--static { cursor: default; }
+.dlist__main:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; border-radius: var(--r-xs); }
+.dlist__t { font-size: 13.5px; font-weight: 600; color: var(--on-surface); display: flex; align-items: center; }
+.dlist__m { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.dlist__act { display: flex; align-items: center; gap: 7px; flex-shrink: 0; flex-wrap: wrap; }
+.dmeta { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 14px; }
+.dmeta__i { font-size: 11.5px; color: var(--on-surface-3); }
+
+/* ── Pivot ──────────────────────────────────────────────────────────────── */
+/* The grid scrolls inside its own box; the page never scrolls sideways. */
+.dpiv__wrap { overflow-x: auto; }
+.dpiv { min-width: 100%; }
+.dpiv td[data-align="right"], .dpiv th[data-align="right"] { text-align: right; }
+.dpiv__rt { font-weight: 600; }
+.dpiv__gt { font-weight: 700; color: var(--primary-text); }
+
+/* One number, no dimension. */
+.dbig { display: flex; flex-direction: column; gap: 4px; padding: 12px 0; }
+.dbig__v {
+  font-size: 34px; font-weight: 700; line-height: 1.05;
+  font-variant-numeric: tabular-nums; color: var(--on-surface);
+}
+.dbig__l { font-size: 12px; color: var(--on-surface-3); }

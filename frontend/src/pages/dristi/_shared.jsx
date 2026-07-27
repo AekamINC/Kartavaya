@@ -1,0 +1,253 @@
+// Dristi · दृष्टि — shared helpers for the analytics tabs.
+//
+// ── Why a fetch hook and not eight copies of useEffect ────────────────────────
+//
+// Every tab in the single-file version did this:
+//
+//     useEffect(() => { api.get(path).then(r => setData(r.data))
+//                          .catch(e => pushToast({ type: 'error', … })); }, []);
+//     if (!data) return <Shimmer />;
+//
+// which has the defect this module exists to avoid. `data` stays null on
+// failure, so the failed fetch renders the LOADING state forever, and the only
+// notice is a toast that has already faded by the time anyone looks. Two tabs
+// were worse — ReportsTab and DashboardsTab did `.catch(() => setReports([]))`,
+// turning a 500 into "No scheduled reports", an empty state that invites you to
+// create a second copy of the thing that already exists.
+//
+// A failed fetch must never render as an empty state. `useDristi` separates the
+// three outcomes so a tab cannot accidentally collapse them, and `<TabState>`
+// renders them so a tab cannot forget one.
+//
+// ── Restricted is not an error ───────────────────────────────────────────────
+//
+// Dristi reads from every other module, so 403 is an ORDINARY answer here, not
+// a fault: the analytics grant is not a grant to the accounting ledger or the
+// salary register. It gets `RestrictedNote` — neutral, names who can grant it —
+// never the red warning that tells a user something is broken when nothing is.
+import React, { useState, useEffect, useCallback } from 'react';
+import { api } from '../../lib/api';
+import { Shimmer } from '../../components/editorial';
+import RestrictedNote from '../../components/module/RestrictedNote';
+import { inr, grouped } from '../../lib/inr';
+
+/** Indian digit grouping, one implementation — see lib/inr.js. */
+export const FMT = inr;
+export const NUM = grouped;
+export const PCT = v => `${Number(v || 0).toFixed(1)}%`;
+
+/** The module a 403 on this path is really about, for the restricted note. */
+const MODULE_OF = {
+  '/v1/dristi/revenue': { module: 'accounting (Ganit)', hi: 'गणित' },
+  '/v1/dristi/pipeline': { module: 'the CRM (Graha)', hi: 'ग्रह' },
+  '/v1/dristi/hr': { module: 'HR records (Manav)', hi: 'मानव' },
+  '/v1/dristi/sales': { module: 'the order book (Vikray)', hi: 'विक्रय' },
+};
+
+/**
+ * The three outcomes of a Dristi read, kept apart.
+ *
+ * `restricted` is 403 and is not a failure. `err` is everything else and always
+ * carries a retry. `data` is only ever set from a response that arrived.
+ */
+export function useDristi(path, { enabled = true } = {}) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(enabled);
+  const [err, setErr] = useState('');
+  const [restricted, setRestricted] = useState(null);
+
+  const load = useCallback(async () => {
+    if (!enabled) return;
+    setLoading(true);
+    setErr('');
+    setRestricted(null);
+    try {
+      const r = await api.get(path);
+      setData(r.data);
+    } catch (e) {
+      // Never leave stale figures on screen under a fresh error — a number with
+      // no provenance is worse than no number.
+      setData(null);
+      if (e.response?.status === 403) {
+        setRestricted(MODULE_OF[path] || { module: 'this data' });
+      } else {
+        setErr(e.response?.data?.detail || 'Retry, or check your connection.');
+      }
+    }
+    setLoading(false);
+  }, [path, enabled]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return { data, loading, err, restricted, reload: load };
+}
+
+/**
+ * Renders whichever of the four states applies, so no tab has to remember all
+ * of them. `children` is a function of the loaded data — it cannot run before
+ * the data exists, which is the point.
+ */
+export function TabState({ state, count = 4, children }) {
+  const { data, loading, err, restricted, reload } = state;
+  if (loading) return <Shimmer count={count} />;
+  if (restricted) return <RestrictedNote module={restricted.module} />;
+  if (err) {
+    return (
+      <div className="note note--warn" role="status">
+        <span>
+          <b>This did not load.</b> {err}
+        </span>
+        <button type="button" className="k-btn k-btn--ghost k-btn--sm dret" onClick={reload}>
+          Retry
+        </button>
+      </div>
+    );
+  }
+  if (!data) return null;
+  return children(data);
+}
+
+/**
+ * A block the server declined to include, named.
+ *
+ * `/overview` and `/sales` return a `withheld` list rather than omitting the
+ * key, precisely so this can be drawn. A withheld payroll total rendered as ₹0
+ * is indistinguishable from a company that paid nobody all year.
+ */
+export function Withheld({ what, module }) {
+  return (
+    <div className="dwith" role="note">
+      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+        strokeWidth="1.5" aria-hidden="true">
+        <rect x="4" y="9" width="12" height="8" rx="1.5" />
+        <path d="M7 9V6.5a3 3 0 0 1 6 0V9" />
+      </svg>
+      <span>{what} is not shown — it reads {module}, which you don’t have access to.</span>
+    </div>
+  );
+}
+
+/** Section sub-head used inside a chart card, both scripts. */
+export function Bi({ en, hi }) {
+  return (
+    <span className="dbi">
+      <b className="dbi__en">{en}</b>
+      {hi && <span className="dbi__hi" lang="hi">{hi}</span>}
+    </span>
+  );
+}
+
+// ── Chart forms ──────────────────────────────────────────────────────────────
+//
+// Three, because the reference draws three (`ScreensMore.jsx`, `ScreenDristi`'s
+// CHARTS): `bar`, `funnel` and `row`. They are CSS, not a charting library —
+// each is a handful of divs whose one data-driven dimension arrives as a custom
+// property, so they inherit the theme, the density setting and the type scale
+// like everything else on the page. A canvas would inherit none of it.
+//
+// Every one of them states its own empty case. A bar chart of nothing is an
+// empty box that reads as a rendering fault.
+
+const pctOf = (v, max) => (max > 0 ? Math.max((Number(v) || 0) / max * 100, 0) : 0);
+
+/**
+ * Vertical bars. `items` is [{ label, value, sub? }]. The last bar is the
+ * accent — the reference highlights the most recent period, which is the one
+ * you are being asked to react to.
+ */
+export function Bars({ items, format = NUM, empty = 'Nothing in this period yet.' }) {
+  if (!items?.length) return <p className="dnone">{empty}</p>;
+  const max = Math.max(...items.map(i => Number(i.value) || 0), 0);
+  if (max <= 0) return <p className="dnone">{empty}</p>;
+  return (
+    <div className="dbars">
+      {items.map((i, n) => (
+        <div className="dbars__c" key={i.label}>
+          <span className="dbars__v">{format(i.value)}</span>
+          <span
+            className={`dbars__b${n === items.length - 1 ? ' dbars__b--now' : ''}`}
+            style={{ '--h': `${pctOf(i.value, max)}%` }}
+          />
+          <span className="dbars__x">{i.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Funnel — stages in order, width proportional to the first. Stage order is
+ * meaning here, so this never sorts by value: a funnel that reorders itself
+ * when Negotiation outgrows Proposal is no longer a funnel.
+ */
+export function Funnel({ items, format = FMT, empty = 'No deals in the pipeline.' }) {
+  if (!items?.length) return <p className="dnone">{empty}</p>;
+  const max = Math.max(...items.map(i => Number(i.value) || 0), 0);
+  return (
+    <div className="dfun">
+      {items.map(i => (
+        <div className="dfun__r" key={i.label}>
+          <span className="dfun__l">{i.label}</span>
+          <span className="dfun__t">
+            <span className="dfun__f" style={{ '--w': `${pctOf(i.value, max)}%` }} />
+          </span>
+          <span className="dfun__v">{format(i.value)}</span>
+          {i.sub != null && <span className="dfun__n">{i.sub}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Horizontal meters — the reference's `row` kind, used for per-person figures.
+ * `pct` is the fill; `value` is what gets printed, so a meter can show a rupee
+ * figure against a percentage-of-target fill.
+ */
+export function Meters({ items, empty = 'Nothing to compare yet.' }) {
+  if (!items?.length) return <p className="dnone">{empty}</p>;
+  return (
+    <div className="dmet">
+      {items.map(i => (
+        <div className="dmet__r" key={i.label}>
+          <span className="dmet__n" title={i.label}>{i.label}</span>
+          <span className="dmet__t">
+            <span
+              className={`dmet__f${i.tone ? ` dmet__f--${i.tone}` : ''}`}
+              style={{ '--w': `${Math.min(Math.max(Number(i.pct) || 0, 0), 100)}%` }}
+            />
+          </span>
+          <span className="dmet__v">{i.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A titled card. The reference's `Card`, on the classes this build already has. */
+export function Panel({ title, hi, right, wide, children }) {
+  return (
+    <section className={`dcard${wide ? ' dcard--wide' : ''}`}>
+      <header className="dcard__h">
+        <Bi en={title} hi={hi} />
+        {right && <span className="dcard__r">{right}</span>}
+      </header>
+      <div className="dcard__b">{children}</div>
+    </section>
+  );
+}
+
+/** Turn rows of objects into a CSV file the browser downloads. */
+export function downloadCSV(filename, header, rows) {
+  const esc = v => {
+    const s = v == null ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const body = [header, ...rows].map(r => r.map(esc).join(',')).join('\n');
+  const url = URL.createObjectURL(new Blob([body], { type: 'text/csv;charset=utf-8;' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
