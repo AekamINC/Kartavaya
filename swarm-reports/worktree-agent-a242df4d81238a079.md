@@ -144,21 +144,127 @@ the code from the task's own UUID, which is at least stable and unique per task
 
 ## 6. What was built
 
-### 6.1 Approvals card on Today
+After: `img/a242-build-today-after.png` (Approvals in the right column),
+`img/a242-build-cash-after.png` (Cash position in the left),
+`img/a242-build-tasks-after.png` (Tasks with real ids).
 
-_(filled in as it lands)_
+### 6.1 Cash position — `pages/today/CashPosition.jsx` + a new endpoint
 
-### 6.2 Cash position card on Today
+Twelve stacked buckets, a `30d` / `Quarter` toggle, an Inflow / Outflow / Net
+footer, and the current bucket drawn in solid `--primary` so "how are we doing
+now" is findable without counting bars.
 
-_(filled in as it lands)_
+Nothing in the API could feed it, so **`GET /api/v1/ganit/cash-position` is
+new** (`backend/routers/ganit.py`). It reads money that actually MOVED:
 
-### 6.3 Stable task reference
+| Direction | Source | Excluded, and why |
+|---|---|---|
+| in | `staging.ganit_payments` | invoices — invoiced is not received, and a card called *cash position* that counts unpaid invoices tells a receivables-heavy firm it is liquid when it is not |
+| out | `staging.ganit_expenses` + `staging.ganit_vendor_payments` | unpaid vendor **bills** — same rule, other direction |
 
-_(filled in as it lands)_
+Read-only, **no migration**: every column has existed since `018`, `019` and
+`035`. The two ranges are a whitelist because both values are interpolated into
+the SQL string. Buckets come from a generated calendar joined LEFT, so a period
+with inflow and no outflow still produces a bar instead of shifting every later
+bucket one place left. The last bucket ends at `CURRENT_DATE + 1`, so money
+received this morning is on the chart.
+
+Both series share **one denominator**, so a taller outflow bar really is more
+money. Scaling two series independently is the commonest way a two-direction bar
+chart lies.
+
+Four tests in `backend/tests/test_ganit.py` — the range whitelist, the three
+footer totals, that net may be negative, and that an empty org returns zero
+totals rather than an error.
+
+**Gated exactly like `ReceivablesKPI`**: 403 or 404 renders *nothing at all* —
+no title, no card — because a member without a Ganit grant must not learn the
+org's cash position from an error message on their home screen. A 5xx or a
+network failure *does* render, because that is a fault the reader should see
+rather than a permission they lack. Verified both ways against the mock.
+
+### 6.2 Approvals — `pages/today/ApprovalsCard.jsx`
+
+First card in the right column, reading `GET /api/approvals/pending`, deciding
+through `POST /api/approvals/{id}/review`, with the `N waiting` tag from the
+reference.
+
+**Approve and decline are deliberately not symmetric.** `server.py:1634` returns
+400 *"Rejection reason is required"* when `notes` is empty, so an inline ✗ that
+posted immediately would be a button that always fails. `ApprovalsPage` solves
+this with a modal; duplicating that modal on a dashboard card would be a second
+dialog with its own copy for one field. So ✗ opens a one-line reason field
+inside the row and ✓ posts straight through. The asymmetry is the server's rule
+made visible instead of hidden behind a button that 400s.
+
+`send_to_client` is not offered here — it needs the project's client list and a
+recipient choice, which belong on the full page.
+
+**States, all exercised against the mock:** skeleton rows while loading; a
+distinct message per `errorKind` on failure that says explicitly *"This is not a
+claim that none are waiting"* with a retry; `Nothing is waiting on your
+decision.` when genuinely empty, with the tag replaced by a History link.
+
+### 6.3 Today no longer blanks its whole body when `/tasks` fails
+
+Not in the brief, but the two new cards forced the question. `error` on this page
+means `/tasks` rejected **and nothing else** — the verse and Ganit calls swallow
+their own rejections by design. The body was nonetheless an all-or-nothing
+branch, so one failed request removed Approvals, Cash position, Team pulse and
+the verse along with it.
+
+Now only the task-derived panels are replaced, by an `ErrorState` that names what
+failed. Everything reading a different source stays. This is the same principle
+the file already states one block above for `ReceivablesKPI`, applied to the rest
+of the page: an approvals queue that vanishes because an unrelated call 500'd is
+how a payroll run sits unapproved for a day.
+
+Verified: with `/tasks` forced to 500, the page renders the ErrorState **and**
+Cash position, Approvals (`3 waiting`), Team pulse and the citation.
+
+### 6.4 Stable task reference on Tasks
+
+`KAR-{idx + 100}` → `#{task_id.slice(-6)}`, which is what `DrawerTitle.jsx`,
+`views/TaskCard.jsx` and `today/TaskListCard.jsx` already render. That sweep
+missed `TasksListPage.jsx`; the four surfaces now name a task the same way.
+(Committed together with §6.1–6.3; the commit subject does not mention it.)
+
+**Still open:** there is no per-org task sequence. A six-character UUID tail is
+stable and unique but it is not a number a person will read aloud. A real
+`task_number` needs a migration and a backfill, which this run may not do.
 
 ---
 
-## 7. For whoever picks this up
+## 7. Left for somebody else, with the reasoning
+
+Ranked by how visible each is in the renders.
+
+1. **The stat row is a different set of quantities.** Reference: Pipeline ·
+   Receivables · Collected MTD · GST due · Team in today — five business
+   figures. Build: Open tasks · Due today · Overdue · Done this week — four task
+   counts, plus a separate Receivables band the reference does not have.
+   `DashboardPage.jsx:28-33` records the divergence as a deliberate product
+   decision, so changing it is a call for the owner, not a defect fix. Worth
+   settling explicitly: it is the single largest visual difference between the
+   two screens.
+2. **The bilingual page header is inverted** — §4 above. Needs the type scale
+   moved with the DOM order; two siblings own type on this surface.
+3. **The week strip is in the wrong container.** Reference renders it below the
+   stat row as its own row of chips; the build renders it inside the hero, above
+   everything. Moving it is a `Hero` change, and `Hero` is shared.
+4. **`Needs you today` is a table in the reference, a list in the build.** Four
+   labelled columns (`Task · Project · Owner · Due`) versus an unlabelled row.
+   `TaskListCard` is used twice on the page, so converting it affects
+   "Waiting on others" too.
+5. **The Tasks button has no `N` hint, and the shortcut does not exist.** The
+   reference advertises `N` on the button and implements `g d / g t / n` in
+   `App.jsx:30-45`. Adding the hint without the shortcut would be a lie; the
+   shortcut is a global keyboard layer, which is nobody's surface right now.
+6. **`inrShort` renders `₹79.9L`; the reference renders `₹31.2 L`** with a
+   space. One character, in `lib/inr.js`, used by 87 call sites — a typographic
+   call for whoever owns type, not a structural one.
+
+## 8. For whoever picks this up
 
 * `frontend/public/__ref/` is gitignored. Recreate with the copy in
   `swarm-reports/_DESIGN-GAP.md` §"How to render the reference".
