@@ -60,26 +60,56 @@ without listing it, so reading the prose could never have caught this.
 
 Ordered by how visible each is.
 
-1. **Section headings.** The reference renders `WORKSPACE` above `कार्यक्षेत्र` as a
-   two-line stacked heading. Confirm the build's heading component matches —
-   size, tracking, weight, and the Devanagari line's font (Tiro, weight 400, and
-   NOT tracked; `24-bilingual-devanagari.md` forbids tracking on Devanagari and
-   the heading style applies it to the Latin line only).
+1. ~~**Section headings.** The reference renders `WORKSPACE` above `कार्यक्षेत्र`
+   as a two-line stacked heading.~~ **WRONG — struck.** It does not. `.side__sec`
+   is `display:flex; flex-direction:row`; measured on the rendered page the Latin
+   sits at `x=18` and the Devanagari at `x=201` in a 251px sidebar — one row,
+   Devanagari pushed right by `margin-left:auto`. The build already matches. This
+   entry was written from the JSX, which is the mistake this whole file exists to
+   warn about. Type treatment of the two spans is still a fair question; the
+   LAYOUT is not.
 2. **Item labels.** Reference says `Finance` where the build says `Invoicing`,
-   and `ग्रह` where the build says `ग्राहक` for CRM. Both are the designer's
-   words; the build's are somebody's paraphrase. Settle each deliberately rather
-   than silently.
-3. **Badges.** The reference carries counts on Tasks (12), Finance (4),
-   Attendance (3), Messaging (7), Roles (1), Approvals (3). Confirm the build
-   renders a badge in the same position and shape for each.
+   and `ग्रह` where the build says `ग्राहक` for CRM. **SETTLED — both kept as the
+   build has them**, see `worktree-agent-a124b468e0049b3a9.md` §2. Short version:
+   `Invoicing` is live in eight surfaces and describes what the module does;
+   `ग्रह` means *planet*, and `Modules.jsx:28` carries a written prior decision
+   that CRM is `ग्राहक`, customer. The mockup is not right about everything.
+   Still open, and found while doing this: `ग्राहक` is now the CRM sub-label AND
+   the Clients section heading — rename the section.
+3. **Badges.** ~~Confirm the build renders a badge in the same position and shape
+   for each.~~ **DONE.** Element and slot match exactly (`.side__badge`,
+   `margin-left:auto`, last child, hidden in the rail). The reference's
+   12/4/3/7/1 are mockup fixtures; `01 §4` specs exactly two counts
+   (`{inbox, approvals}`) and the build has both. Not a gap.
 4. **Per-page layout.** Every module screen in `ScreensBiz.jsx`, `ScreensCore.jsx`,
    `ScreensWork.jsx`, `ScreensMore.jsx` — compare rendered, page by page.
 5. **Density and display presets.** The harness sets `data-density="cozy"` and
    `data-display="serif"` on `<html>`. If the build defaults elsewhere, every
    spacing comparison is against the wrong baseline and will look wrong for a
    reason that is not the page's fault.
-6. **Preset industry navs.** `Chrome.jsx:72-76` defines per-industry module sets
-   (`ca`, `agency`, `trading`, `consult`). The build has no equivalent.
+6. **Preset industry navs.** ~~The build has no equivalent.~~ **ANSWERED — do not
+   build it.** It has a better one, in two halves: `onboarding/data.js`'s
+   `OB_PRESETS` picks the starting modules per industry, and `/auth/me`'s
+   `module_grants[]` drives `canSeeNavItem`, with `navGroupsFor` dropping the
+   emptied groups — the same visible behaviour, decided by entitlement rather
+   than a client toggle the server knows nothing about. A second filter would let
+   a user reveal a row that 403s. Full reasoning in
+   `worktree-agent-a124b468e0049b3a9.md` §3.
+
+## Also settled — the app shell's structure
+
+Sidebar, toolbar, breadcrumb, rail, mobile bar: enumerated element by element
+against the rendered mockup in `worktree-agent-a124b468e0049b3a9.md` §1, with
+screenshots of both sides in `swarm-reports/_shots/`. Six differences fixed in
+`76e06b1`; nine left open as decisions rather than patches (section order,
+`Client Portal` having no staff route, the sync chip, the appearance popover,
+gear-vs-sign-out in the footer, and a duplicate `.k-kbd` declaration).
+
+**Two build-harness facts worth having before you start**: the shared dev server
+on `:5173` serves the MAIN repo, not your worktree, and the Playwright MCP
+browser is shared — tabs get stolen mid-task. Headless Chrome
+(`chrome.exe --headless=new --screenshot=… --virtual-time-budget=7000`) is
+contention-free.
 
 ## Not yet diagnosed — scrolling
 
