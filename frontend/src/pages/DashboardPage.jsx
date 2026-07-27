@@ -45,6 +45,7 @@ import { vikramLabel } from '../lib/vikram';
 import {
   StatRow, QuickActions, ReceivablesKPI, TaskListCard,
   ProjectStatus, UpcomingWeek, TeamPulse, TodaySkeleton,
+  ApprovalsCard, CashPosition,
 } from './today';
 import '../styles/today.css';
 
@@ -305,67 +306,108 @@ export default function TodayPage({ teams = [] }) {
       <ReceivablesKPI stats={finStats} />
 
       {/* ReceivablesKPI stays mounted above: it has its own source and its own
-          null guard, so a task failure must not blank a figure that loaded. */}
-      {showSkeleton ? <TodaySkeleton /> : error ? (
-        <ErrorState
-          kind={errorKind(error)}
-          grant="access to this workspace"
-          onRetry={load}
-        />
-      ) : (
-        <>
-          <StatRow
-            open={derived.openTotal}
-            projectCount={derived.openProjectCount}
-            dueToday={derived.dueToday}
-            dueTodayHigh={derived.dueTodayHigh}
-            overdue={derived.overdue}
-            completedWeek={derived.completedWeek}
-            completedPrevWeek={derived.completedPrevWeek}
-          />
+          null guard, so a task failure must not blank a figure that loaded.
 
-          <QuickActions onNavigate={navigate} />
+          THE SAME RULE NOW GOVERNS THE BODY. `error` here means `/tasks`
+          rejected and nothing else — the other two calls swallow their own
+          rejections. Everything below that reads a DIFFERENT source therefore
+          stays mounted through it: Approvals, Cash position, Team pulse and the
+          verse. Only the task-derived panels drop out, replaced by one
+          ErrorState that says what actually failed.
+
+          Blanking the whole page was the more visible version of the defect
+          this file already documents in `ledeCopy`: a failed request rendering
+          as an absence. An approvals queue that vanishes because an unrelated
+          call 500'd is how a payroll run sits unapproved for a day.
+
+          `showSkeleton`, not `loading` — MOTION-SPEC §7.4's 120ms hold, added
+          on staging while this branch was in flight. The skeleton still stands
+          in for the WHOLE body, including the two independent cards: during the
+          first load nothing about the page is known yet, so claiming anything
+          about approvals or cash would be the same lie in the other direction. */}
+      {showSkeleton ? <TodaySkeleton /> : (
+        <>
+          {error ? (
+            <ErrorState
+              kind={errorKind(error)}
+              grant="access to this workspace"
+              detail="We could not load your tasks. Everything below reads a different source and is unaffected."
+              onRetry={load}
+            />
+          ) : (
+            <>
+              <StatRow
+                open={derived.openTotal}
+                projectCount={derived.openProjectCount}
+                dueToday={derived.dueToday}
+                dueTodayHigh={derived.dueTodayHigh}
+                overdue={derived.overdue}
+                completedWeek={derived.completedWeek}
+                completedPrevWeek={derived.completedPrevWeek}
+              />
+
+              <QuickActions onNavigate={navigate} />
+            </>
+          )}
 
           <section className="k-twocol">
             <div className="k-col k-col--main">
-              <TaskListCard
-                title="On your plate"
-                sanskrit="आपके हाथ में"
-                tasks={withTeam(derived.myPlate)}
-                linkLabel="View all →"
-                onLink={openTask}
-                onOpenTask={openTask}
-                emptyTitle={{ en: 'Nothing assigned to you', hi: 'आपके लिए कुछ नहीं' }}
-                emptyBody="Tasks appear here as soon as someone assigns one to you."
-              />
+              {!error && (
+                <>
+                  <TaskListCard
+                    title="On your plate"
+                    sanskrit="आपके हाथ में"
+                    tasks={withTeam(derived.myPlate)}
+                    linkLabel="View all →"
+                    onLink={openTask}
+                    onOpenTask={openTask}
+                    emptyTitle={{ en: 'Nothing assigned to you', hi: 'आपके लिए कुछ नहीं' }}
+                    emptyBody="Tasks appear here as soon as someone assigns one to you."
+                  />
 
-              {/* New section. This is where the tasks that were polluting "On
-                  your plate" belong — created by you, being done by someone
-                  else. Hidden entirely when you have delegated nothing, so it
-                  costs nothing to an individual contributor. */}
-              {derived.waitingTotal > 0 && (
-                <TaskListCard
-                  title="Waiting on others"
-                  sanskrit="अन्य पर निर्भर"
-                  tasks={withTeam(derived.waiting)}
-                  illustration="teams"
-                  linkLabel={derived.waitingTotal > derived.waiting.length ? 'View all →' : undefined}
-                  onLink={openTask}
-                  onOpenTask={openTask}
-                  emptyTitle={{ en: 'Nothing delegated', hi: 'कुछ सौंपा नहीं' }}
-                  emptyBody="Work you create and assign to someone else shows up here."
-                />
+                  {/* New section. This is where the tasks that were polluting
+                      "On your plate" belong — created by you, being done by
+                      someone else. Hidden entirely when you have delegated
+                      nothing, so it costs nothing to an individual
+                      contributor. */}
+                  {derived.waitingTotal > 0 && (
+                    <TaskListCard
+                      title="Waiting on others"
+                      sanskrit="अन्य पर निर्भर"
+                      tasks={withTeam(derived.waiting)}
+                      illustration="teams"
+                      linkLabel={derived.waitingTotal > derived.waiting.length ? 'View all →' : undefined}
+                      onLink={openTask}
+                      onOpenTask={openTask}
+                      emptyTitle={{ en: 'Nothing delegated', hi: 'कुछ सौंपा नहीं' }}
+                      emptyBody="Work you create and assign to someone else shows up here."
+                    />
+                  )}
+                </>
               )}
 
-              <ProjectStatus
-                counts={derived.statusCounts}
-                total={tasks.length}
-                onOpenProjects={() => navigate('/projects')}
-              />
+              {/* Second card in the reference's left column, directly below the
+                  task list. It sits above Project status here because that card
+                  has no counterpart in the reference at all, so it takes the
+                  slot after everything the design does specify. */}
+              <CashPosition />
+
+              {!error && (
+                <ProjectStatus
+                  counts={derived.statusCounts}
+                  total={tasks.length}
+                  onOpenProjects={() => navigate('/projects')}
+                />
+              )}
             </div>
 
             <div className="k-col k-col--side">
-              <UpcomingWeek tasks={withTeam(derived.upcoming)} onOpenTask={openTask} />
+              {/* FIRST in the reference's right column, above Activity. The
+                  build had no approvals panel on Today at all — clearing three
+                  decisions meant navigating to /approvals and back. */}
+              <ApprovalsCard onOpenApprovals={() => navigate('/approvals')} />
+
+              {!error && <UpcomingWeek tasks={withTeam(derived.upcoming)} onOpenTask={openTask} />}
               <TeamPulse activity={activity} onOpenActivity={() => navigate('/activity')} />
               <Citation
                 sanskrit={verse?.sanskrit || 'कर्मण्येवाधिकारस्ते मा फलेषु कदाचन'}

@@ -14,7 +14,9 @@
  *    nothing throws.
  */
 import { describe, it, expect } from 'vitest';
-import { dayLabel, splitMentions } from '../pages/sanvaad/messageUtils';
+import {
+  dayLabel, dropSettled, isPending, mergeById, optimisticMessage, splitMentions,
+} from '../pages/sanvaad/messageUtils';
 
 const NAMES = ['Keval Shah', 'Keval', 'Rohan Iyer'];
 
@@ -87,5 +89,106 @@ describe('dayLabel()', () => {
     const d = new Date();
     d.setDate(d.getDate() - 40);
     expect(dayLabel(d.toISOString()).hi).toBeNull();
+  });
+});
+
+/* ── The optimistic-send helpers ────────────────────────────────────────────
+ *
+ * These three carry `MOTION-SPEC.md` §7.1 ("never lie about state") and every
+ * one of them fails silently rather than loudly:
+ *
+ *  · `markFresh` decides whether `.msg--new` plays on ONE row or on fifty. Get
+ *    the "was the log already populated" guard wrong and the entire first page
+ *    of a channel animates in on every channel switch, which reads as a bug in
+ *    the layout rather than in a flag.
+ *  · `dropSettled` is the only thing standing between the reader and seeing
+ *    their own message twice, and the window it covers — poll tick lands between
+ *    the optimistic push and the POST's response — is exactly the one a manual
+ *    test on a fast connection never reaches.
+ *  · a placeholder id that could collide with a server id would send a PATCH or
+ *    a reaction to a real, unrelated message.
+ */
+/* A fixed date in the past, not a template around "now". `mergeById` sorts on
+   `created_at` and `optimisticMessage` stamps the real clock, so a fixture
+   built from today's date puts the placeholder BEFORE the fixtures whenever the
+   suite runs earlier in the UTC day than the hard-coded hour — a test that
+   passes in the afternoon and fails in the morning. */
+const row = (id, over = {}) => ({
+  id, content: `m${id}`, sender_id: 1, created_at: `2020-01-01T10:0${id}:00Z`, ...over,
+});
+
+describe('mergeById() freshness marking', () => {
+  it('marks nothing on the first page, however many rows arrive', () => {
+    const out = mergeById([], [row(1), row(2), row(3)], { markFresh: true });
+    expect(out.map(m => !!m.__fresh)).toEqual([false, false, false]);
+  });
+
+  it('marks only the row the poll actually added', () => {
+    const out = mergeById([row(1), row(2)], [row(1), row(2), row(3)], { markFresh: true });
+    expect(out.map(m => [m.id, !!m.__fresh])).toEqual([[1, false], [2, false], [3, true]]);
+  });
+
+  it('marks nothing at all without the flag — loadOlder must stay silent', () => {
+    const out = mergeById([row(3)], [row(1), row(2)]);
+    expect(out.some(m => m.__fresh)).toBe(false);
+  });
+
+  it('does not re-mark a row it already holds, so an update cannot replay the entrance', () => {
+    const first = mergeById([row(1)], [row(2)], { markFresh: true });
+    expect(first.find(m => m.id === 2).__fresh).toBe(true);
+    const second = mergeById(first, [row(2, { is_edited: true })], { markFresh: true });
+    // Still fresh from the first merge, but not re-flagged — and crucially the
+    // edit came through rather than being dropped by the branch that adds it.
+    expect(second.find(m => m.id === 2).is_edited).toBe(true);
+  });
+});
+
+describe('optimisticMessage()', () => {
+  it('cannot collide with a server id', () => {
+    const a = optimisticMessage('hello', { meId: 7 });
+    const b = optimisticMessage('hello', { meId: 7 });
+    expect(isPending(a)).toBe(true);
+    expect(isPending(b)).toBe(true);
+    expect(a.id).not.toBe(b.id);
+    expect(isPending(row(1))).toBe(false);
+    expect(isPending(row('1'))).toBe(false);
+  });
+
+  it('sorts last, because it is the newest thing in the channel', () => {
+    const opt = optimisticMessage('newest', { meId: 1 });
+    const out = mergeById([row(1), row(2)], [opt]);
+    expect(out[out.length - 1].id).toBe(opt.id);
+  });
+
+  it('carries who sent it, so the placeholder is not an "Unknown" avatar', () => {
+    const opt = optimisticMessage('hi', { meId: 7, me: { full_name: 'Keval Shah' } });
+    expect(opt.sender_id).toBe(7);
+    expect(opt.sender_name).toBe('Keval Shah');
+    expect(opt.__pending).toBe(true);
+  });
+});
+
+describe('dropSettled()', () => {
+  it('retires a placeholder whose real row arrived on the poll first', () => {
+    const opt = optimisticMessage('rows 14 and 27', { meId: 1 });
+    const local = [row(1), opt];
+    const incoming = [row(1), row(2, { content: 'rows 14 and 27', sender_id: 1 })];
+    expect(dropSettled(local, incoming).map(m => m.id)).toEqual([1]);
+  });
+
+  it('keeps a placeholder the server has not echoed yet', () => {
+    const opt = optimisticMessage('not sent yet', { meId: 1 });
+    expect(dropSettled([opt], [row(1)])).toHaveLength(1);
+  });
+
+  it('does not retire it against an identical message from someone else', () => {
+    const opt = optimisticMessage('same words', { meId: 1 });
+    const incoming = [row(2, { content: 'same words', sender_id: 99 })];
+    expect(dropSettled([opt], incoming)).toHaveLength(1);
+  });
+
+  it('is identity-stable when there is nothing pending, so React skips the render', () => {
+    const local = [row(1), row(2)];
+    expect(dropSettled(local, [row(1)])).toBe(local);
   });
 });

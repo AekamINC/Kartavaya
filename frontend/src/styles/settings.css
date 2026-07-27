@@ -46,7 +46,27 @@
   font-weight: 400; text-transform: none;
 }
 
-/* ── Segmented control ─────────────────────────────────────────────────── */
+/* ── Segmented control ───────────────────────────────────────────────────
+   THE TWO SOURCES DISAGREE, AND THIS FILE FOLLOWS THE RIGHT ONE. Measured:
+
+   |                 | `app.css:120-125`      | `09-customization.md:79-81` | here |
+   |-----------------|------------------------|-----------------------------|------|
+   | group radius    | `--r-sm`               | `--r-pill`                  | pill |
+   | group bg        | `--s-container` @ 80%  | `--s-container`             | solid |
+   | button radius   | `calc(--r-sm - 2px)`   | `--r-pill`                  | pill |
+   | button weight   | 600                    | 500                         | 500  |
+   | selected bg     | `--s-lowest`           | `--surface`                 | `--surface` |
+
+   `09` is the handover for this exact surface and it specifies the pill
+   verbatim, so a "fix" toward `app.css` would be a regression against the
+   newer of the two. Recorded because the difference is visible — a pill versus
+   a 7px rounded rectangle — and reads as drift until you check which source
+   owns the customization screens.
+
+   NOT ported from the reference either: its `.seg__n` is a tinted chip,
+   `--on-surface-3` on a 14% tint of itself, which measures **4.04:1** — the
+   SPEC-A11Y-3 pattern. The plain `--on-surface-3` on `--s-container` below is
+   4.56:1. Accessibility beats fidelity; the build's count already wins. */
 .seg {
   display: inline-flex; padding: 3px;
   border-radius: var(--r-pill); background: var(--s-container);
@@ -58,10 +78,20 @@
   font-family: inherit;
   transition: background var(--dur-fast), color var(--dur-fast);
 }
+/* The rule above declares `transition: background, color` and NOTHING ever
+   moved either one on an unselected segment — there was no hover rule, so the
+   only state change was the click that selects it, which `.on` handles. The
+   transition was animating a property nobody changed. `app.css:122` is the
+   value both sources omit; 7.00:1 on --s-container, up from the 5.07:1 of the
+   rest state, so the segment under the pointer is the darkest unselected one. */
+.seg__b:hover { color: var(--on-surface-2); }
 .seg__b.on {
   background: var(--surface); color: var(--on-surface);
   font-weight: 600; box-shadow: var(--shadow-1);
 }
+/* Order matters: `.on` must come after `:hover` or hovering the selected
+   segment would drop it from --on-surface to --on-surface-2, which reads as
+   the selection being lost. Same specificity, so document order decides. */
 .seg__b:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
 /* ── Accent grid ───────────────────────────────────────────────────────── */

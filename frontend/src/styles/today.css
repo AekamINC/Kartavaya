@@ -117,3 +117,182 @@
   gap: var(--sp-2);
   margin-top: var(--gap-section);
 }
+
+/* ── Cash position — the reference's second left-column card ──────────────
+   `ScreensCore.jsx:50-64`. Twelve columns, each a stacked pair: inflow above,
+   outflow below, both measured against ONE denominator (see CashPosition.jsx).
+   The chart is a fixed 128px tall there and stays so here — a bar chart that
+   grows with its container changes shape between the two columns and stops
+   being comparable week to week. */
+.k-today .k-cash {
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 128px;
+  padding: 4px 0;
+}
+.k-today .k-cash__col {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+}
+/* `--r-xs` on the outer corners only, so the pair reads as one column split
+   rather than two floating blocks. Literal 2px on the inner corners is the
+   reference's own value and there is no token below `--r-xs`. */
+.k-today .k-cash__in {
+  background: var(--primary-container);
+  border-radius: var(--r-xs) var(--r-xs) 2px 2px;
+  min-height: 1px;
+}
+/* The current bucket, so "how are we doing right now" is findable without
+   counting bars from the left. */
+.k-today .k-cash__in.is-current { background: var(--primary); }
+.k-today .k-cash__out {
+  background: var(--tertiary-container);
+  border-radius: 2px 2px var(--r-xs) var(--r-xs);
+  min-height: 1px;
+}
+
+.k-today .k-cash__legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--outline-variant);
+  font-size: 12px;
+  color: var(--on-surface-2);
+}
+.k-today .k-cash__key { display: inline-flex; align-items: center; gap: 6px; }
+.k-today .k-cash__key--net { color: var(--on-surface-3); }
+.k-today .k-cash__dot { width: 7px; height: 7px; border-radius: var(--r-pill); }
+.k-today .k-cash__dot--in  { background: var(--primary); }
+.k-today .k-cash__dot--out { background: var(--tertiary-container); }
+/* Tabular, always: these three numbers sit in a row and a proportional face
+   makes them jitter against each other as the range changes. */
+.k-today .k-cash__num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+.k-today .k-cash__num--up   { color: var(--ok); }
+.k-today .k-cash__num--down { color: var(--danger); }
+
+/* The range toggle in the card header. Not `.k-segctrl` — that control is a
+   full-width filter bar with counts, and this is two words in a card head. */
+.k-today .k-cash__seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--seg-bg);
+  border-radius: var(--r-md);
+}
+.k-today .k-cash__segbtn {
+  border: 0;
+  background: transparent;
+  color: var(--on-surface-3);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.k-today .k-cash__segbtn.is-active {
+  background: var(--surface);
+  color: var(--on-surface);
+  box-shadow: var(--shadow-1);
+}
+.k-today .k-cash__failed { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }
+
+/* ── Approvals — the reference's first right-column card ───────────────────
+   `ScreensCore.jsx:68-82`. Avatar · title over meta · two icon buttons, with a
+   hairline between rows and none after the last. */
+.k-today .k-approvals { display: flex; flex-direction: column; }
+.k-today .k-approvals__row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--outline-variant);
+}
+.k-today .k-approvals__row:last-child { border-bottom: 0; }
+.k-today .k-approvals__body { min-width: 0; }
+.k-today .k-approvals__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--on-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-today .k-approvals__meta {
+  font-size: 11px;
+  color: var(--on-surface-3);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k-today .k-approvals__acts { display: flex; gap: 4px; flex-shrink: 0; }
+.k-today .k-approvals__act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--outline-variant);
+  background: var(--surface);
+  color: var(--on-surface-2);
+  cursor: pointer;
+}
+.k-today .k-approvals__act:disabled { opacity: .5; cursor: default; }
+.k-today .k-approvals__act--yes {
+  background: var(--ok-container);
+  border-color: transparent;
+  color: var(--on-ok-container);
+}
+.k-today .k-approvals__act--no:hover:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* The decline reason. It replaces the two buttons rather than sitting beside
+   them, because the row is 300px wide in the side column and a field plus four
+   controls does not fit — and because there is nothing else to do in that row
+   once you have started declining. */
+.k-today .k-approvals__reason {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 6px;
+}
+.k-today .k-approvals__reasonin {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--outline);
+  background: var(--input-bg);
+  color: var(--on-surface);
+}
+.k-today .k-approvals__waiting {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--on-warn-container);
+  background: var(--warn-container);
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+}
+.k-today .k-approvals__more { margin-top: var(--sp-3); align-self: flex-start; }
+.k-today .k-approvals__failed { display: flex; flex-direction: column; gap: var(--sp-2); align-items: flex-start; }

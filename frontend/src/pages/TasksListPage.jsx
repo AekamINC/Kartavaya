@@ -492,7 +492,7 @@ export default function TasksListPage() {
                 {g.sans && <span className="k-group__sans" lang="hi">{g.sans}</span>}
                 <span className="k-group__count">{g.items.length}</span>
               </div>
-              {g.items.map((t, idx) => {
+              {g.items.map(t => {
                 const team      = teams.find(tm => tm.team_id === t.team_id);
                 const cat       = categories.find(c => c.category_id === t.category_id);
                 const assignees = (t.assignee_names || []).map(name => ({ name, color: avatarBg(name) }));
@@ -535,7 +535,27 @@ export default function TasksListPage() {
                           return (
                             <div key="task" className="k-trow__cell k-c-task">
                               <PriorityDot priority={t.priority} />
-                              <span className="k-trow__id">KAR-{String(idx + 100)}</span>
+                              {/* `KAR-{idx + 100}` — the row's index WITHIN ITS
+                                  GROUP — was rendered here as if it were the
+                                  task's reference. Every group restarted at 100,
+                                  so one screen showed KAR-100 three times, and
+                                  the number a user copied into an email changed
+                                  the moment anybody switched Group by, typed in
+                                  the search box, or closed a task above it.
+                                  A fabricated identifier that looks real is
+                                  worse than none: it is the one thing a person
+                                  quotes.
+                                  `#${task_id.slice(-6)}` is the form
+                                  `DrawerTitle.jsx`, `views/TaskCard.jsx` and
+                                  `today/TaskListCard.jsx` already use — that
+                                  sweep simply missed this file. It is stable and
+                                  unique per task, so the four surfaces finally
+                                  name a task the same way.
+                                  A real per-org sequence is still the right
+                                  answer; the `tasks` table has no
+                                  `task_number` column and adding one is a
+                                  migration. Filed in the report. */}
+                              <span className="k-trow__id">#{t.task_id?.slice(-6) || '—'}</span>
                               <span className="k-trow__title">{t.title}</span>
                               {t.attachments?.length > 0 && (
                                 <span className="k-trow__attach" title={`${t.attachments.length} attachment${t.attachments.length > 1 ? 's' : ''}`}>

@@ -820,7 +820,13 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .av {
   display: grid; place-items: center; flex: none; border-radius: 50%;
   background: var(--av-bg, var(--s-high)); color: #fff;
-  font-weight: 600; letter-spacing: .01em; overflow: hidden; user-select: none;
+  /* 700/.02em, from `app.css:203`. The port had landed on 600/.01em. Both
+     numbers matter more here than anywhere else in the system: `Avatar.jsx:29`
+     sizes the initials at `size * 0.41`, which is ~10px at the default 24px
+     avatar — under 11px, white on a mid-tone fill, two letters with no word
+     shape to fall back on. Weight and tracking are the only legibility left,
+     and the reference spends both. */
+  font-weight: 700; letter-spacing: .02em; overflow: hidden; user-select: none;
 }
 .av img { width: 100%; height: 100%; object-fit: cover; }
 .avstack { display: inline-flex; flex: none; align-items: center; }
@@ -830,7 +836,11 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .avstack__n {
   display: grid; place-items: center; flex: none; border-radius: 50%;
   background: var(--s-high); color: var(--on-surface-2);
-  font-family: var(--font-mono); font-weight: 600;
+  /* 700, matching `.av` above, the reference's `.avs__more` (`app.css:207`),
+     and `.k-avstack__more` (`editorial.css:892`) — which was already 700, so
+     the build's two overflow chips disagreed with each other. This is the one
+     Avatar.jsx renders. */
+  font-family: var(--font-mono); font-weight: 700;
   box-shadow: 0 0 0 1.5px var(--ring, var(--surface));
 }
 
