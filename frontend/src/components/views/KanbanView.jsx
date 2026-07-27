@@ -10,7 +10,7 @@ import { playPraiseSound } from '../../lib/notifSound';
 import TaskCard from './TaskCard';
 import CardGhost from './CardGhost';
 import TaskDrawer from '../TaskDrawer';
-import { useToast, ConfirmDialog, EmptyState } from '../ui';
+import { useToast, ConfirmDialog, EmptyState, Menu } from '../ui';
 
 /**
  * KanbanView — columns, drag, and the drawer (04-boards-table-views.md §5).
@@ -411,18 +411,35 @@ export default function KanbanView({
                         {colTasks.length + (snapshot.isDraggingOver && droppable
                           && !colTasks.some(t => t.task_id === draggingId) ? 1 : 0)}
                       </span>
+                      {/* 04 §2 gives the column header `dot · name · count · ⋯`
+                          and IxViews 9.3 says the menu is "the shared ⋯
+                          primitive from 5.1". It was a bare ✕ that could only
+                          delete, with rename reachable ONLY by double-clicking
+                          the name — an affordance that lives in a `title`
+                          attribute, which a keyboard user cannot reach and a
+                          touch user has no gesture for. `Menu` carries the
+                          portal, the roving tabindex and the Escape-returns-
+                          focus contract, so the two actions are now one
+                          discoverable control. Double-click still renames;
+                          it is a shortcut now rather than the only route. */}
                       {canManageCols && !isSynth && (
-                        <button
-                          type="button"
-                          className="bd__cx"
-                          onClick={() => deleteCol(col)}
-                          title="Delete column"
-                          aria-label={`Delete column ${col.name}`}
-                        >
-                          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                            <path d="M3 3l10 10M13 3L3 13" />
-                          </svg>
-                        </button>
+                        <Menu
+                          align="right"
+                          label={`Column actions for ${col.name}`}
+                          trigger={
+                            <span className="bd__cx" aria-hidden="true">
+                              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" focusable="false">
+                                <circle cx="3" cy="8" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="13" cy="8" r="1.4" />
+                              </svg>
+                            </span>
+                          }
+                          items={[
+                            { id: 'rename', label: 'Rename column', onSelect: () => startRename(col) },
+                            { id: 'add', label: 'Add task', onSelect: () => { setDraft(''); setComposeCol(col.column_id); } },
+                            { sep: true },
+                            { id: 'delete', label: 'Delete column', danger: true, onSelect: () => deleteCol(col) },
+                          ]}
+                        />
                       )}
                     </div>
 
