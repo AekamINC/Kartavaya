@@ -335,6 +335,17 @@ async def pipeline_analytics(
 ):
     pool = await get_pool()
 
+    # Every block below is the CRM: deal values, win rates and named customers.
+    # Same rule as /revenue and /hr — `dristi` is in STAFF_MODULES, `graha` is
+    # reachable by fewer roles than that, and this endpoint was the one place
+    # the pipeline could be read without holding it.
+    if not await reachable_modules(pool, user["user_id"], org_id, {"graha"}):
+        raise HTTPException(
+            403,
+            "Pipeline analytics reads CRM deals. Ask your org admin for access "
+            "to the Graha module.",
+        )
+
     stages = await pool.fetch(
         "SELECT stage, COUNT(*) AS count, COALESCE(SUM(value),0) AS value "
         "FROM staging.graha_deals WHERE org_id=$1::uuid "
@@ -462,6 +473,18 @@ async def sales_analytics(
 ):
     pool = await get_pool()
 
+    # Orders and targets are Vikray; the leaderboard additionally reads won
+    # deals out of Graha. Refuse without Vikray — there is no non-sensitive
+    # remainder — and drop the leaderboard alone when Graha is unreachable,
+    # the same split /hr uses for payroll.
+    allowed = await reachable_modules(pool, user["user_id"], org_id, {"vikray", "graha"})
+    if "vikray" not in allowed:
+        raise HTTPException(
+            403,
+            "Sales analytics reads the order book. Ask your org admin for "
+            "access to the Vikray module.",
+        )
+
     order_trend = await pool.fetch(
         "SELECT TO_CHAR(order_date, 'YYYY-MM') AS month, "
         "COUNT(*) AS orders, COALESCE(SUM(total),0) AS value "
@@ -479,7 +502,9 @@ async def sales_analytics(
         org_id,
     )
 
-    leaderboard = await pool.fetch(
+    leaderboard = []
+    if "graha" in allowed:
+        leaderboard = await pool.fetch(
         "SELECT t.salesperson_id, "
         "COALESCE(u.full_name, u.name, u.email) AS name, "
         "t.target_amount, "
@@ -503,6 +528,9 @@ async def sales_analytics(
         "order_trend": [dict(r) for r in order_trend],
         "status_split": [dict(r) for r in status_split],
         "leaderboard": [dict(r) for r in leaderboard],
+        # Named so the UI can say the leaderboard is withheld rather than draw
+        # an empty board, which reads as "nobody sold anything".
+        "withheld": [] if "graha" in allowed else ["leaderboard"],
     }
 
 
@@ -932,6 +960,13 @@ _ALLOWED_QUERY_TABLES = {
 class PivotQuery(BaseModel):
     source: str
     group_by: str = ""
+    #: The COLUMN dimension. A pivot is two-dimensional — the rendered reference
+    #: (`ScreensThin.jsx`, `DristiPivot`) draws client × quarter with a total per
+    #: row, per column and a grand total. With one dimension the "pivot" tab was
+    #: a two-column list, which is what `/query` already served the chart cards.
+    #: Validated against the same per-source column whitelist as `group_by`, so
+    #: it is never a caller-supplied SQL fragment.
+    group_by2: str = ""
     measure: str = "count"
     date_from: str = ""
     date_to: str = ""
@@ -962,6 +997,12 @@ async def run_pivot_query(
 
     if body.group_by and body.group_by not in allowed:
         raise HTTPException(400, f"group_by must be one of: {', '.join(allowed)}")
+    if body.group_by2 and body.group_by2 not in allowed:
+        raise HTTPException(400, f"group_by2 must be one of: {', '.join(allowed)}")
+    if body.group_by2 and not body.group_by:
+        raise HTTPException(400, "group_by2 requires group_by — columns need rows.")
+    if body.group_by2 and body.group_by2 == body.group_by:
+        raise HTTPException(400, "group_by and group_by2 must differ.")
 
     measure_sql = "COUNT(*)"
     if body.measure == "sum" and "total" in allowed:
@@ -1000,6 +1041,27 @@ async def run_pivot_query(
 
     where_clause = " AND ".join(where)
 
+    if body.group_by and body.group_by2:
+        # Both names are whitelist members, never caller text. The cap is on the
+        # CELL count rather than the row count: 40 clients x 12 months is 480
+        # rows the browser has to pivot, and a cross-tab that wide is unreadable
+        # anyway. Ordered by label so the rendered grid is stable between runs.
+        rows = await pool.fetch(
+            f"SELECT {body.group_by} AS label, {body.group_by2} AS col, "
+            f"{measure_sql} AS value "
+            f"FROM {table} WHERE {where_clause} "
+            f"GROUP BY {body.group_by}, {body.group_by2} "
+            f"ORDER BY 1, 2 LIMIT 600",
+            *params,
+        )
+        return {
+            "data": [dict(r) for r in rows],
+            "source": body.source,
+            "measure": body.measure,
+            "group_by": body.group_by,
+            "group_by2": body.group_by2,
+        }
+
     if body.group_by:
         rows = await pool.fetch(
             f"SELECT {body.group_by} AS label, {measure_sql} AS value "
@@ -1017,9 +1079,40 @@ async def run_pivot_query(
 
 
 @router.get("/widget-types", dependencies=[Depends(_gate)])
-async def widget_types(user=Depends(require_user)):
+async def widget_types(
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    """The pivot builder's vocabulary — only the sources this caller can read.
+
+    Two things this endpoint did not do:
+
+    · It listed every source regardless of entitlement, so the builder offered
+      `invoices` and `employees` to someone who gets a 403 the moment they press
+      Run. Offering an option that cannot succeed is worse than omitting it.
+    · It returned no columns, so the frontend carried its OWN source->columns
+      map. The two had already drifted — the copy in `DristiPage.jsx` was
+      missing `subtotal`, `amount_paid` and every `created_at`, so those
+      groupings were unreachable from the UI although the server allowed them,
+      and a column added to the whitelist would never have appeared. The
+      whitelist is the only correct source for this list.
+    """
+    pool = await get_pool()
+    reachable = await reachable_modules(
+        pool, user["user_id"], org_id,
+        {spec["module"] for spec in _ALLOWED_QUERY_TABLES.values()},
+    )
+    sources = {
+        name: {"columns": spec["columns"], "date_col": spec.get("date_col", "created_at")}
+        for name, spec in _ALLOWED_QUERY_TABLES.items()
+        if spec["module"] in reachable
+    }
     return {
-        "sources": list(_ALLOWED_QUERY_TABLES.keys()),
+        "sources": list(sources.keys()),
+        "source_meta": sources,
         "measures": ["count", "sum", "avg"],
         "widget_types": ["number", "bar", "pie", "line", "table"],
+        # How many of the eight sources are hidden by entitlement. The builder
+        # says so out loud rather than looking like the product only has three.
+        "withheld_count": len(_ALLOWED_QUERY_TABLES) - len(sources),
     }
