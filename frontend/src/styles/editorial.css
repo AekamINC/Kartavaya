@@ -1525,6 +1525,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
   letter-spacing: normal;
   color: var(--primary-text);
   font-weight: 400;
+  /* `.k-pageh__h1` sets -0.02em, and letter-spacing inherits as a resolved
+     absolute length rather than being recomputed against this element's own
+     size — so the h1's negative tracking landed here. Measured -0.88px at a
+     1440px viewport, where the h1 clamps to 44px. 24-bilingual-devanagari.md
+     forbids tracking on Devanagari: the script hangs its letters off a
+     continuous shirorekha and any tracking opens gaps in it. Same leak, same
+     reset, as `.bd__cn-hi` in boards.css and `.k-stat__hi` above. */
+  letter-spacing: normal;
 }
 .k-pageh__lede {
   font-size: 14px;

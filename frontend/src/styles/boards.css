@@ -75,6 +75,14 @@
    and tracked the wrong direction, so a column name out-shouted the card
    titles under it. */
 .bd__cn { font-size: 12.5px; font-weight: 700; letter-spacing: .03em; color: var(--on-surface); }
+/* `letter-spacing: 0` is load-bearing, not tidying — and more so since `.bd__cn`
+   above went from −.005em to +.03em. letter-spacing INHERITS as a resolved
+   absolute length, so whatever the Latin column name is tracked at lands on the
+   Devanagari beside it: measured −0.065px before, +0.375px now if this reset
+   were dropped. 24-bilingual-devanagari.md forbids tracking on Devanagari
+   outright — the script hangs its letters off a continuous shirorekha and any
+   tracking opens gaps in a stroke meant to be unbroken. Same trap, same reset,
+   as `.k-stat__hi` and `.k-pageh__sans`. */
 .bd__cn-hi { font-family: var(--font-indic); font-size: 12.5px; font-weight: 400; letter-spacing: 0; color: var(--on-surface-3); margin-left: 5px; }
 /* MEASURED: the count is a PILL on `--s-container`, 10.5px mono, not bare text.
    `--on-surface-faint` is a NON-TEXT token (00 §tokens) and this is text. */

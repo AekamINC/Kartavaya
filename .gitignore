@@ -118,3 +118,13 @@ backend/.doc-harness/
 # Copied from design-reference/ at need; never committed, so the reference stays
 # single-source.
 frontend/public/__ref/
+
+# Measurement harness for the reference-vs-build comparison. Local only —
+# the reference stays single-source in design-reference/.
+frontend/__probe.html
+frontend/src/__probe.jsx
+frontend/public/__diff.htm
+frontend/public/__meas.js
+frontend/public/__pairs.js
+frontend/public/__runref.js
+frontend/public/__runbuild.js

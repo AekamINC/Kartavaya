@@ -92,13 +92,17 @@ describe('accept-invite · what you are being asked to accept', () => {
     // one registry and this screen reads it rather than restating labels.
     //
     // ASSERTED THROUGH THE REGISTRY, not as literals. These were `'CRM'` and
-    // `'Invoicing'`, and `ab740fc` renamed ganit to **Finance** with its reason
-    // recorded — "Invoicing named a tenth of it" — which is also `_DESIGN-GAP.md`
-    // #2, where the reference's word wins over the build's paraphrase. That
-    // landed green, this test landed green, and staging went red where they met:
-    // neither branch could see the other. Reading the registry is the fix that
-    // holds, because the claim this test actually makes is "the screen shows the
-    // product name" — not "the product name is Invoicing".
+    // `'Invoicing'`, and `ab740fc` renamed ganit to **Finance** — the module also
+    // holds expenses, payables, bank and contracts, so "Invoicing" named a tenth
+    // of it, and the reference calls it Finance in all three places it names the
+    // module. That is `_DESIGN-GAP.md` #2, settled the way it says to settle it.
+    //
+    // That branch landed green, this test landed green, and staging went red
+    // where they met: neither could see the other. Reading the registry is the
+    // fix that holds, because the claim this line actually makes is "the screen
+    // shows the product name rather than the code" — not "the product name is
+    // Finance". A literal re-states the registry and goes stale the next time a
+    // label is settled deliberately; this cannot.
     expect(text).toContain(moduleMeta('graha').en);
     expect(text).toContain('Editor');
     expect(text).toContain(moduleMeta('ganit').en);
