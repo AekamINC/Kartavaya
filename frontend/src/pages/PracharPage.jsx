@@ -1,1021 +1,141 @@
-// Prachar · प्रचार — marketing — on the shared module chrome, 13-module-pages.md §1.
+// Prachar · प्रचार — marketing route shell.
 //
-// Was `PageHeader` + `TabBar`. Three measured differences from the spec:
-//  · `.k-pageh__h1` is `clamp(32px, 4vw, 44px)`; 13 §1 specs `.mh__en` at 25px.
-//  · `.k-pageh__sans` puts the Devanagari at 0.7em of that h1 — 22-31px where
-//    the spec says 15px — in `--k-primary`, i.e. `--primary-vivid`, a FILL.
-//    `.mh__hi` uses `--primary-text`, the measured text pair.
-//  · `PageHeader` carries no module accent; `.mh__ic` is the 38px tinted icon.
-// `.k-tabbar` also has no role="tablist"/aria-selected/aria-controls.
-import React, { useState, useEffect } from 'react';
-import { api } from '../lib/api';
-import { useToast } from '../components/ui/toast';
-import { StatTile, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTable, Td } from '../components/editorial';
+// This file was 1,021 lines with 108 inline `style={{…}}` objects. Per
+// 13-module-pages.md, and per the header GrahaPage.jsx already carries, a module
+// page is split into a route file plus a directory of tab components BEFORE any
+// styling is applied: a restyle of a single-file module touches every tab, every
+// table and every form at once, and the diff is unreviewable. Graha, Ganit and
+// Manav were split and then styled; Prachar was not, which is why it still
+// looked like a different product.
+//
+// ── What the reference asks for ───────────────────────────────────────────
+// `design-reference/Kartavaya Redesign/ScreensMore.jsx`, `ScreenPrachar`:
+//   · a Growth · वृद्धि kicker over प्रचार Marketing;
+//   · a Month / Week control and a Schedule button at the trailing edge;
+//   · channel filter chips;
+//   · and — the whole point of the screen — a MONTH CALENDAR of campaigns,
+//     tinted by channel, draggable to reschedule.
+// The build had a flat list of campaign cards and no calendar at all, on a
+// module whose one irreducible question is "what goes out, and when".
+//
+// The Month/Week control and the chips live on the Campaigns tab rather than in
+// the header, because seven of the eight tabs are not a calendar and a control
+// that does nothing on the tab you are looking at is worse than no control.
+import React, { useState } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
-import { moduleMeta } from '../lib/moduleColors';
+import useTabPanelMotion from '../lib/tabPanelMotion';
+import { api, useResource, body, pct } from './prachar/_shared';
 
-const STATUS_COLORS = { draft: 'var(--on-surface-3)', scheduled: 'var(--st-in-progress)', sending: 'var(--st-in-review)', sent: 'var(--ok)', paused: 'var(--warn)', cancelled: 'var(--on-surface-3)' };
+import DashboardTab from './prachar/DashboardTab';
+import CampaignsTab from './prachar/CampaignsTab';
+import AdsTab from './prachar/AdsTab';
+import SequencesTab from './prachar/SequencesTab';
+import TemplatesTab from './prachar/TemplatesTab';
+import AutomationsTab from './prachar/AutomationsTab';
+import UnsubscribesTab from './prachar/UnsubscribesTab';
+import EventsTab from './prachar/EventsTab';
 
-const TABS = ['dashboard', 'campaigns', 'ads', 'sequences', 'templates', 'automations', 'unsubscribes', 'events'];
+// Order is `MODULE_TABS.prachar` from the reference's Data.jsx:126, unchanged.
+const TABS = [
+  ['dashboard', DashboardTab], ['campaigns', CampaignsTab], ['ads', AdsTab],
+  ['sequences', SequencesTab], ['templates', TemplatesTab],
+  ['automations', AutomationsTab], ['unsubscribes', UnsubscribesTab],
+  ['events', EventsTab],
+];
 
 export default function PracharPage() {
-  const [tab, setTab] = useState('dashboard');
-  const meta = moduleMeta('prachar');
+  const [tab, setTab] = useState('campaigns');
+  // Opens the Campaigns tab with its scheduler already open. Same nonce pattern
+  // as GrahaPage's `newDealNonce`: a counter rather than a boolean, so pressing
+  // the header button twice re-opens the form the second time.
+  const [scheduleNonce, setScheduleNonce] = useState(0);
+  const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];
+  const motion = useTabPanelMotion(TABS.map(([id]) => id), tab);
+
+  // One call feeds both the KPI strip and the tab counts — the module summary
+  // the page had no equivalent of. A module that opens on a list of rows with
+  // no figures above them makes you read the list to learn the state.
+  const { data: sum, loading, error, reload } = useResource(
+    () => api.get('/v1/prachar/dashboard').then(body), [],
+  );
+
+  const c = sum?.campaigns || {};
+  const d = sum?.delivery || {};
+  const sent = Number(d.total_sent || 0);
+  const opened = Number(d.total_opened || 0);
+
+  const kpi = sum ? [
+    {
+      label: 'In flight', hi: 'चालू', tone: 'p',
+      value: Number(c.scheduled || 0) + Number(c.sending || 0),
+      sub: `${c.drafts || 0} still in draft`,
+    },
+    {
+      label: 'Reached', hi: 'पहुँच',
+      value: sent,
+      sub: sent ? 'recipients, all sent campaigns' : 'nothing sent yet',
+    },
+    {
+      label: 'Open rate', hi: 'खुला', tone: opened && sent && opened / sent < 0.15 ? 'warn' : 'ok',
+      value: pct(opened, sent),
+      // A rate with no denominator is not a rate. 00 §12: the caption carries
+      // the same fact the tone does, so colour is never the only signal.
+      sub: sent ? `${opened} of ${sent} opened` : 'no sends to measure',
+    },
+    {
+      label: 'Opted out', hi: 'निकास',
+      tone: sum.unsubscribes_count > 0 ? 'warn' : undefined,
+      value: sum.unsubscribes_count || 0,
+      sub: 'excluded from every send',
+    },
+  ] : null;
+
+  const counts = {
+    campaigns: c.total,
+    templates: sum?.templates_count,
+    automations: sum?.automations_count,
+    unsubscribes: sum?.unsubscribes_count,
+  };
+  const tabs = TABS.map(([id]) => ({ id, label: id, count: counts[id] }));
+
   return (
-    <div style={{ padding: '0 0 48px' }}>
+    <div className="pr__page">
       <ModuleHeader
         module="prachar"
-        en={meta.en}
-        hi={meta.hi}
-        sub="Campaigns, templates and automations"
+        kick={<>Growth <span className="mh__kick-hi" lang="hi">· वृद्धि</span></>}
+        en="Marketing"
+        hi="प्रचार"
+        sub="Every campaign carries a channel and a date."
         icon={ICONS.prachar}
+        actions={
+          <button
+            type="button"
+            className="k-btn k-btn--primary k-btn--sm"
+            onClick={() => { setTab('campaigns'); setScheduleNonce((n) => n + 1); }}
+          >
+            + Schedule
+          </button>
+        }
       />
-      <ModuleTabs tabs={TABS.map(id => ({ id, label: id }))} value={tab} onChange={setTab} label="Prachar sections" />
-      <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
-        {tab === 'dashboard' && <DashboardTab />}
-        {tab === 'campaigns' && <CampaignsTab />}
-        {tab === 'ads' && <AdsTab />}
-        {tab === 'sequences' && <SequencesTab />}
-        {tab === 'templates' && <TemplatesTab />}
-        {tab === 'automations' && <AutomationsTab />}
-        {tab === 'unsubscribes' && <UnsubscribesTab />}
-        {tab === 'events' && <EventsTab />}
+
+      <ModuleTabs tabs={tabs} value={tab} onChange={setTab} label="Prachar sections" />
+
+      <KpiStrip items={kpi} loading={loading} error={error} count={4} />
+
+      <div
+        role="tabpanel"
+        id={`mt-panel-${tab}`}
+        aria-labelledby={`mt-tab-${tab}`}
+        className="ix-panel"
+        {...motion}
+      >
+        {tab === 'campaigns'
+          ? <CampaignsTab scheduleNonce={scheduleNonce} onChanged={reload} />
+          : <Active onChanged={reload} />}
       </div>
-    </div>
-  );
-}
-
-function DashboardTab() {
-  const [data, setData] = useState(null);
-  const { pushToast } = useToast();
-  useEffect(() => { api.get('/v1/prachar/dashboard').then(r => setData(r.data)).catch(e => pushToast({ type: 'error', title: e.message })); }, []);
-  if (!data) return <Shimmer count={8} />;
-  const { campaigns, delivery } = data;
-  return (
-    <>
-      <Section title="Campaigns" hi="अभियान">
-        <div className="k-stats">
-          <StatTile label="Total Campaigns" value={campaigns.total || 0} />
-          <StatTile label="Sent" value={campaigns.sent || 0} variant="teal" />
-          <StatTile label="Drafts" value={campaigns.drafts || 0} />
-          <StatTile label="Scheduled" value={campaigns.scheduled || 0} variant="blue" />
-        </div>
-      </Section>
-
-      <Section title="Delivery Stats" hi="वितरण">
-        <div className="k-stats">
-          <StatTile label="Total Sent" value={delivery.total_sent || 0} />
-          <StatTile label="Opened" value={delivery.total_opened || 0} variant="teal" />
-          <StatTile label="Clicked" value={delivery.total_clicked || 0} variant="blue" />
-          <StatTile label="Bounced" value={delivery.total_bounced || 0} variant="red" />
-        </div>
-      </Section>
-
-      <Section title="Assets" hi="संसाधन">
-        <div className="k-stats">
-          <StatTile label="Templates" value={data.templates_count} />
-          <StatTile label="Automations" value={data.automations_count} />
-          <StatTile label="Unsubscribes" value={data.unsubscribes_count} variant="amber" />
-        </div>
-      </Section>
-
-      {data.recent_campaigns.length > 0 && (
-        <Section title="Recent Campaigns" hi="हाल के अभियान">
-          <DataTable columns={['Name', 'Status', { label: 'Recipients', align: 'right' }, { label: 'Opened', align: 'right' }, { label: 'Clicked', align: 'right' }]}>
-            {data.recent_campaigns.map(c => (
-              <tr key={c.id}>
-                <td style={{ fontWeight: 500 }}>{c.name}</td>
-                <td><Badge text={c.status} color={STATUS_COLORS[c.status]} /></td>
-                <Td align="right">{c.total_recipients || 0}</Td>
-                <Td align="right">{c.total_opened || 0}</Td>
-                <Td align="right">{c.total_clicked || 0}</Td>
-              </tr>
-            ))}
-          </DataTable>
-        </Section>
-      )}
-    </>
-  );
-}
-
-function CampaignsTab() {
-  const [campaigns, setCampaigns] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState(null);
-  const [detail, setDetail] = useState(null);
-  const { pushToast } = useToast();
-
-  const load = () => api.get('/v1/prachar/campaigns').then(r => { setCampaigns(r.data); setLoading(false); }).catch(e => { pushToast({ type: 'error', title: e.message }); setLoading(false); });
-  useEffect(() => { load(); }, []);
-
-  const save = async () => {
-    if (!form.name.trim() || !form.subject.trim()) return pushToast({ type: 'error', title: 'Name and subject required' });
-    await api.post('/v1/prachar/campaigns', form);
-    setForm(null); load(); pushToast({ type: 'success', title: 'Campaign created' });
-  };
-
-  const send = async (id) => {
-    try {
-      const r = await api.post(`/v1/prachar/campaigns/${id}/send`);
-      pushToast({ type: 'success', title: `Sent to ${r.recipients} recipients` });
-      load();
-    } catch (e) { pushToast({ type: 'error', title: e.message }); }
-  };
-
-  if (detail) {
-    return (
-      <div>
-        <BackButton onClick={() => setDetail(null)} label="Back to campaigns" />
-        <div className="k-detail">
-          <div className="k-detail__header">
-            <div>
-              <h3 className="k-detail__title">{detail.name}</h3>
-              <p className="k-detail__sub">{detail.channel} · {detail.total_recipients || 0} recipients</p>
-            </div>
-            <Badge text={detail.status} color={STATUS_COLORS[detail.status]} />
-          </div>
-
-          <div className="k-metabar">
-            <span>Subject: <strong>{detail.subject}</strong></span>
-          </div>
-
-          {(detail.status === 'draft' || detail.status === 'scheduled') && (
-            <div className="k-detail__actions">
-              <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => send(detail.id)}>Send Now</button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (form) {
-    return (
-      <div>
-        <BackButton onClick={() => setForm(null)} label="Back to campaigns" />
-        <div className="k-formpanel">
-          <h3 style={{ fontSize: 16, fontWeight: 600, fontFamily: 'var(--font-display)', margin: '0 0 20px' }}>New Campaign</h3>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Campaign name
-              <input placeholder="e.g. July Newsletter" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Subject line
-              <input placeholder="e.g. Your monthly update" value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })} className="k-formpanel__input" />
-            </label>
-          </div>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Channel
-              <select value={form.channel} onChange={e => setForm({ ...form, channel: e.target.value })} className="k-formpanel__input">
-                <option value="email">Email</option><option value="sms">SMS</option><option value="whatsapp">WhatsApp</option>
-              </select>
-            </label>
-          </div>
-          <label className="k-formpanel__label" style={{ marginBottom: 16 }}>Body HTML
-            <textarea placeholder="Campaign body content…" value={form.body_html} onChange={e => setForm({ ...form, body_html: e.target.value })} rows={6} className="k-formpanel__input" style={{ minHeight: 120 }} />
-          </label>
-          <div className="k-formpanel__actions">
-            <button onClick={save} className="k-btn k-btn--primary" style={{ fontSize: 13 }}>Create Campaign</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="k-section__head" style={{ marginBottom: 20 }}>
-        <h3 className="k-section__title">All Campaigns<span className="k-section__title-hi">अभियान</span></h3>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
-          onClick={() => setForm({ name: '', subject: '', body_html: '', channel: 'email', audience_filter: {} })}>
-          + New Campaign
-        </button>
-      </div>
-
-      {loading ? <Shimmer count={4} /> : campaigns.length === 0 ? (
-        <Empty icon="📣" title="No campaigns yet" sub="Create your first marketing campaign to reach your audience." cta="+ New Campaign" onCta={() => setForm({ name: '', subject: '', body_html: '', channel: 'email', audience_filter: {} })} />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {campaigns.map(c => (
-            <ModCard key={c.id} onClick={() => setDetail(c)}>
-              <div>
-                <strong style={{ fontSize: 14 }}>{c.name}</strong>
-                <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{c.channel} · {c.total_recipients || 0} recipients</p>
-              </div>
-              <Badge text={c.status} color={STATUS_COLORS[c.status]} />
-            </ModCard>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const SEQ_STATUS_COLORS = { draft: 'var(--on-surface-3)', active: 'var(--ok)', paused: 'var(--warn)', completed: 'var(--st-in-progress)' };
-
-function AdsTab() {
-  const [view, setView] = useState('overview');
-  const [overview, setOverview] = useState(null);
-  const [accounts, setAccounts] = useState([]);
-  const [campaigns, setCampaigns] = useState([]);
-  const [insights, setInsights] = useState([]);
-  const [analysis, setAnalysis] = useState('');
-  const [brief, setBrief] = useState('');
-  const [loading, setLoading] = useState(true);
-  const { pushToast } = useToast();
-
-  useEffect(() => {
-    setLoading(true);
-    if (view === 'overview') {
-      Promise.all([
-        api.get('/v1/prachar/ads/overview'),
-        api.get('/v1/prachar/ads/accounts')
-      ]).then(([ov, acc]) => { setOverview(ov); setAccounts(acc.data || acc); setLoading(false); })
-        .catch(e => { pushToast({ type: 'error', title: e.message }); setLoading(false); });
-    } else if (view === 'campaigns') {
-      api.get('/v1/prachar/ads/campaigns').then(r => { setCampaigns(r.data || r); setLoading(false); }).catch(e => { pushToast({ type: 'error', title: e.message }); setLoading(false); });
-    } else if (view === 'insights') {
-      api.get('/v1/prachar/ads/insights').then(r => { setInsights(r.data || r); setLoading(false); }).catch(e => { pushToast({ type: 'error', title: e.message }); setLoading(false); });
-    } else {
-      setLoading(false);
-    }
-  }, [view]);
-
-  const syncAccount = async (id) => {
-    try {
-      await api.post('/v1/prachar/ads/accounts/sync', { social_account_id: id });
-      pushToast({ type: 'success', title: 'Sync started' });
-    } catch (e) { pushToast({ type: 'error', title: e.message }); }
-  };
-
-  const runAnalysis = async () => {
-    if (!brief.trim()) return pushToast({ type: 'error', title: 'Enter a brief for analysis' });
-    try {
-      const r = await api.post('/v1/prachar/ads/analyse', { brief });
-      setAnalysis(r.analysis || r.result || JSON.stringify(r, null, 2));
-    } catch (e) { pushToast({ type: 'error', title: e.message }); }
-  };
-
-  const viewTabs = ['overview', 'campaigns', 'insights', 'analysis'];
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-        {viewTabs.map(v => (
-          <button key={v} className={`k-btn ${view === v ? 'k-btn--primary' : ''}`} style={{ fontSize: 13 }} onClick={() => setView(v)}>
-            {v.charAt(0).toUpperCase() + v.slice(1)}
-          </button>
-        ))}
-      </div>
-
-      {view === 'overview' && (
-        loading ? <Shimmer count={6} /> : (
-          <>
-            <Section title="Ad Overview" hi="विज्ञापन अवलोकन">
-              <div className="k-stats">
-                <StatTile label="Total Spend" value={overview?.total_spend || 0} />
-                <StatTile label="Impressions" value={overview?.total_impressions || 0} />
-                <StatTile label="Clicks" value={overview?.total_clicks || 0} variant="blue" />
-                <StatTile label="Conversions" value={overview?.total_conversions || 0} variant="teal" />
-                <StatTile label="Avg CTR" value={`${(overview?.avg_ctr || 0).toFixed(2)}%`} />
-                <StatTile label="Avg CPC" value={overview?.avg_cpc || 0} />
-                <StatTile label="Active Campaigns" value={overview?.active_campaigns || 0} variant="blue" />
-              </div>
-            </Section>
-            <Section title="Ad Accounts" hi="विज्ञापन खाते">
-              {accounts.length === 0 ? (
-                <Empty icon="📊" title="No ad accounts" sub="Connect a social account to pull ad data." />
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {accounts.map(a => (
-                    <ModCard key={a.id}>
-                      <div>
-                        <strong style={{ fontSize: 14 }}>{a.platform || a.name}</strong>
-                        <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{a.account_id || a.id}</p>
-                      </div>
-                      <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => syncAccount(a.social_account_id || a.id)}>Sync</button>
-                    </ModCard>
-                  ))}
-                </div>
-              )}
-            </Section>
-          </>
-        )
-      )}
-
-      {view === 'campaigns' && (
-        loading ? <Shimmer count={4} /> : (
-          <Section title="Ad Campaigns" hi="अभियान">
-            {campaigns.length === 0 ? (
-              <Empty icon="📣" title="No ad campaigns" sub="Sync an ad account to see campaigns." />
-            ) : (
-              <DataTable columns={['Name', 'Objective', 'Status', { label: 'Daily Budget', align: 'right' }]}>
-                {campaigns.map(c => (
-                  <tr key={c.id}>
-                    <td style={{ fontWeight: 500 }}>{c.name}</td>
-                    <td>{c.objective}</td>
-                    <td><Badge text={c.status} color={STATUS_COLORS[c.status] || 'var(--on-surface-3)'} /></td>
-                    <Td align="right">{c.daily_budget || 0}</Td>
-                  </tr>
-                ))}
-              </DataTable>
-            )}
-          </Section>
-        )
-      )}
-
-      {view === 'insights' && (
-        loading ? <Shimmer count={4} /> : (
-          <Section title="Ad Insights" hi="विज्ञापन विश्लेषण">
-            {insights.length === 0 ? (
-              <Empty icon="📈" title="No insights yet" sub="Run a sync to pull ad performance data." />
-            ) : (
-              <DataTable columns={['Campaign', 'Date', { label: 'Spend', align: 'right' }, { label: 'Impressions', align: 'right' }, { label: 'Clicks', align: 'right' }, { label: 'Conversions', align: 'right' }, { label: 'CTR', align: 'right' }, { label: 'CPC', align: 'right' }]}>
-                {insights.map((r, i) => (
-                  <tr key={i}>
-                    <td style={{ fontWeight: 500 }}>{r.campaign_name}</td>
-                    <td>{r.date}</td>
-                    <Td align="right">{r.spend}</Td>
-                    <Td align="right">{r.impressions}</Td>
-                    <Td align="right">{r.clicks}</Td>
-                    <Td align="right">{r.conversions}</Td>
-                    <Td align="right">{(r.ctr || 0).toFixed(2)}%</Td>
-                    <Td align="right">{r.cpc}</Td>
-                  </tr>
-                ))}
-              </DataTable>
-            )}
-          </Section>
-        )
-      )}
-
-      {view === 'analysis' && (
-        <Section title="AI Ad Analysis" hi="AI विश्लेषण">
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-            <input value={brief} onChange={e => setBrief(e.target.value)} placeholder="e.g. Analyse last 30 days performance" className="k-formpanel__input" style={{ flex: 1 }} />
-            <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={runAnalysis}>Analyse</button>
-          </div>
-          {analysis && (
-            <pre style={{ background: 'var(--surface-2)', padding: 16, borderRadius: 'var(--r-sm)', fontSize: 13, whiteSpace: 'pre-wrap', lineHeight: 1.6, fontFamily: 'var(--font-mono)' }}>{analysis}</pre>
-          )}
-        </Section>
-      )}
-    </div>
-  );
-}
-
-function SequencesTab() {
-  const [sequences, setSequences] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState(null);
-  const [detail, setDetail] = useState(null);
-  const [stats, setStats] = useState(null);
-  const [stepForm, setStepForm] = useState(null);
-  const [enrollIds, setEnrollIds] = useState('');
-  const { pushToast } = useToast();
-
-  const load = () => api.get('/v1/prachar/sequences').then(r => { setSequences(r.data || r); setLoading(false); }).catch(e => { pushToast({ type: 'error', title: e.message }); setLoading(false); });
-  useEffect(() => { load(); }, []);
-
-  const save = async () => {
-    if (!form.name.trim()) return pushToast({ type: 'error', title: 'Name required' });
-    await api.post('/v1/prachar/sequences', form);
-    setForm(null); load(); pushToast({ type: 'success', title: 'Sequence created' });
-  };
-
-  const openDetail = async (seq) => {
-    setDetail(seq);
-    try {
-      const r = await api.get(`/v1/prachar/sequences/${seq.id}/stats`);
-      setStats(r);
-    } catch (e) { pushToast({ type: 'error', title: e.message }); }
-  };
-
-  const addStep = async () => {
-    if (!stepForm.subject?.trim()) return pushToast({ type: 'error', title: 'Subject required' });
-    await api.post(`/v1/prachar/sequences/${detail.id}/steps`, stepForm);
-    pushToast({ type: 'success', title: 'Step added' });
-    const r = await api.get(`/v1/prachar/sequences/${detail.id}/stats`);
-    setStats(r);
-    setStepForm(null);
-  };
-
-  const enroll = async () => {
-    const ids = enrollIds.split(',').map(s => s.trim()).filter(Boolean);
-    if (!ids.length) return pushToast({ type: 'error', title: 'Enter contact IDs' });
-    await api.post(`/v1/prachar/sequences/${detail.id}/enroll`, { contact_ids: ids });
-    pushToast({ type: 'success', title: `Enrolled ${ids.length} contacts` });
-    setEnrollIds('');
-  };
-
-  const pause = async () => {
-    await api.post(`/v1/prachar/sequences/${detail.id}/pause`);
-    pushToast({ type: 'success', title: 'Sequence paused' });
-    setDetail({ ...detail, status: 'paused' });
-  };
-
-  if (detail) {
-    return (
-      <div>
-        <BackButton onClick={() => { setDetail(null); setStats(null); setStepForm(null); }} label="Back to sequences" />
-        <div className="k-detail">
-          <div className="k-detail__header">
-            <div>
-              <h3 className="k-detail__title">{detail.name}</h3>
-              <p className="k-detail__sub">{detail.channel} sequence</p>
-            </div>
-            <Badge text={detail.status} color={SEQ_STATUS_COLORS[detail.status] || 'var(--on-surface-3)'} />
-          </div>
-
-          <div className="k-detail__actions">
-            {detail.status !== 'paused' && detail.status !== 'completed' && (
-              <button className="k-btn k-btn--ghost" style={{ fontSize: 13 }} onClick={pause}>Pause</button>
-            )}
-          </div>
-        </div>
-
-        {stats && (
-          <Section title="Stats" hi="आँकड़े">
-            <div className="k-stats">
-              <StatTile label="Active" value={stats.totals?.active || 0} variant="teal" />
-              <StatTile label="Completed" value={stats.totals?.completed || 0} variant="blue" />
-              <StatTile label="Replied" value={stats.totals?.replied || 0} />
-              <StatTile label="Bounced" value={stats.totals?.bounced || 0} variant="red" />
-            </div>
-          </Section>
-        )}
-
-        <Section title="Steps" hi="चरण">
-          {stats?.steps?.length > 0 ? (
-            <DataTable columns={['#', 'Channel', 'Subject', { label: 'Delay (days)', align: 'right' }]}>
-              {stats.steps.map((s, i) => (
-                <tr key={i}>
-                  <td>{s.step_order}</td>
-                  <td>{s.channel}</td>
-                  <td style={{ fontWeight: 500 }}>{s.subject}</td>
-                  <Td align="right">{s.delay_days}</Td>
-                </tr>
-              ))}
-            </DataTable>
-          ) : (
-            <Empty icon="📋" title="No steps yet" sub="Add steps to build your sequence." />
-          )}
-          {!stepForm ? (
-            <button className="k-btn k-btn--primary" style={{ fontSize: 13, marginTop: 12 }} onClick={() => setStepForm({ step_order: (stats?.steps?.length || 0) + 1, channel: 'email', delay_days: 1, subject: '', body_html: '' })}>+ Add Step</button>
-          ) : (
-            <div className="k-formpanel" style={{ marginTop: 16 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 600, fontFamily: 'var(--font-display)', margin: '0 0 20px' }}>New Step</h3>
-              <div className="k-formpanel__grid k-formpanel__grid--2">
-                <label className="k-formpanel__label">Step order
-                  <input type="number" value={stepForm.step_order} onChange={e => setStepForm({ ...stepForm, step_order: +e.target.value })} className="k-formpanel__input" />
-                </label>
-                <label className="k-formpanel__label">Delay (days)
-                  <input type="number" value={stepForm.delay_days} onChange={e => setStepForm({ ...stepForm, delay_days: +e.target.value })} className="k-formpanel__input" />
-                </label>
-              </div>
-              <div className="k-formpanel__grid k-formpanel__grid--2">
-                <label className="k-formpanel__label">Channel
-                  <select value={stepForm.channel} onChange={e => setStepForm({ ...stepForm, channel: e.target.value })} className="k-formpanel__input">
-                    <option value="email">Email</option><option value="sms">SMS</option><option value="whatsapp">WhatsApp</option>
-                  </select>
-                </label>
-                <label className="k-formpanel__label">Subject
-                  <input placeholder="Step subject" value={stepForm.subject} onChange={e => setStepForm({ ...stepForm, subject: e.target.value })} className="k-formpanel__input" />
-                </label>
-              </div>
-              <label className="k-formpanel__label" style={{ marginBottom: 16 }}>Body HTML
-                <textarea placeholder="Step body..." value={stepForm.body_html} onChange={e => setStepForm({ ...stepForm, body_html: e.target.value })} rows={4} className="k-formpanel__input" style={{ minHeight: 80 }} />
-              </label>
-              <div className="k-formpanel__actions">
-                <button onClick={addStep} className="k-btn k-btn--primary" style={{ fontSize: 13 }}>Add Step</button>
-                <button onClick={() => setStepForm(null)} className="k-btn k-btn--ghost" style={{ fontSize: 13 }}>Cancel</button>
-              </div>
-            </div>
-          )}
-        </Section>
-
-        <Section title="Enroll Contacts" hi="संपर्क जोड़ें">
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input value={enrollIds} onChange={e => setEnrollIds(e.target.value)} placeholder="Comma-separated contact IDs" className="k-formpanel__input" style={{ flex: 1 }} />
-            <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={enroll}>Enroll</button>
-          </div>
-        </Section>
-      </div>
-    );
-  }
-
-  if (form) {
-    return (
-      <div>
-        <BackButton onClick={() => setForm(null)} label="Back to sequences" />
-        <div className="k-formpanel">
-          <h3 style={{ fontSize: 16, fontWeight: 600, fontFamily: 'var(--font-display)', margin: '0 0 20px' }}>New Sequence</h3>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Sequence name
-              <input placeholder="e.g. Onboarding drip" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Channel
-              <select value={form.channel} onChange={e => setForm({ ...form, channel: e.target.value })} className="k-formpanel__input">
-                <option value="email">Email</option><option value="sms">SMS</option><option value="whatsapp">WhatsApp</option>
-              </select>
-            </label>
-          </div>
-          <div className="k-formpanel__actions">
-            <button onClick={save} className="k-btn k-btn--primary" style={{ fontSize: 13 }}>Create Sequence</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="k-section__head" style={{ marginBottom: 20 }}>
-        <h3 className="k-section__title">Sequences<span className="k-section__title-hi">अनुक्रम</span></h3>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
-          onClick={() => setForm({ name: '', channel: 'email', status: 'draft' })}>
-          + New Sequence
-        </button>
-      </div>
-
-      {loading ? <Shimmer count={4} /> : sequences.length === 0 ? (
-        <Empty icon="🔄" title="No sequences yet" sub="Create automated multi-step outreach sequences." cta="+ New Sequence" onCta={() => setForm({ name: '', channel: 'email', status: 'draft' })} />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {sequences.map(s => (
-            <ModCard key={s.id} onClick={() => openDetail(s)}>
-              <div>
-                <strong style={{ fontSize: 14 }}>{s.name}</strong>
-                <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>{s.channel}</p>
-              </div>
-              <Badge text={s.status} color={SEQ_STATUS_COLORS[s.status] || 'var(--on-surface-3)'} />
-            </ModCard>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TemplatesTab() {
-  const [templates, setTemplates] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState(null);
-  const { pushToast } = useToast();
-
-  const load = () => api.get('/v1/prachar/templates').then(r => { setTemplates(r.data); setLoading(false); }).catch(e => { pushToast({ type: 'error', title: e.message }); setLoading(false); });
-  useEffect(() => { load(); }, []);
-
-  const save = async () => {
-    if (!form.name.trim() || !form.subject.trim()) return pushToast({ type: 'error', title: 'Name and subject required' });
-    await api.post('/v1/prachar/templates', form);
-    setForm(null); load(); pushToast({ type: 'success', title: 'Template created' });
-  };
-
-  const remove = async (id) => {
-    await api.delete(`/v1/prachar/templates/${id}`);
-    load(); pushToast({ type: 'success', title: 'Deleted' });
-  };
-
-  if (form) {
-    return (
-      <div>
-        <BackButton onClick={() => setForm(null)} label="Back to templates" />
-        <div className="k-formpanel">
-          <h3 style={{ fontSize: 16, fontWeight: 600, fontFamily: 'var(--font-display)', margin: '0 0 20px' }}>New Template</h3>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Template name
-              <input placeholder="e.g. Welcome Email" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Subject
-              <input placeholder="e.g. Welcome to {{company}}" value={form.subject} onChange={e => setForm({ ...form, subject: e.target.value })} className="k-formpanel__input" />
-            </label>
-          </div>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Category
-              <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="k-formpanel__input">
-                <option value="general">General</option><option value="newsletter">Newsletter</option>
-                <option value="promotional">Promotional</option><option value="transactional">Transactional</option>
-              </select>
-            </label>
-          </div>
-          <label className="k-formpanel__label" style={{ marginBottom: 16 }}>Body HTML
-            <textarea placeholder="Template body content…" value={form.body_html} onChange={e => setForm({ ...form, body_html: e.target.value })} rows={8} className="k-formpanel__input" style={{ minHeight: 160 }} />
-          </label>
-          <div className="k-formpanel__actions">
-            <button onClick={save} className="k-btn k-btn--primary" style={{ fontSize: 13 }}>Create Template</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="k-section__head" style={{ marginBottom: 20 }}>
-        <h3 className="k-section__title">Email Templates<span className="k-section__title-hi">टेम्पलेट</span></h3>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
-          onClick={() => setForm({ name: '', subject: '', body_html: '', body_text: '', category: 'general', variables: [] })}>
-          + New Template
-        </button>
-      </div>
-
-      {loading ? <Shimmer count={3} /> : templates.length === 0 ? (
-        <Empty icon="✉️" title="No templates yet" sub="Create reusable email templates for your campaigns." cta="+ New Template" onCta={() => setForm({ name: '', subject: '', body_html: '', body_text: '', category: 'general', variables: [] })} />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {templates.map(t => (
-            <div key={t.id} className="k-modcard" style={{ cursor: 'default' }}>
-              <div>
-                <strong style={{ fontSize: 14 }}>{t.name}</strong>
-                <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>
-                  <Badge text={t.category} color="var(--on-surface-3)" /> <span style={{ marginLeft: 6 }}>Subject: {t.subject}</span>
-                </p>
-              </div>
-              <button onClick={() => remove(t.id)} style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Delete</button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AutomationsTab() {
-  const [automations, setAutomations] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState(null);
-  const { pushToast } = useToast();
-
-  const load = () => api.get('/v1/prachar/automations').then(r => { setAutomations(r.data); setLoading(false); }).catch(e => { pushToast({ type: 'error', title: e.message }); setLoading(false); });
-  useEffect(() => { load(); }, []);
-
-  const save = async () => {
-    if (!form.name.trim()) return pushToast({ type: 'error', title: 'Name required' });
-    await api.post('/v1/prachar/automations', form);
-    setForm(null); load(); pushToast({ type: 'success', title: 'Automation created' });
-  };
-
-  const remove = async (id) => {
-    await api.delete(`/v1/prachar/automations/${id}`);
-    load(); pushToast({ type: 'success', title: 'Deleted' });
-  };
-
-  if (form) {
-    return (
-      <div>
-        <BackButton onClick={() => setForm(null)} label="Back to automations" />
-        <div className="k-formpanel">
-          <h3 style={{ fontSize: 16, fontWeight: 600, fontFamily: 'var(--font-display)', margin: '0 0 20px' }}>New Automation</h3>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Automation name
-              <input placeholder="e.g. Welcome series" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="k-formpanel__input" />
-            </label>
-          </div>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Trigger
-              <select value={form.trigger_type} onChange={e => setForm({ ...form, trigger_type: e.target.value })} className="k-formpanel__input">
-                <option value="contact_created">Contact Created</option>
-                <option value="contact_converted">Contact Converted</option>
-                <option value="deal_won">Deal Won</option>
-                <option value="deal_lost">Deal Lost</option>
-                <option value="label_added">Label Added</option>
-                <option value="score_above">Score Above Threshold</option>
-                <option value="manual">Manual Trigger</option>
-              </select>
-            </label>
-            <label className="k-formpanel__label">Action
-              <select value={form.action_type} onChange={e => setForm({ ...form, action_type: e.target.value })} className="k-formpanel__input">
-                <option value="send_email">Send Email</option>
-                <option value="add_label">Add Label</option>
-                <option value="update_score">Update Score</option>
-                <option value="create_follow_up">Create Follow-up</option>
-                <option value="notify_owner">Notify Owner</option>
-              </select>
-            </label>
-          </div>
-          <div className="k-formpanel__actions">
-            <button onClick={save} className="k-btn k-btn--primary" style={{ fontSize: 13 }}>Create Automation</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="k-section__head" style={{ marginBottom: 20 }}>
-        <h3 className="k-section__title">Automations<span className="k-section__title-hi">स्वचालन</span></h3>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
-          onClick={() => setForm({ name: '', trigger_type: 'contact_created', trigger_config: {}, action_type: 'send_email', action_config: {}, is_active: true })}>
-          + New Automation
-        </button>
-      </div>
-
-      {loading ? <Shimmer count={3} /> : automations.length === 0 ? (
-        <Empty icon="⚡" title="No automations yet" sub="Set up automated workflows triggered by contact events and deal changes." cta="+ New Automation" onCta={() => setForm({ name: '', trigger_type: 'contact_created', trigger_config: {}, action_type: 'send_email', action_config: {}, is_active: true })} />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {automations.map(a => (
-            <div key={a.id} className="k-modcard" style={{ cursor: 'default' }}>
-              <div>
-                <strong style={{ fontSize: 14 }}>{a.name}</strong>
-                <p style={{ margin: '3px 0 0', fontSize: 12, color: 'var(--ink-3)' }}>
-                  When: <em>{a.trigger_type.replace(/_/g, ' ')}</em> → {a.action_type.replace(/_/g, ' ')}
-                </p>
-                {a.run_count > 0 && <p style={{ margin: '2px 0 0', fontSize: 11, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>{a.run_count} runs</p>}
-              </div>
-              <button onClick={() => remove(a.id)} style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Delete</button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function UnsubscribesTab() {
-  const [list, setList] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [email, setEmail] = useState('');
-  const { pushToast } = useToast();
-
-  const load = () => api.get('/v1/prachar/unsubscribes').then(r => { setList(r.data); setLoading(false); }).catch(e => { pushToast({ type: 'error', title: e.message }); setLoading(false); });
-  useEffect(() => { load(); }, []);
-
-  const add = async () => {
-    if (!email.trim()) return;
-    await api.post(`/v1/prachar/unsubscribes?email=${encodeURIComponent(email.trim())}&reason=manual`);
-    setEmail(''); load(); pushToast({ type: 'success', title: 'Added to unsubscribe list' });
-  };
-
-  const remove = async (id) => {
-    await api.delete(`/v1/prachar/unsubscribes/${id}`);
-    load(); pushToast({ type: 'success', title: 'Removed' });
-  };
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
-        <input value={email} onChange={e => setEmail(e.target.value)} placeholder="email@example.com"
-          className="k-formpanel__input" style={{ flex: 1 }} />
-        <button onClick={add} className="k-btn k-btn--primary" style={{ fontSize: 13 }}>Add</button>
-      </div>
-
-      {loading ? <Shimmer count={3} /> : list.length === 0 ? (
-        <Empty icon="🚫" title="No unsubscribes" sub="Contacts who opt out of communications will appear here." />
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {list.map(u => (
-            <div key={u.id} className="k-modcard" style={{ cursor: 'default' }}>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500 }}>{u.email}</div>
-                <div style={{ fontSize: 11, color: 'var(--ink-3)' }}>{u.reason || 'manual'}</div>
-              </div>
-              <button onClick={() => remove(u.id)} style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Remove</button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const EVENT_STATUS_COLORS = { draft: 'var(--on-surface-3)', published: 'var(--st-in-progress)', ongoing: 'var(--warn)', completed: 'var(--ok)', cancelled: 'var(--danger)' };
-const EVENT_TYPE_COLORS = { webinar: 'var(--st-in-progress)', meetup: 'var(--st-in-review)', workshop: 'var(--warn)', conference: 'var(--st-in-progress)', other: 'var(--on-surface-3)' };
-
-function EventsTab() {
-  const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState(null);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [expanded, setExpanded] = useState(null);
-  const [regs, setRegs] = useState([]);
-  const [regsLoading, setRegsLoading] = useState(false);
-  const [regForm, setRegForm] = useState(null);
-  const { pushToast } = useToast();
-
-  const load = () => api.get('/v1/prachar/events').then(r => { setEvents(r.data); setLoading(false); }).catch(e => { pushToast({ type: 'error', title: e.message }); setLoading(false); });
-  useEffect(() => { load(); }, []);
-
-  const save = async () => {
-    if (!form.title.trim()) return pushToast({ type: 'error', title: 'Title required' });
-    if (!form.starts_at) return pushToast({ type: 'error', title: 'Start date required' });
-    try {
-      if (form.id) {
-        await api.patch(`/v1/prachar/events/${form.id}`, form);
-        pushToast({ type: 'success', title: 'Event updated' });
-      } else {
-        await api.post('/v1/prachar/events', form);
-        pushToast({ type: 'success', title: 'Event created' });
-      }
-      setForm(null); load();
-    } catch (e) { pushToast({ type: 'error', title: e.message }); }
-  };
-
-  const remove = async (id) => {
-    try {
-      await api.delete(`/v1/prachar/events/${id}`);
-      load(); pushToast({ type: 'success', title: 'Event deleted' });
-    } catch (e) { pushToast({ type: 'error', title: e.message }); }
-  };
-
-  const updateStatus = async (id, status) => {
-    try {
-      await api.patch(`/v1/prachar/events/${id}`, { status });
-      load(); pushToast({ type: 'success', title: `Status changed to ${status}` });
-    } catch (e) { pushToast({ type: 'error', title: e.message }); }
-  };
-
-  const toggleExpand = async (id) => {
-    if (expanded === id) { setExpanded(null); setRegs([]); return; }
-    setExpanded(id);
-    setRegsLoading(true);
-    try {
-      const r = await api.get(`/v1/prachar/events/${id}/registrations`);
-      setRegs(r.data);
-    } catch (e) { pushToast({ type: 'error', title: e.message }); setRegs([]); }
-    setRegsLoading(false);
-  };
-
-  const registerAttendee = async (eventId) => {
-    if (!regForm.name.trim() || !regForm.email.trim()) return pushToast({ type: 'error', title: 'Name and email required' });
-    try {
-      await api.post(`/v1/prachar/events/${eventId}/register`, regForm);
-      pushToast({ type: 'success', title: 'Registered' });
-      setRegForm(null);
-      const r = await api.get(`/v1/prachar/events/${eventId}/registrations`);
-      setRegs(r.data);
-      load();
-    } catch (e) { pushToast({ type: 'error', title: e.message }); }
-  };
-
-  const updateRegStatus = async (eventId, regId, status) => {
-    try {
-      await api.patch(`/v1/prachar/events/${eventId}/registrations/${regId}?status=${status}`);
-      pushToast({ type: 'success', title: `Marked as ${status}` });
-      const r = await api.get(`/v1/prachar/events/${eventId}/registrations`);
-      setRegs(r.data);
-    } catch (e) { pushToast({ type: 'error', title: e.message }); }
-  };
-
-  const filtered = statusFilter ? events.filter(e => e.status === statusFilter) : events;
-
-  if (form) {
-    return (
-      <div>
-        <BackButton onClick={() => setForm(null)} label="Back to events" />
-        <div className="k-formpanel">
-          <h3 style={{ fontSize: 16, fontWeight: 600, fontFamily: 'var(--font-display)', margin: '0 0 20px' }}>{form.id ? 'Edit Event' : 'New Event'}</h3>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Title
-              <input placeholder="e.g. Product Launch Webinar" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Event type
-              <select value={form.event_type} onChange={e => setForm({ ...form, event_type: e.target.value })} className="k-formpanel__input">
-                <option value="webinar">Webinar</option>
-                <option value="meetup">Meetup</option>
-                <option value="workshop">Workshop</option>
-                <option value="conference">Conference</option>
-                <option value="other">Other</option>
-              </select>
-            </label>
-          </div>
-          <label className="k-formpanel__label" style={{ marginBottom: 16 }}>Description
-            <textarea placeholder="Event description..." value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={4} className="k-formpanel__input" style={{ minHeight: 80 }} />
-          </label>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Location
-              <input placeholder="e.g. Mumbai Convention Centre" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Location URL
-              <input placeholder="e.g. https://zoom.us/j/..." value={form.location_url} onChange={e => setForm({ ...form, location_url: e.target.value })} className="k-formpanel__input" />
-            </label>
-          </div>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Starts at
-              <input type="datetime-local" value={form.starts_at} onChange={e => setForm({ ...form, starts_at: e.target.value })} className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label">Ends at
-              <input type="datetime-local" value={form.ends_at} onChange={e => setForm({ ...form, ends_at: e.target.value })} className="k-formpanel__input" />
-            </label>
-          </div>
-          <div className="k-formpanel__grid k-formpanel__grid--2">
-            <label className="k-formpanel__label">Max attendees
-              <input type="number" placeholder="e.g. 100" value={form.max_attendees} onChange={e => setForm({ ...form, max_attendees: e.target.value ? +e.target.value : '' })} className="k-formpanel__input" />
-            </label>
-            <label className="k-formpanel__label" style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 24 }}>
-              <input type="checkbox" checked={form.registration_open} onChange={e => setForm({ ...form, registration_open: e.target.checked })} />
-              Registration open
-            </label>
-          </div>
-          <div className="k-formpanel__actions">
-            <button onClick={save} className="k-btn k-btn--primary" style={{ fontSize: 13 }}>{form.id ? 'Update Event' : 'Create Event'}</button>
-            <button onClick={() => setForm(null)} className="k-btn k-btn--ghost" style={{ fontSize: 13 }}>Cancel</button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <div className="k-section__head" style={{ marginBottom: 20 }}>
-        <h3 className="k-section__title">Events<span className="k-section__title-hi">कार्यक्रम</span></h3>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="k-formpanel__input" style={{ fontSize: 13, minWidth: 120 }}>
-            <option value="">All statuses</option>
-            <option value="draft">Draft</option>
-            <option value="published">Published</option>
-            <option value="ongoing">Ongoing</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-          <button className="k-btn k-btn--primary" style={{ fontSize: 13 }}
-            onClick={() => setForm({ title: '', description: '', event_type: 'webinar', location: '', location_url: '', starts_at: '', ends_at: '', max_attendees: '', registration_open: true, tags: [] })}>
-            + New Event
-          </button>
-        </div>
-      </div>
-
-      {loading ? <Shimmer count={4} /> : filtered.length === 0 ? (
-        <Empty icon="📅" title="No events yet" sub="Create events to engage your audience with webinars, meetups and more." cta="+ New Event" onCta={() => setForm({ title: '', description: '', event_type: 'webinar', location: '', location_url: '', starts_at: '', ends_at: '', max_attendees: '', registration_open: true, tags: [] })} />
-      ) : (
-        <DataTable columns={['Title', 'Type', 'Date', 'Status', { label: 'Registrations', align: 'right' }, 'Actions']}>
-          {filtered.map(ev => (
-            <React.Fragment key={ev.id}>
-              <tr style={{ cursor: 'pointer' }} onClick={() => toggleExpand(ev.id)}>
-                <td style={{ fontWeight: 500 }}>{ev.title}</td>
-                <td><Badge text={ev.event_type} color={EVENT_TYPE_COLORS[ev.event_type] || 'var(--on-surface-3)'} /></td>
-                <td>{ev.starts_at ? new Date(ev.starts_at).toLocaleDateString('en-IN') : '-'}</td>
-                <td><Badge text={ev.status} color={EVENT_STATUS_COLORS[ev.status] || 'var(--on-surface-3)'} /></td>
-                <Td align="right">{ev.reg_count || 0}</Td>
-                <td>
-                  <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
-                    <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => setForm({ ...ev, starts_at: ev.starts_at ? ev.starts_at.slice(0, 16) : '', ends_at: ev.ends_at ? ev.ends_at.slice(0, 16) : '' })}>Edit</button>
-                    {ev.status === 'draft' && <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => updateStatus(ev.id, 'published')}>Publish</button>}
-                    {ev.status === 'published' && <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => updateStatus(ev.id, 'cancelled')}>Cancel</button>}
-                    <button style={{ fontSize: 12, color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }} onClick={() => remove(ev.id)}>Delete</button>
-                  </div>
-                </td>
-              </tr>
-              {expanded === ev.id && (
-                <tr>
-                  <td colSpan={6} style={{ padding: '12px 16px', background: 'var(--surface-2)' }}>
-                    {ev.description && <p style={{ fontSize: 13, color: 'var(--ink-2)', margin: '0 0 12px' }}>{ev.description}</p>}
-                    <div style={{ fontSize: 12, color: 'var(--ink-3)', marginBottom: 12, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                      {ev.location && <span>Location: <strong>{ev.location}</strong></span>}
-                      {ev.starts_at && <span>Starts: <strong>{new Date(ev.starts_at).toLocaleString('en-IN')}</strong></span>}
-                      {ev.ends_at && <span>Ends: <strong>{new Date(ev.ends_at).toLocaleString('en-IN')}</strong></span>}
-                      {ev.max_attendees && <span>Max: <strong>{ev.max_attendees}</strong></span>}
-                      <span>Registration: <strong>{ev.registration_open ? 'Open' : 'Closed'}</strong></span>
-                    </div>
-
-                    <div style={{ marginBottom: 8 }}>
-                      <strong style={{ fontSize: 13 }}>Registrations</strong>
-                      {!regForm && (
-                        <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginLeft: 8 }} onClick={() => setRegForm({ name: '', email: '', phone: '' })}>+ Register</button>
-                      )}
-                    </div>
-
-                    {regForm && (
-                      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-                        <input placeholder="Name" value={regForm.name} onChange={e => setRegForm({ ...regForm, name: e.target.value })} className="k-formpanel__input" style={{ flex: 1, minWidth: 120 }} />
-                        <input placeholder="Email" value={regForm.email} onChange={e => setRegForm({ ...regForm, email: e.target.value })} className="k-formpanel__input" style={{ flex: 1, minWidth: 120 }} />
-                        <input placeholder="Phone" value={regForm.phone} onChange={e => setRegForm({ ...regForm, phone: e.target.value })} className="k-formpanel__input" style={{ flex: 1, minWidth: 120 }} />
-                        <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={() => registerAttendee(ev.id)}>Submit</button>
-                        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => setRegForm(null)}>Cancel</button>
-                      </div>
-                    )}
-
-                    {regsLoading ? <Shimmer count={2} /> : regs.length === 0 ? (
-                      <p style={{ fontSize: 12, color: 'var(--ink-3)' }}>No registrations yet.</p>
-                    ) : (
-                      <DataTable columns={['Name', 'Email', 'Phone', 'Status', 'Registered', 'Actions']}>
-                        {regs.map(reg => (
-                          <tr key={reg.id}>
-                            <td style={{ fontSize: 13 }}>{reg.name}</td>
-                            <td style={{ fontSize: 13 }}>{reg.email}</td>
-                            <td style={{ fontSize: 13 }}>{reg.phone || '-'}</td>
-                            <td><Badge text={reg.status} color={reg.status === 'attended' ? 'var(--ok)' : 'var(--on-surface-3)'} /></td>
-                            <td style={{ fontSize: 12 }}>{reg.registered_at ? new Date(reg.registered_at).toLocaleDateString('en-IN') : '-'}</td>
-                            <td>
-                              {reg.status !== 'attended' && (
-                                <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => updateRegStatus(ev.id, reg.id, 'attended')}>Mark Attended</button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </DataTable>
-                    )}
-                  </td>
-                </tr>
-              )}
-            </React.Fragment>
-          ))}
-        </DataTable>
-      )}
     </div>
   );
 }
