@@ -336,7 +336,47 @@ it did not. One surface responded to the slider and the other did not.
 
 ---
 
-## 7. One thing I could not reproduce
+## 7. Post-fix verification — re-measured, same probe, same viewport
+
+Run after the two fix commits. `REF | BUILD`:
+
+| | REF | BUILD | |
+|---|---|---|---|
+| `<html data-density>` | cozy | **cozy** | ✅ |
+| `--pad-page` | 28px | **28px** | ✅ |
+| `--radius-base` | 12px | **12px** | ✅ |
+| mark box | 34×34 | **34×34** | ✅ |
+| mark radius | 9.6px | **9.6px** | ✅ |
+| mark shadow | inset + teal cast | **identical string** | ✅ |
+| wordmark tracking | +0.076px | **+0.08008px** | ✅ sign corrected |
+| byline size / tracking | 8.5px / 1.7px | **8.5px / 1.7px** | ✅ exact |
+| section heading line-height | 12.75px | **12.75px** | ✅ |
+| section Devanagari size | 11px | **11.06px** | ✅ |
+| section Devanagari weight | 700 (faux-bold) | **400** | ✅ deliberate improvement |
+| nav item weight | 500 | **500** | ✅ |
+| nav item radius | 6.96px | **6.96px** | ✅ exact |
+| nav icon | 17×17 | **17×17** | ✅ exact |
+| role-line colour | `rgba(255,255,255,.28)` | **identical** | ✅ |
+| topbar height | 56px | **56px** | ✅ |
+| topbar background | `rgba(250,247,240,0.83)` | **identical** | ✅ |
+| topbar position | relative | **relative** | ✅ |
+| crumb gap | 9px | **9px** | ✅ |
+| crumb Devanagari size | 16px | **15.96px** | ✅ |
+| crumb separator | `rgb(157,160,150)` | **identical** | ✅ |
+| badge bg / fg | teal 26% / `#05b7aa` | **identical on both counts** | ✅ |
+
+### What remains different, and why each one stays
+
+| | REF | BUILD | reason |
+|---|---|---|---|
+| nav row height | 49.2px | 53.2px | +4.58 is the `[lang="hi"]` 1.18× leading — a correct build invention (§3) |
+| section heading box | 35.5px | 38.58px | same |
+| brand block | 83.26px | 93.51px | same, plus 1.02px on the wordmark's token step |
+| section word left offset | 18px | 36px | the collapse chevron — structural, not mine |
+| wordmark / label / crumb-current sizes | literals | tokens, ≤1.06px off | the Text-size control reaches tokens and not literals |
+| `--primary`, `--primary-text` | `#04837A` / `#046B64` | `#00897f` / `#005650` | accent-ramp owner |
+
+## 8. One thing I could not reproduce
 
 `_DESIGN-GAP.md` lists scrolling as "not working at all, not yet diagnosed". In
 the probe, `.kv__content` scrolls correctly: `.kv` is `height:100vh; overflow:hidden`,
