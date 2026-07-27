@@ -216,6 +216,38 @@ cases. **18 passed.**
 | `messageUtils.js` | a system row never joins a continuation run — it carries the triggering user's `sender_id` and would otherwise group under their message and lose its header. |
 | `ThreadPanel.jsx` | edit and delete on the root and on every reply. The endpoints always applied to replies; the panel simply never passed the handlers, so a typo in a thread was permanent while the same typo in the channel was not. |
 | `icons.jsx`, `sanvaad.css` | `bolt` glyph; archived, banner, toggle, locked-composer, system-message and settings-sheet rules. |
+| `__tests__/sanvaadChatPane.test.jsx` *(new)* | five cases mounting the real tree: viewer locked, editor composing, archived banner + different reason, settings control present, `type='system'` rendered as a module event and **not** as the person who triggered it. |
+| `__tests__/sanvaadMessageUtils.test.js` | five cases on `isContinuation`, including both system-grouping guards. |
+
+### Gates — all from `frontend/`, unpiped
+
+| Gate | Result |
+|---|---|
+| `npm run build` | ✅ built in 56s |
+| `npm run check` (tokens) | ✅ 341 declared, 0 missing |
+| `npm run check` (classes) | ✅ 2146 selectors, 0 missing a rule |
+| `node scripts/check-accent-contrast.mjs` | ✅ exit 0 |
+| `node scripts/check-component-parity.mjs` | ✅ exit 0 |
+| `npm test` | **442 passed, 1 failed** — see below |
+| `backend`: `pytest tests/test_messaging_security.py` | ✅ 18 passed |
+
+**The one red test is inherited, not mine.** `visual-regression.test.jsx` expects
+`--outline light=#ADA692`; the CSS now produces `#78725F`. Commit `c41128a`
+*"fix(a11y): --outline failed 1.4.11 on eleven of twelve surfaces"* changed the
+token without regenerating the committed snapshot. Proof it is not this branch's:
+`git diff staging --name-only` over the snapshot **and** `kartavaya-design.css`,
+`tokens.css`, `accent.js` returns empty — every file involved is byte-identical
+to staging. Whoever owns that a11y pass should regenerate the snapshot; doing it
+here would rubber-stamp a palette change under the wrong name.
+
+Two unhandled rejections also appear, from `TaskDrawer.jsx:168` under
+`e2e/task-flow.test.jsx`. Neither file is in this diff and nothing here is
+imported by `TaskDrawer`.
+
+A build break was also inherited and resolved by merging: `DristiPage.jsx:581`
+had a `{/* comment */}` in ternary-expression position, which is an object
+literal to esbuild. Staging had already fixed it; `git merge staging` picked the
+fix up.
 
 ---
 
