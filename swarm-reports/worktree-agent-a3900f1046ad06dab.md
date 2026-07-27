@@ -372,14 +372,41 @@ real CSS barrel and `applyPrefs(DEFAULTS)`. Same cascade, no network, no writes.
 
 ---
 
-## 8 · Gates
+## 8 · Corroboration — three branches, one method, the same numbers
+
+This run overlapped with sibling branches measuring other surfaces the same
+way. Where we touched the same facts, we agree to the decimal, which is worth
+more than any one of the reports on its own.
+
+| finding | this branch | independently | agreement |
+|---|---|---|---|
+| `.ph__kick` tracking | 2.1px (.2em), uppercase, Latin face | `design-dashboard-tasks-pixel-type.md` | exact |
+| `.ph__hi` tracking | −0.56px (−.02em), Tiro | `design-dashboard-tasks-pixel-type.md` | exact |
+| Public Sans never loaded | 401.08px = bare serif, both sides | `component-pixel-and-type.md` §9a, `design-settings-org-customize-pixel-type.md` | same conclusion, different instrument |
+| density default was `comfy`, should be `cozy` | 48/32/20/26/12 → 44/28/18/22/10 | a sibling landed the same change first | exact |
+| `--radius-base` 10 → 12 | whole `--r-*` ladder at 83% | same sibling | exact |
+
+One correction the siblings surface that this report's §1 table should be read
+against: `component-pixel-and-type.md` §4 shows that `applyPrefs` overwrites
+`--primary` at runtime from the chosen accent, so the stylesheet's `#04837A`
+is **not** what renders — the default teal produces `#00897f`. That is exactly
+what the build column of this report's token table measured (`--primary`
+`#00897f`, `--primary-text` `#005650`), and it is why those two rows differ from
+the reference. The token that is declared is not the token that renders, and
+measuring the running page is the only way to see it.
+
+---
+
+## 9 · Gates
+
+Run from `frontend/`, unpiped, on the merged tree.
 
 | gate | result |
 |---|---|
-| `check-tokens.mjs` | green — 341 declared, 236 referenced, 0 missing |
-| `check-classes.mjs` | green — 2166 selectors, 1486 classes, 0 missing a rule |
+| `check-tokens.mjs` | green — 342 declared, 237 referenced, 0 missing |
+| `check-classes.mjs` | green — 2184 selectors, 1500 classes, 0 missing a rule |
 | `check-component-parity.mjs` | green (exit 0) |
-| `vitest run src/__tests__` | 321 passed across 19 files |
+| `vitest run src/__tests__` | **384 passed across 24 files** |
 | `check-contrast.mjs` | **fails, and fails identically on staging** — see §6.7 |
 
 No database was read or written at any point.
