@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { format, isToday, isYesterday } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
 import Refresher from '../components/Refresher';
+import { a11yButton, a11ySelected } from '../components/a11y';
 import ScreenState, { resolveScreenState } from '../components/ScreenState';
 import { useOnline } from '../hooks/useOnline';
 import { notificationsApi } from '../api/notifications';
@@ -185,6 +186,7 @@ export default function InboxScreen() {
                             borderWidth: 0,
                           },
                     ]}
+                    {...a11ySelected(`${chip.label}, ${count}`, active)}
                   >
                     <Text style={[s.chipLabel, {
                       color: IS_ANDROID
@@ -307,6 +309,19 @@ function InboxRow({
               shadowRadius: 2,
             },
       ]}
+      /* Unread was a coloured bar and nothing else, and urgent was a coloured
+         left border — both invisible to a screen reader. Read state goes in
+         the label, which is the only carrier that survives (00 §12: never
+         encode state in colour alone). */
+      {...a11yButton(
+        [
+          n.read_at ? '' : 'Unread',
+          (n as any).priority === 'urgent' ? 'Urgent' : '',
+          `${actorName} ${n.message ?? ''}`.trim(),
+          n.title ?? '',
+          relTime(n.created_at),
+        ].filter(Boolean).join(', '),
+      )}
     >
       {/* Unread indicator */}
       {!n.read_at && (

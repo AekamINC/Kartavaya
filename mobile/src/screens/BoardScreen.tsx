@@ -16,6 +16,7 @@ import Sheet from '../components/Sheet';
 import Refresher from '../components/Refresher';
 import ScreenState, { resolveScreenState } from '../components/ScreenState';
 import { useOnline } from '../hooks/useOnline';
+import { a11yButton, a11ySelected, a11yToggle, hitSlopTo } from '../components/a11y';
 import { tasksApi } from '../api/tasks';
 import { projectsApi } from '../api/projects';
 import { PRIORITY_COLORS, projectColor, AVATAR_COLORS, BRAND_GRADIENT_2, withAlpha } from '../theme/tokens';
@@ -58,18 +59,23 @@ function ProjectPicker({
                 style={[ps.row, { borderBottomColor: t.outline }, isActive && { backgroundColor: t.primaryContainer }]}
                 onPress={() => { onSelect(p); onClose(); }}
                 activeOpacity={0.75}
+                {...a11ySelected(p.name, isActive)}
               >
-                <View style={[ps.dot, { backgroundColor: color }]} />
+                <View style={[ps.dot, { backgroundColor: color }]} accessibilityElementsHidden />
                 <View style={{ flex: 1 }}>
                   <Text style={[ps.rowName, { color: t.ink }]}>{p.name}</Text>
                   {p.description ? <Text style={[ps.rowDesc, { color: t.ink3 }]} numberOfLines={1}>{p.description}</Text> : null}
                 </View>
-                {isActive && <Ionicons name="checkmark" size={18} color={t.primary} />}
+                {isActive && <Ionicons name="checkmark" size={18} color={t.primary} accessibilityElementsHidden />}
               </TouchableOpacity>
             );
           })}
       </ScrollView>
-      <TouchableOpacity onPress={onClose} style={[ps.cancelBtn, { borderColor: t.outline }]}>
+      <TouchableOpacity
+        onPress={onClose}
+        style={[ps.cancelBtn, { borderColor: t.outline }]}
+        {...a11yButton('Cancel', 'Close the project picker')}
+      >
         {/* fontWeight '700' on `रद्द करें` has no Tiro to apply it to, so the
             Hindi half renders in a synthesised bold or the system face. */}
         <BiLabel latinStyle={[ps.cancelText, { color: t.ink3 }]} hindiStyle={{ color: t.ink3 }} hindiSize={13}>
@@ -112,6 +118,18 @@ function BoardCard({ task, col, onPress }: { task: Task; col?: ProjectColumn; on
   const dueBg   = isLate ? (IS_ANDROID ? t.errorBg   : 'rgba(255,69,58,0.12)') : t.surface2;
   const dueFg   = isLate ? (IS_ANDROID ? t.error     : '#FF453A')               : t.ink2;
 
+  /* One label for the whole card. Without it VoiceOver stops on each of the
+     card's text nodes in turn — priority word, truncated id, title, due chip,
+     comment and attachment counts — and the reader has to assemble the task
+     themselves. Overdue and the approval state are spelled out because on the
+     card they are carried by a chip colour. */
+  const cardLabel = [
+    task.title,
+    `${task.priority} priority`,
+    approvalLabel,
+    isLate ? 'overdue' : '',
+  ].filter(Boolean).join(', ');
+
   return (
     <TouchableOpacity
       style={[bc.card, IS_ANDROID
@@ -122,10 +140,11 @@ function BoardCard({ task, col, onPress }: { task: Task; col?: ProjectColumn; on
       ]}
       onPress={onPress}
       activeOpacity={0.75}
+      {...a11yButton(cardLabel, 'Open task')}
     >
       {/* Priority dot + label + ID */}
       <View style={bc.topRow}>
-        <View style={[bc.priDot, { backgroundColor: priColor, borderRadius: 99 }]} />
+        <View style={[bc.priDot, { backgroundColor: priColor, borderRadius: 99 }]} accessibilityElementsHidden />
         <Text style={[bc.priLabel, { color: t.ink2 }]}>{task.priority}</Text>
         <Text style={[bc.taskId, { color: t.ink3 }]}>{task.task_id.slice(0, 8)}</Text>
       </View>
@@ -565,8 +584,13 @@ export default function BoardScreen() {
         paddingTop: insets.top + (IS_ANDROID ? 8 : 54),
       }]}>
         {!isTabMode && (
-          <TouchableOpacity onPress={() => nav.goBack()} style={s.backBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="chevron-back" size={24} color={t.ink} />
+          <TouchableOpacity
+            onPress={() => nav.goBack()}
+            style={s.backBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            {...a11yButton('Back')}
+          >
+            <Ionicons name="chevron-back" size={24} color={t.ink} accessibilityElementsHidden />
           </TouchableOpacity>
         )}
         <View style={s.kickerRow}>
@@ -582,6 +606,10 @@ export default function BoardScreen() {
           style={[s.projectBtn, { backgroundColor: t.surface2, borderRadius: IS_ANDROID ? 20 : 14 }]}
           onPress={() => setShowPicker(true)}
           activeOpacity={0.75}
+          {...a11yButton(
+            `Project: ${activeProject?.name ?? 'none selected'}`,
+            'Switch project',
+          )}
         >
           <View style={[s.projDot, { backgroundColor: colColor, borderRadius: 4 }]} />
           <View style={{ flex: 1, minWidth: 0 }}>
@@ -604,6 +632,9 @@ export default function BoardScreen() {
         contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, gap: 6 }}>
         {VIEWS.map(v => {
           const active = view === v;
+          // Which view is current was carried by the pill's fill alone, so
+          // every pill announced identically. `a11ySelected` puts it in
+          // accessibilityState — 23 §"never encode state in colour alone".
           return (
             <TouchableOpacity
               key={v}
@@ -614,6 +645,7 @@ export default function BoardScreen() {
                 borderWidth: 1,
                 borderColor: active ? 'transparent' : t.outline,
               }]}
+              {...a11ySelected(`${v} view`, active)}
             >
               <Text style={[s.viewPillText, {
                 color: active ? t.onSecondaryContainer : t.ink2,
@@ -639,8 +671,12 @@ export default function BoardScreen() {
                   backgroundColor: isActiveC ? t.surface3 : 'transparent',
                   borderColor:     isActiveC ? 'transparent' : t.outline,
                 }]}
+                {...a11ySelected(`${col.name}, ${count} task${count !== 1 ? 's' : ''}`, isActiveC)}
               >
-                <View style={[s.colTabDot, { backgroundColor: col.color, borderRadius: 99 }]} />
+                <View
+                  style={[s.colTabDot, { backgroundColor: col.color, borderRadius: 99 }]}
+                  accessibilityElementsHidden
+                />
                 <Text style={[s.colTabText, { color: isActiveC ? t.ink : t.ink2 }]}>{col.name}</Text>
                 <Text style={[s.colTabCount, { color: t.ink3 }]}>{count}</Text>
               </TouchableOpacity>

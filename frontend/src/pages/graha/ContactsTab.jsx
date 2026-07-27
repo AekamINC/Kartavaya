@@ -411,7 +411,18 @@ export default function ContactsTab() {
             <tbody>
               {contacts.map(c => (
                 <tr key={c.id} className="gr__tr--click" onClick={() => loadDetail(c.id)}>
-                  <td className="gr__td--name">{c.name}</td>
+                  {/* The only focusable thing in this row was Delete, so a
+                      keyboard could reach the destructive action and not the
+                      record itself. */}
+                  <td className="gr__td--name">
+                    <button
+                      type="button"
+                      className="gr__link"
+                      onClick={e => { e.stopPropagation(); loadDetail(c.id); }}
+                    >
+                      {c.name}
+                    </button>
+                  </td>
                   <td className="gr__td--mute">{c.company || '—'}</td>
                   <td className="gr__td--mute">{c.email || '—'}</td>
                   <td className="gr__td--mute">{c.phone || '—'}</td>

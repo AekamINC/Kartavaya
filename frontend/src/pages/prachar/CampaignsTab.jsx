@@ -379,7 +379,18 @@ function CampaignList({ list, onOpen }) {
     <DataTable columns={['Name', 'Channel', 'Scheduled', 'Status', { label: 'Recipients', align: 'right' }, { label: 'Opened', align: 'right' }]}>
       {list.map((c) => (
         <tr key={c.id} onClick={() => onOpen(c)}>
-          <Td bold>{c.name}</Td>
+          {/* Nothing in this row was focusable, so a campaign could not be
+              opened without a mouse. `.btn--text` is the shared text button —
+              no new class for one table. */}
+          <Td bold>
+            <button
+              type="button"
+              className="btn btn--text btn--sm"
+              onClick={e => { e.stopPropagation(); onOpen(c); }}
+            >
+              {c.name}
+            </button>
+          </Td>
           <td><span className="tag" style={{ '--c': channelColor(c.channel) }}>{channelLabel(c.channel)}</span></td>
           <td>{c.scheduled_at ? fmtDateTime(c.scheduled_at) : 'Not scheduled'}</td>
           <td><Badge text={humanise(c.status)} color={CAMPAIGN_COLORS[c.status]} /></td>

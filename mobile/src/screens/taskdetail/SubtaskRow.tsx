@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { a11yToggle } from '../../components/a11y';
+import { a11yToggle, a11yButton, hitSlopTo } from '../../components/a11y';
 import type { Subtask, TeamMember } from '../../api/types';
 import { Avatar } from './Avatar';
 import { s } from './styles';
@@ -43,8 +43,12 @@ export function SubtaskRow({ sub, t, members, canEdit, onToggle, onDelete }: Pro
         <Avatar uid={(assignee.user_id ?? assignee.member_id) ?? ''} name={memberName(assignee)} size={20} />
       )}
       {canEdit && (
-        <TouchableOpacity onPress={onDelete} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-          <Ionicons name="close" size={14} color={t.ink4} />
+        <TouchableOpacity
+          onPress={onDelete}
+          hitSlop={hitSlopTo(14)}
+          {...a11yButton(`Delete subtask ${sub.title}`)}
+        >
+          <Ionicons name="close" size={14} color={t.ink4} accessibilityElementsHidden />
         </TouchableOpacity>
       )}
     </View>

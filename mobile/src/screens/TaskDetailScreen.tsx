@@ -494,7 +494,7 @@ export default function TaskDetailScreen() {
           <Section
             label="ASSIGNEES"
             t={t}
-            action={canEdit ? { icon: 'person-add-outline', onPress: () => setShowAssignee(true) } : undefined}
+            action={canEdit ? { icon: 'person-add-outline', onPress: () => setShowAssignee(true), label: 'Add assignee' } : undefined}
           >
             {assignedMembers.length === 0 ? (
               <TouchableOpacity onPress={() => canEdit && setShowAssignee(true)}>
@@ -592,7 +592,11 @@ export default function TaskDetailScreen() {
           <Section
             label="ATTACHMENTS"
             t={t}
-            action={canEdit ? { icon: uploadingFile ? 'hourglass-outline' : 'attach-outline', onPress: () => setShowAttachPicker(true) } : undefined}
+            action={canEdit ? {
+              icon: uploadingFile ? 'hourglass-outline' : 'attach-outline',
+              onPress: () => setShowAttachPicker(true),
+              label: uploadingFile ? 'Uploading attachment' : 'Add attachment',
+            } : undefined}
           >
             {task.attachments.length === 0 && !uploadingFile && (
               <Text style={[s.emptyHint, { color: t.ink4 }]}>{canEdit ? 'Tap + to attach files' : 'No attachments'}</Text>

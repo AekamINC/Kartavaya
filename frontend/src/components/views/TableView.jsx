@@ -285,7 +285,22 @@ export default function TableView({
                                 {task.approval_status === 'pending_client' ? 'Client review' : 'Needs approval'}
                               </span>
                             )}
-                            <span>{task.title}</span>
+                            {/* The row's onClick was the ONLY way to open a
+                                task from the table, and a <tr> is not
+                                focusable — so the keyboard could tick the
+                                checkbox and edit the custom fields but never
+                                open the record. The title is the affordance
+                                that already reads as the way in, so it is the
+                                one that becomes the button. */}
+                            <span>
+                              <button
+                                type="button"
+                                className="tb__ttlbtn"
+                                onClick={e => { e.stopPropagation(); setDrawer(task.task_id); }}
+                              >
+                                {task.title}
+                              </button>
+                            </span>
                             {task.attachments?.length > 0 && (
                               <span
                                 className="tb__att"
