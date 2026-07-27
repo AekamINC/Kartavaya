@@ -39,7 +39,7 @@ exports[`e2e · visual · the theme palette baseline > light and dark resolve ev
 --ink-fixed                  light=#23262B  dark=#23262B
 --ink-fixed-dark             light=#E9E7E1  dark=#E9E7E1
 --ink3                       light=var(--on-surface-3)  dark=var(--on-surface-3)
---ok                         light=#14743A  dark=#5BD98A
+--ok                         light=#126B36  dark=#5BD98A
 --ok-container               light=#C6EFD2  dark=#14432A
 --on-danger                  light=#FFFFFF  dark=#2A0A06
 --on-danger-container        light=#5C1109  dark=#FBDAD5
@@ -50,7 +50,7 @@ exports[`e2e · visual · the theme palette baseline > light and dark resolve ev
 --on-secondary-container     light=#1A2013  dark=#DFE7CB
 --on-surface                 light=#1B1D1A  dark=#E9E7E1
 --on-surface-2               light=#4A4E48  dark=#BFBDB6
---on-surface-3               light=#666A61  dark=#8E8D87
+--on-surface-3               light=#5E625A  dark=#8E8D87
 --on-surface-disabled        light=#9DA096  dark=#64645F
 --on-surface-faint           light=var(--on-surface-3)  dark=var(--on-surface-3)
 --on-tertiary-container      light=#301A07  dark=#FFDCC3
@@ -85,8 +85,8 @@ exports[`e2e · visual · the theme palette baseline > light and dark resolve ev
 --surface-1                  light=var(--surface)  dark=var(--surface)
 --surface-2                  light=var(--s-lowest)  dark=var(--s-lowest)
 --surface-dim                light=var(--s-container)  dark=var(--s-container)
---tertiary                   light=#8A5730  dark=#F0BB90
+--tertiary                   light=#86552F  dark=#F0BB90
 --tertiary-container         light=#FFDCC3  dark=#6A3F1A
---warn                       light=#955806  dark=#E8B45C
+--warn                       light=#8B5206  dark=#E8B45C
 --warn-container             light=#FBE3BE  dark=#4A3312"
 `;

@@ -14,7 +14,36 @@ from middleware.org_resolver import get_org_id
 from services.audit import emit as audit
 from middleware.role_tiers import (
     ALL_PLATFORM_ROLES, PLATFORM_ROLE_PRECEDENCE, can_reach_module, is_god_mode,
+    DEFAULT_GRANT_LEVEL, EDITOR, LEVELS, level_satisfies,
 )
+
+#: POST routes that READ. The verb rule below treats POST/PUT/PATCH/DELETE as a
+#: write, which is right almost everywhere and wrong for these: generating a
+#: document or running a saved query takes a body because the parameters do not
+#: fit in a URL, not because anything changes. Requiring Editor for them would
+#: stop a viewer downloading a GSTR-3B they are entitled to read.
+#:
+#: Matched on the path SUFFIX so the router prefix is irrelevant. Keep this list
+#: short and justified — every entry is a hole in the rule, and the rule is what
+#: closed 210 routes. If an entry here ever starts writing, it must leave.
+READ_SHAPED_POSTS: tuple[str, ...] = (
+    "/pdf",        # every document generator: gstr3b, tds challan, agreement, project report
+    "/query",      # dristi's saved-report runner
+    "/export",     # data export
+    "/preview",
+)
+
+
+def _is_write(request: Request) -> bool:
+    """Does this request change anything?
+
+    GET/HEAD/OPTIONS never do. Everything else does, unless its path is one of
+    the read-shaped POSTs above.
+    """
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return False
+    path = request.url.path.rstrip("/")
+    return not any(path.endswith(suffix) for suffix in READ_SHAPED_POSTS)
 
 _cache: dict = {}
 _CACHE_TTL = timedelta(minutes=5)
@@ -124,17 +153,41 @@ def require_module(module_code: str):
                 user_id, org_id,
             )
             if not org_role:
-                # org_member needs explicit grant
-                has_grant = await pool.fetchval(
-                    "SELECT 1 FROM staging.org_member_modules "
+                # org_member needs explicit grant.
+                #
+                # Reads the LEVEL, not merely the row. This used to be
+                # `SELECT 1`, which answered reach — "is there a grant" — and
+                # never depth. Since `DEFAULT_GRANT_LEVEL` is `viewer`, every
+                # new grant and every invite is created read-only and was then
+                # permitted to write on 210 of 234 module-gated write routes.
+                # Only ten routes enforced a level, all by hand.
+                #
+                # The rung is decided by the HTTP verb rather than per route,
+                # because 210 hand-classifications is a week of work that would
+                # be wrong somewhere, and a rule that lives in one place cannot
+                # drift out of sync with the handlers.
+                held = await pool.fetchval(
+                    "SELECT role FROM staging.org_member_modules "
                     "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
                     user_id, org_id, module_code,
                 )
-                if not has_grant:
+                if held is None:
                     raise HTTPException(
                         403,
                         f"You don't have access to the {module_code} module. "
                         "Ask your org admin to grant it.",
+                    )
+                # A row written before the level column existed, or holding a
+                # value the ladder does not know, reads as the weakest level.
+                # Failing upward would hand write access to every legacy row.
+                if held not in LEVELS:
+                    held = DEFAULT_GRANT_LEVEL
+
+                if _is_write(request) and not level_satisfies(held, EDITOR, module_code):
+                    raise HTTPException(
+                        403,
+                        f"Your {module_code} access is {held.title()}: you can "
+                        f"read it, but not change it. Ask an org admin for Editor.",
                     )
 
         cache_key = f"{org_id}:{module_code}"

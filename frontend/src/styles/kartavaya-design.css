@@ -223,7 +223,7 @@
 
   --on-surface:       #1B1D1A;
   --on-surface-2:     #4A4E48;
-  --on-surface-3:     #666A61;   /* was #74786F — 3.9:1 on --bg, failed AA */
+  --on-surface-3:     #5E625A;   /* was #74786F — 3.9:1 on --bg, failed AA */
   /* 00 §11 resolves the contradiction between §7 (which declared the literal
      #9DA096) and §12 (which marked that literal NON-TEXT ONLY): the ramp was
      designed with four foreground steps and the background only supports
@@ -288,12 +288,12 @@
   --secondary:              #5C6450;
   --secondary-container:    #E1E7D4;
   --on-secondary-container: #1A2013;
-  --tertiary:               #8A5730;
+  --tertiary:               #86552F;
   --tertiary-container:     #FFDCC3;
   --on-tertiary-container:  #301A07;
 
-  --ok:     #14743A;  --ok-container:     #C6EFD2;   /* was #16803F — 4.4:1 */
-  --warn:   #955806;  --warn-container:   #FBE3BE;   /* was #A66207 — 4.2:1 */
+  --ok:     #126B36;  --ok-container:     #C6EFD2;   /* was #16803F — 4.4:1 */
+  --warn:   #8B5206;  --warn-container:   #FBE3BE;   /* was #A66207 — 4.2:1 */
   --danger: #B42318;  --danger-container: #FBDAD5;
   /* 00 §7: every container has an `on-` half, and --on-danger is separate from
      --on-danger-container because --danger itself is a FILL (badges, count
@@ -434,7 +434,7 @@
 :root, [data-theme="light"] {
   --st-todo:        #5A6270;
   --st-in-progress: #3E5C8A;
-  --st-in-review:   #6E5AA0;
+  --st-in-review:   #675496;
   --st-requested:   var(--warn);
   --st-done:        var(--ok);
   --st-rejected:    var(--danger);

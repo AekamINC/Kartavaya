@@ -22,58 +22,6 @@
       "ratio": 1.31,
       "need": 4.5
     },
-    "editorial.css:2419|.k-inboxkind--assign|light": {
-      "ratio": 4.21,
-      "need": 4.5
-    },
-    "editorial.css:2420|.k-inboxkind--approval|light": {
-      "ratio": 4.13,
-      "need": 4.5
-    },
-    "editorial.css:2421|.k-inboxkind--comment|light": {
-      "ratio": 4.2,
-      "need": 4.5
-    },
-    "editorial.css:2445|.k-pri--high|light": {
-      "ratio": 4.13,
-      "need": 4.5
-    },
-    "editorial.css:2447|.k-pri--low|light": {
-      "ratio": 4.37,
-      "need": 4.5
-    },
-    "editorial.css:2497|.k-apcard__kind--creative|light": {
-      "ratio": 4.13,
-      "need": 4.5
-    },
-    "editorial.css:2580|.k-actitem__verb--approved|light": {
-      "ratio": 4.21,
-      "need": 4.5
-    },
-    "editorial.css:2581|.k-actitem__verb--attached|light": {
-      "ratio": 4.13,
-      "need": 4.5
-    },
-    "editorial.css:2583|.k-actitem__verb--assigned|light": {
-      "ratio": 4.2,
-      "need": 4.5
-    },
-    "editorial.css:2611|.k-rule__status--on|light": {
-      "ratio": 4.33,
-      "need": 4.5
-    },
-    "kartavaya-design.css:1031|.k-pri--high|light": {
-      "ratio": 4.13,
-      "need": 4.5
-    },
-    "kartavaya-design.css:1033|.k-pri--low|light": {
-      "ratio": 4.37,
-      "need": 4.5
-    },
-    "manav.css:281|.mn-chip|light": {
-      "ratio": 4.15,
-      "need": 4.5
-    },
     "sanvaad.css:1123|.msg--sys .msg__glyph|light": {
       "ratio": 3.39,
       "need": 4.5
