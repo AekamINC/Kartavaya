@@ -252,3 +252,96 @@ Checked, and left alone deliberately:
   admin cost report, which is **not one of the nine specified documents**. There
   is no spec to conform it to, so changing it days before delivery would be
   inventing a design decision. Flagged, not changed.
+
+---
+
+## 9. The verification round — closed 2026-07-27
+
+Seven agents, one verdict per file, ~470 files. **This is the first time anyone
+looked at this product against its design.** Every earlier agent was blocked
+from a browser tab and had to declare visual fidelity unverified.
+
+Three of them solved that independently, and the pattern is worth keeping: **own
+vite on a private port, a LOCAL stub API, and a gitignored `.env.local` pointing
+every backend and Supabase URL at loopback** so the shared database is
+*physically unreachable* rather than merely untouched. One mounted the real
+components inside the real `AppShell` with the real stylesheet graph and swapped
+`api.defaults.adapter` before mount. No session was ever taken against real
+data.
+
+**Screenshots failed all session** ("the Browser pane is not displayed, so the
+page is not compositing frames"). Everything below is therefore measured layout
+— `getComputedStyle`, `getBoundingClientRect`, `scrollWidth` — not images. That
+is stronger evidence for structure and weaker for aesthetics, and the aesthetic
+half remains the owner's to judge.
+
+### The two owner complaints, answered
+
+**"tab in crm is few only visible and rest is under more section."** The build
+matches the design. The reference `TabBar` is `max = 6`; measured Graha
+6 + `More +11`, Ganit 6 + `More +4`, Manav 6 + `More +5`, popover reading
+`All tabs · 17` at the reference's own 230/340px. **This is a design
+disagreement, not a fidelity bug**, and `max` is already a prop — one line
+whenever the owner wants more inline.
+
+**"only tab is done not the whole page."** Not reproduced across 26 module tabs.
+Two genuine instances were found and one is fixed: `graha/ActivitiesTab` now
+renders the list over an endpoint that had existed all along. **`ganit/
+TimesheetTab` is still a form only** — no list of the entries being billed, and
+unlike ActivitiesTab there is no ready GET; the unbilled-entries query lives
+inside the POST. **Backend work, still open.**
+
+### The false-empty class is dead
+
+All 43 module tab-states driven to a real 500: **none printed an empty state.**
+"No invoices", "no employees", "No payroll runs" never appear over a failure.
+Manav's `useList` holds `items` at null whenever `error` is set, so a call site
+cannot collapse the two.
+
+Fixed in this round, each an empty state making a claim the failure falsified:
+"No channels yet" to a member of nine; "No approved templates yet" on the only
+path that reaches a customer after the WhatsApp 24-hour window closes; "No
+transactions yet" over a spending wallet; a confident **"0h"** on Time Report
+over a failed request; and on mobile **"All clear! No tasks for this filter."**
+on the first screen a user opens each morning.
+
+### Defects that were not styling
+
+- **A throw in any tab blanked the entire product.** `ErrorBoundary` existed
+  once, at the root. Fixed: `AppShell` wraps `<Outlet>` at `scope="page"`, keyed
+  on pathname so the latch clears on navigation.
+- **`srijan/DataCatalogTab` unmounted the whole module** when `input_schema`
+  arrived as a JSON string. `routers/scrapers.py:160` explicitly handles that
+  shape, which is the evidence it happens.
+- **The Ganit e-sign flow could never send** — four faults under one
+  `except Exception`, answering `{"status": "sent"}` with nothing sent. Fixing
+  the import alone would have given every signer the same token.
+- **Pahchan retakes never reset** — after three failures, every later punch sent
+  `retry_count: 3` and was flagged for a manager forever.
+- **Both public pages had 2.13:1 Devanagari in dark mode** — the page a client's
+  own customer uses to approve work.
+- **The primary button was 2.51:1 in LIGHT** on 145 uses, because `--k-grad` ran
+  to `--primary-vivid`. The design's ordinary button is flat.
+
+### Discipline worth keeping
+
+Three agents nearly filed **twelve false defects between them**, all their own
+fixtures serving wrong field names — one unanchored `/tasks$` was swallowing
+`/templates/tasks`. Each verified against the backend and recorded the finding
+as **disproved** rather than reporting it. That is why these reports can be
+trusted: they say what they could not verify.
+
+### Still open after this round
+
+1. **`ganit/TimesheetTab`** — a form with no list. Backend work.
+2. **Payload-shape agreement with the live backend is unproven.** Every pass ran
+   against stubs, and agents hit real field-name mismatches in their own
+   fixtures. One run against a real staging session would settle it.
+3. **Mobile was never rendered** — no simulator. Gestures, haptics, camera,
+   sheet presentation, dark mode and touch targets are unverified.
+4. **Seven mobile files have zero accessibility attributes**, including
+   `BoardScreen` (734 loc) and `NewTaskSheet` (659 loc).
+5. **The landing page's primary CTA has no destination** — `VITE_LEAD_CTA_HREF`
+   is unset and the page says so to visitors.
+6. **Aesthetic fidelity.** Measured layout is not a look. Nobody has seen these
+   pages side by side with the mockups.
