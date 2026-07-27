@@ -4,9 +4,10 @@
  * Schedules management toggles below the builder via "Manage schedules" in the header.
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import { api } from '../lib/api';
+import { api, rows as asRows, body as asBody } from '../lib/api';
 import { PageHeader, DataTable, Td } from '../components/editorial';
-import { ErrorState, errorKind } from '../components/ui';
+import { ErrorState, errorKind, SkeletonText } from '../components/ui';
+import { useToast } from '../components/ui/toast';
 import { PROJECT_COLORS, userInitials } from '../lib/utils';
 
 const TODAY     = new Date().toISOString().slice(0, 10);
@@ -69,6 +70,7 @@ const FREQ_OPTS = [
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 function SchedulesPanel({ teams }) {
+  const { pushToast } = useToast();
   const [teamId,    setTeamId]    = useState(teams[0]?.team_id || '');
   const [schedules, setSchedules] = useState([]);
   const [loading,   setLoading]   = useState(false);
@@ -89,7 +91,7 @@ function SchedulesPanel({ teams }) {
     setLoading(true);
     setErr(null);
     api.get(`/reports/schedules/${tid}`)
-      .then(r => setSchedules(Array.isArray(r.data) ? r.data : []))
+      .then(r => setSchedules(asRows(r)))
       .catch(e => { setErr(e); setSchedules([]); })
       .finally(() => setLoading(false));
   }, []);
@@ -117,28 +119,45 @@ function SchedulesPanel({ teams }) {
         day_of_week:   form.frequency === 'weekly'  ? Number(form.day_of_week)  : null,
         day_of_month:  form.frequency === 'monthly' ? Number(form.day_of_month) : null,
       });
-      setSchedules(s => [r.data, ...s]);
+      setSchedules(s => [asBody(r), ...s]);
       setShowForm(false);
       setForm(f => ({ ...f, recipients: '' }));
-    } catch (_) {}
-    finally { setSubmitting(false); }
+    } catch (e) {
+      // Was `catch (_) {}`. A rejected create closed nothing, added nothing and
+      // said nothing — the form simply sat there, so the user pressed Create
+      // again. On a schedule that DID save before erroring, that is a duplicate
+      // recurring email to a client.
+      pushToast({
+        type: 'error',
+        title: 'Could not create the schedule',
+        message: e?.response?.data?.detail || 'Try again.',
+      });
+    } finally { setSubmitting(false); }
   }
 
   async function del(id) {
     try {
       await api.delete(`/reports/schedules/${id}`);
       setSchedules(s => s.filter(x => x.schedule_id !== id));
-    } catch (_) {}
+    } catch (e) {
+      // Also `catch (_) {}` before: a failed delete left the row on screen with
+      // no explanation, which reads as the button being broken.
+      pushToast({
+        type: 'error',
+        title: 'Could not delete the schedule',
+        message: e?.response?.data?.detail || 'Try again.',
+      });
+    }
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="rep-page">
       {/* Project + new button */}
       <section className="k-card">
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 200px', minWidth: 0 }}>
+        <div className="rep-bar">
+          <div className="rep-bar__grow">
             <div className="k-fld-label">PROJECT</div>
-            <select className="k-input" value={teamId} onChange={e => setTeamId(e.target.value)} style={{ cursor: 'pointer' }}>
+            <select className="k-input rep-sel" value={teamId} onChange={e => setTeamId(e.target.value)}>
               {teams.map(t => <option key={t.team_id} value={t.team_id}>{t.name}</option>)}
             </select>
           </div>
@@ -158,25 +177,21 @@ function SchedulesPanel({ teams }) {
             </div>
           </div>
           <form onSubmit={createSchedule}>
-            <div className="k-card__body" style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <div className="k-card__body rep-form">
               {/* Frequency */}
               <div>
                 <div className="k-fld-label">FREQUENCY</div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                <div className="rep-seg">
                   {FREQ_OPTS.map(opt => (
-                    <button key={opt.value} type="button"
+                    <button
+                      key={opt.value}
+                      type="button"
+                      aria-pressed={form.frequency === opt.value}
+                      className={`rep-seg__btn${form.frequency === opt.value ? ' is-on' : ''}`}
                       onClick={() => setForm(f => ({ ...f, frequency: opt.value }))}
-                      style={{
-                        padding: '8px 16px', borderRadius: 8, cursor: 'pointer',
-                        fontSize: 13, fontWeight: 600,
-                        border: form.frequency === opt.value
-                          ? '1.5px solid var(--k-teal)' : '1.5px solid var(--rule)',
-                        background: form.frequency === opt.value
-                          ? 'color-mix(in srgb, var(--k-teal) 10%, transparent)' : 'var(--surface)',
-                        color: form.frequency === opt.value ? 'var(--k-teal)' : 'var(--ink-2)',
-                      }}>
+                    >
                       {opt.label}
-                      <span style={{ display: 'block', fontSize: 10, fontWeight: 400, color: 'var(--ink-3)', marginTop: 1 }}>{opt.hi}</span>
+                      <span className="rep-seg__hi" lang="hi" aria-hidden="true">{opt.hi}</span>
                     </button>
                   ))}
                 </div>
@@ -185,16 +200,17 @@ function SchedulesPanel({ teams }) {
               {form.frequency === 'weekly' && (
                 <div>
                   <div className="k-fld-label">DAY</div>
-                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  <div className="rep-seg">
                     {DAYS.map((d, i) => (
-                      <button key={d} type="button"
+                      <button
+                        key={d}
+                        type="button"
+                        aria-pressed={form.day_of_week === i}
+                        className={`rep-seg__btn rep-seg__btn--day${form.day_of_week === i ? ' is-on' : ''}`}
                         onClick={() => setForm(f => ({ ...f, day_of_week: i }))}
-                        style={{
-                          width: 38, height: 38, borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                          border: form.day_of_week === i ? '1.5px solid var(--k-teal)' : '1.5px solid var(--rule)',
-                          background: form.day_of_week === i ? 'color-mix(in srgb, var(--k-teal) 10%, transparent)' : 'var(--surface)',
-                          color: form.day_of_week === i ? 'var(--k-teal)' : 'var(--ink-3)',
-                        }}>{d}</button>
+                      >
+                        {d}
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -203,18 +219,24 @@ function SchedulesPanel({ teams }) {
               {form.frequency === 'monthly' && (
                 <div>
                   <div className="k-fld-label">DAY OF MONTH</div>
-                  <input type="number" min="1" max="28" className="k-input"
-                    style={{ width: 80, marginTop: 6 }}
+                  <input
+                    type="number" min="1" max="28"
+                    className="k-input rep-num"
+                    aria-label="Day of month"
                     value={form.day_of_month}
-                    onChange={e => setForm(f => ({ ...f, day_of_month: e.target.value }))} />
+                    onChange={e => setForm(f => ({ ...f, day_of_month: e.target.value }))}
+                  />
                 </div>
               )}
               {/* Send hour */}
               <div>
                 <div className="k-fld-label">SEND TIME (UTC)</div>
-                <select className="k-input" style={{ width: 130, marginTop: 6, cursor: 'pointer' }}
+                <select
+                  className="k-input rep-sel rep-sel--time"
+                  aria-label="Send time in UTC"
                   value={form.send_hour_utc}
-                  onChange={e => setForm(f => ({ ...f, send_hour_utc: e.target.value }))}>
+                  onChange={e => setForm(f => ({ ...f, send_hour_utc: e.target.value }))}
+                >
                   {Array.from({ length: 24 }, (_, i) => (
                     <option key={i} value={i}>{String(i).padStart(2, '0')}:00 UTC</option>
                   ))}
@@ -223,11 +245,15 @@ function SchedulesPanel({ teams }) {
               {/* Formats */}
               <div>
                 <div className="k-fld-label">FORMAT</div>
-                <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+                <div className="rep-fmt">
                   {['pdf', 'excel'].map(fmt => (
-                    <label key={fmt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--ink-2)' }}>
-                      <input type="checkbox" checked={form.file_formats.includes(fmt)}
-                        onChange={() => toggleFmt(fmt)} style={{ accentColor: 'var(--k-teal)' }} />
+                    <label key={fmt} className="rep-fmt__l">
+                      <input
+                        type="checkbox"
+                        className="rep-fmt__cb"
+                        checked={form.file_formats.includes(fmt)}
+                        onChange={() => toggleFmt(fmt)}
+                      />
                       {fmt.toUpperCase()}
                     </label>
                   ))}
@@ -236,14 +262,17 @@ function SchedulesPanel({ teams }) {
               {/* Recipients */}
               <div>
                 <div className="k-fld-label">RECIPIENTS</div>
-                <textarea className="k-input"
-                  placeholder="email@example.com, another@example.com"
-                  rows={3} value={form.recipients}
+                <textarea
+                  className="k-input rep-ta"
+                  aria-label="Recipients"
+                  placeholder="name@example.com, another@example.com"
+                  rows={3}
+                  value={form.recipients}
                   onChange={e => setForm(f => ({ ...f, recipients: e.target.value }))}
-                  style={{ marginTop: 6, resize: 'vertical' }} />
-                <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 4 }}>Separate with commas or new lines.</div>
+                />
+                <div className="rep-hint">Separate with commas or new lines.</div>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div className="rep-acts">
                 <button type="submit" className="k-btn k-btn--primary k-btn--sm" disabled={submitting}>
                   {submitting ? 'Saving…' : 'Create schedule'}
                 </button>
@@ -256,7 +285,7 @@ function SchedulesPanel({ teams }) {
 
       {/* List */}
       {loading ? (
-        <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--ink-3)', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>Loading…</div>
+        <div className="k-card" aria-busy="true" aria-label="Loading schedules"><SkeletonText width="40%" height={14} /></div>
       ) : err ? (
         <ErrorState
           kind={errorKind(err)}
@@ -270,8 +299,8 @@ function SchedulesPanel({ teams }) {
           <div className="k-empty__sub">Create one to auto-deliver reports to your inbox.</div>
         </div>
       ) : (
-        <section className="k-card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div className="k-card__head" style={{ padding: '16px 24px' }}>
+        <section className="k-card">
+          <div className="k-card__head">
             <div className="k-card__titles">
               <h3 className="k-card__title">Active schedules</h3>
               <span className="k-card__sans">स्वचालित सूची</span>
@@ -289,7 +318,7 @@ function SchedulesPanel({ teams }) {
             {schedules.map(s => (
               <tr key={s.schedule_id}>
                 <Td>
-                  <span className="k-statuschip" style={{ '--c': 'var(--k-teal)', textTransform: 'capitalize' }}>
+                  <span className="k-statuschip rep-chip--cap" style={{ '--c': 'var(--primary)' }}>
                     <span className="k-statuschip__dot" />
                     {s.frequency}
                   </span>
@@ -552,7 +581,7 @@ export default function ReportsPage({ teams: propTeams }) {
                 <button key={t.team_id}
                   className={'gr__chip' + (projectIds.includes(t.team_id) ? ' is-active' : '')}
                   onClick={() => toggleProject(t.team_id)}>
-                  <i className="gr__chip-dot" style={{ background: colorFor(i) }} />
+                  <i className="gr__chip-dot rep-swatch" style={{ '--c': colorFor(i) }} />
                   <span className="gr__chip-name">{t.name}</span>
                   {t.task_count !== null && t.task_count !== undefined && (
                     <span className="gr__chip-hi">{t.task_count} tasks</span>
@@ -572,16 +601,16 @@ export default function ReportsPage({ teams: propTeams }) {
               <button className="gr__block-action" onClick={() => setMemberIds([])}>None</button>
             </div>
             {projectIds.length === 0 ? (
-              <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-3)', fontStyle: 'italic' }}>Select a project above first.</p>
+              <p className="rep-note">Select a project above first.</p>
             ) : uniqueMembers.length === 0 ? (
-              <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-3)', fontStyle: 'italic' }}>Loading members…</p>
+              <p className="rep-note">Loading members…</p>
             ) : (
               <div className="gr__people">
                 {uniqueMembers.map((m, i) => (
                   <button key={m.user_id}
                     className={'gr__person' + (memberIds.includes(m.user_id) ? ' is-active' : '')}
                     onClick={() => toggleMember(m.user_id)}>
-                    <span className="gr__person-av" style={{ background: colorFor(i) }}>
+                    <span className="gr__person-av rep-swatch" style={{ '--c': colorFor(i) }}>
                       {userInitials(m.display_name)}
                     </span>
                     <span className="gr__person-name">{m.display_name}</span>
@@ -647,7 +676,7 @@ export default function ReportsPage({ teams: propTeams }) {
               {sections.summary && (
                 <div className="gr__preview-stats">
                   {prevLoading ? (
-                    <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '8px 0', color: 'var(--ink-3)', fontSize: 12, fontStyle: 'italic' }}>
+                    <div className="rep-note rep-note--cell">
                       Loading…
                     </div>
                   ) : (
@@ -732,7 +761,7 @@ export default function ReportsPage({ teams: propTeams }) {
               <span className="gr__history-hi">पूर्व निर्यात</span>
             </div>
             {history.length === 0 ? (
-              <div style={{ padding: '14px 16px', fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+              <div className="rep-note rep-note--pad">
                 No exports this session.
               </div>
             ) : (
@@ -752,12 +781,12 @@ export default function ReportsPage({ teams: propTeams }) {
 
       {/* Schedules panel — toggled by header button */}
       {showSchedules && (
-        <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid var(--rule-soft)' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 20 }}>
-            <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 500, color: 'var(--ink)', letterSpacing: '-0.005em' }}>
+        <div className="rep-sched">
+          <div className="rep-sched__head">
+            <h2 className="rep-sched__t">
               Automated schedules
             </h2>
-            <span style={{ fontFamily: 'var(--font-hindi)', fontSize: 14, color: 'var(--ink-3)' }}>स्वचालित प्रेषण</span>
+            <span className="rep-sched__hi" lang="hi" aria-hidden="true">स्वचालित प्रेषण</span>
           </div>
           <SchedulesPanel teams={teams} />
         </div>

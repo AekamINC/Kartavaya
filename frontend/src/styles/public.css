@@ -1,0 +1,276 @@
+/* public.css — the two UNAUTHENTICATED pages: /approve and /sign/:token.
+ *
+ * These are the only routes in the product that a stranger reaches. Both are in
+ * `PUBLIC_PATHS` (lib/api.js), so a 401 on either does NOT end the session and
+ * does NOT bounce the visitor to /login — the person holding the link has no
+ * session to end. They are also the pages a client's OWN customer opens from an
+ * email, which makes them the most externally visible surface in the product.
+ *
+ * They share one chrome (`pub-*`) because they are one surface to the person
+ * looking at them: same brand lockup, same page frame, same footer. Only the
+ * body differs — `ap-*` for the approval decision, `sg-*` for the signer.
+ *
+ * WHY THIS FILE EXISTS AT ALL. ApprovePage carried 52 raw inline styles on the
+ * OLD token vocabulary (`--ink`, `--rule`, `--k-primary`, `.k-card`, `.k-btn`)
+ * while SigningPage next door had already moved to the current one
+ * (`--on-surface`, `--outline`, `.card`, `.btn`). Two pages one click apart in
+ * the same email flow disagreed about what a card, a rule and body text look
+ * like. None of ApprovePage's values followed the theme, the Density setting or
+ * the Border-radius setting, so the public face of the product ignored three
+ * user preferences and rendered a different design system than the app it
+ * belongs to.
+ *
+ * LAYOUT. Fluid and left-aligned, per the standing owner rule recorded in
+ * `_SOURCE-MAP.md` ("all pages fluid and left-aligned, no fixed-width
+ * centring"). SigningPage already followed it; ApprovePage centred a 540px
+ * column and is brought into line here rather than the rule being bent for it.
+ * Prose takes a `ch` measure, which caps LINE LENGTH — a typographic limit, not
+ * a page width, and it centres nothing.
+ *
+ * The only inline style permitted in the JSX is a custom property feeding a
+ * rule here (`style={{ '--c': … }}`, the Tag pattern) — check-tokens.mjs
+ * deviation 2. A per-instance priority colour is genuinely per-instance data; a
+ * raw `padding: 20px` never is.
+ *
+ * No literal hex anywhere below. Everything resolves through tokens so both
+ * themes, the density scale and the radius setting all reach it.
+ */
+
+/* ── Page frame ────────────────────────────────────────────────────────────
+ * `min-height: 100dvh`, not 100vh. On iOS Safari 100vh is the viewport WITHOUT
+ * the address bar, so a short page gets a scrollbar and the footer sits under
+ * the browser chrome. These pages are opened from email, overwhelmingly on a
+ * phone, so this is the common case rather than an edge one.
+ */
+.pub {
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--on-surface);
+  font-family: var(--font-ui);
+  font-size: var(--t-body);
+  padding: var(--pad-page);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--gap-section);
+}
+
+/* ── Brand lockup ───────────────────────────────────────────────────────── */
+.pub__brand { display: flex; align-items: center; gap: var(--sp-3); }
+
+.pub__kick {
+  margin: 3px 0 0;
+  font-size: var(--t-micro);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--on-surface-3);
+}
+
+/* ── Body slot ──────────────────────────────────────────────────────────────
+ * width:100% so a card fills the fluid page instead of shrink-wrapping to its
+ * text. `flex: 1` pins the footer to the bottom on a short state (loading,
+ * "already signed") rather than leaving it floating mid-screen.
+ */
+.pub__body { width: 100%; flex: 1 0 auto; }
+
+.pub__card { width: 100%; }
+
+/* Padding for the states that render straight into a CardBody with no head —
+ * ErrorState and the skeleton would otherwise sit flush against the card edge. */
+.pub__pad { padding-top: var(--pad-card); }
+
+.pub__foot {
+  margin: 0;
+  font-size: var(--t-micro);
+  color: var(--on-surface-3);
+}
+
+/* ── Shared prose ───────────────────────────────────────────────────────────
+ * 64ch is the measure for body copy. Long legal sentences (the IT Act notice on
+ * the signing page) are unreadable at full 1440px width.
+ */
+.pub__lede {
+  max-width: 64ch;
+  margin: 0;
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-2);
+  line-height: var(--line-height-base);
+}
+
+.pub__muted {
+  max-width: 64ch;
+  margin: 0;
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  line-height: var(--line-height-base);
+}
+
+/* ── Shared layout helpers ──────────────────────────────────────────────── */
+.pub__stack { display: flex; flex-direction: column; gap: var(--sp-3); }
+
+/* flex-wrap matters: at 360px two lg buttons side by side overflow, and the
+   second action (Decline / Reject) would be unreachable off-screen. */
+.pub__actions { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+
+.pub__link {
+  align-self: flex-start;
+  color: var(--primary-text);
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+}
+
+/* ══ APPROVE ═══════════════════════════════════════════════════════════════ */
+
+/* Requester / date line under the card title. */
+.ap__by { font-size: var(--t-label); color: var(--on-surface-3); }
+.ap__by strong { color: var(--on-surface-2); font-weight: 600; }
+
+/* Meta row — priority and due date. Wraps on a phone. */
+.ap__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+  align-items: center;
+}
+
+.ap__fact { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--t-label); }
+.ap__fact-l { color: var(--on-surface-3); }
+.ap__fact-v { color: var(--on-surface-2); font-weight: 600; }
+
+/* The priority dot reads its colour from --c, set per instance in the JSX from
+   priorityColor(). Same contract as Tag. */
+.ap__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c, var(--on-surface-faint));
+  flex-shrink: 0;
+}
+.ap__prio { color: var(--c, var(--on-surface-2)); font-weight: 600; text-transform: capitalize; }
+
+/* The requester's note. Left rule marks it as quoted material rather than the
+   page's own voice. */
+.ap__note {
+  max-width: 64ch;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--s-container);
+  border-radius: var(--r-sm);
+  border-left: 2px solid var(--primary);
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-2);
+  line-height: var(--line-height-base);
+}
+
+/* ── Outcome (approved / rejected) ──────────────────────────────────────────
+ * The terminal state after a decision, and the state a second click on the same
+ * email link lands on. It is a RESULT, not an error: the visitor did nothing
+ * wrong by opening the link twice.
+ */
+.ap__outcome { display: flex; flex-direction: column; gap: var(--sp-3); align-items: flex-start; }
+
+.ap__mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--s-container);
+  color: var(--c, var(--on-surface-3));
+}
+
+.ap__outcome-t {
+  font-family: var(--font-display);
+  font-size: var(--t-title-lg);
+  font-weight: 400;
+  letter-spacing: -.02em;
+  color: var(--on-surface);
+  margin: 0;
+}
+
+.ap__outcome-hi {
+  font-family: var(--font-hindi);
+  font-size: var(--t-body);
+  color: var(--c, var(--on-surface-3));
+  margin: 0;
+}
+
+/* ── Reject reason ──────────────────────────────────────────────────────── */
+.ap__reason { max-width: 64ch; }
+
+/* ══ SIGN ══════════════════════════════════════════════════════════════════ */
+
+/* Prose + field measure on the signing page. */
+.sg__measure { max-width: 64ch; }
+
+/* The OTP input. Centred, tracked out, tabular — a six-digit code typed into a
+   normal left-aligned input reads as a text field, not a code. */
+.sg__otp {
+  text-align: center;
+  letter-spacing: .5em;
+  font-family: var(--font-mono);
+}
+
+/* ── Signature paper ────────────────────────────────────────────────────────
+ * --sg-paper and --sg-ink are the LIGHT palette's surface and ink, declared
+ * here and pinned in BOTH themes on purpose. `toDataURL` ships these exact
+ * pixels into the signed PDF, which every viewer renders on white paper — ink
+ * drawn in a dark-theme foreground arrives as a near-white smudge, i.e. an
+ * invisible signature on a legal document. The drawing area is paper, not
+ * chrome, so it does not follow the theme.
+ *
+ * They are declared as tokens rather than written as hex at each use so the
+ * canvas 2D context (which cannot read a custom property) and the CSS have one
+ * source of truth — JS reads them back with getComputedStyle.
+ */
+.sg__paper {
+  --sg-paper: #FFFEFB;
+  --sg-ink: #1B1D1A;
+  border: 1px solid var(--outline);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--sg-paper);
+}
+
+.sg__canvas {
+  width: 100%;
+  height: 160px;
+  cursor: crosshair;
+  display: block;
+  touch-action: none; /* stop the page panning under a finger mid-stroke */
+}
+
+/* Typed-signature preview. Same paper exception, same reason: this previews the
+   ink that goes onto the document, so it must read here as it will there. */
+.sg__preview {
+  --sg-paper: #FFFEFB;
+  --sg-ink: #1B1D1A;
+  margin-top: var(--sp-2);
+  padding: var(--sp-4);
+  background: var(--sg-paper);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+}
+
+.sg__preview-ink {
+  font-family: 'Brush Script MT', 'Segoe Script', cursive;
+  font-size: 32px;
+  color: var(--sg-ink);
+  overflow-wrap: anywhere;
+}
+
+.sg__clear { margin-top: var(--sp-2); }
+
+.sg__done { color: var(--ok); font-weight: 600; }
+
+/* ── Narrow viewport ────────────────────────────────────────────────────────
+ * These pages are opened from email, so the phone is the primary case rather
+ * than a fallback. Both actions go full-width and stack: a 50/50 split at 360px
+ * gives two buttons too narrow for their labels, and "✕ Confirm Reject" is the
+ * one that truncates.
+ */
+@media (max-width: 560px) {
+  .pub__actions { flex-direction: column; align-items: stretch; }
+  .pub__actions > .btn { width: 100%; justify-content: center; }
+  .ap__meta { gap: var(--sp-2) var(--sp-4); }
+}

@@ -18,10 +18,18 @@
  * Layout follows the standing owner rule in `_SOURCE-MAP.md` ("all pages fluid
  * and left-aligned, no fixed-width centring"), which overrides any spec. The
  * reference's own public auth surface centres a 392px card (`auth.css` `.au--m`,
- * `.au-form`) and `ApprovePage.jsx` copies that — both are in the same position
- * and are recorded in the report, not silently followed here. Prose blocks take
- * a `ch` measure, which is a typographic limit on line length, not a page width,
- * and does not centre anything.
+ * `.au-form`); ApprovePage used to copy that and has now been brought onto the
+ * same fluid left-aligned frame as this page, so the two public routes no
+ * longer disagree. Prose blocks take a `ch` measure, which is a typographic
+ * limit on line length, not a page width, and does not centre anything.
+ *
+ * The chrome is shared with ApprovePage as `pub-*` in `styles/public.css`; the
+ * signer-specific pieces are `sg-*`. This file previously held that layout as
+ * six inline style OBJECTS (`page`, `stack`, `inline`, `lede`, `muted`, `cardW`)
+ * plus per-element literals — token-driven, but invisible to the design gates,
+ * unreachable from a media query, and impossible for the next page to reuse.
+ * The narrow-viewport rule that stacks the action buttons could not have been
+ * written against them at all.
  */
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
@@ -31,6 +39,7 @@ import Button from '../components/ui/Button';
 import { Card, CardHead, CardBody } from '../components/ui/Card';
 import { Chip, ChipRow } from '../components/ui/Chip';
 import { ErrorState, errorKind } from '../components/ui/ErrorState';
+import { SkeletonText } from '../components/ui/Skeleton';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 
 const API = `${import.meta.env.VITE_BACKEND_URL}/api`;
@@ -43,17 +52,31 @@ const ax = axios.create({ baseURL: API });
    drawn in a dark-theme foreground would arrive as a near-white smudge on a
    white page, i.e. an invisible signature on a legal document. So the drawing
    area is pinned to the LIGHT palette's values in both themes: it is paper,
-   not chrome. The literals below are `--s-lowest` and `--on-surface` as the
-   light theme declares them (kartavaya-design.css §7), copied rather than
-   referenced because a canvas 2D context cannot read a CSS custom property.
-   The typed-signature path has no such constraint — it submits a string, not
-   an image — so its preview is fully tokenised. */
-const PAPER = '#FFFEFB';
-const INK   = '#1B1D1A';
+   not chrome.
 
-/* Prose measure. A limit on line length, not on page width — the block is
-   still left-aligned and the page is still fluid. */
-const MEASURE = { maxWidth: '64ch' };
+   Those values now live in ONE place — `.sg__paper` / `.sg__preview` in
+   public.css declare `--sg-paper` and `--sg-ink` — and are read back here with
+   getComputedStyle, because a canvas 2D context cannot consume a CSS custom
+   property directly. Previously the same two hex literals existed in both the
+   stylesheet's territory and this file, which is a divergence waiting to
+   happen on the one artefact that is legally binding.
+
+   The fallbacks are the light palette's --s-lowest and --on-surface
+   (kartavaya-design.css §7). They are reached only where custom properties do
+   not resolve at all — jsdom under test — and never in a browser. */
+const PAPER_FALLBACK = '#FFFEFB';
+const INK_FALLBACK   = '#1B1D1A';
+
+function paperInk(el) {
+  if (!el || typeof window === 'undefined' || !window.getComputedStyle) {
+    return [PAPER_FALLBACK, INK_FALLBACK];
+  }
+  const cs = window.getComputedStyle(el);
+  return [
+    cs.getPropertyValue('--sg-paper').trim() || PAPER_FALLBACK,
+    cs.getPropertyValue('--sg-ink').trim() || INK_FALLBACK,
+  ];
+}
 
 export default function SigningPage() {
   const { token } = useParams();
@@ -69,6 +92,7 @@ export default function SigningPage() {
   const [confirm, setConfirm] = useState(null);
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
+  const paperRef = useRef(PAPER_FALLBACK);
 
   /* This page's viewer is a stranger to the product: a client's client, with no
      session and no stored prefs, so nothing here has ever expressed a theme
@@ -193,12 +217,17 @@ export default function SigningPage() {
     if (!canvas) return;
     canvasRef.current = canvas;
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    // --sg-paper / --sg-ink inherit down from .sg__paper, so reading them off
+    // the canvas itself resolves the same values the stylesheet painted.
+    const [paper, ink] = paperInk(canvas);
+    paperRef.current = paper;
     // Paint the paper in, rather than leaving the canvas transparent: a
     // transparent PNG dropped onto a dark viewer background hides the ink just
-    // as effectively as light ink would. See PAPER/INK above.
-    ctx.fillStyle = PAPER;
+    // as effectively as light ink would. See paperInk above.
+    ctx.fillStyle = paper;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = INK;
+    ctx.strokeStyle = ink;
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
 
@@ -227,225 +256,212 @@ export default function SigningPage() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     // Repaint the paper, not clearRect — clearing back to transparent would
     // undo the fill laid down in initCanvas and reintroduce the invisible-ink
     // problem for anyone who draws, clears, and draws again.
-    ctx.fillStyle = PAPER;
+    ctx.fillStyle = paperRef.current || PAPER_FALLBACK;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   };
 
-  const page = {
-    minHeight: '100vh', background: 'var(--bg)', color: 'var(--on-surface)',
-    fontFamily: 'var(--font-ui)', fontSize: 'var(--t-body)',
-    padding: 'var(--pad-page)',
-    display: 'flex', flexDirection: 'column', gap: 'var(--gap-section)',
-    alignItems: 'flex-start',
-  };
-  const stack  = { display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' };
-  const inline = { display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-3)' };
-  const lede   = { ...MEASURE, margin: 0, fontSize: 'var(--t-body-sm)', color: 'var(--on-surface-2)', lineHeight: 1.6 };
-  const muted  = { ...MEASURE, margin: 0, fontSize: 'var(--t-label)', color: 'var(--on-surface-3)', lineHeight: 1.6 };
-  // width:100% so a card fills the fluid page rather than shrink-wrapping.
-  const cardW  = { width: '100%' };
-
   return (
-    <div style={page}>
-      <header style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
+    <div className="pub">
+      <header className="pub__brand">
         <KLogo size={36} />
         <div>
           <KWordmark />
-          <p style={{ margin: '3px 0 0', fontSize: 'var(--t-micro)', letterSpacing: '.14em',
-            textTransform: 'uppercase', fontWeight: 600, color: 'var(--on-surface-3)' }}>
-            Secure document signing
-          </p>
+          <p className="pub__kick">Secure document signing</p>
         </div>
       </header>
 
-      {step === 'loading' && (
-        <Card style={cardW}>
-          <CardBody>
-            <p style={{ ...lede, paddingTop: 'var(--pad-card)' }}>Checking this signing link…</p>
-          </CardBody>
-        </Card>
-      )}
-
-      {step === 'error' && (
-        <Card style={cardW}>
-          <CardBody>
-            <div style={{ paddingTop: 'var(--pad-card)' }}>
-              <ErrorState kind={errKind} detail={error || undefined} />
-            </div>
-          </CardBody>
-        </Card>
-      )}
-
-      {step === 'otp_send' && data && (
-        <Card style={cardW}>
-          <CardHead title={`Sign: ${data.document_title}`} />
-          <CardBody>
-            <div style={stack}>
-              {data.document_description && <p style={lede}>{data.document_description}</p>}
-              <p style={lede}>
-                Hi <strong>{data.signer_name}</strong>, you need to verify your identity before signing.
-              </p>
-              <p style={muted}>We&rsquo;ll send a 6-digit code to your email.</p>
-              {data.file_url && (
-                <a href={data.file_url} target="_blank" rel="noopener noreferrer"
-                  style={{ alignSelf: 'flex-start', color: 'var(--primary-text)',
-                    fontSize: 'var(--t-body-sm)', fontWeight: 600 }}>
-                  View document (PDF)
-                </a>
-              )}
-              {error && <span className="fldx__err" role="alert">{error}</span>}
-              <div style={inline}>
-                <Button variant="fill" size="lg" onClick={sendOtp} disabled={busy}>
-                  {busy ? 'Sending…' : 'Send verification code'}
-                </Button>
-                <Button variant="out" size="lg" onClick={decline} disabled={busy}>Decline</Button>
+      <div className="pub__body">
+        {/* Loading, error and every terminal state are distinct branches. A
+            failed verify must never fall through to a state that implies the
+            link was checked and found wanting. */}
+        {step === 'loading' && (
+          <Card className="pub__card">
+            <CardBody>
+              <div className="pub__pad pub__stack" aria-busy="true" aria-label="Checking this signing link">
+                <SkeletonText width="45%" height={11} />
+                <SkeletonText width="70%" height={22} />
+                <SkeletonText width="100%" height={12} />
+                <SkeletonText width="85%" height={12} />
               </div>
-            </div>
-          </CardBody>
-        </Card>
-      )}
+            </CardBody>
+          </Card>
+        )}
 
-      {step === 'otp_verify' && (
-        <Card style={cardW}>
-          <CardHead title="Enter verification code" />
-          <CardBody>
-            <div style={stack}>
-              <p style={lede}>
-                Sent to {data?.maskedEmail || 'your email'}. Valid for 10 minutes.
-              </p>
-              {/* `.fldx--otp` is the system's OTP field — a 210px cap, because a
-                  six-digit code in a full-width input reads as a text box. */}
-              <div className={`fldx fldx--otp${error ? ' is-error' : ''}`}>
-                <label className="fldx__lbl" htmlFor="sgn-otp"><span>Verification code</span></label>
-                <input id="sgn-otp" className="fldx__in" value={otp} inputMode="numeric"
-                  autoComplete="one-time-code" maxLength={6} autoFocus
-                  onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  style={{ textAlign: 'center', letterSpacing: '.5em', fontFamily: 'var(--font-mono)' }}
-                  placeholder="000000" />
+        {step === 'error' && (
+          <Card className="pub__card">
+            <CardBody>
+              <div className="pub__pad">
+                <ErrorState kind={errKind} detail={error || undefined} />
+              </div>
+            </CardBody>
+          </Card>
+        )}
+
+        {step === 'otp_send' && data && (
+          <Card className="pub__card">
+            <CardHead title={`Sign: ${data.document_title}`} />
+            <CardBody>
+              <div className="pub__stack">
+                {data.document_description && <p className="pub__lede">{data.document_description}</p>}
+                <p className="pub__lede">
+                  Hi <strong>{data.signer_name}</strong>, you need to verify your identity before signing.
+                </p>
+                <p className="pub__muted">We&rsquo;ll send a 6-digit code to your email.</p>
+                {data.file_url && (
+                  <a className="pub__link" href={data.file_url} target="_blank" rel="noopener noreferrer">
+                    View document (PDF)
+                  </a>
+                )}
                 {error && <span className="fldx__err" role="alert">{error}</span>}
-              </div>
-              <div style={inline}>
-                <Button variant="fill" size="lg" onClick={verifyOtp} disabled={busy}>
-                  {busy ? 'Verifying…' : 'Verify'}
-                </Button>
-                <Button variant="out" size="lg" onClick={sendOtp} disabled={busy}>Resend code</Button>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-      )}
-
-      {step === 'sign' && data && (
-        <Card style={cardW}>
-          <CardHead title={`Sign: ${data.document_title}`} />
-          <CardBody>
-            <div style={stack}>
-              <p style={lede}>
-                Signing as <strong>{data.signer_name}</strong> ({data.signer_email})
-              </p>
-
-              <ChipRow>
-                {['type', 'draw'].map(t => (
-                  <Chip key={t} on={sigType === t} onClick={() => setSigType(t)}>
-                    {t === 'type' ? 'Type signature' : 'Draw signature'}
-                  </Chip>
-                ))}
-              </ChipRow>
-
-              {sigType === 'type' && (
-                <div className="fldx" style={MEASURE}>
-                  <label className="fldx__lbl" htmlFor="sgn-name"><span>Full name</span></label>
-                  <input id="sgn-name" className="fldx__in" value={typedName} autoFocus
-                    onChange={e => setTypedName(e.target.value)} placeholder="Type your full name" />
-                  {typedName && (
-                    /* PAPER/INK, not surface tokens — this is a preview of the
-                       ink that goes onto the document, so it must read the same
-                       here as it will on the page. Same exception as the canvas. */
-                    <div style={{ marginTop: 'var(--sp-2)', padding: 'var(--sp-4)', background: PAPER,
-                      border: '1px solid var(--outline-variant)', borderRadius: 'var(--r-sm)' }}>
-                      <span style={{ fontFamily: "'Brush Script MT', 'Segoe Script', cursive",
-                        fontSize: 32, color: INK }}>
-                        {typedName}
-                      </span>
-                    </div>
-                  )}
+                <div className="pub__actions">
+                  <Button variant="fill" size="lg" onClick={sendOtp} disabled={busy}>
+                    {busy ? 'Sending…' : 'Send verification code'}
+                  </Button>
+                  <Button variant="out" size="lg" onClick={decline} disabled={busy}>Decline</Button>
                 </div>
-              )}
+              </div>
+            </CardBody>
+          </Card>
+        )}
 
-              {sigType === 'draw' && (
-                <div style={MEASURE}>
-                  <div style={{ border: '1px solid var(--outline)', borderRadius: 'var(--r-sm)',
-                    overflow: 'hidden', background: PAPER }}>
-                    <canvas ref={initCanvas} width={500} height={160}
-                      style={{ width: '100%', height: 160, cursor: 'crosshair', display: 'block' }} />
+        {step === 'otp_verify' && (
+          <Card className="pub__card">
+            <CardHead title="Enter verification code" />
+            <CardBody>
+              <div className="pub__stack">
+                <p className="pub__lede">
+                  Sent to {data?.maskedEmail || 'your email'}. Valid for 10 minutes.
+                </p>
+                {/* `.fldx--otp` is the system's OTP field — a 210px cap, because a
+                    six-digit code in a full-width input reads as a text box. */}
+                <div className={`fldx fldx--otp${error ? ' is-error' : ''}`}>
+                  <label className="fldx__lbl" htmlFor="sgn-otp"><span>Verification code</span></label>
+                  <input id="sgn-otp" className="fldx__in sg__otp" value={otp} inputMode="numeric"
+                    autoComplete="one-time-code" maxLength={6} autoFocus
+                    onChange={e => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000" />
+                  {error && <span className="fldx__err" role="alert">{error}</span>}
+                </div>
+                <div className="pub__actions">
+                  <Button variant="fill" size="lg" onClick={verifyOtp} disabled={busy}>
+                    {busy ? 'Verifying…' : 'Verify'}
+                  </Button>
+                  <Button variant="out" size="lg" onClick={sendOtp} disabled={busy}>Resend code</Button>
+                </div>
+              </div>
+            </CardBody>
+          </Card>
+        )}
+
+        {step === 'sign' && data && (
+          <Card className="pub__card">
+            <CardHead title={`Sign: ${data.document_title}`} />
+            <CardBody>
+              <div className="pub__stack">
+                <p className="pub__lede">
+                  Signing as <strong>{data.signer_name}</strong> ({data.signer_email})
+                </p>
+
+                <ChipRow>
+                  {['type', 'draw'].map(t => (
+                    <Chip key={t} on={sigType === t} onClick={() => setSigType(t)}>
+                      {t === 'type' ? 'Type signature' : 'Draw signature'}
+                    </Chip>
+                  ))}
+                </ChipRow>
+
+                {sigType === 'type' && (
+                  <div className="fldx sg__measure">
+                    <label className="fldx__lbl" htmlFor="sgn-name"><span>Full name</span></label>
+                    <input id="sgn-name" className="fldx__in" value={typedName} autoFocus
+                      onChange={e => setTypedName(e.target.value)} placeholder="Type your full name" />
+                    {typedName && (
+                      /* Paper and ink, not surface tokens — this previews the ink
+                         that goes onto the document, so it must read the same here
+                         as it will on the page. Same exception as the canvas. */
+                      <div className="sg__preview">
+                        <span className="sg__preview-ink">{typedName}</span>
+                      </div>
+                    )}
                   </div>
-                  <Button variant="text" size="sm" onClick={clearCanvas}
-                    style={{ marginTop: 'var(--sp-2)' }}>Clear</Button>
+                )}
+
+                {sigType === 'draw' && (
+                  <div className="sg__measure">
+                    <div className="sg__paper">
+                      <canvas className="sg__canvas" ref={initCanvas} width={500} height={160}
+                        aria-label="Draw your signature" />
+                    </div>
+                    <Button className="sg__clear" variant="text" size="sm" onClick={clearCanvas}>
+                      Clear
+                    </Button>
+                  </div>
+                )}
+
+                {error && <span className="fldx__err" role="alert">{error}</span>}
+
+                <p className="pub__muted">
+                  By pressing &ldquo;Sign document&rdquo; you agree that this electronic signature is
+                  legally binding and has the same effect as a handwritten signature under the
+                  IT Act, 2000.
+                </p>
+
+                <div className="pub__actions">
+                  <Button variant="fill" size="lg" onClick={submitSignature} disabled={busy}>
+                    {busy ? 'Signing…' : 'Sign document'}
+                  </Button>
+                  <Button variant="out" size="lg" onClick={decline} disabled={busy}>Decline</Button>
                 </div>
-              )}
-
-              {error && <span className="fldx__err" role="alert">{error}</span>}
-
-              <p style={muted}>
-                By pressing &ldquo;Sign document&rdquo; you agree that this electronic signature is
-                legally binding and has the same effect as a handwritten signature under the
-                IT Act, 2000.
-              </p>
-
-              <div style={inline}>
-                <Button variant="fill" size="lg" onClick={submitSignature} disabled={busy}>
-                  {busy ? 'Signing…' : 'Sign document'}
-                </Button>
-                <Button variant="out" size="lg" onClick={decline} disabled={busy}>Decline</Button>
               </div>
-            </div>
-          </CardBody>
-        </Card>
-      )}
+            </CardBody>
+          </Card>
+        )}
 
-      {step === 'done' && (
-        <Card style={cardW}>
-          <CardHead title="Document signed" />
-          <CardBody>
-            <div style={stack}>
-              <p style={{ ...lede, color: 'var(--ok)', fontWeight: 600 }}>
-                {result?.signers_completed}/{result?.signers_total} signers have signed.
-                {result?.document_status === 'completed' && ' All signatures collected.'}
+        {step === 'done' && (
+          <Card className="pub__card">
+            <CardHead title="Document signed" />
+            <CardBody>
+              <div className="pub__stack">
+                <p className="pub__lede sg__done">
+                  {result?.signers_completed}/{result?.signers_total} signers have signed.
+                  {result?.document_status === 'completed' && ' All signatures collected.'}
+                </p>
+                <p className="pub__muted">
+                  You can close this window. A copy will be sent to your email when all parties
+                  have signed.
+                </p>
+              </div>
+            </CardBody>
+          </Card>
+        )}
+
+        {step === 'already_signed' && (
+          <Card className="pub__card">
+            <CardHead title="Already signed" />
+            <CardBody>
+              <p className="pub__lede">
+                You have already signed this document
+                {result?.signed_at ? ` on ${new Date(result.signed_at).toLocaleDateString('en-IN')}` : ''}.
               </p>
-              <p style={muted}>
-                You can close this window. A copy will be sent to your email when all parties
-                have signed.
-              </p>
-            </div>
-          </CardBody>
-        </Card>
-      )}
+            </CardBody>
+          </Card>
+        )}
 
-      {step === 'already_signed' && (
-        <Card style={cardW}>
-          <CardHead title="Already signed" />
-          <CardBody>
-            <p style={lede}>
-              You have already signed this document
-              {result?.signed_at ? ` on ${new Date(result.signed_at).toLocaleDateString()}` : ''}.
-            </p>
-          </CardBody>
-        </Card>
-      )}
+        {step === 'declined' && (
+          <Card className="pub__card">
+            <CardHead title="Signing declined" />
+            <CardBody>
+              <p className="pub__lede">You have declined to sign this document.</p>
+            </CardBody>
+          </Card>
+        )}
+      </div>
 
-      {step === 'declined' && (
-        <Card style={cardW}>
-          <CardHead title="Signing declined" />
-          <CardBody>
-            <p style={lede}>You have declined to sign this document.</p>
-          </CardBody>
-        </Card>
-      )}
-
-      <p style={{ margin: 0, fontSize: 'var(--t-micro)', color: 'var(--on-surface-3)' }}>
+      <p className="pub__foot">
         Powered by Kartavaya &middot; Aekam Inc &middot; Secure e-signatures
       </p>
 
