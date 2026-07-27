@@ -1,5 +1,17 @@
 # Sanvaad + Varta — STRUCTURE lens
 
+> **Status: merged to `staging`.** Verified green on the merged tip — frontend
+> build ✅, `check-tokens` / `check-classes` / `check-accent-contrast` /
+> `check-component-parity` ✅, vitest **560/560**, backend
+> `test_messaging_security.py` **18/18**. The two unhandled rejections vitest
+> reports are `TaskDrawer.jsx:168` under `e2e/task-flow.test.jsx` and predate
+> this branch.
+>
+> Two reds encountered along the way were **inherited and are now resolved**:
+> a build break at `DristiPage.jsx:581` (a `{/* comment */}` in ternary-expression
+> position) and the `--outline` visual-regression snapshot from `c41128a`. Both
+> were fixed on staging by their owners and picked up by merging.
+
 Branch `worktree-agent-a50b57c3e71a02207`. Reference **rendered**, not read:
 `design-reference/Kartavaya Redesign/*` copied to `frontend/public/__ref/` and
 served on `127.0.0.1:5397`; the Sanvaad screen was driven to its default state and
