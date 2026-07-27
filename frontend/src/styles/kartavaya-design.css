@@ -735,19 +735,23 @@ body {
 }
 
 /* ── Cards ─────────────────────────────────────────────────────────────────
-   No shell padding, and that is the fix rather than a simplification.
+   The `padding` below STAYS, and the reasoning is worth keeping because the
+   obvious reading of the measurement is wrong.
+
    `editorial.css` — imported after this file — gives `.k-card__head` and
-   `.k-card__body` their own padding, and puts a full-bleed hairline under the
-   head. The `padding: var(--sp-5)` that used to be here was a SECOND, outer
-   pad wrapping both: measured 20px on the shell on top of 16/20 on the head
-   and 16/20/20 on the body, and it inset the head's rule 20px from each edge
-   so it stopped reading as a rule and started reading as a stray line.
-   The reference's card (`app.css:150`) carries no shell padding either. */
-/* The `padding` stays. It is NOT the double-pad defect — twelve call sites
-   render `.k-card` around bare content and legitimately need it. editorial.css
-   scopes it off with `:has(> .k-card__head)` / `:has(> .k-card__body)`, which
-   is the precise version of the blanket removal this file first reached for:
-   only a card that brings its own padded parts gives the shell padding up. */
+   `.k-card__body` their own padding and puts a full-bleed hairline under the
+   head, so on a card built from those parts this shell padding is a SECOND,
+   outer pad: measured 20px on the shell on top of 16/20 on the head and
+   16/20/20 on the body, with the head's rule inset 20px from each edge so it
+   read as a stray line rather than a divider. The reference's card
+   (`app.css:150`) carries no shell padding at all.
+
+   But deleting it outright breaks the other shape: twelve call sites render
+   `.k-card` around bare content and legitimately want the 20px.
+   `editorial.css` therefore scopes it off with `:has(> .k-card__head)` /
+   `:has(> .k-card__body)` — only a card that brings its own padded parts gives
+   the shell padding up. That is the precise version of the blanket removal
+   this file first reached for. */
 .k-card {
   background: var(--surface);
   border: 1px solid var(--rule);
