@@ -13,6 +13,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../theme/ThemeProvider';
 import Sheet from './Sheet';
+import { a11yButton } from './a11y';
 import BiLabel from '../theme/BiLabel';
 
 export interface PickedFile {
@@ -104,8 +105,9 @@ export default function AttachmentSourceSheet({ visible, onClose, onPicked, maxF
             style={[s.card, { backgroundColor: t.bg, borderColor: t.outline }]}
             onPress={() => pick(src.key)}
             activeOpacity={0.75}
+            {...a11yButton(src.label, src.hint)}
           >
-            <View style={[s.iconWrap, { backgroundColor: t.primary + '16' }]}>
+            <View style={[s.iconWrap, { backgroundColor: t.primary + '16' }]} accessibilityElementsHidden>
               <Ionicons name={src.icon as any} size={26} color={t.primary} />
             </View>
             <Text style={[s.cardLabel, { color: t.ink }]}>{src.label}</Text>
@@ -114,7 +116,11 @@ export default function AttachmentSourceSheet({ visible, onClose, onPicked, maxF
         ))}
       </View>
 
-      <TouchableOpacity onPress={onClose} style={[s.cancelBtn, { borderColor: t.outline }]}>
+      <TouchableOpacity
+        onPress={onClose}
+        style={[s.cancelBtn, { borderColor: t.outline }]}
+        {...a11yButton('Cancel', 'Close without adding an attachment')}
+      >
         {/* fontWeight '600' has no Tiro weight to resolve to; split so the
             Devanagari run keeps the one weight the face actually ships. */}
         <BiLabel latinStyle={[s.cancelText, { color: t.ink3 }]} hindiStyle={{ color: t.ink3 }} hindiSize={14}>

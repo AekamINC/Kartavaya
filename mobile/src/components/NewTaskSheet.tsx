@@ -16,6 +16,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { useAuth } from '../hooks/useAuth';
 import { apiClient } from '../api/client';
 import Sheet from './Sheet';
+import { a11yButton, a11yInput, a11ySelected, a11yToggle, hitSlopTo } from './a11y';
 import AttachmentSourceSheet, { type PickedFile } from './AttachmentSourceSheet';
 import { enqueueMutation } from '../offline/mutationQueue';
 import NetInfo from '@react-native-community/netinfo';
@@ -209,8 +210,8 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
               </BiLabel>
               <Text style={s.headerTitle}>What needs doing?</Text>
             </View>
-            <TouchableOpacity onPress={handleClose} hitSlop={12}>
-              <Ionicons name="close" size={22} color={t.ink3} />
+            <TouchableOpacity onPress={handleClose} hitSlop={12} {...a11yButton('Close')}>
+              <Ionicons name="close" size={22} color={t.ink3} accessibilityElementsHidden />
             </TouchableOpacity>
           </View>
 
@@ -228,8 +229,23 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
               returnKeyType="done"
               blurOnSubmit
               onSubmitEditing={handleSubmit}
+              /* The error was communicated by a red underline plus a line of
+                 text the input never pointed at — RN has no `aria-describedby`
+                 and its AccessibilityState has no `invalid`, so the only place
+                 a screen reader will reliably meet the message is the field's
+                 own name. The <Text> below keeps role="alert" for the moment
+                 validation fires. */
+              {...a11yInput(titleError ? 'Task title, required' : 'Task title')}
             />
-            {titleError && <Text style={[s.fieldError, { color: t.error }]}>Title is required.</Text>}
+            {titleError && (
+              <Text
+                style={[s.fieldError, { color: t.error }]}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+              >
+                Title is required.
+              </Text>
+            )}
 
             {/* Project */}
             <FieldLabel t={t}>PROJECT · परियोजना</FieldLabel>
@@ -239,8 +255,9 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
                   key={p.team_id}
                   onPress={() => setProjectId(p.team_id === projectId ? null : p.team_id)}
                   style={[s.chip, projectId === p.team_id && { borderColor: t.primary, backgroundColor: t.primary + '18' }]}
+                  {...a11ySelected(p.name, projectId === p.team_id)}
                 >
-                  {p.color && <View style={[s.projectDot, { backgroundColor: p.color }]} />}
+                  {p.color && <View style={[s.projectDot, { backgroundColor: p.color }]} accessibilityElementsHidden />}
                   <Text style={[s.chipText, projectId === p.team_id && { color: t.primary }]}>{p.name}</Text>
                 </TouchableOpacity>
               ))}
@@ -252,8 +269,10 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
                 <TouchableOpacity
                   onPress={() => setShowTemplates(v => !v)}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, marginBottom: showTemplates ? 8 : 0 }}
+                  {...a11yButton('Use a template')}
+                  accessibilityState={{ expanded: showTemplates }}
                 >
-                  <Ionicons name={showTemplates ? 'chevron-down' : 'copy-outline'} size={14} color={t.primary} />
+                  <Ionicons name={showTemplates ? 'chevron-down' : 'copy-outline'} size={14} color={t.primary} accessibilityElementsHidden />
                   <Text style={{ fontSize: 12, fontWeight: '700', color: t.primary, letterSpacing: 0.5 }}>
                     USE A TEMPLATE · टेम्पलेट
                   </Text>
@@ -265,6 +284,7 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
                         key={tmpl.template_id}
                         onPress={() => applyTemplate(tmpl)}
                         style={[styles(t).chip, { borderColor: t.primary, backgroundColor: t.primary + '12' }]}
+                        {...a11yButton(tmpl.name, 'Fill this task from the template')}
                       >
                         {tmpl.icon ? <Text style={{ fontSize: 14 }}>{tmpl.icon}</Text> : null}
                         <Text style={[styles(t).chipText, { color: t.primary }]}>{tmpl.name}</Text>
@@ -287,6 +307,7 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
                         key={s2}
                         onPress={() => setStatus(s2)}
                         style={[styles(t).chip, status === s2 && { borderColor: t.primary, backgroundColor: t.primary + '18' }]}
+                        {...a11ySelected(labels[s2], status === s2)}
                       >
                         <Text style={[styles(t).chipText, status === s2 && { color: t.primary }]}>{labels[s2]}</Text>
                       </TouchableOpacity>
@@ -304,8 +325,9 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
                   key={p.key}
                   onPress={() => setPriority(p.key)}
                   style={[s.priorityChip, priority === p.key && { borderColor: PRIORITY_COLORS[scheme][p.key], backgroundColor: withAlpha(PRIORITY_COLORS[scheme][p.key], 0.09) }]}
+                  {...a11ySelected(`${p.label} priority`, priority === p.key)}
                 >
-                  <View style={[s.prioDot, { backgroundColor: PRIORITY_COLORS[scheme][p.key] }]} />
+                  <View style={[s.prioDot, { backgroundColor: PRIORITY_COLORS[scheme][p.key] }]} accessibilityElementsHidden />
                   <Text style={[s.priorityLabel, priority === p.key && { color: PRIORITY_COLORS[scheme][p.key], fontWeight: '700' }]}>{p.label}</Text>
                 </TouchableOpacity>
               ))}
@@ -316,6 +338,10 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
             <TouchableOpacity
               onPress={() => setShowDatePicker(true)}
               style={[s.input, { justifyContent: 'center' }]}
+              {...a11yButton(
+                dueAt ? `Due date, ${dueAt.toLocaleDateString('en-CA')}` : 'Due date, not set',
+                'Opens the date picker',
+              )}
             >
               <Text style={{ color: dueAt ? t.ink : t.ink3, fontSize: 15 }}>
                 {dueAt ? dueAt.toLocaleDateString('en-CA') : 'Select date'}
@@ -352,12 +378,13 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
                         key={uid}
                         onPress={() => toggleAssignee(uid)}
                         style={[s.memberRow, checked && { backgroundColor: t.primary + '12' }]}
+                        {...a11yToggle(name, checked)}
                       >
-                        <View style={[s.memberAvatar, { backgroundColor: bg }]}>
+                        <View style={[s.memberAvatar, { backgroundColor: bg }]} accessibilityElementsHidden>
                           <Text style={s.memberInitials}>{initials}</Text>
                         </View>
                         <Text style={[s.memberName, { color: t.ink }]}>{name}</Text>
-                        {checked && <Ionicons name="checkmark-circle" size={18} color={t.primary} />}
+                        {checked && <Ionicons name="checkmark-circle" size={18} color={t.primary} accessibilityElementsHidden />}
                       </TouchableOpacity>
                     );
                   })}
@@ -373,6 +400,8 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
                   onPress={() => setShowAttachPicker(true)}
                   disabled={uploadingFiles}
                   style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingBottom: 8 }}
+                  {...a11yButton(uploadingFiles ? 'Uploading attachments' : 'Add attachment')}
+                  accessibilityState={{ disabled: uploadingFiles, busy: uploadingFiles }}
                 >
                   {uploadingFiles
                     ? <ActivityIndicator size="small" color={t.primary} />
@@ -388,8 +417,9 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
               <TouchableOpacity
                 onPress={() => setShowAttachPicker(true)}
                 style={[s.attachEmpty, { borderColor: t.outline }]}
+                {...a11yButton('Add attachment', 'Camera, photos, Drive or files')}
               >
-                <Ionicons name="attach-outline" size={18} color={t.ink3} />
+                <Ionicons name="attach-outline" size={18} color={t.ink3} accessibilityElementsHidden />
                 <Text style={{ fontSize: 13, color: t.ink3 }}>Camera · Photos · Drive · Files</Text>
               </TouchableOpacity>
             )}
@@ -399,10 +429,14 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
                   const isImage = /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(a.name);
                   return (
                     <View key={i} style={[s.attachRow, { backgroundColor: t.bg, borderColor: t.outline }]}>
-                      <Ionicons name={isImage ? 'image-outline' : 'document-outline'} size={14} color={t.primary} />
+                      <Ionicons name={isImage ? 'image-outline' : 'document-outline'} size={14} color={t.primary} accessibilityElementsHidden />
                       <Text style={[s.attachName, { color: t.ink }]} numberOfLines={1}>{a.name}</Text>
-                      <TouchableOpacity onPress={() => setAttachments(prev => prev.filter((_, j) => j !== i))} hitSlop={8}>
-                        <Ionicons name="close-circle" size={16} color={t.ink3} />
+                      <TouchableOpacity
+                        onPress={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
+                        hitSlop={hitSlopTo(16)}
+                        {...a11yButton(`Remove attachment ${a.name}`)}
+                      >
+                        <Ionicons name="close-circle" size={16} color={t.ink3} accessibilityElementsHidden />
                       </TouchableOpacity>
                     </View>
                   );
@@ -421,9 +455,18 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
               multiline
               numberOfLines={4}
               textAlignVertical="top"
+              {...a11yInput('Description')}
             />
 
-            {error && <Text style={[s.fieldError, { color: t.error }]}>{error}</Text>}
+            {error && (
+              <Text
+                style={[s.fieldError, { color: t.error }]}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="assertive"
+              >
+                {error}
+              </Text>
+            )}
 
             <View style={{ height: 24 }} />
           </ScrollView>
@@ -434,6 +477,8 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
               style={[s.btn, (!title.trim() || saving) && s.btnDisabled]}
               onPress={handleSubmit}
               disabled={!title.trim() || saving}
+              {...a11yButton(isClient ? 'Send request' : 'Create task')}
+              accessibilityState={{ disabled: !title.trim() || saving, busy: saving }}
             >
               {saving
                 ? <ActivityIndicator color="#fff" size="small" />

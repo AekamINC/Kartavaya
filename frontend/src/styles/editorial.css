@@ -3216,6 +3216,13 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-color: var(--k-primary);
   box-shadow: 0 2px 8px color-mix(in srgb, var(--k-primary) 12%, transparent);
 }
+/* `ModCard` renders a <button> when it has a handler, so the record is
+   reachable by keyboard. These are the four properties a button does not
+   inherit — everything else already comes from `.k-modcard` above, so the two
+   render identically. */
+.k-modcard--btn {
+  width: 100%; font: inherit; color: inherit; text-align: left;
+}
 
 .k-modtable {
   width: 100%; border-collapse: collapse; font-size: 13px;

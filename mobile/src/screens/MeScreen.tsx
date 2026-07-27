@@ -9,6 +9,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme/ThemeProvider';
+import { a11yButton } from '../components/a11y';
 import { useAuth } from '../hooks/useAuth';
 import { avatarColor, userInitials } from '../theme/tokens';
 import { FAMILY } from '../theme/fonts';
@@ -96,11 +97,22 @@ function SettingsRow({
       onPress={onPress}
       activeOpacity={onPress ? 0.7 : 1}
       style={[row.wrap, sep && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.outline }]}
+      /* A row with no `onPress` is a read-only line of information. It was
+         still a TouchableOpacity, so it announced as a button that does
+         nothing when activated; `accessible` without the button role reads it
+         as one item of text, which is what it is. The label and its value are
+         joined so the pair is announced together rather than as two stops. */
+      accessible
+      accessibilityRole={onPress ? 'button' : 'text'}
+      accessibilityLabel={value ? `${label}, ${value}` : label}
     >
-      <View style={[row.iconWrap, {
-        backgroundColor: destructive ? t.errorBg : t.surface2,
-        borderRadius: 99,
-      }]}>
+      <View
+        style={[row.iconWrap, {
+          backgroundColor: destructive ? t.errorBg : t.surface2,
+          borderRadius: 99,
+        }]}
+        accessibilityElementsHidden
+      >
         <Ionicons name={icon as any} size={18}
           color={destructive ? t.error : t.ink2} />
       </View>
@@ -316,8 +328,9 @@ export default function MeScreen() {
           <TouchableOpacity
             activeOpacity={0.8}
             style={[s.syncBtn, { backgroundColor: t.primary }]}
+            {...a11yButton('Sync now')}
           >
-            <Ionicons name="sync-outline" size={16} color={t.onPrimary} />
+            <Ionicons name="sync-outline" size={16} color={t.onPrimary} accessibilityElementsHidden />
             <Text style={[s.syncBtnText, { color: t.onPrimary }]}>Sync now</Text>
           </TouchableOpacity>
         </View>
@@ -350,6 +363,7 @@ export default function MeScreen() {
           onPress={logout}
           activeOpacity={0.8}
           style={[s.signOutBtn, { borderColor: t.error }]}
+          {...a11yButton('Sign out', 'Signs you out of Kartavaya on this device')}
         >
           <Text style={[s.signOutText, { color: t.error }]}>Sign out</Text>
         </TouchableOpacity>

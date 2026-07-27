@@ -515,3 +515,85 @@
   .kv__content  { padding: 10px 16px; }
   .modal__panel { max-height: 96vh; }
 }
+
+/* ── Control strips that could not fit, and had no way to scroll ──────────
+   `.k-segctrl` is `inline-flex` + `flex-shrink: 0` + `white-space: nowrap`
+   (editorial.css). Inside `.vtb__bar` that is fine, because `ViewToolbar`
+   wraps it in `.vtb__scroll` (`overflow-x: auto; max-width: 100%`, boards.css
+   :467). Inside `.k-filterbar` — TasksListPage and ActivityFeedPage — there is
+   no such wrapper, so the strip simply overflowed and `.kv__content`'s
+   `overflow-x: hidden` cut it off.
+
+   Measured on /tasks at 393px BEFORE this rule: `.k-segctrl` 480px wide in a
+   351px bar, its right edge at 496 in a 394px viewport, with NO scrollable
+   ancestor — so `Archived` (right edge 492) was ~98px off-screen and
+   unreachable by scroll, drag or keyboard. That is a control that does not
+   exist on a phone, not a layout nit.
+
+   This gives the unwrapped case the SAME mechanism `.vtb__scroll` already
+   uses rather than a second one; `.k-filterbar > .k-segctrl` (0-2-0) is what
+   beats the bare `.k-segctrl` in editorial.css, which loads later. */
+@media (max-width: 1023px) {
+  .k-filterbar > .k-segctrl {
+    max-width: 100%;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
+
+  /* `.vtb__end` is a bare `display: flex` with `margin-left: auto` and no
+     wrap, so its three children — search pill, a toggle and the count — ran
+     29px past their 351px track at 393px (measured on /boards, /ganit and
+     /projects/:id, `.vtb__count` right edge 396 in a 394px viewport). The bar
+     around it (`.vtb__bar`) already wraps; this makes the group inside it wrap
+     the same way. `.vtb__bar > .vtb__end` (0-2-0) beats boards.css. */
+  .vtb__bar > .vtb__end {
+    flex-wrap: wrap;
+    row-gap: var(--sp-2);
+  }
+}
+
+/* ── The two-up form grid that never had a query ──────────────────────────
+   `.form__row` (components.css:641), `.gr__grid` (graha.css:83),
+   `.k-modal__grid` (editorial.css:2921), `.k-formpanel__grid--2`
+   (editorial.css:3417), `.hcl-form` and `.tpl-grid2` (workflow.css:435) all
+   collapse to one column on a phone already. `.row2` is the same object —
+   two form fields side by side — and was the one left on a hard `1fr 1fr`
+   with no query at any width. It carries the stock adjustment form
+   (`vikray/StockTab.jsx`) and the order edit row (`vikray/OrderDetail.jsx`),
+   which is a number input and a select at ~150px each on a 393px screen.
+
+   767 to match `.form__row`, its neighbour in components.css and the closest
+   thing it has to a sibling. */
+@media (max-width: 767px) {
+  .row2 { grid-template-columns: 1fr; }
+}
+
+/* ── Touch targets: the bar-shaped controls ───────────────────────────────
+   Extends the block at the top of this file, which named `.k-iconbtn`,
+   `.k-btn`, `.btn`, `.seg__b`, the board controls, `.k-fld__sel`,
+   `.aufld__eye` and `.lfoot__a`. These three were missed and are all wide
+   enough already — only their HEIGHT is short, so `min-height` grows the box
+   on the one axis that is deficient and cannot re-space the row.
+
+   Measured at 393px: `.k-segctrl__btn` 31px · `.apv-seg__btn` 32px ·
+   `.mwarn` 31px, against the 44px floor in 15 §Hit targets.
+
+   Deliberately NOT here: `.k-trow__tick` (17×17), `.k-row-action` (28×18),
+   `.k-approvals__act` (28×26), `.k-notifbanner__x` (24×24) and
+   `.k-cash__segbtn` (39×23). Those need the hit-area expansion 23 §Touch
+   targets describes rather than a taller box, and a 44px overlay on controls
+   that sit in pairs 28px apart would have each one swallowing its
+   neighbour's taps. They are listed in the audit report as the follow-up
+   that needs a rendered check, not guessed at here.
+
+   Specificity: `.apv-seg` and `.k-segctrl` parents because approvals.css and
+   editorial.css both load AFTER this file. */
+@media (max-width: 1023px), (hover: none) and (pointer: coarse) {
+  .k-segctrl .k-segctrl__btn { min-height: 44px; }
+  .apv-seg .apv-seg__btn     { min-height: 44px; }
+  .mwarn                     { min-height: 44px; }
+}

@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDeviceId } from '../hooks/usePushNotifications';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme/ThemeProvider';
+import { a11yButton, a11ySelected, a11yToggle } from '../components/a11y';
 import { hindi } from '../theme/fonts';
 import { useAuth } from '../hooks/useAuth';
 import { notificationsApi } from '../api/notifications';
@@ -199,10 +200,11 @@ export default function SettingsScreen() {
             first={i === 0}
             last={i === themes.length - 1}
             onPress={() => setPreference(key)}
+            a11y={a11ySelected(label, preference === key)}
           >
-            <Ionicons name={icon as any} size={17} color={preference === key ? t.primary : t.ink3} style={{ width: 24 }} />
+            <Ionicons name={icon as any} size={17} color={preference === key ? t.primary : t.ink3} style={{ width: 24 }} accessibilityElementsHidden />
             <Text style={[s.rowLabel, { color: preference === key ? t.primary : t.ink, flex: 1 }]}>{label}</Text>
-            {preference === key && <Ionicons name="checkmark" size={17} color={t.primary} />}
+            {preference === key && <Ionicons name="checkmark" size={17} color={t.primary} accessibilityElementsHidden />}
           </Row>
         ))}
       </View>
@@ -221,6 +223,7 @@ export default function SettingsScreen() {
                 onValueChange={handlePushToggle}
                 trackColor={{ false: t.outline, true: t.primary + 'aa' }}
                 thumbColor={pushEnabled ? t.primary : t.ink4}
+                accessibilityLabel="Push notifications"
               />}
         </Row>
 
@@ -233,7 +236,14 @@ export default function SettingsScreen() {
             const mode = currentPrefs.prefs[item.kind] ?? 'mine_only';
             const enabled = mode !== 'off';
             return (
-              <Row key={item.kind} t={t} first={false} last={i === NOTIF_KINDS.length - 1} onPress={() => toggleKind(item.kind)}>
+              <Row
+                key={item.kind}
+                t={t}
+                first={false}
+                last={i === NOTIF_KINDS.length - 1}
+                onPress={() => toggleKind(item.kind)}
+                a11y={a11yToggle(`${item.label}. ${item.desc}`, enabled)}
+              >
                 <View style={{ flex: 1, gap: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Text style={[s.rowLabel, { color: t.ink }]}>{item.label}</Text>
@@ -241,11 +251,16 @@ export default function SettingsScreen() {
                   </View>
                   <Text style={[s.rowSub, { color: t.ink3 }]}>{item.desc}</Text>
                 </View>
+                {/* The Row above already announces this kind and its state, so
+                    the switch itself must not be a second stop saying the same
+                    thing with no name of its own. */}
                 <Switch
                   value={enabled}
                   onValueChange={() => toggleKind(item.kind)}
                   trackColor={{ false: t.outline, true: t.primary + 'aa' }}
                   thumbColor={enabled ? t.primary : t.ink4}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
                 />
               </Row>
             );
@@ -281,8 +296,8 @@ export default function SettingsScreen() {
       {/* ── Sync ── */}
       <SectionHeader label="SYNC · सिंक" t={t} desc="Replay offline changes" />
       <View style={[s.card, { backgroundColor: t.surface, borderColor: t.outline }]}>
-        <Row t={t} first last onPress={handleSyncNow}>
-          <Ionicons name="sync-outline" size={17} color={t.ink3} style={{ width: 24 }} />
+        <Row t={t} first last onPress={handleSyncNow} a11y={a11yButton('Sync now', 'Replay changes made while offline')}>
+          <Ionicons name="sync-outline" size={17} color={t.ink3} style={{ width: 24 }} accessibilityElementsHidden />
           <Text style={[s.rowLabel, { color: t.ink, flex: 1 }]}>Sync now</Text>
           {syncing
             ? <ActivityIndicator size="small" color={t.primary} />
@@ -293,20 +308,26 @@ export default function SettingsScreen() {
       {/* ── Permissions ── */}
       <SectionHeader label="PERMISSIONS · अनुमतियाँ" t={t} />
       <View style={[s.card, { backgroundColor: t.surface, borderColor: t.outline }]}>
-        <Row t={t} first last onPress={() => Linking.openSettings()}>
-          <Ionicons name="shield-checkmark-outline" size={17} color={t.ink3} style={{ width: 24 }} />
+        <Row
+          t={t}
+          first
+          last
+          onPress={() => Linking.openSettings()}
+          a11y={a11yButton('App permissions', 'Opens the system settings for Kartavaya')}
+        >
+          <Ionicons name="shield-checkmark-outline" size={17} color={t.ink3} style={{ width: 24 }} accessibilityElementsHidden />
           <Text style={[s.rowLabel, { color: t.ink, flex: 1 }]}>App permissions</Text>
-          <Ionicons name="open-outline" size={14} color={t.ink4} />
+          <Ionicons name="open-outline" size={14} color={t.ink4} accessibilityElementsHidden />
         </Row>
       </View>
 
       {/* ── Account ── */}
       <SectionHeader label="ACCOUNT" t={t} />
       <View style={[s.card, { backgroundColor: t.surface, borderColor: t.outline }]}>
-        <Row t={t} first last onPress={confirmLogout}>
-          <Ionicons name="log-out-outline" size={17} color={t.error} style={{ width: 24 }} />
+        <Row t={t} first last onPress={confirmLogout} a11y={a11yButton('Sign out')}>
+          <Ionicons name="log-out-outline" size={17} color={t.error} style={{ width: 24 }} accessibilityElementsHidden />
           <Text style={[s.rowLabel, { color: t.error, flex: 1 }]}>Sign out</Text>
-          <Ionicons name="chevron-forward" size={14} color={t.error} />
+          <Ionicons name="chevron-forward" size={14} color={t.error} accessibilityElementsHidden />
         </Row>
       </View>
 
@@ -347,9 +368,16 @@ function SectionHeader({ label, t, desc }: { label: string; t: any; desc?: strin
   );
 }
 
-function Row({ t, first, last, children, onPress }: {
+/**
+ * `a11y` carries the props from the factories in `components/a11y.ts`. The row
+ * is the pressable, so the label and any selected/checked state have to land
+ * HERE — putting them on the children inside would name an element the user
+ * never focuses.
+ */
+function Row({ t, first, last, children, onPress, a11y }: {
   t: any; first: boolean; last: boolean;
   children: React.ReactNode; onPress: () => void;
+  a11y?: Record<string, unknown>;
 }) {
   return (
     <TouchableOpacity
@@ -360,6 +388,7 @@ function Row({ t, first, last, children, onPress }: {
         first && { borderTopLeftRadius: 14, borderTopRightRadius: 14 },
         last  && { borderBottomLeftRadius: 14, borderBottomRightRadius: 14 },
       ]}
+      {...(a11y ?? {})}
     >
       {children}
     </TouchableOpacity>
@@ -376,9 +405,14 @@ function TimeWheel({ value, options, onChange, t }: {
       <TouchableOpacity
         onPress={() => setOpen(true)}
         style={[s.timeChip, { backgroundColor: t.primaryContainer, borderColor: t.primary + '66' }]}
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={value}
+        accessibilityHint="Choose a time"
+        accessibilityState={{ expanded: open }}
       >
         <Text style={[s.timeChipText, { color: t.primary }]}>{value}</Text>
-        <Ionicons name="chevron-down" size={12} color={t.primary} />
+        <Ionicons name="chevron-down" size={12} color={t.primary} accessibilityElementsHidden />
       </TouchableOpacity>
       {open && (
         <View style={[s.timeDropdown, { backgroundColor: t.surface, borderColor: t.outline, shadowColor: '#000' }]}>
@@ -388,6 +422,7 @@ function TimeWheel({ value, options, onChange, t }: {
                 key={o}
                 style={[s.timeOption, o === value && { backgroundColor: t.primaryContainer }]}
                 onPress={() => { onChange(o); setOpen(false); }}
+                {...a11ySelected(o, o === value)}
               >
                 <Text style={[s.timeOptionText, { color: o === value ? t.primary : t.ink }]}>{o}</Text>
               </TouchableOpacity>

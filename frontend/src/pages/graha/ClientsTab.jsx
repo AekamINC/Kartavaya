@@ -204,7 +204,19 @@ export default function ClientsTab() {
             <tbody>
               {clients.map(c => (
                 <tr key={c.id} className="gr__tr--click" onClick={() => openDetail(c.id)}>
-                  <td className="gr__td--name">{c.name}</td>
+                  {/* A real button on the name, so the record is reachable by
+                      keyboard — the row's onClick alone was mouse-only, and
+                      nothing else in the row opened it. Same shape as
+                      `ganit/InvoicesTab` and `graha/DealsTab`. */}
+                  <td className="gr__td--name">
+                    <button
+                      type="button"
+                      className="gr__link"
+                      onClick={e => { e.stopPropagation(); openDetail(c.id); }}
+                    >
+                      {c.name}
+                    </button>
+                  </td>
                   <td className="gr__td--mute">{c.ref_no || '—'}</td>
                   <td className="gr__td--mute">{c.gstin || '—'}</td>
                   <td className="gr__td--mute">{c.website || '—'}</td>

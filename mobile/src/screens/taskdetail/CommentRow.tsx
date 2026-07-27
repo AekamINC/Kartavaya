@@ -19,10 +19,21 @@ export function CommentRow({ comment, isMine, t, onLongPress }: Props) {
   }, [comment.created_at]);
 
   return (
+    /* The comment actions were reachable ONLY by long press, which a screen
+       reader cannot perform — 23 §"a feature reachable only by [gesture] does
+       not exist". `accessibilityActions` exposes the same handler through the
+       rotor, and the label reads the comment as one item instead of three. */
     <TouchableOpacity
       onLongPress={onLongPress}
       style={[s.commentRow, isMine && s.commentRowMine]}
       activeOpacity={0.85}
+      accessible
+      accessibilityLabel={`${isMine ? 'You' : comment.user_name}, ${comment.body}, ${when}`}
+      accessibilityHint="Long press for comment actions"
+      accessibilityActions={[{ name: 'longpress', label: 'Comment actions' }]}
+      onAccessibilityAction={e => {
+        if (e.nativeEvent.actionName === 'longpress') onLongPress();
+      }}
     >
       {!isMine && <Avatar uid={comment.user_id} name={comment.user_name} size={30} />}
       <View style={[s.commentBubble, {

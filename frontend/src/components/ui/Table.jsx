@@ -39,10 +39,17 @@ export function nextSort(dir) {
 }
 
 export function HeadCell({ sortKey, sort, onSort, num, className = '', children }) {
-  const dir = sort?.key === sortKey ? sort.dir : null;
   const cls = [num ? 'tbl__num' : '', className].filter(Boolean).join(' ');
 
+  /* The unsortable guard runs BEFORE `dir` is derived, and that order is the
+     whole fix. A plain `<HeadCell>Status</HeadCell>` passes neither `sortKey`
+     nor `sort`, so the old `sort?.key === sortKey` compared undefined to
+     undefined — TRUE — and then read `.dir` off undefined and threw. Every
+     header in `AdminBillingPage` and `OrgTable`'s Status column is that shape,
+     which crashed /admin and /admin/billing into the ErrorBoundary outright. */
   if (!sortKey || !onSort) return <th className={cls} scope="col">{children}</th>;
+
+  const dir = sort?.key === sortKey ? sort.dir : null;
 
   return (
     <th className={cls} scope="col" aria-sort={dir || 'none'}>

@@ -8,6 +8,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
+import { a11yButton, a11yInput } from '../components/a11y';
 import { KIcon } from '../components/icons/KIcon';
 import { BRAND_GRADIENT } from '../theme/tokens';
 import { useReducedMotion, amplitude, EASE, SHAKE } from '../theme/motion';
@@ -120,9 +121,19 @@ export default function LoginScreen() {
             <Text style={s.cardTitle}>Sign In</Text>
 
             {/* Error */}
+            {/* A sign-in failure was shown but never spoken: the banner had no
+                role and no live region, so a screen-reader user pressed SIGN
+                IN and got silence. `alert` + assertive is 23 §Defect 3's rule
+                applied to the one error the user cannot proceed past. */}
             {!!errMsg && (
-              <View style={s.errBanner}>
-                <Ionicons name="alert-circle" size={14} color={C.error} />
+              <View
+                style={s.errBanner}
+                accessible
+                accessibilityRole="alert"
+                accessibilityLiveRegion="assertive"
+                accessibilityLabel={errMsg}
+              >
+                <Ionicons name="alert-circle" size={14} color={C.error} accessibilityElementsHidden />
                 <Text style={s.errText}>{errMsg}</Text>
               </View>
             )}
@@ -141,6 +152,7 @@ export default function LoginScreen() {
               returnKeyType="next"
               onSubmitEditing={() => pwRef.current?.focus()}
               blurOnSubmit={false}
+              {...a11yInput('Email')}
             />
 
             {/* Password */}
@@ -157,14 +169,27 @@ export default function LoginScreen() {
                 returnKeyType="go"
                 onSubmitEditing={submit}
                 autoComplete="password"
+                {...a11yInput('Password')}
               />
-              <TouchableOpacity onPress={() => setShowPw(v => !v)} style={s.eyeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={18} color={C.muted} />
+              <TouchableOpacity
+                onPress={() => setShowPw(v => !v)}
+                style={s.eyeBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                {...a11yButton(showPw ? 'Hide password' : 'Show password')}
+              >
+                <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={18} color={C.muted} accessibilityElementsHidden />
               </TouchableOpacity>
             </View>
 
             {/* Submit */}
-            <TouchableOpacity onPress={submit} disabled={loading} activeOpacity={0.85} style={{ marginTop: 22 }}>
+            <TouchableOpacity
+              onPress={submit}
+              disabled={loading}
+              activeOpacity={0.85}
+              style={{ marginTop: 22 }}
+              {...a11yButton('Sign in')}
+              accessibilityState={{ disabled: loading, busy: loading }}
+            >
               <LinearGradient colors={GRAD} style={s.btn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                 {loading
                   ? <ActivityIndicator color="#fff" size="small" />

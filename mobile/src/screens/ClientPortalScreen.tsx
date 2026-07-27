@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { apiClient } from '../api/client';
 import { apiLogout, getCachedUser } from '../api/auth';
 import { useTheme } from '../theme/ThemeProvider';
+import { a11yButton, a11yInput } from '../components/a11y';
 import type { ClientState, ClientTask, Comment } from '../api/types';
 import type { User } from '../api/types';
 import { BRAND_GRADIENT_2 } from '../theme/tokens';
@@ -85,8 +86,8 @@ export default function ClientPortalScreen({ onLogout }: Props) {
   if (selected) return (
     <View style={s.root}>
       <View style={s.header}>
-        <TouchableOpacity onPress={() => setSelected(null)} style={s.back}>
-          <Ionicons name="chevron-back" size={22} color={t.primary} />
+        <TouchableOpacity onPress={() => setSelected(null)} style={s.back} {...a11yButton('Back to updates')}>
+          <Ionicons name="chevron-back" size={22} color={t.primary} accessibilityElementsHidden />
         </TouchableOpacity>
         <Text style={[s.taskTitle, { color: t.ink }]} numberOfLines={2}>{selected.title}</Text>
       </View>
@@ -115,8 +116,9 @@ export default function ClientPortalScreen({ onLogout }: Props) {
           placeholder="Add a comment…"
           placeholderTextColor={t.ink3}
           multiline
+          {...a11yInput('Add a comment')}
         />
-        <TouchableOpacity onPress={postComment}>
+        <TouchableOpacity onPress={postComment} {...a11yButton('Post comment')}>
           <LinearGradient colors={BRAND_GRADIENT_2} style={s.sendBtn}>
             <Text style={{ color: '#fff', fontWeight: '800' }}>Post</Text>
           </LinearGradient>
@@ -135,7 +137,7 @@ export default function ClientPortalScreen({ onLogout }: Props) {
           <Text style={[s.brand, { color: t.ink }]}>Kartavaya</Text>
           <Text style={[s.brandSub, { color: t.ink3 }]}>Hi, {user?.name ?? user?.full_name}</Text>
         </View>
-        <TouchableOpacity onPress={confirmLogout} style={[s.logoutBtn, { backgroundColor: `${t.error}18` }]}>
+        <TouchableOpacity onPress={confirmLogout} style={[s.logoutBtn, { backgroundColor: `${t.error}18` }]} {...a11yButton('Sign out')}>
           <Text style={[s.logoutText, { color: t.error }]}>Sign out</Text>
         </TouchableOpacity>
       </View>
@@ -149,6 +151,14 @@ export default function ClientPortalScreen({ onLogout }: Props) {
           <TouchableOpacity
             style={[s.taskCard, { backgroundColor: t.surface, borderColor: t.outline }]}
             onPress={() => setSelected(item)}
+            {...a11yButton(
+              [
+                item.title,
+                STATE_LABEL[item.state] ?? '',
+                item.expectedAt ? `due ${new Date(item.expectedAt).toLocaleDateString()}` : '',
+              ].filter(Boolean).join(', '),
+              'Open to comment',
+            )}
           >
             <View style={s.taskTop}>
               <Text style={[s.taskTitleText, { color: t.ink }]} numberOfLines={2}>{item.title}</Text>

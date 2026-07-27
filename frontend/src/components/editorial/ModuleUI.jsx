@@ -110,11 +110,27 @@ export function BackButton({ onClick, label = 'Back' }) {
   );
 }
 
-export function ModCard({ children, onClick }) {
+/**
+ * A card that opens a record when it is given `onClick`, and a plain container
+ * when it is not.
+ *
+ * The clickable case was a `<div onClick>`: not focusable, no role, so the
+ * payroll runs, payslips and salary structures it carries in `vetana/*` were
+ * openable with a mouse and by no other means. `OrderRows` records the same
+ * finding for the same class — "a real <button> per row is also the only
+ * version of 'click the row to open it' that a keyboard reaches".
+ *
+ * Rendering a `<button>` only when there IS a handler matters: a button with
+ * nothing to do is a focus stop that answers nothing, which is the same defect
+ * pointed the other way. `.k-modcard` already lays out as flex, and the reset
+ * for the button case rides beside it in editorial.css.
+ */
+export function ModCard({ children, onClick, label }) {
+  if (!onClick) return <div className="k-modcard">{children}</div>;
   return (
-    <div className="k-modcard" onClick={onClick}>
+    <button type="button" className="k-modcard k-modcard--btn" onClick={onClick} aria-label={label}>
       {children}
-    </div>
+    </button>
   );
 }
 
