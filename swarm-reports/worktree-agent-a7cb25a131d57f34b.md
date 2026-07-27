@@ -244,7 +244,49 @@ Green on both commits.
 
 ---
 
-## 9 · For whoever comes next
+## 9 · Merged to `staging` — and a collision worth knowing about
+
+Fast-forwarded to `staging` at `f6c94244`. Two conflicts, both in shared
+stylesheets, both from siblings working the same run.
+
+`index.css` was trivial — both sides appended an `@import`, kept both.
+
+**`module.css` was not, and auto-merge would have shipped a regression.** Two
+agents independently found the touching-scripts bug in the same run. The Dristi
+branch fixed it with `display: inline-flex; gap: 7px` on `.mt__b`; this branch
+fixed it with `margin-left: 6px` on `.mt__hi`. Git merged both cleanly, because
+they touch different selectors — but **a flex gap and a margin add**, so the pair
+renders 13px where either alone renders 6–7px.
+
+Kept the gap (it spaces every child in one declaration), dropped the margin.
+That also exposed a stale `margin-left: 6px` on `.mt__b .mt__n`, predating
+`.mt__b` becoming a flex container, which the gap was now doubling — 13px before
+the count against 7px before the Devanagari **on the same tab**. Removed, with
+the reasoning recorded at both selectors.
+
+Re-measured after the merge: `gap_en_to_hi: 7`, `gap_hi_to_n: 7`, both margins
+`0px`. Uniform.
+
+Gates on the merged tree, plus the suite the siblings added:
+
+```
+check-tokens:  346 declared, 239 referenced, 0 missing
+check-classes: 2482 selectors defined, 1763 used, 0 missing a rule
+vite build:    ✓ built in 6.33s
+vitest run:    35 files, 587 tests, all passing
+```
+
+> **Pre-existing bug found while running that suite, not fixed here.**
+> `TaskDrawer.jsx:196` does `r.data.forEach(…)` on a `{"data": […]}` body and
+> throws `TypeError: r.data.forEach is not a function` — **the same defect class
+> as the five Prachar tabs**, in a file this branch does not touch. It surfaces
+> as two Unhandled Rejections in `task-flow.test.jsx`; the suite still reports
+> 587 passed, because an unhandled rejection is not an assertion. It also has no
+> `.catch`. Flagged as a separate task.
+
+---
+
+## 10 · For whoever comes next
 
 1. **`GrahaPage.jsx` still spreads `key`** into its tab panel (`:160`). Same
    React-19 hazard; not changed from here because it is not this branch's file.
@@ -257,7 +299,9 @@ Green on both commits.
    `module.css:115` asks for a rename and it has not happened.
 4. **Two `.k-badge` rules** in `editorial.css`, one silently winning on source
    order (noted at `:3322`).
-5. Prachar campaigns are `email | sms | whatsapp`. The reference's four social
+5. **`TaskDrawer.jsx:196`** — see the box above. Same `r.data` bug class, still
+   live, and hidden behind a green test suite.
+6. Prachar campaigns are `email | sms | whatsapp`. The reference's four social
    channels (Instagram, LinkedIn, Facebook) have no backing column. If social
    publishing lands, `CHANNELS` in `prachar/_shared.jsx` is the one place to
    extend, and the calendar picks it up for free.
