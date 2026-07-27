@@ -19,6 +19,7 @@ from middleware.role_tiers import (
     any_level_satisfies, require_module_or_self,
 )
 from services.audit import emit as audit
+from services.encryption import decrypt, encrypt, is_encrypted
 from services.pii import mask_bank, mask_tail
 
 router = APIRouter(prefix="/api/v1/manav", tags=["manav-hrms"])
@@ -94,6 +95,61 @@ _EMP_SAFE_COLS = (
 )
 
 _SENSITIVE_COLS = ("aadhaar", "pan", "bank_details")
+
+#: Columns held as ciphertext in the database.
+#:
+#: `aadhaar` only, deliberately. It is the field that turns an employee record
+#: into an identity kit, and the owner's decision was to keep the column rather
+#: than drop it (see the header of PROPOSED_063_employee_pii.sql) — so the
+#: remaining lever is what it costs when the row leaks.
+#:
+#: `pan` and `bank_details` are masked on read like aadhaar but are NOT
+#: encrypted, for one reason: Vetana reads both off this table when it builds a
+#: payslip, so encrypting them means finding and fixing every reader. Aadhaar
+#: has no reader at all, which is what makes it safe to do alone and first.
+#: Adding a column here is one entry plus a backfill for that column.
+_ENCRYPTED_COLS = ("aadhaar",)
+
+
+def _decrypt_cols(row: dict) -> dict:
+    """Plaintext copy of a row read from the database.
+
+    Called at the point of read so everything downstream — masking, the audited
+    reveal, the payslip builder — keeps seeing plaintext and needs no knowledge
+    of how the column is stored.
+
+    A value that is still marked after `decrypt()` did not open: the key
+    changed. Serving that to a caller would put `enc::gAAAA…` where an Aadhaar
+    number belongs, and the masker would happily render its last four
+    characters as though they meant something. Fail instead.
+    """
+    out = dict(row)
+    for col in _ENCRYPTED_COLS:
+        value = out.get(col)
+        if not value:
+            continue
+        plain = decrypt(value)
+        if is_encrypted(plain):
+            raise HTTPException(
+                500,
+                f"Stored {col} could not be decrypted. FIELD_ENCRYPTION_KEY has "
+                "changed or is not the key this row was written under.",
+            )
+        out[col] = plain
+    return out
+
+
+def _encrypt_cols(values: dict) -> dict:
+    """Copy of a write payload with the encrypted columns enciphered.
+
+    `encrypt()` is idempotent and returns empty/None untouched, so this is safe
+    on partial updates and on rows that carry no aadhaar at all.
+    """
+    out = dict(values)
+    for col in _ENCRYPTED_COLS:
+        if out.get(col):
+            out[col] = encrypt(out[col])
+    return out
 
 
 # The masking rules now live in services/pii.py, because Vetana reads the same
@@ -386,7 +442,7 @@ async def create_employee(
         org_id, body.user_id, body.employee_code, body.name, body.email, body.phone,
         body.department, body.designation, body.date_of_joining, body.date_of_birth,
         body.gender or None, body.blood_group, body.emergency_contact, json.dumps(body.address),
-        json.dumps(body.bank_details), body.pan, body.aadhaar, body.uan, body.esi_number,
+        json.dumps(body.bank_details), body.pan, encrypt(body.aadhaar), body.uan, body.esi_number,
         body.employment_type, body.reporting_to, body.shift, user["user_id"],
     )
     return {"status": "created", **dict(row)}
@@ -426,7 +482,10 @@ async def get_employee(
         str(employee_id),
     )
     return {
-        "employee": _mask_employee_pii(dict(row)),
+        # Decrypt BEFORE masking. Masking ciphertext would render the last four
+        # characters of a Fernet token and present them as the last four digits
+        # of an Aadhaar number.
+        "employee": _mask_employee_pii(_decrypt_cols(dict(row))),
         "leave_balances": [dict(lb) for lb in leave_balances],
     }
 
@@ -481,7 +540,7 @@ async def get_employee_sensitive(
         },
         severity="warn",
     )
-    return {"employee": dict(row), "audited": True}
+    return {"employee": _decrypt_cols(dict(row)), "audited": True}
 
 
 @router.patch("/employees/{employee_id}")
@@ -498,6 +557,9 @@ async def update_employee(
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "No fields to update")
+    # Before the SET list is built below, so the generic column loop never sees
+    # a plaintext aadhaar and cannot write one simply by not knowing about it.
+    updates = _encrypt_cols(updates)
 
     sets = []
     params = [str(employee_id), org_id]
