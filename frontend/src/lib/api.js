@@ -125,4 +125,33 @@ api.interceptors.response.use(undefined, async (error) => {
   return Promise.reject(error);
 });
 
+/* ── Response unwrapping ───────────────────────────────────────────────────
+ * `api` is a bare axios instance, so `api.get(p)` resolves to the RESPONSE and
+ * the body is `r.data`. What the body then looks like is decided per route and
+ * there is no rule: 99 GET routes answer `{"data": [...]}` and 28 answer a bare
+ * array. Every call site therefore has to remember which kind it is calling,
+ * and getting it wrong fails in the two worst ways available —
+ *
+ *   · `r.data.map(...)` on an envelope throws, and takes the panel down blank;
+ *   · `Array.isArray(r.data) ? r.data : []` on an envelope silently renders an
+ *     EMPTY LIST, which on a payroll or invoice screen is not a broken page,
+ *     it is a false statement about the business.
+ *
+ * That mismatch is what left five Prachar tabs blank and both Dristi list
+ * endpoints reading as empty. Route reads through `rows()` and the shape stops
+ * mattering. Unwrapping belongs here rather than in one module's helpers,
+ * because the inconsistency is codebase-wide.
+ */
+
+/** The array out of a list route, tolerant of both `{"data": [...]}` and a bare array. */
+export const rows = (r) => {
+  const b = r?.data;
+  if (Array.isArray(b)) return b;
+  if (Array.isArray(b?.data)) return b.data;
+  return [];
+};
+
+/** The object out of a single-object route. */
+export const body = (r) => r?.data ?? {};
+
 export { BACKEND_URL, API };

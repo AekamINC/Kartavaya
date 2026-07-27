@@ -323,7 +323,12 @@ describe('e2e · board · opening the task drawer', () => {
     'GET /projects/:teamId/columns': COLUMNS,
     'GET /teams/:teamId': { members: [] },
     'GET /fields/team/:teamId': [],
-    'GET /fields/task/:id/values': {},
+    // A bare array, because that is what `fields.py:194` actually returns. This
+    // fixture said `{}` — an object the component then called `.forEach` on —
+    // so the drawer threw on every open and the suite still reported green,
+    // because an unhandled rejection is not a failed assertion. A fixture that
+    // does not match its route turns the test into a source of false comfort.
+    'GET /fields/task/:id/values': [],
   };
 
   it('clicking a card opens a labelled dialog for that task', async () => {

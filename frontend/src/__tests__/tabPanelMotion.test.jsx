@@ -88,3 +88,53 @@ describe('useTabPanelMotion', () => {
     expect(dx()).toBe('1');
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The call sites, which is where this actually broke
+   ══════════════════════════════════════════════════════════════════════════
+
+   Every test above passed while all six module pages were broken, because the
+   bug was not in the hook — it was in how they consumed it. Each did:
+
+       const motion = useTabPanelMotion(…);   <div className="ix-panel" {...motion}>
+
+   React 19 refuses a `key` inside a spread: it logs and DROPS it. So the panel
+   was reconciled in place, the enter animation never restarted, and the hook's
+   entire purpose was silently defeated on every page that used it.
+
+   Nothing caught it. Not these tests, not check-tokens, not check-classes, not
+   `vite build` — a dropped key is a console warning, not a build error. So the
+   guard has to read the source. It is a blunt instrument on purpose: the next
+   module page will be written by copying an existing one, and this fails the
+   moment that copy spreads the key. */
+import fs from 'node:fs';
+import path from 'node:path';
+
+const PAGES = path.resolve(__dirname, '../pages');
+
+describe('useTabPanelMotion · call sites', () => {
+  const callers = fs.readdirSync(PAGES)
+    .filter(f => f.endsWith('.jsx'))
+    .map(f => [f, fs.readFileSync(path.join(PAGES, f), 'utf8')])
+    .filter(([, src]) => src.includes('useTabPanelMotion('));
+
+  it('finds the module pages, so an empty list cannot pass vacuously', () => {
+    expect(callers.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it.each(callers.map(([f]) => f))('%s destructures `key` instead of spreading it', (file) => {
+    const src = callers.find(([f]) => f === file)[1];
+
+    // Whatever the object is named, it must not be assigned whole from the hook
+    // and then spread — that is the shape that drops the key.
+    const assigned = src.match(/const\s+(\w+)\s*=\s*useTabPanelMotion\(/);
+    expect(
+      assigned,
+      `${file} assigns the hook result whole (\`${assigned?.[1]}\`) — destructure ` +
+      '`{ key: panelKey, ...motion }` so the key is passed explicitly.',
+    ).toBeNull();
+
+    expect(src).toMatch(/const\s*\{\s*key\s*:\s*\w+\s*,\s*\.\.\.\w+\s*\}\s*=\s*useTabPanelMotion\(/);
+    expect(src, `${file} spreads motion without a sibling key=`).toMatch(/key=\{\w+\}/);
+  });
+});

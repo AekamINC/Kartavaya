@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api } from '../lib/api';
+import { api, rows } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import ConfirmDialog from './ui/ConfirmDialog';
 import FocusTrap from './ui/FocusTrap';
@@ -185,17 +185,22 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
       if (t.team_id) {
         api.get(`/projects/${t.team_id}/columns`).then(r => setColumns(Array.isArray(r.data) ? r.data : [])).catch(() => {});
         api.get(`/teams/${t.team_id}`).then(r => setMembers(Array.isArray(r.data?.members) ? r.data.members : [])).catch(() => {});
+        // These two were the only reads in this effect with no rejection
+        // handler — every sibling above has one. A 403 or a 500 on either
+        // therefore became an Unhandled Rejection, and the custom-field section
+        // just stayed empty rather than saying it had failed. `rows()` also
+        // makes them indifferent to whether the route answers a bare array
+        // (which `fields.py` does today) or a `{"data": […]}` envelope.
         api.get(`/fields/team/${t.team_id}`).then(r => {
-          const defs = r.data.map(f =>
+          setFields(rows(r).map(f =>
             f.type === 'person' ? { ...f, config: { ...f.config, members: mentionMembers } } : f
-          );
-          setFields(defs);
-        });
+          ));
+        }).catch(logger.error);
         api.get(`/fields/task/${taskId}/values`).then(r => {
           const vals = {};
-          r.data.forEach(v => { vals[v.field_id] = v.value; });
+          rows(r).forEach(v => { vals[v.field_id] = v.value; });
           setFValues(vals);
-        });
+        }).catch(logger.error);
       }
     }).catch(logger.error);
   }, [open, taskId]); // eslint-disable-line react-hooks/exhaustive-deps

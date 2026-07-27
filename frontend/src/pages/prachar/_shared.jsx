@@ -25,18 +25,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../lib/api';
 import { Shimmer, Empty } from '../../components/editorial';
 
-/* ── Response unwrapping ──────────────────────────────────────────────── */
-
-/** The array out of a `{"data": [...]}` list route, tolerant of a bare array. */
-export const rows = (r) => {
-  const b = r?.data;
-  if (Array.isArray(b)) return b;
-  if (Array.isArray(b?.data)) return b.data;
-  return [];
-};
-
-/** The object out of a single-object route. */
-export const body = (r) => r?.data ?? {};
+/* ── Response unwrapping ──────────────────────────────────────────────────
+ * Promoted to `lib/api` and re-exported here so the existing tab imports keep
+ * working. The shape mismatch is not a Prachar problem — it is every module's —
+ * so one implementation, next to the client that creates the ambiguity. */
+export { rows, body } from '../../lib/api';
 
 /* ── Status and channel vocabulary ────────────────────────────────────── */
 

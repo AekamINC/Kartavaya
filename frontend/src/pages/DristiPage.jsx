@@ -46,7 +46,9 @@ const TABS = [
 export default function DristiPage() {
   const [tab, setTab] = useState('overview');
   const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];
-  const motion = useTabPanelMotion(TABS.map(([id]) => id), tab);
+  // `key` is destructured out, never spread: React 19 drops a `key` inside a
+  // spread, and the changing key IS the mechanism — see `VikrayPage.jsx:47`.
+  const { key: panelKey, ...motion } = useTabPanelMotion(TABS.map(([id]) => id), tab);
 
   const [kpi, setKpi] = useState(null);
   const [kpiErr, setKpiErr] = useState('');
@@ -144,6 +146,7 @@ export default function DristiPage() {
         id={`mt-panel-${tab}`}
         aria-labelledby={`mt-tab-${tab}`}
         className="ix-panel"
+        key={panelKey}
         {...motion}
       >
         <Active />

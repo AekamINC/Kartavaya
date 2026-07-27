@@ -3,7 +3,7 @@
  */
 import { logger } from '../lib/utils';
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '../lib/api';
+import { api, rows } from '../lib/api';
 
 export function useFieldDefs(teamId) {
   const [defs, setDefs]       = useState([]);
@@ -47,7 +47,7 @@ export function useFieldValues(taskId) {
     api.get(`/fields/task/${taskId}/values`)
        .then(r => {
          const vals = {};
-         r.data.forEach(v => { vals[v.field_id] = v.value; });
+         rows(r).forEach(v => { vals[v.field_id] = v.value; });
          setValues(vals);
        })
        .catch(logger.error)

@@ -62,7 +62,9 @@ export default function GrahaPage() {
   const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];
   // Seventeen tabs, and switching between them had no motion at all: the
   // underline teleported and the panel swapped between one frame and the next.
-  const motion = useTabPanelMotion(TABS.map(([id]) => id), tab);
+  // `key` is destructured out, never spread: React 19 drops a `key` inside a
+  // spread, and the changing key IS the mechanism — see `VikrayPage.jsx:47`.
+  const { key: panelKey, ...motion } = useTabPanelMotion(TABS.map(([id]) => id), tab);
 
   const [kpi, setKpi] = useState(null);
   const [kpiErr, setKpiErr] = useState('');
@@ -157,6 +159,7 @@ export default function GrahaPage() {
         id={`mt-panel-${tab}`}
         aria-labelledby={`mt-tab-${tab}`}
         className="ix-panel"
+        key={panelKey}
         {...motion}
       >
         {tab === 'deals' ? <DealsTab newNonce={newDealNonce} /> : <Active />}
