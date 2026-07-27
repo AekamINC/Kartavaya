@@ -61,7 +61,10 @@ async def execute_step(pool, enrollment_id: str) -> dict:
         subject = (step["subject"] or "").replace("{{name}}", enrollment["contact_name"] or "")
         body = (step["body"] or "").replace("{{name}}", enrollment["contact_name"] or "")
         try:
-            await send_email(enrollment["email"], subject, body)
+            # Sync — see campaign_sender.py. The await raised, so every step
+            # returned "failed" and the enrolment never advanced: the same
+            # sequence step was re-sent to the same contact on each cron pass.
+            send_email(enrollment["email"], subject, body)
         except Exception:
             log.exception("Sequence email failed for enrollment %s step %s", enrollment_id, step["step_number"])
             return {"status": "failed", "next_step_at": None}

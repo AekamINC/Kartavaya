@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from email_service import (
     send_email, _base, _body_text, _info_card, _cta_row, _safe_subject,
-    FRONTEND_URL, _INK3, FROM_EMAIL, _resend_client, ses_client,
+    FRONTEND_URL, _INK3, FROM_EMAIL, _resend_client, ses_client, to_plaintext,
 )
 from html import escape as _h
 import logging
@@ -209,6 +209,8 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
         msg["To"] = employee_email
 
         alt = MIMEMultipart("alternative")
+        # Text part first — see the same note in email_service.send_report_email.
+        alt.attach(MIMEText(to_plaintext(html_content), "plain", "utf-8"))
         alt.attach(MIMEText(html_content, "html", "utf-8"))
         msg.attach(alt)
 
@@ -225,6 +227,7 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
                     "to": [employee_email],
                     "subject": subject,
                     "html": html_content,
+                    "text": to_plaintext(html_content),
                     "attachments": [{"filename": f"Payslip-{payslip_number}.pdf", "content": list(pdf_bytes)}],
                 })
                 _log.info("✅ Payslip email (Resend) → %s", employee_email)

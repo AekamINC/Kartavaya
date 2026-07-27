@@ -420,6 +420,72 @@ def _fallback_url(url: str, label: str = "Button not working? Paste this into yo
             f'word-break:break-all;">{_h(label)}<br>{_h(url)}</td></tr>')
 
 
+def to_plaintext(html_doc: str) -> str:
+    """Derive the `text/plain` alternative from a rendered email document.
+
+    Every email this product sends was HTML-only. That is wrong on three counts
+    and only one of them is cosmetic:
+
+      * Spam scoring. A `multipart/alternative` with no text part is one of the
+        oldest heuristics there is. The mail that suffers most is the one sent
+        to a stranger — a signature request or an invoice going to a client's
+        customer, from a domain that recipient has never corresponded with.
+      * Clients that prefer text. Screen readers, watch notifications, plain
+        digest views and locked-down corporate gateways all take the text part
+        when one exists and render a tag-stripped soup of the HTML when it does
+        not.
+      * The links. A tag-stripped HTML document loses every `href`, so the
+        recipient of a magic link is left with the words "Accept invitation"
+        and nowhere to go.
+
+    So the anchors are rewritten as `label <url>` rather than dropped, which is
+    what makes this a usable alternative rather than a formality.
+
+    The preheader div is removed first. It is `display:none` decoration whose
+    trailing entity padding exists purely to push quoted text out of a preview
+    strip; in a text part it would surface as the first thing the reader sees,
+    followed by 30 invisible spaces.
+    """
+    s = html_doc
+    # Order matters: kill invisible/structural content before flattening.
+    s = re.sub(r"<div[^>]*mso-hide:all[^>]*>.*?</div>", "", s, flags=re.S | re.I)
+    s = re.sub(r"<(script|style|title|head)\b.*?</\1>", "", s, flags=re.S | re.I)
+    s = re.sub(r"<!--.*?-->", "", s, flags=re.S)
+
+    # Anchors carry the only information a stripped document cannot recover.
+    # A label identical to its own href (the fallback-URL row) is not doubled.
+    #
+    # The URL is parked between NULs rather than written as `<url>` directly:
+    # the tag strip below cannot tell `<https://…>` from a tag and ate every
+    # link in the first cut of this. NUL cannot occur in the source document,
+    # so the sentinel can never collide with content.
+    def _anchor(m):
+        href, label = m.group(1).strip(), re.sub(r"<[^>]+>", "", m.group(2)).strip()
+        if not href or href.startswith("#"):
+            return label
+        return f"\x00{href}\x00" if (not label or label == href) else f"{label} \x00{href}\x00"
+
+    s = re.sub(r'<a\b[^>]*href="([^"]*)"[^>]*>(.*?)</a>', _anchor, s, flags=re.S | re.I)
+
+    s = re.sub(r"<br\s*/?>", "\n", s, flags=re.I)
+    s = re.sub(r"</(p|h1|h2|h3|div|tr|table|li)>", "\n", s, flags=re.I)
+    s = re.sub(r"</td>", "  ", s, flags=re.I)
+    s = re.sub(r"<[^>]+>", "", s)
+
+    from html import unescape as _u
+    s = _u(s)
+    # &#847;&zwnj;&nbsp; padding and NBSP survive unescaping as real characters.
+    s = s.replace("‌", "").replace("͏", "").replace("\xa0", " ")
+    s = "\n".join(re.sub(r"[ \t]+", " ", ln).strip() for ln in s.splitlines())
+    # A line holding nothing but a separator is an artefact of the footer's
+    # `&nbsp;·&nbsp;` between anchors; fold it back onto the line above.
+    s = re.sub(r"\n[·|-]\n", " · ", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    # Unpark the URLs only now that no further tag-shaped strip will run.
+    s = re.sub(r"\x00([^\x00]*)\x00", r"<\1>", s)
+    return s.strip()
+
+
 def _notice(text: str, tone: str = "warn") -> str:
     """Render a filled notice strip — the amber block under the reset button."""
     bg, fg = (WARN_BG, ON_WARN_BG) if tone == "warn" else (CARD_BG, INK_2)
@@ -441,6 +507,11 @@ def send_email(to_email: str, subject: str, html_content: str,
     if suppressed("email", to_email, subject):
         return True
 
+    # Derived once, outside the thread: a regex pass per send is wasted work and
+    # a failure in here must surface as a normal exception, not inside a thread
+    # whose traceback nobody reads.
+    text_content = to_plaintext(html_content)
+
     def _send():
         if _resend_client:
             try:
@@ -449,6 +520,7 @@ def send_email(to_email: str, subject: str, html_content: str,
                     "to": [to_email],
                     "subject": subject,
                     "html": html_content,
+                    "text": text_content,
                 }
                 if reply_to:
                     params["reply_to"] = [reply_to]
@@ -460,7 +532,8 @@ def send_email(to_email: str, subject: str, html_content: str,
             try:
                 msg = {
                     "Subject": {"Data": subject, "Charset": "UTF-8"},
-                    "Body":    {"Html":  {"Data": html_content, "Charset": "UTF-8"}},
+                    "Body":    {"Text": {"Data": text_content, "Charset": "UTF-8"},
+                                "Html":  {"Data": html_content, "Charset": "UTF-8"}},
                 }
                 kwargs = dict(
                     Source=FROM_EMAIL,
@@ -1235,6 +1308,10 @@ def send_report_email(
             msg["To"]      = to_email
 
             alt = MIMEMultipart("alternative")
+            # Text first: `multipart/alternative` is ordered least-to-most rich
+            # and a client picks the LAST part it understands. Attaching HTML
+            # first would hand a text-capable-only client the HTML.
+            alt.attach(MIMEText(to_plaintext(html_body), "plain", "utf-8"))
             alt.attach(MIMEText(html_body, "html", "utf-8"))
             msg.attach(alt)
 

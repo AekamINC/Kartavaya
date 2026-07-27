@@ -35,7 +35,8 @@ async def notify_multi(
         )
         for r in rows:
             try:
-                await send_email(r["email"], title, f"<p>{body}</p>")
+                # Sync — see campaign_sender.py.
+                send_email(r["email"], title, f"<p>{body}</p>")
                 sent += 1
             except Exception:
                 log.warning("Email send failed for %s", r["user_id"])

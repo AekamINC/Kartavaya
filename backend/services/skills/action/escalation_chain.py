@@ -78,7 +78,10 @@ async def escalate(pool, entity_type: str, entity_id: str, level: int = 1) -> di
         log.warning("Push failed for escalation to %s", target_id)
 
     try:
-        await send_email(target["email"], subject, body)
+        # Sync — see campaign_sender.py. The await raised every time, so an
+        # escalation was always reported as method="none" or "push" even when
+        # the email had gone.
+        send_email(target["email"], subject, body)
     except Exception:
         log.warning("Email failed for escalation to %s", target["email"])
         if method == "email":

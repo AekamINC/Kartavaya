@@ -43,7 +43,9 @@ async def process_expiry(pool, org_id: str, module: str = "esign") -> dict:
         for doc in expiring:
             if doc["creator_email"]:
                 try:
-                    await send_email(
+                    # Sync — see campaign_sender.py. Awaiting it raised after
+                    # the send had already been dispatched.
+                    send_email(
                         doc["creator_email"],
                         f"Contract expiring soon: {doc['title']}",
                         f"<p>Hi {doc['creator_name']},</p><p>Your contract <b>{doc['title']}</b> is expiring within {REMIND_DAYS_BEFORE} days. Please review and renew if needed.</p>",
@@ -86,7 +88,9 @@ async def process_expiry(pool, org_id: str, module: str = "esign") -> dict:
         for asset in expiring_assets:
             if asset["email"]:
                 try:
-                    await send_email(
+                    # Sync — see campaign_sender.py. Awaiting it raised after
+                    # the send had already been dispatched.
+                    send_email(
                         asset["email"],
                         f"Asset warranty expiring: {asset['name']}",
                         f"<p>The warranty for asset <b>{asset['name']}</b> is expiring soon.</p>",

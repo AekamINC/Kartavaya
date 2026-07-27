@@ -34,7 +34,9 @@ async def execute_onboarding(pool, employee_id: str, org_id: str) -> dict:
     # 1. Welcome email
     if emp["email"]:
         try:
-            await send_email(
+            # Sync — see campaign_sender.py. The await raised, so
+            # "welcome_email" was never recorded as a completed step.
+            send_email(
                 emp["email"],
                 f"Welcome to the team, {emp['name']}!",
                 f"<p>Hello {emp['name']},</p><p>Welcome aboard! Your joining date is {emp['date_of_joining']}.</p>",

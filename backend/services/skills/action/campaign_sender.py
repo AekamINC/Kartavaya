@@ -56,7 +56,12 @@ async def send_campaign(pool, campaign_id: str) -> dict:
         subject = (campaign["subject"] or "").replace("{{name}}", r["name"] or "")
         body = (campaign["html_content"] or "").replace("{{name}}", r["name"] or "")
         try:
-            await send_email(r["email"], subject, body)
+            # NOT awaited. `send_email` is sync — it threads internally and
+            # returns bool. Awaiting it raised TypeError AFTER the send thread
+            # had already started, so the mail went out and this contact was
+            # then written back as 'failed'. A retry of the campaign resent to
+            # everyone who had in fact received it.
+            send_email(r["email"], subject, body)
             await pool.execute(
                 "UPDATE staging.prachar_campaign_contacts SET status = 'sent', sent_at = NOW() WHERE id = $1::uuid",
                 r["id"],

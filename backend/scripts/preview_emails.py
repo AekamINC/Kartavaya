@@ -33,6 +33,14 @@ from pathlib import Path
 # Before anything imports the send path.
 os.environ["OUTBOUND_MODE"] = "dry"
 os.environ.setdefault("FRONTEND_URL", "https://kartavaya.com")
+# `routers/esign.py` raises at import time without this, and the two templates
+# it owns are the only ones in the whole set that go to somebody outside the
+# customer's organisation — a client's client, asked to sign. Without this line
+# they failed with "RENDER ERROR: RuntimeError" and the contact sheet still said
+# 29 templates, so the two that most need looking at were the two nobody saw.
+# Never used to sign or verify anything here: nothing in this process serves a
+# request or issues a token.
+os.environ.setdefault("JWT_SECRET", "preview-harness-renders-only-never-signs")
 
 BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND))
@@ -291,6 +299,86 @@ def _senders():
         ("27-esign-request", "27 · Signature requested (eSign)", lambda: _render_esign("sign")),
         ("28-esign-otp", "28 · Signing OTP (eSign)", lambda: _render_esign("otp")),
         ("29-generic-reminder", "29 · Generic reminder (cron)", _render_generic_reminder),
+    ] + _unshelled()
+
+
+# ── Senders that do NOT use the shell ─────────────────────────────────────────
+#
+# Everything above is built by `_base()` and therefore inherits the envelope,
+# the lockup, the escaping and the dark-mode block for free. These nine are not.
+# Each one hand-writes its markup at the call site, so each one is its own
+# little design system of `<p>` tags — no envelope, no brand, no footer, no
+# preheader, no unsubscribe, and no `_h()` on the values it interpolates.
+#
+# They are rendered here for one reason: an email that bypasses the design is
+# invisible in a review that only looks at the design. Putting them in the same
+# contact sheet as the other 29 is what makes the gap countable. The bodies below
+# are copied from the call sites named in each label — if a call site changes,
+# this copy goes stale, which is the known cost of a sender that has no builder
+# function to call.
+def _unshelled():
+    F = "https://kartavaya.com"
+
+    def dristi_report():
+        """routers/dristi.py — scheduled report 'run now'."""
+        return (f"<p>Your scheduled report <strong>{html.escape(ORG)}</strong> is ready.</p>"
+                f"<p>Report type: gst_summary</p>"
+                f"<pre>{html.escape('{ \"rows\": 42 }')}</pre>")
+
+    def prachar_campaign():
+        """routers/prachar.py — marketing campaign to external contacts.
+
+        The body is whatever the org typed into the campaign composer, with
+        {{name}}/{{email}}/{{company}} substituted in UNESCAPED.
+        """
+        body = "<p>Hi {{name}},</p><p>New GST filing service from {{company}}.</p>"
+        for k, v in (("name", PERSON), ("company", ORG), ("email", "a@b.c")):
+            body = body.replace("{{" + k + "}}", v)
+        return body
+
+    def automation():
+        """services/automation_engine.py — 'send_email' automation action."""
+        return "<p>Automation fired.</p>"
+
+    def esign_svc_sign():
+        """services/esign_service.py — Ganit contract signature request. DEAD."""
+        return (f"<p>Hi {PERSON},</p>"
+                f"<p>You have been asked to sign a document. "
+                f"<a href='{F}/sign/TOKEN'>Click here to review and sign</a>.</p>"
+                f"<p>This link expires in 7 days.</p>")
+
+    def esign_svc_otp():
+        """services/esign_service.py — Ganit signing OTP. DEAD."""
+        return ("<p>Your one-time verification code is: <strong>418205</strong></p>"
+                "<p>This code is valid for 10 minutes.</p>")
+
+    def onboarding():
+        """services/skills/action/onboarding_chain.py"""
+        return f"<p>Hello {PERSON},</p><p>Welcome aboard! Your joining date is 2026-08-01.</p>"
+
+    def contract_expiry():
+        """services/skills/action/document_expiry.py — contract"""
+        return (f"<p>Hi {PERSON},</p><p>Your contract <b>{TASK}</b> is expiring within "
+                f"30 days. Please review and renew if needed.</p>")
+
+    def asset_expiry():
+        """services/skills/action/document_expiry.py — asset warranty"""
+        return f"<p>The warranty for asset <b>{TASK}</b> is expiring soon.</p>"
+
+    def fan_out():
+        """services/skills/action/notification_fan_out.py"""
+        return f"<p>{NOTE}</p>"
+
+    return [
+        ("30-unshelled-dristi-report", "30 · Scheduled report run-now — NO SHELL", dristi_report),
+        ("31-unshelled-prachar-campaign", "31 · Prachar campaign — NO SHELL, EXTERNAL", prachar_campaign),
+        ("32-unshelled-automation", "32 · Automation send_email — NO SHELL", automation),
+        ("33-unshelled-esignsvc-sign", "33 · Ganit signature request — NO SHELL, DEAD, EXTERNAL", esign_svc_sign),
+        ("34-unshelled-esignsvc-otp", "34 · Ganit signing OTP — NO SHELL, DEAD, EXTERNAL", esign_svc_otp),
+        ("35-unshelled-onboarding", "35 · Employee welcome (skill) — NO SHELL", onboarding),
+        ("36-unshelled-contract-expiry", "36 · Contract expiring (skill) — NO SHELL", contract_expiry),
+        ("37-unshelled-asset-expiry", "37 · Asset warranty expiring (skill) — NO SHELL", asset_expiry),
+        ("38-unshelled-fan-out", "38 · Notification fan-out (skill) — NO SHELL", fan_out),
     ]
 
 
@@ -488,6 +576,41 @@ def audit(rendered: str) -> list[str]:
     # var() resolves to nothing in email and the element paints transparent.
     if "var(--" in rendered:
         problems.append("CSS custom property present — does not resolve in email")
+
+    # ── Email-client reality ─────────────────────────────────────────────────
+    # An external stylesheet never arrives; flex and grid are unsupported by
+    # Outlook's Word engine and unreliable in Gmail, so any layout that depends
+    # on them collapses to a single column in the clients Indian firms actually
+    # run.
+    if re.search(r"<link[^>]+stylesheet|@import", rendered, re.I):
+        problems.append("EXTERNAL STYLESHEET — never loads in email")
+    if re.search(r"display:\s*(flex|grid|inline-flex)", rendered):
+        problems.append("FLEX/GRID layout — Outlook's Word engine ignores it")
+    for tag in re.findall(r"<img\b[^>]*>", rendered, re.I):
+        if "alt=" not in tag:
+            problems.append("IMAGE WITHOUT alt — blank box in a blocked-image inbox")
+
+    # ── Brand ────────────────────────────────────────────────────────────────
+    # kartavaya.com, never kartavya.com. The owner has corrected this repeatedly
+    # and a link on the wrong domain in a signature request is a dead link in
+    # front of somebody else's customer.
+    if re.search(r"kartavya\.(com|co)\b", rendered, re.I):
+        problems.append("WRONG DOMAIN — kartavya, should be kartavaya")
+    # A relative or protocol-relative href resolves against the mail client,
+    # which has no origin. Every link has to be absolute.
+    for href in re.findall(r'href="([^"]*)"', rendered):
+        if href and not href.startswith(("http://", "https://", "mailto:", "#")):
+            problems.append(f"NON-ABSOLUTE href ({href[:40]})")
+            break
+
+    # ── The shell ────────────────────────────────────────────────────────────
+    # Not a style nit. A document with no envelope has no lockup, no footer, no
+    # preheader and no dark-mode block, and — because it never passed through
+    # `_base()` — nothing escaped its interpolations either.
+    if 'class="em__envelope"' not in rendered:
+        problems.append("NOT ON THE SHELL — hand-written markup, bypasses _base()")
+    elif "mso-hide:all" not in rendered:
+        problems.append("NO PREHEADER — client invents preview text from the body")
     return problems
 
 
