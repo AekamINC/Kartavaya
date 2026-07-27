@@ -135,6 +135,40 @@ Now a 400 with the sentence, and the UI gates on it too.
 called.** They were found by building the screen, not by reading the file — reading it
 shows three plausible handlers.
 
+### 3.5 · The geofence has never existed for any organisation
+
+`GET`/`POST /sites` existed and nothing called them, so `staging.pahchan_sites` is empty
+for every org. Follow that through:
+
+```
+_nearest_site()  → (None, None) on an empty table
+create_punch()   → distance_m stays None
+_compute_flags() → `if distance_m is not None and site_radius_m is not None`
+                   never fires
+```
+
+So the `geo` flag has only ever meant *"location was off entirely"* and never *"outside
+the site"* — while `PahchanPolicy` offered **"Geofence radius — how close to a site a
+punch has to be"**, a setting for a thing that could not be created. Built (§4).
+
+### 3.6 · `staging` has not built since `8131f24` — NOT MY SURFACE, FIXED ANYWAY
+
+`npx vite build` fails at `DristiPage.jsx:581`:
+
+```
+Expected ")" but found "columns"
+```
+
+A `{/* … */}` comment was placed inside a ternary branch. That is an **expression**
+position, not a JSX children position, so the braces parse as an object literal. It
+takes the **whole bundle** down, not that page — a Vercel deploy from `staging` fails,
+and every gate downstream of a bundle is unrunnable.
+
+Fixed by removing the braces; the comment is correct and stays. Flagged here because the
+commit that introduced it (`8131f24`, a sibling's genuine `cols`→`columns` fix) reads as
+a careful change and its own gates would have been `check-tokens`/`check-classes`, which
+do not parse JSX. **`vite build` is not in the run's stated gate list and should be.**
+
 ---
 
 ## 4 · What was built
@@ -142,12 +176,23 @@ shows three plausible handlers.
 | Screen | File | Endpoint |
 |---|---|---|
 | Register detail — three photos full size, accuracy geometry, metadata | `pages/pahchan/Register.jsx` | `/punches/{id}/photo`, `/enrollment/photos/{id}/url` |
+| Register day picker | `pages/pahchan/Register.jsx` | `GET /register?on=` |
 | Shift and overtime policy | `pages/pahchan/PahchanPolicy.jsx` | `PATCH /policy` |
+| Sites / geofence | `pages/pahchan/Sites.jsx` | `GET`/`POST /sites` |
 | Corrections | `pages/pahchan/Corrections.jsx` | `GET`/`PATCH /regularisations` |
 | Payroll push | `pages/pahchan/PublishPayroll.jsx` | `POST /attendance/publish` |
 | History — month calendar, states, legend, day detail, retention promise | `pages/pahchan/History.jsx` | `GET /me` |
 
 Web tabs: **register · corrections · payroll · my attendance · enrollment · policy**.
+
+### The register could only ever show today
+
+`GET /register` has always taken `?on=` and nothing sent it. A reviewer away on Friday
+had no route back to Friday, and those punches sat until the seven-day auto-accept
+swallowed them. Now a date input capped at today — a register for tomorrow is always
+empty, and its empty state would tell a reviewer that nobody has clocked in, which is
+true and useless. Both empty states are day-aware: *"Nobody has clocked in **yet**"* said
+to somebody looking at last Tuesday reads as a page that has not finished loading.
 
 ### The detail draws its own geometry rather than loading a map
 
@@ -193,11 +238,35 @@ be able to see what is held and for how long without asking."
 
 ---
 
-## 5 · Still open on this surface
+## 5 · Gates
+
+Run from `frontend/`, unpiped, per `_COORDINATION.md` §2.
+
+| Gate | Result |
+|---|---|
+| `node scripts/check-tokens.mjs` | 340 declared, 234 referenced, **0 missing** |
+| `node scripts/check-classes.mjs` | 2132 selectors, 1456 classes, **0 missing a rule** |
+| `npx vite build` | **succeeds** — it did not before §3.6 |
+| `npx vitest run` | **438 passed / 23 files** |
+| `python -m pytest` (backend) | see below |
+
+The two `Unhandled Rejection`s vitest reports are pre-existing, in
+`task-flow.test.jsx` via `TaskDrawer.jsx:168` (`r.data.forEach` on a mock that returns a
+non-array). Not on this surface and not introduced here.
+
+`frontend/node_modules` had to be installed to run the last three. **`npm install`
+rewrote both `package-lock.json` and `yarn.lock`** — restored with `git checkout --`
+before any commit, per §9. Worth knowing before the next agent installs.
+
+---
+
+## 6 · Still open on this surface
 
 | # | Gap | Why it was left |
 |---|---|---|
-| 13 | **Sites / geofence.** `GET`/`POST /sites` exist; no UI. The policy screen sets a default radius, but an org cannot name a location, so `_nearest_site` finds nothing and every punch outside a fence it cannot see is compared against `None`. | Out of the four named in the brief; it is the next one to build |
-| 3b | The detail re-signs its three photos rather than reusing the row's URLs | Each view is audited `severity=warn` on purpose. A second, larger viewing IS a second viewing, and recording it is right |
+| 3b | The detail re-signs its three photos rather than reusing the row's URLs | Each view is audited `severity=warn` deliberately. A second, larger viewing IS a second viewing, and recording it is correct |
 | 7 | Privacy notice (§05 `PhNotice`) on web | Mobile owns the first-run notice; not audited here |
-| — | `Seg` on the register offers All / Needs a look; the reference also lets a reviewer pick a DATE. `GET /register?on=` accepts one and no UI sends it | The register is today-only. A reviewer cannot look at yesterday |
+| 6 | Two-tab shell — Clock · Me | Mobile's `MeScreen` + `MyBiometrics` cover part of it. `17-mobile-app.md` §"attendance-only shell" is a nav-structure change, not a screen |
+| 13 | Sites have no edit or delete | The backend has neither, and it is not a UI decision: moving a site retroactively changes whether punches **already reviewed** were inside it |
+| — | Reports (§07 `PhReport`) — monthly register table + the photo-free email preview | `History` covers the employee's own month. The org-wide monthly register and the email preview are a reporting surface, not an attendance one |
+| — | `POST /regularisations` has no employee-facing form on web | The reviewer half is built. The request half belongs with the two-tab shell, where the person who needs it actually is |
