@@ -14,7 +14,21 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-button { font-family: inherit; cursor: pointer; }
+/* The reference's reset is five declarations (`app.css:7`); this had two, and
+   the three missing ones are the three that matter. Without them a <button>
+   whose class sets no background/border/colour of its own falls through to the
+   user-agent stylesheet: `buttonface` #F0F0F0, a 2px `outset` border and
+   `buttontext` black — a light-grey slab with black text, IN BOTH THEMES.
+   In dark that is a pale rectangle on a near-black page.
+   Measured, not assumed: `.k-btn` (editorial.css:702) declares `border: 0`
+   but no background and no colour, and `PracharPage.jsx` renders it bare at
+   ten call sites (297, 433, 492, 915, 956, 957, 958, 978, 988, 1005). The
+   probe read them as rgb(240,240,240) / rgb(0,0,0) in dark.
+   An element selector is specificity 0,0,1 and loses to every class rule
+   regardless of document order, so this cannot override a styled button — it
+   only catches the ones nothing styles. `input, textarea, select` below
+   already inherits colour for exactly this reason; `button` was the omission. */
+button { font-family: inherit; cursor: pointer; border: 0; background: none; color: inherit; }
 a { color: inherit; text-decoration: none; cursor: pointer; }
 input, textarea, select { font-family: inherit; color: inherit; }
 ::selection { background: color-mix(in srgb, var(--k-primary) 30%, transparent); }
