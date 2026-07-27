@@ -38,6 +38,11 @@ about twenty has been converted, and that has held every time it has been checke
 **3,541 inline style blocks across 171 page and tab files.** 64 files are at
 zero; **53 are above twenty**.
 
+> **This table is the BASELINE and is deliberately not edited.** vetana, dristi
+> and prachar have landed since — see "Landed since this file was written"
+> below, and re-run the script for current numbers rather than trusting either.
+> Top-level is **1,260** as of the prachar merge, down from the 1,529 here.
+
 | area | files | lines | inline |
 |---|---|---|---|
 | **(top-level pages)** | 42 | 19,290 | **1,529** |
@@ -139,6 +144,42 @@ Its findings, none of which the inline-style metric could see:
   it.** This is part of what the owner meant by "things are not in line". Fixed
   in shared CSS, so the remaining agents inherit it.
 
+**prachar — DONE, verified on the directory.** `PracharPage.jsx` 1,021 lines /
+108 inline → **141 / 0**; `prachar/` is 9 tab files. The script above reports
+**10** for the directory; **8 are real and all 8 are `style={{ '--c': … }}`** —
+a custom property feeding `.pr__pill` / `.pr__wcard` / `.tag`, the same pattern
+`graha/PipelineTab` and `dristi/` use, so they are not hardcoded values. The
+other **2 are prose inside comments** — the script matches `style={{` textually,
+so a docblock quoting the defect it fixed counts as the defect. Worth knowing
+before this metric is used to judge a file: **it cannot tell a value from a
+token, or code from a comment.** 108 → 8 for the whole module, raw property
+values **0**.
+
+What the metric could not see, and what actually made the module unusable:
+
+- **Five of the eight tabs could not render.** `api.get()` resolves to the axios
+  RESPONSE and every list route answers `{"data":[…]}`, so the array is
+  `r.data.data`. Campaigns, Templates, Automations, Unsubscribes and Events all
+  did `setX(r.data)` then `X.map(…)` on the envelope — a `TypeError`, blank
+  panel. **This is the third module in this run with the identical bug** (dristi
+  had it on both list endpoints); it is a codebase-wide shape problem, not three
+  coincidences.
+- **Ads set state to the axios object itself**, so every spend, impression and
+  conversion figure rendered `0`.
+- **The whole design was missing.** The reference for this module is a month
+  CALENDAR of campaigns, drag-to-reschedule, tinted by channel. The build had a
+  flat list of cards with no date on them. `scheduled_at` and `channel` have been
+  on the table since migration 021 and `PATCH` has always accepted a new date —
+  every part of it was already backed by the API and none of it was built.
+- `POST /sequences` sent three fields the model does not have and omitted
+  `exit_on_reply`, which decides whether a contact who **replies** keeps getting
+  the drip. The list then rendered `s.channel`, a column that does not exist, as
+  "undefined" on every row.
+- The step form offered **SMS**; `add_step` validates against
+  `(email, whatsapp, call_task, manual)` and 400s otherwise.
+- Event edit sliced the **UTC** clock face into a `datetime-local`, so opening an
+  event and pressing Save moved it back 5½ hours.
+
 ## Cross-cutting, and confirmed twice
 
 - **The :5173 dev server runs from `D:\Projects\Kartavya`, not from any
@@ -153,12 +194,28 @@ Its findings, none of which the inline-style metric could see:
 - `useTabPanelMotion` returns `{key, style}` spread as `{...motion}`; React warns
   on `key` in a spread. Identical across graha/ganit/manav/vikray/dristi — **one
   shared fix, not five**, and deliberately left so five agents don't each edit
-  the others' files.
+  the others' files. (Fixed in `PracharPage` only, where it is that file's own
+  line; the other five are untouched.)
+- **Two agents fixed the `.mt__b` glued-scripts bug in the same run, in different
+  selectors, and git merged both.** dristi used `display:inline-flex; gap:7px` on
+  `.mt__b`; prachar used `margin-left:6px` on `.mt__hi`. They do not override
+  each other — **a flex gap and a margin ADD** — so the merged result was 13px
+  where either alone gives 6–7px. Resolved on the prachar merge by keeping the
+  gap and dropping the margin, which also exposed a now-doubled
+  `margin-left:6px` on `.mt__b .mt__n` predating the flex change. Re-measured:
+  7px on both sides. **Two agents fixing one shared bug is not free — check
+  whether a peer already fixed it before adding a second mechanism.**
+- **`r.data` vs `r.data.data` is codebase-wide.** dristi (2 endpoints) and
+  prachar (6) are fixed. **`TaskDrawer.jsx:196` is still live**:
+  `r.data.forEach(…)` on an envelope, throwing `TypeError` as two Unhandled
+  Rejections in `task-flow.test.jsx` — and the suite still reports 587 passed,
+  because an unhandled rejection is not an assertion. A green suite is not
+  evidence here.
 
 ## In flight
 
-Two agents, one per module, briefed to build rather than audit: **prachar,
-vikray**. Each carries split-then-style, `vite build` in the
+One agent remains, briefed to build rather than audit: **vikray**
+(756 lines / 71 inline, unsplit). It carries split-then-style, `vite build` in the
 gate, and its verified reference file — `ScreenPrachar`, `ScreenDristi` and
 `ScreenVetana` are all in `ScreensMore.jsx`; `ScreenVikray` is in `ScreensBiz.jsx`;
 `ScreenGraha` is in `ScreensCore.jsx`. Three briefs this week sent an agent to the
