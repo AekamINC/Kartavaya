@@ -104,12 +104,16 @@ from the leaderboard endpoint, inline edit, confirmed delete.
 
 Both were visible on this page, in files this page was already editing.
 
-- **`.mt__hi` had no left margin.** Every module tab in the product rendered as
-  "Dashboardमुख्य" — one word in two alphabets. `.mt__b .mt__n` beside it
-  already sets 6px for the same reason. Nine pages.
-- **`.dr__lbl-hi` the same, and worse.** `.dr__lbl` tracks at `.15em` and the
-  Devanagari zeroes it, so ~1.4px was the entire gap: "CUSTOMERग्राहक" in every
-  drawer label, the task drawer's eight included.
+- **`.dr__lbl-hi` had no left margin**, and worse: `.dr__lbl` tracks at `.15em`
+  and the Devanagari zeroes it, so ~1.4px was the entire gap. "CUSTOMERग्राहक"
+  in every drawer label, the task drawer's eight included.
+- **`.mt__hi` had the same defect** — every module tab rendered as
+  "Dashboardमुख्य" — and I fixed it with a `margin-left: 6px`. **Another agent
+  in this run found it independently and fixed it better**, with
+  `display: inline-flex; gap: 7px` on `.mt__b`, which spaces the Devanagari
+  *and* the count from one declaration. The two do not override each other — a
+  flex gap and a margin add, and the pair produced 13px. Resolved on the merge
+  in their favour; mine is dropped. Measured after merging: 7px, not 13.
 
 ## Verified against a live render, not read
 
