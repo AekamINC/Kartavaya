@@ -209,6 +209,11 @@ const GROUP_MS = 5 * 60 * 1000;
 
 export function isContinuation(msg, prev) {
   if (!prev || !msg) return false;
+  // A module event is never part of a run. `type='system'` rows carry the
+  // sender_id of whoever triggered them, so without this a task update from
+  // Kartavya would group under the human message that caused it and lose the
+  // header that names the module.
+  if (msg.type === 'system' || prev.type === 'system') return false;
   if (prev.sender_id !== msg.sender_id) return false;
   if (dayKey(prev.created_at) !== dayKey(msg.created_at)) return false;
   const gap = new Date(msg.created_at || 0) - new Date(prev.created_at || 0);

@@ -27,6 +27,13 @@ export const SvIcons = {
   /** Public channel — the # that every chat product uses for a room. */
   hash: <svg width="15" height="15" viewBox="0 0 16 16" {...s}><path d="M6 2L4.5 14M11.5 2L10 14M2.5 5.5h11M2 10.5h11" /></svg>,
   /**
+   * The glyph on a `type='system'` row. `MESSAGING-ATTENDANCE-SPEC.md:20` asks
+   * for "a module glyph"; `ScreensSanvaad.jsx` reaches per-module icons through
+   * `MOD_GLYPH`, which this build has no equivalent of, so one mark stands for
+   * "this came from a module" and the module's own accent and name carry which.
+   */
+  bolt: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><path d="M8.8 1.5L3.5 9h4l-.3 5.5L12.5 7h-4l.3-5.5z" /></svg>,
+  /**
    * WhatsApp. `00-tokens.md` §9 declares `--wa-green` as a genuinely fixed
    * literal — "WhatsApp brand" — and nothing in this module was using it, so
    * the token had no call site at all. The glyph is `ScreensVarta.jsx`'s `SI.wa`

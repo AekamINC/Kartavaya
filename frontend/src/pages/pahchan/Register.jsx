@@ -41,6 +41,46 @@ import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 const PHOTO_W = 50;
 const PHOTO_H = 62;
 
+/**
+ * How long a face may say "still loading" before it is called a failure.
+ *
+ * `lib/api.js` creates the axios instance with no `timeout`, so its default is
+ * 0 — never. Its response interceptor then RETRIES a network error three times
+ * with backoff before rejecting. Between those two facts a request against a
+ * socket that accepts and never answers has no terminal state at all: the slot
+ * sits at 'load' for as long as the tab is open.
+ *
+ * That is the failure this screen already had. Three permanent ellipses read as
+ * "nearly there", not as "these never arrived", and a reviewer clearing a day
+ * confirmed against them — which is the one outcome the register exists to
+ * prevent, because it manufactures a record of a verification that did not
+ * happen. A loading state that cannot become a failed state is indistinguishable
+ * from a slow one, so this one is given a deadline and a word.
+ *
+ * 12s: past the p99 of a signed-URL round trip on a bad connection, well inside
+ * the patience of someone holding J down.
+ */
+export const PHOTO_DEADLINE_MS = 12000;
+
+/** A row's comparison, as one word. Slots are 'load' | 'ok' | 'gone' | 'err'. */
+export const COMPARE = { PENDING: 'pending', READY: 'ready', BROKEN: 'broken' };
+
+/**
+ *   pending — at least one image is still in flight. Nothing can be judged yet.
+ *   ready   — punch AND both references are on screen. The only state in which
+ *             confirming means anything.
+ *   broken  — something resolved to nothing: retention deleted it, the fetch
+ *             failed, the deadline passed. There is a row, but there is no
+ *             comparison, and confirming it would be trust with a checkmark on
+ *             it — the same thing `noref` already suppresses, reached from a
+ *             different direction.
+ */
+function compareStatus(slots) {
+  if (slots.some(s => s.st === 'load')) return COMPARE.PENDING;
+  if (slots.every(s => s.st === 'ok'))  return COMPARE.READY;
+  return COMPARE.BROKEN;
+}
+
 /** Which flags mean "a human needs to look at this". */
 const NEEDS_LOOK = new Set(['geo', 'accuracy', 'noref', 'mock', 'offline', 'late', 'reuse']);
 
@@ -72,6 +112,8 @@ function dateOf(iso) {
  * deleted this three weeks ago", and those must not look alike: a permanent
  * spinner reads as a broken page, and a reviewer who thinks the page is broken
  * stops reviewing.
+ *
+ * And 'load' is NOT one of the terminal states. See PHOTO_DEADLINE_MS.
  */
 function usePhotoUrl(path, enabled = true) {
   const [s, setS] = useState(() => (enabled && path ? { st: 'load' } : { st: 'gone' }));
@@ -79,25 +121,39 @@ function usePhotoUrl(path, enabled = true) {
     let alive = true;
     if (!enabled || !path) { setS({ st: 'gone' }); return undefined; }
     setS({ st: 'load' });
+
+    // The clock starts with the request, and whichever settles first clears the
+    // other — so a slow-but-successful fetch is never overwritten by its own
+    // deadline, and a request that simply never answers still ends somewhere.
+    const deadline = setTimeout(() => { if (alive) setS({ st: 'err' }); }, PHOTO_DEADLINE_MS);
+    const settle = (next) => { if (!alive) return; clearTimeout(deadline); setS(next); };
+
     api.get(path)
-      .then(r => { if (alive) setS({ st: 'ok', url: r.data.url }); })
+      .then(r => settle({ st: 'ok', url: r.data.url }))
       // 404 is the retention case and is not an error: the punch record outlives
       // the photo by law (07 §5/§8), so a missing photo on an old row is expected.
-      .catch(err => { if (alive) setS({ st: err?.response?.status === 404 ? 'gone' : 'err' }); })
-    ;
-    return () => { alive = false; };
+      .catch(err => settle({ st: err?.response?.status === 404 ? 'gone' : 'err' }));
+
+    return () => { alive = false; clearTimeout(deadline); };
   }, [path, enabled]);
   return s;
 }
 
 function PhotoSlot({ state, alt, emptyWord, w, h }) {
+  const failed = state?.st === 'err';
+  const word = failed ? 'failed to load' : state?.st === 'load' ? 'loading' : emptyWord;
   return (
     <div
       className="rv__slot"
+      /* Labelled, not a live region. Three slots per row across a dozen rows is
+         thirty-six nodes; `role="status"` on each would fire thirty-six
+         announcements as the page settles and bury the one sentence that
+         matters. The verdict cell carries the row's state as text. */
+      aria-label={state?.st === 'ok' ? undefined : `${alt} — ${word}`}
       style={{
         width: w, height: h,
         background: state?.st === 'ok' ? 'var(--s-low)' : 'var(--s-container)',
-        border: '1px solid var(--outline-variant)',
+        border: `1px solid ${failed ? 'var(--danger)' : 'var(--outline-variant)'}`,
         borderRadius: 'var(--r-sm)',
         overflow: 'hidden', flexShrink: 0,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -105,15 +161,29 @@ function PhotoSlot({ state, alt, emptyWord, w, h }) {
     >
       {state?.st === 'ok'
         ? <img src={state.url} alt={alt} style={{ objectFit: 'cover', width: '100%', height: '100%' }} />
-        : (
-          <span style={{
-            fontSize: 'var(--t-label-sm)', color: 'var(--on-surface-3)',
-            textAlign: 'center', padding: 2, lineHeight: 1.2,
-          }}
-          >
-            {state?.st === 'load' ? '…' : state?.st === 'err' ? 'failed' : emptyWord}
-          </span>
-        )}
+        : state?.st === 'load'
+          /* `.ix-skeleton`, not `.k-skeleton`: its sweep is a translated overlay
+             rather than an animated `background-position`, and this is the one
+             screen in the app that paints three dozen of them at once. Both stop
+             under reduced motion; only this one is free per frame while running.
+             The SHAPE is the loading signal, so it survives the sweep being off —
+             which an ellipsis, being a glyph that means "nearly there", did not. */
+          ? <span className="ix-skeleton" aria-hidden="true"
+                  style={{ width: '100%', height: '100%', borderRadius: 0 }} />
+          : (
+            <span style={{
+              fontSize: 'var(--t-label-sm)',
+              // The state colour from MOTION-SPEC §6's meaning table. This is the
+              // word that has to stop a reviewer and it is the only signal here
+              // that does not move; it must not read as another grey caption.
+              color: failed ? 'var(--danger)' : 'var(--on-surface-3)',
+              fontWeight: failed ? 600 : 400,
+              textAlign: 'center', padding: 2, lineHeight: 1.2,
+            }}
+            >
+              {failed ? 'failed' : emptyWord}
+            </span>
+          )}
     </div>
   );
 }
@@ -125,7 +195,7 @@ function PhotoSlot({ state, alt, emptyWord, w, h }) {
  * Keys, not URLs. A signed URL is fetched per image actually rendered, so
  * scrolling past a row never mints a link to that person's face.
  */
-function Triple({ hasPhoto, referenceIds, punchId, name, w = PHOTO_W, h = PHOTO_H }) {
+function Triple({ hasPhoto, referenceIds, punchId, name, w = PHOTO_W, h = PHOTO_H, onStatus }) {
   const ids = (referenceIds || []).slice(0, 2);
   // Two APPROVED references are what makes a row verifiable. One is not half a
   // comparison — 07 §0 is explicit that the pair exists because a single frontal
@@ -135,6 +205,12 @@ function Triple({ hasPhoto, referenceIds, punchId, name, w = PHOTO_W, h = PHOTO_
   const punch = usePhotoUrl(`/v1/pahchan/punches/${punchId}/photo`, !!punchId && !!hasPhoto);
   const ref1 = usePhotoUrl(hasRefs ? `/v1/pahchan/enrollment/photos/${ids[0]}/url` : null, hasRefs);
   const ref2 = usePhotoUrl(hasRefs ? `/v1/pahchan/enrollment/photos/${ids[1]}/url` : null, hasRefs);
+
+  // Reported upward because the row's approve path depends on it: a comparison
+  // nobody can see is not a comparison. Optional — the detail renders a second
+  // Triple for the same punch and has no business speaking for the row.
+  const status = compareStatus([punch, ref1, ref2]);
+  useEffect(() => { if (onStatus) onStatus(punchId, status); }, [onStatus, punchId, status]);
 
   return (
     <div className="rv__trip" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -335,6 +411,21 @@ export default function Register() {
   // stale by every handler in a burst.
   const curRef = useRef(0);
 
+  // Which rows have a comparison the reviewer can actually see, reported up by
+  // each row's Triple. A ref for the same reason the cursor is one, plus a
+  // second: a photo resolving must not rebuild `record`, or the keydown listener
+  // is torn down and rebound three dozen times while the page loads — and a
+  // keypress landing in that window has no handler at all.
+  const compareRef = useRef({});
+  // The mirror exists only to re-render the verdict cell when a row becomes
+  // judgable. Nothing reads it to make a decision.
+  const [compare, setCompare] = useState({});
+  const onCompareStatus = useCallback((id, st) => {
+    if (compareRef.current[id] === st) return;
+    compareRef.current = { ...compareRef.current, [id]: st };
+    setCompare(compareRef.current);
+  }, []);
+
   // Which KIND of failure, not just that there was one. A reviewer in a basement
   // and a reviewer hitting a 500 need different words and different actions, and
   // `errorKind` already draws that line — it treats a rejection with no response
@@ -399,6 +490,12 @@ export default function Register() {
     const row = visible[curRef.current];
     if (!row) return;
 
+    // ── Confirming requires something to have been compared ──────────────────
+    //
+    // Flagging never does, and neither gate below touches it. A reviewer who
+    // cannot see the faces still has an opinion worth recording, and refusing F
+    // as well would strand the queue on exactly the rows that most need a human.
+
     // No reference pair means there is nothing to compare against, so confirming
     // is not verification — §3: "it is trust with a checkmark on it". The
     // affordance is suppressed rather than silently doing nothing, so the
@@ -410,6 +507,35 @@ export default function Register() {
         message: `${row.employee_name} has no approved reference photos. Send an enrollment request instead.`,
       });
       return;
+    }
+
+    // The photographs themselves. `noref` above is the SERVER's word for an
+    // employee with no approved pair; this is the client's word for a pair that
+    // exists and is not on screen — a fetch still in flight, a retention
+    // deletion, a signing endpoint that stopped answering. The reviewer sees the
+    // same three rectangles either way, and ↵ against three rectangles is how a
+    // day gets cleared without anyone looking at a face. It is the failure this
+    // screen was actually observed committing.
+    if (val === 'ok') {
+      const cmp = compareRef.current[row.id];
+      if (cmp !== COMPARE.READY) {
+        pushToast(cmp === COMPARE.BROKEN
+          ? {
+            type: 'warning',
+            title: 'The photos did not load — nothing to compare',
+            message: `${row.employee_name}'s comparison is incomplete, so confirming would record a check that did not happen. Reload, or flag the row.`,
+          }
+          : {
+            type: 'info',
+            title: 'Still loading the photos',
+            message: `Wait for ${row.employee_name}'s three photos before confirming.`,
+          });
+        // Deliberately no seek(): the cursor stays put so the next ↵ lands here
+        // once the faces arrive. Advancing would walk a burst straight past the
+        // people whose photos are slowest — the same silent skip the cursor ref
+        // exists to prevent.
+        return;
+      }
     }
 
     setVerdict(v => ({ ...v, [row.id]: val }));
@@ -644,6 +770,7 @@ export default function Register() {
                       hasPhoto={p.has_photo}
                       referenceIds={p.reference_ids}
                       name={p.employee_name}
+                      onStatus={onCompareStatus}
                     />
                   </Td>
 
@@ -667,7 +794,30 @@ export default function Register() {
 
                   <Td className="rv__v">
                     {mine
-                      ? <StatusChip status={mine === 'ok' ? 'done' : 'rejected'} />
+                      /* `key` on the flash wrapper so the one-shot RESTARTS when
+                         the verdict changes, rather than being a class already on
+                         the node that never fires again. The flash is the polish;
+                         the chip appearing where a dash was is the signal, and
+                         that difference is static — `--dur-slow` collapses to
+                         ~0.5ms under `prefers-reduced-motion`, so the animation
+                         goes, and it must not take the confirmation with it. */
+                      ? (
+                        <span key={mine} className="ix-flash"
+                              style={{ display: 'inline-block', borderRadius: 'var(--r-pill)' }}>
+                          {/* The tone comes from `status`; the WORD is named,
+                              because the affordance and its result have to agree.
+                              The help line above this table says "↵ confirm · F
+                              flag", and the bare STATUS_MAP words are "Done" and
+                              "Rejected" — so pressing F on a punch that needs a
+                              second look reported it as REJECTED, which is a
+                              different decision about a person's attendance than
+                              the one the reviewer made. */}
+                          <StatusChip
+                            status={mine === 'ok' ? 'done' : 'rejected'}
+                            label={mine === 'ok' ? 'Confirmed' : 'Flagged'}
+                          />
+                        </span>
+                      )
                       : noRef
                         // §3: no reference pair suppresses the confirm affordance
                         // and offers enrollment instead. Confirming here would be
@@ -680,7 +830,21 @@ export default function Register() {
                             }); }}>
                             Send enrollment request
                           </button>
-                        : <span style={{ fontSize: 11, color: 'var(--on-surface-3)' }}>—</span>}
+                        /* Not an em-dash. This is the cell a reviewer looks at to
+                           know whether the row is theirs to judge, and ↵ now
+                           refuses on two of these three states — so it names the
+                           one it is in rather than letting the refusal arrive as
+                           an unexplained toast. */
+                        : (
+                          <span style={{
+                            fontSize: 11,
+                            color: compare[p.id] === COMPARE.BROKEN ? 'var(--danger)' : 'var(--on-surface-3)',
+                          }}>
+                            {compare[p.id] === COMPARE.BROKEN ? 'Cannot compare'
+                              : compare[p.id] === COMPARE.READY ? '—'
+                                : 'Loading photos'}
+                          </span>
+                        )}
                   </Td>
                 </tr>
 

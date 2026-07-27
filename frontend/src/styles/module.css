@@ -318,7 +318,17 @@
 
 /* The cursor row. Outlined rather than filled: a fill would sit behind the three
    photographs the reviewer is comparing and change how the faces read, which is
-   the one thing this row must not do. */
+   the one thing this row must not do.
+
+   The transition is the reference's, measured off the running harness rather
+   than read: `.rv__r` there is `transition: background var(--dur-fast)
+   var(--ease-standard)`, and the build had none — the tint teleported. On a
+   surface driven by holding J down, that short trail is what tells a reviewer
+   which way the cursor went and how far; an instant swap at speed reads as the
+   whole table flickering. `--dur-fast` collapses to 0.14ms under
+   `prefers-reduced-motion`, which is the correct behaviour and costs nothing,
+   because the outline and the tint are both static differences that remain. */
+.rv__r { transition: background var(--dur-fast) var(--ease-standard); }
 .rv__r.is-cursor { background: color-mix(in srgb, var(--primary) 5%, transparent); }
 
 /* Mono, and not as decoration. Measured in the rendered reference, both of

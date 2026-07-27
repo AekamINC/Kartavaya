@@ -3,8 +3,10 @@
  * thread link.
  */
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Avatar, ConfirmDialog, Menu } from '../../components/ui';
 import { formatTime } from '../../lib/timeFormat';
+import { moduleMeta } from '../../lib/moduleColors';
 import { relTime } from '../../lib/utils';
 import { groupReactions, splitMentions } from './messageUtils';
 import { SvIcons } from './icons';
@@ -51,6 +53,61 @@ function Tomb({ msg, who }) {
         {SvIcons.trash}
         Message deleted by {who} · <time dateTime={msg.created_at}>{formatTime(msg.created_at)}</time>
       </span>
+    </article>
+  );
+}
+
+/**
+ * A module event. `MESSAGING-ATTENDANCE-SPEC.md:20` is unusually direct about
+ * this one: "`type='system'` already exists — module bot messages (task updates
+ * from Kartavya, deals from Graha, invoices from Ganit) are a **message type**,
+ * not a new mechanism. Render them with no avatar, a module glyph, and a muted
+ * tonal background."
+ *
+ * `samvada_messages.type` has had `'system'` in its CHECK constraint since 058
+ * and `list_messages` selects `m.*`, so the value has always arrived at the
+ * client — which rendered it as an ordinary message with the sender's face and
+ * name on it. A task update from Kartavya therefore looked like a human being
+ * had typed it.
+ *
+ * The module id and the optional deep link come from `metadata`, the JSONB
+ * column 058 provides and nothing writes yet:
+ *
+ *   { "module": "ganit", "action_label": "Open in Ganit", "action_href": "/ganit/…" }
+ *
+ * Everything is optional and the row degrades to a plain system note without it,
+ * because the first producer of these rows does not exist yet and this must not
+ * be the thing that breaks when it appears.
+ */
+function SystemMsg({ msg }) {
+  const meta = (msg.metadata && typeof msg.metadata === 'object') ? msg.metadata : {};
+  const mod = moduleMeta(meta.module);
+  const when = formatTime(msg.created_at);
+
+  return (
+    <article className="msg msg--sys">
+      <span
+        className="msg__glyph"
+        aria-hidden="true"
+        style={mod ? { '--glyph': mod.color } : undefined}
+      >
+        {SvIcons.bolt}
+      </span>
+      <div className="msg__c">
+        <div className="msg__hd">
+          <span className="msg__who">
+            {mod ? <>{mod.en} <span className="sv__hi" lang="hi">{mod.hi}</span></> : 'System'}
+          </span>
+          <span className="msg__systag">system</span>
+          <time className="msg__when" dateTime={msg.created_at}>{when}</time>
+        </div>
+        <div className="msg__sysb">
+          {msg.content}
+          {meta.action_label && meta.action_href && (
+            <Link className="msg__sysa" to={meta.action_href}>{meta.action_label} →</Link>
+          )}
+        </div>
+      </div>
     </article>
   );
 }
@@ -148,6 +205,9 @@ export default function Message({
   ].filter(Boolean) : [];
 
   if (msg.is_deleted) return <Tomb msg={msg} who={who} />;
+  // Before the tray, the reactions and the avatar are read: none of them apply
+  // to a module event, and a system row has no author to act on.
+  if (msg.type === 'system') return <SystemMsg msg={msg} />;
 
   // `__pending` is the optimistic row, `__fresh` a message that arrived while
   // the reader was watching. Both are motion-only flags set in `messageUtils`;

@@ -11,7 +11,9 @@ from pydantic import BaseModel
 
 from auth_router import require_user
 from db import get_pool
+from middleware.module_levels import held_level
 from middleware.org_resolver import get_org_id
+from middleware.role_tiers import level_satisfies
 from middleware.subscription import require_module
 
 log = logging.getLogger(__name__)
@@ -25,6 +27,35 @@ router = APIRouter(prefix="/api/v1/messaging", tags=["sanvaad-messaging"])
 # "Module 'samvada' is not active" to everyone, org_owner included. The tables
 # below stay `samvada_*`; those are table names, not the module code.
 _gate = require_module("sanvaad")
+
+MODULE = "sanvaad"
+
+
+async def _require_editor(pool, user_id: str, org_id: str) -> str:
+    """`MESSAGING-ATTENDANCE-SPEC.md:73` — "viewer reads channels, editor sends
+    messages, admin manages channels".
+
+    `_gate` above answers only REACH: does a grant row exist and is the module
+    subscribed. It has never answered DEPTH, so a `viewer` grant — which is what
+    `DEFAULT_GRANT_LEVEL` makes every new grant — could post, edit, delete and
+    react exactly like an editor. The whole viewer level was decorative on this
+    module.
+
+    `ScreensSanvaad.jsx:286-294` is the design's own statement of the rule: a
+    viewer gets a locked composer reading "you can read every channel you are a
+    member of, but not send". That copy only means something if the server
+    refuses.
+
+    Returns the held level so callers can put it in the error.
+    """
+    held = await held_level(pool, user_id, org_id, MODULE)
+    if not level_satisfies(held, "editor", MODULE):
+        raise HTTPException(
+            403,
+            "Your Sanvaad access is Viewer: you can read every channel you are a "
+            "member of, but not send. Ask an org admin for Editor.",
+        )
+    return held
 
 
 async def _assert_channel_access(pool, channel_id, org_id: str, user_id: str) -> None:
@@ -96,12 +127,94 @@ class MessageUpdate(BaseModel):
 
 # ── Channels ─────────────────────────────────────────────────
 
-@router.get("/channels")
-async def list_channels(
+@router.get("/me")
+async def my_access(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """The caller's own level on Sanvaad, so the composer can lock itself.
+
+    Nothing in `frontend/src` could previously learn this. `GET /v1/me` returns
+    `module_grants[]` — module CODES only, no level — which answers reach and not
+    depth, so the client could tell whether Messaging belongs in the sidebar and
+    not whether this user may type in it. Without this the locked composer in
+    `ScreensSanvaad.jsx:286` is unbuildable and a viewer would discover the rule
+    only by writing a message and watching it 403.
+
+    Deliberately narrow: this module's level and the two booleans derived from
+    it, not a general permissions feed.
+    """
+    pool = await get_pool()
+    level = await held_level(pool, user["user_id"], org_id, MODULE)
+    return {
+        "module": MODULE,
+        "level": level,
+        "can_post": level_satisfies(level, "editor", MODULE),
+        "can_manage": level_satisfies(level, "admin", MODULE),
+    }
+
+
+@router.get("/directory")
+async def directory(
+    q: Optional[str] = None,
+    limit: int = Query(50, le=200),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """The people in this org who can be added to a channel or opened as a DM.
+
+    `add_member` and `find_or_create_dm` both take a `user_id` the caller has to
+    have got from somewhere, and there was nowhere: `GET /v1/org/members` is the
+    only user directory in the API and it is gated on
+    `require_org_role("org_admin", "org_owner")`. An ordinary member therefore
+    could not name anybody, which is the proximate reason both endpoints have
+    had zero callers since 058 — and why a private channel can never reach a
+    second member.
+
+    Scoped to the same rows `_assert_same_org` accepts, so this can only name
+    somebody the two write endpoints would go on to allow. Identity only —
+    no email, because a member picker does not need one and this is reachable
+    by every module holder rather than by admins.
+    """
+    pool = await get_pool()
+    needle = f"%{(q or '').strip()}%"
+    rows = await pool.fetch("""
+        SELECT DISTINCT u.user_id, u.full_name, u.avatar_url
+        FROM staging.user_roles ur
+        JOIN staging.users u ON u.user_id = ur.user_id
+        WHERE ur.org_id = $1::uuid
+          AND ur.role_code IN ('org_owner','org_admin','org_member')
+          AND ur.user_id <> $2
+          AND ($3 = '%%' OR u.full_name ILIKE $3)
+        ORDER BY u.full_name
+        LIMIT $4
+    """, org_id, user["user_id"], needle, limit)
+    return [dict(r) for r in rows]
+
+
+@router.get("/channels")
+async def list_channels(
+    archived: bool = False,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """`archived=true` returns the archived channels INSTEAD of the live ones.
+
+    `is_archived` has been a column since 058 and this query hard-filtered
+    `is_archived = FALSE`, so an archived channel left the list and became
+    unreachable — no history, no search, no unarchive. `MESSAGING-ATTENDANCE-SPEC.md:22`
+    asks for the opposite: "archived channels must be visually distinct", which
+    presumes they are still listed. `ScreensSanvaad.jsx:198` renders them as
+    their own `Archived · संग्रहित` section and `:260` keeps their history
+    readable behind a banner.
+
+    A separate call rather than a merged list: the archived set is cold, it is
+    only ever wanted behind an explicit "All" toggle, and paying for it on every
+    poll of the live rail would be waste.
+    """
     pool = await get_pool()
     rows = await pool.fetch("""
         SELECT c.*, (
@@ -120,12 +233,12 @@ async def list_channels(
                    WHERE cm4.channel_id = c.id AND cm4.user_id = $2), '1970-01-01'::timestamptz)
         ) AS unread_count
         FROM staging.samvada_channels c
-        WHERE c.org_id = $1::uuid AND c.is_archived = FALSE
+        WHERE c.org_id = $1::uuid AND c.is_archived = $3
           AND (c.type = 'public' OR EXISTS (
               SELECT 1 FROM staging.samvada_channel_members cm
               WHERE cm.channel_id = c.id AND cm.user_id = $2))
         ORDER BY c.updated_at DESC
-    """, org_id, user["user_id"])
+    """, org_id, user["user_id"], archived)
     return [dict(r) for r in rows]
 
 
@@ -139,6 +252,8 @@ async def create_channel(
     if body.type not in ("public", "private"):
         raise HTTPException(400, "Use /dm endpoint for DM channels")
     pool = await get_pool()
+    # "Editor adds sending and channel creation" — ScreensSanvaad.jsx:291.
+    await _require_editor(pool, user["user_id"], org_id)
     async with pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow("""
@@ -168,6 +283,7 @@ async def update_channel(
     )
     if not ch:
         raise HTTPException(404, "Channel not found")
+    await _require_editor(pool, user["user_id"], org_id)
 
     mem = await pool.fetchrow(
         "SELECT role FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
@@ -204,6 +320,7 @@ async def find_or_create_dm(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    await _require_editor(pool, user["user_id"], org_id)
     await _assert_same_org(pool, target_user_id, org_id)
     existing = await pool.fetchrow("""
         SELECT c.* FROM staging.samvada_channels c
@@ -239,12 +356,13 @@ async def list_members(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    ch = await pool.fetchrow(
-        "SELECT 1 FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
-        channel_id, org_id,
-    )
-    if not ch:
-        raise HTTPException(404, "Channel not found")
+    # Was `SELECT 1 ... WHERE org_id = $2` only, which is a check that the
+    # channel is in the caller's org and NOT that the caller may see it. Any org
+    # member could therefore enumerate the members of any private channel — and
+    # of any DM, which is a two-person list and so tells them who is talking to
+    # whom. `_assert_channel_access` is the rule the message endpoints already
+    # use; this is the third caller it was written for.
+    await _assert_channel_access(pool, channel_id, org_id, user["user_id"])
     rows = await pool.fetch("""
         SELECT cm.*, u.full_name, u.email, u.avatar_url
         FROM staging.samvada_channel_members cm
@@ -271,6 +389,7 @@ async def add_member(
         raise HTTPException(404, "Channel not found")
     if ch["type"] == "dm":
         raise HTTPException(400, "Cannot add members to DM channels")
+    await _require_editor(pool, user["user_id"], org_id)
 
     mem = await pool.fetchrow(
         "SELECT role FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
@@ -411,16 +530,29 @@ async def send_message(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+
+    # An archived channel is readable and closed. `ScreensSanvaad.jsx:260` and
+    # `:290` are unambiguous — "History stays searchable; nobody can post" and
+    # "nobody can post, including admins" — and now that `list_channels` can
+    # return archived rows a client can reach one, so the refusal has to be
+    # here rather than implied by the row being absent.
+    chan = await pool.fetchrow(
+        "SELECT type, is_archived FROM staging.samvada_channels "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        channel_id, org_id,
+    )
+    if not chan:
+        raise HTTPException(404, "Channel not found")
+    if chan["is_archived"]:
+        raise HTTPException(403, "This channel is archived — nobody can post, including admins.")
+    await _require_editor(pool, user["user_id"], org_id)
+
     mem = await pool.fetchrow(
         "SELECT 1 FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
         channel_id, user["user_id"],
     )
     if not mem:
-        ch = await pool.fetchrow(
-            "SELECT type FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
-            channel_id, org_id,
-        )
-        if not ch or ch["type"] != "public":
+        if chan["type"] != "public":
             raise HTTPException(403, "Not a member of this channel")
         await pool.execute("""
             INSERT INTO staging.samvada_channel_members (channel_id, user_id)
@@ -460,6 +592,7 @@ async def edit_message(
         raise HTTPException(404, "Message not found")
     if msg["sender_id"] != user["user_id"]:
         raise HTTPException(403, "Can only edit your own messages")
+    await _require_editor(pool, user["user_id"], org_id)
 
     row = await pool.fetchrow("""
         UPDATE staging.samvada_messages
@@ -485,6 +618,7 @@ async def delete_message(
         raise HTTPException(404, "Message not found")
     if msg["sender_id"] != user["user_id"]:
         raise HTTPException(403, "Can only delete your own messages")
+    await _require_editor(pool, user["user_id"], org_id)
 
     await pool.execute("""
         UPDATE staging.samvada_messages SET is_deleted=TRUE, updated_at=NOW()
@@ -538,6 +672,17 @@ async def add_reaction(
     if not msg:
         raise HTTPException(404, "Message not found")
     await _assert_channel_access(pool, msg["channel_id"], org_id, user["user_id"])
+    # A reaction is a write into the channel, so it is an editor act — the
+    # reference disables the whole quick-reaction tray for a viewer
+    # (`ScreensSanvaad.jsx:106,153`), not just the composer.
+    #
+    # Ordered AFTER the org-scoped 404 on purpose. Putting the level check first
+    # would make `test_add_reaction_404_for_other_org_message` pass on a 403 that
+    # fires before the org filter is ever consulted — the test would then hold
+    # even if cross-tenant scoping were deleted. The refusal a viewer gets is the
+    # same either way; what changes is whether the security test still proves
+    # anything. Same ordering in edit, delete and send below.
+    await _require_editor(pool, user["user_id"], org_id)
     await pool.execute("""
         INSERT INTO staging.samvada_message_reactions (message_id, user_id, emoji)
         VALUES ($1::uuid, $2, $3) ON CONFLICT DO NOTHING
@@ -554,6 +699,10 @@ async def remove_reaction(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # Deliberately NOT gated on editor, unlike `add_reaction`. This deletes only
+    # the caller's own row; gating it would leave somebody demoted to viewer
+    # permanently unable to withdraw a reaction they had already left. Taking
+    # something back is not an act the viewer level exists to prevent.
     msg = await pool.fetchrow(
         "SELECT 1 FROM staging.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
