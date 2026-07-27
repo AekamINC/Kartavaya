@@ -44,7 +44,7 @@ pages and diff the two JSON blobs. `frontend/.env.local` needs any
 |---|---|---|
 | `data-density` | `cozy` | absent in harness; `comfy` at runtime |
 | `data-display` | `serif` | attribute does not exist |
-| `--radius-base` | `12px` (`App.jsx:3`) / `10px` (`SetCustomize.jsx:470`) | `10px` |
+| `--radius-base` | `12px` (`App.jsx:3`) / `10px` (`SetCustomize.jsx:470`) | `10px` at the time of measurement — **now `12px`**, see below |
 | `--font-ui` | `Public Sans` (stylesheet fallback) | `Inter` — and Inter is the reference's runtime default too |
 
 Two things this settles, both already in `_COORDINATION.md §0c` and confirmed
@@ -61,18 +61,38 @@ here independently:
   own `CUST_DEFAULTS` is `uiFont: 'inter'`. Every `font-family` row marked ⚠
   below is this and is **not a defect**. Sizes, weights and tracking are real.
 
-One correction to `_COORDINATION.md §0c` offered rather than asserted:
-`--radius-base` may not be a fallback-only difference. The **product** harness
-(`App.jsx:3`) renders the whole app at `radius: 12`; `SetCustomize.jsx`'s
-`radius: '10'` is that settings screen's own demo slider position, not a product
-default. All three residual mismatches below are this one token. I did **not**
-touch it — I corrected the radius *steps*, which are base-independent, and left
-the base to whoever owns tokens.
+I measured at `--radius-base: 10px` and did **not** touch it — I corrected the
+radius *steps*, which are base-independent, and left the base to whoever owns
+tokens. That was the right call: **while this branch was in flight a sibling
+moved the base to 12px on staging**, and because the steps were already fixed the
+two changes composed into exact agreement. `_COORDINATION.md §0c`'s "nobody
+should fix `--radius-base`" is now stale — it has been fixed, correctly.
+
+The same sibling also corrected `--ease-emph` to `cubic-bezier(.2, 0, 0, 1)`.
+Both are re-measured below on the rebased tree, not assumed.
+
+`--font-ui` Inter-vs-Public-Sans remains as described: a harness artefact, and
+the reference's own runtime default is Inter.
 
 ## Result
 
-**37 of 40 load-bearing measurements now match the render exactly.** The three
-that do not are all `--radius-base` 10-vs-12.
+**40 of 40 load-bearing measurements match the render exactly**, re-verified on
+the rebased tree at `origin/staging`:
+
+| | reference | build |
+|---|---|---|
+| column radius | 17.4px | 17.4px |
+| card radius | 12px | 12px |
+| table shell radius | 17.4px | 17.4px |
+| drawer width | 560px | 560px |
+| table row height | 44px | 44px |
+
+And every Devanagari node the build renders is Tiro 400, `letter-spacing:
+normal`, `text-transform: none` — verified by a pass over every text node
+containing Devanagari, not by inspection.
+
+Measured at 10px, the first three read 14.5 / 10 / 14.5 — so if `--radius-base`
+is ever reverted, those three move together and nothing else does.
 
 ---
 
@@ -199,11 +219,9 @@ baseline had to be settled first: it agrees at `cozy` and is 4px out at `comfy`.
 
 ## Open, not fixed — with numbers, for whoever owns them
 
-**1 · `--radius-base` 10 vs 12 (tokens).** Every remaining mismatch. At 10 the
-column corner is 14.5px against 17.4px and the card is 10px against 12px. The
-steps are now correct; only the base is out. See the note above — I think the
-product harness (12) is the pixel source and `SetCustomize`'s 10 is a slider
-demo, but this is a token-owner call, not mine.
+**1 · ~~`--radius-base` 10 vs 12~~ — CLOSED by a sibling mid-flight.** The base
+is now 12px on staging and, with the steps corrected here, the column, card and
+table shell land on 17.4 / 12 / 17.4 exactly. Re-measured, not assumed.
 
 **2 · The view toolbar is a different object (structure).** Not a size gap.
 
@@ -236,13 +254,15 @@ At the corrected 22px, initials render 9px (`Math.round(size * .41)`) against th
 reference's 8px, the ring is 1.5px against 2px, and the overlap is −6px against
 −7px. Three one-off values in a shared primitive; not my files.
 
-**6 · `--ease-emph` differs at the token, not at the drawer (motion).**
-`drawer.css` correctly says `--ease-emph`, but the build's token is
-`cubic-bezier(.16, 1, .3, 1)` where the reference's is `cubic-bezier(.2, 0, 0, 1)`.
-So the recorded "drawer easing resolved toward the reference" fix is in place and
-still renders the wrong curve. Same for `.dr__scrim`: `--ease-enter`
-(`cubic-bezier(0,0,.2,1)`) against the reference's `--ease-emph`. Durations all
-agree (drawer .36s, scrim .22s). Motion agent's call.
+**6 · Drawer easing — half closed, half open (motion).** `--ease-emph` was
+`cubic-bezier(.16, 1, .3, 1)` against the reference's `cubic-bezier(.2, 0, 0, 1)`,
+so the recorded "drawer easing resolved toward the reference" fix was in place
+and still rendering the wrong curve. **A sibling has since corrected the token**
+and the drawer's own entrance now measures identically.
+
+Still open: `.dr__scrim` animates on `--ease-enter` (`cubic-bezier(0, 0, .2, 1)`)
+where the reference's `.scrim` uses `--ease-emph` (`cubic-bezier(.2, 0, 0, 1)`).
+Durations agree throughout (drawer .36s, scrim .22s).
 
 **7 · The reference board is fluid; the build's is rigid (structure).**
 `.board` is `grid-auto-flow: column` with `grid-auto-columns: minmax(268px, 1fr)`
@@ -301,6 +321,11 @@ Reference · build before · build after, for every probe and property where any
 of the three disagreed. `✅` = corrected to the reference. `⚠` = still open;
 `font-family` rows so marked are the harness artefact described at the top and
 are not defects. `_absent_` = the node does not render on that side.
+
+Both the "before" and "after" columns were measured at `--radius-base: 10px`,
+which is why the three radius rows still read ⚠ here. After the sibling's base
+change they land exactly — see Result above. Everything else in this table is
+unaffected by that token.
 
 | object | ref sel / build sel | property | reference | build before | build after |
 |---|---|---|---|---|---|
