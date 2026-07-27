@@ -17,7 +17,7 @@ import Refresher from '../components/Refresher';
 import { tasksApi } from '../api/tasks';
 import { projectsApi } from '../api/projects';
 import { PRIORITY_COLORS, projectColor, AVATAR_COLORS, BRAND_GRADIENT_2, withAlpha } from '../theme/tokens';
-import { FAMILY } from '../theme/fonts';
+import { FAMILY, hindi } from '../theme/fonts';
 import BiLabel from '../theme/BiLabel';
 import type { Task, ProjectColumn, TeamMember, Project } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
@@ -633,7 +633,10 @@ const ps = StyleSheet.create({
   sheet:      { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 28, paddingHorizontal: 20, shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.18, shadowRadius: 20, elevation: 20 },
   handle:     { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 4 },
   title:      { fontSize: 17, fontWeight: '700', textAlign: 'center', marginTop: 12 },
-  sub:        { fontSize: 12, textAlign: 'center', marginBottom: 16 },
+  // `परियोजना चुनें`. Named the Indic face explicitly: with no fontFamily the
+  // platform picks its own Devanagari fallback, so this line rendered in a
+  // different typeface from every other Hindi label in the app.
+  sub:        { fontSize: 12, textAlign: 'center', marginBottom: 16, ...hindi() },
   row:        { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderRadius: 8, paddingLeft: 8 },
   dot:        { width: 12, height: 12, borderRadius: 4, flexShrink: 0 },
   rowName:    { fontSize: 15, fontWeight: '600' },

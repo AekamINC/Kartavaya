@@ -10,6 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../theme/ThemeProvider';
+import { hindi } from '../../theme/fonts';
 import { pahchanApi, enrollmentApi, type ReferencePhoto } from '../../api/pahchan';
 
 /**
@@ -241,7 +242,10 @@ const s = StyleSheet.create({
   head: { alignItems: 'center', gap: 3 },
   step: { fontSize: 11.5, fontWeight: '700', letterSpacing: 1.2, color: 'rgba(255,255,255,0.75)', textTransform: 'uppercase' },
   headEn: { fontSize: 20, fontWeight: '700', color: '#FFFFFF', textAlign: 'center' },
-  headHi: { fontSize: 14, color: 'rgba(255,255,255,0.85)' },
+  // `सीधे देखें` / `थोड़ा बगल में`. Without a family the platform substitutes its
+  // own Devanagari face, so the instruction the employee is reading renders in a
+  // different typeface from the rest of the app. No weight — Tiro has only 400.
+  headHi: { fontSize: 14, color: 'rgba(255,255,255,0.85)', ...hindi() },
   foot: { alignItems: 'center', gap: 14 },
   guide: {
     fontSize: 13, lineHeight: 19, color: '#FFFFFF', textAlign: 'center',

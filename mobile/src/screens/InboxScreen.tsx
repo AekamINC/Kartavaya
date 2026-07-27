@@ -11,6 +11,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { format, isToday, isYesterday } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
 import Refresher from '../components/Refresher';
+import ScreenState, { resolveScreenState } from '../components/ScreenState';
+import { useOnline } from '../hooks/useOnline';
 import { notificationsApi } from '../api/notifications';
 import { avatarColor, userInitials } from '../theme/tokens';
 import { FAMILY } from '../theme/fonts';
@@ -80,11 +82,17 @@ export default function InboxScreen() {
   const qc      = useQueryClient();
   const [filter, setFilter] = useState<Filter>('all');
 
-  const { data: notifications = [], isLoading, refetch, isFetching } = useQuery<Notification[]>({
+  const online = useOnline();
+
+  const query = useQuery<Notification[]>({
     queryKey: ['notifications'],
     queryFn:  () => notificationsApi.list(),
     staleTime: 30_000,
   });
+  const { isLoading, refetch, isFetching } = query;
+  // Not a destructuring default: `= []` made a failed fetch indistinguishable
+  // from an empty inbox, so a server error rendered "You're all caught up!".
+  const notifications = query.data ?? [];
 
   const { mutate: markRead } = useMutation({
     mutationFn: (id: string) => notificationsApi.markRead([id]),
@@ -114,6 +122,15 @@ export default function InboxScreen() {
   }, [filtered]);
 
   const unreadCount = notifications.filter((n: Notification) => !n.read_at).length;
+
+  const status = resolveScreenState({
+    isLoading,
+    isError: query.isError,
+    error:   query.error,
+    online,
+    hasData: query.data !== undefined,
+    isEmpty: query.data !== undefined && groups.length === 0,
+  });
 
   return (
     <View style={[s.root, { backgroundColor: t.bg }]}>
@@ -190,20 +207,26 @@ export default function InboxScreen() {
               })}
             </ScrollView>
 
-            {isLoading && (
-              <View style={{ padding: 40, alignItems: 'center' }}>
-                <ActivityIndicator color={t.primary} />
-              </View>
-            )}
           </View>
         }
         ListEmptyComponent={
-          !isLoading ? (
+          status === 'ready' ? null : status === 'empty' ? (
             <View style={s.empty}>
               <Text style={[s.emptyTitle, { color: t.ink }]}>No notifications</Text>
               <Text style={[s.emptyBody, { color: t.ink3 }]}>You're all caught up!</Text>
             </View>
-          ) : null
+          ) : (
+            <ScreenState
+              status={status}
+              onRetry={() => refetch()}
+              {...(status === 'error'
+                ? {
+                    title: "Couldn't load your inbox",
+                    body:  'The server didn’t answer, so this is not an empty inbox — there may be notifications waiting.',
+                  }
+                : {})}
+            />
+          )
         }
         renderItem={({ item: group }) => (
           <View>

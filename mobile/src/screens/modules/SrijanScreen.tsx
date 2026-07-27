@@ -136,5 +136,11 @@ const s = StyleSheet.create({
     borderWidth: 1, borderRadius: 10, padding: 11, marginTop: 14,
   },
   scopeText:   { flex: 1, fontSize: 11.5, lineHeight: 16.5 },
-  scopeKicker: { fontWeight: '700', ...hindi() },
+  // No `fontWeight`. Tiro Devanagari Hindi ships one weight (400), so a '700'
+  // here is not a bolder Tiro — Android synthesises a smeared fake bold and iOS
+  // falls back to the system Devanagari face, putting `सृजन` in a typeface
+  // nobody chose next to Latin that renders correctly. `hindi()` deliberately
+  // returns no weight; spreading it after a weight did not remove one.
+  // Emphasis on Devanagari is carried by colour and size, as it is on the web.
+  scopeKicker: { ...hindi() },
 });
