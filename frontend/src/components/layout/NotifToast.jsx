@@ -1,31 +1,90 @@
-﻿import React, { useEffect, useRef, useState } from 'react';
+﻿/**
+ * NotifToast.jsx — the shell's toast layer.
+ *
+ * ── This file used to be completely deaf to `prefers-reduced-motion`.
+ *
+ * Measured, both media states, same browser: card transition `0.3s, 0.3s` with
+ * a `0.05s` delay, permission prompt `0.35s`, progress bar `6s`, unmount at
+ * 360ms — IDENTICAL numbers under an emulated OS reduce. Not "close to": the
+ * same values to the digit.
+ *
+ * The cause is structural rather than an oversight. Every duration here was an
+ * inline literal in a `style` object, and **no media query can reach an inline
+ * style**. `kartavaya-design.css §5`'s `@media (prefers-reduced-motion: reduce)
+ * { --ix: .001 }` collapses every `var(--dur-*)` in the application, and this
+ * file referenced none of them, so a user who had asked their operating system
+ * for less motion still got a 300ms slide in, a 300ms slide out and a
+ * six-second animated bar.
+ *
+ * The fix is to reference the tokens rather than restate their values. An
+ * inline style CAN resolve a custom property — `transition: 'opacity
+ * var(--dur-base) var(--ease-enter)'` works exactly like the stylesheet
+ * version, and inherits the media query with it. Travel rides `--motion-scale`
+ * for the same reason: at Animations = None the slide is 0 and the toast
+ * arrives as a pure fade.
+ *
+ * ── The dwell is NOT motion, and deliberately does not scale
+ *
+ * `DWELL_MS` is how long the user has to read the toast. Scaling it by `--ix`
+ * would empty the progress bar in six milliseconds while the card sat there for
+ * six seconds, which is the "never lie about state" rule broken by arithmetic.
+ * The bar's animation therefore takes a FIXED duration, and both the CSS
+ * animation and the JS timer read the same constant so they cannot drift.
+ */
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, X } from 'lucide-react';
+
+/** How long a toast stays before dismissing itself. Not a motion duration —
+ *  see the header. One constant, read by both the timer and the progress bar. */
+const DWELL_MS = 6000;
 
 /* Single toast card */
 function NotifToast({ notif, onDismiss }) {
   const navigate = useNavigate();
   const [visible, setVisible] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  // `dismiss` is called from a timer set on mount, so the timer would otherwise
+  // close over the first render's `leaving`. A ref keeps one live definition.
+  const dismissRef = useRef(null);
+
+  const dismiss = () => setLeaving(true);
+  dismissRef.current = dismiss;
 
   useEffect(() => {
     requestAnimationFrame(() => setVisible(true));
-    const t = setTimeout(() => dismiss(), 6000);
+    const t = setTimeout(() => dismissRef.current?.(), DWELL_MS);
     return () => clearTimeout(t);
   }, []);
-
-  function dismiss() {
-    setLeaving(true);
-    setTimeout(() => onDismiss(notif.notification_id), 350);
-  }
 
   function handleView() {
     dismiss();
     if (notif.url) navigate(notif.url);
   }
 
+  /**
+   * Unmount on `transitionend`, not on a 350ms stopwatch.
+   *
+   * It was `setTimeout(() => onDismiss(id), 350)` beside a 300ms CSS
+   * transition — two numbers that had to be kept in step by hand, and which
+   * only agreed at `--ix: 1`. Once the durations became tokens the stopwatch
+   * could not have tracked them at all: at `--ix: .001` the card finishes
+   * leaving in 0.14ms and the timer would still hold the node for 350ms.
+   *
+   * Guarded twice. `propertyName` because opacity and transform both fire and
+   * the node must be dropped once, and `target === currentTarget` because
+   * `transitionend` bubbles and this card contains buttons of its own.
+   */
+  const onTransitionEnd = (e) => {
+    if (!leaving) return;
+    if (e.target !== e.currentTarget || e.propertyName !== 'opacity') return;
+    onDismiss(notif.notification_id);
+  };
+
   return (
-    <div style={{
+    <div
+      onTransitionEnd={onTransitionEnd}
+      style={{
       display: 'flex', flexDirection: 'column',
       width: 320, maxWidth: 'calc(100vw - 32px)',
       background: 'var(--surface)',
@@ -35,10 +94,22 @@ function NotifToast({ notif, onDismiss }) {
       boxShadow: '0 8px 32px rgba(0,0,0,.18)',
       overflow: 'hidden',
       opacity: visible && !leaving ? 1 : 0,
-      transform: visible && !leaving ? 'translateX(0)' : 'translateX(24px)',
+      // 16px in, 12px out — the exit travels less as well as being faster.
+      transform: visible && !leaving
+        ? 'translateX(0)'
+        : `translateX(calc(${leaving ? 12 : 16}px * var(--motion-scale, 1)))`,
+      // The reconciled table in animations.css §8: toast is dmPop --dur-base
+      // --ease-enter in, dmPopOut --dur-fast --ease-exit out. Expressed as a
+      // transition rather than those keyframes because this card animates
+      // between two live states rather than mounting and unmounting.
+      // The entrance delay scales too. Left as a bare `50ms` it survived the
+      // token conversion as the last literal in the file, and under reduce it
+      // read as a 50ms wait in front of a 0.22ms transition — longer than the
+      // motion it was delaying.
       transition: leaving
-        ? 'opacity .3s ease, transform .3s ease'
-        : 'opacity .3s ease .05s, transform .3s ease .05s',
+        ? 'opacity var(--dur-fast) var(--ease-exit), transform var(--dur-fast) var(--ease-exit)'
+        : 'opacity var(--dur-base) var(--ease-enter) calc(50ms * var(--ix)),'
+          + ' transform var(--dur-base) var(--ease-enter) calc(50ms * var(--ix))',
       pointerEvents: 'all',
     }}>
       {/* Header row */}
@@ -87,15 +158,26 @@ function NotifToast({ notif, onDismiss }) {
         </div>
       )}
 
-      {/* Progress bar */}
+      {/* Progress bar — how much of the dwell is left.
+
+          It animated `width` from 100% to 0% for six continuous seconds.
+          `width` is a layout property: every frame of that ran layout on the
+          bar and repainted it, for six seconds, per toast. animations.css's
+          performance note is explicit that every keyframe in the motion layer
+          animates transform and opacity only. `scaleX` with a left origin is
+          the composited equivalent and looks identical.
+
+          The duration is `DWELL_MS` and is deliberately NOT scaled by --ix —
+          the bar's whole meaning is "this much time remains", so a bar that
+          empties faster than the timer would be lying. See the file header. */}
       <div style={{ height: 2, background: 'var(--rule-soft)', flexShrink: 0 }}>
         <div style={{
           height: '100%',
           background: 'var(--k-primary)',
           width: '100%',
-          animation: 'k-toast-progress 6s linear forwards',
-        }} />
-      </div>
+          transformOrigin: 'left center',
+          animation: `k-toast-progress ${DWELL_MS}ms linear forwards`,
+        }} /></div>
     </div>
   );
 }
@@ -116,8 +198,11 @@ export function NotifPermissionPrompt({ onAllow, onDismiss }) {
       boxShadow: '0 8px 32px rgba(0,0,0,.18)',
       padding: '14px 14px 12px',
       opacity: visible ? 1 : 0,
-      transform: visible ? 'translateX(0)' : 'translateX(24px)',
-      transition: 'opacity .35s ease, transform .35s ease',
+      // Same treatment as the toast above: tokens rather than a `.35s` literal,
+      // so the OS reduced-motion setting reaches it, and travel on
+      // --motion-scale so Animations = None degrades it to a fade.
+      transform: visible ? 'translateX(0)' : 'translateX(calc(16px * var(--motion-scale, 1)))',
+      transition: 'opacity var(--dur-base) var(--ease-enter), transform var(--dur-base) var(--ease-enter)',
       pointerEvents: 'all',
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
@@ -169,8 +254,8 @@ export function NotifToastContainer({ toasts, onDismiss }) {
     <>
       <style>{`
         @keyframes k-toast-progress {
-          from { width: 100%; }
-          to   { width: 0%; }
+          from { transform: scaleX(1); }
+          to   { transform: scaleX(0); }
         }
       `}</style>
 
@@ -178,8 +263,15 @@ export function NotifToastContainer({ toasts, onDismiss }) {
         <div className="sr-only" aria-live="polite" aria-atomic="false">{politeText}</div>
         <div className="sr-only" aria-live="assertive" aria-atomic="false">{assertiveText}</div>
 
+        {/* `--z-toast` (520), not 9999. The ladder in animations.css §1 exists
+            because a corner card on an invented z-index renders on top of the
+            command palette and every modal — AppShell's own header records that
+            exact failure at 9998 for the permission prompt. 9999 was one rung
+            higher than that and above `--z-sheet` (620) as well, so a toast
+            could paint over a mobile sheet the user was mid-way through. */}
         <div style={{
-          position: 'fixed', bottom: 'max(20px, env(safe-area-inset-bottom))', right: 20, zIndex: 9999,
+          position: 'fixed', bottom: 'max(20px, env(safe-area-inset-bottom))', right: 20,
+          zIndex: 'var(--z-toast)',
           display: 'flex', flexDirection: 'column', gap: 10,
           alignItems: 'flex-end',
           pointerEvents: 'none',
