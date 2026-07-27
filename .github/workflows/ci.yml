@@ -84,6 +84,19 @@ jobs:
 
       - name: Design class gate
         run: node scripts/check-classes.mjs
+
+      # Contrast. This gate EXISTED and ran nowhere — neither `npm run check`
+      # nor this workflow ever called it — which is how five failing pairs were
+      # signed off by two separate audits. A gate nobody runs is worse than no
+      # gate: its presence reads as coverage.
+      #
+      # It is baselined rather than clean, because the pairs it finds today are
+      # a design decision (chips tinted with their own foreground) with no
+      # correct fix available yet. NEW failures and REGRESSIONS still fail here.
+      # `scripts/contrast-baseline.json` is the record of what was accepted;
+      # shrinking it is the direction of travel.
+      - name: Design contrast gate
+        run: node scripts/check-contrast.mjs
       # Both run from `frontend/` (this job's working-directory) and unpiped.
       # They process.exit(1) when src/styles is absent, so a root invocation is
       # a loud failure rather than a silent pass — do not "helpfully" pipe them

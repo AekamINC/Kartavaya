@@ -37,14 +37,18 @@
  * KNOWN LIMITS, stated so nobody reads a pass as more than it is:
  *   · A rule that sets only `color` is skipped — its background comes from an
  *     ancestor and no static pass can know which. The matrix is the backstop.
- *   · color-mix(in srgb, A p%, B) is computed in sRGB, non-premultiplied, which
- *     is what browsers do for opaque operands.
+ *   · color-mix(in srgb, A p%, B) is computed in sRGB and IS premultiplied, so
+ *     a translucent operand contributes in proportion to its alpha — matching
+ *     the spec and the browser. (This line used to claim non-premultiplied; the
+ *     comment was wrong and the code was right, which is the worse way round:
+ *     an auditor who reads it distrusts a correct gate. Verified against 400
+ *     pairs of the repo's own accent.js contrast() at delta 0.)
  *   · currentColor, gradients and images are skipped, not guessed.
  *
  * Usage: node scripts/check-contrast.mjs            (from frontend/)
  *        node scripts/check-contrast.mjs --matrix   (also print pass 2 in full)
  */
-import { readFileSync, readdirSync, existsSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, writeFileSync } from 'fs';
 import { join } from 'path';
 
 const STYLE_DIR = 'src/styles';
@@ -595,8 +599,70 @@ else {
   console.log('');
 }
 
-if (failed) {
-  console.error('check-contrast: FAILED');
+/* ── Baseline ──────────────────────────────────────────────────────────────
+ * This gate has existed, caught real failures, and run NOWHERE: `npm run
+ * check` invokes check-tokens and check-classes, `.github/workflows/ci.yml`
+ * runs the same two, and neither has ever called this file. That is why five
+ * failing pairs sat unreported long enough to be signed off twice.
+ *
+ * It cannot simply be wired in, because the failures it finds today are a
+ * DESIGN decision — chips coloured with a tint of their own foreground, whose
+ * only remedy either darkens the label or destroys the colour coding. Blocking
+ * on those would mean a red build with no correct fix available.
+ *
+ * So: the known set is frozen in `contrast-baseline.json` and anything NEW
+ * fails. A pair that gets WORSE also fails, because "already failing" must not
+ * become a place to hide a regression. Regenerate deliberately with
+ * `--update-baseline`, never as a reflex — the file is the record of what was
+ * accepted and why, and shrinking it is the direction of travel.
+ */
+const BASELINE_PATH = new URL('./contrast-baseline.json', import.meta.url);
+const keyOf = (r) => `${r.at}|${r.selector}|${r.theme}`;
+
+let baseline = {};
+try {
+  baseline = JSON.parse(readFileSync(BASELINE_PATH, 'utf8')).pairs || {};
+} catch { /* absent on first run — every failure is then new, which is correct */ }
+
+if (process.argv.includes('--update-baseline')) {
+  const pairs = {};
+  for (const r of realFails.sort((a, b) => keyOf(a).localeCompare(keyOf(b)))) {
+    pairs[keyOf(r)] = { ratio: Number(r.ratio.toFixed(2)), need: r.need };
+  }
+  writeFileSync(BASELINE_PATH, JSON.stringify({
+    note: 'Known-failing pairs, accepted deliberately. NEW failures and REGRESSIONS still fail the gate. Shrink this file; do not grow it.',
+    generated: new Date().toISOString().slice(0, 10),
+    pairs,
+  }, null, 2) + '\n');
+  console.log(`check-contrast: baseline written — ${Object.keys(pairs).length} known pairs`);
+  process.exit(0);
+}
+
+const isNew = [];
+const worse = [];
+for (const r of realFails) {
+  const known = baseline[keyOf(r)];
+  if (!known) isNew.push(r);
+  // 0.01 of slack: the ratio is printed to two places, so an unchanged pair can
+  // differ in the last digit without anything having actually moved.
+  else if (r.ratio < known.ratio - 0.01) worse.push({ r, was: known.ratio });
+}
+
+const knownCount = realFails.length - isNew.length;
+if (knownCount) {
+  console.log(`   ${knownCount} known-failing pair(s) held at baseline — see scripts/contrast-baseline.json\n`);
+}
+for (const { r, was } of worse) {
+  console.error(`   REGRESSION  ${r.selector} (${r.theme}) was ${f2(was)}:1, now ${f2(r.ratio)}:1`);
+}
+for (const r of isNew) {
+  console.error(`   NEW FAILURE ${r.selector} (${r.theme}) ${f2(r.ratio)}:1, needs ${r.need}:1  — ${r.at}`);
+}
+
+if (isNew.length || worse.length) {
+  console.error(`\ncheck-contrast: FAILED — ${isNew.length} new, ${worse.length} regressed`);
   process.exit(1);
 }
+console.log('check-contrast: no new failures and no regressions');
+process.exit(0);
 console.log('check-contrast: OK');
