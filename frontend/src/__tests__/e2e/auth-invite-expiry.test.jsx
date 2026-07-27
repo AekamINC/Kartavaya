@@ -23,6 +23,7 @@ import { Route } from 'react-router-dom';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { api, _resetSessionLatch } from '../../lib/api';
+import { moduleMeta } from '../../lib/moduleColors';
 import { AcceptInvitePage, LoginPage, ResetPasswordPage } from '../../pages/LoginPage';
 import {
   installMockApi, installNetworkKillSwitch, restoreNetwork, httpError,
@@ -89,9 +90,18 @@ describe('accept-invite · what you are being asked to accept', () => {
     expect(text).toContain('rohan@aekam.co');
     // Grants by their product names, not their codes — `moduleColors.js` is the
     // one registry and this screen reads it rather than restating labels.
-    expect(text).toContain('CRM');
+    //
+    // ASSERTED THROUGH THE REGISTRY, not as literals. These were `'CRM'` and
+    // `'Invoicing'`, and `ab740fc` renamed ganit to **Finance** with its reason
+    // recorded — "Invoicing named a tenth of it" — which is also `_DESIGN-GAP.md`
+    // #2, where the reference's word wins over the build's paraphrase. That
+    // landed green, this test landed green, and staging went red where they met:
+    // neither branch could see the other. Reading the registry is the fix that
+    // holds, because the claim this test actually makes is "the screen shows the
+    // product name" — not "the product name is Invoicing".
+    expect(text).toContain(moduleMeta('graha').en);
     expect(text).toContain('Editor');
-    expect(text).toContain('Invoicing');
+    expect(text).toContain(moduleMeta('ganit').en);
     expect(text).toContain('Viewer');
     expect(host.$('.auinv')).toBeTruthy();
   });
