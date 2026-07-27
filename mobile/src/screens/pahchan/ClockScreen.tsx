@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, ActivityIndicator, StatusBar, Linking, Animated,
+  View, Text, Pressable, ScrollView, StyleSheet, ActivityIndicator, StatusBar, Linking, Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -12,10 +12,12 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../theme/ThemeProvider';
+import { hindi } from '../../theme/fonts';
 import { pahchanApi, enrollmentApi, type PunchDirection } from '../../api/pahchan';
 import { enqueuePunch, attachPhotoKey, flushPunches } from '../../offline/punchQueue';
 import { useQueueStatus } from '../../hooks/useQueueStatus';
 import { duration, scaleTo, usePressScale, useReducedMotion, DUR, EASE } from '../../theme/motion';
+import AttendanceHistory, { AttendanceSegment } from './AttendanceHistory';
 
 /**
  * Clock in / clock out. 07-pahchan.md, and the prototype at `Pahchan v1.html` §01.
@@ -115,7 +117,7 @@ async function readFix(): Promise<Fix> {
 }
 
 export default function ClockScreen() {
-  const { t } = useTheme();
+  const { t, scheme } = useTheme();
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
   const camera = useRef<CameraView>(null);
@@ -183,10 +185,18 @@ export default function ClockScreen() {
     return () => clearTimeout(back);
   }, [phase, reduced, confirm]);
 
+  // `Clock | My attendance`, per the reference's MPahchan. The register is a tab
+  // on this screen rather than a route of its own, because it is the same
+  // question asked twice — "am I in?" and "was I in?".
+  const [tab, setTab] = useState<'clock' | 'history'>('clock');
+
   const nav = useNavigation();
 
   const { data: mine, isFetching: mineFetching } = useQuery({
-    queryKey: ['pahchan', 'me'],
+    // `days` is part of the key. It was not, and `MyBiometrics` asks the same
+    // key for 1 day while this asks for 7 — so whichever mounted first decided
+    // what both got back. Same key, different request, is a cache that lies.
+    queryKey: ['pahchan', 'me', 7],
     queryFn: () => pahchanApi.me(7),
   });
 
@@ -300,6 +310,28 @@ export default function ClockScreen() {
       setNotice('That did not work. Try again.');
     }
   }, [direction, phase, qc]);
+
+  // ── The register ────────────────────────────────────────────────────────────
+  // Deliberately ABOVE the camera-permission gate. Reading your own attendance
+  // record does not need a camera, and someone who denied the permission — or
+  // who is looking at last month on a train — must still be able to see it.
+  if (tab === 'history') {
+    return (
+      <View style={[s.historyRoot, { backgroundColor: t.bg, paddingTop: insets.top + 8 }]}>
+        <StatusBar barStyle={scheme === 'dark' ? 'light-content' : 'dark-content'} />
+        <View style={s.historyHead}>
+          <Text style={[s.historyTitle, { color: t.ink }]} accessibilityRole="header">Attendance</Text>
+          <Text style={[s.historyTitleHi, { color: t.primaryText }]}>पहचान</Text>
+        </View>
+        <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}>
+          <AttendanceSegment tab={tab} onChange={setTab} />
+        </View>
+        <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
+          <AttendanceHistory />
+        </ScrollView>
+      </View>
+    );
+  }
 
   // ── Permission states ───────────────────────────────────────────────────────
 
@@ -461,6 +493,20 @@ export default function ClockScreen() {
               : phase === 'done' ? (direction === 'in' ? 'Clocked in' : 'Clocked out')
               : 'Look at the camera and tap'}
           </Text>
+
+          {/* The reference reaches the register from a segment; over a live
+              camera there is nowhere to put one, so the way through is a link.
+              It comes BACK via the segment on the other side. */}
+          <Pressable
+            onPress={() => setTab('history')}
+            accessibilityRole="button"
+            accessibilityLabel="My attendance"
+            hitSlop={10}
+            style={({ pressed }) => [s.historyLink, pressed && { opacity: 0.6 }]}
+          >
+            <Ionicons name="calendar-outline" size={14} color="#FFFFFF" />
+            <Text style={s.historyLinkText}>My attendance</Text>
+          </Pressable>
         </View>
       </View>
     </View>
@@ -511,4 +557,19 @@ const s = StyleSheet.create({
   body: { fontSize: 13.5, lineHeight: 20 },
   cta: { borderRadius: 12, paddingHorizontal: 20, paddingVertical: 12, marginTop: 8 },
   ctaText: { fontSize: 14, fontWeight: '700' },
+
+  // Over the camera, so fixed white for the same reason as everything else in
+  // the scrim — the background is whatever the lens sees.
+  historyLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 99,
+    paddingHorizontal: 14, paddingVertical: 7,
+  },
+  historyLinkText: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '700' },
+
+  // The register tab is a normal themed screen, not a camera one.
+  historyRoot: { flex: 1 },
+  historyHead: { paddingHorizontal: 16, paddingBottom: 10 },
+  historyTitle: { fontSize: 24, fontWeight: '700', letterSpacing: -0.4 },
+  historyTitleHi: { fontSize: 13, marginTop: 1, ...hindi() },
 });

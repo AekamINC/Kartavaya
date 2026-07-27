@@ -24,7 +24,9 @@ export default function WeekStrip({ weekDates = [], dotsByDay = {}, todayIdx }) 
             className={`k-wday${isToday ? ' is-today' : ''}`}
             aria-current={isToday ? 'date' : undefined}
           >
-            <div className="k-week__hi">{WEEK_HI_MON[i]}</div>
+            {/* lang="hi" — the tracking and leading guards in editorial.css are
+                keyed on [lang], so सोम…रवि were getting Latin leading. */}
+            <div className="k-week__hi" lang="hi">{WEEK_HI_MON[i]}</div>
             <div className="k-week__num">{d.getDate()}</div>
             <div className="k-week__dots" aria-hidden="true">
               {Array.from({ length: Math.min(dots, 4) }).map((_, j) => <i key={j} />)}

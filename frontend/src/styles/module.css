@@ -226,9 +226,20 @@
    the one thing this row must not do. */
 .rv__r.is-cursor { background: color-mix(in srgb, var(--primary) 5%, transparent); }
 
-.rv__n   { font-variant-numeric: tabular-nums; color: var(--on-surface-3); width: 26px; }
+/* Mono, and not as decoration. Measured in the rendered reference, both of
+   these columns are `var(--font-mono)`: the index at 10.5px right-aligned, the
+   time at 12px weight 500. Measured in the build they were both 13px Inter,
+   left-aligned — `font-variant-numeric: tabular-nums` was already here, which
+   buys equal-width DIGITS but leaves the colon and the am/pm proportional, so
+   a column of "09:33 am" over "06:32 pm" still walks.
+   Same argument this file already makes at `.mt__b .mt__n` and applies at
+   `.mtbl__num`: 00 §2 puts numbers in mono with tabular figures. A register is
+   a column of times that a reviewer scans vertically — it is the strongest
+   case for it on the surface, not the weakest.
+   Sizes are left to the shared table so the row height does not move. */
+.rv__n   { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--on-surface-3); width: 26px; }
 .rv__who { min-width: 0; }
-.rv__t   { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rv__t   { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rv__loc { font-size: max(11.5px, calc(var(--font-size-base) * .86)); color: var(--on-surface-2); }
 .rv__v   { white-space: nowrap; }
 
@@ -253,4 +264,74 @@
 @media (max-width: 900px) {
   .rv__loc, .rv__v { display: none; }
   .rv__trip-cell { width: auto; }
+}
+
+/* ── Module tab overflow — the "More" menu 13 §1 asks for ──────────────────
+   Ported from `design-reference/Kartavaya Redesign/`: `Data.jsx`'s TabBar for
+   the behaviour, `app.css:128-137` and `:250-256` for the treatment.
+
+   The strip used to hold every tab in an `overflow-x: auto` scroller with the
+   scrollbar hidden. CRM declares SEVENTEEN tabs — the same seventeen the
+   reference declares — so eleven of them were in the DOM and out of the
+   product, reachable only by dragging a bar with no scrollbar. The edge
+   gradients above were the only hint, and a fade is not an affordance.
+
+   `.mt` keeps its own scroller for the head row: at a narrow width even six
+   tabs overflow, and scrolling six is a different problem from hiding eleven. */
+.mt__wrap {
+  display: flex; align-items: stretch; position: relative;
+  border-bottom: 1px solid var(--outline-variant); margin-bottom: 18px;
+}
+/* The wrapper owns the rule now, so the strip must not draw a second one. */
+.mt__wrap > .mt { border-bottom: 0; margin-bottom: 0; flex: 1; min-width: 0; }
+
+.mt__en { text-transform: capitalize; }
+.mt__hi {
+  font-family: var(--font-hindi); font-size: 12px; font-weight: 400;
+  color: var(--on-surface-3);
+}
+.mt__b.on .mt__hi { color: var(--primary-text); }
+
+.mt__ovf {
+  position: relative; flex-shrink: 0; display: flex;
+  border-left: 1px solid var(--outline-variant);
+  margin-left: 6px; padding-left: 6px;
+}
+.mt__more { gap: 6px; }
+
+.mt__pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 120;
+  min-width: 230px; max-width: min(280px, 90vw);
+  max-height: 340px; overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-3);
+  animation: mtPopIn var(--dur-base) var(--ease-spring);
+}
+/* Travel rides --motion-scale so the Animations preference reaches it; the
+   opacity step is kept because a menu that appears with no transition at all
+   reads as a repaint glitch rather than an opening. */
+@keyframes mtPopIn {
+  from { transform: translateY(calc(-6px * var(--motion-scale, 1))) scale(.97); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .mt__pop { animation: none; } }
+
+.mt__pop-head {
+  padding: 11px 14px 8px;
+  font-size: 9.5px; letter-spacing: .15em; text-transform: uppercase;
+  font-weight: 700; color: var(--on-surface-3);
+  border-bottom: 1px solid var(--outline-variant);
+}
+.mt__pop-row {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 14px; font-size: 13px; text-align: left;
+  color: var(--on-surface);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.mt__pop-row:hover { background: var(--s-container); }
+.mt__pop-row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.mt__pop-en { text-transform: capitalize; }
+.mt__pop-hi {
+  margin-left: auto; font-family: var(--font-hindi); font-size: 12px;
+  color: var(--on-surface-3);
 }

@@ -42,8 +42,32 @@ export const BILLING_CONSOLE_ROLES = [...GOD, 'platform_manager', 'account_manag
  *  modules, and Aekam's P&L is not one of them. */
 export const FINANCE_CONSOLE_ROLES = [...GOD, 'account_finance'];
 
+// ── The four rows, against the design's seven ────────────────────────────────
+//
+// `SetAdmin.jsx:4` (ADM_NAV, rendered from Settings.html) has seven:
+//
+//   Dashboard · मुख्य         cross-org stats, revenue, growth, alerts, health
+//   Organisations · संस्था     ✓ /admin/orgs
+//   Users · उपयोगकर्ता          ✓ /admin  ← this row
+//   Billing & invoices · बीजक  ✓ /admin/billing
+//   Cost analytics · व्यय      ✓ /admin/costs
+//   Support sessions · सहायता  time-boxed access into a customer org
+//   System settings · व्यवस्था  defaults, email templates, maintenance, flags
+//
+// The three that are absent are absent because there is nothing behind them:
+// no `GET /v1/admin/dashboard`; `platform_support_sessions` does not exist
+// (`middleware/role_tiers.py:46`); no `/v1/admin/system-settings`. Rows that
+// resolve to a screen with no endpoint are the defect this file's history is
+// mostly about, so they stay off until the tables and routes land.
+//
+// This first row was labelled `Overview`, which is what it looked like from
+// outside and not what it is. `pages/AdminPage.jsx:870` renders Overview ·
+// Accounts · Invites · Platform roles — it is the design's **Users** console,
+// and only its first tab is an overview (stat tiles and an R2 folder map, not
+// the cross-org Dashboard the design means by that word). Naming it `Overview`
+// promised the missing row and delivered a different one.
 export const ADMIN_NAV = [
-  { to: '/admin',         icon: 'admin',   en: 'Overview',       hi: 'प्रशासन',                 roles: CONSOLE_ROLES },
+  { to: '/admin',         icon: 'users',   en: 'Users',          hi: 'उपयोगकर्ता',              roles: CONSOLE_ROLES },
   { to: '/admin/orgs',    icon: 'org',     en: 'Organisations',  hi: 'संस्थाएँ', count: 'orgs', roles: CONSOLE_ROLES },
   { to: '/admin/billing', icon: 'billing', en: 'Billing',        hi: 'बिलिंग',                  roles: BILLING_CONSOLE_ROLES },
   { to: '/admin/costs',   icon: 'chart',   en: 'Cost dashboard', hi: 'लागत',                    roles: FINANCE_CONSOLE_ROLES },

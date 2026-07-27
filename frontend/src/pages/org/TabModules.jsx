@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { ErrorState, SkeletonCardGrid } from '../../components/ui';
 import ModuleCard from './ModuleCard';
@@ -34,7 +34,7 @@ const Info = (
   </svg>
 );
 
-export default function TabModules() {
+export default function TabModules({ onCount }) {
   const [active, setActive] = useState([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -48,6 +48,14 @@ export default function TabModules() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // The tab bar's count is how many modules are ACTIVE, which is the list this
+  // panel already fetched. Through a ref and keyed on the number: the parent
+  // passes an inline arrow, so depending on the callback itself would re-run
+  // this on every render of the shell it is reporting to.
+  const onCountRef = useRef(onCount);
+  onCountRef.current = onCount;
+  useEffect(() => { onCountRef.current?.(active.length); }, [active.length]);
 
   // The twelve grantable modules, plus anything the subscription carries that
   // this catalogue does not list. A module the customer is paying for that

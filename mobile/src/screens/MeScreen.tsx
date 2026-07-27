@@ -17,6 +17,7 @@ import { notificationsApi } from '../api/notifications';
 import type { RootStackParamList } from '../nav/RootStack';
 import type { NotifKind, NotifPrefsResponse } from '../api/types';
 import MyBiometrics from './pahchan/MyBiometrics';
+import MyRegister from './pahchan/MyRegister';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
@@ -283,6 +284,15 @@ export default function MeScreen() {
           whose face is photographed twice a day should be able to see what is
           held and for how long without having to ask. */}
       <MyBiometrics t={t} />
+
+      {/* ── Your attendance record (07 §9) ───────────────────────────
+          The third thing §9 asks of Me, after the reference pair and the
+          retention promise: the employee's own REGISTER. It sits directly under
+          the photographs on purpose — what is held about you, then what it was
+          used to record. In the attendance-only shell this is one of only two
+          destinations, so burying it behind a route would leave a site worker
+          with a Clock tab and nothing else. */}
+      <MyRegister t={t} />
 
       {/* ── Permissions ──────────────────────────────────────────── */}
       <Section label="Permissions" hi="अनुमतियाँ"

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import { ErrorState, errorKind } from '../../components/ui/ErrorState';
+import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { Card } from '../../components/editorial';
 import { mixAlpha } from '../../lib/statusColors';
 import { inr } from '../../lib/inr';
@@ -14,12 +16,17 @@ export default function ClientsTab() {
   const [form, setForm] = useState({ name: '', ref_no: '', gstin: '', website: '', notes: '', address: {} });
   const [search, setSearch] = useState('');
   const [detail, setDetail] = useState(null);
+  // Without this a failed load left `clients` at [] and the list painted its
+  // "No clients yet" empty state — a confident wrong answer behind a toast that
+  // is gone in four seconds.
+  const [err, setErr] = useState(null);
 
   const load = useCallback(() => {
     const params = search ? `?search=${encodeURIComponent(search)}` : '';
+    setErr(null);
     api.get(`/v1/graha/clients${params}`)
       .then(r => setClients(r.data.data || []))
-      .catch(() => pushToast({ title: 'Failed to load clients', type: 'error' }))
+      .catch(e => { setErr(e); pushToast({ title: 'Failed to load clients', type: 'error' }); })
       .finally(() => setLoading(false));
   }, [search]);
 
@@ -65,7 +72,8 @@ export default function ClientsTab() {
     } catch { pushToast({ title: 'Could not delete client', type: 'error' }); }
   }
 
-  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, padding: 16 }}>Loading...</p>;
+  if (loading) return <SkeletonRegion label="Loading clients"><SkeletonList rows={6} /></SkeletonRegion>;
+  if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
 
   if (detail) {
     return (

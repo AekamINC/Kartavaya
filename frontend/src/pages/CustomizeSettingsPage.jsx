@@ -21,13 +21,30 @@ import TabData from './customize/TabData';
  * ?tab= is honoured so /settings/notifications can redirect into the
  * notifications tab and keep old links working.
  */
+/**
+ * Every tab carries its Devanagari beside the word.
+ *
+ * This is only visible by RUNNING `Settings.html` — `SetCustomize.jsx:495`
+ * passes `TabBar` a list of bare keys, and the Devanagari arrives from a lookup
+ * two files away (`Data.jsx:134`, `TAB_HI`). Reading either file alone shows a
+ * plain tab bar; the rendered one is `Appearance रूप`.
+ *
+ * The English is `CUST_TABS`' label rather than its key. Those differ only
+ * where the designer made them differ — `['data', 'Data & privacy', …]` — and a
+ * label written out longhand next to the key it belongs to is a decision, not a
+ * duplicate. The harness renders `Data` only because it never passes the label
+ * through, which is the same key-instead-of-label shortcut that leaves its own
+ * `TAB_HI['danger zone']` unreachable over in the Organisation hub.
+ */
+const hi = w => <span className="tabs__hi" lang="hi">{w}</span>;
+
 const TABS = [
-  { value: 'appearance',    label: 'Appearance',    content: <TabAppearance /> },
-  { value: 'typography',    label: 'Typography',    content: <TabTypography /> },
-  { value: 'layout',        label: 'Layout',        content: <TabLayout /> },
-  { value: 'language',      label: 'Language',      content: <TabLanguage /> },
-  { value: 'notifications', label: 'Notifications', content: <TabNotifications /> },
-  { value: 'data',          label: 'Data',          content: <TabData /> },
+  { value: 'appearance',    label: <>Appearance{hi('रूप')}</>,        content: <TabAppearance /> },
+  { value: 'typography',    label: <>Typography{hi('अक्षर')}</>,      content: <TabTypography /> },
+  { value: 'layout',        label: <>Layout{hi('ढाँचा')}</>,          content: <TabLayout /> },
+  { value: 'language',      label: <>Language{hi('भाषा')}</>,         content: <TabLanguage /> },
+  { value: 'notifications', label: <>Notifications{hi('सूचना')}</>,   content: <TabNotifications /> },
+  { value: 'data',          label: <>Data &amp; privacy{hi('गोपनीयता')}</>, content: <TabData /> },
 ];
 
 export default function CustomizeSettingsPage() {
@@ -39,8 +56,11 @@ export default function CustomizeSettingsPage() {
     <div className="st">
       <PageHeader
         kicker="SETTINGS"
-        title="Customize"
-        sanskrit="सजावट"
+        // `Customization` · रूपांकन are the designer's words (`Chrome.jsx:36`).
+        // `Customize` / सजावट — "decoration" — was a paraphrase, and the nav row
+        // now carries the reference's pair, so the page title matches it.
+        title="Customization"
+        sanskrit="रूपांकन"
         lede="Appearance, typography, layout, language and notifications."
       />
 

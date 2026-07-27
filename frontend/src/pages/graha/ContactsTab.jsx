@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { ErrorState, errorKind } from '../../components/ui/ErrorState';
+import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { Badge, CONTACT_TYPES, TYPE_COLORS, stageColor, SOURCE_COLORS } from './_shared';
 import { mixAlpha } from '../../lib/statusColors';
 import ContactTimeline from './ContactTimeline';
@@ -20,6 +22,9 @@ export default function ContactsTab() {
   const [clientOptions, setClientOptions] = useState([]);
   const [editContact, setEditContact] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
+  // A failed load left `contacts` at [] and rendered the "No contacts yet"
+  // EmptyState — which invites the user to add one, on a list that may be full.
+  const [err, setErr] = useState(null);
 
   useEffect(() => {
     api.get('/v1/graha/clients').then(r => setClientOptions(r.data.data || [])).catch(() => {});
@@ -28,13 +33,17 @@ export default function ContactsTab() {
   useEffect(() => { load(); }, []);
 
   async function load() {
+    setErr(null);
     try {
       let url = '/v1/graha/contacts?';
       if (search) url += `search=${encodeURIComponent(search)}&`;
       if (typeFilter) url += `contact_type=${typeFilter}&`;
       const r = await api.get(url);
       setContacts(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load contacts', type: 'error' }); }
+    } catch (e) {
+      setErr(e);
+      pushToast({ title: 'Failed to load contacts', type: 'error' });
+    }
     finally { setLoading(false); }
   }
 
@@ -306,7 +315,11 @@ export default function ContactsTab() {
         </form>
       )}
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
+      {loading ? (
+        <SkeletonRegion label="Loading contacts"><SkeletonList rows={6} /></SkeletonRegion>
+      ) : err ? (
+        <ErrorState kind={errorKind(err)} onRetry={load} />
+      ) :
         contacts.length === 0 ? (
           <EmptyState
             illustration="contacts"

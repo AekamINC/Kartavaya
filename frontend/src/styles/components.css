@@ -200,6 +200,26 @@ textarea.inp { resize: vertical; min-height: 76px; }
 .tabs__b.on    { color: var(--primary-text); }
 .tabs__b:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--r-xs); }
 .tabs__label { display: flex; align-items: center; gap: 6px; }
+
+/* The tab's Devanagari sub-label, sitting inside `.tabs__label`'s row between
+   the word and its count — which is where `app.css:136` puts it in the design,
+   and it is the same treatment `.k-inboxpg__tabhi` already arrived at for the
+   inbox independently.
+
+   Muted and a step down in weight, because it is the same word rather than a
+   second one; and it follows the tab's own colour when active, since a fixed
+   `--on-surface-3` sitting beside `--primary-text` reads as a disabled twin.
+   `--font-hindi`, not `--font-indic`: these are fixed Devanagari labels from
+   the designer's own TAB_HI map, not strings that follow the language setting
+   (24 §watermark exception). */
+.tabs__hi {
+  font-family: var(--font-hindi);
+  font-size: var(--t-label);
+  font-weight: 400;
+  color: var(--on-surface-3);
+}
+.tabs__b.on .tabs__hi { color: inherit; opacity: .8; }
+
 .tabs__n {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 18px; height: 18px; padding: 0 4px;
@@ -820,7 +840,13 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .av {
   display: grid; place-items: center; flex: none; border-radius: 50%;
   background: var(--av-bg, var(--s-high)); color: #fff;
-  font-weight: 600; letter-spacing: .01em; overflow: hidden; user-select: none;
+  /* 700/.02em, from `app.css:203`. The port had landed on 600/.01em. Both
+     numbers matter more here than anywhere else in the system: `Avatar.jsx:29`
+     sizes the initials at `size * 0.41`, which is ~10px at the default 24px
+     avatar — under 11px, white on a mid-tone fill, two letters with no word
+     shape to fall back on. Weight and tracking are the only legibility left,
+     and the reference spends both. */
+  font-weight: 700; letter-spacing: .02em; overflow: hidden; user-select: none;
 }
 .av img { width: 100%; height: 100%; object-fit: cover; }
 .avstack { display: inline-flex; flex: none; align-items: center; }
@@ -830,7 +856,11 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .avstack__n {
   display: grid; place-items: center; flex: none; border-radius: 50%;
   background: var(--s-high); color: var(--on-surface-2);
-  font-family: var(--font-mono); font-weight: 600;
+  /* 700, matching `.av` above, the reference's `.avs__more` (`app.css:207`),
+     and `.k-avstack__more` (`editorial.css:892`) — which was already 700, so
+     the build's two overflow chips disagreed with each other. This is the one
+     Avatar.jsx renders. */
+  font-family: var(--font-mono); font-weight: 700;
   box-shadow: 0 0 0 1.5px var(--ring, var(--surface));
 }
 

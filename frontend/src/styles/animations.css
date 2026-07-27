@@ -68,12 +68,19 @@
 
    ── REDUCED MOTION — BOTH PATHS ──────────────────────────────────────────
    1. OS: `@media (prefers-reduced-motion: reduce)` sets `--ix: .001` and
-      `--motion-scale: 0` (kartavaya-design.css §5). `--motion-scale` is also
-      written INLINE by applyPrefs and an inline style outranks a media query,
-      so that half of the pair only lands because a11y.css §1 restates it with
-      `!important`. Every amplitude below rides on `--motion-scale`, so that
-      rule is load-bearing here: do not remove it before `--motion-scale` gets
-      the `--motion-scale-user` twin that `--ix` already has.
+      `--motion-scale: 0` (kartavaya-design.css §5), and that one query owns both
+      values outright. MEASURED under `emulateMedia({reducedMotion:'reduce'})`:
+      root resolves `--ix: .001`, `--motion-scale: 0`.
+
+      This paragraph used to say the second half only landed because a11y.css §1
+      restated it with `!important`, and to warn against removing that rule until
+      `--motion-scale` got the `-user` twin `--ix` already had. Both halves are
+      now out of date and the warning had become an instruction to preserve a
+      rule that no longer exists: kartavaya-design.css §1 declares
+      `--motion-scale-user` and derives `--motion-scale` from it, applyPrefs
+      writes the twin rather than the derived value, and a11y.css §1 is now a
+      comment recording why its block was deleted. Nothing inline outranks the
+      media query any more, so nothing here depends on an `!important` elsewhere.
    2. Runtime: `applyPrefs` writes `--ix-user` and `--motion-scale` on the root
       when the user picks Animations = Reduced/None in Customization. There is
       no attribute to select on, so CSS cannot branch on it — which is exactly
@@ -350,6 +357,178 @@
   .ix-skeleton::after { animation: none; opacity: 0; }
   .ix-stagger > *     { animation-delay: 0s; }
   .ix-pulse           { animation: none; }
+}
+
+/* ── 9b · Optimistic write — MOTION-SPEC §7.1 and IxViews 10.3 ────────────
+   "Never lie about state. Optimistic UI renders at `opacity .6` until
+   acknowledged, then goes solid. A failed write restores the old value and says
+   so — it does not keep the new one on screen."
+
+   `.bc.pending` in boards.css already encodes the first half, but it is scoped
+   to a board card. CRM deals, sales orders and invoices need the same contract
+   on rows, cells and chips, so it lives here as a bare utility instead of being
+   copied a fourth time.
+
+   `cursor: progress` is the non-motion half of the signal and is what makes this
+   survive `--motion-scale: 0`: opacity is not motion, so nothing here needs to
+   be reduced. */
+.ix-pending {
+  opacity: .6;
+  cursor: progress;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+
+/* The rollback tint. IxViews 10.3: "On failure the old value returns and the
+   cell tints --danger-container for 1.6s."
+
+   Deliberately NOT an animation. The 1.6s is a READING duration, not a motion
+   duration — it is how long the user needs to notice which cell went back. Run
+   it through `--ix` and a reduced-motion user gets a 1.6ms flash they cannot
+   see, which removes information rather than motion, and WCAG 2.3.3 governs
+   non-essential animation only. So the tint is a static state held by a JS
+   timer, and only the fade at either end rides the token ladder.
+
+   Pair it with the restored value, never instead of it: this class explains a
+   rollback, it does not perform one. */
+.ix-rollback {
+  background-color: var(--danger-container);
+  transition: background-color var(--dur-base) var(--ease-exit);
+}
+
+/* ── 9c · Tab panel entrance ──────────────────────────────────────────────
+   Reference `motion.css` `.dm-tabs__p` — `@keyframes dmPanel { from { opacity:
+   0; transform: translateX(var(--dx)) } }` on `--dur-base --ease-emph`, where
+   `--dx` carries the SIGN of the move: a panel to the right of the one you left
+   enters from the right. A panel that always slides the same way is a page
+   transition, not a tab, and it stops telling you where you are in the strip.
+
+   The travel is `8px * --motion-scale`, so Animations = None degrades it to a
+   pure cross-fade — still a state change, no movement. The caller sets
+   `--ix-dx: -1 | 1` and remounts the panel by keying it on the active tab; the
+   animation restarts because the node is new, not because a class was toggled.
+
+   `backwards` holds the from-state through the (zero) delay so the panel never
+   paints at its final position for one frame first. */
+@keyframes ixPanelIn {
+  from { opacity: 0; transform: translateX(calc(8px * var(--ix-dx, 1) * var(--motion-scale, 1))); }
+  to   { opacity: 1; transform: none; }
+}
+.ix-panel { animation: ixPanelIn var(--dur-base) var(--ease-emph) backwards; }
+
+/* ── 9d · Tab indicator ───────────────────────────────────────────────────
+   `.mt__b.on::after` (module.css:141) is the 2px underline on the selected
+   module tab. Measured before this rule: `animation-name: none`,
+   `transition-duration: 0s` — the underline teleports between tabs.
+
+   The reference slides ONE indicator (`.dm-tabs__ind`, `transition: left
+   --dur-base --ease-emph, width --dur-base --ease-emph`). That needs a single
+   shared element and a ref per tab, which is JS in `ModuleTabs` — a component
+   three other module families share and a sibling owns. So this is the
+   CSS-reachable half: the underline on the newly-selected tab grows out from
+   its own centre. It restarts on every tab change for free, because `.on` moves
+   to a different button and that button's `::after` is a brand new box.
+
+   ── ON WHY THIS RULE CAN LIVE HERE AT ALL ──
+   `.mt__b.on::after` is declared in module.css. index.css imports module.css
+   (line 10) BEFORE animations.css (line 12), and the two selectors have equal
+   specificity, so source order decides and this file wins. That is the same
+   mechanism §9 documents for `.skeleton` — and it cuts the other way there,
+   which is why that stop had to be repeated at the foot of §10. Verified by
+   measurement, not by reading: `animation-name` on `.mt__b.on::after` resolves
+   to `ixTabInd` with this rule present and to `none` without it.
+
+   If module.css ever moves after animations.css in index.css, this rule goes
+   silent and the underline snaps again. It will not throw; it will just stop.
+
+   `transform-origin: center` and scaleX only — no width animation, which would
+   relayout the button on every frame. */
+@keyframes ixTabInd {
+  from { transform: scaleX(calc(1 - .999 * var(--motion-scale, 1))); opacity: 0; }
+  to   { transform: scaleX(1); opacity: 1; }
+}
+.mt__b.on::after {
+  transform-origin: center;
+  animation: ixTabInd var(--dur-base) var(--ease-emph) backwards;
+}
+
+/* ── 9e · Drag surfaces — IxViews 9.1, 9.2, 9.4 ───────────────────────────
+   `boards.css` already encodes all of this for the TASK board, on `.bc` and
+   `.bd__col`. Those two selectors also carry that board's geometry — a 288px
+   column, an 11px/12px card — so a second board cannot borrow the motion
+   without inheriting the pixels, and the pixels belong to a sibling.
+
+   These are the same numbers with the layout left out, so the CRM deal board
+   gets identical behaviour and keeps its own dimensions. Values are boards.css's
+   and, behind it, reference `motion.css` `.kb__card` / `.kb__col`:
+
+     grab     scale(1.02) rotate(.6deg) --shadow-2      transform  90ms
+     press    scale(.985)                               transform  90ms
+     hover    border warms to --primary 46%             border    140ms
+     over     --primary 9% tint + dashed 48% border     bg/border 140ms
+     landed   box-shadow ring --primary → transparent   540ms --ease-exit
+
+   Every travel rides `--motion-scale`, so at Animations = None a press is a
+   pure opacity step, a lift is a pure shadow, and a drop target is a pure tint.
+   None of the three loses its signal — that is why each pairs its transform
+   with something that is not a transform.
+
+   `rotate` is `.6deg`, not 04's `2deg`: on a narrow column 2deg clips the
+   neighbouring card's corner. boards.css records the same conflict and resolves
+   it the same way. */
+.ix-drag-card {
+  cursor: grab;
+  transition: box-shadow    var(--dur-fast)    var(--ease-standard),
+              border-color  var(--dur-fast)    var(--ease-standard),
+              opacity       var(--dur-fast)    var(--ease-standard),
+              transform     var(--dur-instant) var(--ease-standard);
+}
+.ix-drag-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 46%, var(--outline-variant));
+}
+/* IxViews 9.2 — "enough to feel the target without looking like a drag has
+   begun". The opacity step is what survives --motion-scale: 0. */
+.ix-drag-card:active {
+  transform: scale(calc(1 - .015 * var(--motion-scale, 1)));
+  opacity: .92;
+}
+/* 9.1 grab. `.is-dragging` and not `:active`, because the library owns the
+   drag state and a press that never became a drag must not lift. */
+.ix-drag-card.is-dragging {
+  transform: scale(calc(1 + .02 * var(--motion-scale, 1)))
+             rotate(calc(.6deg * var(--motion-scale, 1)));
+  box-shadow: var(--shadow-2);
+  cursor: grabbing;
+  z-index: 3;
+}
+/* 9.1 landing flash — "one --primary flash so you can find it in the new
+   column". Deliberately identical to boards.css `bcJust` rather than improved:
+   two boards in one product that confirm a drop differently is the bug, and the
+   fix belongs on both at once. Both lose the flash under reduced motion, where
+   the card's new COLUMN is still the primary signal; noted in the report as a
+   cross-surface question rather than diverged here. */
+@keyframes ixLanded {
+  0%   { box-shadow: 0 0 0 2px var(--primary); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.ix-landed { animation: ixLanded calc(var(--dur-slow) * 1.5) var(--ease-exit); }
+
+/* The column under the cursor. The highlight is a TINT plus an inset hairline,
+   not a border, and that is deliberate: reference `.kb__col` and boards.css
+   both use `1px dashed transparent` → `--primary 48%`, but the CRM column
+   already carries a solid `--rule-soft` border as an inline style, and an
+   inline shorthand outranks any class. Restyling that border is a pixel
+   decision and belongs to the sibling who owns them, so this expresses the same
+   SIGNAL — 9% tint, 48% keyline — through a property that composes with
+   whatever border is there instead of fighting it. Recorded in the report:
+   the reference wants the resting border dashed, which is one line for whoever
+   owns that file. */
+.ix-drop-target {
+  transition: background-color var(--dur-fast) var(--ease-standard),
+              box-shadow       var(--dur-fast) var(--ease-standard);
+}
+.ix-drop-target.is-over {
+  background-color: color-mix(in srgb, var(--primary) 9%, var(--surface-1));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 48%, transparent);
 }
 
 /* ── 10 · Legacy utility names ────────────────────────────────────────────
