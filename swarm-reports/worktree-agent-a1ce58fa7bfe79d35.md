@@ -129,17 +129,36 @@ other words — and denied/error are `ErrorState.jsx`, which carries four kinds
 (`offline`/`server`/`denied`/`missing`) plus the grant-not-record rule the
 reference asks for in prose. No gap here. Recorded so it is not re-opened.
 
-### 3c · `.is-loading` is rendered by nothing
+### 3c · `.is-loading` was rendered by nothing · FIXED
 
 The inventory renders `.is-loading` as **one of five states for every button
-variant and for `icobtn`**, plus `.fldx.is-loading`. The build has the CSS
-(`components.css:483-484` `.is-loading > .spin`, `:585` `.fldx.is-loading`) and
-**zero JSX occurrences of the string**. `Button.jsx` has no `loading` prop, so
-the label-stays-width-must-not-jump behaviour the inventory specifies for all
-seven variants cannot happen. `.spin` exists and is used 3× directly.
+variant and for `icobtn`**, plus `.fldx.is-loading`. The build had the whole CSS
+chain — `components.css:483-484` (`.is-loading { pointer-events: none }`,
+`.is-loading > .spin`), `:485-491` `.spin`, `:515` `@keyframes dmSpin`, `:585`
+`.fldx.is-loading` — and **zero JSX occurrences of the string**. One of the six
+state words was unreachable from any component API, so every in-flight button in
+the product had to invent its own treatment.
 
-This is the largest pure state gap in the set: 1 of the 6 state words is
-unreachable from any component API.
+**Fixed** (commit 3): `Button.jsx` takes `loading`, and renders what the
+inventory renders —
+
+```jsx
+<button className="btn btn--fill is-loading"><span className="spin" />Save changes</button>
+```
+
+spinner first, label kept. Additive: `loading` defaults false, so none of the 64
+existing `<Button>` call sites move a pixel.
+
+Two decisions worth recording. It does **not** set `disabled` or `aria-disabled`
+— `components.css:458-460` dims both to .42 opacity and the inventory's loading
+specimens are at full opacity — so `aria-busy` carries it instead, and the
+`onClick` is dropped while loading because `pointer-events: none` stops the mouse
+and nothing was stopping the keyboard. And the label stays rather than being
+swapped for the spinner: swapping collapses the button's width mid-click and
+shoves everything beside it.
+
+Still open in the same state word: `icobtn` (no component at all, §1) and
+`.fldx.is-loading` (no component renders `.fldx`, §3a).
 
 ---
 
@@ -342,6 +361,22 @@ already defaults `delay = 300` and has no exit animation, both correct.
 2. `fix(field)` — `frontend/src/components/ui/Field.jsx`: the hint no longer
    disappears when an error appears (§3a, rule 2), which also repairs a dangling
    `aria-describedby` IDREF.
+3. `feat(button)` — `frontend/src/components/ui/Button.jsx`: `loading` prop, so
+   the sixth state word reaches a component API (§3c). Additive.
 
-Gates after both: `check-classes` 2120 selectors / 1443 classes / **0 missing**,
-exit 0. `check-tokens` 340 declared / 234 referenced / **0 missing**, exit 0.
+Deliberately **not** changed, each because it is a design call rather than a
+coverage fix, and each with the evidence above to decide on:
+
+- `k-btn` → `btn` (§4). 213 primaries lose a gradient, a shadow and a hover
+  lift. Also the inventory's §11 forbids the standalone sweep outright.
+- `.seg` vs `.k-segctrl` (§5). Picking a winner moves pixels on 11 surfaces.
+- `required` → `optional` marking in `Field.jsx` (§3a rule 3). Public API across
+  10 files.
+- Tooltip edge auto-flip (§7). Zero call sites, so nothing would verify it.
+
+Gates after all three, run from `frontend/`, unpiped:
+`check-classes` — 2120 selectors defined, 1443 classes used, **0 missing**, exit 0.
+`check-tokens` — 340 declared, 234 referenced, **0 missing**, exit 0.
+Both edited files parse clean under esbuild's JSX loader. No test in
+`src/__tests__` covers `Button` or `Field`, so the vitest suite is untouched by
+either change.
