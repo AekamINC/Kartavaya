@@ -56,7 +56,7 @@ repeating this should use CDP with a wait condition, not `--dump-dom`.
 | 11 | Time | push | `screens/TimeScreen.tsx` | present |
 | 12 | Reminders | push | `screens/RemindersScreen.tsx` | present |
 | 13 | Pahchan · **Clock** tab | push | `screens/pahchan/ClockScreen.tsx` | present |
-| 14 | Pahchan · **My attendance** tab | segment on 13 | — | **ABSENT** (§2) |
+| 14 | Pahchan · **My attendance** tab | segment on 13 | `screens/pahchan/AttendanceHistory.tsx` | **was ABSENT — built** (§2) |
 | 15 | Module · CRM (ग्रह / Graha) | push | `screens/modules/GrahaScreen.tsx` | present |
 | 16 | Module · Finance (गणित / Ganit) | push | `screens/modules/GanitScreen.tsx` | present |
 | 17 | Module · HRMS (मानव / Manav) | push | `screens/modules/ManavScreen.tsx` | present |
@@ -66,7 +66,7 @@ repeating this should use CDP with a wait condition, not `--dump-dom`.
 | 21 | Module · **eSign (हस्ताक्षर / Hastakshar)** | push | — | **ABSENT** (§3.1) |
 | — | *(no reference equivalent)* | — | `screens/modules/PracharScreen.tsx` | **extra** (§3.1) |
 | — | *(no reference equivalent)* | — | `screens/BoardsScreen.tsx` | **orphaned** (§3.3) |
-| — | *(not a screen in the reference)* | — | `screens/MeScreen.tsx` | present, **missing the register** (§2) |
+| — | *(not a screen in the reference)* | — | `screens/MeScreen.tsx` | **register added** (§2) |
 
 Build-only screens with no reference case, all legitimate: `LoginScreen`,
 `ClientPortalScreen`, `pahchan/EnrollScreen` (the reference harness has no auth,
@@ -228,37 +228,101 @@ eight files**, each hand-rolling `<Modal transparent>` + its own scrim:
 | `screens/ApprovalsScreen.tsx` | centre dialog (fade) |
 | `screens/taskdetail/ApprovalModal.tsx` | centre dialog (fade) |
 
-Two spellings of the same thing (`backdrop` at `rgba(0,0,0,0.45)`, `scrim` at
-`rgba(0,0,0,0.4)`) and seven copies of the same slide-up scaffold.
+**THREE** scrim values, not two — `0.45` in four files, `0.40` in three, and `0.55` in
+`BoardScreen`'s `NewTaskModal`. Three grab-handle sizes. `paddingBottom: Platform.OS ===
+'ios' ? 40 : 28` in two files, a guess at the home indicator.
 
-See §4 for what I did about it.
+And `onRequestClose` present in some and absent in others — the one that actually
+matters, because without it Android's hardware back does nothing on an open sheet. 17's
+platform table calls that out, and it is invisible to anyone testing on iOS.
 
----
-
-## 4. `components/Sheet.tsx`
-
-Added as the single bottom-sheet primitive: `<Modal transparent>`, one scrim value, the
-grab handle the reference draws (`msheet__grab`), safe-area-aware padding, `onRequestClose`
-wired for Android hardware back, and `accessibilityViewIsModal`.
-
-**Deliberately no animation logic of its own** — it uses RN's built-in `animationType`.
-The motion sibling owns the sheet's motion curve, and a Sheet that hardcodes its own
-timing is exactly the thing that would have to be torn out again. The primitive is the
-seam they need; it is not the motion.
-
-Migrated the pure slide-up sheets. The two centre dialogs are a different component and
-were left alone.
+See §4.
 
 ---
 
-## 5. Gates
+## 4. `components/Sheet.tsx` · **BUILT, 8 of 9 migrated**
+
+The single bottom-sheet primitive: `<Modal transparent>`, one scrim, the grab handle the
+reference draws (`msheet__grab`), `paddingBottom` from the real safe-area inset,
+`onRequestClose`, `accessibilityViewIsModal`, `statusBarTranslucent`, optional bilingual
+title, and an opt-in `keyboardAvoiding` for the sheets that hold a `TextInput`.
+
+Migrated: `AttachmentSourceSheet`, `MoveModal`, `AssigneePickerModal`, `RemindersScreen`,
+`ManavScreen`, and **both** of `BoardScreen`'s.
+
+**`NewTaskSheet` left deliberately.** It carries a custom bilingual `BiLabel` header and
+nests `AttachmentSourceSheet` inside its own `Modal`. Migrating it means making a
+typography decision about that header, which belongs to the sibling who owns pixels.
+
+Two things worth knowing about the implementation:
+
+- **It owns no motion.** RN's built-in `animationType`, not a hand-driven timing. The
+  sheet's curve belongs to MOTION-SPEC, and a primitive with a hardcoded duration is
+  exactly what has to be torn out when the motion work lands. This is the seam that work
+  needs — one place instead of nine — and nothing more.
+- **The scrim is a sibling of the sheet, not its parent.** The `MoveModal` pattern being
+  replaced wrapped the sheet *inside* a pressable scrim, which means every tap in the
+  sheet has to be swallowed by a second `Pressable` with an empty `onPress` — and
+  anything that forgets closes the sheet under the user's finger.
+
+`contentStyle` applies to the body wrapper rather than the sheet itself, so the two call
+sites that relied on a container `gap` keep their spacing without the grabber being
+pushed off the top edge. That was a regression I introduced and caught before committing.
+
+The two centre dialogs (`ApprovalsScreen`, `taskdetail/ApprovalModal`) are a different
+component and were left alone.
+
+---
+
+## 5. Smaller things found in passing
+
+- **`MyBiometrics.tsx:51` reads `t.outlineVariant`, which does not exist.** The token is
+  `outlineVar` (`theme/tokens.ts:131`), so the `?? t.ink3` fallback fires every time and
+  the reference-photo slots have never drawn their intended border. One word; left for
+  the theming sibling because a border colour is theirs.
+- **Query-key collision — fixed.** `ClockScreen` and `MyBiometrics` both used
+  `['pahchan','me']` while requesting **7 days** and **1 day**. Same key, different
+  request: whichever mounted first decided what both got back. `days` is now part of the
+  key in all three call sites.
+- **Messages tab carries no badge.** Reference `MTABS` puts `7` on `msgs`; the build
+  passes `badges={{ More: unread }}` only. Flagged, not changed — which tab owns the
+  count is a product call.
+
+---
+
+## 6. Gates
 
 | Gate | Command | Result |
 |---|---|---|
-| Mobile typecheck | `cd mobile && npx tsc --noEmit` | see §6 |
-| Web tokens | `cd frontend && node scripts/check-tokens.mjs` | see §6 |
-| Web classes | `cd frontend && node scripts/check-classes.mjs` | see §6 |
+| Mobile typecheck | `cd mobile && npx tsc --noEmit` | **exit 0** |
+| Register logic | `cd mobile && node --experimental-strip-types src/screens/pahchan/register.check.mjs` | **12 checks passed** |
+| Web tokens | `cd frontend && node scripts/check-tokens.mjs` | **exit 0** — 340 declared, 234 referenced, 0 missing |
+| Web classes | `cd frontend && node scripts/check-classes.mjs` | **exit 0** — 2120 selectors, 1443 classes, 0 missing |
 
-Run unpiped from `frontend/` per `_COORDINATION.md` §2. Mobile deps installed with
-`npm ci --ignore-scripts`; **`mobile/package-lock.json` is unmodified** and `__ref/` is
-gitignored — neither is committed.
+Run unpiped from `frontend/` per `_COORDINATION.md` §2. Baseline `tsc --noEmit` on clean
+`staging` was also exit 0, so the gate was green before and after.
+
+`register.check.mjs` is a plain assert script, not a framework — there is no test runner
+in `mobile/` and `tsc` is the only declared gate. It exists because a typecheck cannot
+tell you that 09:02→17:30 is 8h 28m, and this arithmetic decides what someone is shown as
+having worked. It covers DESC-ordered input (which is the order `/me` actually returns), a
+forgotten clock-out contributing zero rather than hours-until-now, a double clock-in not
+doubling the day, and IST-local day keying.
+
+Mobile deps installed with `npm ci --ignore-scripts`; **`mobile/package-lock.json` is
+unmodified** and `frontend/public/__ref/` is gitignored — neither is committed.
+
+---
+
+## 7. What I did not do, and why
+
+- **eSign / Hastakshar surface (§3.1)** — needs its endpoints and a decision on whether
+  Prachar stays on mobile. Not mine to settle unilaterally.
+- **More screen restructure (§3.2)** — a layout rewrite of a file the pixel/theming
+  sibling is working in. Head-on conflict for no structural gain they could not make.
+- **Tasks `My tasks | Boards` segment + reaching `BoardsScreen` (§3.3)** — one change,
+  not two, and it restructures the Tasks screen's segment hierarchy. Worth doing next;
+  worth doing as its own unit.
+- **Module label deltas** (`Finance`/`Invoicing`, `ग्रह`/`ग्राहक`, …) — the same
+  disagreement `_DESIGN-GAP.md` §2 raises for the web sidebar. Settle once for both
+  surfaces, not twice.
