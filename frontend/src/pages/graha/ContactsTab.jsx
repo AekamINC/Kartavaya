@@ -18,6 +18,22 @@ import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { Badge, CONTACT_TYPES, TYPE_COLORS, stageColor, SOURCE_COLORS } from './_shared';
 import ContactTimeline from './ContactTimeline';
 import { inr } from '../../lib/inr';
+import { useDocumentDownload } from '../../lib/documents';
+import DocumentError from '../../components/ui/DocumentError';
+
+/**
+ * The Indian financial year to date: 1 April → today.
+ *
+ * Not the calendar year, and not a rolling 12 months. A statement of account is
+ * reconciled against books kept on the FY, and an April-to-today window is the
+ * one a firm actually asks for. The statement's opening balance carries
+ * everything before the window, so a shorter window never understates the debt.
+ */
+function financialYearToDate(today = new Date()) {
+  const year = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1;
+  const iso = d => d.toISOString().slice(0, 10);
+  return { start: `${year}-04-01`, end: iso(today) };
+}
 
 export default function ContactsTab() {
   const { pushToast } = useToast();
@@ -36,6 +52,9 @@ export default function ContactsTab() {
   // A failed load left `contacts` at [] and rendered the "No contacts yet"
   // EmptyState — which invites the user to add one, on a list that may be full.
   const [err, setErr] = useState(null);
+
+  const statement = useDocumentDownload();
+  const [soaPeriod, setSoaPeriod] = useState(financialYearToDate);
 
   useEffect(() => {
     // The client dropdown is an enrichment: it failing must not take the list
@@ -274,6 +293,48 @@ export default function ContactsTab() {
               ))}
             </div>
           )}
+
+          <div className="gr__panel">
+            <h4 className="gr__ptitle gr__ptitle--sm">Statement of account</h4>
+            <p className="gr__sub">
+              The ledger for this account over one period, with ageing. The opening
+              balance carries everything before the start date, so the statement ties
+              to the whole history rather than only to the window it prints.
+            </p>
+            <div className="gr__grid">
+              {field('From', (
+                <input
+                  className="k-input" type="date" value={soaPeriod.start}
+                  onChange={e => setSoaPeriod({ ...soaPeriod, start: e.target.value })}
+                />
+              ))}
+              {field('To', (
+                <input
+                  className="k-input" type="date" value={soaPeriod.end}
+                  onChange={e => setSoaPeriod({ ...soaPeriod, end: e.target.value })}
+                />
+              ))}
+            </div>
+            <div className="gr__acts">
+              <button
+                type="button"
+                className="k-btn k-btn--primary"
+                disabled={statement.busy === 'statement' || soaPeriod.start > soaPeriod.end}
+                onClick={() => statement.run('statement', {
+                  url: `/v1/documents/contacts/${c.id}/statement/pdf`,
+                  params: { period_start: soaPeriod.start, period_end: soaPeriod.end },
+                  filename: `statement-${c.name || 'account'}.pdf`,
+                  fallback: 'Could not generate the statement',
+                })}
+              >
+                {statement.busy === 'statement' ? 'Generating…' : 'Download statement'}
+              </button>
+            </div>
+            {soaPeriod.start > soaPeriod.end && (
+              <p className="gr__mute">The start date is after the end date.</p>
+            )}
+            <DocumentError error={statement.error} onDismiss={statement.clear} />
+          </div>
 
           <div className="gr__panel">
             <ContactTimeline contactId={c.id} />

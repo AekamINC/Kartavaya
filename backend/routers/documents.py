@@ -432,34 +432,16 @@ class Gstr3bOverrides(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
-@router.post("/gst/gstr3b/{period}/pdf")
-async def download_gstr3b_pdf(
-    period: str,
-    overrides: Gstr3bOverrides = Body(default_factory=Gstr3bOverrides),
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_ganit),
-):
-    """The GSTR-3B working paper for one tax period.
+async def _assemble_gstr3b(
+    pool, org_id: str, period: str, overrides: "Gstr3bOverrides"
+) -> tuple[dict, dict]:
+    """Build the GSTR-3B working-paper dict, and load the org alongside it.
 
-    POST rather than GET because the rows the schema cannot supply come in the
-    body. Nothing is written; the verb reflects the payload, not a side effect.
-
-    Table 3.1(a) and (b) are computed from `ganit_invoices`, and 4(A) "all other
-    ITC" from `ganit_vendor_bills`. Everything else has no column and arrives as
-    an override. Invoices missing an HSN or SAC on any line are HELD BACK and
-    named on the face of the paper — the behaviour `doc_validation`'s docstring
-    cites the design for, and the reason this document is worth generating at
-    all for a CA firm.
+    Extracted from `download_gstr3b_pdf` so the JSON sibling below reports the
+    SAME figures the PDF prints. Two implementations of Table 3.1 would drift,
+    and a filing screen that disagrees with the document it generates is worse
+    than a screen with no figures — the preparer cannot tell which one lied.
     """
-    from services.gstr3b_pdf import generate_gstr3b_pdf
-
-    try:
-        datetime.strptime(period, "%Y-%m")
-    except (ValueError, TypeError):
-        raise HTTPException(400, "period must be YYYY-MM")
-
-    pool = await get_pool()
     start = f"{period}-01"
     py, pm = int(period[:4]), int(period[5:7])
     end_exclusive = date(py + 1, 1, 1) if pm == 12 else date(py, pm + 1, 1)
@@ -569,6 +551,38 @@ async def download_gstr3b_pdf(
         "held_back": held_back,
         "notes": overrides.notes,
     }
+    return gstr, org
+
+
+@router.post("/gst/gstr3b/{period}/pdf")
+async def download_gstr3b_pdf(
+    period: str,
+    overrides: Gstr3bOverrides = Body(default_factory=Gstr3bOverrides),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_ganit),
+):
+    """The GSTR-3B working paper for one tax period.
+
+    POST rather than GET because the rows the schema cannot supply come in the
+    body. Nothing is written; the verb reflects the payload, not a side effect.
+
+    Table 3.1(a) and (b) are computed from `ganit_invoices`, and 4(A) "all other
+    ITC" from `ganit_vendor_bills`. Everything else has no column and arrives as
+    an override. Invoices missing an HSN or SAC on any line are HELD BACK and
+    named on the face of the paper — the behaviour `doc_validation`'s docstring
+    cites the design for, and the reason this document is worth generating at
+    all for a CA firm.
+    """
+    from services.gstr3b_pdf import generate_gstr3b_pdf
+
+    try:
+        datetime.strptime(period, "%Y-%m")
+    except (ValueError, TypeError):
+        raise HTTPException(400, "period must be YYYY-MM")
+
+    pool = await get_pool()
+    gstr, org = await _assemble_gstr3b(pool, org_id, period, overrides)
 
     try:
         pdf = generate_gstr3b_pdf(gstr, org)
@@ -578,6 +592,185 @@ async def download_gstr3b_pdf(
         raise _failed("GSTR-3B", e, period=period, org=org_id) from e
 
     return _pdf_response(pdf, f"GSTR-3B-{period}.pdf")
+
+
+async def _prefiling_checks(
+    pool, org_id: str, period: str, gstr: dict, org: dict
+) -> list[dict]:
+    """What would stop this period being filed, computed — never illustrated.
+
+    The design's pre-filing panel lists three findings. Two of them are real
+    checks this codebase can actually make, so they are made here rather than
+    hard-coded: a line with no HSN/SAC (rule 46(g), which is also why the
+    working paper holds the invoice back) and a counterparty GSTIN that fails
+    its own check digit. The third — place of supply — is reported as what the
+    data says, not as the design's illustrative sentence.
+
+    `severity` is 'blocking' where the working paper will visibly exclude or
+    refuse, and 'info' where the figure still files but rests on a weaker
+    assertion than the reader may assume.
+    """
+    from services.gstin import is_valid
+
+    start = f"{period}-01"
+    py, pm = int(period[:4]), int(period[5:7])
+    end_exclusive = (date(py + 1, 1, 1) if pm == 12 else date(py, pm + 1, 1)).isoformat()
+
+    checks: list[dict] = []
+
+    if not str(org.get("gstin") or "").strip():
+        checks.append({
+            "code": "supplier_gstin_missing",
+            "severity": "blocking",
+            "title": "Your GSTIN is not on the organisation profile",
+            "detail": "A GSTR-3B is filed against a registration. The working paper "
+                      "will refuse until the GSTIN is set.",
+            "fix": "Settings → Organisation profile",
+            "items": [],
+        })
+
+    held = gstr.get("held_back") or []
+    if held:
+        checks.append({
+            "code": "hsn_missing",
+            "severity": "blocking",
+            "title": f"HSN/SAC missing on {len(held)} "
+                     f"{'invoice' if len(held) == 1 else 'invoices'}",
+            "detail": "Rule 46(g) requires an HSN or SAC on every line. These "
+                      "invoices are HELD BACK from the figures below and named on "
+                      "the working paper — they are not silently included.",
+            "fix": "Ganit → Invoices",
+            "items": [str(h.get("party") or "") for h in held],
+        })
+
+    # Counterparty GSTINs. A number that fails its own check digit will be
+    # rejected downstream and the recipient's credit refused, months later.
+    parties = await pool.fetch(
+        "SELECT DISTINCT c.name, c.company, c.gstin "
+        "FROM staging.ganit_invoices i "
+        "JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "WHERE i.org_id=$1::uuid AND i.is_active AND i.cancelled_at IS NULL "
+        "AND i.invoice_type IN ('tax_invoice','credit_note','debit_note') "
+        "AND i.invoice_date >= $2::date AND i.invoice_date < $3::date "
+        "AND COALESCE(c.gstin, '') <> ''",
+        org_id, start, end_exclusive,
+    )
+    bad = [
+        f"{p['company'] or p['name'] or 'Unnamed party'} — {p['gstin']}"
+        for p in parties if not is_valid(str(p["gstin"]))
+    ]
+    if bad:
+        checks.append({
+            "code": "counterparty_gstin_invalid",
+            "severity": "blocking",
+            "title": f"{len(bad)} counterparty {'GSTIN fails' if len(bad) == 1 else 'GSTINs fail'} the check digit",
+            "detail": "A GSTIN carries its own checksum so a typo is catchable at "
+                      "entry. Left as-is, the recipient's input tax credit is "
+                      "refused — and that surfaces months after filing.",
+            "fix": "Graha → Contacts",
+            "items": bad,
+        })
+
+    # Place of supply. The column exists; where it is blank the CGST/SGST vs
+    # IGST split rests on the `is_igst` flag alone, which nothing cross-checks.
+    no_pos = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.ganit_invoices "
+        "WHERE org_id=$1::uuid AND is_active AND cancelled_at IS NULL "
+        "AND invoice_type IN ('tax_invoice','credit_note','debit_note') "
+        "AND invoice_date >= $2::date AND invoice_date < $3::date "
+        "AND COALESCE(place_of_supply, '') = ''",
+        org_id, start, end_exclusive,
+    ) or 0
+    if no_pos:
+        checks.append({
+            "code": "place_of_supply_missing",
+            "severity": "info",
+            "title": f"Place of supply not recorded on {no_pos} "
+                     f"{'invoice' if no_pos == 1 else 'invoices'}",
+            "detail": "The inter-state/intra-state split for these rests on the "
+                      "IGST flag alone. The figures still file; nothing "
+                      "independently confirms the classification.",
+            "fix": "Ganit → Invoices",
+            "items": [],
+        })
+
+    return checks
+
+
+@router.get("/gst/gstr3b/{period}")
+async def gstr3b_summary(
+    period: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_ganit),
+):
+    """The working paper's figures as JSON, for the filing screen.
+
+    A GET sibling of the POST above, reading the same `_assemble_gstr3b` and the
+    same `gstr3b_pdf.compute`, so the screen and the document can never state
+    different tax. Nothing is written and nothing is sent.
+
+    The override rows stay at their defaults here because a GET carries no body.
+    That is not a silent nil: `not_recorded` names every row Kartavaya has no
+    store for, so the screen can say the row is unrecorded rather than paint a
+    confident zero. Reverse charge, nil/exempt, non-GST and every ITC reversal
+    are in that list — see `Gstr3bOverrides`.
+    """
+    from services.gstr3b_pdf import HEADS, compute, statutory_due_date
+
+    try:
+        datetime.strptime(period, "%Y-%m")
+    except (ValueError, TypeError):
+        raise HTTPException(400, "period must be YYYY-MM")
+
+    pool = await get_pool()
+    gstr, org = await _assemble_gstr3b(pool, org_id, period, Gstr3bOverrides())
+    computed = compute(gstr)
+    checks = await _prefiling_checks(pool, org_id, period, gstr, org)
+
+    def _tax(block: dict) -> int:
+        return sum(int(round(float(block.get(h) or 0))) for h in HEADS)
+
+    return {
+        "period": period,
+        "due_date": statutory_due_date(period),
+        "state_label": gstr.get("state_label") or "",
+        "gstin": org.get("gstin") or "",
+        "outward_count": gstr.get("outward_count", 0),
+        "inward_count": gstr.get("inward_count", 0),
+        # The four rows the design's summary panel prints, each as
+        # {taxable, tax}. `taxable` is nil where the row carries no value.
+        "rows": [
+            {"key": "outward_taxable", "label": "Outward taxable supplies",
+             "taxable": int(round(float(gstr["outward_taxable"].get("taxable") or 0))),
+             "tax": _tax(gstr["outward_taxable"]), "recorded": True},
+            {"key": "outward_zero_rated", "label": "Zero-rated supplies (exports)",
+             "taxable": int(round(float(gstr["outward_zero_rated"].get("taxable") or 0))),
+             "tax": _tax(gstr["outward_zero_rated"]), "recorded": True},
+            {"key": "inward_reverse_charge", "label": "Inward supplies (reverse charge)",
+             "taxable": int(round(float((gstr.get("inward_reverse_charge") or {}).get("taxable") or 0))),
+             "tax": _tax(gstr.get("inward_reverse_charge") or {}), "recorded": False},
+            {"key": "net_itc", "label": "Eligible ITC",
+             "taxable": None, "tax": sum(computed["net_itc"][h] for h in HEADS),
+             "recorded": True},
+            {"key": "total_cash", "label": "Net tax payable in cash",
+             "taxable": None, "tax": computed["total_cash"], "recorded": True},
+        ],
+        "totals": {
+            "payable": computed["total_payable"],
+            "via_itc": computed["total_itc"],
+            "in_cash": computed["total_cash"],
+        },
+        #: Rows with no column anywhere in Kartavaya. The screen states these as
+        #: unrecorded; it must never render them as a confident zero.
+        "not_recorded": [
+            "Inward supplies liable to reverse charge",
+            "Nil-rated, exempt and non-GST outward supplies",
+            "ITC on imports, ISD credit and reverse charge",
+            "ITC reversals (rules 38/42/43 and section 17(5))",
+        ],
+        "checks": checks,
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════

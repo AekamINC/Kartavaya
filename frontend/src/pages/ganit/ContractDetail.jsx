@@ -7,6 +7,8 @@ import FocusTrap from '../../components/ui/FocusTrap';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
+import { useDocumentDownload } from '../../lib/documents';
+import DocumentError from '../../components/ui/DocumentError';
 import { Badge, CONTRACT_COLORS } from './_shared';
 
 const STATUSES = ['draft', 'active', 'expired', 'cancelled', 'renewed'];
@@ -20,6 +22,14 @@ export default function ContractDetail({ contractId, onClose, onChanged }) {
   const [draft, setDraft] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [saving, setSaving] = useState(false);
+
+  const agreement = useDocumentDownload();
+  // Governing law and seat have no column on `ganit_contracts`. They are
+  // ADVISORY on the validator, so the agreement renders without them — but a
+  // dispute-resolution clause with an empty seat resolves nothing, so they are
+  // asked for here rather than defaulted. A generator that guessed a seat would
+  // send a dispute to the wrong forum.
+  const [terms, setTerms] = useState({ governing_law: '', governing_seat: '' });
 
   const [closing, setClosing] = useState(false);
   const closingRef = useRef(false);
@@ -163,6 +173,60 @@ export default function ContractDetail({ contractId, onClose, onChanged }) {
                   <section className="dr__sec">
                     <h3 className="dr__lbl">Description<span className="dr__lbl-hi" lang="hi">विवरण</span></h3>
                     <p className="gnd__contact">{c.description}</p>
+                  </section>
+                )}
+
+                {!editing && (
+                  <section className="dr__sec">
+                    <h3 className="dr__lbl">Service agreement<span className="dr__lbl-hi" lang="hi">अनुबंध</span></h3>
+                    <p className="gn-est__note">
+                      The two-page execution copy. It draws the parties, term, fee and scope
+                      from this contract; if any of those is missing the document is refused
+                      and says which, rather than issuing an agreement with a blank in it.
+                    </p>
+                    <div className="gn-form__grid gn-form__grid--2 gn-form__grid--flush">
+                      <label className="fld">
+                        <span className="fld__l">Governing law</span>
+                        <input
+                          className="inp" placeholder="e.g. the laws of India"
+                          value={terms.governing_law}
+                          onChange={e => setTerms({ ...terms, governing_law: e.target.value })}
+                        />
+                      </label>
+                      <label className="fld">
+                        <span className="fld__l">Seat of arbitration</span>
+                        <input
+                          className="inp" placeholder="e.g. Mumbai"
+                          value={terms.governing_seat}
+                          onChange={e => setTerms({ ...terms, governing_seat: e.target.value })}
+                        />
+                      </label>
+                    </div>
+                    <div className="gn-form__acts">
+                      <button
+                        type="button"
+                        className="btn btn--out btn--sm"
+                        disabled={agreement.busy === 'agreement'}
+                        onClick={() => agreement.run('agreement', {
+                          method: 'post',
+                          url: `/v1/documents/contracts/${contractId}/agreement/pdf`,
+                          // Only the two clause values this drawer actually
+                          // collects. Every other field on `AgreementBody` has a
+                          // considered default in the router; inventing values
+                          // for them here would put terms in a signed document
+                          // that nobody agreed.
+                          data: {
+                            governing_law: terms.governing_law,
+                            governing_seat: terms.governing_seat,
+                          },
+                          filename: `AGR-${String(contractId).slice(0, 8).toUpperCase()}.pdf`,
+                          fallback: 'Could not generate the agreement',
+                        })}
+                      >
+                        {agreement.busy === 'agreement' ? 'Generating…' : 'Download agreement'}
+                      </button>
+                    </div>
+                    <DocumentError error={agreement.error} onDismiss={agreement.clear} />
                   </section>
                 )}
 

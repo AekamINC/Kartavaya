@@ -399,6 +399,89 @@ button.gn-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offs
 .gn-payline { display: flex; gap: var(--sp-2); align-items: flex-end; flex-wrap: wrap; }
 .gn-payline__in { width: 150px; }
 
+/* ── GST filing screen ─────────────────────────────────────────────────────
+ * `ScreensBiz.jsx:60–117`. Two columns of panels on a wide screen, one on a
+ * narrow one — the reference's `.two`/`.col`, scoped to this module rather
+ * than adding another global layout vocabulary.
+ */
+.gn-gst {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: var(--sp-4);
+  align-items: start;
+}
+.gn-gst__col { min-width: 0; }
+
+/* The summary's figure rows. A two-column numeric block: taxable value, then
+   tax. Both monospaced so digits line up down the column — on a tax figure a
+   misread column is a misfiled return. */
+.gn-gst__rows { display: flex; flex-direction: column; }
+.gn-gst__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--outline-variant);
+  font-size: var(--t-body-sm);
+}
+.gn-gst__row:last-child { border-bottom: 0; font-weight: 600; }
+.gn-gst__l { min-width: 0; }
+.gn-gst__nums { display: flex; gap: var(--sp-5); flex-shrink: 0; }
+.gn-gst__tx {
+  font-family: var(--font-mono);
+  color: var(--on-surface-3);
+  text-align: right;
+}
+.gn-gst__gst {
+  font-family: var(--font-mono);
+  min-width: 96px;
+  text-align: right;
+}
+/* A row Kartavaya has no store for. Deliberately NOT styled as a zero — it
+   reads as prose, because it is a statement about the absence of data. */
+.gn-gst__gst--none {
+  font-family: inherit;
+  font-style: italic;
+  color: var(--on-surface-3);
+}
+
+.gn-gst__acts { display: flex; flex-direction: column; gap: var(--sp-3); }
+.gn-gst__acts .btn { width: 100%; }
+
+/* ── Panel status tint and tag ─────────────────────────────────────────── */
+.gn-panel--warn { border-color: var(--warn); }
+.gn-tag {
+  font-size: var(--t-label);
+  font-weight: 600;
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--on-surface-2);
+  white-space: nowrap;
+}
+.gn-tag--ok     { background: var(--ok-container);     color: var(--on-ok-container); }
+.gn-tag--danger { background: var(--danger-container); color: var(--on-danger-container); }
+
+/* ── Pre-filing findings ───────────────────────────────────────────────── */
+.gn-chk__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.gn-chk__i {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--ok-container);
+  color: var(--on-ok-container);
+}
+.gn-chk__i--bad { background: var(--danger-container); color: var(--on-danger-container); }
+.gn-chk__t { font-size: var(--t-body-sm); font-weight: 600; }
+.gn-chk__d { font-size: var(--t-label); }
+/* The named parties or invoice numbers. Monospaced: these are identifiers the
+   user carries to another screen, and a transposed digit is the whole bug. */
+.gn-chk__items { font-family: var(--font-mono); font-size: var(--t-label); }
+.gn-chk__fix { font-size: var(--t-label); font-weight: 600; }
+
 @media (max-width: 640px) {
   .gn-form { padding: var(--sp-4); }
   .gnd__title, .gnd__acts { padding-inline: var(--sp-4); }
@@ -406,4 +489,7 @@ button.gn-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offs
      honest; a 40px "Description" input is not. */
   .gn-li { grid-template-columns: 1fr; }
   .gn-li__x { justify-self: end; padding-bottom: 0; }
+  /* Below the summary's two numeric tracks, stack rather than crush them. */
+  .gn-gst__row { flex-direction: column; align-items: stretch; }
+  .gn-gst__nums { justify-content: space-between; gap: var(--sp-3); }
 }

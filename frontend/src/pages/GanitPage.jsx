@@ -104,7 +104,13 @@ export default function GanitPage() {
     } catch { /* the tab simply carries no count */ }
   }
 
-  const tabs = TABS.map(([id]) => ({ id, label: id.replace(/-/g, ' '), count: counts[id] }));
+  // The reference's tab id is `stats` (Data.jsx:122) and the panel it names is
+  // the GST filing screen, not a figures page. The id stays; the LABEL says
+  // what the tab actually opens, because "stats" sends a preparer looking for
+  // GSTR-3B everywhere except the tab that holds it.
+  const tabs = TABS.map(([id]) => ({
+    id, label: id === 'stats' ? 'GST filing' : id.replace(/-/g, ' '), count: counts[id],
+  }));
 
   return (
     <div className="mpage">
