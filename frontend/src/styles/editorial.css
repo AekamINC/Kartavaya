@@ -1005,17 +1005,28 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-radius: var(--r-lg);
   overflow: hidden;
 }
+/* `--pad-card`, not `--sp-4`/`--sp-5`. Those are fixed steps; --pad-card is
+   the one that moves with density, and a card whose padding does not respond
+   to the density setting is the most visible place for the setting to look
+   broken. `.card` in components.css already uses it. The bottom rule stays —
+   the reference's card head has no divider, but that is this build's own look
+   decision and separating head from body is not a measurement error. */
 .k-card__head {
   display: flex; align-items: baseline; justify-content: space-between;
   gap: 12px;
-  padding: var(--sp-4) var(--sp-5);
+  padding: var(--pad-card);
   border-bottom: 1px solid var(--rule-soft);
 }
 .k-card__titles { display: flex; align-items: baseline; gap: 10px; }
+/* `--t-title-lg` (20px), which is what the reference's `.card__title` resolves
+   to and what `.card__title` in components.css already uses. The 18px literal
+   here made the same object two different sizes depending on which of the two
+   card components a page happened to import, and it did not track the Text
+   size slider. */
 .k-card__title {
   font-family: var(--font-display);
-  font-size: 18px; font-weight: 500;
-  letter-spacing: -0.005em;
+  font-size: var(--t-title-lg); font-weight: var(--t-title-lg-w);
+  letter-spacing: -0.01em;
   margin: 0;
   color: var(--ink);
 }
@@ -1024,7 +1035,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-size: 14px;
   color: var(--ink-3);
 }
-.k-card__body { padding: var(--sp-4) var(--sp-5) var(--sp-5); }
+.k-card__body { padding: var(--pad-card); }
 
 /* ── Task row ──────────────────────────────────────────────────────────────
    The list bleeds to the card edge so each row's hairline is a full-width rule.
