@@ -65,6 +65,9 @@ async function press(key) {
 /** The three comparison slots' visible text, in row order. */
 const slotText = () => host.$$('.rv__slot').map(n => n.textContent.trim());
 
+/** …and what a screen reader is told about each. */
+const slotLabels = () => host.$$('.rv__slot').map(n => n.getAttribute('aria-label') || '');
+
 beforeEach(() => {
   installNetworkKillSwitch();
   host = makeHost();
@@ -91,15 +94,18 @@ describe('the photo comparison must be able to fail', () => {
     // Before the deadline this is genuinely still loading, and says so.
     expect(host.$$('.rv__slot')).toHaveLength(3);
     expect(host.$$('.rv__slot .ix-skeleton')).toHaveLength(3);
-    expect(slotText().join(' ')).toContain('loading');
+    expect(slotLabels().every(l => l.includes('loading'))).toBe(true);
     expect(slotText().join(' ')).not.toContain('failed');
 
     const { act } = await import('react');
     await act(async () => { await vi.advanceTimersByTimeAsync(PHOTO_DEADLINE_MS + 50); });
     await settle();
 
-    // After it, every slot has resolved to a failure the reviewer can read.
+    // After it, every slot has resolved to a failure the reviewer can read —
+    // on screen AND to a screen reader, because neither audience may be left
+    // with an indicator that only ever means "wait".
     expect(slotText()).toEqual(['failed', 'failed', 'failed']);
+    expect(slotLabels().every(l => l.includes('failed to load'))).toBe(true);
     expect(host.$$('.rv__slot .ix-skeleton')).toHaveLength(0);
   });
 

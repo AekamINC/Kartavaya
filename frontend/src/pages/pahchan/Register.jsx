@@ -120,13 +120,6 @@ function timeOf(iso) {
 }
 
 /**
- * The punch-and-two-references comparison. Genuinely new — §3's "Reuse before you
- * create" table lists `.rv__trip` as one of four things no primitive covers.
- *
- * Keys, not URLs. A signed URL is fetched per image actually rendered, so
- * scrolling past a row never mints a link to that person's face.
- */
-/**
  * One image slot's whole lifecycle: 'load' | 'ok' | 'gone' | 'err'.
  *
  * A single nullable URL cannot express the difference between "still fetching"
@@ -164,9 +157,16 @@ function useSignedPhoto(path) {
 /** The slot itself. Loading is the app's skeleton, not an ellipsis. */
 function Slot({ s, label, emptyWord }) {
   const failed = s.st === 'err';
+  const word = failed ? 'failed to load' : s.st === 'load' ? 'loading' : emptyWord;
   return (
     <div
       className="rv__slot"
+      /* Labelled, not live. Three slots per row across twelve rows is
+         thirty-six nodes; giving each one `role="status"` would fire
+         thirty-six announcements as a page settles and bury the one sentence
+         that matters. The verdict cell already carries the row's state as
+         text, and it is the thing a reviewer is deciding from. */
+      aria-label={s.st === 'ok' ? undefined : `${label} — ${word}`}
       style={{
         width: PHOTO_W, height: PHOTO_H,
         background: s.st === 'ok' ? 'var(--s-low)' : 'var(--s-container)',
@@ -185,10 +185,8 @@ function Slot({ s, label, emptyWord }) {
         // place in the app that paints 36 of them at once. Both stop under
         // reduced motion; only this one costs nothing per frame while running.
         // The shape is the loading signal, so it survives the sweep being off.
-        <span className="ix-skeleton" role="status" aria-busy="true"
-              style={{ width: '100%', height: '100%', borderRadius: 0 }}>
-          <span className="sr-only">{label} — loading</span>
-        </span>
+        <span className="ix-skeleton" aria-hidden="true"
+              style={{ width: '100%', height: '100%', borderRadius: 0 }} />
       ) : (
         <span
           style={{

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, Pressable, StyleSheet, ActivityIndicator, StatusBar, Platform, Linking,
+  Animated, AccessibilityInfo,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import * as ImageManipulator from 'expo-image-manipulator';
@@ -12,6 +13,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../theme/ThemeProvider';
+import { DUR, EASE, amplitude, duration, useReducedMotion } from '../../theme/motion';
 import { pahchanApi, enrollmentApi, type PunchDirection } from '../../api/pahchan';
 import { enqueuePunch, attachPhotoKey, flushPunches, getPunchCount } from '../../offline/punchQueue';
 
@@ -43,10 +45,39 @@ import { enqueuePunch, attachPhotoKey, flushPunches, getPunchCount } from '../..
 
 const MAX_RETAKES = 3;
 
+/**
+ * Over a live camera feed the palette does not apply — the background is
+ * whatever the lens sees — so these two are fixed, and they are the prototype's
+ * own values for this screen (`pahchan.css` `.pc__tick`, `.pc__done`).
+ *
+ * Amber, not red, for a queued punch. It is recorded; only its delivery is
+ * waiting. Colouring it as a failure would send someone hunting for signal over
+ * a punch that is already safe.
+ */
+const OK = '#6FBF8F';
+const QUEUED = '#E8A33D';
+
 /** 07 §2's threshold. Worse than this flags — it never blocks. */
 const ACCURACY_FLAG_M = 100;
 
 type Phase = 'idle' | 'capturing' | 'submitting' | 'done';
+
+/** Whether the punch reached the server, or is sitting on the phone. */
+type Outcome = 'sent' | 'queued' | null;
+
+/**
+ * The shutter is BUSY, not merely non-idle.
+ *
+ * `phase !== 'idle'` disabled it, and nothing ever returned the phase to 'idle'
+ * — so one punch permanently disabled the control and left an ActivityIndicator
+ * spinning inside it. The screen's success state was a spinner that never
+ * stopped, and there was no way to clock out again without killing the app.
+ *
+ * 'done' is a RESTING state: the confirmation stays on screen and the control
+ * is live, because the next thing this person does on this screen is the
+ * opposite punch.
+ */
+const isBusy = (p: Phase) => p === 'capturing' || p === 'submitting';
 
 interface Fix {
   lat?: number;
@@ -96,11 +127,27 @@ export default function ClockScreen() {
   const [permission, requestPermission] = useCameraPermissions();
 
   const [phase, setPhase] = useState<Phase>('idle');
+  const [outcome, setOutcome] = useState<Outcome>(null);
   const [retakes, setRetakes] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(getPunchCount());
 
   const nav = useNavigation();
+  const reduced = useReducedMotion();
+
+  /**
+   * The shutter flash.
+   *
+   * The one piece of motion on this screen that is genuinely informational: the
+   * camera preview does not otherwise change at the instant the frame is taken,
+   * so without it there is no moment. It is not the ONLY signal — the haptic
+   * fires beside it and the shutter swaps to a spinner — which is what lets it
+   * collapse to nothing under reduced motion without taking the meaning along.
+   */
+  const flash = useRef(new Animated.Value(0)).current;
+
+  /** The confirmation pop. Amplitude only; the tick is drawn either way. */
+  const tickScale = useRef(new Animated.Value(1)).current;
 
   const { data: mine } = useQuery({
     queryKey: ['pahchan', 'me'],
@@ -123,18 +170,100 @@ export default function ClockScreen() {
 
   useEffect(() => { setPending(getPunchCount()); }, [phase]);
 
+  // The queue drains in the background when connectivity returns, and nothing
+  // re-rendered this screen when it did — so "3 waiting to send" could still be
+  // on screen long after they had all sent. Re-read on focus, which is when
+  // someone is actually looking at it.
+  useFocusEffect(useCallback(() => { setPending(getPunchCount()); }, []));
+
+  /**
+   * Say it out loud.
+   *
+   * The notice is the load-bearing half of the confirmation — under reduced
+   * motion it is very nearly the whole of it — and a `<Text>` that appears is
+   * not announced by a screen reader on its own.
+   */
+  useEffect(() => {
+    if (notice) AccessibilityInfo.announceForAccessibility(notice);
+  }, [notice]);
+
+  /**
+   * The confirmation. One place, so 'sent' and 'queued' cannot drift apart.
+   *
+   * Someone punching in outdoors, in a hurry, glancing at a phone in sunlight,
+   * has to know this registered. So the confirmation is carried by three signals
+   * that fail independently:
+   *
+   *   · a HAPTIC — success for sent, warning for queued. Not motion, not visual,
+   *     works with the screen barely readable and with reduced motion on;
+   *   · a STATIC swap — the shutter becomes a coloured tick, green for sent and
+   *     amber for queued, and the sentence under it says which. Present at
+   *     `--motion-scale: 0`, because nothing about it moves;
+   *   · a POP — and only this last one is motion, so losing it loses nothing.
+   *
+   * `queued` is not a failure and must not read as one. The punch is recorded;
+   * only its delivery is pending. Amber, not red.
+   */
+  const finish = useCallback((how: Exclude<Outcome, null>, message: string) => {
+    setPhase('done');
+    setOutcome(how);
+    setNotice(message);
+
+    void Haptics.notificationAsync(
+      how === 'sent'
+        ? Haptics.NotificationFeedbackType.Success
+        : Haptics.NotificationFeedbackType.Warning,
+    ).catch(() => {});
+
+    // MOTION-SPEC §4: confirmations overshoot, and spring is for confirmation
+    // only. At `amplitude(…, true)` the overshoot is 0 and this settles on 1
+    // immediately — the tick is already drawn, so it simply does not bounce.
+    tickScale.setValue(1);
+    Animated.sequence([
+      Animated.timing(tickScale, {
+        toValue: 1 + amplitude(18, reduced) / 100,
+        duration: duration(DUR.fast, reduced),
+        easing: EASE.spring,
+        useNativeDriver: true,
+      }),
+      Animated.timing(tickScale, {
+        toValue: 1,
+        duration: duration(DUR.slow, reduced),
+        easing: EASE.spring,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [reduced, tickScale]);
+
   const submit = useCallback(async () => {
-    if (!camera.current || phase !== 'idle') return;
+    if (!camera.current || isBusy(phase)) return;
     setPhase('capturing');
     setNotice(null);
+    setOutcome(null);
 
     try {
       const shot = await camera.current.takePictureAsync({ quality: 0.9, skipProcessing: false });
+
+      // Fired once there IS a frame, not on the button press: this marks the
+      // instant the photograph was actually taken, and a flash a moment before
+      // or after the capture is a lie about when. Under reduced motion
+      // `duration()` returns 0 and the overlay is set and cleared on the same
+      // frame — invisible, which is correct, because the haptic below and the
+      // shutter's own spinner both still mark the moment.
       if (!shot?.uri) {
         setPhase('idle');
         setNotice('The camera did not return a photo. Try again.');
         return;
       }
+
+      flash.setValue(0.9);
+      Animated.timing(flash, {
+        toValue: 0,
+        duration: duration(DUR.slow, reduced),
+        easing: EASE.standard,
+        useNativeDriver: true,
+      }).start();
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
       // Compressed before it is queued, not after. A punch may sit on the device
       // for three days, and a full-resolution frame per punch fills a cheap phone.
@@ -192,8 +321,8 @@ export default function ClockScreen() {
         const { photo_key } = await pahchanApi.uploadPhoto(small.uri, 'punch');
         attachPhotoKey(clientPunchId, photo_key);
         const result = await flushPunches();
-        setPhase('done');
-        setNotice(
+        finish(
+          result.sent > 0 ? 'sent' : 'queued',
           result.sent > 0
             ? [`Clocked ${direction === 'in' ? 'in' : 'out'}.`, ...warnings].join(' ')
             : ['Saved on this device. It will send when you have signal.', ...warnings].join(' '),
@@ -202,8 +331,8 @@ export default function ClockScreen() {
         // Upload or send failed. The punch is already queued, so this is a
         // "saved, not sent" outcome rather than a failure — and saying so matters,
         // because "couldn't clock in" would send someone hunting for signal.
-        setPhase('done');
-        setNotice(
+        finish(
+          'queued',
           [
             `Clocked ${direction === 'in' ? 'in' : 'out'} and saved on this device. `
             + 'It will send automatically when you have signal.',
@@ -218,7 +347,7 @@ export default function ClockScreen() {
       setRetakes(n => n + 1);
       setNotice('That did not work. Try again.');
     }
-  }, [direction, phase, qc]);
+  }, [direction, phase, qc, finish, flash, reduced]);
 
   // ── Permission states ───────────────────────────────────────────────────────
 
@@ -268,6 +397,16 @@ export default function ClockScreen() {
 
       <CameraView ref={camera} style={StyleSheet.absoluteFill} facing="front" />
 
+      {/* The shutter flash. `pointerEvents="none"` matters — it covers the whole
+          screen including the shutter button, and an overlay that swallows the
+          next tap would eat the clock-out. */}
+      <Animated.View
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={[StyleSheet.absoluteFill, s.flash, { opacity: flash }]}
+      />
+
       <View style={[s.scrim, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 24 }]}>
         <View style={s.head}>
           <Text style={s.headEn}>
@@ -294,10 +433,16 @@ export default function ClockScreen() {
           )}
 
           {pending > 0 && (
+            // Amber, and the same amber as the queued tick below. Two indicators
+            // for one condition that did not agree on a colour is two conditions
+            // as far as the person reading them is concerned. Static — a pulsing
+            // "waiting" badge is an infinite animation, and an infinite animation
+            // is the one thing this codebase has repeatedly got wrong under
+            // reduced motion.
             <View style={s.pendingPill}>
               <Ionicons name="cloud-upload-outline" size={12} color="#FFFFFF" />
               <Text style={s.pendingText}>
-                {pending} waiting to send
+                {pending === 1 ? '1 punch waiting to send' : `${pending} punches waiting to send`}
               </Text>
             </View>
           )}
@@ -305,7 +450,10 @@ export default function ClockScreen() {
 
         <View style={s.foot}>
           {notice && (
-            <View style={s.notice}>
+            // `polite`, and announced imperatively above — between them the
+            // sentence reaches TalkBack and VoiceOver, which a bare <Text>
+            // appearing in a subtree does not.
+            <View style={s.notice} accessibilityLiveRegion="polite">
               <Text style={s.noticeText}>{notice}</Text>
             </View>
           )}
@@ -317,28 +465,62 @@ export default function ClockScreen() {
           ) : (
             <Pressable
               onPress={submit}
-              disabled={phase !== 'idle'}
+              disabled={isBusy(phase)}
               accessibilityRole="button"
               accessibilityLabel={direction === 'in' ? 'Clock in now' : 'Clock out now'}
-              accessibilityState={{ disabled: phase !== 'idle' }}
+              accessibilityState={{ disabled: isBusy(phase), busy: isBusy(phase) }}
               style={({ pressed }) => [
                 s.shutter,
-                { backgroundColor: phase === 'idle' ? '#FFFFFF' : 'rgba(255,255,255,0.5)' },
-                pressed && { transform: [{ scale: 0.96 }] },
+                {
+                  backgroundColor: isBusy(phase) ? 'rgba(255,255,255,0.5)' : '#FFFFFF',
+                  // The confirmation ring. A static difference, so it is exactly
+                  // as visible at --motion-scale 0 as at 1.
+                  borderColor: phase === 'done'
+                    ? (outcome === 'sent' ? OK : QUEUED)
+                    : 'rgba(255,255,255,0.4)',
+                },
+                // Press feedback pairs its scale with an opacity step, so it
+                // still reads when the scale is gone. `amplitude()` is what
+                // removes the movement rather than a second style branch.
+                pressed && {
+                  transform: [{ scale: 1 - amplitude(4, reduced) / 100 }],
+                  opacity: 0.86,
+                },
               ]}
             >
-              {phase === 'idle' ? (
-                <Ionicons name="finger-print" size={30} color="#111111" />
-              ) : (
+              {isBusy(phase) ? (
                 <ActivityIndicator color="#111111" />
+              ) : phase === 'done' ? (
+                // NOT an ActivityIndicator. This state used to render one and
+                // never leave, so the success state was a spinner that never
+                // stopped — indistinguishable from a send still in flight, on
+                // the screen whose entire job is to say the punch registered.
+                <Animated.View style={{ transform: [{ scale: tickScale }] }}>
+                  <Ionicons
+                    name={outcome === 'sent' ? 'checkmark-sharp' : 'cloud-upload'}
+                    size={30}
+                    color={outcome === 'sent' ? OK : QUEUED}
+                  />
+                </Animated.View>
+              ) : (
+                <Ionicons name="finger-print" size={30} color="#111111" />
               )}
             </Pressable>
           )}
 
           <Text style={s.hint}>
-            {phase === 'submitting' ? 'Sending…'
-              : phase === 'done' ? 'Done'
-              : 'Look at the camera and tap'}
+            {phase === 'capturing' ? 'Hold still…'
+              : phase === 'submitting' ? 'Sending…'
+                : phase === 'done'
+                  // Deliberately says nothing about which direction is next.
+                  // `direction` is derived from the last punch and the query
+                  // that supplies it is invalidated by the punch just made, so
+                  // it flips underneath this line at a moment nobody controls —
+                  // and the heading above already shows the answer once it has.
+                  ? (outcome === 'sent'
+                    ? 'Recorded. Tap again for your next punch.'
+                    : 'Saved on this phone. Tap again for your next punch.')
+                  : 'Look at the camera and tap'}
           </Text>
         </View>
       </View>
@@ -349,6 +531,7 @@ export default function ClockScreen() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#000000' },
   centre: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
+  flash: { backgroundColor: '#FFFFFF' },
   // Over a live camera feed the palette does not apply: the background is
   // whatever the lens sees, so contrast has to come from a scrim and fixed
   // white. This is the one screen where theme tokens cannot carry the text.
@@ -359,6 +542,7 @@ const s = StyleSheet.create({
   pendingPill: {
     flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10,
     backgroundColor: 'rgba(0,0,0,0.45)', borderRadius: 99,
+    borderWidth: 1, borderColor: QUEUED,
     paddingHorizontal: 10, paddingVertical: 5,
   },
   pendingText: { fontSize: 11.5, fontWeight: '600', color: '#FFFFFF' },
