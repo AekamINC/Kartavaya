@@ -170,3 +170,62 @@ Do not let any of these read as done:
 A thing is done when it has been measured on the artefact the customer sees —
 the tab directory, the generated PDF, the sent email — never on the file that
 routes to it.
+
+---
+
+## 8. The page-overrun question, settled by measurement
+
+Measured in a real browser with `doc-page.js` actually running (WeasyPrint cannot
+render these — the component is JS, so a WeasyPrint measurement of the spec HTML
+is meaningless and an earlier one of mine was). Each authored `.page` forced to
+A4 print dimensions, then `scrollHeight` compared to the sheet:
+
+| document | authored pages | content | vs 297mm | |
+|---|---|---:|---:|---|
+| Tax Invoice | 1 | 297.1mm | +0.1 | fits |
+| Payslip | 1 | 297.1mm | +0.1 | fits |
+| Quotation | 1 | 297.1mm | +0.1 | fits |
+| Statement of Account | 1 | 297.1mm | +0.1 | fits |
+| Service Agreement | 2 | 297.1mm each | +0.1 | fits |
+| **TDS Challan** | 1 | **327.0mm** | **+30** | **clips** |
+| **Project Report** | 1 | **380.2mm** | **+83** | **clips** |
+| **GSTR-3B Summary** | 1 | **406.7mm** | **+110** | **clips** |
+
+**Five of eight are designed to fill the sheet to within 0.1mm.** That is careful
+work, and it means the design is not casually broken — three documents are
+genuinely over, and the rest are precise.
+
+`doc-page.js` states its own contract: each `.page` prints as one full-bleed
+sheet "with overflow hidden. Nothing scrolls and nothing reflows onto a next
+sheet: content that misses the box is CLIPPED." So on GSTR-3B roughly **37% of
+the document would be silently deleted**, and it is the BOTTOM that goes — the
+6.1 payment table, the totals, and the signature.
+
+**Decision: paginate. This is not a deviation to tolerate, it is the only
+correct behaviour.** Clipping is right for a poster and wrong for a paper a
+chartered accountant signs. Our generators paginate, and GSTR-3B's second page
+carries real content (payment tail, "before you file", the missing-detail panel,
+the signature) rather than an orphaned colophon.
+
+Two corrections to the earlier agent report this supersedes:
+- It listed **Quotation** as overrunning at 344mm. Measured in the browser it is
+  **297.1mm — it fits.** Its number came from a WeasyPrint render that never ran
+  the component.
+- Its magnitudes (362/380/347) differ from these (406.7/327/380.2) for the same
+  reason. **The three documents it identified are the right three.**
+
+One thing it got right that would otherwise have shipped broken: `doc-page.js`
+defaults to **US Letter (279mm)** and no spec document sets `size="a4"`. On
+letter the GSTR-3B overflow is +127mm. Our generators pin A4, matching the two
+pre-existing ones.
+
+### Reproducing this
+`.claude/launch.json` now has a `design-docs` entry serving the spec documents
+over HTTP, because `file://` is blocked in the browser pane. Start it, open a
+document, and force the print box:
+
+```js
+const page = document.querySelector('.page'), toPx = m => m * 96 / 25.4;
+page.setAttribute('style', `width:${toPx(210)}px!important;height:${toPx(297)}px!important;aspect-ratio:auto!important;container-type:size;overflow:visible;box-sizing:border-box;`);
+page.scrollHeight * 25.4 / 96;   // content height in mm, against a 297mm sheet
+```
