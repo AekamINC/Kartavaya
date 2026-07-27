@@ -73,7 +73,9 @@ function Slot({
 
 export default function MyBiometrics({ t }: { t: any }) {
   const { data: mine } = useQuery({
-    queryKey: ['pahchan', 'me'],
+    // `days` is part of the key — see the note in ClockScreen. This asks for 1
+    // day and ClockScreen asks for 7; under a shared key they collided.
+    queryKey: ['pahchan', 'me', 1],
     queryFn: () => pahchanApi.me(1),
     // A failure here must not surface as an error on a settings screen — the
     // section simply does not render.
