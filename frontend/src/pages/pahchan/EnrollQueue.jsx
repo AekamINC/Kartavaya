@@ -204,10 +204,11 @@ export default function EnrollQueue() {
                 </Td>
                 <Td mono>{e.approved_count} of 2</Td>
                 <Td>
-                  <StatusChip
-                    status={Number(e.approved_count) === 0 ? 'rejected' : 'requested'}
-                    label={Number(e.approved_count) === 0 ? 'No photos' : 'One missing'}
-                  />
+                  {/* `noref` / `halfref`, not `rejected` / `requested`. The label
+                      prop never existed, so these two chips read "Rejected" and
+                      "Requested" — an employee nobody has photographed yet was
+                      being shown to HR as a rejection. */}
+                  <StatusChip status={Number(e.approved_count) === 0 ? 'noref' : 'halfref'} />
                 </Td>
               </tr>
             ))}

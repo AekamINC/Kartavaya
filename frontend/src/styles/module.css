@@ -257,6 +257,25 @@
 }
 .rv__slot img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
+/* The detail — 07 §3, "opens inline, for outliers only".
+   A row in the same table rather than a modal: the reviewer is comparing this
+   punch against the ones above and below it, and a dialog takes those away. */
+.rv-det__row > td { padding: 0; }
+.rv-det {
+  display: grid;
+  gap: 24px;
+  padding: 16px 4px 22px;
+  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+}
+.rv-meta { margin-top: 4px; }
+.rv-meta__r {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid var(--outline-variant);
+}
+
 /* Below 900px the location and verdict columns drop and the row becomes
    index / person / triple / time. 07 §3: "a reviewer on a phone is triaging, not
    clearing a day." The header cells carry the same classes, so they hide with
@@ -264,6 +283,11 @@
 @media (max-width: 900px) {
   .rv__loc, .rv__v { display: none; }
   .rv__trip-cell { width: auto; }
+  /* The detail spans a six-column header on desktop and a four-column one here.
+     colSpan={6} is still correct — the extra two cells are display:none, not
+     absent — but the grid inside must not try to hold two columns at 290px in
+     what is now a phone-width table. */
+  .rv-det { grid-template-columns: 1fr; gap: 18px; }
 }
 
 /* ── Module tab overflow — the "More" menu 13 §1 asks for ──────────────────

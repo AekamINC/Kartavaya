@@ -108,6 +108,53 @@ export const ORDER_LABELS = {
   delivered: 'Delivered', closed: 'Closed', cancelled: 'Cancelled',
 };
 
+// Attendance review flags (Pahchan) — the sixth map 07-pahchan.md §"Attendance
+// states are not in statusColors.js" asks for, rather than a tenth private one.
+//
+// A flagged punch is a QUESTION for a reviewer, not a failed state, so almost
+// nothing here is --danger. Two exceptions, both added since that section was
+// written because the backend now emits flags it did not describe:
+//
+//   mock   07 §8. A mock-location app spoofs coordinates in about thirty
+//          seconds. It is the only flag that implies intent rather than
+//          circumstance, and §8 asks for it "flagged prominently".
+//   reuse  The same photograph on two punches. §1 bans the gallery so that "one
+//          saved selfie works forever" is impossible; camera-only is enforced in
+//          the mobile UI, and the UI is not the boundary. Same character as mock.
+//
+// `accuracy` is --tertiary and NOT --warn on purpose: weak GPS is not fraud, and
+// colouring a basement fix the same as a late arrival tells the reviewer the
+// wrong thing about a warehouse worker.
+export const PUNCH_COLORS = {
+  late:     'var(--warn)',
+  overtime: 'var(--warn)',
+  geo:      'var(--danger)',
+  accuracy: 'var(--tertiary)',
+  offline:  'var(--st-in-progress)',
+  clean:    'var(--ok)',
+  mock:     'var(--danger)',
+  reuse:    'var(--danger)',
+  // Enrollment gaps. Not an accusation — nobody has done anything wrong, there
+  // is simply nothing to compare against yet.
+  noref:    'var(--warn)',
+  halfref:  'var(--warn)',
+};
+
+export const PUNCH_LABELS = {
+  late:     'Late',
+  overtime: 'Overtime',
+  geo:      'Outside site',
+  accuracy: 'Weak GPS',
+  offline:  'Sent later',
+  clean:    'Clear',
+  mock:     'Simulated location',
+  reuse:    'Photo reused',
+  noref:    'No reference pair',
+  halfref:  'One reference only',
+};
+
+export const punchColor = f => PUNCH_COLORS[f] || FALLBACK;
+
 export const orderColor = s => ORDER_COLORS[s] || FALLBACK;
 
 export const billingColor = s => BILLING_COLORS[s] || FALLBACK;

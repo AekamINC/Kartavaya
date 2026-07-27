@@ -1,5 +1,7 @@
 import React from 'react';
-import { STATUS_COLORS, APPROVAL_COLORS } from '../../lib/statusColors';
+import {
+  STATUS_COLORS, APPROVAL_COLORS, PUNCH_COLORS, PUNCH_LABELS,
+} from '../../lib/statusColors';
 
 // Colours and labels come from lib/statusColors.js. This file used to carry its
 // own map, which disagreed with drawer/constants.js on every shared state.
@@ -14,6 +16,22 @@ const STATUS_MAP = {
   pending_client: { label: 'Client Review',     color: APPROVAL_COLORS.pending_client },
   approved:       { label: 'Approved',          color: APPROVAL_COLORS.approved },
   rejected:       { label: 'Rejected',          color: APPROVAL_COLORS.rejected },
+
+  // Attendance review flags (Pahchan). Folded in from PUNCH_* rather than kept
+  // as a private map on the register — 07-pahchan.md §"Attendance states are not
+  // in statusColors.js" is explicit about wanting one file to look in.
+  //
+  // THIS FIXES A LIVE DEFECT, not a hypothetical one. `Register.jsx` was calling
+  // `<StatusChip status={FLAG_TONE[f]} label={FLAG_LABEL[f]} />` — and this
+  // component takes no `label` prop, so every flag chip in the register rendered
+  // a generic task word: "Requested" where the spec says "Outside site",
+  // "Rejected" where it says "Simulated location", "In Review" for weak GPS. The
+  // reviewer's only per-row summary of WHY a punch needs a look was four
+  // task-tracker nouns that say nothing about attendance. `EnrollQueue.jsx` lost
+  // its labels the same way. No key collides with a task or approval state.
+  ...Object.fromEntries(
+    Object.keys(PUNCH_LABELS).map(k => [k, { label: PUNCH_LABELS[k], color: PUNCH_COLORS[k] }]),
+  ),
 };
 
 const FALLBACK = 'var(--on-surface-3)';
