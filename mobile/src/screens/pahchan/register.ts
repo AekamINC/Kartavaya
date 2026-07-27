@@ -4,7 +4,11 @@
  * Pure — no React, no react-native, no network. Deliberately its own module so
  * the arithmetic that decides how many hours someone worked can be read, and
  * run, without a device. Every function here is exercised by
- * `register.check.mjs`.
+ * `__tests__/register.test.ts`, which runs under `npm test`.
+ *
+ * Those checks began life as `register.check.mjs`, a standalone script written
+ * when there was no runner here. It was not matched by the test glob, so twelve
+ * checks over payroll arithmetic gated nothing until they were ported.
  */
 
 /** A punch from the server, or one still queued on this device. */
