@@ -7,6 +7,7 @@ import { useTheme } from '../theme/ThemeProvider';
 // chip from the theme directly. Dropping it leaves the deprecated light-only map
 // with no consumers at all.
 import { projectColor, AVATAR_COLORS } from '../theme/tokens';
+import { FAMILY } from '../theme/fonts';
 import { a11yButton } from './a11y';
 import type { Task } from '../api/types';
 
@@ -218,7 +219,7 @@ const s = StyleSheet.create({
   },
   taskId: {
     fontSize: IS_ANDROID ? 11 : 10.5,
-    fontFamily: 'SpaceMono',
+    fontFamily: FAMILY.mono,
   },
   title: {
     fontSize: IS_ANDROID ? 15.5 : 15,
