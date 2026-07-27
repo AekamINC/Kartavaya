@@ -1,0 +1,144 @@
+/* vikray.css — Vikray · विक्रय (Sales) module styling.
+ *
+ * Scope: the two tabs restored from the approved design — `pipeline` and
+ * `customers` (`design-reference/Kartavaya Redesign/Data.jsx:125`). Prefixes
+ * are `vk-pl__` and `vk-cu__`, following the per-module convention already in
+ * `module.css` and the file-per-module one in `graha.css` / `ganit.css`.
+ *
+ * Why a new file rather than more rules in `module.css`: that stylesheet is
+ * shared by every module page, and four other agents are editing sibling
+ * modules in this same tree. A new module-scoped sheet cannot collide with
+ * them. The one line this adds to shared CSS is the `@import` in `index.css`,
+ * which is how `graha.css`, `ganit.css`, `vetana.css` and the rest register —
+ * there is no other way to load a stylesheet, and it appends rather than
+ * editing an existing rule.
+ *
+ * Vikray's OTHER tabs (`vk-`, `vko__`, `vk-tg__`, `vk-stk__`) stay in
+ * module.css. Moving them would be churn in a file three other agents may be
+ * touching, and churn is not a fix.
+ *
+ * No colour literals. Per-stage colour arrives as `--c` from
+ * `lib/statusColors.js`, set inline as a custom property — deviation 2 in
+ * check-tokens, and the only inline this module's new markup uses.
+ */
+
+/* ── Pipeline ────────────────────────────────────────────────────────────── */
+
+.vk-pl { display: flex; flex-direction: column; gap: 16px; }
+
+.vk-pl__lede {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--on-surface-2);
+}
+
+/* The stage board. `auto-fit` rather than a fixed six columns: at 393px this
+   becomes two per row and at 820px three, with no breakpoint of its own and no
+   horizontal scroll. Six fixed columns is what makes a strip like this
+   unreadable on a phone. */
+.vk-pl__board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 10px;
+}
+
+.vk-pl__st {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 11px 14px;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  /* The stage's own colour, or a neutral keyline for "All stages" which has
+     no single colour to claim. */
+  border-left: 3px solid var(--c, var(--outline-variant));
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+
+.vk-pl__st:hover { background: var(--s-low); }
+.vk-pl__st:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* Selected is carried by fill AND by `aria-pressed`, never by colour alone. */
+.vk-pl__st.is-on { background: var(--s-container); border-color: var(--primary); }
+
+.vk-pl__stn {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.vk-pl__stl {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+
+.vk-pl__stv {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--on-surface-2);
+}
+
+/* ── Customers ───────────────────────────────────────────────────────────── */
+
+.vk-cu { display: flex; flex-direction: column; gap: 12px; }
+
+.vk-cu__search { flex: 1; min-width: 0; max-width: 320px; }
+
+.vk-cu__t { width: 100%; }
+
+/* The name is the disclosure control for the row's orders. A real <button>,
+   so it is focusable and announces its expanded state — the pattern
+   `vk-stk__name` already uses for the stock ledger's movement history. */
+.vk-cu__name {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--outline-variant);
+  text-underline-offset: 3px;
+}
+
+.vk-cu__name:hover { text-decoration-color: currentColor; }
+.vk-cu__name:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.vk-cu__who {
+  display: block;
+  font-size: 11.5px;
+  color: var(--on-surface-3);
+}
+
+.vk-cu__gst { font-variant-numeric: tabular-nums; font-size: 12.5px; }
+
+/* "Not recorded" / "None" are absences, not values — they read quieter than
+   the figures beside them so the eye skips them while scanning a column. */
+.vk-cu__nogst { color: var(--on-surface-3); font-size: 12px; }
+
+.vk-cu__open { color: var(--warn); font-variant-numeric: tabular-nums; }
+
+.vk-cu__last { font-variant-numeric: tabular-nums; font-size: 12.5px; white-space: nowrap; }
+
+.vk-cu__exp > td { background: var(--s-container); }
+
+.vk-cu__none {
+  margin: 0;
+  padding: 10px 2px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--on-surface-3);
+}
+
+@media (max-width: 767px) {
+  .vk-cu__search { max-width: none; }
+}

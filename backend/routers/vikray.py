@@ -578,6 +578,130 @@ async def dashboard(
     }
 
 
+# ── Pipeline ─────────────────────────────────────────────────
+#
+# The reference (`design-reference/Kartavaya Redesign/ScreensBiz.jsx`,
+# `ScreenVikray`) opens Vikray on `tab: 'pipeline'` and renders "Quote to cash":
+# every live sales object on a five-segment progress bar, with the money summed
+# per stage. `Data.jsx:125` lists the tab, `Data.jsx:119` records that the tab
+# set was "lifted from staging pages — nothing dropped", and `TAB_HI` carries a
+# Devanagari label for it. It is specified.
+#
+# It is NOT Graha's deal pipeline, and this endpoint deliberately cannot become
+# one. `GET /v1/dristi/pipeline` was found reading `staging.graha_deals` with no
+# source-module check, so a grant on the reporting module alone read the whole
+# CRM. Nothing here touches `graha_deals`: the only Graha table in the query is
+# `graha_contacts`, joined for the party NAME on an order that already belongs
+# to this org — precisely what `GET /orders` two hundred lines above already
+# returns under this same gate. A vikray grant reads vikray's own orders.
+#
+# The reference is quote-shaped and the build is order-shaped: there is no
+# quote entity in `staging.vikray_orders` and none is invented here. The five
+# stages are the order lifecycle in `_VALID_TRANSITIONS`, which is the same
+# quote→cash line the design draws, named for the objects this build actually
+# stores.
+
+#: The lifecycle, in order — mirrors `_VALID_TRANSITIONS` and the frontend's
+#: `ORDER_FLOW` in `pages/vikray/_shared.jsx`. `cancelled` is terminal and off
+#: the line: a cancelled order is soft-deleted (`is_active=FALSE`) and is not
+#: money sitting anywhere, so it is neither a stage nor part of any total.
+_PIPELINE_STAGES = ["draft", "confirmed", "dispatched", "delivered", "closed"]
+
+
+@router.get("/pipeline")
+async def pipeline(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+
+    # Aggregated over EVERY active order, not over the truncated list below.
+    # A stage total computed from a LIMITed page is a wrong number that looks
+    # like a right one — and these are rupee figures somebody plans against.
+    stage_rows = await pool.fetch(
+        "SELECT status, COUNT(*) AS count, COALESCE(SUM(total), 0) AS value "
+        "FROM staging.vikray_orders "
+        "WHERE org_id=$1::uuid AND is_active=TRUE "
+        "GROUP BY status",
+        org_id,
+    )
+    by_status = {r["status"]: r for r in stage_rows}
+    stages = [
+        {
+            "stage": s,
+            "count": int(by_status[s]["count"]) if s in by_status else 0,
+            "value": by_status[s]["value"] if s in by_status else 0,
+        }
+        for s in _PIPELINE_STAGES
+    ]
+
+    rows = await pool.fetch(
+        "SELECT o.id, o.order_number, o.status, o.total, o.order_date, "
+        "o.expected_delivery, o.invoice_id, o.contact_id, "
+        "c.company AS contact_company, c.name AS contact_name, "
+        "COALESCE(u.full_name, u.name, u.email) AS owner_name "
+        "FROM staging.vikray_orders o "
+        # Org-scoped on both sides. `GET /orders` joins on `c.id` alone; a
+        # contact_id that ever pointed outside the org would cross a tenant
+        # boundary on a read, and the extra predicate costs nothing.
+        "LEFT JOIN staging.graha_contacts c ON c.id = o.contact_id AND c.org_id = o.org_id "
+        "LEFT JOIN users u ON u.user_id = o.created_by "
+        "WHERE o.org_id=$1::uuid AND o.is_active=TRUE "
+        "ORDER BY o.order_date DESC, o.created_at DESC LIMIT 400",
+        org_id,
+    )
+
+    return {"data": [dict(r) for r in rows], "stages": stages}
+
+
+# ── Customers ────────────────────────────────────────────────
+#
+# `Data.jsx:125` lists `customers`; `TAB_HI` gives it ग्राहक.
+#
+# This is the sales ledger's view of a party — how much they have ordered, when
+# they last did, and what is still open — derived entirely by grouping THIS
+# module's `vikray_orders`. It is not a second CRM contact list: a contact who
+# has never placed an order does not appear, and none of Graha's CRM columns
+# (lead_score, lead_score_reasons, assigned_to, source, tags, notes,
+# last_contacted_at) are selected. The identifying fields that are returned —
+# name, company, gstin, email, phone — are the ones `GET /orders/{id}` already
+# returns behind this same gate.
+
+
+@router.get("/customers")
+async def list_customers(
+    q: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    pool = await get_pool()
+    sql = (
+        "SELECT o.contact_id, "
+        "c.name AS contact_name, c.company AS contact_company, "
+        "c.gstin, c.email, c.phone, "
+        "COUNT(*) AS order_count, "
+        "COALESCE(SUM(o.total), 0) AS order_value, "
+        "MAX(o.order_date) AS last_order_date, "
+        "COUNT(*) FILTER (WHERE o.status <> 'closed') AS open_orders, "
+        "COUNT(*) FILTER (WHERE o.invoice_id IS NOT NULL) AS invoiced_orders "
+        "FROM staging.vikray_orders o "
+        "LEFT JOIN staging.graha_contacts c ON c.id = o.contact_id AND c.org_id = o.org_id "
+        "WHERE o.org_id=$1::uuid AND o.is_active=TRUE AND o.contact_id IS NOT NULL"
+    )
+    params: list = [org_id]
+    if q:
+        params.append(f"%{q}%")
+        sql += f" AND (c.name ILIKE ${len(params)} OR c.company ILIKE ${len(params)})"
+    sql += (
+        " GROUP BY o.contact_id, c.name, c.company, c.gstin, c.email, c.phone "
+        "ORDER BY order_value DESC LIMIT 200"
+    )
+    rows = await pool.fetch(sql, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
 # ── Stock Ledger ─────────────────────────────────────────────
 
 @router.get("/stock")
