@@ -24,8 +24,9 @@ import {
   EmptyState, ErrorState, errorKind,
 } from '../components/ui';
 import { logger } from '../lib/utils';
-import ViewToolbar from '../components/views/ViewToolbar';
-import { VIEWS, FIELD_TYPES, IcArchive, IcPlus } from '../components/views/viewDefs';
+import BoardToolbar from '../components/views/BoardToolbar';
+import useBoardView from '../components/views/useBoardView';
+import { FIELD_TYPES, IcArchive, IcPlus } from '../components/views/viewDefs';
 import AutomationsPage from './AutomationsPage';
 import NewTaskModal from '../components/NewTaskModal';
 
@@ -67,6 +68,11 @@ export default function BoardsPage() {
   const [newFieldType,    setNewFieldType]    = useState('text');
   const { tasks, setTasks } = useRealtimeTasks(activeId, rawTasks);
   const onlineUsers = usePresence(activeId, me);
+
+  // Search, filter, group and sort — in the URL, so a narrowed board is a link
+  // (IxViews 10.4). Every view below renders `board.filtered`, not `tasks`:
+  // the search box used to live inside `TableView` and reach nothing else.
+  const board = useBoardView({ tasks, columns, fieldDefs, boardKey: activeId });
 
   // A failed project list left `projects` empty, which renders exactly like an
   // account with no projects — the one state where "you have none" and "we
@@ -215,11 +221,13 @@ export default function BoardsPage() {
 
       {/* One toolbar, shared with every other view — 04 §2. The switcher was a
           hand-rolled `.k-segctrl` in an inline-styled flex row here, and again
-          in ProjectBoardPage, which is why the two drifted. */}
-      <ViewToolbar
-        views={VIEWS}
+          in ProjectBoardPage, which is why the two drifted. `BoardToolbar` now
+          carries search, filter, group and fields too, so Table view no longer
+          stacks a second bar under this one. */}
+      <BoardToolbar
         view={view}
         onView={setView}
+        board={board}
         end={
           <>
             <button
@@ -348,7 +356,8 @@ export default function BoardsPage() {
           {view === 'kanban' && (
             <KanbanView
               columns={columns}
-              tasks={tasks}
+              tasks={board.filtered}
+              allTasks={tasks}
               teamMembers={teamMembers}
               fieldDefs={fieldDefs}
               teamId={activeId}
@@ -362,18 +371,24 @@ export default function BoardsPage() {
           )}
           {view === 'table' && (
             <TableView
-              tasks={tasks}
+              tasks={board.filtered}
               columns={columns}
               teamMembers={teamMembers}
               fieldDefs={fieldDefs}
               fieldValueMap={fieldValueMap}
               boardId={activeId}
               onTasksChange={handleTasksChange}
+              sort={board.sort}
+              onSort={board.setSort}
+              groupBy={board.groupBy}
+              shownFields={board.shownFields}
+              isFiltered={board.isFiltered}
+              onClearFilters={board.clearFilters}
             />
           )}
           {view === 'calendar' && (
             <CalendarView
-              tasks={tasks}
+              tasks={board.filtered}
               teamMembers={teamMembers}
               onTasksChange={handleTasksChange}
               onDayClick={date => {
@@ -384,7 +399,7 @@ export default function BoardsPage() {
           )}
           {view === 'timeline' && (
             <TimelineView
-              tasks={tasks}
+              tasks={board.filtered}
               columns={columns}
               teamMembers={teamMembers}
               onTasksChange={handleTasksChange}
@@ -392,13 +407,13 @@ export default function BoardsPage() {
           )}
           {view === 'workload' && (
             <WorkloadView
-              tasks={tasks}
+              tasks={board.filtered}
               teamMembers={teamMembers}
             />
           )}
           {view === 'priority' && (
             <PriorityView
-              tasks={tasks}
+              tasks={board.filtered}
               columns={columns}
               teamMembers={teamMembers}
               onTasksChange={handleTasksChange}
@@ -406,7 +421,7 @@ export default function BoardsPage() {
           )}
           {view === 'mytasks' && (
             <MyTasksView
-              tasks={tasks}
+              tasks={board.filtered}
               teamMembers={teamMembers}
               onTasksChange={handleTasksChange}
             />

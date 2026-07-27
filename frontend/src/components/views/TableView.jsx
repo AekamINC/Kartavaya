@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 
 import { api } from '../../lib/api';
 import { logger } from '../../lib/utils';
@@ -7,11 +7,9 @@ import { PRIORITY_COLORS, PRIORITY_LABELS } from '../../lib/statusColors';
 import TaskDrawer from '../TaskDrawer';
 import FieldRenderer from '../fields/FieldRenderer';
 import {
-  Checkbox, DueChip, EmptyState, Popover, nextSort, useToast,
+  Checkbox, DueChip, EmptyState, nextSort, useToast,
 } from '../ui';
 
-import ViewToolbar from './ViewToolbar';
-import FilterBuilder, { applyFilters, filterFields } from './FilterBuilder';
 import BulkBar from './BulkBar';
 import { groupTasks, PRIORITY_RANK } from './grouping';
 import { useColumnResize, useTableSelection } from './tableHooks';
@@ -38,27 +36,31 @@ import { useColumnResize, useTableSelection } from './tableHooks';
  *      reshuffle the page. `grouping.js` emits declared order.
  *  4 · **The field-visibility reset.** `useEffect(… , [fieldDefs?.length])`
  *      rebuilt the visible list from scratch whenever a field was added or
- *      removed, discarding every column the user had hidden. Visibility is now
- *      persisted per board and reconciled **by id**: a new field appears, an
- *      existing choice is left alone.
+ *      removed, discarding every column the user had hidden. Visibility is
+ *      persisted per board and reconciled **by id** — a new field appears, an
+ *      existing choice is left alone — and now lives in `useBoardView` with the
+ *      control that sets it. This file takes `shownFields`.
  *  5 · **The `<details>` field menu.** It did not close on outside click, did
- *      not close on Escape, and announced as a disclosure. It is a `Popover`,
- *      which owns all three. 04 names `Menu`; `Menu` closes on select, and this
- *      is a multi-toggle list where that turns hiding three columns into six
- *      round trips. `Popover` is the same portal, the same z-index, the same
- *      Escape and outside-click contract — it just does not dismiss on pick.
+ *      not close on Escape, and announced as a disclosure. It is a `Popover`
+ *      in `BoardToolbar`, which owns all three. 04 names `Menu`; `Menu` closes
+ *      on select, and this is a multi-toggle list where that turns hiding three
+ *      columns into six round trips. `Popover` is the same portal, the same
+ *      z-index, the same Escape and outside-click contract — it just does not
+ *      dismiss on pick.
  *
  * `--danger` for overdue, not `--k-danger`: the two were used in sibling files
  * for the same colour and one of them is undefined. Both are gone from here —
  * overdue tone belongs to `DueChip`.
+ *
+ * **The toolbar is not here any more.** This file used to render its own
+ * `ViewToolbar` — search, group, field visibility and the `FilterBuilder` —
+ * inside a page that had already rendered one, so Table view showed two stacked
+ * `.vtb` bars and every control moved to a different row when you switched
+ * view. Worse, it meant search and filter reached the table and nothing else:
+ * the other six views, Kanban included, had no way to narrow anything. That
+ * state is `useBoardView` now, the bar is `BoardToolbar`, and this component
+ * receives the already-filtered set. It renders a table.
  */
-
-const GROUPS = [
-  { id: 'none', label: 'No grouping' },
-  { id: 'column', label: 'Column' },
-  { id: 'status', label: 'Status' },
-  { id: 'priority', label: 'Priority' },
-];
 
 const BASE_COLS = [
   { key: 'title', label: 'Title', sortKey: 'title', width: 320, min: 160 },
@@ -111,32 +113,22 @@ function Th({ col, sort, onSort, width, onGrip, gripActive }) {
 
 export default function TableView({
   tasks, columns, fieldDefs, fieldValueMap, teamMembers, onTasksChange, boardId,
+  // From `useBoardView`, via the page. `tasks` arrives already searched and
+  // filtered; sort and grouping are the table's own but live in the URL so a
+  // sorted, grouped, filtered table is one link.
+  sort, onSort, groupBy = 'none', shownFields: shownFieldsProp,
+  isFiltered = false, onClearFilters,
 }) {
   const { pushToast } = useToast();
-  const [sort, setSort] = useState(null);
-  const [search, setSearch] = useState('');
-  const [clauses, setClauses] = useState([]);
-  const [groupBy, setGroupBy] = useState('none');
   const [drawer, setDrawer] = useState(null);
   const [valueEdits, setValueEdits] = useState({});
 
   const boardKey = boardId || columns?.[0]?.team_id || columns?.[0]?.project_id || 'default';
   const defs = useMemo(() => fieldDefs || [], [fieldDefs]);
 
-  // ── Field visibility, persisted and reconciled by id ──────────────────────
-  // The old effect keyed on `fieldDefs?.length` and rebuilt the whole list, so
-  // adding one custom field un-hid every column the user had hidden.
-  const visKey = `kv.table.fields.${boardKey}`;
-  const [hidden, setHidden] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(visKey) || '[]')); }
-    catch { return new Set(); }
-  });
-  useEffect(() => {
-    try { localStorage.setItem(visKey, JSON.stringify([...hidden])); }
-    catch { /* quota or private mode — visibility is not worth failing over */ }
-  }, [hidden, visKey]);
-
-  const shownFields = useMemo(() => defs.filter(f => !hidden.has(f.field_id)), [defs, hidden]);
+  // Field visibility belongs to the toolbar, which is the page's. A table
+  // rendered without one still shows every field rather than none.
+  const shownFields = shownFieldsProp || defs;
 
   const allCols = useMemo(() => [
     ...BASE_COLS,
@@ -146,20 +138,13 @@ export default function TableView({
   const { widths, activeKey, onPointerDown, onPointerMove, onPointerUp } =
     useColumnResize(allCols, `kv.table.widths.${boardKey}`);
 
-  // ── Filter · search · sort · group ────────────────────────────────────────
-  const fields = useMemo(() => filterFields(columns), [columns]);
+  // ── Sort · group ──────────────────────────────────────────────────────────
   const colMap = useMemo(
     () => Object.fromEntries((columns || []).map(c => [c.column_id, c])),
     [columns],
   );
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const base = q
-      ? (tasks || []).filter(t => (t.title || '').toLowerCase().includes(q))
-      : (tasks || []);
-    return applyFilters(base, clauses, fields);
-  }, [tasks, search, clauses, fields]);
+  const filtered = useMemo(() => tasks || [], [tasks]);
 
   const sorted = useMemo(() => {
     if (!sort) {
@@ -219,62 +204,6 @@ export default function TableView({
 
   return (
     <>
-      <ViewToolbar
-        search={search}
-        onSearch={setSearch}
-        searchPlaceholder="Filter tasks…"
-        groups={GROUPS}
-        group={groupBy}
-        onGroup={setGroupBy}
-        count={filtered.length}
-        end={defs.length > 0 && (
-          <Popover
-            label="Column visibility"
-            align="right"
-            trigger={
-              <span className="btn btn--out btn--sm">
-                Fields{hidden.size > 0 ? ` · ${defs.length - hidden.size}/${defs.length}` : ''}
-              </span>
-            }
-          >
-            {/* The whole row is the control, not a 17px box beside a label.
-                `role="checkbox"` with `aria-checked` on the row is the same
-                shape `Picker`'s multi mode uses, so the two read identically
-                to a screen reader. */}
-            <div className="tb__fields">
-              {defs.map(f => {
-                const on = !hidden.has(f.field_id);
-                return (
-                  <button
-                    key={f.field_id}
-                    type="button"
-                    role="checkbox"
-                    aria-checked={on}
-                    className="tb__field"
-                    onClick={() => setHidden(prev => {
-                      const next = new Set(prev);
-                      if (next.has(f.field_id)) next.delete(f.field_id);
-                      else next.add(f.field_id);
-                      return next;
-                    })}
-                  >
-                    <span className={on ? 'cbx on' : 'cbx'} aria-hidden="true">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M20 6L9 17l-5-5" />
-                      </svg>
-                    </span>
-                    {f.name}
-                  </button>
-                );
-              })}
-            </div>
-          </Popover>
-        )}
-      >
-        <FilterBuilder fields={fields} clauses={clauses} onChange={setClauses} />
-      </ViewToolbar>
-
       <div
         className="tbv"
         onPointerMove={activeKey ? onPointerMove : undefined}
@@ -301,7 +230,7 @@ export default function TableView({
                     key={c.key}
                     col={c}
                     sort={sort}
-                    onSort={setSort}
+                    onSort={onSort}
                     width={widths[c.key]}
                     onGrip={onPointerDown}
                     gripActive={activeKey === c.key}
@@ -416,13 +345,13 @@ export default function TableView({
                     {/* A filtered list reaching zero is not the same state as a
                         list with nothing in it — 02, "Two empty states". One is
                         a filter to undo, the other is a board to fill. */}
-                    {(search || clauses.length) ? (
+                    {isFiltered ? (
                       <EmptyState
                         illustration="search"
                         title="No tasks match these filters"
-                        description={`${clauses.length + (search ? 1 : 0)} filter${clauses.length + (search ? 1 : 0) === 1 ? '' : 's'} applied.`}
-                        action="Clear all"
-                        onAction={() => { setSearch(''); setClauses([]); }}
+                        description="The search or filters above are hiding everything on this board."
+                        action={onClearFilters ? 'Clear all' : undefined}
+                        onAction={onClearFilters}
                       />
                     ) : (
                       <EmptyState
