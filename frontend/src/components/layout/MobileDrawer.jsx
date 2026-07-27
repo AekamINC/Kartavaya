@@ -15,6 +15,37 @@ import Sidebar from './Sidebar';
 import FocusTrap from '../ui/FocusTrap';
 
 export default function MobileDrawer({ open, onClose, inboxCount = 0, approvalsCount = 0 }) {
+  /**
+   * The exit now actually plays.
+   *
+   * This was `if (!open) return null`, which drops the node on the same tick as
+   * the state change. Measured: `document.getAnimations()` sampled during a
+   * close returned `[]`, and `document.querySelector('.kv__scrim')` was already
+   * null on the next tick — so the `dmFadeOut` / `kv-drawer-out` pair could
+   * never have run however it was declared. The drawer appeared with a slide
+   * and disappeared with a cut.
+   *
+   * `mounted` outlives `open` by exactly one animation. `data-closing` is what
+   * the two exit rules in editorial.css select on, and `animationend` on the
+   * DRAWER is what unmounts — the drawer's exit is `--dur-base` and the scrim's
+   * is `--dur-fast`, so the drawer is the last to finish and waiting on the
+   * scrim would cut the panel off mid-slide.
+   *
+   * `e.target === e.currentTarget` guards the listener: `animationend` bubbles,
+   * and the panel contains a whole sidebar whose section accordions animate
+   * `grid-template-rows`. Without the guard, one section settling anywhere
+   * inside would unmount the drawer mid-exit.
+   *
+   * A timeout backstop is deliberately NOT used. `--ix` bottoms out at `.001`
+   * rather than `0` precisely so a zero-duration animation still fires
+   * `animationend` (kartavaya-design.css §5 says so in as many words), so the
+   * event is guaranteed under reduced motion too — at 0.36ms rather than 360ms.
+   */
+  const [mounted, setMounted] = React.useState(open);
+  const closing = mounted && !open;
+
+  React.useEffect(() => { if (open) setMounted(true); }, [open]);
+
   // Escape closes, matching every other overlay in the product.
   React.useEffect(() => {
     if (!open) return undefined;
@@ -23,18 +54,41 @@ export default function MobileDrawer({ open, onClose, inboxCount = 0, approvalsC
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   return (
-    <div className="kv__scrim" onClick={onClose}>
-      {/* Wrap the panel, not the scrim — FocusTrap's own contract. */}
-      <FocusTrap>
+    <div
+      className="kv__scrim"
+      data-closing={closing ? '1' : undefined}
+      onClick={closing ? undefined : onClose}
+    >
+      {/* Wrap the panel, not the scrim — FocusTrap's own contract.
+
+          `active={!closing}` is what keeps deferred unmount from costing the
+          keyboard user anything. FocusTrap restores focus in its effect
+          CLEANUP, so leaving it active would hold focus inside a panel that is
+          visibly leaving for the whole 220ms of the exit. Flipping `active`
+          the moment the close starts runs that cleanup immediately: focus is
+          back on the burger on the same tick the user pressed Escape, while
+          the animation plays out behind it.
+
+          `aria-hidden` on the closing panel is only safe BECAUSE of that —
+          hiding a subtree that still contains focus is the classic version of
+          this bug. Focus has already left by the time this attribute appears,
+          so what remains is a decorative node finishing its exit, which is
+          exactly what a screen reader should not be walking. */}
+      <FocusTrap active={!closing}>
         <div
           className="kv__drawer"
+          data-closing={closing ? '1' : undefined}
           role="dialog"
-          aria-modal="true"
+          aria-modal={closing ? undefined : 'true'}
+          aria-hidden={closing ? 'true' : undefined}
           aria-label="Navigation"
           onClick={e => e.stopPropagation()}
+          onAnimationEnd={(e) => {
+            if (closing && e.target === e.currentTarget) setMounted(false);
+          }}
         >
           {/* forceWide: a rail inside a narrow overlay is a column of
               unlabelled icons with no reason to be narrow. */}

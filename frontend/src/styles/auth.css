@@ -416,14 +416,59 @@
 }
 @media (prefers-reduced-motion: reduce) { .au__box.is-shake { animation: none; } }
 
-/* NOT DEFINED HERE, deliberately: the "what you are accepting" block — org,
-   inviter, role and grants — that 12 §4 wants on the accept-invite screen.
-   It needs `GET /auth/invite/:token`, which 12 §4 itself lists as NEW and which
-   does not exist in backend/auth_router.py. Shipping the CSS for a panel that
+/* ── Accept-invite: what you are accepting ────────────────────────────────
+   This block was held back on purpose, and the note that stood here said why:
+   it needs `GET /auth/invite/:token`, and "shipping the CSS for a panel that
    can never be populated is how dead rules accumulate. It goes in with the
-   endpoint.
+   endpoint." The endpoint landed, so it goes in.
 
-   ═══════════════════════════════════════════════════════════════════════════
+   AUTH-SPEC · Accept invite: the screen "shows org, inviter, role **and the
+   module grants**". Every one of those was already stored on the invite row by
+   routers/org_invites.py — the person accepting was the only party who could
+   not see them. */
+.auinv {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  background: var(--s-container);
+  border-radius: var(--r-md);
+}
+.auinv__head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.auinv__org {
+  font-family: var(--font-display); font-size: 16px; font-weight: 600;
+  color: var(--on-surface); letter-spacing: -.01em;
+}
+.auinv__meta { font-size: 11.5px; color: var(--on-surface-3); }
+.auinv__by {
+  margin: 6px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--on-surface-2);
+}
+.auinv__by strong { color: var(--on-surface); font-weight: 600; }
+.auinv__role { color: var(--primary-text); font-weight: 600; }
+.auinv__email { color: var(--on-surface-3); }
+
+.auinv__grants {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  margin-top: 10px;
+}
+.auinv__glabel { font-size: 11.5px; color: var(--on-surface-3); }
+/* --tag-c is the module accent, set inline from lib/moduleColors.js so the tag
+   is correct in both themes without this file naming any module. */
+.auinv__tag {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  padding: 3px 9px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--tag-c) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tag-c) 34%, transparent);
+  font-size: 11.5px; color: var(--on-surface);
+}
+/* Devanagari at 400 on a single-weight face — Tiro ships one weight, and a
+   heavier rule here would be synthesised. `lang` is set on the element. */
+.auinv__tag-hi { font-family: var(--font-hindi); font-weight: 400; font-size: 13px; }
+.auinv__tag-lv { color: var(--on-surface-3); }
+
+.auinv__fine {
+  margin: 10px 0 0; font-size: 11px; line-height: 1.5; color: var(--on-surface-3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    Onboarding wizard — 12 §1 and §2
    ═══════════════════════════════════════════════════════════════════════════ */
 .ob {

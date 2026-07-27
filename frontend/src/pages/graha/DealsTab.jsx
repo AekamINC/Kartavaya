@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import { ErrorState, errorKind } from '../../components/ui/ErrorState';
+import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { RotBadge, Badge, stageColor } from './_shared';
 import { inr } from '../../lib/inr';
 
@@ -10,6 +12,14 @@ export default function DealsTab() {
   const { pushToast } = useToast();
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
+  // A failed load used to leave `deals` at [] and paint "No deals yet — track
+  // your sales pipeline here", which is a confident wrong answer: the user
+  // cannot tell it from a genuinely empty pipeline, and the toast that says
+  // otherwise is gone in four seconds.
+  const [err, setErr] = useState(null);
+  // Deals whose stage change is in flight. MOTION-SPEC §7.1 — the row shows the
+  // new stage at opacity .6 until the server agrees, then goes solid.
+  const [pending, setPending] = useState(() => new Set());
   const [showForm, setShowForm] = useState(false);
   const [stageFilter, setStageFilter] = useState('');
   const [contacts, setContacts] = useState([]);
@@ -25,12 +35,16 @@ export default function DealsTab() {
   useEffect(() => { load(); }, []);
 
   async function load() {
+    setErr(null);
     try {
       let url = '/v1/graha/deals?';
       if (stageFilter) url += `stage=${stageFilter}&`;
       const r = await api.get(url);
       setDeals(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load deals', type: 'error' }); }
+    } catch (e) {
+      setErr(e);
+      pushToast({ title: 'Failed to load deals', type: 'error' });
+    }
     finally { setLoading(false); }
   }
 
@@ -64,12 +78,36 @@ export default function DealsTab() {
     } catch { pushToast({ title: 'Could not delete deal', type: 'error' }); }
   }
 
+  /**
+   * Optimistic stage change — MOTION-SPEC §7.1.
+   *
+   * Before: `await PATCH` then `load()`. The select snapped back to the old
+   * stage for a whole round trip, then the entire list re-rendered. If the
+   * write failed the toast fired but the row had already been reset by the
+   * refetch, so the two paths looked identical from the user's side.
+   *
+   * Now the row shows the new stage immediately at `opacity .6`, and a failure
+   * restores the WHOLE previous deal rather than just its stage — restoring one
+   * field leaves a row that is half-committed and looks fine.
+   */
   async function updateStage(dealId, stage) {
+    const previous = deals.find(d => d.id === dealId);
+    if (!previous) return;
+    setDeals(prev => prev.map(d => (d.id === dealId ? { ...d, stage } : d)));
+    setPending(prev => new Set(prev).add(dealId));
     try {
-      await api.patch(`/v1/graha/deals/${dealId}`, { stage });
+      const r = await api.patch(`/v1/graha/deals/${dealId}`, { stage });
+      const fresh = r?.data?.data || r?.data;
+      if (fresh && fresh.id != null) {
+        setDeals(prev => prev.map(d => (d.id === dealId ? { ...d, ...fresh } : d)));
+      }
       pushToast({ title: `Deal moved to ${stage}`, type: 'success' });
-      load();
-    } catch { pushToast({ title: 'Could not update deal stage', type: 'error' }); }
+    } catch {
+      pushToast({ title: 'Could not update deal stage', type: 'error' });
+      setDeals(prev => prev.map(d => (d.id === dealId ? previous : d)));
+    } finally {
+      setPending(prev => { const n = new Set(prev); n.delete(dealId); return n; });
+    }
   }
 
   async function createInvoice(dealId) {
@@ -167,7 +205,11 @@ export default function DealsTab() {
         </form>
       )}
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
+      {loading ? (
+        <SkeletonRegion label="Loading deals"><SkeletonList rows={6} /></SkeletonRegion>
+      ) : err ? (
+        <ErrorState kind={errorKind(err)} onRetry={load} />
+      ) :
         deals.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '48px 24px' }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>💼</div>
@@ -177,7 +219,7 @@ export default function DealsTab() {
         ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {deals.map(d => (
-            <div key={d.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: '12px 16px' }}>
+            <div key={d.id} className={pending.has(d.id) ? 'ix-pending' : undefined} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: '12px 16px' }}>
               {editDeal?.id === d.id ? (
                 <div>
                   <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Edit Deal</h4>

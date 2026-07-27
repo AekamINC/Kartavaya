@@ -45,6 +45,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { apiRefreshSession } from '../../lib/auth';
 import { KLogo } from '../../lib/brand';
 import { navContext } from './navConfig';
 import { ADMIN_SURFACE_ROLES } from '../admin/adminNav';
@@ -55,6 +56,17 @@ const CLIENT_HOME = '/client';
 /** Platform console. */
 const PLATFORM_PREFIX = '/admin';
 
+/**
+ * How often a tab that is left open slides its own session forward.
+ *
+ * The JWT is minted for seven days (`auth_router.JWT_TTL_DAYS`) and there is no
+ * refresh token, so `POST /auth/refresh` can only extend a token that is still
+ * valid. Six hours is far inside that window and cheap: a tab open across a
+ * working week never hits the expiry, and a tab that has been closed for eight
+ * days still expires, which is the behaviour a session length is for.
+ */
+const REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
+
 function underPath(path, prefix) {
   return path === prefix || path.startsWith(prefix + '/');
 }
@@ -64,6 +76,8 @@ export default function Protected({ children, requiredRole }) {
   const location = useLocation();
   const [ready, setReady] = useState(null);
   const [user,  setUser]  = useState(null);
+  /** Set only when `/auth/me` failed for a reason that is not the session. */
+  const [reachError, setReachError] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -77,14 +91,49 @@ export default function Protected({ children, requiredRole }) {
         localStorage.setItem('Kartavaya_user', JSON.stringify(r.data));
         setUser(r.data); setReady(true);
       })
-      .catch(() => {
+      .catch((err) => {
         if (!live) return;
-        localStorage.removeItem('auth_token');
-        navigate('/login', { replace: true });
+        /**
+         * A 401 is the session; ANYTHING ELSE IS NOT, and this used to treat
+         * them the same — every failure deleted `auth_token` and bounced to
+         * `/login`. `api.js` retries a dead network three times at 800/1600/
+         * 2400ms and then rejects, so a lift, a tunnel or a Railway restart
+         * ended with the user signed out and their token destroyed, with no
+         * way to tell that from a real expiry.
+         *
+         * `api.js`'s 401 branch clears the session and hard-redirects to
+         * `/login?expired=1` for a 401 raised anywhere in the product, which is
+         * where that rule belongs — a 401 arrives from any request on any page,
+         * not only from this one. The same move is repeated here so the gate is
+         * correct WITHOUT the interceptor: they agree on the destination and
+         * the query, so whichever runs first, the outcome is the same.
+         */
+        if (err?.response?.status === 401) {
+          try {
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('Kartavaya_user');
+          } catch { /* private mode — the redirect still has to happen */ }
+          navigate('/login?expired=1', { replace: true });
+          setReady(false);
+          return;
+        }
+        setReachError(true);
         setReady(false);
       });
     return () => { live = false; };
   }, []);
+
+  /**
+   * Slide the session forward while the tab is open — AUTH-SPEC and
+   * `12-auth-onboarding.md` both assume a refresh exists, and until now none
+   * did, in any form. A rejection is swallowed on purpose: the token may still
+   * be days from expiry, and `api.js` owns the case where it is not.
+   */
+  useEffect(() => {
+    if (!ready) return undefined;
+    const t = setInterval(() => { apiRefreshSession().catch(() => {}); }, REFRESH_EVERY_MS);
+    return () => clearInterval(t);
+  }, [ready]);
 
   // Tokens, not the hardcoded #050e1a slab with #5a7087 text this used to
   // paint. Both are the retired cold-blue set (00 §9) and neither followed the
@@ -98,6 +147,28 @@ export default function Protected({ children, requiredRole }) {
       </div>
     </div>
   );
+
+  /**
+   * The server could not be reached, and the session is very probably fine. Say
+   * that, and offer the retry — the alternative this replaces was a silent
+   * sign-out that also deleted the token, so the user's next move was to find
+   * their password.
+   */
+  if (reachError) return (
+    <div className="k-boot">
+      <div className="k-boot__in">
+        <KLogo size={40} />
+        <p className="k-boot__t">Could not reach Kartavaya</p>
+        <p className="k-boot__d">
+          Your session is still valid — this is a connection problem, not a sign-out.
+        </p>
+        <button type="button" className="au__btn" onClick={() => window.location.reload()}>
+          <span>Try again</span>
+        </button>
+      </div>
+    </div>
+  );
+
   if (!ready) return null;
 
   const path = location.pathname;
