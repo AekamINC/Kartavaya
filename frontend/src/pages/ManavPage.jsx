@@ -9,6 +9,7 @@ import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
+import useTabPanelMotion from '../lib/tabPanelMotion';
 
 import EmployeesTab from './manav/EmployeesTab';
 import AttendanceTab from './manav/AttendanceTab';
@@ -26,6 +27,12 @@ const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'recrui
 
 export default function ManavPage() {
   const [tab, setTab] = useState('employees');
+  // `key` is destructured out, never spread: React 19 drops a `key` inside a
+  // spread, and the changing key IS the mechanism — see `GrahaPage.jsx:67`.
+  // Without this the panel was a plain <div> that React reused across every tab
+  // change: measured `sameNode: true`, `animation-name: none`. Manav was the
+  // only one of the three module pages with no panel motion at all.
+  const { key: panelKey, ...motion } = useTabPanelMotion(TABS, tab);
   const [stats, setStats] = useState(null);
   // The headline counts failing is worth saying. `catch {}` left `stats` null
   // and the strip simply did not render — indistinguishable from an org with
@@ -53,9 +60,13 @@ export default function ManavPage() {
     <div className="mn-page">
       <ModuleHeader
         module="manav"
+        // `kick` was missing entirely. `ScreenManav` (ScreensMore.jsx:73) opens
+        // with kick="People · जन", and it is the band that files this module
+        // under its group — Graha and Ganit both carry theirs.
+        kick={<>People <span className="mh__kick-hi" lang="hi">· जन</span></>}
         en="HRMS"
         hi="मानव"
-        sub="Employees, attendance and leave"
+        sub="Fix attendance and approve leave from the row where you see the problem."
         icon={ICONS.manav}
       />
 
@@ -68,17 +79,27 @@ export default function ManavPage() {
         </p>
       )}
 
-      {stats && (
-        <KpiStrip items={[
-          { label: 'Employees',     value: stats.total_employees },
-          { label: 'Departments',   value: stats.departments },
-          { label: 'Present today', value: stats.today_present },
-          { label: 'Clocked in',    value: stats.clocked_in_count ?? '—' },
-          { label: 'On leave',      value: stats.on_leave_today ?? '—' },
-          { label: 'Pending leaves', value: stats.pending_leaves },
-          { label: 'Announcements', value: stats.announcements_count ?? '—' },
-        ]} />
-      )}
+      {/* `hi`, `sub` and `tone` on every tile — the reference's `Stat` carries
+          all three (`ScreensMore.jsx`:77-80) and Graha and Ganit already pass
+          them. Without them Manav's row was seven untinted, unglossed numbers:
+          "CLOCKED IN / 4" says less than "4 of 6". `loading` is passed so the
+          first paint is a skeleton rather than nothing — the strip previously
+          rendered only on `stats &&`, so a slow request looked like a page with
+          no figures in it. */}
+      <KpiStrip
+        loading={!stats && !statsError}
+        count={7}
+        items={stats ? [
+          { label: 'Employees',      hi: 'कर्मचारी', tone: 'p',  value: stats.total_employees, sub: 'on the register' },
+          { label: 'Departments',    hi: 'विभाग',    value: stats.departments },
+          { label: 'Present today',  hi: 'उपस्थित',  tone: 'ok', value: stats.today_present, sub: `of ${stats.total_employees}` },
+          { label: 'Clocked in',     hi: 'समय',      value: stats.clocked_in_count ?? '—' },
+          { label: 'On leave',       hi: 'अवकाश',    tone: 'warn', value: stats.on_leave_today ?? '—' },
+          { label: 'Pending leaves', hi: 'सम्मति',   tone: stats.pending_leaves > 0 ? 'danger' : undefined,
+            value: stats.pending_leaves, sub: stats.pending_leaves > 0 ? 'awaiting approval' : 'nothing waiting' },
+          { label: 'Announcements',  hi: 'सूचना',    value: stats.announcements_count ?? '—' },
+        ] : null}
+      />
 
       <ModuleTabs
         tabs={TABS.map(id => ({ id, label: id }))}
@@ -87,7 +108,14 @@ export default function ManavPage() {
         label="Manav sections"
       />
 
-      <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
+      <div
+        role="tabpanel"
+        id={`mt-panel-${tab}`}
+        aria-labelledby={`mt-tab-${tab}`}
+        className="ix-panel"
+        key={panelKey}
+        {...motion}
+      >
         {tab === 'employees' && <EmployeesTab onUpdate={loadStats} />}
         {tab === 'attendance' && <AttendanceTab />}
         {tab === 'shifts' && <ShiftsTab />}

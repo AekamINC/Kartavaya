@@ -284,7 +284,10 @@
 .gr__tval--ok  { color: var(--ok); }
 .gr__tval--bad { color: var(--danger); }
 .gr__twhen { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
-.gr__tic { font-size: 14px; }
+/* Also wraps the inline stroke SVGs in TodayTab's section headers. `inline-flex`
+   keeps the 16px glyph off the text baseline — as a plain inline box it sat on
+   it and pushed the header 3px taller than its siblings. */
+.gr__tic { font-size: 14px; display: inline-flex; align-items: center; flex-shrink: 0; }
 
 /* ── Contact timeline ───────────────────────────────────────────────────── */
 
