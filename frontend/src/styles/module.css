@@ -488,6 +488,14 @@
 .mt__hi {
   font-family: var(--font-hindi); font-size: 12px; font-weight: 400;
   color: var(--on-surface-3);
+  /* The two scripts were touching. `.mt__b` is not a flex container and neither
+     span carried a margin, so every module tab in the product rendered
+     `Dashboardमुख्य` — measured on the running page as en.right === hi.left,
+     0px. The rendered reference sets them apart, and 24-bilingual-devanagari.md
+     is explicit that the two scripts accompany rather than run together.
+     6px matches `.mt__n` directly below, so a tab carrying both a Devanagari
+     name and a count spaces both the same way. */
+  margin-left: 6px;
 }
 .mt__b.on .mt__hi { color: var(--primary-text); }
 

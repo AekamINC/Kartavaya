@@ -66,6 +66,22 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+/* `.k-formpanel__input` is `width: 100%`, which is right inside a form column
+   and wrong in a toolbar: at 100% the filter select claimed the whole trailing
+   group and pushed the button it sits beside onto a second line. Measured on
+   the running page — the select and "+ New template" were on separate rows for
+   no reason but an inherited width. */
+.pr__bar-act .k-formpanel__input {
+  width: auto;
+  min-width: 9rem;
+  /* Keeps the control on the same optical line as the buttons beside it;
+     `.k-formpanel__input` pads 9px against `.k-btn--sm`'s 7px. */
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+/* A select needs room for its own chevron, which is painted as a background
+   image at `right 10px` rather than reserved by `appearance`. */
+.pr__bar-act select.k-formpanel__input { padding-right: 30px; }
 
 /* A row of inputs that ends in a button — the unsubscribe adder, the AI brief
    box, the contact enroller. */
@@ -78,6 +94,10 @@
 }
 .pr__inline > .k-formpanel__input,
 .pr__inline > .pr__grow { flex: 1 1 220px; min-width: 0; }
+/* A select in an inline row sizes to its options, not to the row. Without this
+   the reason dropdown beside the unsubscribe field took an equal third of the
+   width and left the email input too narrow to read an address in. */
+.pr__inline > select.k-formpanel__input { flex: 0 1 auto; width: auto; padding-right: 30px; }
 
 /* ── Panel states ──────────────────────────────────────────────────────────
    `.pr__err` is the reason this section exists. A failed fetch rendering as an

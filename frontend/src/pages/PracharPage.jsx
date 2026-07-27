@@ -53,7 +53,12 @@ export default function PracharPage() {
   // the header button twice re-opens the form the second time.
   const [scheduleNonce, setScheduleNonce] = useState(0);
   const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];
-  const motion = useTabPanelMotion(TABS.map(([id]) => id), tab);
+  // `key` is destructured out rather than spread. `useTabPanelMotion` returns
+  // `{ key, style }` and the key is the whole mechanism — it remounts the panel
+  // so the CSS animation restarts. React warns on a spread `key` today and
+  // React 19 DROPS it silently, which would leave the panel animating once and
+  // never again. GrahaPage still spreads it; this is the shape that survives.
+  const { key: panelKey, ...motion } = useTabPanelMotion(TABS.map(([id]) => id), tab);
 
   // One call feeds both the KPI strip and the tab counts — the module summary
   // the page had no equivalent of. A module that opens on a list of rows with
@@ -126,6 +131,7 @@ export default function PracharPage() {
       <KpiStrip items={kpi} loading={loading} error={error} count={4} />
 
       <div
+        key={panelKey}
         role="tabpanel"
         id={`mt-panel-${tab}`}
         aria-labelledby={`mt-tab-${tab}`}
