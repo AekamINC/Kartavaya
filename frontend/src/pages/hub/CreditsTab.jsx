@@ -12,7 +12,7 @@ import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { DataTable, Td } from '../../components/editorial';
-import { Resource, StatusPill, TX_TONE, useResource, errText, stamp, words } from './_shared';
+import { Resource, StatusPill, TX_TONE, useResource, creditLabel, errText, stamp, words } from './_shared';
 
 export default function CreditsTab({ clientId, wallet, onRefresh }) {
   const { pushToast } = useToast();
@@ -37,7 +37,7 @@ export default function CreditsTab({ clientId, wallet, onRefresh }) {
     setBusy(true);
     try {
       await api.post(`/v1/hub/clients/${clientId}/credits/topup`, { amount: n, notes });
-      pushToast({ title: `${n} credits added`, type: 'success' });
+      pushToast({ title: `${creditLabel(n)} added`, type: 'success' });
       setAmount('');
       setNotes('');
       onRefresh?.();

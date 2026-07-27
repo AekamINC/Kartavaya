@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import { Resource, StatusPill, useList } from '../hub/_shared';
-import { AGENT_LABELS, shortStamp, words } from './_shared';
+import { AGENT_LABELS, shortStamp, words, creditLabel } from './_shared';
 
 export default function ContentTab() {
   const [filter, setFilter] = useState('');
@@ -128,7 +128,7 @@ function ContentCard({ item }) {
           <div className="sr-cc__foot">
             <span className="hb-cap hb-mono">{shortStamp(item.created_at)}</span>
             <span className="hb-cap hb-mono">
-              {item.credits_used != null ? `${item.credits_used} credits` : ''}
+              {item.credits_used != null ? creditLabel(item.credits_used) : ''}
             </span>
           </div>
         </div>

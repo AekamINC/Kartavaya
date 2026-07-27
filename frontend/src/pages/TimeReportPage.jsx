@@ -167,7 +167,22 @@ export default function TimeReportPage({ teamId }) {
     Object.fromEntries(byMember.map((m, i) => [m.label, AVATAR_COLORS[i % AVATAR_COLORS.length]])),
   [byMember]);
 
-  const totalHours = data.total_minutes ? (data.total_minutes / 60).toFixed(1) : '0';
+  /**
+   * The headline figure, and the one number on this page someone reads without
+   * scrolling.
+   *
+   * It used to be `data.total_minutes ? … : '0'`, and the catch on the fetch
+   * sets `total_minutes: 0` — so a failed request printed a confident **0h**
+   * beside the word TOTAL while the error card sat underneath it. Zero hours
+   * logged and "we could not find out" are different answers, and on a
+   * timesheet the wrong one is the one that gets billed. The same applied while
+   * loading: 0h for a beat, then the real figure.
+   *
+   * `ApprovalsPage` already draws its tiles as `—` when their fetch fails; this
+   * is that rule, on the number that matters most here.
+   */
+  const totalHours = (loading || err) ? null
+    : data.total_minutes ? (data.total_minutes / 60).toFixed(1) : '0';
 
   return (
     <div className="k-screen">
@@ -178,7 +193,9 @@ export default function TimeReportPage({ teamId }) {
         lede="Hours logged across tasks and members. Filter to investigate."
         right={
           <div className="k-time-total">
-            <div className="k-time-total__num">{totalHours}<span className="k-time-total__unit">h</span></div>
+            <div className="k-time-total__num">
+              {totalHours === null ? '—' : <>{totalHours}<span className="k-time-total__unit">h</span></>}
+            </div>
             <div className="k-time-total__lbl">TOTAL <span className="k-lbl__in" lang="hi">कुल</span></div>
           </div>
         }

@@ -14,7 +14,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import { Resource, StatusPill, useList, errText } from '../hub/_shared';
-import { SCRAPER_CATEGORIES, RUN_TONE } from './_shared';
+import { SCRAPER_CATEGORIES, RUN_TONE, creditLabel, parseSchema } from './_shared';
 
 export default function DataCatalogTab({ onViewRun, onSpent }) {
   const { pushToast } = useToast();
@@ -31,7 +31,7 @@ export default function DataCatalogTab({ onViewRun, onSpent }) {
     setPicked(s);
     setRun(null);
     setInputs(Object.fromEntries(
-      (s.input_schema || []).filter(f => f.default != null).map(f => [f.name, f.default])
+      parseSchema(s.input_schema).filter(f => f.default != null).map(f => [f.name, f.default])
     ));
   }
 
@@ -97,8 +97,17 @@ export default function DataCatalogTab({ onViewRun, onSpent }) {
                   <span className="sr-tool__t">{s.name}</span>
                   <span className="hb-cap sr-tool__d">{s.description}</span>
                   <span className="sr-tool__foot">
-                    <span className="hb-cap">Up to {s.max_results} results</span>
-                    <span className="hb-cap hb-mono">{s.credit_cost ?? 2} credits</span>
+                    {/* `max_results` is nullable — routers/scrapers.py:96 selects
+                        the column raw and only coalesces it at run time
+                        (`scraper["max_results"] or 100`). Rendered
+                        unconditionally it printed "Up to  results", a sentence
+                        with a hole in it. Same rule the rest of this module
+                        follows for credits: omit the figure rather than show a
+                        wrong or missing one. */}
+                    {s.max_results != null && (
+                      <span className="hb-cap">Up to {s.max_results} results</span>
+                    )}
+                    <span className="hb-cap hb-mono">{creditLabel(s.credit_cost ?? 2)}</span>
                   </span>
                 </button>
               ))}
@@ -120,7 +129,7 @@ export default function DataCatalogTab({ onViewRun, onSpent }) {
               <div className="sr-runstate">
                 {run.stale ? (
                   <div className="note note--warn hb-err" role="status">
-                    <b>We lost track of this run.</b> It was started and {run.charged} credits were
+                    <b>We lost track of this run.</b> It was started and {creditLabel(run.charged)} were
                     charged — it may still be working. Open the Data runs tab to see where it got to.
                   </div>
                 ) : run.status === 'running' ? (
@@ -161,10 +170,10 @@ export default function DataCatalogTab({ onViewRun, onSpent }) {
               <form className="hb-form" onSubmit={start}>
                 <div className="sr-cost">
                   <span className="hb-cap">This run spends</span>
-                  <b className="hb-mono">{picked.credit_cost ?? 2} credits</b>
+                  <b className="hb-mono">{creditLabel(picked.credit_cost ?? 2)}</b>
                 </div>
 
-                {(picked.input_schema || []).map(f => (
+                {parseSchema(picked.input_schema).map(f => (
                   <label className="hb-field" key={f.name}>
                     <span className="hb-field__l">
                       {f.label}
@@ -186,7 +195,7 @@ export default function DataCatalogTab({ onViewRun, onSpent }) {
                 <div className="hb-form__foot hb-form__foot--end">
                   <button type="button" className="k-btn k-btn--ghost" onClick={close}>Cancel</button>
                   <button type="submit" className="k-btn k-btn--primary" disabled={starting}>
-                    {starting ? 'Starting…' : `Run · ${picked.credit_cost ?? 2} credits`}
+                    {starting ? 'Starting…' : `Run · ${creditLabel(picked.credit_cost ?? 2)}`}
                   </button>
                 </div>
               </form>

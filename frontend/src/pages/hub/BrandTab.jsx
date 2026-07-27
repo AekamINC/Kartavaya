@@ -113,8 +113,13 @@ export default function BrandTab({ clientId, state, brand, onSaved }) {
         </div>
 
         <div className="hb-form__foot">
+          {/* Three states, not two. A client with no brand profile yet loads
+              this form empty and un-dirty, and the two-state version then told
+              them it was "Saved." — a claim about a record that does not
+              exist, on the one field set that decides what every generated
+              draft sounds like. */}
           <span className="hb-cap">
-            {dirty ? 'Unsaved changes.' : 'Saved.'}
+            {dirty ? 'Unsaved changes.' : brand ? 'Saved.' : 'Not saved yet.'}
           </span>
           <button type="submit" className="k-btn k-btn--primary" disabled={busy || !dirty}>
             {busy ? 'Saving…' : 'Save brand profile'}

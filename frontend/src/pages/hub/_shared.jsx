@@ -298,6 +298,21 @@ export function thisMonth() {
 export const words = s => String(s ?? '').replace(/_/g, ' ');
 
 /**
+ * `1 credit` / `3 credits`.
+ *
+ * The bare `${n} credits` template printed "1 credits", and not only on a
+ * contrived value: the cost table the server serves on `/v1/hub/org/credits`
+ * has a single-credit entry in it, so the WhatsApp preset showed the broken
+ * plural on every load of the Generate tab. `skills/CreateTab.jsx` already
+ * pluralises "step" by hand, so the intent was there — this just gives the
+ * module one place to do it.
+ *
+ * NOT called `credits`: several tabs take a prop by that name, and a
+ * destructured parameter shadows a module import silently.
+ */
+export const creditLabel = n => `${n} credit${Math.abs(Number(n)) === 1 ? '' : 's'}`;
+
+/**
  * The status pill. Renders through the shared chip vocabulary rather than a
  * per-page span, and carries the colour as `--c` so the tint is computed in CSS.
  */

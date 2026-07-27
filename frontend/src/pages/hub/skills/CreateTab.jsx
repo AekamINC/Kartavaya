@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { api } from '../../../lib/api';
 import { useToast } from '../../../components/ui/toast';
-import { errText } from '../_shared';
+import { errText, creditLabel } from '../_shared';
 import {
   StepEditor, SkillGlyph, ICON_OPTIONS, CATEGORY_LABELS, estimateCredits,
 } from './_shared';
@@ -104,7 +104,7 @@ export default function CreateTab({ costs, canManage, onCreated }) {
           {valid.length === 0
             ? 'No step has a prompt yet.'
             : est != null
-              ? <>{valid.length} {valid.length === 1 ? 'step' : 'steps'} · about {est} credits per run</>
+              ? <>{valid.length} {valid.length === 1 ? 'step' : 'steps'} · about {creditLabel(est)} per run</>
               : <>{valid.length} {valid.length === 1 ? 'step' : 'steps'} · cost table unavailable</>}
         </span>
         <button type="submit" className="k-btn k-btn--primary" disabled={busy}>
