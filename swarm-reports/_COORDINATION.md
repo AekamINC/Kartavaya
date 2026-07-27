@@ -31,6 +31,46 @@ work that dies.
 
 ---
 
+
+## 0b. THE BROWSER IS SHARED — your readings may be another agent's page
+
+Both browser MCPs are shared across every running agent. A sibling had **three
+readings land on someone else's page** — twice on a build probe carrying
+`data-density="comfy"` instead of the reference, once on a motion probe. Any of
+those transcribed as "the reference" produces a confidently wrong report.
+
+**Assert `location.href` on every reading** and discard anything that does not
+match the URL you expect. Re-verify measurements you have already recorded.
+
+Robust pattern, worth copying: have the page POST its results to a small local
+server that writes them to disk. The browser then loads once and you read from a
+file instead of racing 27 other agents.
+
+## 0c. DENSITY BASELINE — the build renders looser than the design, everywhere
+
+The reference's density control offers compact/comfy but **writes `cozy` for
+comfy** (`SetCustomize.jsx:491`). The build writes `comfy` literally and has **no
+`cozy` row at all**, so the defaults resolve differently:
+
+| token | reference | build |
+|---|---|---|
+| `--row-h` | 44 | 48 |
+| `--pad-page` | 28 | 32 |
+| `--pad-card` | 18 | 20 |
+| `--gap-section` | 22 | 26 |
+
+**This is a plausible root cause of "nothing is pixel perfect" globally**, and no
+per-page fix corrects it. Do NOT fix it in your lane — it moves spacing on every
+page at once and would silently invalidate every other agent's in-flight
+measurements. Record your deltas against the reference's true default and note
+which of your findings it explains.
+
+Two measured corrections while you are here:
+- **`--on-surface-faint` is now an alias of `--on-surface-3`** (`#666A61`, 4.82:1).
+  The "non-text only at 2.3:1" rule in older briefs is **STALE**.
+- **`--radius-base` 10-vs-12 and `--font-ui` Inter-vs-Public-Sans are stylesheet
+  fallbacks only.** Runtime defaults agree. Nobody should "fix" them.
+
 ## 1. Your worktree may be cut from `main`, not `staging`
 
 **28 worktree branches in this run descend from `main`'s tip.** On `main` there is no

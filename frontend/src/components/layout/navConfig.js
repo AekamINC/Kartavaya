@@ -61,10 +61,23 @@ export const NAV_FULL = [
   },
   {
     // ── People · जन ────────────────────────────────────────────────────────
+    //
+    // ORDER is the reference's, read off the RENDERED mockup rather than the
+    // prose: `Chrome.jsx:47` runs HRMS · Payroll · Attendance · Messaging, and
+    // this list had the last two the other way round. It reads as an accident
+    // either way until you see them side by side — the three rows above
+    // Attendance are all employee RECORDS, and Messaging is the one row in the
+    // group that is a live surface rather than a record, so it belongs last.
     section: 'people', sans: 'जन', gu: 'જન',
     items: [
       { to: '/manav',   icon: 'manav',   en: 'HRMS',      hi: 'मानव',    gu: 'માનવ',   module: 'manav' },
       { to: '/vetana',  icon: 'vetana',  en: 'Payroll',   hi: 'वेतन',    gu: 'વેતન',   module: 'vetana' },
+      // Pahchan was routed in App.jsx and rendered a finished page, but it was
+      // in NO nav list — it appeared only in EXTRA_ROUTES, which exists to give
+      // a breadcrumb to routes that have no sidebar entry. So the module was
+      // reachable exclusively by typing the URL. It is a module like the nine
+      // above it and belongs in the group with them.
+      { to: '/pahchan', icon: 'pahchan', en: 'Attendance', hi: 'पहचान',  gu: 'પહચાન',  module: 'pahchan' },
       // `sanvaad` — ONE spelling, and this is it. The key is compared against
       // `module_grants[]`, which carries whatever code `require_module(...)`
       // gates on, and `routers/messaging.py:27` now gates on `sanvaad`.
@@ -79,12 +92,6 @@ export const NAV_FULL = [
       // `samvada` would have preserved that. Settled the other way; the tables
       // keep their `samvada_` prefix, the module code does not.
       { to: '/sanvaad', icon: 'inbox',   en: 'Messages',  hi: 'संवाद',   gu: 'સંવાદ',  module: 'sanvaad' },
-      // Pahchan was routed in App.jsx and rendered a finished page, but it was
-      // in NO nav list — it appeared only in EXTRA_ROUTES, which exists to give
-      // a breadcrumb to routes that have no sidebar entry. So the module was
-      // reachable exclusively by typing the URL. It is a module like the nine
-      // above it and belongs in the group with them.
-      { to: '/pahchan', icon: 'pahchan', en: 'Attendance', hi: 'पहचान',  gu: 'પહચાન',  module: 'pahchan' },
     ],
   },
   {
@@ -94,10 +101,16 @@ export const NAV_FULL = [
     // the AI hub with Marketing and Reports because they are the same job —
     // finding and keeping work — and a one-module section is a heading with
     // nothing to head.
+    //
+    // ORDER, again from the rendered mockup: `Chrome.jsx:53` is Marketing ·
+    // AI Hub · Reports, i.e. प्रचार · सृजन · दृष्टि. This list had दृष्टि
+    // second and सृजन third. Analytics moves last, which is also where it
+    // belongs on its own terms — it reports on what the two rows above it did.
+    // `Srijan Admin` has no counterpart in the mockup and stays beside the
+    // Srijan row it administers rather than being wedged between them.
     section: 'growth', sans: 'वृद्धि', gu: 'વૃદ્ધિ',
     items: [
       { to: '/prachar', icon: 'prachar', en: 'Marketing', hi: 'प्रचार',  gu: 'પ્રચાર', module: 'prachar' },
-      { to: '/dristi',  icon: 'dristi',  en: 'Analytics', hi: 'दृष्टि',  gu: 'દૃષ્ટિ', module: 'dristi' },
       // `module` is the code `require_module(...)` uses, which for the AI hub is
       // `srijan`. Without it these two rows were the only module surfaces in the
       // sidebar with no entitlement predicate at all, so `platform_support` — a
@@ -105,6 +118,7 @@ export const NAV_FULL = [
       // admin approves a session — was offered the Srijan console on the nav.
       { to: '/hub/org', icon: 'hub',      en: 'Srijan',       hi: 'सृजन',           gu: 'સર્જન', module: 'srijan' },
       { to: '/hub',     icon: 'settings', en: 'Srijan Admin', hi: 'सृजन व्यवस्था', gu: 'સર્જન વ્યવસ્થા', adminOnly: true, module: 'srijan' },
+      { to: '/dristi',  icon: 'dristi',  en: 'Analytics', hi: 'दृष्टि',  gu: 'દૃષ્ટિ', module: 'dristi' },
     ],
   },
   {
@@ -169,12 +183,26 @@ export function navContext(user) {
   // `Array.isArray` is what keeps those apart: a missing signal must never read
   // as an empty grant, or the entire modules group vanishes for administrators.
   const moduleGrants  = Array.isArray(user?.module_grants) ? user.module_grants : null;
+  /**
+   * The active organisation's display name, or `null`.
+   *
+   * `auth_router.py:346` already selects `o.name AS org_name` into every
+   * `org_roles` row and has done all along; nothing on the client read it. The
+   * FIRST row is the active org, which is the same row `_module_grants` calls
+   * `primary` — one definition of "which org am I in", not two.
+   *
+   * Null for a platform-only operator and for a legacy account that predates
+   * `user_roles`. Every caller must render nothing rather than a placeholder:
+   * an empty breadcrumb segment reading "—" is worse than no segment.
+   */
+  const orgName = orgRoles[0]?.org_name || null;
   return {
     isPlatform,
     isOrgOwner,
     isOrgAdmin,
     isClient,
     moduleGrants,
+    orgName,
     // Legacy `role` column is still the only signal for orgs that predate
     // user_roles, so it is a fallback, not the primary test.
     isOwnerish: isOrgOwner || isOrgAdmin || isPlatform || user?.role === 'owner' || user?.role === 'admin',

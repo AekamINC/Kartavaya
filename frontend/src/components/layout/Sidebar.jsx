@@ -14,7 +14,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { currentUser } from '../../lib/auth';
 import { ICONS } from './navIcons';
-import { navGroupsFor } from './navConfig';
+import { navContext, navGroupsFor } from './navConfig';
 import { useCustomize } from '../CustomizePanel';
 import SideBrand from './SideBrand';
 
@@ -137,6 +137,24 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
   const initials = ((user?.full_name || user?.name || 'U')
     .split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase());
 
+  /**
+   * "Owner · Aekam Inc", not "owner".
+   *
+   * `Chrome.jsx:133` puts the role AND the organisation on this line, and the
+   * build printed the role alone. On its own the word is close to no
+   * information — every user is one of four words, and the one thing that
+   * differs between two sessions of the same person (which company am I signed
+   * into) was the part left out. The org name comes from the same
+   * `navContext()` the breadcrumb reads.
+   *
+   * Falls back to the bare role when there is no org: a platform operator and a
+   * legacy account both land here, and a trailing separator with nothing after
+   * it is worse than the short line.
+   */
+  const orgName = navContext(user).orgName;
+  const roleWord = user?.role || 'member';
+  const meLine = orgName ? `${roleWord} · ${orgName}` : roleWord;
+
   return (
     <aside className={'side' + (rail ? ' side--rail' : '')}>
       <SideBrand rail={rail} />
@@ -250,7 +268,7 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
           <>
             <div className="side__me">
               <div className="side__me-n">{user?.full_name || user?.name || 'User'}</div>
-              <div className="side__me-r">{user?.role || 'member'}</div>
+              <div className="side__me-r" title={meLine}>{meLine}</div>
             </div>
             <button
               type="button"
