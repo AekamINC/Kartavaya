@@ -1,0 +1,271 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   VETANA · वेतन — payroll surfaces.
+
+   `VetanaPage.jsx` carried 87 inline styles across six tabs in one 857-line
+   file: every table total, every metadata line, every form row was a literal
+   object in JSX. None of them tracked the Text size or Border radius settings,
+   several hard-coded a grey that is a token, and the two-column payslip was a
+   fixed `1fr 1fr` grid that did not collapse on a phone.
+
+   This file is the styled half of that split. It is a per-surface stylesheet on
+   the same footing as boards.css, inbox.css and sanvaad.css rather than an
+   addition to module.css, which is shared chrome.
+
+   Everything below consumes tokens only: --on-surface-*, --outline-variant,
+   --r-*, --sp-*, --font-*, --ok/--warn/--danger. No literal colour, no literal
+   radius. Sizes below the 11px metadata floor are written as
+   max(11px, calc(var(--font-size-base) * n)) so they track the Text size
+   preference and never fall under the floor.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.vt-page { padding-bottom: 48px; }
+
+/* The header action. Sized down to sit on the .mh baseline beside a 25px
+   display title without becoming the loudest thing on the page. */
+.vt-hdr__go { font-size: 13px; }
+
+/* ── Section head with a trailing control ─────────────────────────────────
+   Every tab opens with a title and either a month picker or a create button.
+   Below 640px the control drops to its own line rather than crushing the
+   title — a month input has a minimum usable width and a heading does not. */
+.vt-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 20px;
+}
+.vt-head__act { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+
+/* ── A labelled inline control ────────────────────────────────────────────
+   The month inputs were bare `<input type="month">` with no label at all —
+   three of them on the module, each meaning something different (the month to
+   process, the month to filter, the month to file for). */
+.vt-field { display: flex; flex-direction: column; gap: 3px; }
+.vt-field__l {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
+  color: var(--on-surface-3);
+}
+.vt-field__in { width: auto; }
+
+/* ── Card list ────────────────────────────────────────────────────────────
+   Was `style={{ display:'flex', flexDirection:'column', gap:6 }}` repeated in
+   four tabs. */
+.vt-list { display: flex; flex-direction: column; gap: 6px; }
+
+.vt-row__t   { font-size: var(--t-body-sm); font-weight: 600; }
+.vt-row__s   { margin: 3px 0 0; font-size: max(11.5px, calc(var(--font-size-base) * .86)); color: var(--on-surface-3); }
+.vt-row__end { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.vt-row__fig { text-align: right; }
+/* Mono with tabular figures, per 00 §2 — a column of rupee amounts that is not
+   tabular cannot be scanned for magnitude, and scanning it is the only reason
+   to put it in a list. */
+.vt-row__num {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--t-body-sm); font-weight: 600;
+}
+.vt-row__sub {
+  margin: 2px 0 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: max(11px, calc(var(--font-size-base) * .82)); color: var(--on-surface-3);
+}
+/* An employee code or document number sitting beside a name. */
+.vt-code {
+  margin-left: 8px; font-family: var(--font-mono);
+  font-size: max(11px, calc(var(--font-size-base) * .82)); color: var(--on-surface-3);
+}
+
+/* A caption on a section head — the month a table is showing. */
+.vt-cap { font-size: max(11.5px, calc(var(--font-size-base) * .86)); color: var(--on-surface-3); }
+.vt-cap--note { display: block; margin-top: 8px; max-width: 72ch; line-height: 1.5; }
+
+/* ── Proportion bar ───────────────────────────────────────────────────────
+   A second reading of a figure that is already printed beside it, never a
+   replacement for it: the bar gives the shape of a distribution at a glance and
+   the number stays exact. Non-text, so the 3:1 contrast floor does not apply —
+   which is why it is allowed to be a tint. */
+.vt-bar {
+  display: block; width: 100%; min-width: 48px; height: 6px;
+  background: var(--s-container); border-radius: 99px; overflow: hidden;
+}
+.vt-bar--slim { height: 4px; margin-top: 6px; }
+.vt-bar__f { display: block; height: 100%; background: var(--primary); border-radius: 99px; }
+
+/* ── Failure block ────────────────────────────────────────────────────────
+   Deliberately not the empty state. See `_shared.jsx`: on payroll, "no runs"
+   and "the request failed" mean opposite things. */
+.vt-err { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.vt-err__go { margin-left: auto; font-size: max(11.5px, calc(var(--font-size-base) * .86)); }
+
+/* ── Source card — where a run's numbers come from ────────────────────────
+   The reference's `Card title="Source"`. Tonal rather than outlined: it is
+   supporting evidence for the control above it, not a peer of the run list. */
+.vt-src {
+  background: var(--s-container); border-radius: var(--r-md);
+  padding: var(--sp-4); margin-bottom: 18px;
+}
+.vt-src__head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.vt-src__t { margin: 0; font-size: var(--t-body-sm); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+/* Devanagari is never tracked and never uppercased (24-bilingual-devanagari.md);
+   the tracking on the parent would otherwise be inherited into the conjuncts. */
+.vt-src__hi {
+  margin-left: 7px; font-family: var(--font-indic); font-size: 12.5px;
+  font-weight: 400; letter-spacing: normal; text-transform: none;
+  color: var(--on-surface-3);
+}
+.vt-src__head > .k-btn { margin-left: auto; }
+.vt-src__lede {
+  margin: 0 0 12px; font-size: max(12px, calc(var(--font-size-base) * .88));
+  line-height: 1.55; color: var(--on-surface-2); max-width: 72ch;
+}
+.vt-src__grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px; margin-bottom: 12px;
+}
+.vt-fact { padding: 11px 13px; background: var(--surface); border-radius: var(--r-sm); }
+.vt-fact__l {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
+  color: var(--on-surface-3);
+}
+.vt-fact__v {
+  margin-top: 4px; font-family: var(--font-display); font-size: 21px;
+  font-variant-numeric: tabular-nums;
+}
+.vt-fact__s { margin-top: 2px; font-size: max(11px, calc(var(--font-size-base) * .82)); color: var(--on-surface-3); }
+
+/* ── Definition rows — a policy readout, a payslip's employer figures ───── */
+.vt-pol { margin: 12px 0 0; }
+.vt-pol--tight { margin-top: 16px; }
+.vt-pol__r {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 6px 0; border-top: 1px solid var(--outline-variant);
+}
+.vt-pol__k { font-size: max(12px, calc(var(--font-size-base) * .88)); color: var(--on-surface-3); }
+.vt-pol__v {
+  margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: max(12px, calc(var(--font-size-base) * .88));
+}
+.vt-pol__src {
+  margin: 10px 0 0; font-size: max(11px, calc(var(--font-size-base) * .82));
+  line-height: 1.5; color: var(--on-surface-3); max-width: 72ch;
+}
+
+/* ── Run detail ───────────────────────────────────────────────────────────
+   Six tiles rather than the previous two rows of four and two, which left a
+   half-empty second row at most widths. */
+.vt-stats { margin-bottom: 20px; }
+
+/* ── The payslip: earnings beside deductions ──────────────────────────────
+   Was a hard `gridTemplateColumns: '1fr 1fr'`, which stayed two columns at
+   every width and put a rupee table into ~160px on a phone. auto-fit with a
+   minimum collapses it to one column when it has to. */
+.vt-slip { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 28px; }
+
+/* A table's total row. Was an inline
+   `background: color-mix(in srgb, var(--k-primary) 4%, transparent)` written
+   out four times, plus `fontWeight: 700` on the label cell. */
+.vt-tot > td { font-weight: 700; background: var(--s-low); }
+.vt-tot--minus > td { background: var(--danger-container); }
+
+/* ── The refusal to issue an incomplete payslip ───────────────────────────
+   `services/doc_validation.py` answers 422 with every blocking gap named. This
+   is that payload as a work list. It is a danger note because the document was
+   NOT issued — but it is a list of things to go and fix, so it is laid out to
+   be worked through rather than merely read. */
+.vt-inc { margin-bottom: 16px; }
+.vt-inc__head { display: flex; align-items: baseline; gap: 12px; }
+.vt-inc__x { margin-left: auto; font-size: max(11.5px, calc(var(--font-size-base) * .86)); }
+.vt-inc__m { margin: 6px 0 10px; line-height: 1.55; max-width: 72ch; }
+
+.vt-gaps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.vt-gaps--adv { margin-top: 4px; opacity: .88; }
+.vt-gap {
+  padding: 10px 12px; border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+.vt-gap__l { font-weight: 700; }
+.vt-gap__f {
+  margin-left: 8px; font-family: var(--font-mono);
+  font-size: max(11px, calc(var(--font-size-base) * .8)); color: var(--on-surface-3);
+}
+.vt-gap__r { margin: 4px 0 0; line-height: 1.5; }
+/* The fix is the actionable half and is weighted to show it. */
+.vt-gap__x { margin: 5px 0 0; line-height: 1.5; font-weight: 600; }
+
+/* ── Checkbox / select cluster on a form ──────────────────────────────────
+   Was three copies of an inline flex row with a 12px font — under the 11px
+   floor once the Text size slider is reduced. */
+.vt-toggles {
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.vt-toggle {
+  display: flex; align-items: center; gap: 6px;
+  font-size: max(12px, calc(var(--font-size-base) * .88)); color: var(--on-surface-2);
+}
+.vt-toggle__sel { width: auto; }
+.vt-editform { margin-top: 16px; }
+
+/* ── Statutory flags on a structure ───────────────────────────────────────
+   The dot is a second signal beside words that already say the same thing
+   ("deducted" / "not deducted"), never the only one — 00 §12. */
+.vt-flags { display: flex; gap: 18px; flex-wrap: wrap; font-size: max(12.5px, calc(var(--font-size-base) * .92)); }
+.vt-flag { display: inline-flex; align-items: center; gap: 7px; }
+.vt-flag__d { width: 8px; height: 8px; border-radius: 50%; background: var(--outline-variant); flex-shrink: 0; }
+.vt-flag--on .vt-flag__d { background: var(--ok); }
+
+/* ── Inline edit inside a card ────────────────────────────────────────── */
+.vt-inline { display: flex; gap: 8px; margin-top: 10px; align-items: flex-end; flex-wrap: wrap; }
+.vt-inline .vt-field__in { width: 130px; }
+.vt-loan__main { min-width: 0; flex: 1 1 auto; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Compliance calendar
+
+   One card per filing. The amount and the due date are the two things read
+   first, so they sit together at the trailing edge in mono; the rule that
+   produced the date is printed underneath, because a compliance date a reader
+   cannot check is a date they have to trust.
+   ══════════════════════════════════════════════════════════════════════════ */
+.vt-cal { display: flex; flex-direction: column; gap: 10px; }
+.vt-cal__i {
+  padding: var(--sp-4); border-radius: var(--r-md);
+  border: 1px solid var(--outline-variant); background: var(--surface);
+}
+/* Overdue tints the card AND the row carries the word "Overdue" in its tag —
+   the tint is never the only carrier. */
+.vt-cal__i--late {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--outline-variant));
+  background: color-mix(in srgb, var(--danger) 4%, var(--surface));
+}
+.vt-cal__top { display: flex; align-items: flex-start; gap: 11px; flex-wrap: wrap; }
+/* The form number — ECR, ESIC, 24Q. A short mono identifier, the same treatment
+   the reference gives `.tbl__id`. */
+.vt-cal__form {
+  flex-shrink: 0; padding: 3px 8px; border-radius: var(--r-sm);
+  background: var(--s-container); color: var(--on-surface-2);
+  font-family: var(--font-mono); font-size: max(11px, calc(var(--font-size-base) * .82));
+  font-weight: 600;
+}
+.vt-cal__names { min-width: 0; flex: 1 1 200px; }
+.vt-cal__t { display: block; font-size: var(--t-body-sm); }
+.vt-cal__hi { font-family: var(--font-indic); font-size: max(11.5px, calc(var(--font-size-base) * .86)); color: var(--on-surface-3); }
+.vt-cal__fig { margin-left: auto; text-align: right; flex-shrink: 0; }
+.vt-cal__amt { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: var(--t-body-sm); font-weight: 600; }
+.vt-cal__due {
+  display: block; margin-top: 2px; font-family: var(--font-mono);
+  font-size: max(11px, calc(var(--font-size-base) * .8)); color: var(--on-surface-3);
+}
+.vt-cal__n { margin: 9px 0 0; font-size: max(12px, calc(var(--font-size-base) * .88)); line-height: 1.5; color: var(--on-surface-2); max-width: 78ch; }
+.vt-cal__rule { margin: 5px 0 0; font-size: max(11px, calc(var(--font-size-base) * .82)); line-height: 1.5; color: var(--on-surface-3); max-width: 78ch; }
+.vt-cal__foot { display: flex; align-items: center; gap: 12px; margin-top: 11px; }
+.vt-cal__bar { max-width: 180px; }
+.vt-cal__sum {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 12px var(--sp-4); border-radius: var(--r-md); background: var(--s-low);
+  font-size: var(--t-body-sm); font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .vt-head__act { width: 100%; }
+  .vt-cal__fig { margin-left: 0; text-align: left; width: 100%; }
+  .vt-cal__bar { display: none; }
+}
