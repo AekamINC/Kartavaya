@@ -36,6 +36,26 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .kv {
   display: grid;
   grid-template-columns: auto 1fr;
+  /* LOAD-BEARING. Without this NOTHING SCROLLS — not a page, not the sidebar.
+     There was no `grid-template-rows`, so the single implicit row was `auto` and
+     sized itself to its TALLEST ITEM rather than to this 100vh box. Measured on
+     a 720px viewport with a long page and a long nav: the row computed to
+     3078px. `.kv__main` and `.side` then inherited that height, so
+     `.kv__content` and `.side__nav` were each exactly as tall as their own
+     content and their `overflow-y: auto` had nothing left to scroll — while
+     `overflow: hidden` here silently clipped everything past the fold.
+
+     After: the row is 720px, `.kv__content` 699 vs 3056 scrollable, and
+     `.side__nav` 666 vs 3024. One declaration, both scrollers.
+
+     `minmax(0, 1fr)` and not a bare `1fr`: `1fr` floors at min-content, which
+     reintroduces the same bug the moment the content is tall.
+
+     A first attempt at this was reverted because a probe said the row already
+     resolved to 720px. That probe loaded two of the four stylesheets App.jsx
+     imports and left the sidebar empty, so nothing was tall enough to stretch
+     the row and the bug could not appear. Reproduce with a FAITHFUL probe. */
+  grid-template-rows: minmax(0, 1fr);
   height: 100vh;
   width: 100vw;
   background: var(--bg);
