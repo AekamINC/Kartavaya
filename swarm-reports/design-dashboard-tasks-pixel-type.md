@@ -281,6 +281,183 @@ Recorded as a second reference spec defect.
 
 ---
 
-## 6. Changes made
+## 6. A second Devanagari defect, in the build this time
 
-See the next section of this report, appended as each lands.
+The same probe that cleared the build on tracking caught it on **weight**.
+
+| node | family | declared weight | face ships |
+|---|---|---|---|
+| `.k-hero__samvat` | Tiro Devanagari Hindi | **600** | 400 only |
+
+`editorial.css:828` `.k-hero__meta` is `font-weight: 600`; `.k-hero__samvat`
+reset the family, the tracking and the case but **not** the weight, so गुरुवार
+and विक्रम संवत् on Today asked the rasteriser for a weight the font does not
+have. It answers by smearing — the शिरोरेखा thickens unevenly.
+
+`editorial.css` already documents exactly this failure for four other label
+classes; `.k-hero__samvat` is a fifth it does not name. Fixed.
+
+---
+
+## 7. Changes made
+
+Ten files. Every number below was measured before and after.
+
+### Baseline
+
+| file | change |
+|---|---|
+| `styles/kartavaya-design.css` | added `[data-density="cozy"]` — the tier the design is drawn at |
+| `components/CustomizePanel.jsx` | `DEFAULTS.density` `comfy` → `cozy`; one-time migration for stored prefs |
+| `pages/customize/TabLayout.jsx` | Density control now offers three tiers, not two |
+
+The migration is deliberate and has a cost: `setPrefs` persists the whole prefs
+object, so `comfy` is frozen in storage for anyone who ever changed any setting,
+and changing `DEFAULTS` alone would have fixed new installs only. It runs once,
+behind its own flag. Someone who deliberately chose Comfy is moved to Cozy one
+time — reversible in two clicks, and their next choice sticks. The old default
+and a deliberate choice are the same three bytes in storage, so there is no
+version of this that touches only one of them.
+
+### Two rules leaking from `kartavaya-design.css`
+
+Both are cases where `editorial.css` redeclares a selector and overrides some
+properties but not all, so the older declaration survives in the gaps.
+
+| selector | leaked | effect | fix |
+|---|---|---|---|
+| `.k-card` | `padding: var(--sp-5)` | stacked with `__head`/`__body` — cards inset **~38px** instead of 18px, and the head's hairline stopped short of the card edge | `:has(> .k-card__head/__body) { padding: 0 }` |
+| `.k-col` | `background`, `border-radius`, `min-height: 200px` from a **kanban** column whose `.k-col__head` no JSX renders | Today's two layout columns and both skeletons drew tinted rounded panels behind content meant to sit on the page | explicit resets |
+
+`.k-card` is scoped with `:has()` rather than zeroed because both shapes exist:
+twelve call sites wrap bare content in `.k-card` and legitimately want the 20px.
+`:has()` was already in use in `mobile-responsive.css`.
+
+### Literals replaced by the density tokens the build already defines
+
+| selector | was | now |
+|---|---|---|
+| `.k-screen` | `gap: var(--sp-6)` 24px | `var(--gap-section)` 22px |
+| `.k-twocol` | `gap: var(--sp-5)`, `1.6fr` | `var(--gap-section)`, `1.65fr` |
+| `.k-col` | `gap: var(--sp-5)` | `var(--gap-section)` |
+| `.k-stats` | `gap: 11px`, `minmax(196px)`, leaked `margin-top: 20px` | `var(--gap-tight)`, `minmax(180px)`, `margin-top: 0` |
+| `.k-stat` | `padding: 16px 17px`, `radius: var(--r-md)` | `var(--pad-card)`, `var(--r-lg)`, `display:flex` + `gap:3px` |
+| `.k-card__head` | `var(--sp-4) var(--sp-5)` | `var(--pad-card) var(--pad-card) calc(var(--pad-card) * .7)` |
+| `.k-card__body` | `var(--sp-4) var(--sp-5) var(--sp-5)` | `calc(var(--pad-card) * .7) var(--pad-card) var(--pad-card)` |
+| `.k-tasklist` | negative margins in `--sp-*` | same, in `--pad-card`, so the two cannot drift |
+| `.k-table__head` | `padding: 10px 18px`, `gap: 16px` | `0 16px`, `gap: 14px`, `min-height: 38px`, `align-items: center` |
+| `.k-trow` | `padding: 0 18px`, `gap: 16px`, `--row-h` fallback **48px** | `0 16px`, `gap: 14px`, fallback `44px` |
+| `.k-trow__cell` | `gap: 10px` | `9px` |
+| `.k-group__head` | `padding: 10px 18px` | `9px 16px` |
+| `today.css` skeletons | pinned to `--sp-6` to match the old wrong gap | `--gap-section` |
+
+`--gap-section` was declared by all three density tiers and consumed by nothing.
+`.k-table__head` had no `align-items` at all, so the header labels sat at the top
+of the band while the rows they head were centred.
+
+### Type
+
+| selector | was | now |
+|---|---|---|
+| `.k-stat__lbl` | `9.5px / .16em / gap 7px` | `10px / .15em / gap 8px` + `space-between` |
+| `.k-stat__hi` | `11px` | `12px` |
+| `.k-stat__val` | `31px / 1.1 / −.03em / mt 8px` | `34px / 1.16 / −.025em / mt 6px` |
+| `.k-stat__sub` | `margin-top: 3px` stacking on the new gap | `0` |
+| `.k-card__title` | `18px / −.005em` | `var(--t-title-lg)` / `−.01em` / `1.4` |
+| `.k-group__title` | `16px` display serif 500 | `11px / 700 / .1em / uppercase` |
+| `.k-group__sans` | `14px` | `12px`, `text-transform: none` |
+| `.k-group__count` | `12px / 400` | `11px / 700 / ls 0` |
+| `.k-trow__title` | `13.5px` | `var(--t-body-sm)` |
+| `.k-trow__id` | `11px` | `10.5px` |
+| `.k-hero__samvat` | inherited **600** into a 400-only face | `400` |
+
+The group header was the largest visible divergence on Tasks: at 16px display
+serif it read as another row rather than as the rule between two runs of rows.
+
+### `lang="hi"` on five Devanagari render sites
+
+`Card.jsx`, `WeekStrip.jsx`, `Hero.jsx` (samvat segments only), `ProjectTag.jsx`,
+`TasksListPage.jsx`.
+
+This is what makes the group-header change **safe**: `.k-group__title` is now
+tracked at `.1em`, and अत्यावश्यक sits directly beside it. Without the attribute
+the guard does not fire and the क्ष conjunct splits. The two edits are one edit.
+
+---
+
+## 8. Verified after the change
+
+Same probe, same headless run.
+
+**Every remaining difference is either intentional or an artefact of the
+comparison. There are no unexplained residuals.**
+
+| element | property | reference | build | why it stays |
+|---|---|---|---|---|
+| `.k-stat` | `background` | `#EEE9DC` tonal | `#FAF7F0` + 1px border + 2px accent bar | the build draws an outlined tile with a tone bar, the reference a flat tonal tile — a visual treatment, not a metric. Sibling's call. |
+| `.k-stat__hi` | `line-height` | `18px` | `21.24px` | the build's `[lang="hi"]` ×1.18 Devanagari leading. **The build is right.** |
+| `.k-card__body` | `padding-top` | `0` | `12.6px` | the build keeps a hairline under the card head, which the reference does not have; the gap is split around the rule rather than collapsed onto it |
+| `.k-card__title` | `font-size` | `20px` | `20.02px` | fluid scale, `calc(14px * 1.43)` |
+| `.k-trow__title` | `font-size` | `13px` | `13.02px` | fluid scale, `calc(14px * .93)` |
+| `.k-group__head` | type | on the container | on `.k-group__title` | different DOM shape — the **child's** type now matches the reference container exactly: `11px / 16.5px / 1.1px / uppercase / 700` |
+| `.k-trow` | `background` | zebra `nth-child(even)` | flat | the reference stripes rows, the build does not — visual treatment |
+| `.k-c-task` | `gap` | `9px` | `12px` | one cell holding three things; base cell gap is now 9px |
+
+Matched exactly after the change, having differed before:
+
+`.kv__content` padding · `.k-screen` gap · `.k-twocol` gap · `.k-col` gap,
+background, radius, min-height · `.k-stats` gap and margin · `.k-stat` padding
+and radius · `.k-stat__lbl` size and tracking · `.k-stat__hi` size ·
+`.k-stat__val` size, leading, tracking and margin · `.k-card` padding ·
+`.k-card__head` padding · `.k-card__body` horizontal padding · `.k-table__head`
+height (38px), padding, gap, size and tracking · `.k-trow` height (44px),
+padding and gap · `.k-group__head` padding · `.k-group__title` full type ·
+`.k-group__count` size and weight · `.k-trow__id` size.
+
+### Devanagari, after
+
+| side | Devanagari nodes | tracked | uppercased | synthesised weight |
+|---|---|---|---|---|
+| reference Dashboard | 67 | 2 | 1 | — |
+| reference Tasks | 50 | 2 | 1 | — |
+| **build, both pages** | **15** | **0** | **0** | **0** |
+
+All fifteen resolve to Tiro Devanagari Hindi at its real 400.
+
+### Gates
+
+Run from `frontend/` in this worktree, unpiped:
+
+```
+check-tokens:  340 declared, 235 referenced, 0 missing
+check-classes: 2120 selectors defined, 1443 classes used, 0 missing a rule
+```
+
+All eight touched JSX files parse clean under `@babel/parser` with the `jsx`
+plugin.
+
+---
+
+## 9. Left for others, deliberately
+
+- **`--radius-base` 10px vs the reference's 12px.** Global; the build's radius
+  control offers `4 | 10 | 20` with the default documented as one of the
+  options. Moving it moves every corner in the product.
+- **The Dashboard header.** `.k-hero` is a bespoke tonal card; the reference
+  uses the same `PH` header as every other screen. Structure.
+- **Stat tile treatment and row zebra striping.** Visual, above.
+- **`.k-card__sans` colour** — reference `--primary-text`, build `--ink-3`.
+- **Five stat tiles vs four**, and their subjects. Content.
+- **Reference spec defects**, recorded so nobody ports them: Devanagari tracked
+  in `.ph__kick` and `.ph__hi`, and `--font-ui: "Public Sans"` naming a family
+  the reference never loads.
+
+### Token rules from the brief — checked, and already clean
+
+- `color: var(--primary)` — **zero** occurrences. Every `--primary`/`--k-primary`
+  use is `border-color` or a `color-mix` fill. Primary-coloured text uses
+  `--primary-text` (#046B64, 5.2:1).
+- `--on-surface-faint` — aliased to `--on-surface-3` (#666A61) in **both** the
+  build and the reference, so the ~20 `color: var(--ink-faint)` rules resolve to
+  an AA-passing value today. The name still reads as non-text; left alone rather
+  than churning twenty rules for no measured change.

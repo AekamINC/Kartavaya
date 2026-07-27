@@ -837,6 +837,16 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-hero__samvat {
   font-family: var(--font-indic);
   font-size: 12.5px; letter-spacing: 0; text-transform: none;
+  /* 400, and it is the third reset here rather than an afterthought.
+     `.k-hero__meta` above is 600, and this rule reset the family, the tracking
+     and the case but not the weight — so गुरुवार and विक्रम संवत् were rendering
+     at 600 in a face that ships at 400 only. Measured in the browser: computed
+     font-weight 600, resolved family Tiro Devanagari Hindi. The rasteriser
+     answers a weight the font does not have by smearing the glyph, which
+     thickens the शिरोरेखा unevenly — the same faux-bold defect the
+     §Devanagari-metrics block further down documents for four other label
+     classes, on a fifth it does not name. */
+  font-weight: 400;
   color: var(--primary-text);
 }
 
