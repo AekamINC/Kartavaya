@@ -471,7 +471,17 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   const addManual  = async () => {
     const mins = parseInt(manualMin);
     if (!mins || mins < 1) return;
-    const res = await api.post('/time/manual', { task_id: taskId, minutes: mins, description: manualDesc });
+    // `started_at` is REQUIRED on `TimeEntryCreate` (routers/time_entries.py) and
+    // was never sent, so every manual entry 422'd — the feature had not worked
+    // once. Sent as "now" rather than back-dated by `mins`: the entry is only
+    // ever ordered and reported on by this column, and back-dating a long entry
+    // logged just after midnight would file it against the previous day.
+    const res = await api.post('/time/manual', {
+      task_id: taskId,
+      started_at: new Date().toISOString(),
+      minutes: mins,
+      description: manualDesc,
+    });
     setEntries(prev => [res.data, ...prev]);
     setManualMin(''); setManualDesc('');
   };

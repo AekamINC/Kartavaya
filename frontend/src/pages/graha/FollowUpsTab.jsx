@@ -29,10 +29,26 @@ export default function FollowUpsTab() {
   async function load() {
     setErr(null);
     try {
-      let url = '/v1/graha/follow-ups?';
-      if (statusFilter) url += `status=${statusFilter}&`;
-      const r = await api.get(url);
-      setFollowUps(rows(r));
+      // `GET /v1/graha/follow-ups` takes `is_completed` (a bool) and has no
+      // `status` parameter at all. This sent `?status=pending|completed|overdue`,
+      // which FastAPI drops silently — so the filter did nothing, and picking
+      // "Completed" kept showing the OPEN list (the route defaults to
+      // `is_completed=FALSE` when the parameter is absent). Three choices, none
+      // of which worked, and one that stated the opposite of what it had.
+      //
+      // `overdue` has no server-side equivalent, and it is a strict subset of
+      // "not completed" — past its `due_at` and still open — so it is asked for
+      // as the open set and narrowed here. Both are bounded by the route's
+      // LIMIT 200.
+      const done = statusFilter === 'completed';
+      const r = await api.get(`/v1/graha/follow-ups?is_completed=${done}`);
+      const list = rows(r);
+      const now = Date.now();
+      setFollowUps(
+        statusFilter === 'overdue'
+          ? list.filter(f => f.due_at && new Date(f.due_at).getTime() < now)
+          : list
+      );
     } catch (e) {
       setErr(e);
       pushToast({ title: 'Failed to load follow-ups', type: 'error' });
