@@ -1,13 +1,23 @@
-// Ganit · गणित — GST invoicing route shell.
+// Ganit · गणित — Finance route shell.
 //
 // Was 2,030 lines / 124 KB. Split per 13-module-pages.md: route file + one file
 // per tab, applied BEFORE any restyle so the styling diff stays reviewable.
 // Now on the shared .mh/.mt chrome from 13-module-pages.md §1.
-import React, { useState } from 'react';
+//
+// ── "Finance", not "Invoicing" ────────────────────────────────────────────
+// Three independent places in the design reference call this module Finance:
+// `Chrome.jsx`'s NAV renders the sidebar item **Finance**, `ScreenGanit`'s page
+// title is **गणित FINANCE & GST**, and `Landing2.jsx:265` lists it as
+// "Ganit · Finance". "Invoicing" was a paraphrase, and a narrower one than the
+// module: the tab bar below carries expenses, payables, bank, contracts and
+// timesheet, none of which is invoicing.
+import React, { useState, useEffect } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
+import { api } from '../lib/api';
 
 import InvoicesTab from './ganit/InvoicesTab';
 import ProductsTab from './ganit/ProductsTab';
@@ -27,27 +37,100 @@ const TABS = [
   ['stats', StatsTab],
 ];
 
+const lakh = n => {
+  const v = Number(n) || 0;
+  if (v >= 10000000) return `₹${(v / 10000000).toFixed(2)} Cr`;
+  if (v >= 100000) return `₹${(v / 100000).toFixed(1)} L`;
+  return `₹${v.toLocaleString('en-IN')}`;
+};
+
 export default function GanitPage() {
   const [tab, setTab] = useState('invoices');
+  const [newInvoiceNonce, setNewInvoiceNonce] = useState(0);
   const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];
   const motion = useTabPanelMotion(TABS.map(([id]) => id), tab);
+
+  const [kpi, setKpi] = useState(null);
+  const [kpiErr, setKpiErr] = useState('');
+  const [counts, setCounts] = useState({});
+
+  useEffect(() => { loadSummary(); }, []);
+
+  async function loadSummary() {
+    setKpiErr('');
+    try {
+      // Receivables and payables are two different tables and two different
+      // routes. Settled with allSettled rather than all: a firm that has raised
+      // invoices but entered no vendor bills yet must still see its
+      // receivables, and Promise.all would throw the whole strip away.
+      const [inv, pay] = await Promise.allSettled([
+        api.get('/v1/ganit/stats'),
+        api.get('/v1/ganit/payables-summary'),
+      ]);
+      if (inv.status === 'rejected') throw inv.reason;
+      const s = inv.value.data;
+      const p = pay.status === 'fulfilled' ? pay.value.data : null;
+
+      setKpi([
+        {
+          label: 'Receivables', hi: 'प्राप्य', tone: 'warn',
+          value: lakh(s.total_outstanding),
+          sub: `${s.unpaid_count} unpaid of ${s.total_invoices}`,
+        },
+        {
+          label: 'Overdue', hi: 'विलंब', tone: s.overdue_count > 0 ? 'danger' : undefined,
+          value: s.overdue_count,
+          // 43B(h) disallows the deduction if an MSME supplier is paid late, so
+          // an overdue count is a tax exposure here, not just a chasing list.
+          sub: s.overdue_count > 0 ? 'MSME rule 43B(h) applies' : 'nothing past due',
+        },
+        { label: 'Collected', hi: 'प्राप्त', tone: 'ok', value: lakh(s.total_collected), sub: 'paid invoices' },
+        {
+          label: 'Payables', hi: 'देय',
+          value: p ? lakh(p.outstanding) : '—',
+          sub: p ? `${p.open_bills} open ${p.open_bills === 1 ? 'bill' : 'bills'}` : 'vendor bills unavailable',
+        },
+      ]);
+      setCounts(k => ({ ...k, payables: p ? Number(p.open_bills) : undefined }));
+    } catch (e) {
+      setKpi(null);
+      setKpiErr(e.response?.status === 403 ? 'You do not have access to Finance figures.' : 'Retry, or check your connection.');
+    }
+    try {
+      const r = await api.get('/v1/ganit/invoices');
+      setCounts(k => ({ ...k, invoices: (r.data.data || []).length }));
+    } catch { /* the tab simply carries no count */ }
+  }
+
+  const tabs = TABS.map(([id]) => ({ id, label: id.replace(/-/g, ' '), count: counts[id] }));
 
   return (
     <div style={{ padding: '0 0 48px' }}>
       <ModuleHeader
         module="ganit"
-        en="Invoicing"
+        kick={<>Revenue <span className="mh__kick-hi" lang="hi">· राजस्व</span></>}
+        en="Finance"
         hi="गणित"
-        sub="Tax invoices, quotations and payments"
+        sub="Invoices, GST, expenses and payables."
         icon={ICONS.ganit}
+        actions={
+          <button
+            type="button"
+            className="k-btn k-btn--primary"
+            style={{ fontSize: 13 }}
+            onClick={() => { setTab('invoices'); setNewInvoiceNonce(n => n + 1); }}
+          >
+            + Invoice
+          </button>
+        }
       />
 
-      <ModuleTabs
-        tabs={TABS.map(([id]) => ({ id, label: id.replace(/-/g, ' ') }))}
-        value={tab}
-        onChange={setTab}
-        label="Ganit sections"
-      />
+      {/* Figures above the tabs — the order Ganit and Vikray use in the
+          reference. Graha is the exception, and only because its tab row
+          shares a line with the no-next-step warning. */}
+      <KpiStrip items={kpi} loading={!kpi && !kpiErr} error={kpiErr} count={4} />
+
+      <ModuleTabs tabs={tabs} value={tab} onChange={setTab} label="Finance sections" />
 
       <div
         role="tabpanel"
@@ -56,7 +139,7 @@ export default function GanitPage() {
         className="ix-panel"
         {...motion}
       >
-        <Active />
+        {tab === 'invoices' ? <InvoicesTab newNonce={newInvoiceNonce} /> : <Active />}
       </div>
     </div>
   );

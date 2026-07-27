@@ -8,9 +8,18 @@
 // Colours are var() references rather than literals so a module accent is
 // correct in both themes without any consumer knowing which theme is active.
 
+// `en`/`hi` here are the designer's words, taken from the rendered reference
+// (`Chrome.jsx` NAV) rather than paraphrased:
+//   · ganit is **Finance**, not "Invoicing" — the module also holds expenses,
+//     payables, bank and contracts, so "Invoicing" named a tenth of it. The
+//     reference agrees in three places: NAV, the page title "FINANCE & GST",
+//     and Landing2.jsx:265's "Ganit · Finance".
+//   · graha is **ग्रह**, not "ग्राहक" — ग्राहक means *customer*, and it is
+//     already the Devanagari for Graha's `clients` tab and Vikray's
+//     `customers`. One word cannot label the module and a tab inside it.
 export const MODULES = {
-  graha:     { color: 'var(--m-graha)',     en: 'CRM',        hi: 'ग्राहक',   route: '/graha' },
-  ganit:     { color: 'var(--m-ganit)',     en: 'Invoicing',  hi: 'गणित',    route: '/ganit' },
+  graha:     { color: 'var(--m-graha)',     en: 'CRM',        hi: 'ग्रह',     route: '/graha' },
+  ganit:     { color: 'var(--m-ganit)',     en: 'Finance',    hi: 'गणित',    route: '/ganit' },
   manav:     { color: 'var(--m-manav)',     en: 'HRMS',       hi: 'मानव',    route: '/manav' },
   vikray:    { color: 'var(--m-vikray)',    en: 'Sales',      hi: 'विक्रय',  route: '/vikray' },
   vetana:    { color: 'var(--m-vetana)',    en: 'Payroll',    hi: 'वेतन',    route: '/vetana' },

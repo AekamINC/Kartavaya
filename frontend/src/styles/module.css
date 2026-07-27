@@ -205,6 +205,12 @@
 .mk-load { margin-bottom: 18px; }
 .mk-err  { margin-bottom: 18px; }
 .mk__v { font-family: var(--font-display); font-size: 25px; font-weight: 400; letter-spacing: -.028em; margin-top: 6px; font-variant-numeric: tabular-nums; }
+/* Tints the figure, never the tile — a row of five tinted cards stops reading
+   as one object. Mirrors `app.css:170-174` in the reference. */
+.mk__v--p      { color: var(--primary-text); }
+.mk__v--ok     { color: var(--ok); }
+.mk__v--warn   { color: var(--warn); }
+.mk__v--danger { color: var(--danger); }
 .mk__d { font-size: 11px; margin-top: 3px; display: flex; align-items: center; gap: 4px; }
 .mk__d--up { color: var(--ok); }
 .mk__d--dn { color: var(--danger); }

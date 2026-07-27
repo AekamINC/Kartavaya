@@ -83,9 +83,9 @@ export default function GrahaPage() {
       ]);
       const openDeals = (f.data.stages || []).reduce((s, r) => s + Number(r.count || 0), 0);
       setKpi([
-        { label: 'Open pipeline', hi: 'प्रवाह', value: lakh(f.data.total_pipeline), sub: `${openDeals} ${openDeals === 1 ? 'deal' : 'deals'}` },
+        { label: 'Open pipeline', hi: 'प्रवाह', tone: 'p', value: lakh(f.data.total_pipeline), sub: `${openDeals} ${openDeals === 1 ? 'deal' : 'deals'}` },
         { label: 'Weighted forecast', hi: 'अनुमान', value: lakh(f.data.weighted_forecast), sub: 'by stage probability' },
-        { label: 'Won this quarter', hi: 'विजित', value: lakh(c.data.won_value), sub: `${c.data.won} of ${c.data.total_deals} deals` },
+        { label: 'Won this quarter', hi: 'विजित', tone: 'ok', value: lakh(c.data.won_value), sub: `${c.data.won} of ${c.data.total_deals} deals` },
         { label: 'Avg cycle', hi: 'चक्र', value: c.data.avg_cycle_days ? `${c.data.avg_cycle_days}d` : '—', sub: c.data.avg_cycle_days ? 'from open to won' : 'no closed deals yet' },
       ]);
       setCounts(k => ({ ...k, pipeline: openDeals }));
