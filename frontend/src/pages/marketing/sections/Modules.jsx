@@ -25,11 +25,28 @@ import React from 'react';
  * is an expansion for a reader who has never seen the product ("Invoicing" →
  * "Invoicing & GST"), not a second vocabulary.
  *
- * CRM is ग्राहक — grāhak, customer. Not ग्राह, which means seizing, or a
- * crocodile, and was live in both navConfig and here until it was corrected.
+ * CRM is ग्रह — Graha, the module's own name. NOT ग्राहक.
+ *
+ * This line previously read ग्राहक and claimed, just above, to have been
+ * "checked against navConfig.js rather than retyped, so the page cannot drift
+ * from the product's own menu". The page HAD drifted, and this was the drift:
+ *
+ *   · `navConfig.js:64`  — `hi: 'ग्रह'`, and :60-62 say "`ग्रह` not `ग्राहक`"
+ *   · `lib/moduleColors.js` — `graha: { hi: 'ग्रह' }`, the single source
+ *   · the design reference, on the LANDING PAGE itself — `Landing.jsx:6`,
+ *     `Landing2.jsx:36` and `Landing2.jsx:134` all render ग्रह
+ *
+ * ग्राहक means *customer*, and the sidebar already spends it on the Clients
+ * section heading (`navConfig.js:143`, `section: 'clients', sans: 'ग्राहक'`).
+ * One word cannot label a module here and a different thing after sign-in — a
+ * prospect reading ग्राहक next to "CRM" on this page then finds ग्राहक over
+ * something else on their first afternoon in the product.
+ *
+ * The older note this replaces argued only against ग्राह (seizing/crocodile),
+ * which nobody proposed; it never addressed ग्रह, the word actually in use.
  */
 const MODULES = [
-  { hi: 'ग्राहक',    en: 'CRM' },
+  { hi: 'ग्रह',      en: 'CRM' },
   { hi: 'गणित',     en: 'Invoicing & GST' },
   { hi: 'मानव',     en: 'HRMS' },
   { hi: 'वेतन',     en: 'Payroll' },

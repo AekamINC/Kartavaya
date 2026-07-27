@@ -46,6 +46,13 @@ const API = `${import.meta.env.VITE_BACKEND_URL}/api`;
 
 const ax = axios.create({ baseURL: API });
 
+/* Same options object as ApprovePage. A bare toLocaleDateString('en-IN') gives
+   "20/7/2026", which is both ambiguous to a reader who expects MM/DD and
+   inconsistent with the other public page — the two are reached from the same
+   kind of email by the same person, so they must not disagree about what a date
+   looks like. This renders "20 Jul 2026". */
+const DATE = { day: 'numeric', month: 'short', year: 'numeric' };
+
 /* The signature canvas is the one place on this page that is NOT theme-aware,
    and deliberately so. `toDataURL` ships these exact pixels into the signed
    PDF, which is rendered on white paper by every viewer that opens it — ink
@@ -109,8 +116,19 @@ export default function SigningPage() {
      stranger gets their OS setting.
 
      Restored rather than removed on unmount — the bootstrap's value is what the
-     rest of the app expects to find on <html> when this route is left. */
+     rest of the app expects to find on <html> when this route is left.
+
+     THEMED_ACCENT: `applyPrefs` writes these four as INLINE styles chosen by
+     the theme it saw, and `DEFAULT_PREFS.mode` is 'light', so for a stranger it
+     writes the LIGHT values once and never re-runs. Flipping data-theme below
+     moves the surfaces to the dark palette but an inline style outranks the
+     `[data-theme="dark"]` block that exists to correct these, leaving dark-teal
+     text on near-black. Removing them is right rather than recomputing: this
+     branch is only reached when `k_prefs` is absent, so there is no chosen
+     accent to preserve. Same defect and same repair as ApprovePage — see the
+     measured ratios in its docblock. */
   useEffect(() => {
+    const THEMED_ACCENT = ['--primary', '--primary-hover', '--primary-text', '--on-primary'];
     const root = document.documentElement;
     let chosen = null;
     try { chosen = window.localStorage?.getItem('k_prefs'); } catch { chosen = null; }
@@ -118,11 +136,14 @@ export default function SigningPage() {
     const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
     if (!mq) return undefined;
     const prev = root.getAttribute('data-theme');
+    const prevAccent = THEMED_ACCENT.map((p) => [p, root.style.getPropertyValue(p)]);
     const apply = () => root.setAttribute('data-theme', mq.matches ? 'dark' : 'light');
     apply();
+    THEMED_ACCENT.forEach((p) => root.style.removeProperty(p));
     mq.addEventListener?.('change', apply);
     return () => {
       mq.removeEventListener?.('change', apply);
+      prevAccent.forEach(([p, v]) => { if (v) root.style.setProperty(p, v); });
       if (prev === null) root.removeAttribute('data-theme');
       else root.setAttribute('data-theme', prev);
     };
@@ -366,6 +387,21 @@ export default function SigningPage() {
                   Signing as <strong>{data.signer_name}</strong> ({data.signer_email})
                 </p>
 
+                {/* The document itself, on the step where it is actually signed.
+                    This link previously existed ONLY in the `otp_send` branch,
+                    so it appeared for signers whose document required identity
+                    verification and for nobody else. With `otp_required` false —
+                    verified in a browser: zero <a> elements on this step — the
+                    signer reached the button under the IT Act, 2000 notice below
+                    with no way to open what they were agreeing to. Whether the
+                    document is readable cannot depend on whether an OTP was
+                    configured. */}
+                {data.file_url && (
+                  <a className="pub__link" href={data.file_url} target="_blank" rel="noopener noreferrer">
+                    View document (PDF)
+                  </a>
+                )}
+
                 <ChipRow>
                   {['type', 'draw'].map(t => (
                     <Chip key={t} on={sigType === t} onClick={() => setSigType(t)}>
@@ -445,7 +481,7 @@ export default function SigningPage() {
             <CardBody>
               <p className="pub__lede">
                 You have already signed this document
-                {result?.signed_at ? ` on ${new Date(result.signed_at).toLocaleDateString('en-IN')}` : ''}.
+                {result?.signed_at ? ` on ${new Date(result.signed_at).toLocaleDateString('en-IN', DATE)}` : ''}.
               </p>
             </CardBody>
           </Card>

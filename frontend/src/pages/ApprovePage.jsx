@@ -65,7 +65,33 @@ import { SkeletonText } from '../components/ui/Skeleton';
  *
  * Restored rather than removed on unmount: the bootstrap's value is what the
  * rest of the app expects to find on <html> when this route is left.
+ *
+ * ACCENT, and why flipping the attribute alone was not enough:
+ *
+ * `applyPrefs` (CustomizePanel.jsx) writes FOUR theme-dependent accent tokens
+ * as INLINE styles on <html> — `--primary`, `--primary-hover`, `--primary-text`
+ * and `--on-primary` — choosing each by the theme it saw at the time. Its own
+ * comment says it "must re-run on theme change, not only on preference change".
+ * `DEFAULT_PREFS.mode` is `'light'` and index.html's bootstrap defaults to
+ * `'light'` too, so for a stranger applyPrefs runs once with dark === false and
+ * writes the LIGHT values. Flipping data-theme afterwards moved the surfaces to
+ * the dark palette and left those four inline values behind — and an inline
+ * style beats the `[data-theme="dark"]` block in kartavaya-design.css that
+ * exists to correct exactly them.
+ *
+ * Measured on this page before the fix, on a dark-OS visitor:
+ *   `by Aekam Inc`  #005650 on #0C0E11 → 2.25:1   (needs 4.5)
+ *   `अनुमोदन`        #005650 on #12151A → 2.13:1   (needs 4.5)
+ * The Devanagari half of the bilingual pair was effectively invisible on the
+ * page a client's own customer uses to approve work.
+ *
+ * REMOVING them is the correct repair rather than recomputing them: this branch
+ * is only ever reached when `k_prefs` is absent, i.e. the visitor has chosen no
+ * accent, so there is no user preference to preserve and the stylesheet's own
+ * per-theme values — which are the measured ones — are what should apply.
  */
+const THEMED_ACCENT = ['--primary', '--primary-hover', '--primary-text', '--on-primary'];
+
 function useOsThemeForStrangers() {
   useEffect(() => {
     const root = document.documentElement;
@@ -75,11 +101,15 @@ function useOsThemeForStrangers() {
     const mq = window.matchMedia?.('(prefers-color-scheme: dark)');
     if (!mq) return undefined;
     const prev = root.getAttribute('data-theme');
+    // Captured so unmount can hand the app back exactly what it had.
+    const prevAccent = THEMED_ACCENT.map((p) => [p, root.style.getPropertyValue(p)]);
     const apply = () => root.setAttribute('data-theme', mq.matches ? 'dark' : 'light');
     apply();
+    THEMED_ACCENT.forEach((p) => root.style.removeProperty(p));
     mq.addEventListener?.('change', apply);
     return () => {
       mq.removeEventListener?.('change', apply);
+      prevAccent.forEach(([p, v]) => { if (v) root.style.setProperty(p, v); });
       if (prev === null) root.removeAttribute('data-theme');
       else root.setAttribute('data-theme', prev);
     };
