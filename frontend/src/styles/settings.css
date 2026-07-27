@@ -30,7 +30,21 @@
   font-size: 10px; font-weight: 700; letter-spacing: .12em;
   text-transform: uppercase; color: var(--primary-text); margin-bottom: 2px;
 }
-.st__gh { font-family: var(--font-hindi); font-size: 11px; color: var(--on-surface-3); }
+/* font-weight and text-transform are reset for the same reason `.k-lbl__in`
+   resets them (editorial.css §"The bilingual secondary inside a tracked/uppercase
+   label"): `.st__gt` above is 700/.12em/uppercase, and SoundGrid nests this span
+   INSIDE it, so all three inherit. The `[lang="hi"]` rule in editorial.css already
+   zeroes the tracking, but it does NOT touch weight or case.
+
+   Tiro Devanagari Hindi ships at weight 400 only, so the inherited 700 was being
+   synthesised by the rasteriser — measured computed `font-weight: 700` on the
+   rendered span. That is faux-bold: it smears the शिरोरेखा and closes the
+   counters. `text-transform` is a no-op on unicase Devanagari, which is the
+   problem — the Latin beside it uppercases and the pair stops matching. */
+.st__gh {
+  font-family: var(--font-hindi); font-size: 11px; color: var(--on-surface-3);
+  font-weight: 400; text-transform: none;
+}
 
 /* ── Segmented control ─────────────────────────────────────────────────── */
 .seg {
@@ -283,11 +297,51 @@
     radial-gradient(48% 42% at 22% 18%, color-mix(in srgb, var(--primary-vivid) 26%, transparent), transparent 70%),
     radial-gradient(42% 38% at 78% 74%, color-mix(in srgb, var(--tertiary) 20%, transparent), transparent 72%);
 }
+/* 12 §1's CSS block specifies `.au`, `.au__brand`, `.au__mesh`, `.au__wm`,
+   `.au__form` and `.au__box` — and stops. It never gives the brand-panel
+   headline or its subline, so these two rules survived from the pre-redesign
+   shell untouched, and nobody compared them against the design source because
+   the design source is a runnable harness nobody ran.
+
+   Rendered side by side at 1280x800, cozy/serif, the gap measured:
+
+     .au-brand__h  clamp(28px,3.1vw,40px) / 400 / 1.18 / -.026em  -> 39.68px
+     .au__title    30px                   / 500 / 1.25 / -.02em   -> 30px
+
+   Nine and a half pixels smaller, one weight heavier and two hundredths of an
+   em looser, on the largest piece of type on the first screen of the product.
+   The weight is the tell: every display headline in the design source is 400
+   (`.au-brand__h`, `.au-h__1`, `.ob-h1`, `.ob-h2`), and so is this file's own
+   `.au__h1` twenty lines away in auth.css. 500 here was inconsistent with the
+   build before it was inconsistent with the reference.
+
+   The reference ALSO caps `.au-brand__mid` at 22ch, which at the panel's
+   inherited 14px is 166px — so the source renders this headline as four
+   stacked lines inside a 475px column. That is a measure decision, not a type
+   one, and `.au__mid` keeps its 460px cap here; measured after this change the
+   headline is two lines of 222.27px and 193.94px against 460px available, with
+   no wrap risk down to the 900px breakpoint where the panel hides. The measure
+   is reported for whoever owns the panel's composition.
+
+   The margin moves off the headline and onto the subline because that is where
+   the source puts it — `.au-brand__h { margin: 0 }`, `.au-brand__p
+   { margin: 14px 0 0 }` — and 14px is what it is there, not 12. */
 .au__title {
-  font-family: var(--font-display); font-size: 30px; font-weight: 500;
-  line-height: 1.25; margin: 0 0 12px; letter-spacing: -.02em; color: #fff;
+  font-family: var(--font-display); font-size: clamp(28px, 3.1vw, 40px);
+  font-weight: 400; line-height: 1.18; margin: 0; letter-spacing: -.026em;
+  color: #fff;
 }
-.au__sub { font-size: 13px; line-height: 1.7; color: var(--side-fg); opacity: .72; margin: 0; }
+/* `--side-fg-mute` IS rgba(255,255,255,.5), which is what `.au-brand__p` uses.
+   The old pair — `--side-fg` (.8) multiplied by `opacity: .72` — composited to
+   .576, close enough to look right and wrong enough to be untraceable to a
+   token. An `opacity` on a text node is also a different thing from a colour:
+   it would dim any child element added later, including a link. Line-height
+   comes back to the source's 1.68; 1.7 was 0.26px per line of drift.
+   font-family is set in auth.css, where the Devanagari-fallback reasoning is. */
+.au__sub {
+  font-size: 13px; line-height: 1.68;
+  color: var(--side-fg-mute); margin: 14px 0 0;
+}
 .au__features {
   position: relative; list-style: none; margin: 0; padding: 0;
   display: flex; flex-direction: column; gap: 10px;
@@ -299,15 +353,32 @@
   padding: 44px; background: var(--bg);
 }
 .au__box { width: 100%; max-width: 392px; }
+/* Weight and tracking from `.au-pow` in the design source: 9px, .22em, and no
+   font-weight declaration at all, i.e. 400, with only the `b` carrying 700.
+   This rule had the whole strip at 700 and the name at 800 — at 9px with a
+   quarter-em of tracking that is a solid bar of caps under the form, competing
+   with the submit button for the last thing the eye lands on.
+
+   The 800 is NOT a faux bold, which is worth recording because it looks like
+   one: index.html's Google Fonts link ships Inter 300-700 only, but
+   editorial.css also imports rsms.me/inter/inter.css, and enumerating
+   document.fonts shows `Inter | 800 | normal | loaded` as a real face — the
+   advance widths step monotonically 552.02 / 558.98 / 565.00 / 571.09 /
+   577.11 / 584.44px for 300-800 at 100px, so every one of those weights is a
+   distinct outline. It renders correctly; it is simply heavier than the source.
+
+   Colour stays as it was, deliberately: the source puts the strip on
+   `--on-surface-faint` and the name on `--on-surface-3`, and this build already
+   moved both one step up for contrast. That is the build being right. */
 .au__foot {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   padding-top: 18px; margin-top: 18px;
   border-top: 1px solid var(--outline-variant);
-  font-size: 9px; letter-spacing: .25em; text-transform: uppercase;
-  color: var(--on-surface-3); font-weight: 700;
+  font-size: 9px; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--on-surface-3); font-weight: 400;
 }
 .au__dot { width: 4px; height: 4px; border-radius: 50%; background: var(--primary); }
-.au__aekam { color: var(--primary-text); font-weight: 800; }
+.au__aekam { color: var(--primary-text); font-weight: 700; }
 
 /* Hidden, not stacked: a tall decorative panel above the form on a phone means
    scrolling past marketing to reach a password field. */

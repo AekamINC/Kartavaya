@@ -573,17 +573,11 @@ function PivotTab() {
 
       {result && (
         <div style={{ marginTop: 8 }}>
-          {/* `cols` was the prop name here and DataTable takes `columns`, so it
-              destructured to undefined and `columns.map` threw the moment a
-              pivot query returned an array — i.e. on every successful grouped
-              query. The other 26 DataTable call sites all pass `columns`.
-
-              The comment itself then broke the build: `{/* … *\/}` sitting
-              directly inside a ternary branch is an object literal in
-              expression position, not JSX, so esbuild read `<DataTable
-              columns` as a syntax error and `vite build` failed for the whole
-              app. A JSX comment is only a comment where children are expected. */}
           {Array.isArray(result.data) ? (
+            /* `cols` was the prop name here and DataTable takes `columns`, so
+               it destructured to undefined and `columns.map` threw the moment a
+               pivot query returned an array — i.e. on every successful grouped
+               query. The other 26 DataTable call sites all pass `columns`. */
             <DataTable columns={['Label', { label: 'Value', align: 'right' }]}>
               {result.data.map((r, i) => (
                 <tr key={i}><Td>{String(r.label ?? '—')}</Td><Td>{typeof r.value === 'number' && r.value > 100 ? FMT(r.value) : r.value}</Td></tr>

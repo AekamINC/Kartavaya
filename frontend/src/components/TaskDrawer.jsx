@@ -32,17 +32,31 @@ import useAutosave       from './drawer/useAutosave';
  * The exit animation is the reason `open` is not simply `if (!open) return
  * null`. A drawer that unmounts instantly never plays `dmDrawerOut`, and 26 §6
  * is explicit that the exit is a step faster than the entrance rather than
- * absent. `requestClose` sets `.is-closing`, waits one `--dur-base`, and then
- * calls the parent's `onClose`; under `prefers-reduced-motion` it closes
- * immediately, because a 200ms stall with no animation to justify it is just
- * lag.
+ * absent. `requestClose` sets `.is-closing` and the panel's own `animationend`
+ * calls the parent's `onClose` — the animation's real duration, not a literal
+ * copy of it, which is what `EXIT_FALLBACK_MS` below is about. Under
+ * `prefers-reduced-motion` it closes immediately, because a stall with no
+ * animation to justify it is just lag.
  */
 
 const MAX_FILES    = 10;
 const MAX_MB       = 25;
 const MAX_MB_VIDEO = 50;
 const VIDEO_EXT    = /\.(mov|mp4|webm|avi|mkv|m4v|3gp|3gpp|flv|wmv|asf|ogv|ts|mts|m2ts)$/i;
-const EXIT_MS      = 220;   // --dur-base
+/* A BACKSTOP, not the schedule. The unmount is driven by `animationend` on the
+   panel, which is the only thing that knows how long `dmDrawerOut` actually
+   ran: `--dur-base` is `calc(220ms * var(--ix))`, and `--ix` is .5 at
+   Animations = Reduced and .001 at None. A fixed 220ms held the drawer mounted
+   at `opacity: 0` for 110ms after it finished at Reduced, and for the whole
+   219.78ms at None — a fifth of a second of an invisible panel over an
+   unclickable board, delivered to the user who asked for no animation.
+   MOTION-SPEC §1: never write a literal duration.
+
+   The timer stays because `animationend` does not fire if the node is hidden,
+   the animation is cancelled, or the tab is backgrounded mid-exit, and a drawer
+   that never unmounts is worse than one that unmounts late. 420ms clears the
+   longest real exit (220ms) with room for a slow frame. */
+const EXIT_FALLBACK_MS = 420;
 
 export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers = [] }) {
   const me = currentUser();
@@ -116,6 +130,8 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
 
   useEffect(() => () => clearTimeout(closeTimer.current), []);
 
+  const finishClose = useCallback(() => { setClosing(false); onClose(); }, [onClose]);
+
   const requestClose = useCallback(() => {
     if (typeof window !== 'undefined'
       && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
@@ -124,8 +140,20 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
     }
     setClosing(true);
     clearTimeout(closeTimer.current);
-    closeTimer.current = setTimeout(() => { setClosing(false); onClose(); }, EXIT_MS);
-  }, [onClose]);
+    closeTimer.current = setTimeout(finishClose, EXIT_FALLBACK_MS);
+  }, [onClose, finishClose]);
+
+  /* Fired by `animationend` on the panel. Guarded on the animation NAME and on
+     `closing`: `.dr` also runs `dmDrawerIn` on open, and its animationend
+     bubbles to the same element — without the guard, opening the drawer closes
+     it. `animationName` is the resolved keyframe name, so it survives the
+     token indirection. */
+  const handleExitEnd = useCallback((e) => {
+    if (!closing || e.target !== e.currentTarget) return;
+    if (e.animationName !== 'dmDrawerOut') return;
+    clearTimeout(closeTimer.current);
+    finishClose();
+  }, [closing, finishClose]);
 
   // ── Load task on open ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -630,6 +658,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
         <FocusTrap active>
           <div
             className={`dr${closing ? ' is-closing' : ''}`}
+            onAnimationEnd={handleExitEnd}
             role="dialog"
             aria-modal="true"
             aria-label={task?.title ? `Task: ${task.title}` : 'Task details'}
