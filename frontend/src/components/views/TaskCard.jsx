@@ -128,7 +128,10 @@ export default function TaskCard({
         )}
 
         {people.length > 0 && (
-          <AvatarStack users={people} size={26} max={3} className="bc__people" />
+          // MEASURED: the reference card's avatar is 22px, not 26. At 26 the
+          // stack was the tallest thing in the foot and set the row's height,
+          // which is why the foot measured 26px against the reference's 22.
+          <AvatarStack users={people} size={22} max={3} className="bc__people" />
         )}
       </span>
     </button>

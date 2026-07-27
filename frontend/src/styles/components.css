@@ -92,7 +92,13 @@ textarea.inp { resize: vertical; min-height: 76px; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 /* ── Card ──────────────────────────────────────────────────────────────── */
-.card         { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: var(--r-md); box-shadow: var(--shadow-1); }
+/* `--r-lg` and `overflow: hidden`, both measured off the rendered reference
+   (`app.css:150`). `--r-md` put the card a full radius step below the stat
+   tiles and the table shell it sits beside — 12px against 17.4px — so the two
+   read as different families of object. `overflow: hidden` is what lets a
+   table or a list bleed to the card's edge and still be clipped by the corner;
+   without it the first row's corner squares off over the card's rounding. */
+.card         { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: var(--r-lg); box-shadow: var(--shadow-1); overflow: hidden; }
 .card--flat   { background: var(--s-low); border-color: transparent; box-shadow: none; }
 /* 00 §6: glass is `blur(var(--glass-blur)) saturate(var(--glass-sat))`, and the
    -webkit- prefix always ships. The saturate half was missing here and only

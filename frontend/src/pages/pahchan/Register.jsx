@@ -44,37 +44,78 @@ const PHOTO_H = 62;
 /** Which flags mean "a human needs to look at this". */
 const NEEDS_LOOK = new Set(['geo', 'accuracy', 'noref', 'mock', 'offline', 'late', 'reuse']);
 
-const FLAG_LABEL = {
-  late:     'Late',
-  geo:      'Outside site',
-  noref:    'No reference pair',
-  accuracy: 'Weak GPS',
-  offline:  'Synced late',
-  overtime: 'Overtime',
-  mock:     'Simulated location',
-  reuse:    'Photo reused',
-};
-
-/** 07 §8: mock location is flagged PROMINENTLY. It is the only flag that implies
- *  intent rather than circumstance, so it reads as danger where the rest read as
- *  circumstance. */
-const FLAG_TONE = {
-  mock:     'rejected',
-  // Like `mock`, this implies intent rather than circumstance: the same
-  // photograph on two punches is what §1's camera-only rule exists to prevent.
-  reuse:    'rejected',
-  noref:    'requested',
-  geo:      'requested',
-  accuracy: 'in_review',
-  offline:  'in_review',
-  late:     'requested',
-  overtime: 'in_progress',
-};
+/* The flag labels and colours used to live here as two private maps, and the
+   labels never reached the screen: `StatusChip` takes no `label` prop, so
+   `<StatusChip status="requested" label="Outside site" />` rendered the word
+   "Requested". Both maps are now `PUNCH_LABELS` / `PUNCH_COLORS` in
+   `lib/statusColors.js` — the sixth map 07 §"Attendance states are not in
+   statusColors.js" asks for — and the raw flag is passed straight through. */
 
 function timeOf(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
+function dateOf(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/**
+ * One signed URL, per image, on demand.
+ *
+ * Shared by the row triple and the detail. Each slot is its own little state
+ * machine — 'load' | 'ok' | 'gone' | 'err' — because a single nullable URL
+ * cannot express the difference between "still fetching" and "the retention job
+ * deleted this three weeks ago", and those must not look alike: a permanent
+ * spinner reads as a broken page, and a reviewer who thinks the page is broken
+ * stops reviewing.
+ */
+function usePhotoUrl(path, enabled = true) {
+  const [s, setS] = useState(() => (enabled && path ? { st: 'load' } : { st: 'gone' }));
+  useEffect(() => {
+    let alive = true;
+    if (!enabled || !path) { setS({ st: 'gone' }); return undefined; }
+    setS({ st: 'load' });
+    api.get(path)
+      .then(r => { if (alive) setS({ st: 'ok', url: r.data.url }); })
+      // 404 is the retention case and is not an error: the punch record outlives
+      // the photo by law (07 §5/§8), so a missing photo on an old row is expected.
+      .catch(err => { if (alive) setS({ st: err?.response?.status === 404 ? 'gone' : 'err' }); })
+    ;
+    return () => { alive = false; };
+  }, [path, enabled]);
+  return s;
+}
+
+function PhotoSlot({ state, alt, emptyWord, w, h }) {
+  return (
+    <div
+      className="rv__slot"
+      style={{
+        width: w, height: h,
+        background: state?.st === 'ok' ? 'var(--s-low)' : 'var(--s-container)',
+        border: '1px solid var(--outline-variant)',
+        borderRadius: 'var(--r-sm)',
+        overflow: 'hidden', flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      {state?.st === 'ok'
+        ? <img src={state.url} alt={alt} style={{ objectFit: 'cover', width: '100%', height: '100%' }} />
+        : (
+          <span style={{
+            fontSize: 'var(--t-label-sm)', color: 'var(--on-surface-3)',
+            textAlign: 'center', padding: 2, lineHeight: 1.2,
+          }}
+          >
+            {state?.st === 'load' ? '…' : state?.st === 'err' ? 'failed' : emptyWord}
+          </span>
+        )}
+    </div>
+  );
 }
 
 /**
@@ -84,93 +125,199 @@ function timeOf(iso) {
  * Keys, not URLs. A signed URL is fetched per image actually rendered, so
  * scrolling past a row never mints a link to that person's face.
  */
-function Triple({ hasPhoto, referenceIds, punchId, name }) {
-  // Each slot is its own little state machine: 'load' | 'ok' | 'gone' | 'err'.
-  // A single nullable URL cannot express the difference between "still fetching"
-  // and "retention deleted this three weeks ago", and those must not look alike —
-  // a permanent spinner reads as a broken page, and a reviewer who thinks the
-  // page is broken stops reviewing.
-  const [punch, setPunch] = useState(() => (hasPhoto ? { st: 'load' } : { st: 'gone' }));
-  const [refs, setRefs] = useState(() =>
-    (referenceIds || []).slice(0, 2).map(() => ({ st: 'load' })));
-
-  useEffect(() => {
-    let alive = true;
-    if (!punchId || !hasPhoto) return undefined;
-    setPunch({ st: 'load' });
-    api.get(`/v1/pahchan/punches/${punchId}/photo`)
-      .then(r => { if (alive) setPunch({ st: 'ok', url: r.data.url }); })
-      // 404 is the retention case and is not an error: the punch record outlives
-      // the photo by law (07 §5/§8), so a missing photo on an old row is expected.
-      .catch(err => {
-        if (alive) setPunch({ st: err?.response?.status === 404 ? 'gone' : 'err' });
-      });
-    return () => { alive = false; };
-  }, [punchId, hasPhoto]);
-
-  useEffect(() => {
-    let alive = true;
-    const ids = (referenceIds || []).slice(0, 2);
-    if (!ids.length) { setRefs([]); return undefined; }
-    setRefs(ids.map(() => ({ st: 'load' })));
-    ids.forEach((id, i) => {
-      api.get(`/v1/pahchan/enrollment/photos/${id}/url`)
-        .then(r => {
-          if (!alive) return;
-          setRefs(prev => { const next = prev.slice(); next[i] = { st: 'ok', url: r.data.url }; return next; });
-        })
-        .catch(err => {
-          if (!alive) return;
-          const st = err?.response?.status === 404 ? 'gone' : 'err';
-          setRefs(prev => { const next = prev.slice(); next[i] = { st }; return next; });
-        });
-    });
-    return () => { alive = false; };
-    // Joined, so a re-render with an equal-but-new array does not refetch every
-    // face on the page — which at 12 rows is 36 signed URLs per keystroke.
-  }, [(referenceIds || []).join(',')]);
-
-  const slot = (s, label, emptyWord) => (
-    <div
-      className="rv__slot"
-      style={{
-        width: PHOTO_W, height: PHOTO_H,
-        background: s?.st === 'ok' ? 'var(--s-low)' : 'var(--s-container)',
-        border: '1px solid var(--outline-variant)',
-        borderRadius: 'var(--r-sm)',
-        overflow: 'hidden', flexShrink: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}
-    >
-      {s?.st === 'ok' ? (
-        <img src={s.url} alt={label} width={PHOTO_W} height={PHOTO_H}
-             style={{ objectFit: 'cover', width: '100%', height: '100%' }} />
-      ) : (
-        <span
-          style={{
-            fontSize: 'var(--t-label-sm)', color: 'var(--on-surface-3)',
-            textAlign: 'center', padding: 2, lineHeight: 1.2,
-          }}
-        >
-          {s?.st === 'load' ? '…' : s?.st === 'err' ? 'failed' : emptyWord}
-        </span>
-      )}
-    </div>
-  );
-
+function Triple({ hasPhoto, referenceIds, punchId, name, w = PHOTO_W, h = PHOTO_H }) {
+  const ids = (referenceIds || []).slice(0, 2);
   // Two APPROVED references are what makes a row verifiable. One is not half a
   // comparison — 07 §0 is explicit that the pair exists because a single frontal
   // photo fails on anyone who turns their head.
-  const hasRefs = (referenceIds || []).length >= 2;
+  const hasRefs = ids.length >= 2;
+
+  const punch = usePhotoUrl(`/v1/pahchan/punches/${punchId}/photo`, !!punchId && !!hasPhoto);
+  const ref1 = usePhotoUrl(hasRefs ? `/v1/pahchan/enrollment/photos/${ids[0]}/url` : null, hasRefs);
+  const ref2 = usePhotoUrl(hasRefs ? `/v1/pahchan/enrollment/photos/${ids[1]}/url` : null, hasRefs);
 
   return (
     <div className="rv__trip" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-      {slot(punch, `Clock-in photo for ${name}`, 'deleted')}
+      <PhotoSlot state={punch} alt={`Clock-in photo for ${name}`} emptyWord="deleted" w={w} h={h} />
       {/* A divider, not a gap: the left image is the claim and the right two are
           the evidence, and the reviewer is comparing across that line. */}
-      <span aria-hidden="true" style={{ width: 1, height: PHOTO_H - 12, background: 'var(--outline-variant)' }} />
-      {slot(hasRefs ? refs[0] : null, `Reference 1 for ${name}`, 'none')}
-      {slot(hasRefs ? refs[1] : null, `Reference 2 for ${name}`, 'none')}
+      <span aria-hidden="true" style={{ width: 1, height: h - 12, background: 'var(--outline-variant)' }} />
+      <PhotoSlot state={ref1} alt={`Reference 1 for ${name}`} emptyWord="none" w={w} h={h} />
+      <PhotoSlot state={ref2} alt={`Reference 2 for ${name}`} emptyWord="none" w={w} h={h} />
+    </div>
+  );
+}
+
+/**
+ * Accuracy drawn as a RADIUS, not a dot — 07 §3's one non-negotiable about the
+ * detail: "a dot makes a ±184m fix look like proof of presence, which is the one
+ * thing it is not".
+ *
+ * The prototype used a Leaflet map on OpenStreetMap tiles. This does not, and
+ * the reason is not that the dependency was inconvenient. A tile request carries
+ * the employee's punch coordinates in the URL path to a third-party host on
+ * every detail open. §7 will not let Aekam — who runs the product — see a
+ * location; shipping those same coordinates to a public tile server would be a
+ * strictly worse leak than the one the spec forbids. So the geometry is drawn
+ * locally: no tiles, no third-party request, nothing leaves the page.
+ *
+ * What survives from the map is what the map was FOR — the reviewer seeing that
+ * a ±184m circle at 412m from the site overlaps the site, and that this fix
+ * therefore proves nothing either way.
+ */
+function AccuracyScale({ distanceM, accuracyM, siteName }) {
+  if (distanceM == null) {
+    return (
+      <p style={{ fontSize: 12, color: 'var(--on-surface-3)', margin: '0 0 12px', lineHeight: 1.6 }}>
+        No location was recorded for this punch, so there is no distance to draw. The
+        punch still counts — §2 — but there is nothing here to place it.
+      </p>
+    );
+  }
+
+  const acc = accuracyM == null ? 0 : Number(accuracyM);
+  const dist = Number(distanceM);
+  const span = Math.max(dist + acc, 60) * 1.12;
+  const X0 = 34;
+  const RUN = 250;
+  const px = m => (m / span) * RUN;
+  const cx = X0 + px(dist);
+  const r = Math.max(3, Math.min(px(acc), 150));
+
+  return (
+    <figure style={{ margin: '0 0 14px' }}>
+      <svg viewBox="0 0 320 108" width="100%" height="108" role="img"
+        aria-label={
+          `The punch was recorded ${Math.round(dist)} metres from ${siteName || 'the site'}, `
+          + (acc ? `with an accuracy of plus or minus ${Math.round(acc)} metres.` : 'with no accuracy figure.')
+        }
+      >
+        {/* The uncertainty first, underneath everything, so the marker sits IN it
+            rather than on top of it looking definitive. */}
+        {acc > 0 && (
+          <circle
+            cx={cx} cy={54} r={r}
+            fill="var(--tertiary)" fillOpacity="0.18"
+            stroke="var(--tertiary)" strokeWidth="1"
+          />
+        )}
+        <line x1={X0} y1={54} x2={X0 + RUN} y2={54} stroke="var(--outline-variant)" strokeWidth="1" />
+        <circle cx={X0} cy={54} r="5" fill="var(--primary)" />
+        <circle cx={cx} cy={54} r="4" fill="var(--surface)" stroke="var(--on-surface)" strokeWidth="2" />
+        <text x={X0} y={78} fontSize="10" fill="var(--on-surface-3)" textAnchor="middle">site</text>
+        <text x={cx} y={30} fontSize="10" fill="var(--on-surface-2)" textAnchor="middle">
+          {dist >= 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist)} m`}
+        </text>
+      </svg>
+      <figcaption style={{ fontSize: 11.5, color: 'var(--on-surface-3)', lineHeight: 1.6 }}>
+        {acc > 0
+          ? `The shaded circle is the ±${Math.round(acc)}m the device reported. Anywhere inside it is consistent with this fix.`
+          : 'No accuracy figure was reported, so the position cannot be bounded at all.'}
+      </figcaption>
+    </figure>
+  );
+}
+
+function MetaRow({ k, v, tone }) {
+  return (
+    <div className="rv-meta__r">
+      <span style={{ flex: 1, fontSize: 12, color: 'var(--on-surface-3)' }}>{k}</span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: tone || 'var(--on-surface)' }}>{v}</span>
+    </div>
+  );
+}
+
+/**
+ * The detail — 07 §3, "opens inline, for outliers only".
+ *
+ * It did not exist. `openId` was set by the O key and by a row click and then
+ * read by nothing, so the shortcut the hint bar advertises did nothing at all
+ * and the three photos were only ever available at 50×62. The whole point of
+ * having a detail is the outlier the thumbnail cannot settle.
+ */
+function Detail({ row, photoRetentionDays }) {
+  const acc = row.accuracy_m == null ? null : Number(row.accuracy_m);
+  const outside = row.distance_m != null && (row.flags || []).includes('geo');
+  const refCount = (row.reference_ids || []).length;
+
+  const deleteOn = (() => {
+    if (!photoRetentionDays || !row.has_photo) return null;
+    const d = new Date(row.captured_at);
+    if (Number.isNaN(d.getTime())) return null;
+    d.setDate(d.getDate() + Number(photoRetentionDays));
+    return dateOf(d.toISOString());
+  })();
+
+  return (
+    <div className="rv-det">
+      <div>
+        <Triple
+          punchId={row.id}
+          hasPhoto={row.has_photo}
+          referenceIds={row.reference_ids}
+          name={row.employee_name}
+          w={132}
+          h={164}
+        />
+        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          <span style={{ width: 132, fontSize: 11, color: 'var(--on-surface-3)' }}>
+            Punch<br /><b style={{ color: 'var(--on-surface-2)' }}>{timeOf(row.captured_at)}</b>
+          </span>
+          <span style={{ width: 1 }} />
+          <span style={{ width: 132, fontSize: 11, color: 'var(--on-surface-3)' }}>
+            Reference 1<br /><b style={{ color: 'var(--on-surface-2)' }}>{refCount > 0 ? 'Straight on' : 'Not captured'}</b>
+          </span>
+          <span style={{ width: 132, fontSize: 11, color: 'var(--on-surface-3)' }}>
+            Reference 2<br /><b style={{ color: 'var(--on-surface-2)' }}>{refCount > 1 ? 'Three-quarter' : 'Not captured'}</b>
+          </span>
+        </div>
+
+        {refCount < 2 && (
+          <div className="note note--warn" style={{ marginTop: 14 }}>
+            <b>{refCount === 0 ? 'No reference pair.' : 'Only one reference.'}</b> There is
+            nothing to compare against, so this punch cannot be verified — only accepted on
+            trust. Send an enrollment request rather than confirming it.
+          </div>
+        )}
+      </div>
+
+      <div>
+        <AccuracyScale distanceM={row.distance_m} accuracyM={acc} siteName={row.site_name} />
+        <div className="rv-meta">
+          {row.lat != null && row.lng != null && (
+            <MetaRow k="Coordinates" v={`${Number(row.lat).toFixed(4)}, ${Number(row.lng).toFixed(4)}`} />
+          )}
+          <MetaRow
+            k="Accuracy"
+            v={acc == null ? 'Not reported' : `±${Math.round(acc)} m`}
+            tone={acc == null || acc > 100 ? 'var(--tertiary)' : undefined}
+          />
+          <MetaRow
+            k="From site"
+            v={row.distance_m == null
+              ? 'No location'
+              : (row.distance_m >= 1000 ? `${(row.distance_m / 1000).toFixed(1)} km` : `${Math.round(row.distance_m)} m`)}
+            tone={outside ? 'var(--danger)' : undefined}
+          />
+          <MetaRow k="Site" v={row.site_name || 'None matched'} />
+          <MetaRow k="Captured" v="In-app camera" />
+          <MetaRow
+            k="Delivery"
+            v={row.source === 'offline'
+              ? `Offline · received ${timeOf(row.received_at)}`
+              : 'Live'}
+          />
+          {/* null is not false. 07 §4: `mock_location: null` means the platform
+              could not check, and a reviewer must be able to tell that from a
+              check that ran and came back clean. */}
+          <MetaRow
+            k="Mock location"
+            v={row.mock_location == null ? 'Not checked' : row.mock_location ? 'DETECTED' : 'Not detected'}
+            tone={row.mock_location ? 'var(--danger)' : undefined}
+          />
+          <MetaRow k="Photo deleted" v={deleteOn || (row.has_photo ? '—' : 'Already deleted')} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -194,10 +341,20 @@ export default function Register() {
   // as offline rather than blaming us for the user's train tunnel.
   const [errKind, setErrKind] = useState('server');
 
-  const load = useCallback(async () => {
+  /**
+   * Which day. `GET /register` has always taken `?on=`, and nothing sent it, so
+   * the register was today or nothing — a reviewer who was away on Friday had no
+   * way back to Friday, and the punches sat unreviewed until the 7-day
+   * auto-accept swallowed them. The reference header names the day for the same
+   * reason, and its empty state offers "View yesterday".
+   */
+  const [day, setDay] = useState(() => new Date().toISOString().slice(0, 10));
+  const isToday = day === new Date().toISOString().slice(0, 10);
+
+  const load = useCallback(async (on) => {
     setState('loading');
     try {
-      const r = await api.get('/v1/pahchan/register');
+      const r = await api.get('/v1/pahchan/register', { params: on ? { on } : undefined });
       setRows(r.data.punches || []);
       setState('ready');
     } catch (err) {
@@ -206,7 +363,19 @@ export default function Register() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(day); }, [load, day]);
+
+  // Just the retention window, for the detail's "photo deleted on" row. Failing
+  // to read it must not break the register — the whole page is not worth losing
+  // over one derived date, so it stays null and the row reads "—".
+  const [photoRetentionDays, setPhotoRetentionDays] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    api.get('/v1/pahchan/policy')
+      .then(r => { if (alive) setPhotoRetentionDays(r.data?.punch_photo_retention_days ?? null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const flaggedCount = useMemo(
     () => rows.filter(p => (p.flags || []).some(f => NEEDS_LOOK.has(f)) && !p.review_verdict).length,
@@ -306,17 +475,41 @@ export default function Register() {
     <Section
       title="Register"
       hi="उपस्थिति पंजी"
-      right={
-        <Seg
-          label="Which punches to show"
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: 'needs', label: 'Needs a look', count: flaggedCount },
-            { value: 'all',   label: 'All',          count: rows.length },
-          ]}
-        />
-      }
+      right={(
+        <span style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <span className="k-sr-only">Which day&rsquo;s register</span>
+            <input
+              className="inp"
+              type="date"
+              style={{ maxWidth: 160 }}
+              value={day}
+              // Not into the future. A register for tomorrow is always empty and
+              // the empty state would tell a reviewer that nobody has clocked in,
+              // which would be true and useless.
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={e => { if (e.target.value) setDay(e.target.value); }}
+            />
+          </label>
+          {!isToday && (
+            <button
+              className="btn btn--ghost" style={{ fontSize: 12 }}
+              onClick={() => setDay(new Date().toISOString().slice(0, 10))}
+            >
+              Today
+            </button>
+          )}
+          <Seg
+            label="Which punches to show"
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: 'needs', label: 'Needs a look', count: flaggedCount },
+              { value: 'all',   label: 'All',          count: rows.length },
+            ]}
+          />
+        </span>
+      )}
     >
       {/* Persistent while the connection is down, not just on the failed request
           that revealed it. A reviewer clearing a day needs to know saves are not
@@ -353,7 +546,7 @@ export default function Register() {
               // HR admin into a panic about attendance records that are perfectly safe.
               : 'Punches are safe — this is a read failure, not data loss.'
           }
-          onRetry={load}
+          onRetry={() => load(day)}
         />
       )}
 
@@ -367,14 +560,35 @@ export default function Register() {
               icon="check"
               tone="ok"
               title={{ en: 'Nothing needs a look', hi: 'सब ठीक है' }}
-              description="Every punch today cleared the checks."
+              description={`Every punch ${isToday ? 'today' : 'that day'} cleared the checks.`}
+              action="Show all"
+              onAction={() => setFilter('all')}
             />
           )
-          : (
+          : isToday ? (
             <EmptyState
               icon="clock"
               title={{ en: 'Nobody has clocked in yet', hi: 'अभी कोई नहीं' }}
               description="On a normal weekday the first punches land between 9:00 and 9:40."
+              // §3's own empty state offers this, and it is only offerable now
+              // that the register can be pointed at a day other than today.
+              action="View yesterday"
+              onAction={() => {
+                const d = new Date();
+                d.setDate(d.getDate() - 1);
+                setDay(d.toISOString().slice(0, 10));
+              }}
+            />
+          ) : (
+            // A past day with no punches is not "nobody has clocked in YET" —
+            // nobody is going to. Saying "yet" to a reviewer looking at last
+            // Tuesday reads as a page that has not finished loading.
+            <EmptyState
+              icon="clock"
+              title={{ en: 'No punches on this day', hi: 'कोई उपस्थिति नहीं' }}
+              description="Nothing was recorded. A holiday, a weekly off, or a day the team was not on the clock."
+              action="Back to today"
+              onAction={() => setDay(new Date().toISOString().slice(0, 10))}
             />
           )
       )}
@@ -396,10 +610,14 @@ export default function Register() {
               const mine = verdict[p.id] || p.review_verdict;
               const noRef = (p.flags || []).includes('noref');
               return (
+                <React.Fragment key={p.id}>
                 <tr
-                  key={p.id}
                   className={`rv__r${i === cursor ? ' is-cursor' : ''}`}
-                  onClick={() => seek(i)}
+                  /* A click both moves the cursor and toggles the detail, which is
+                     what the prototype does. `seek` is what keeps the ref and the
+                     highlight from drifting — a row click that set state directly
+                     is exactly the desync trap §3 warns about. */
+                  onClick={() => { seek(i); setOpenId(id => (id === p.id ? null : p.id)); }}
                   /* aria-current, not aria-selected. `aria-selected` on a row
                      is only supported inside a grid or treegrid; DataTable
                      renders a plain <table>, where `row` does not support it
@@ -415,9 +633,7 @@ export default function Register() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
                       <strong style={{ fontSize: 13.5 }}>{p.employee_name}</strong>
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {(p.flags || []).map(f => (
-                          <StatusChip key={f} status={FLAG_TONE[f] || 'todo'} label={FLAG_LABEL[f] || f} />
-                        ))}
+                        {(p.flags || []).map(f => <StatusChip key={f} status={f} />)}
                       </div>
                     </div>
                   </Td>
@@ -451,8 +667,7 @@ export default function Register() {
 
                   <Td className="rv__v">
                     {mine
-                      ? <StatusChip status={mine === 'ok' ? 'done' : 'rejected'}
-                                    label={mine === 'ok' ? 'Confirmed' : 'Flagged'} />
+                      ? <StatusChip status={mine === 'ok' ? 'done' : 'rejected'} />
                       : noRef
                         // §3: no reference pair suppresses the confirm affordance
                         // and offers enrollment instead. Confirming here would be
@@ -468,6 +683,18 @@ export default function Register() {
                         : <span style={{ fontSize: 11, color: 'var(--on-surface-3)' }}>—</span>}
                   </Td>
                 </tr>
+
+                {/* §3: "opens inline, for outliers only". A colSpan row rather
+                    than a modal — the reviewer is comparing this punch against
+                    the ones above and below it, and a dialog takes those away. */}
+                {openId === p.id && (
+                  <tr className="rv-det__row">
+                    <td colSpan={6} style={{ background: 'var(--s-low)' }}>
+                      <Detail row={p} photoRetentionDays={photoRetentionDays} />
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               );
             })}
           </DataTable>

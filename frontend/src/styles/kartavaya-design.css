@@ -26,7 +26,10 @@
      It was 10px while the default moved to 12, which is a first-paint jump:
      applyPrefs writes --radius-base as an inline style, so every corner in the
      product rendered at 10px until React mounted and then snapped to 12px.
-     The comment was stale on both counts — the options are 8 | 12 | 20. */
+     The comment was stale on both counts — the options are 8 | 12 | 20.
+     Measured downstream: at 10 the whole --r-* ladder sat at 83% of the drawn
+     radius, and --r-lg — cards, stat tiles, the table shell — came out 14.5px
+     against the reference's 17.4px. */
   --radius-base:      12px;   /* user: 8 | 12 | 20 — default IS an option */
   --glass-mix:        .6;     /* user: 0 → 1 */
   --font-size-base:   14px;   /* user: 12 → 20 */
@@ -103,7 +106,7 @@
 /* Three tiers, and the middle one is the default — measured off the rendered
    harness, not the prose. `Kartavaya Redesign.html` carries data-density="cozy"
    and `App.jsx:3` defaults `density: 'cozy'`, with `Chrome.jsx:196` offering all
-   three. Numbers are `design-reference/…/tokens.css:228-230` verbatim.
+   three. Spacing numbers are `design-reference/…/tokens.css:228-230` verbatim.
 
    `cozy` did not exist here, so the shipped default was `comfy` — a tier the
    design never renders. --pad-page is the topbar's horizontal padding AND
@@ -113,10 +116,31 @@
    The :root block above already declared exactly these cozy numbers and could
    never be reached: applyPrefs writes data-density unconditionally, so an
    attribute rule always won. Declared explicitly here so the default tier is
-   visible beside its siblings rather than implied by an absence. */
-[data-density="compact"] { --row-h:34px; --pad-page:18px; --pad-card:12px; --gap-section:14px; --gap-tight:7px }
+   visible beside its siblings rather than implied by an absence.
+
+   ── Why the type steps are ratios and not the reference's literals
+   tokens.css:228/230 also move text with density: --t-body 13px on compact,
+   15px on comfy, --t-body-sm 12px on compact. Density SHOULD move type —
+   tightening a row to 34px around body copy that never shrinks is how a
+   compact table ends up with less air than it had before.
+
+   But copying those literals here would break the Text size slider. Unlike the
+   reference, this build derives the whole scale from --font-size-base (§ above,
+   lines 66-79) precisely so the slider moves everything at once; a literal
+   13px would pin body text at 13px for every user at every slider position,
+   but only while they were on compact. The ratios below are the reference's
+   own steps expressed against the base — .93 is 13/14, 1.07 is 15/14 — so the
+   design's intent and the slider both survive. */
+[data-density="compact"] {
+  --row-h:34px; --pad-page:18px; --pad-card:12px; --gap-section:14px; --gap-tight:7px;
+  --t-body: calc(var(--font-size-base) * .93);      /* 13px @14 */
+  --t-body-sm: calc(var(--font-size-base) * .86);   /* 12px @14 */
+}
 [data-density="cozy"]    { --row-h:44px; --pad-page:28px; --pad-card:18px; --gap-section:22px; --gap-tight:10px }
-[data-density="comfy"]   { --row-h:54px; --pad-page:38px; --pad-card:24px; --gap-section:30px; --gap-tight:14px }
+[data-density="comfy"]   {
+  --row-h:54px; --pad-page:38px; --pad-card:24px; --gap-section:30px; --gap-tight:14px;
+  --t-body: calc(var(--font-size-base) * 1.07);     /* 15px @14 */
+}
 
 /* ── 5 · Motion (§5) ────────────────────────────────────────────────────────
    applyPrefs writes --ix-user, NEVER --ix. An inline style on the root beats
@@ -710,7 +734,24 @@ body {
   gap: 8px;
 }
 
-/* ── Cards ─────────────────────────────────────────────────────────────── */
+/* ── Cards ─────────────────────────────────────────────────────────────────
+   The `padding` below STAYS, and the reasoning is worth keeping because the
+   obvious reading of the measurement is wrong.
+
+   `editorial.css` — imported after this file — gives `.k-card__head` and
+   `.k-card__body` their own padding and puts a full-bleed hairline under the
+   head, so on a card built from those parts this shell padding is a SECOND,
+   outer pad: measured 20px on the shell on top of 16/20 on the head and
+   16/20/20 on the body, with the head's rule inset 20px from each edge so it
+   read as a stray line rather than a divider. The reference's card
+   (`app.css:150`) carries no shell padding at all.
+
+   But deleting it outright breaks the other shape: twelve call sites render
+   `.k-card` around bare content and legitimately want the 20px.
+   `editorial.css` therefore scopes it off with `:has(> .k-card__head)` /
+   `:has(> .k-card__body)` — only a card that brings its own padded parts gives
+   the shell padding up. That is the precise version of the blanket removal
+   this file first reached for. */
 .k-card {
   background: var(--surface);
   border: 1px solid var(--rule);
@@ -1208,8 +1249,18 @@ body {
    overrides are removed rather than kept and re-tuned: a token and an override
    of that token in the same stylesheet is how the two drift.
 
+   `.k-card`'s removal fixes a second thing measured on the way past: it carries
+   no shell padding by design — `.k-card__head` and `.k-card__body` own it, so
+   the head's bottom rule runs the full width of the card. The comfy override
+   wrapped a second, outer pad around both. Measured 20/22 on the shell AND
+   16/20 on the head AND 16/20/20 on the body, with the head rule inset 20px
+   from each edge so it read as a stray line rather than a divider — and every
+   user got it, because `comfy` used to be the default.
+
    The rest stay. `.k-page`, `.k-pageh`, `.k-hero` and `.k-wday` do not consume
-   `--pad-card` and are outside this change. */
+   `--pad-card` and are outside this change. Note that `.k-page`'s comfy padding
+   is ALSO declared in editorial.css, which is imported later and wins;
+   reported, not touched. */
 [data-density="compact"] .k-page          { padding: 12px 16px; }
 [data-density="compact"] .k-pageh         { margin-bottom: 10px; }
 [data-density="compact"] .k-hero          { padding: 20px 22px; }

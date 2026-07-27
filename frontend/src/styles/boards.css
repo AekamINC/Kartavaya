@@ -26,7 +26,12 @@
    The drop target highlights the COLUMN, not a gap between cards. A card-level
    insertion indicator is more precise than anyone needs on a kanban board and
    costs a hit-test per pointermove. */
-.bd { display: flex; gap: 12px; align-items: flex-start; overflow-x: auto; padding-bottom: 10px; }
+/* MEASURED against the rendered reference (`.board` in app.css, harness at
+   data-density="cozy"): gap is `--gap-tight`, not a literal. A hardcoded 12px
+   is the same gap at every density setting, which is the one thing the density
+   control exists to change — and it read 2px wide of the reference's 10px.
+   Trailer is 6px, not 10px. */
+.bd { display: flex; gap: var(--gap-tight); align-items: flex-start; overflow-x: auto; padding-bottom: 6px; }
 
 /* The drop target is DASHED, and that is the reference implementation's value,
    not a preference — `motion.css` `.kb__col` carries `1px dashed transparent`
@@ -36,10 +41,17 @@
    are the reference's too — 04 §1's prose gives 7% / 34% over `--s-low`, which
    is the weaker of the two and loses the target on a busy board. Recorded as a
    spec conflict in the report; the reference implementation wins. */
+/* MEASURED: padding 11px, gap 9px, radius `--r-lg`, min-height 180px. The
+   radius was `--r-md`, one step down — at the shipping `--radius-base: 10px`
+   that rendered a 10px corner where the reference renders 17.4px, so the
+   column read as a card rather than as the ground a card sits on. min-height
+   keeps a column that has been emptied the same object it was a moment ago;
+   `.bd__list`'s own 34px only guarantees a drop target, not a shape. */
 .bd__col {
   width: 288px; flex-shrink: 0;
-  display: flex; flex-direction: column; gap: 8px;
-  padding: 10px; border-radius: var(--r-md);
+  display: flex; flex-direction: column; gap: 9px;
+  min-height: 180px;
+  padding: 11px; border-radius: var(--r-lg);
   background: var(--s-low); border: 1px dashed transparent;
   transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
 }
@@ -48,11 +60,37 @@
   border-color: color-mix(in srgb, var(--primary) 48%, transparent);
 }
 
-.bd__ch { display: flex; align-items: center; gap: 8px; padding: 2px 4px 8px; }
-.bd__cdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--c); }
-.bd__cn { font-size: 13px; font-weight: 800; letter-spacing: -.005em; color: var(--on-surface); }
-.bd__cn-hi { font-family: var(--font-indic); font-size: 11px; font-weight: 400; color: var(--on-surface-3); margin-left: 5px; }
-.bd__cc { font-family: var(--font-mono); font-size: 11px; color: var(--on-surface-faint); margin-left: auto; }
+/* MEASURED: the head carries a 1px rule under it in the reference — without it
+   the count and the first card's top edge sit 9px apart with nothing between
+   them, and the head stops reading as a head. */
+.bd__ch {
+  display: flex; align-items: center; gap: 8px; padding: 2px 4px 9px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+/* MEASURED: the colour mark is a 4x16 BAR, not an 8px dot. Same ink, different
+   object: a bar aligns to the cap height of the title beside it, a dot floats.
+   (`.bcol__bar`, reference app.css.) */
+.bd__cdot { width: 4px; height: 16px; border-radius: 2px; flex-shrink: 0; background: var(--c); }
+/* MEASURED 12.5px/700 at +.03em. It was 13px/800 at −.005em: heavier, larger
+   and tracked the wrong direction, so a column name out-shouted the card
+   titles under it. */
+.bd__cn { font-size: 12.5px; font-weight: 700; letter-spacing: .03em; color: var(--on-surface); }
+/* `letter-spacing: 0` is load-bearing, not tidying — and more so since `.bd__cn`
+   above went from −.005em to +.03em. letter-spacing INHERITS as a resolved
+   absolute length, so whatever the Latin column name is tracked at lands on the
+   Devanagari beside it: measured −0.065px before, +0.375px now if this reset
+   were dropped. 24-bilingual-devanagari.md forbids tracking on Devanagari
+   outright — the script hangs its letters off a continuous shirorekha and any
+   tracking opens gaps in a stroke meant to be unbroken. Same trap, same reset,
+   as `.k-stat__hi` and `.k-pageh__sans`. */
+.bd__cn-hi { font-family: var(--font-indic); font-size: 12.5px; font-weight: 400; letter-spacing: 0; color: var(--on-surface-3); margin-left: 5px; }
+/* MEASURED: the count is a PILL on `--s-container`, 10.5px mono, not bare text.
+   `--on-surface-faint` is a NON-TEXT token (00 §tokens) and this is text. */
+.bd__cc {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--on-surface-3);
+  margin-left: auto; padding: 1px 7px;
+  background: var(--s-container); border-radius: var(--r-pill);
+}
 .bd__cx {
   display: grid; place-items: center; width: 20px; height: 20px; flex: none;
   border: 0; background: none; border-radius: var(--r-xs);
@@ -143,12 +181,19 @@
    pixel source, so `.6deg` it is — 2deg on a 288px column also clips the
    neighbouring card's edge at the top of a tall list. Spec conflict recorded in
    the report rather than resolved silently. */
+/* MEASURED against `.bcard`: gap 8px, radius `--r-md`, and NO resting shadow.
+   The radius was `--r-sm` — 5.8px at the shipping base against the reference's
+   12px, so a card read as a chip. The resting `--shadow-1` is the other half of
+   the same mistake: the reference card is a 1px outline on `--surface` over the
+   column's `--s-low`, and elevation is what a card acquires when you pick it
+   up. Giving it to every card at rest spends the only signal the lift has.
+   The lift's own `--shadow-2` in `.bc.drag` is untouched. */
 .bc {
   position: relative;
-  display: flex; flex-direction: column; gap: 7px;
+  display: flex; flex-direction: column; gap: 8px;
   width: 100%; padding: 11px 12px;
-  border-radius: var(--r-sm); background: var(--surface);
-  border: 1px solid var(--outline-variant); box-shadow: var(--shadow-1);
+  border-radius: var(--r-md); background: var(--surface);
+  border: 1px solid var(--outline-variant);
   font: inherit; color: inherit; text-align: left; cursor: grab;
   transition: box-shadow var(--dur-fast) var(--ease-standard),
               border-color var(--dur-fast) var(--ease-standard),
@@ -245,10 +290,23 @@
 
 .bc__top { display: flex; align-items: center; gap: 7px; }
 .bc__pdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--c); }
-.bc__id { font-family: var(--font-mono); font-size: 10px; color: var(--on-surface-faint); }
-.bc__prio { margin-left: auto; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--c); }
+/* `--on-surface-faint` is a NON-TEXT token and this is text. Same hex today,
+   so the change is zero-pixel; it is the ramp that moves when the palette does. */
+.bc__id { font-family: var(--font-mono); font-size: 10px; color: var(--on-surface-3); }
+/* MEASURED: the priority on a reference card is a `.tag` PILL — 11.5px/600 on a
+   15% tint of its own colour, radius `--r-pill`, padding 2px 9px — not tracked
+   uppercase micro-type. At 10px/.06em it was the smallest thing on the card
+   while carrying the one field a triage pass reads first. */
+.bc__prio {
+  margin-left: auto;
+  display: inline-flex; align-items: center;
+  padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: 11.5px; font-weight: 600; white-space: nowrap;
+  background: color-mix(in srgb, var(--c) 15%, transparent);
+  color: color-mix(in srgb, var(--c) 72%, var(--on-surface));
+}
 .bc__t { font-size: 13px; line-height: 1.4; font-weight: 500; text-wrap: pretty; color: var(--on-surface); }
-.bc__foot { display: flex; align-items: center; gap: 9px; font-size: 11px; color: var(--on-surface-3); }
+.bc__foot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--on-surface-3); }
 .bc__meta { display: inline-flex; align-items: center; gap: 9px; font-family: var(--font-mono); }
 .bc__meta > span { display: inline-flex; align-items: center; gap: 4px; }
 .bc__people { margin-left: auto; }
@@ -288,9 +346,14 @@
    the card. The table VIEW is not in a card — it sits straight on the page — so
    without this the sticky header's `--s-low` band runs edge to edge with no
    containing stroke, and the bottom row has nothing to close it off. */
+/* MEASURED against `.tbl` in the reference: the table is a CARD — `--surface`
+   ground, `--r-lg` corner, one outline. It was a `--r-md` outline over the page
+   ground, so the zebra rows sat directly on `--bg` and the corner was a step
+   tighter than the board columns beside it. */
 .tbv .tbl__wrap {
+  background: var(--surface);
   border: 1px solid var(--outline-variant);
-  border-radius: var(--r-md);
+  border-radius: var(--r-lg);
 }
 
 /* `.tbl th` is already `position: sticky; top: 0`, and on its own that does
@@ -316,7 +379,10 @@
 .tb__grpn { margin-left: 6px; font-family: var(--font-mono); font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--on-surface-faint); }
 
 .tb__sel { width: 40px; }
-.tb__ttl { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* MEASURED: `.tbl__t` is 13px at 500. The cell inherited 400 from the table, so
+   the one column a scanning eye lands on had the same weight as the metadata
+   either side of it. Gap is 9px, not 6, to match `.tbl__c`. */
+.tb__ttl { display: flex; align-items: center; gap: 9px; min-width: 0; font-weight: 500; }
 .tb__ttl > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb__att { display: inline-flex; align-items: center; gap: 3px; flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--on-surface-3); }
 .tb__col { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--on-surface-2); white-space: nowrap; }

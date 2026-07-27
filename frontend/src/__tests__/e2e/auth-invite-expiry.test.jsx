@@ -23,7 +23,6 @@ import { Route } from 'react-router-dom';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { api, _resetSessionLatch } from '../../lib/api';
-import { moduleMeta } from '../../lib/moduleColors';
 import { AcceptInvitePage, LoginPage, ResetPasswordPage } from '../../pages/LoginPage';
 import {
   installMockApi, installNetworkKillSwitch, restoreNetwork, httpError,
@@ -90,16 +89,13 @@ describe('accept-invite · what you are being asked to accept', () => {
     expect(text).toContain('rohan@aekam.co');
     // Grants by their product names, not their codes — `moduleColors.js` is the
     // one registry and this screen reads it rather than restating labels.
-    //
-    // So this reads the registry too, instead of restating the labels a second
-    // time. It used to hardcode 'Invoicing', which went red the moment `ganit`
-    // was renamed to 'Finance' — the designer's word, per `_DESIGN-GAP.md` §2 —
-    // even though the screen was correct and only the test was stale. What is
-    // under test is that the grants appear by product name rather than as
-    // `graha` and `ganit`, not how either module is currently spelt.
-    expect(text).toContain(moduleMeta('graha').en);
+    expect(text).toContain('CRM');
     expect(text).toContain('Editor');
-    expect(text).toContain(moduleMeta('ganit').en);
+    // `Finance`, not `Invoicing` — the label moved in moduleColors.js to match
+    // the design reference, which calls ganit Finance in all three of the
+    // places it names the module. This assertion existing is the point: it is
+    // what proves the screen reads the registry instead of restating labels.
+    expect(text).toContain('Finance');
     expect(text).toContain('Viewer');
     expect(host.$('.auinv')).toBeTruthy();
   });
