@@ -18,7 +18,22 @@ const STATUS_MAP = {
 
 const FALLBACK = 'var(--on-surface-3)';
 
-export default function StatusChip({ status, approvalStatus, columnName, columnColor }) {
+/**
+ * `label` overrides the word, never the colour.
+ *
+ * Some surfaces borrow this chip's TONE for a vocabulary of their own. Pahchan's
+ * register is the clearest case: `mock` (a device reporting a simulated
+ * location) is styled `rejected` because it implies intent, and `accuracy` is
+ * styled `in_review` because it implies circumstance — but the reviewer has to
+ * read "Simulated location" and "Weak GPS", not "Rejected" and "In Review".
+ *
+ * It was already being passed by every chip on that screen and silently dropped,
+ * so a weak GPS fix announced itself as "In Review" and a simulated location as
+ * "Rejected" — the latter indistinguishable from a verdict somebody had already
+ * recorded, in the column where verdicts are recorded. Accepting the prop is the
+ * whole fix; every existing caller that omits it is unchanged.
+ */
+export default function StatusChip({ status, approvalStatus, columnName, columnColor, label }) {
   // Approval state takes precedence when active
   const activeApproval = approvalStatus && approvalStatus !== 'approved' && approvalStatus !== 'rejected';
   const decidedApproval = approvalStatus === 'approved' || approvalStatus === 'rejected';
@@ -28,7 +43,7 @@ export default function StatusChip({ status, approvalStatus, columnName, columnC
     return (
       <span className="k-statuschip" style={{ '--c': s.color }}>
         <span className="k-statuschip__dot" />
-        {s.label}
+        {label || s.label}
       </span>
     );
   }
@@ -38,7 +53,7 @@ export default function StatusChip({ status, approvalStatus, columnName, columnC
     return (
       <span className="k-statuschip" style={{ '--c': columnColor || FALLBACK }}>
         <span className="k-statuschip__dot" />
-        {columnName}
+        {label || columnName}
       </span>
     );
   }
@@ -47,7 +62,7 @@ export default function StatusChip({ status, approvalStatus, columnName, columnC
   return (
     <span className="k-statuschip" style={{ '--c': s.color }}>
       <span className="k-statuschip__dot" />
-      {s.label}
+      {label || s.label}
     </span>
   );
 }
