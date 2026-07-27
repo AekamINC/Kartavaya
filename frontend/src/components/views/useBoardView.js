@@ -94,8 +94,27 @@ export default function useBoardView({ tasks, columns, fieldDefs, boardKey }) {
   const sortRaw = params.get('sort');
   const filtRaw = params.get('filter');
 
-  const sort    = useMemo(() => decodeSort(sortRaw),    [sortRaw]);
-  const clauses = useMemo(() => decodeClauses(filtRaw), [filtRaw]);
+  const sort = useMemo(() => decodeSort(sortRaw), [sortRaw]);
+
+  /**
+   * A `column_id` clause names a column of ONE board. `/boards` switches
+   * project without leaving the route, so a filter set on Quarterly GST would
+   * survive into Diwali campaign, match nothing there, and present an empty
+   * board with a chip naming a column that project does not have. The same
+   * applies to a pasted link opened against the wrong board.
+   *
+   * Clauses whose column no longer exists are dropped from what the UI reads.
+   * The guard on `columns.length` matters: the list is empty while the board is
+   * loading, and pruning then would discard a perfectly good filter on every
+   * page load. The URL is left alone — a stale param that stops applying is
+   * recoverable; rewriting someone's link out from under them is not.
+   */
+  const clauses = useMemo(() => {
+    const all = decodeClauses(filtRaw);
+    if (!columns?.length) return all;
+    const known = new Set(columns.map(c => c.column_id));
+    return all.filter(c => c.field !== 'column_id' || !c.value || known.has(c.value));
+  }, [filtRaw, columns]);
 
   const write = useCallback((patch) => {
     setParams((prev) => {

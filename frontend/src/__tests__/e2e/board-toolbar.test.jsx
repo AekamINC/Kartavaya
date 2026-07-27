@@ -156,6 +156,30 @@ describe('useBoardView — the URL is the filter', () => {
     expect(JSON.parse(localStorage.getItem('kv.table.fields.test-board'))).toEqual(['f1']);
   });
 
+  it('drops a column filter naming a column this board does not have', async () => {
+    // `/boards` switches project without leaving the route, so a column filter
+    // set on one board would otherwise survive into the next and empty it.
+    let board;
+    await host.mount(
+      <Board view="kanban" onBoard={b => { board = b; }} />,
+      { path: '/boards?filter=column_id%3Ais%3Ac9' },
+    );
+    expect(board.clauses).toHaveLength(0);
+    expect(board.filtered).toHaveLength(3);
+  });
+
+  it('leaves a column filter alone when the column does exist', async () => {
+    // A separate test, not a second mount: `MemoryRouter` reads
+    // `initialEntries` once, so re-rendering the same root at a new path keeps
+    // the first one and the assertion would measure the previous case.
+    let board;
+    await host.mount(
+      <Board view="kanban" onBoard={b => { board = b; }} />,
+      { path: '/boards?filter=column_id%3Ais%3Ac2' },
+    );
+    expect(board.filtered.map(t => t.task_id)).toEqual(['t2']);
+  });
+
   it('clears search and filter together in one write', async () => {
     let board;
     await host.mount(
