@@ -1,4 +1,26 @@
--- PROPOSED — NOT APPLIED. Needs a product decision first (see §1).
+-- DECIDED 2026-07-27: Option A is DECLINED. The aadhaar column STAYS.
+--
+-- Owner's call, made with §1 in front of him. Do not re-propose the drop, and
+-- do not run §2 — the DDL below is kept only so the option stays costed if the
+-- decision is ever revisited. Nothing in this file is to be applied.
+--
+-- This header exists because the file previously read "needs a product
+-- decision first", which is an open invitation for the next session or agent
+-- to raise it again. It has been raised and answered.
+--
+-- What remains TRUE and unaffected by the decision:
+--   · aadhaar is still written and never read (§1). Keeping it is a choice to
+--     hold data no feature consumes, not a correction of that finding.
+--   · the access-control half is already SHIPPED — masked detail endpoint,
+--     audited reveal gated on org owner/admin. Keeping the column is therefore
+--     not the same as keeping it exposed.
+--   · 3 rows carry a real value today (re-verified live 2026-07-27; a `count()`
+--     reads 9 because six rows hold an empty string, not NULL).
+--
+-- Option B (§3, encrypt at rest) is NOT foreclosed by this decision and is the
+-- natural pairing with keeping the column — the Fernet infrastructure already
+-- exists and is tested. It was not chosen here; it was simply not asked about.
+-- Read §3's key-hygiene warnings before anyone acts on it.
 --
 -- Filename deliberately carries no runnable sequence number. Migrations in this
 -- directory are applied by hand — `_run_startup_migrations()` in server.py holds
