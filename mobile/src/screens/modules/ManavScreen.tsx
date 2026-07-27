@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import {
-  View, Text, Pressable, StyleSheet, Modal, TextInput,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  View, Text, Pressable, StyleSheet, TextInput,
+  ActivityIndicator, Alert,
 } from 'react-native';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
+import Sheet from '../../components/Sheet';
 import ModuleShell, { Stat, StatRow, SectionHead, Card } from './ModuleShell';
 import { manavApi, num, type LeaveRequest, type HrStats, type Holiday } from '../../api/modules';
 import { a11yButton } from '../../components/a11y';
@@ -194,19 +195,14 @@ export default function ManavScreen() {
 
       {/* Decline needs a reason before it can be sent — the employee is told it
           verbatim, so an empty one produces a decision they cannot act on. */}
-      <Modal
+      <Sheet
         visible={!!declining}
-        transparent
-        animationType="slide"
         // Android's hardware back must dismiss this, per 17's platform table.
-        onRequestClose={() => setDeclining(null)}
+        onClose={() => setDeclining(null)}
+        closeLabel="Dismiss"
+        panelStyle={[s.sheet, { backgroundColor: t.surface, borderColor: t.outlineVar }]}
+        avoidKeyboard
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={s.modalRoot}
-        >
-          <Pressable style={s.scrim} onPress={() => setDeclining(null)} accessibilityLabel="Dismiss" />
-          <View style={[s.sheet, { backgroundColor: t.surface, borderColor: t.outlineVar }]}>
             <View style={[s.grab, { backgroundColor: t.outline }]} />
             <Text style={[s.sheetTitle, { color: t.ink }]}>
               Decline {declining?.employee_name ?? 'this request'}?
@@ -253,9 +249,7 @@ export default function ManavScreen() {
                 </Text>
               </Pressable>
             </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
+      </Sheet>
     </ModuleShell>
   );
 }
@@ -274,8 +268,7 @@ const s = StyleSheet.create({
   clearRow:  { flexDirection: 'row', alignItems: 'center', gap: 9 },
   clearText: { flex: 1, fontSize: 12.5, lineHeight: 17 },
 
-  modalRoot: { flex: 1, justifyContent: 'flex-end' },
-  scrim:     { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  // modalRoot and scrim removed — Sheet owns both, and fades the scrim.
   sheet: {
     borderTopLeftRadius: 20, borderTopRightRadius: 20,
     borderWidth: 1, borderBottomWidth: 0, padding: 18, paddingBottom: 34, gap: 8,

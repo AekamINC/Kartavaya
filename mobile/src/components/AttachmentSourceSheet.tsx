@@ -6,13 +6,13 @@
  */
 import React from 'react';
 import {
-  Modal, View, Text, TouchableOpacity, StyleSheet,
-  Platform, Pressable,
+  View, Text, TouchableOpacity, StyleSheet, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../theme/ThemeProvider';
+import Sheet from './Sheet';
 
 export interface PickedFile {
   uri:  string;
@@ -86,43 +86,43 @@ export default function AttachmentSourceSheet({ visible, onClose, onPicked, maxF
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={s.backdrop} onPress={onClose} />
-      <View style={[s.sheet, { backgroundColor: t.surface }]}>
-        <View style={[s.handle, { backgroundColor: t.outline }]} />
-        <Text style={[s.title, { color: t.ink }]}>Add Attachment</Text>
-        <Text style={[s.subtitle, { color: t.ink3 }]}>संलग्नक जोड़ें</Text>
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      closeLabel="Close attachment picker"
+      panelStyle={[s.sheet, { backgroundColor: t.surface }]}
+    >
+      <View style={[s.handle, { backgroundColor: t.outline }]} />
+      <Text style={[s.title, { color: t.ink }]}>Add Attachment</Text>
+      <Text style={[s.subtitle, { color: t.ink3 }]}>संलग्नक जोड़ें</Text>
 
-        <View style={s.grid}>
-          {SOURCES.map(src => (
-            <TouchableOpacity
-              key={src.key}
-              style={[s.card, { backgroundColor: t.bg, borderColor: t.outline }]}
-              onPress={() => pick(src.key)}
-              activeOpacity={0.75}
-            >
-              <View style={[s.iconWrap, { backgroundColor: t.primary + '16' }]}>
-                <Ionicons name={src.icon as any} size={26} color={t.primary} />
-              </View>
-              <Text style={[s.cardLabel, { color: t.ink }]}>{src.label}</Text>
-              <Text style={[s.cardHint, { color: t.ink3 }]}>{src.hint}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <TouchableOpacity onPress={onClose} style={[s.cancelBtn, { borderColor: t.outline }]}>
-          <Text style={[s.cancelText, { color: t.ink3 }]}>Cancel · रद्द करें</Text>
-        </TouchableOpacity>
+      <View style={s.grid}>
+        {SOURCES.map(src => (
+          <TouchableOpacity
+            key={src.key}
+            style={[s.card, { backgroundColor: t.bg, borderColor: t.outline }]}
+            onPress={() => pick(src.key)}
+            activeOpacity={0.75}
+          >
+            <View style={[s.iconWrap, { backgroundColor: t.primary + '16' }]}>
+              <Ionicons name={src.icon as any} size={26} color={t.primary} />
+            </View>
+            <Text style={[s.cardLabel, { color: t.ink }]}>{src.label}</Text>
+            <Text style={[s.cardHint, { color: t.ink3 }]}>{src.hint}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
-    </Modal>
+
+      <TouchableOpacity onPress={onClose} style={[s.cancelBtn, { borderColor: t.outline }]}>
+        <Text style={[s.cancelText, { color: t.ink3 }]}>Cancel · रद्द करें</Text>
+      </TouchableOpacity>
+    </Sheet>
   );
 }
 
 const s = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
+  // `backdrop` is gone — the scrim lives in Sheet now, and it fades over
+  // --dur-base --ease-enter instead of appearing at full strength on frame one.
   sheet: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,

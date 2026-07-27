@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  FlatList, Modal, TextInput, ActivityIndicator,
-  Platform, Alert, RefreshControl, KeyboardAvoidingView, Pressable,
+  FlatList, TextInput, ActivityIndicator,
+  Platform, Alert, RefreshControl, Pressable,
 } from 'react-native';
 import { useRoute, useNavigation, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, isToday, isPast } from 'date-fns';
 import { useTheme } from '../theme/ThemeProvider';
+import Sheet from '../components/Sheet';
 import { tasksApi } from '../api/tasks';
 import { projectsApi } from '../api/projects';
 import { PRIORITY_COLORS, projectColor, AVATAR_COLORS, BRAND_GRADIENT_2, withAlpha } from '../theme/tokens';
@@ -33,13 +34,16 @@ function ProjectPicker({
   onSelect: (p: Project) => void; onClose: () => void; t: any;
 }) {
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={ps.backdrop} onPress={onClose} />
-      <View style={[ps.sheet, { backgroundColor: t.surface }]}>
-        <View style={[ps.handle, { backgroundColor: t.outline }]} />
-        <Text style={[ps.title, { color: t.ink }]}>Switch Project</Text>
-        <Text style={[ps.sub, { color: t.ink3 }]}>परियोजना चुनें</Text>
-        <ScrollView style={{ maxHeight: 380 }}>
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      closeLabel="Close project picker"
+      panelStyle={[ps.sheet, { backgroundColor: t.surface }]}
+    >
+      <View style={[ps.handle, { backgroundColor: t.outline }]} />
+      <Text style={[ps.title, { color: t.ink }]}>Switch Project</Text>
+      <Text style={[ps.sub, { color: t.ink3 }]}>परियोजना चुनें</Text>
+      <ScrollView style={{ maxHeight: 380 }}>
           {projects.map(p => {
             const color = projectColor(p.team_id, p.color ?? undefined);
             const isActive = p.team_id === activeId;
@@ -59,12 +63,11 @@ function ProjectPicker({
               </TouchableOpacity>
             );
           })}
-        </ScrollView>
-        <TouchableOpacity onPress={onClose} style={[ps.cancelBtn, { borderColor: t.outline }]}>
-          <Text style={[ps.cancelText, { color: t.ink3 }]}>Cancel · रद्द करें</Text>
-        </TouchableOpacity>
-      </View>
-    </Modal>
+      </ScrollView>
+      <TouchableOpacity onPress={onClose} style={[ps.cancelBtn, { borderColor: t.outline }]}>
+        <Text style={[ps.cancelText, { color: t.ink3 }]}>Cancel · रद्द करें</Text>
+      </TouchableOpacity>
+    </Sheet>
   );
 }
 
@@ -201,11 +204,14 @@ function NewTaskModal({ visible, columns, projectId, onClose, onCreated, t }: {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <Pressable style={s.overlay} onPress={onClose} />
-        <View style={[s.sheet, { backgroundColor: t.surface, borderColor: t.outline }]}>
-          <View style={[s.sheetHandle, { backgroundColor: t.outline }]} />
+    <Sheet
+      visible={visible}
+      onClose={onClose}
+      closeLabel="Close new task sheet"
+      panelStyle={[s.sheet, { backgroundColor: t.surface, borderColor: t.outline }]}
+      avoidKeyboard
+    >
+      <View style={[s.sheetHandle, { backgroundColor: t.outline }]} />
           <Text style={[s.sheetTitle, { color: t.ink }]}>New Task</Text>
           <TextInput
             style={[s.sheetInput, { backgroundColor: t.bg, borderColor: t.outline, color: t.ink }]}
@@ -245,9 +251,7 @@ function NewTaskModal({ visible, columns, projectId, onClose, onCreated, t }: {
               </LinearGradient>
             </TouchableOpacity>
           </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </Sheet>
   );
 }
 
@@ -611,7 +615,7 @@ export default function BoardScreen() {
 
 // ── Project picker styles ─────────────────────────────────────────────────────
 const ps = StyleSheet.create({
-  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' },
+  // backdrop removed — Sheet owns the scrim and fades it.
   sheet:      { borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: Platform.OS === 'ios' ? 40 : 28, paddingHorizontal: 20, shadowColor: '#000', shadowOffset: { width: 0, height: -6 }, shadowOpacity: 0.18, shadowRadius: 20, elevation: 20 },
   handle:     { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 4 },
   title:      { fontSize: 17, fontWeight: '700', textAlign: 'center', marginTop: 12 },
@@ -694,7 +698,7 @@ const s = StyleSheet.create({
   trackerBar:   { height: 10, borderRadius: 5 },
   trackerTotal: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 16, borderTopWidth: 1 },
   // Modal
-  overlay:      { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.55)' },
+  // overlay removed — Sheet owns the scrim and fades it.
   sheet:        { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, borderTopWidth: 1 },
   sheetHandle:  { width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: 18 },
   sheetTitle:   { fontSize: 18, fontWeight: '900', marginBottom: 16 },

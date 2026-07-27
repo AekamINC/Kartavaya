@@ -68,7 +68,7 @@ export const s = StyleSheet.create({
   sendBtn:          { flexShrink: 0, marginBottom: 2 },
   sendGrad:         { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   // Modals
-  modalOverlay:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  // modalOverlay removed — Sheet/Dialog own the frame and fade the scrim.
   approvalModal:    { margin: 16, borderRadius: 20, padding: 22, marginBottom: Platform.OS === 'ios' ? 32 : 16 },
   approvalModalTitle:{ fontSize: 18, fontWeight: '900', marginBottom: 16 },
   approvalModalLabel:{ fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 6 },
