@@ -3,34 +3,71 @@ import { useState, useEffect } from 'react';
 import { api } from './api';
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
+/**
+ * `noRetry` on every one of these, and it is load-bearing rather than cautious.
+ *
+ * The response interceptor in `lib/api.js` retries any request that comes back
+ * 502/503/504 — or with no response at all — up to three more times, 800ms /
+ * 1600ms / 2400ms apart. It was written for the Railway restart window, where
+ * the gateway answers before the app is up and a retried GET is free.
+ *
+ * None of these five is a GET, and measured in the browser each one put FOUR
+ * identical requests on the wire against a single 503:
+ *
+ *   forgot-password  four reset emails from one press, and the 3/minute limiter
+ *                    spent on the first one
+ *   reset-password   the token is single-use. Attempt 1 succeeds server-side,
+ *                    the gateway times out, attempts 2–4 come back "invalid or
+ *                    expired" — so the password IS changed and the screen shakes
+ *                    and says the link is dead. The worst kind of wrong: the UI
+ *                    lies about a write that landed.
+ *   accept-invite    a non-idempotent account create, retried
+ *   login            four sessions minted, and the 5/minute limiter spent
+ *   logout           holds the sign-out for 4.8s of retries before the local
+ *                    keys are cleared
+ *
+ * A 502/504 does not mean the request was not processed — it means the answer
+ * did not come back. That is exactly the case where a retry doubles a side
+ * effect. `OnboardingPage.jsx` already opted `POST /admin/invites` and
+ * `POST /teams` out for the same reason; these five were the rest of the set.
+ *
+ * The user-visible motion consequence is separate and also real: without this,
+ * the button sat in its pending state with the spinner running for ~4.8s before
+ * the failure surfaced.
+ */
+const NO_RETRY = { noRetry: true };
+
 export async function apiLogin(email, password) {
-  const res = await api.post('/auth/login', { email, password });
+  const res = await api.post('/auth/login', { email, password }, NO_RETRY);
   localStorage.setItem('Kartavaya_user', JSON.stringify(res.data.user));
   if (res.data.token) localStorage.setItem('auth_token', res.data.token);
   return res.data;
 }
 
 export async function apiAcceptInvite(token, name, password) {
-  const res = await api.post('/auth/accept-invite', { token, name, password });
+  const res = await api.post('/auth/accept-invite', { token, name, password }, NO_RETRY);
   localStorage.setItem('Kartavaya_user', JSON.stringify(res.data.user));
   if (res.data.token) localStorage.setItem('auth_token', res.data.token);
   return res.data;
 }
 
 export async function apiForgotPassword(email) {
-  const res = await api.post('/auth/forgot-password', { email });
+  const res = await api.post('/auth/forgot-password', { email }, NO_RETRY);
   return res.data;
 }
 
 export async function apiResetPassword(token, password) {
-  const res = await api.post('/auth/reset-password', { token, password });
+  const res = await api.post('/auth/reset-password', { token, password }, NO_RETRY);
   localStorage.setItem('Kartavaya_user', JSON.stringify(res.data.user));
   if (res.data.token) localStorage.setItem('auth_token', res.data.token);
   return res.data;
 }
 
 export async function apiLogout() {
-  try { await api.post('/auth/logout'); } catch (_) { /* fire-and-forget: logout always proceeds */ }
+  // `null`, not `{}`: axios omits the body and the Content-Type header for null,
+  // which is byte-for-byte the request this sent before the config argument was
+  // added. `{}` would start posting a JSON body to an endpoint that declares none.
+  try { await api.post('/auth/logout', null, NO_RETRY); } catch (_) { /* fire-and-forget: logout always proceeds */ }
   localStorage.removeItem('auth_token');
   localStorage.removeItem('Kartavaya_user');
   localStorage.removeItem('kv_teams_cache');

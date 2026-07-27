@@ -3,6 +3,7 @@ import { View, Text, Image, StyleSheet, ActivityIndicator } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { pahchanApi, enrollmentApi, type ReferencePhoto } from '../../api/pahchan';
+import { FAMILY } from '../../theme/fonts';
 
 /**
  * What is held about you, and for how long — 07-pahchan.md §9.
@@ -72,7 +73,9 @@ function Slot({
 
 export default function MyBiometrics({ t }: { t: any }) {
   const { data: mine } = useQuery({
-    queryKey: ['pahchan', 'me'],
+    // `days` is part of the key — see the note in ClockScreen. This asks for 1
+    // day and ClockScreen asks for 7; under a shared key they collided.
+    queryKey: ['pahchan', 'me', 1],
     queryFn: () => pahchanApi.me(1),
     // A failure here must not surface as an error on a settings screen — the
     // section simply does not render.
@@ -148,7 +151,7 @@ const s = StyleSheet.create({
   wrap:     { paddingHorizontal: 16, paddingBottom: 14 },
   labelRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, paddingHorizontal: 6, paddingBottom: 8 },
   label:    { fontSize: 11, fontWeight: '700', letterSpacing: 1.4, textTransform: 'uppercase' },
-  hi:       { fontSize: 12, fontFamily: 'TiroDevanagariHindi' },
+  hi:       { fontSize: 12, fontFamily: FAMILY.devanagari },
   card:     { borderRadius: 16, overflow: 'hidden' },
   slots:    { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 14 },
   slot: {

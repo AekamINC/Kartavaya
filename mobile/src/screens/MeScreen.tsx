@@ -11,10 +11,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme/ThemeProvider';
 import { useAuth } from '../hooks/useAuth';
 import { avatarColor, userInitials } from '../theme/tokens';
+import { FAMILY } from '../theme/fonts';
+import BiLabel from '../theme/BiLabel';
 import { notificationsApi } from '../api/notifications';
 import type { RootStackParamList } from '../nav/RootStack';
 import type { NotifKind, NotifPrefsResponse } from '../api/types';
 import MyBiometrics from './pahchan/MyBiometrics';
+import MyRegister from './pahchan/MyRegister';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
@@ -72,10 +75,13 @@ const sec = StyleSheet.create({
   wrap:     { paddingHorizontal: 16, paddingBottom: 14 },
   labelRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8, paddingHorizontal: 6, paddingBottom: 8 },
   label:    { fontSize: 11, fontWeight: '700', letterSpacing: 1.4, textTransform: 'uppercase' },
-  hi:       { fontSize: 12, fontFamily: 'TiroDevanagariHindi' },
+  hi:       { fontSize: 12, fontFamily: FAMILY.devanagari },
   card:     { overflow: 'hidden' },
   caption:  { paddingHorizontal: 6, paddingTop: 6, fontSize: 12, lineHeight: 18 },
 });
+
+/** Devanagari block (U+0900–U+097F). Decides whether a value needs the split. */
+const DEVANAGARI = /[ऀ-ॿ]/;
 
 // ── Settings row (icon + label + value + chevron) ─────────────────────────────
 function SettingsRow({
@@ -102,7 +108,18 @@ function SettingsRow({
         {label}
       </Text>
       {value ? (
-        <Text style={[row.value, { color: valueColor ?? t.ink2 }]}>{value}</Text>
+        // `row.value` sets fontWeight '500', and Tiro ships only a 400 — so a
+        // bilingual value like `English · हिन्दी` renders its Hindi half in a
+        // synthesised bold or the system face, and in no Devanagari face at all.
+        // Only values that actually carry Devanagari take the split path, so
+        // every other row keeps the exact layout it had.
+        DEVANAGARI.test(value)
+          ? <BiLabel
+              latinStyle={[row.value, { color: valueColor ?? t.ink2 }]}
+              hindiStyle={{ color: valueColor ?? t.ink2 }}
+              hindiSize={13}
+            >{value}</BiLabel>
+          : <Text style={[row.value, { color: valueColor ?? t.ink2 }]}>{value}</Text>
       ) : null}
       {!destructive ? (
         <Ionicons name="chevron-forward" size={16} color={t.ink3} />
@@ -268,6 +285,15 @@ export default function MeScreen() {
           held and for how long without having to ask. */}
       <MyBiometrics t={t} />
 
+      {/* ── Your attendance record (07 §9) ───────────────────────────
+          The third thing §9 asks of Me, after the reference pair and the
+          retention promise: the employee's own REGISTER. It sits directly under
+          the photographs on purpose — what is held about you, then what it was
+          used to record. In the attendance-only shell this is one of only two
+          destinations, so burying it behind a route would leave a site worker
+          with a Clock tab and nothing else. */}
+      <MyRegister t={t} />
+
       {/* ── Permissions ──────────────────────────────────────────── */}
       <Section label="Permissions" hi="अनुमतियाँ"
         caption="Approval pushes need Notifications enabled."
@@ -354,7 +380,7 @@ const s = StyleSheet.create({
   },
   kickerHi: {
     fontSize: 12,
-    fontFamily: 'TiroDevanagariHindi',
+    fontFamily: FAMILY.devanagari,
   },
   screenTitle: {
     fontSize: IS_ANDROID ? 30 : 34,
@@ -362,7 +388,7 @@ const s = StyleSheet.create({
     lineHeight: IS_ANDROID ? 36 : 40,
     letterSpacing: -0.5,
     marginBottom: 8,
-    fontFamily: IS_ANDROID ? undefined : 'Newsreader',
+    fontFamily: IS_ANDROID ? undefined : FAMILY.display,
   },
 
   accountCard: {
@@ -410,7 +436,7 @@ const s = StyleSheet.create({
     flexShrink: 0,
   },
   notifLabel: { fontSize: 15, fontWeight: '500' },
-  notifHi:    { fontSize: 11, fontFamily: 'TiroDevanagariHindi' },
+  notifHi:    { fontSize: 11, fontFamily: FAMILY.devanagari },
   notifDesc:  { fontSize: 12.5, marginTop: 2 },
 
   syncBtn: {

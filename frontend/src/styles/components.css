@@ -820,7 +820,13 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .av {
   display: grid; place-items: center; flex: none; border-radius: 50%;
   background: var(--av-bg, var(--s-high)); color: #fff;
-  font-weight: 600; letter-spacing: .01em; overflow: hidden; user-select: none;
+  /* 700/.02em, from `app.css:203`. The port had landed on 600/.01em. Both
+     numbers matter more here than anywhere else in the system: `Avatar.jsx:29`
+     sizes the initials at `size * 0.41`, which is ~10px at the default 24px
+     avatar — under 11px, white on a mid-tone fill, two letters with no word
+     shape to fall back on. Weight and tracking are the only legibility left,
+     and the reference spends both. */
+  font-weight: 700; letter-spacing: .02em; overflow: hidden; user-select: none;
 }
 .av img { width: 100%; height: 100%; object-fit: cover; }
 .avstack { display: inline-flex; flex: none; align-items: center; }
@@ -830,7 +836,11 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .avstack__n {
   display: grid; place-items: center; flex: none; border-radius: 50%;
   background: var(--s-high); color: var(--on-surface-2);
-  font-family: var(--font-mono); font-weight: 600;
+  /* 700, matching `.av` above, the reference's `.avs__more` (`app.css:207`),
+     and `.k-avstack__more` (`editorial.css:892`) — which was already 700, so
+     the build's two overflow chips disagreed with each other. This is the one
+     Avatar.jsx renders. */
+  font-family: var(--font-mono); font-weight: 700;
   box-shadow: 0 0 0 1.5px var(--ring, var(--surface));
 }
 
@@ -936,6 +946,26 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 [data-toast-pos="tl"] .tst,
 [data-toast-pos="bl"] .tst { animation-name: tstInL; }
 
+/* The other half of the pair. `tstIn` existed; dismissing removed the node in
+   the same frame, so the only toast a user could not read was the one they
+   clicked. MOTION-SPEC §3: out is `translateX(12px)` + fade — LESS travel than
+   the 16px entrance — on --dur-fast --ease-exit, which is the reconciled
+   table's toast exit and §7.3's rule that exits are faster than entrances.
+
+   `both`, so the card holds its final transparent frame instead of flicking
+   back to solid for the one frame between `animationend` and React's unmount.
+   `pointer-events: none` because a card on its way out must not be clickable —
+   a second Dismiss during the exit is a click the user did not mean. */
+.tst.is-out {
+  animation: tstOut var(--dur-fast) var(--ease-exit) both;
+  pointer-events: none;
+}
+@keyframes tstOut { to { opacity: 0; transform: translateX(12px) } }
+@keyframes tstOutL { to { opacity: 0; transform: translateX(-12px) } }
+@keyframes tstOutM { to { opacity: 0; transform: translateY(12px) } }
+[data-toast-pos="tl"] .tst.is-out,
+[data-toast-pos="bl"] .tst.is-out { animation-name: tstOutL; }
+
 /* Mobile: the stack goes full width, so there is no side to arrive from and
    the reference switches to a vertical rise (`ovToastM`, MOTION-SPEC §3
    "mobile: translateY(12px)"). */
@@ -943,6 +973,14 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   .tst,
   [data-toast-pos="tl"] .tst,
   [data-toast-pos="bl"] .tst { animation-name: tstInM; }
+  /* The `.is-out` rules must be restated INSIDE the media block, after the
+     entrance names above. `@media` adds no specificity, so `[data-toast-pos]
+     .tst` here — one attribute selector plus one class — outranks `.tst.is-out`
+     outside it, and a mobile toast in a left corner would have exited by
+     replaying its ENTRANCE keyframe. Same trap as animations.css §9/§10. */
+  .tst.is-out,
+  [data-toast-pos="tl"] .tst.is-out,
+  [data-toast-pos="bl"] .tst.is-out { animation-name: tstOutM; }
 }
 @keyframes tstInM { from { opacity: 0; transform: translateY(12px) } }
 .tst__i { flex: none; margin-top: 1px; color: var(--tst-c, var(--on-surface-3)); font-size: 12px; font-weight: 700; }

@@ -63,11 +63,35 @@ export default function WAChat({ conversation, onBack }) {
 
   const win = useMemo(() => windowState(messages), [messages]);
 
+  /**
+   * `MOTION-SPEC.md` §7.1, on the Varta side. The bubble goes up before the
+   * request, not after it — `Composer` empties the box on the keystroke, so
+   * awaiting the round trip first would show the sender nothing at all, and a
+   * WhatsApp send is the slowest one in the product: it is a Meta API call
+   * behind our own.
+   *
+   * `status: 'pending'` is not invented for this. It is already one of the five
+   * in `WA_STATUS_LABEL`, and `WaTicks.pending` is already the clock glyph — so
+   * the placeholder renders as "Pending" with the accessible name the tick
+   * always had, and the real row overwrites it with `sent` a moment later. The
+   * `.wa__b--sending` opacity is the same .6 as `.msg--sending`.
+   */
   const post = useCallback(async (content, type) => {
+    const tmpId = `tmp:${Date.now()}`;
+    setMessages(prev => mergeById(prev, [{
+      id: tmpId,
+      direction: 'outbound',
+      content,
+      type,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      __pending: true,
+    }]));
     try {
       const r = await api.post(`/v1/whatsapp/conversations/${convId}/messages`, { content, type });
-      setMessages(prev => mergeById(prev, [r.data]));
+      setMessages(prev => mergeById(prev.filter(m => m.id !== tmpId), [r.data]));
     } catch (e) {
+      setMessages(prev => prev.filter(m => m.id !== tmpId));
       pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to send' });
       throw e;
     }
@@ -115,7 +139,7 @@ export default function WAChat({ conversation, onBack }) {
               const label = WA_STATUS_LABEL[m.status] || m.status;
               return (
                 <React.Fragment key={m.id}>
-                  <div className={`wa__b ${out ? 'wa__b--out' : 'wa__b--in'}`}>
+                  <div className={`wa__b ${out ? 'wa__b--out' : 'wa__b--in'}${m.__pending ? ' wa__b--sending' : ''}`}>
                     {m.content}
                     <div className="wa__m">
                       <time dateTime={m.created_at}>{formatTime(m.created_at)}</time>

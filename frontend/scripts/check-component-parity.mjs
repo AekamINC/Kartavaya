@@ -420,6 +420,69 @@ P('```');
 P([...new Set(tokenExtra.map(t => t.name))].sort().join(' '));
 P('```');
 
+/* ── §7 · hard-coded radii ───────────────────────────────────────────────
+   `00-tokens.md §96`, verbatim: "Never hard-code a radius. A literal
+   `border-radius: 8px` breaks the Sharp and Pill settings in exactly that one
+   place." The Corner radius control writes `--radius-base`, and every `--r-*`
+   is a calc off it — a literal is a control that silently does nothing there.
+   50% and 999px/9999px are NOT violations: a circle and a pill are shapes, not
+   radii, and `--r-pill` is itself 999px. */
+const RADIUS_LITERAL = /(^|[\s,])(\d+(?:\.\d+)?)px/;
+const RADIUS_BASE = (() => {
+  const m = /--radius-base:\s*(\d+(?:\.\d+)?)px/.exec(fs.readFileSync(path.join(BUILD_STYLES, 'kartavaya-design.css'), 'utf8'));
+  return m ? parseFloat(m[1]) : 12;
+})();
+const radiusLiterals = [];
+for (const r of buildRules) {
+  for (const [prop, val] of r.decls) {
+    if (!/^border(-[a-z]+)?-radius$/.test(prop)) continue;
+    if (val.includes('var(') || val.includes('%')) continue;
+    const m = val.match(RADIUS_LITERAL);
+    if (!m) continue;
+    const px = parseFloat(m[2]);
+    if (px === 0) continue;                // a deliberate square corner
+    // A literal >= 48px on a control that is at most ~40px tall is a PILL
+    // written the long way. Still §96 — it should be `--r-pill` — but it is a
+    // different failure from `8px`, which is a real corner the radius control
+    // was supposed to move and cannot. Bucketed so the second list is not
+    // buried under the first.
+    radiusLiterals.push({ file: r.file, line: r.line, selector: r.selector, value: val, px, pill: px >= 48 });
+  }
+}
+radiusLiterals.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+
+const realRadii = radiusLiterals.filter(r => !r.pill);
+const pillRadii = radiusLiterals.filter(r => r.pill);
+
+P(`## 7 · Hard-coded radii — \`00-tokens.md §96\` violations`);
+P(``);
+P(`${radiusLiterals.length} declarations set a literal pixel radius: **${realRadii.length} real corners**`);
+P(`and ${pillRadii.length} pills written the long way. \`50%\` is excluded — a circle is a shape.`);
+P(``);
+P(`Each real corner is a place where the Corner radius control (Sharp 4 /`);
+P(`Default 10 / Pill 20) moves nothing.`);
+P(``);
+P(`Of the ${realRadii.length}: **${realRadii.filter(r => r.px >= 4).length} are >= 4px** — a corner a user would see move, and the`);
+P(`ones worth converting. The remaining ${realRadii.filter(r => r.px < 4).length} are 1-3px hairline softening on dots,`);
+P(`bars and ticks, where a token that scales to 20px under Pill would be wrong.`);
+P(``);
+P(table(['file:line', 'selector', 'value', 'nearest token'],
+  realRadii.map(r => {
+    // The ramp is .34 / .58 / 1 / 1.45 / 2.1 of --radius-base, and the base is
+    // READ, not assumed: it moved 10 → 12 mid-run, and a hard-coded 10 here
+    // would have named the wrong nearest token for all 83 rows.
+    const ramp = [['--r-xs', 0.34], ['--r-sm', 0.58], ['--r-md', 1], ['--r-lg', 1.45], ['--r-xl', 2.1]]
+      .map(([n, k]) => [n, Math.round(k * RADIUS_BASE * 100) / 100]);
+    const near = ramp.reduce((a, b) => Math.abs(b[1] - r.px) < Math.abs(a[1] - r.px) ? b : a);
+    return [`\`${r.file}:${r.line}\``, `\`${r.selector}\``, r.value, `\`${near[0]}\` (${near[1]}px, Δ${(r.px - near[1]).toFixed(1)})`];
+  })));
+
+P(`### 7b · Pills written as a literal — should be \`--r-pill\` (${pillRadii.length})`);
+P(``);
+P('```');
+P(pillRadii.map(r => `${r.file}:${r.line} ${r.selector} → ${r.value}`).join('\n'));
+P('```');
+
 P(`## 6 · Class roots in the build with no reference counterpart`);
 P(``);
 P(`${extraRoots.length} roots. These are build inventions — not defects by`);
@@ -439,5 +502,6 @@ else {
   console.log(`declaration drift  : ${declDrift.length} selectors`);
   console.log(`token literal drift: ${tokenDrift.length} differ, ${tokenMissing.length} missing from build, ${tokenExtra.length} build-only`);
   console.log(`build-only roots   : ${extraRoots.length}`);
+  console.log(`hard-coded radii   : ${radiusLiterals.filter(r => !r.pill).length} real corners + ${radiusLiterals.filter(r => r.pill).length} literal pills (00-tokens.md §96)`);
   console.log(`\nrun with --md for the full tables`);
 }

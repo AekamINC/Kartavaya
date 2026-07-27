@@ -209,8 +209,15 @@ export default function Message({
   // to a module event, and a system row has no author to act on.
   if (msg.type === 'system') return <SystemMsg msg={msg} />;
 
+  // `__pending` is the optimistic row, `__fresh` a message that arrived while
+  // the reader was watching. Both are motion-only flags set in `messageUtils`;
+  // neither is ever sent to or read from the server.
+  const cls = `msg${cont ? ' msg--cont' : ''}`
+    + (msg.__pending ? ' msg--sending' : '')
+    + (msg.__fresh ? ' msg--new' : '');
+
   return (
-    <article className={`msg${cont ? ' msg--cont' : ''}`}>
+    <article className={cls}>
       {/* Grouping hides the avatar with `visibility` so nothing shifts, which
           also hid the only timestamp a continuation row had. The gutter puts it
           back in that slot on hover — `00-tokens.md` §11 names
@@ -303,9 +310,18 @@ export default function Message({
         {mine && Array.isArray(msg.seen_by) && msg.seen_by.length > 0 && (
           <Seen names={msg.seen_by} total={msg.seen_count} />
         )}
+
+        {/* `IxChat.jsx:138` — the caption under an unacknowledged row. The
+            `opacity: .6` on `.msg--sending` is the state; this is the word for
+            it, because opacity alone is not a signal a screen reader can read
+            and `--motion-scale: 0` must not be able to remove it. */}
+        {msg.__pending && <div className="msg__sending" role="status">Sending…</div>}
       </div>
 
-      {!editing && (onReact || menu.length > 0) && (
+      {/* No tray on a row the server has not acknowledged: its id is a local
+          `tmp:` string, so a reaction, a thread reply, an edit or a delete would
+          all address a message that does not exist yet. */}
+      {!editing && !msg.__pending && (onReact || menu.length > 0) && (
         <div className="msg__act">
           {onReact && QUICK.map(e => (
             <button

@@ -27,6 +27,28 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 /** Within this many px of the bottom counts as "following the conversation". */
 const NEAR = 120;
 
+/**
+ * `behavior: 'smooth'` is the one piece of motion on this surface that is NOT on
+ * the token ladder — it is a scroll API, so no `--dur-*` and no
+ * `@media (prefers-reduced-motion)` rule can reach it, and the browser does not
+ * apply the OS setting to a programmatic `scrollTo` for you. A reader who asked
+ * for reduced motion was getting the whole log swept past their eyes.
+ *
+ * Both signals are read, for the same reason `animations.css` gives: the OS
+ * media query is one path and the user's own Animations preference is the other,
+ * and the second one has no attribute to select on — it only exists as `--ix` on
+ * the root. `--ix` is `1` normally, `.5` at Reduced and `.001` at None; anything
+ * below half a step is a request for no travel at all.
+ */
+function jumpBehavior() {
+  if (typeof window === 'undefined') return 'auto';
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return 'auto';
+  const ix = parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue('--ix')
+  );
+  return Number.isFinite(ix) && ix < 0.5 ? 'auto' : 'smooth';
+}
+
 export function useStickyScroll(dep) {
   const logRef = useRef(null);
   const endRef = useRef(null);
@@ -72,7 +94,7 @@ export function useStickyScroll(dep) {
   const jump = useCallback(() => {
     const el = logRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    el.scrollTo({ top: el.scrollHeight, behavior: jumpBehavior() });
     wasNear.current = true;
     setPinned(true);
   }, []);
