@@ -1,4 +1,5 @@
 import React, { useEffect, useState, createContext, useContext, useCallback } from 'react';
+import { deriveAccentColors } from '../lib/accent';
 
 const STORAGE_KEY = 'k_prefs';
 
@@ -73,12 +74,21 @@ export const DEFAULTS = {
   accent:       'teal',
   customAccent: null,
   sidebar:      'wide',
-  density:      'comfy',
+  // `cozy`, not `comfy`. The rendered harness carries data-density="cozy" and
+  // `design-reference/…/App.jsx:3` defaults to it; `comfy` is the LOOSEST of the
+  // three tiers, not the middle one. Shipping `comfy` as the default put every
+  // page one tier looser than the design — --pad-page 32px against 28px, and
+  // that token is the topbar's padding and .kv__content's padding everywhere.
+  density:      'cozy',       // compact | cozy | comfy
   font:         'newsreader', // display face
   uiFont:       'inter',      // body face — independent of `font` (00 §2)
   fontSize:     14,           // 12 → 20
   lineHeight:   1.5,          // 1.3 | 1.5 | 1.7
-  radius:       10,           // 4 | 10 | 20 — default IS one of the options
+  // 12, measured off the harness (`App.jsx:3` radius: 12, and `Chrome.jsx:190`
+  // is a slider 8→28 step 2). The presets in TabLayout moved to 8 | 12 | 20 to
+  // match, so the default is still one of the options and every option sits
+  // inside the reference's range.
+  radius:       12,           // 8 | 12 | 20 — default IS one of the options
   anim:         'full',       // full | reduced | none
   language:     'en+sa',
   sideBg:       'dark',       // dark | light | accent
@@ -91,86 +101,17 @@ export const DEFAULTS = {
   // devices it exists to silence. TabNotifications reads and writes the real one.
 };
 
-function hexToHsl(hex) {
-  let r = parseInt(hex.slice(1, 3), 16) / 255;
-  let g = parseInt(hex.slice(3, 5), 16) / 255;
-  let b = parseInt(hex.slice(5, 7), 16) / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  let h = 0, s = 0, l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-    else if (max === g) h = ((b - r) / d + 2) / 6;
-    else h = ((r - g) / d + 4) / 6;
-  }
-  return [h * 360, s * 100, l * 100];
-}
+/* The accent maths now lives in `lib/accent.js`, moved there unchanged so a
+   plain Node script can import it — `scripts/check-accent-contrast.mjs` could
+   not reach it while it sat behind this file's `import React`, and one of the
+   24 foreground/background pairs it produces measured 1.96:1. Re-exported
+   here so every existing import of `deriveAccentColors` keeps resolving.
+   Imported AND re-exported, not `export { x } from` — the bare re-export form
+   creates no local binding, so `accentFor` below would have been a
+   ReferenceError at the first render. */
+export { deriveAccentColors };
 
-function hslToHex(h, s, l) {
-  s /= 100; l /= 100;
-  const a = s * Math.min(l, 1 - l);
-  const f = n => { const k = (n + h / 30) % 12; return l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1); };
-  return '#' + [f(0), f(8), f(4)].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
-}
-
-/** WCAG 2.x relative luminance. */
-function relLuminance(hex) {
-  const chan = (i) => {
-    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
-    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * chan(1) + 0.7152 * chan(3) + 0.0722 * chan(5);
-}
-
-/** Light `--bg` is #F3EFE6. Contrast is measured against the canvas, not the
- *  card on top of it — 00 §12, and the mistake that passed three tokens which
- *  failed on the page. */
-const BG_LIGHT_LUM = relLuminance('#F3EFE6');
-
-function contrastOnLightBg(hex) {
-  const l = relLuminance(hex);
-  const [hi, lo] = l > BG_LIGHT_LUM ? [l, BG_LIGHT_LUM] : [BG_LIGHT_LUM, l];
-  return (hi + 0.05) / (lo + 0.05);
-}
-
-/**
- * The accent value that primary-coloured TEXT uses in light mode.
- *
- * `--primary` itself is 4.04:1 on `--bg` at the default teal — a fill, never
- * text (00 §7, 23 §contrast table). `deep` is the right starting point, but
- * twelve presets ship plus arbitrary custom hex, so taking `deep` on trust
- * would leave each one an unmeasured contrast risk — which is exactly what 00
- * says this function must stop doing. So measure, and darken until it clears.
- *
- * Steps lightness down 2% at a time rather than solving directly: it keeps the
- * hue and saturation the preset was chosen for, and the loop is bounded.
- */
-function deriveAccentText(h, s, l) {
-  let lightness = Math.max(l - 20, 10);
-  let hex = hslToHex(h, Math.min(s + 10, 100), lightness);
-  while (contrastOnLightBg(hex) < 4.5 && lightness > 4) {
-    lightness -= 2;
-    hex = hslToHex(h, Math.min(s + 10, 100), lightness);
-  }
-  return hex;
-}
-
-export function deriveAccentColors(hex) {
-  const [h, s, l] = hexToHsl(hex);
-  return {
-    color: hex,
-    mid:   hslToHex(h, Math.min(s + 5, 100),  Math.max(l - 10, 10)),
-    deep:  hslToHex(h, Math.min(s + 10, 100), Math.max(l - 20, 10)),
-    // `light` is new (00 §10). Hover must step AWAY from the page, which
-    // reverses by theme: darker on light surfaces, lighter on dark ones.
-    light: hslToHex(h, s, Math.min(l + 12, 92)),
-    // `text` is new (00 §7). Measured, not assumed — see deriveAccentText.
-    text:  deriveAccentText(h, s, l),
-  };
-}
-
-/** Resolve the active accent to its four derived values. */
+/** Resolve the active accent to its derived values. */
 function accentFor(prefs) {
   const hex = prefs.customAccent
     || (ACCENTS.find(a => a.id === prefs.accent) || ACCENTS[0]).color;
@@ -223,6 +164,19 @@ export function applyPrefs(prefs) {
   // user-configurable, so a token that is safe at the default teal says nothing
   // about the other eleven.
   root.style.setProperty('--primary-text', dark ? acc.color : acc.text);
+
+  // --on-primary is the LABEL on the fill the three lines above just changed.
+  // It was the one half of the pair that never moved: declared once per theme
+  // (#FFFFFF light, #00332F dark) and asked to partner twelve hues. Measured
+  // against the fill each preset actually produces, dark failed 10 of 12 —
+  // worst 1.96:1 on Forest — because #00332F is a near-black TEAL that only
+  // ever suited a teal accent. Light failed 3 of 12, and that includes the
+  // shipped default: every earlier report measured white against the
+  // stylesheet's --primary #04837A and got 4.63, but this function overwrites
+  // --primary with acc.mid = #00897f, where white is 4.30.
+  // deriveOnAccent picks the label, with the incumbent in its own candidate
+  // set so it can never return something worse than what shipped.
+  root.style.setProperty('--on-primary', dark ? acc.onDark : acc.onLight);
 
   // ── Type ─────────────────────────────────────────────────────────────────
   // --font-display and --font-ui are independent. The old SANS_IDS check set

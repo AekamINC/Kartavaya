@@ -3,6 +3,7 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useDismiss } from '../hooks/useDismiss';
+import { useSkeletonGate } from '../hooks/useSkeletonGate';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import { navContext } from '../components/layout/navConfig';
@@ -11,11 +12,12 @@ import TaskDrawer  from '../components/TaskDrawer';
 import NewTaskModal from '../components/NewTaskModal';
 import { PageHeader, DueChip, PriorityDot, StatusChip, ProjectTag } from '../components/editorial';
 import { avatarBg } from '../components/ui/Avatar';
-import { userInitials, relTime } from '../lib/utils';
+import { userInitials, relTime, logger } from '../lib/utils';
 import {
   PRIORITY_COLORS, PRIORITY_LABELS, STATUS_COLORS, STATUS_LABELS, STATUS_LABELS_HI,
 } from '../lib/statusColors';
 import { SkeletonTable, SkeletonRegion } from '../components/ui/Skeleton';
+import { EmptyState, ErrorState, errorKind } from '../components/ui';
 import { useColumnResize } from '../components/views/tableHooks';
 
 const PRIORITY_ORDER = ['urgent','high','medium','low'];
@@ -91,6 +93,34 @@ export default function TasksListPage() {
   const [colsOpen,     setColsOpen]     = useState(false);
   const [visible,      setVisible]      = useState(DEFAULT_VISIBLE);
   const [showArchived, setShowArchived] = useState(false);
+  // A FAILED LOAD IS NOT AN EMPTY LIST. `/tasks` rejecting used to land in a
+  // `catch` that pushed one toast and left `tasks` at `[]` — so the table drew
+  // its own zero state, "No tasks match this filter", under four filter tabs
+  // all reading 0. The toast is gone four seconds later; the lie stays on
+  // screen. This is the defect TodayPage already fixed for the dashboard,
+  // still live on the page next to it.
+  const [error,  setError]  = useState(null);
+  // Whether a load has ever SUCCEEDED. Two things need it: the skeleton gate
+  // has no previous content to hold before the first one, and an empty table
+  // is only honestly empty after one.
+  const [loaded, setLoaded] = useState(false);
+  // Rows with a write in flight (MOTION-SPEC §7.1 — optimistic UI renders at
+  // opacity .6 until acknowledged) and rows that just changed (the one-shot
+  // --primary flash, IxViews 9.1). Sets, not one id: two rows can be in flight
+  // at once, and one can be flashing while another is pending.
+  const [pendingIds, setPendingIds] = useState(() => new Set());
+  const [justIds,    setJustIds]    = useState(() => new Set());
+
+  // Same helper as KanbanView's, for the same reason: the class has to be
+  // DROPPED after the animation ends or it can never fire again on that row.
+  const markTransient = useCallback((setter, id, ms) => {
+    setter(prev => new Set(prev).add(id));
+    setTimeout(() => setter(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    }), ms);
+  }, []);
 
   const activeCols = ALL_COLS.filter(c => c.fixed || visible.has(c.key));
   // Was a local `useResizableCols` bound to `mousemove`/`mouseup`, which do not
@@ -114,27 +144,41 @@ export default function TasksListPage() {
 
   const load = useCallback(async (archived = false) => {
     setLoading(true);
+    setError(null);
+    // Staff endpoints only. This page reads `status`, `user_id`,
+    // `assignee_user_ids`, `due_at` and `task_id` off every row — the
+    // internal `TaskOut` shape. It used to fall back to `/client/tasks` and
+    // `/client/projects`, which return the deliberately reduced
+    // `ClientTaskOut` / `ClientProjectOut` allow-lists and carry none of
+    // those keys, so that branch could only ever render broken rows. It is
+    // gone rather than repaired: a portal client cannot reach this page at
+    // all (`Protected.jsx` allow-list), and their own screens are
+    // `pages/client/`.
+    //
+    // All three are fired together and awaited APART. Only `/tasks` is fatal:
+    // `/teams` and `/categories` decorate a row with a project chip and a
+    // category chip, and their absence costs an em-dash in one cell. Inside one
+    // `Promise.all` they were fatal together, so a `/categories` 500 blanked a
+    // list of tasks that had arrived intact.
+    const tasksReq = api.get(`/tasks${archived ? '?archived=true' : ''}`);
+    const teamsReq = api.get('/teams').catch(() => null);
+    const catsReq  = api.get('/categories').catch(() => null);
     try {
-      // Staff endpoints only. This page reads `status`, `user_id`,
-      // `assignee_user_ids`, `due_at` and `task_id` off every row — the
-      // internal `TaskOut` shape. It used to fall back to `/client/tasks` and
-      // `/client/projects`, which return the deliberately reduced
-      // `ClientTaskOut` / `ClientProjectOut` allow-lists and carry none of
-      // those keys, so that branch could only ever render broken rows. It is
-      // gone rather than repaired: a portal client cannot reach this page at
-      // all (`Protected.jsx` allow-list), and their own screens are
-      // `pages/client/`.
-      const [tRes, pRes, cRes] = await Promise.all([
-        api.get(`/tasks${archived ? '?archived=true' : ''}`),
-        api.get('/teams'),
-        api.get('/categories'),
-      ]);
+      const tRes = await tasksReq;
       setTasks(Array.isArray(tRes.data) ? tRes.data : []);
-      setTeams((Array.isArray(pRes.data) ? pRes.data : []).map(t => ({ team_id: t.team_id, name: t.name })));
-      setCategories(Array.isArray(cRes.data) ? cRes.data : []);
-    } catch (_) { pushToast({ type: 'error', title: 'Could not load tasks' }); }
-    finally { setLoading(false); }
-  }, [isClient, pushToast]);
+      setLoaded(true);
+      const [pRes, cRes] = await Promise.all([teamsReq, catsReq]);
+      if (pRes) setTeams((Array.isArray(pRes.data) ? pRes.data : []).map(t => ({ team_id: t.team_id, name: t.name })));
+      if (cRes) setCategories(Array.isArray(cRes.data) ? cRes.data : []);
+    } catch (err) {
+      // No toast beside the panel. One failure gets one report, and the panel
+      // is the one that names WHICH failure — `errorKind` separates offline
+      // from 403 from 5xx, where the toast said "Could not load tasks" to a
+      // user in a train tunnel and to a user without a grant alike.
+      logger.error('Tasks load failed', err);
+      setError(err);
+    } finally { setLoading(false); }
+  }, []);
 
   // On mount: load tasks and trigger auto-archive in background
   useEffect(() => {
@@ -145,26 +189,88 @@ export default function TasksListPage() {
   // Reload when switching archived view
   useEffect(() => { load(showArchived); }, [showArchived]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const archiveTask = useCallback(async (taskId, e) => {
+  /**
+   * Archive and restore both REMOVE the row from the view they were pressed in,
+   * so the optimistic shape is the one MOTION-SPEC §7.1 describes rather than
+   * the one it forbids: the row stays put and dims to `.6` while the write is
+   * in flight, and only leaves once the server has agreed. Removing it first
+   * and putting it back on a 4xx is the version that lies — the row is gone,
+   * the list has closed the gap, and the failure arrives as a toast pointing at
+   * something no longer on screen.
+   *
+   * `pressed` rather than a bare `e.stopPropagation()` at the call site: the
+   * row is itself a button, so without it every quick action also opens the
+   * drawer (IxViews 9.4's handler note).
+   */
+  const pressed = useCallback((taskId, e) => {
     e.stopPropagation();
-    try {
-      await api.patch(`/tasks/${taskId}/archive`);
-      setTasks(prev => prev.filter(t => t.task_id !== taskId));
-      pushToast({ type: 'success', title: 'Task archived' });
-    } catch { pushToast({ type: 'error', title: 'Could not archive task' }); }
-  }, [pushToast]);
+    return pendingIds.has(taskId);
+  }, [pendingIds]);
 
-  const unarchiveTask = useCallback(async (taskId, e) => {
-    e.stopPropagation();
+  const setArchived = useCallback(async (taskId, e, { path, ok, fail }) => {
+    if (pressed(taskId, e)) return;
+    setPendingIds(prev => new Set(prev).add(taskId));
     try {
-      await api.patch(`/tasks/${taskId}/unarchive`);
+      await api.patch(`/tasks/${taskId}/${path}`);
       setTasks(prev => prev.filter(t => t.task_id !== taskId));
-      pushToast({ type: 'success', title: 'Task restored' });
-    } catch { pushToast({ type: 'error', title: 'Could not restore task' }); }
-  }, [pushToast]);
+      pushToast({ type: 'success', title: ok });
+    } catch (err) {
+      logger.error(`Task ${path} failed`, err);
+      pushToast({ type: 'error', title: fail });
+    } finally {
+      setPendingIds(prev => { const n = new Set(prev); n.delete(taskId); return n; });
+    }
+  }, [pressed, pushToast]);
+
+  const archiveTask   = useCallback((taskId, e) =>
+    setArchived(taskId, e, { path: 'archive',   ok: 'Task archived', fail: 'Could not archive task' }), [setArchived]);
+  const unarchiveTask = useCallback((taskId, e) =>
+    setArchived(taskId, e, { path: 'unarchive', ok: 'Task restored',  fail: 'Could not restore task' }), [setArchived]);
+
+  /**
+   * Quick-complete — IxViews 9.4, the same interaction the board already
+   * carries (`KanbanView.toggleComplete`) and the same contract, because a tick
+   * that behaves differently on the list than on the board is two features.
+   *
+   * "One quick action, not five. A complete-tick is worth surfacing because it
+   * is the most common single change; everything else is a click into the
+   * drawer." Marking one task done was three clicks through the drawer.
+   */
+  const toggleComplete = useCallback(async (task, e) => {
+    if (pressed(task.task_id, e) || showArchived) return;
+    const next = task.status === 'done' ? 'todo' : 'done';
+    const previous = task;
+    setPendingIds(prev => new Set(prev).add(task.task_id));
+    setTasks(prev => prev.map(t => (t.task_id === task.task_id ? { ...t, status: next } : t)));
+    try {
+      const res = await api.patch(`/tasks/${task.task_id}`, { status: next });
+      setTasks(prev => prev.map(t => (t.task_id === task.task_id ? res.data : t)));
+      // 600ms, matching the board: `--dur-slow * 1.5` is 540ms of animation
+      // plus a frame's grace, so the class outlives the flash it triggers.
+      markTransient(setJustIds, task.task_id, 600);
+    } catch (err) {
+      // The whole previous record, not a status flip back: the optimistic write
+      // replaced one field, but the server may have been mid-update on others.
+      logger.error('Complete toggle failed', err);
+      pushToast({ type: 'error', title: 'Could not update that task' });
+      setTasks(prev => prev.map(t => (t.task_id === task.task_id ? previous : t)));
+    } finally {
+      setPendingIds(prev => { const n = new Set(prev); n.delete(task.task_id); return n; });
+    }
+  }, [pressed, showArchived, markTransient, pushToast]);
 
   const myId = user?.user_id;
   const filtered = tasks.filter(t => {
+    // A row that is mid-write, or that just finished one, STAYS — measured, and
+    // it is the whole reason the optimistic feedback existed only on paper.
+    // Under the default "All open" filter, ticking a task complete flips its
+    // status to `done`, which the predicate below excludes, so the row was
+    // unmounted in the same commit as the optimistic update: no `.6` pending
+    // dim, no confirmation flash, and on a 4xx the row reappeared out of
+    // nowhere. IxViews 9.4 is explicit that ticking runs the confirmation and
+    // THEN the row moves. Held for the ~600ms the flash lasts, then it leaves
+    // on the next render like anything else.
+    if (pendingIds.has(t.task_id) || justIds.has(t.task_id)) return true;
     const matchSearch = !search || t.title.toLowerCase().includes(search.toLowerCase());
     if (showArchived) return matchSearch;
     let matchFilter = true;
@@ -211,6 +317,16 @@ export default function TasksListPage() {
   };
 
   const hiddenCount = ALL_COLS.filter(c => !c.fixed && !visible.has(c.key)).length;
+
+  // MOTION-SPEC §7.4 — the skeleton waits 120ms, so flipping Archived (which
+  // re-runs the whole load) no longer replaces the table with a skeleton and
+  // back inside one frame of a warm request. `loaded` is what stops it holding
+  // an empty table on the very first load, which would show the zero state
+  // before the skeleton.
+  const showSkeleton = useSkeletonGate(loading, loaded);
+  // "Nothing here" and "nothing MATCHES" are different sentences with different
+  // exits. Narrowed is recoverable by clearing; genuinely empty is not.
+  const narrowed = !!search || (!showArchived && filter !== 'all');
 
   return (
     <div className="k-screen">
@@ -303,10 +419,12 @@ export default function TasksListPage() {
         </div>
       </div>
 
-      {loading ? (
+      {showSkeleton ? (
         <SkeletonRegion label="Loading tasks…">
           <SkeletonTable rows={8} columns={activeCols.length} />
         </SkeletonRegion>
+      ) : error ? (
+        <ErrorState kind={errorKind(error)} grant="access to these tasks" onRetry={() => load(showArchived)} />
       ) : (
         <div
           className="k-tablewrap"
@@ -326,9 +444,37 @@ export default function TasksListPage() {
             ))}
           </div>
 
+          {/* Was a bare line of text in `.pb__loading` — the PROJECT BOARD's
+              loading class, borrowed for an empty state on a different page, so
+              the one moment the table has nothing to say was styled as though it
+              were still fetching. `.ix-fade-up` gives it the entrance every
+              other arriving surface has (--dur-base --ease-enter); with no
+              entrance it replaced eight rows in a single frame. */}
           {groups.length === 0 && (
-            <div className="pb__loading">
-              No tasks match this filter.
+            <div className="ix-fade-up k-table__empty">
+              {narrowed ? (
+                <EmptyState
+                  illustration="search"
+                  title={{ en: 'No tasks match', hi: 'कोई कार्य नहीं मिला' }}
+                  description="Every task is still here — this filter and search just do not reach any of them."
+                  action="Clear filter and search"
+                  onAction={() => { setSearch(''); setFilter('all'); setShowArchived(false); }}
+                />
+              ) : showArchived ? (
+                <EmptyState
+                  illustration="tasks"
+                  title={{ en: 'Nothing archived', hi: 'कुछ संग्रहीत नहीं' }}
+                  description="Archived tasks are kept here, out of the way but not deleted."
+                />
+              ) : (
+                <EmptyState
+                  illustration="tasks"
+                  title={{ en: 'No tasks yet', hi: 'अभी कोई कार्य नहीं' }}
+                  description="The first one is usually the hardest. Everything after it lands here."
+                  action={isClient ? undefined : 'New task'}
+                  onAction={() => setNewTaskOpen(true)}
+                />
+              )}
             </div>
           )}
 
@@ -345,11 +491,37 @@ export default function TasksListPage() {
                 const cat       = categories.find(c => c.category_id === t.category_id);
                 const assignees = (t.assignee_names || []).map(name => ({ name, color: avatarBg(name) }));
                 return (
-                  <button
+                  /* The row was a `<button>` with `<button>`s inside it —
+                     archive, and now the quick-complete tick. React logs "In
+                     HTML, <button> cannot be a descendant of <button>" for
+                     every row, and it is not a style complaint: a nested button
+                     is invalid, its activation behaviour is undefined, and with
+                     the keyboard the inner controls were unreachable in the
+                     order they appear. The reference row is a plain element
+                     with real buttons in `.tv__acts` for exactly this reason
+                     (IxViews §10).
+
+                     `role="button"` + `tabIndex` + Enter/Space restores what the
+                     element gave for free. `e.target === e.currentTarget` on the
+                     key handler keeps Space on the tick from also opening the
+                     drawer behind it. */
+                  <div
                     key={t.task_id}
-                    className={'k-trow k-trow--resizable' + (t.archived_at ? ' k-trow--archived' : '')}
+                    role="button"
+                    tabIndex={0}
+                    className={['k-trow', 'k-trow--resizable',
+                      t.archived_at && 'k-trow--archived',
+                      pendingIds.has(t.task_id) && 'is-pending',
+                      justIds.has(t.task_id) && 'is-just',
+                    ].filter(Boolean).join(' ')}
                     style={rowStyle}
                     onClick={() => setDrawerTaskId(t.task_id)}
+                    onKeyDown={e => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                      e.preventDefault();
+                      setDrawerTaskId(t.task_id);
+                    }}
                   >
                     {activeCols.map(col => {
                       switch (col.key) {
@@ -364,6 +536,26 @@ export default function TasksListPage() {
                                   <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M10 3l-5 5a2.5 2.5 0 003.5 3.5l5-5a4 4 0 00-5.7-5.7L3 5.5"/></svg>
                                   {t.attachments.length}
                                 </span>
+                              )}
+                              {/* IxViews 9.4 — the quick-complete tick. Hidden
+                                  until row hover on a pointer device and always
+                                  visible on touch, where there is no hover to
+                                  reveal it (MOTION-SPEC §7.7). Not offered in
+                                  the archived view: completing something you
+                                  have filed away is not a state worth adding. */}
+                              {!showArchived && (
+                                <button
+                                  type="button"
+                                  className={'k-trow__tick' + (t.status === 'done' ? ' on' : '')}
+                                  aria-pressed={t.status === 'done'}
+                                  aria-label={t.status === 'done' ? `Mark “${t.title}” not done` : `Mark “${t.title}” done`}
+                                  title={t.status === 'done' ? 'Mark not done' : 'Mark done'}
+                                  onClick={e => toggleComplete(t, e)}
+                                >
+                                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="M3.5 8.4l3 3 6-6.6" />
+                                  </svg>
+                                </button>
                               )}
                               {showArchived ? (
                                 <button
@@ -439,7 +631,7 @@ export default function TasksListPage() {
                         default: return null;
                       }
                     })}
-                  </button>
+                  </div>
                 );
               })}
             </div>

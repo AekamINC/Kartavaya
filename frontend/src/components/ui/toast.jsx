@@ -29,6 +29,28 @@ const DURATION = { success: 4000, info: 4000, warning: 7000, error: null };
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
+  /**
+   * Toasts that have been dismissed and are playing their exit.
+   *
+   * Every overlay in the reconciled table (animations.css) is a PAIR, and the
+   * toast shipped with only half of one: `tstIn` slides it 16px in over
+   * --dur-base, and dismissing it removed the node in the same frame. So the
+   * only toast a user could not read — the one they reached for and clicked —
+   * was also the only one that vanished without warning, and an auto-dismiss at
+   * four seconds ended as a disappearance rather than a departure.
+   *
+   * MOTION-SPEC §3 gives the pair: in 16px over --dur-base, out 12px on
+   * --dur-fast --ease-exit. §7.3 is the rule behind it — exits are faster than
+   * entrances, decisive out and gentle in.
+   *
+   * Unmounting on `animationend` rather than a JS timer is what keeps the two
+   * in step: the duration is `var(--dur-fast)`, so it already rides `--ix` and
+   * the user's Animations preference, and a hardcoded `setTimeout(180)` would
+   * silently stop matching the moment either changed. `--ix` bottoms out at
+   * `.001` rather than 0 precisely so the event still fires under reduced
+   * motion — a zero-duration animation never fires it, and the node would leak.
+   */
+  const [exiting, setExiting] = useState(() => new Set());
   // Announcement text is held separately from the toast list. A live region has
   // to exist in the DOM BEFORE its content arrives or the insertion is not
   // announced — which is why aria-live must never go on the toast card itself.
@@ -36,11 +58,31 @@ export function ToastProvider({ children }) {
   const [assertive, setAssertive] = useState('');
   const timers = useRef(new Map());
 
-  const dismiss = useCallback((id) => {
+  /** Remove the node. Called by `onAnimationEnd`, and by the safety net below. */
+  const remove = useCallback((id) => {
     clearTimeout(timers.current.get(id)?.handle);
     timers.current.delete(id);
+    setExiting((prev) => { const n = new Set(prev); n.delete(id); return n; });
     setToasts((prev) => prev.filter((x) => x.id !== id));
   }, []);
+
+  const dismiss = useCallback((id) => {
+    // The auto-dismiss timer is cleared HERE, not on unmount: the toast lives
+    // for one more --dur-fast and must not be re-dismissed in that window.
+    clearTimeout(timers.current.get(id)?.handle);
+    setExiting((prev) => {
+      if (prev.has(id)) return prev;
+      const n = new Set(prev);
+      n.add(id);
+      return n;
+    });
+    // Safety net. If the exit animation never runs — a `display: none` from
+    // somewhere, a print stylesheet, an ancestor that suppresses animation —
+    // `animationend` never fires and the toast would sit there for good. One
+    // second is far outside any duration the ladder can produce, so this only
+    // ever fires when the animation genuinely did not happen.
+    timers.current.set(id, { handle: setTimeout(() => remove(id), 1000) });
+  }, [remove]);
 
   const arm = useCallback((id, ms) => {
     if (ms == null) return;
@@ -52,14 +94,19 @@ export function ToastProvider({ children }) {
   // pointer is resting on it is one the user was in the middle of reading.
   const pause = useCallback((id) => {
     const t = timers.current.get(id);
-    if (!t) return;
+    // `total == null` is the exit's safety-net entry, not a dismiss timer.
+    // Without this guard, hovering a toast during its 140ms exit cleared the
+    // net and stored `remaining: NaN`, and the resume on mouse-out fired
+    // immediately — a hover that made it leave FASTER, which is the opposite of
+    // what hover-to-pause is for.
+    if (!t || t.total == null) return;
     clearTimeout(t.handle);
     timers.current.set(id, { ...t, remaining: Math.max(0, t.endsAt - Date.now()) });
   }, []);
 
   const resume = useCallback((id) => {
     const t = timers.current.get(id);
-    if (!t || t.remaining == null) return;
+    if (!t || t.total == null || t.remaining == null) return;
     const handle = setTimeout(() => dismiss(id), t.remaining);
     timers.current.set(id, { handle, endsAt: Date.now() + t.remaining, total: t.total });
   }, [dismiss]);
@@ -120,11 +167,18 @@ export function ToastProvider({ children }) {
           return (
             <div
               key={t.id}
-              className={`tst ${ts.tone}`}
+              className={`tst ${ts.tone}${exiting.has(t.id) ? ' is-out' : ''}`}
               onMouseEnter={() => pause(t.id)}
               onMouseLeave={() => resume(t.id)}
               onFocus={() => pause(t.id)}
               onBlur={() => resume(t.id)}
+              // Gated on the keyframe NAME, not merely on "we are exiting": the
+              // four `tstOut*` variants are chosen by position and viewport, and
+              // an unguarded handler would also catch a stray animationend from
+              // anything nested in the card.
+              onAnimationEnd={(e) => {
+                if (e.target === e.currentTarget && String(e.animationName).startsWith('tstOut')) remove(t.id);
+              }}
             >
               <span className="tst__i" aria-hidden="true">{ts.icon}</span>
               <div className="tst__b">
