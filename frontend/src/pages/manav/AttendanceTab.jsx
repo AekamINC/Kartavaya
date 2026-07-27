@@ -1,160 +1,290 @@
-import React, { useState, useEffect } from 'react';
+// Manav → Attendance. The daily ledger, the monthly summary, and the one
+// sentence about what editing a row here actually does.
+//
+// ── What this tab now says out loud that it did not before ───────────────────
+//
+// ATTENDANCE IS A PAYROLL INPUT. `POST /v1/manav/attendance` upserts straight
+// into `staging.manav_attendance` with `marked_by='manual'`, and that is the
+// exact table Vetana's payroll run prices. Marking someone absent here is not
+// a note in a register — it is a decision about what they are paid. Nothing on
+// this screen said so.
+//
+// The `marked_by='manual'` flag is also load-bearing in the other direction.
+// `POST /v1/pahchan/attendance/publish` pairs biometric punches with approved
+// corrections and upserts the same rows, but its `DO UPDATE` carries a WHERE
+// that refuses to overwrite a manual row — so a value typed here WINS over the
+// device, permanently, until someone edits it here again. That is the correct
+// behaviour and it is invisible, so the panel states it.
+//
+// ── The defect ───────────────────────────────────────────────────────────────
+//
+// Both `load()` and `loadSummary()` were `catch { toast }` over state that
+// stayed `[]`, and the render branched on `records.length === 0` to print
+// "No attendance records — no records found for this date range". A failed
+// fetch therefore asserted that nobody attended, on the screen that decides
+// pay. `loadEmployees()` was a bare `catch {}`, so the Mark form could open
+// with a silently empty employee list and no explanation.
+import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
-import { Badge, ATT_STATUSES, ATT_COLORS } from './_shared';
+import { Empty, DataTable, Td } from '../../components/editorial';
+import {
+  Badge, ATT_STATUSES, ATT_COLORS,
+  useList, useResource, ErrorNote, Shim, errText, clockTime, today,
+} from './_shared';
 
 export default function AttendanceTab() {
   const { pushToast } = useToast();
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
-  const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
+  const [dateFrom, setDateFrom] = useState(today());
+  const [dateTo, setDateTo] = useState(today());
+  // The applied range. Typing in a date box must not fire a request per
+  // keystroke — a half-typed year is a range query for the year 202.
+  const [range, setRange] = useState({ from: today(), to: today() });
+  const [view, setView] = useState('daily');
   const [showMark, setShowMark] = useState(false);
-  const [employees, setEmployees] = useState([]);
-  const [markForm, setMarkForm] = useState({ employee_id: '', date: new Date().toISOString().split('T')[0], status: 'present', check_in: '', check_out: '', notes: '' });
-  const [summary, setSummary] = useState(null);
-  const [viewMode, setViewMode] = useState('daily');
 
-  useEffect(() => { load(); }, []);
-
-  async function load() {
-    try {
-      const r = await api.get(`/v1/manav/attendance?date_from=${dateFrom}&date_to=${dateTo}`);
-      setRecords(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load attendance', type: 'error' }); }
-    finally { setLoading(false); }
-  }
-
-  async function loadSummary() {
-    try {
-      const month = dateFrom.substring(0, 7);
-      const r = await api.get(`/v1/manav/attendance/summary?month=${month}`);
-      setSummary(r.data);
-    } catch { pushToast({ title: 'Failed to load summary', type: 'error' }); }
-  }
-
-  async function loadEmployees() {
-    try {
-      const r = await api.get('/v1/manav/employees');
-      setEmployees(r.data.data || []);
-    } catch {}
-  }
-
-  async function markAttendance(e) {
-    e.preventDefault();
-    try {
-      await api.post('/v1/manav/attendance', markForm);
-      pushToast({ title: 'Attendance marked', type: 'success' });
-      setShowMark(false);
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-  }
+  const listUrl = `/v1/manav/attendance?date_from=${range.from}&date_to=${range.to}`;
+  const records = useList(listUrl, [listUrl]);
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-        <input className="k-input" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ width: 150 }} />
-        <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>to</span>
-        <input className="k-input" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ width: 150 }} />
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>View</button>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => { setViewMode('summary'); loadSummary(); }}>Monthly Summary</button>
-        <div style={{ flex: 1 }} />
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => { setShowMark(true); loadEmployees(); setViewMode('daily'); }}>Mark Attendance</button>
+      <div className="mn-bar">
+        <label className="mn-field">
+          <span className="mn-field__l">From</span>
+          <input className="k-input mn-f" type="date" value={dateFrom}
+            onChange={e => setDateFrom(e.target.value)} />
+        </label>
+        <label className="mn-field">
+          <span className="mn-field__l">To</span>
+          <input className="k-input mn-f" type="date" value={dateTo}
+            onChange={e => setDateTo(e.target.value)} />
+        </label>
+        <button
+          type="button"
+          className="k-btn k-btn--ghost"
+          onClick={() => { setRange({ from: dateFrom, to: dateTo }); setView('daily'); }}
+        >
+          View
+        </button>
+        <button
+          type="button"
+          className={`k-btn k-btn--ghost${view === 'summary' ? ' on' : ''}`}
+          onClick={() => setView('summary')}
+        >
+          Monthly summary
+        </button>
+        <div className="mn-bar__gap" />
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowMark(true)}>
+          Mark attendance
+        </button>
       </div>
 
+      <p className="note note--info mn-bridge">
+        <b>This ledger is what payroll is priced from.</b> Vetana reads these
+        rows directly, so a status changed here changes what that person is
+        paid for that day. A row marked by hand also outranks the biometric
+        device permanently — the Pahchan publish will not overwrite it.
+      </p>
+
       {showMark && (
-        <form onSubmit={markAttendance} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Mark Attendance</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee *</span>
-              <select className="k-input" required value={markForm.employee_id} onChange={e => setMarkForm({ ...markForm, employee_id: e.target.value })}>
-                <option value="">Select…</option>
-                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name} ({emp.employee_code || '—'})</option>)}
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Date</span>
-              <input className="k-input" type="date" value={markForm.date} onChange={e => setMarkForm({ ...markForm, date: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Status</span>
-              <select className="k-input" value={markForm.status} onChange={e => setMarkForm({ ...markForm, status: e.target.value })}>
-                {ATT_STATUSES.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Check In</span>
-              <input className="k-input" type="datetime-local" value={markForm.check_in} onChange={e => setMarkForm({ ...markForm, check_in: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Check Out</span>
-              <input className="k-input" type="datetime-local" value={markForm.check_out} onChange={e => setMarkForm({ ...markForm, check_out: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Notes</span>
-              <input className="k-input" value={markForm.notes} onChange={e => setMarkForm({ ...markForm, notes: e.target.value })} /></label>
-          </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowMark(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary">Mark</button>
-          </div>
-        </form>
+        <MarkForm
+          onClose={() => setShowMark(false)}
+          onMarked={() => { setShowMark(false); records.reload(); }}
+          pushToast={pushToast}
+        />
       )}
 
-      {viewMode === 'summary' && summary ? (
-        <div>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Monthly Summary — {summary.month}</h4>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                {['Code', 'Name', 'Present', 'Absent', 'Half Day', 'Late', 'Leaves', 'Hours', 'OT'].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(summary.data || []).map(r => (
-                <tr key={r.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                  <td style={{ padding: '8px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{r.employee_code || '—'}</td>
-                  <td style={{ padding: '8px', fontWeight: 600 }}>{r.name}</td>
-                  <td style={{ padding: '8px', color: 'var(--ok)' }}>{r.present_days}</td>
-                  <td style={{ padding: '8px', color: 'var(--danger)' }}>{r.absent_days}</td>
-                  <td style={{ padding: '8px' }}>{r.half_days}</td>
-                  <td style={{ padding: '8px', color: 'var(--st-in-review)' }}>{r.late_days}</td>
-                  <td style={{ padding: '8px', color: 'var(--st-in-progress)' }}>{r.leave_days}</td>
-                  <td style={{ padding: '8px' }}>{Number(r.total_hours).toFixed(1)}</td>
-                  <td style={{ padding: '8px' }}>{Number(r.overtime_hours).toFixed(1)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginTop: 12 }} onClick={() => setViewMode('daily')}>Back to Daily View</button>
-        </div>
-      ) : (
-        <>
-          {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-            records.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
-                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No attendance records</div>
-                <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>No records found for this date range. Try adjusting the filters above.</div>
-              </div>
+      {view === 'summary'
+        ? <MonthlySummary month={range.from.substring(0, 7)} />
+        : records.loading ? <Shim count={6} />
+          : records.error ? <ErrorNote what="The attendance ledger" error={records.error} onRetry={records.reload} />
+            : records.items.length === 0 ? (
+              <Empty
+                icon="📊"
+                title="No attendance in this range"
+                sub={`Nothing is recorded between ${range.from} and ${range.to}. Widen the dates, or mark attendance for a day.`}
+              />
             ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                  {['Date', 'Employee', 'Status', 'Check In', 'Check Out', 'Hours', 'Marked By'].map(h => (
-                    <th key={h} style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {records.map(r => (
-                  <tr key={r.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                    <td style={{ padding: '8px' }}>{r.date}</td>
-                    <td style={{ padding: '8px', fontWeight: 600 }}>{r.employee_name} <span style={{ fontWeight: 400, color: 'var(--ink-3)', fontSize: 11 }}>({r.employee_code || '—'})</span></td>
-                    <td style={{ padding: '8px' }}><Badge text={r.status} color={ATT_COLORS[r.status] || 'var(--on-surface-3)'} /></td>
-                    <td style={{ padding: '8px', fontSize: 12 }}>{r.check_in ? new Date(r.check_in).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-                    <td style={{ padding: '8px', fontSize: 12 }}>{r.check_out ? new Date(r.check_out).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}</td>
-                    <td style={{ padding: '8px' }}>{r.work_hours ? `${Number(r.work_hours).toFixed(1)}h` : '—'}</td>
-                    <td style={{ padding: '8px', fontSize: 11, color: 'var(--ink-3)' }}>{r.marked_by}</td>
+              <DataTable columns={['Date', 'Employee', 'Status', 'Check in', 'Check out', { label: 'Hours', align: 'right' }, 'Marked by']}>
+                {records.items.map(r => (
+                  <tr key={r.id}>
+                    <Td className="mn-t__mono">{r.date}</Td>
+                    <Td bold>
+                      {r.employee_name}{' '}
+                      <span className="mn-t__mute mn-t__mono">({r.employee_code || '—'})</span>
+                    </Td>
+                    <Td><Badge text={r.status} color={ATT_COLORS[r.status] || 'var(--on-surface-3)'} /></Td>
+                    <Td className="mn-t__mono">{clockTime(r.check_in)}</Td>
+                    <Td className="mn-t__mono">{clockTime(r.check_out)}</Td>
+                    <Td align="right" mono>{r.work_hours != null ? `${Number(r.work_hours).toFixed(1)}h` : '—'}</Td>
+                    <Td className="mn-t__mute">{r.marked_by}</Td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          )}
-        </>
-      )}
+              </DataTable>
+            )}
     </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Marking a day
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function MarkForm({ onClose, onMarked, pushToast }) {
+  const employees = useList('/v1/manav/employees');
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    employee_id: '', date: today(), status: 'present',
+    check_in: '', check_out: '', notes: '',
+  });
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/v1/manav/attendance', form);
+      pushToast({ title: 'Attendance marked', type: 'success' });
+      onMarked();
+    } catch (err) {
+      pushToast({ title: errText(err, 'Attendance could not be marked.'), type: 'error' });
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <form onSubmit={submit} className="k-formpanel">
+      <h3 className="k-section__title">Mark attendance</h3>
+
+      {/* The employee list failing is not the same as there being no
+          employees, and the form must not silently offer an empty select. */}
+      {employees.error && (
+        <ErrorNote what="The employee list" error={employees.error} onRetry={employees.reload} />
+      )}
+
+      <div className="k-formpanel__grid k-formpanel__grid--3">
+        <label className="k-formpanel__label">
+          <span>Employee *</span>
+          <select
+            className="k-formpanel__input"
+            required
+            value={form.employee_id}
+            disabled={employees.loading || !!employees.error}
+            onChange={e => setForm({ ...form, employee_id: e.target.value })}
+          >
+            <option value="">
+              {employees.loading ? 'Loading…' : employees.error ? 'Unavailable' : 'Select…'}
+            </option>
+            {(employees.items || []).map(emp => (
+              <option key={emp.id} value={emp.id}>{emp.name} ({emp.employee_code || '—'})</option>
+            ))}
+          </select>
+        </label>
+        <label className="k-formpanel__label">
+          <span>Date</span>
+          <input className="k-formpanel__input" type="date" value={form.date}
+            onChange={e => setForm({ ...form, date: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>Status</span>
+          <select className="k-formpanel__input" value={form.status}
+            onChange={e => setForm({ ...form, status: e.target.value })}>
+            {ATT_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+          </select>
+        </label>
+        <label className="k-formpanel__label">
+          <span>Check in</span>
+          <input className="k-formpanel__input" type="datetime-local" value={form.check_in}
+            onChange={e => setForm({ ...form, check_in: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>Check out</span>
+          <input className="k-formpanel__input" type="datetime-local" value={form.check_out}
+            onChange={e => setForm({ ...form, check_out: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>Notes</span>
+          <input className="k-formpanel__input" value={form.notes}
+            onChange={e => setForm({ ...form, notes: e.target.value })} />
+        </label>
+      </div>
+
+      <p className="note note--warn">
+        <b>This writes to the row payroll reads.</b> Work hours are computed
+        from check-in and check-out when both are given. The row is marked as
+        entered by hand, which stops the biometric bridge from ever replacing it.
+      </p>
+
+      <div className="k-formpanel__actions">
+        <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving || !!employees.error}>
+          {saving ? 'Marking…' : 'Mark'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The month
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * `/v1/manav/attendance/summary` answers `{ data: [...], month: "YYYY-MM" }`.
+ *
+ * That envelope carries `month` alongside the rows, so this call site keeps the
+ * whole body rather than unwrapping to the array — the heading prints the month
+ * the SERVER resolved, not the one this component asked for, and those differ
+ * whenever the query is malformed or clamped.
+ */
+function MonthlySummary({ month }) {
+  const res = useResource(`/v1/manav/attendance/summary?month=${month}`, [month]);
+
+  if (res.loading) return <Shim count={6} />;
+  if (res.error) return <ErrorNote what="The monthly summary" error={res.error} onRetry={res.reload} />;
+
+  const data = res.data?.data || [];
+
+  return (
+    <section className="k-section">
+      <div className="k-section__head">
+        <h3 className="k-section__title">
+          Monthly summary
+          <span className="k-section__title-hi" lang="hi">मासिक सारांश</span>
+        </h3>
+        <span className="mn-bar__lbl mn-t__mono">{res.data?.month || month}</span>
+      </div>
+
+      {data.length === 0 ? (
+        <Empty
+          icon="📊"
+          title="Nothing recorded this month"
+          sub="No attendance rows exist for this month yet, so there is nothing to total."
+        />
+      ) : (
+        <DataTable columns={[
+          'Code', 'Name',
+          { label: 'Present', align: 'right' },
+          { label: 'Absent', align: 'right' },
+          { label: 'Half day', align: 'right' },
+          { label: 'Late', align: 'right' },
+          { label: 'Leave', align: 'right' },
+          { label: 'Hours', align: 'right' },
+          { label: 'Overtime', align: 'right' },
+        ]}>
+          {data.map(r => (
+            <tr key={r.id}>
+              <Td className="mn-t__mono">{r.employee_code || '—'}</Td>
+              <Td bold>{r.name}</Td>
+              <Td align="right" mono><span className="mn-t__n" style={{ '--c': 'var(--ok)' }}>{r.present_days}</span></Td>
+              <Td align="right" mono><span className="mn-t__n" style={{ '--c': 'var(--danger)' }}>{r.absent_days}</span></Td>
+              <Td align="right" mono>{r.half_days}</Td>
+              <Td align="right" mono><span className="mn-t__n" style={{ '--c': 'var(--tertiary)' }}>{r.late_days}</span></Td>
+              <Td align="right" mono><span className="mn-t__n" style={{ '--c': 'var(--st-in-progress)' }}>{r.leave_days}</span></Td>
+              <Td align="right" mono>{Number(r.total_hours || 0).toFixed(1)}</Td>
+              <Td align="right" mono>{Number(r.overtime_hours || 0).toFixed(1)}</Td>
+            </tr>
+          ))}
+        </DataTable>
+      )}
+    </section>
   );
 }

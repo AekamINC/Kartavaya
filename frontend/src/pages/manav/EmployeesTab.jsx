@@ -1,43 +1,50 @@
-import React, { useState, useEffect } from 'react';
+// Manav → Employees. The personnel directory and one employee's file.
+//
+// 87 inline styles, the most of any file in this module. Every one of them was
+// a literal that already existed as a token or a class: the form grid is
+// `k-formpanel__grid--3`, the table is `k-modtable`, the detail pane is
+// `k-detail`. None of the literals tracked the Text size or Border radius
+// preferences.
+//
+// ── The defect that mattered more than the styling ───────────────────────────
+//
+// `load()` was `catch { pushToast(…) }` with `employees` left at `[]`, and the
+// render branched on `employees.length === 0` to print "No employees yet — add
+// your team members". So a 500, a dropped connection or a permission refusal
+// all rendered as a confident statement that this organisation employs nobody,
+// under a toast that had already faded. On a personnel directory that is not a
+// cosmetic bug. It now goes through `useList`, which cannot collapse the two.
+import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
-import { Badge, EMP_TYPES, STATUS_COLORS } from './_shared';
+import { Empty, BackButton, DataTable, Td } from '../../components/editorial';
+import {
+  Badge, EMP_TYPES, STATUS_COLORS,
+  useList, useResource, ErrorNote, Shim, errText,
+} from './_shared';
+
+const BLANK = {
+  name: '', email: '', phone: '', employee_code: '', department: '', designation: '',
+  date_of_joining: '', date_of_birth: '', gender: '', employment_type: 'full_time',
+  pan: '', aadhaar: '', shift: 'general',
+};
 
 export default function EmployeesTab({ onUpdate }) {
   const { pushToast } = useToast();
-  const [employees, setEmployees] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
+  // The applied query, not the typed one — the list re-fetches when the person
+  // presses Filter or Enter, not on every keystroke.
+  const [query, setQuery] = useState({ search: '', department: '' });
+  const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [detail, setDetail] = useState(null);
-  const [editEmp, setEditEmp] = useState(null);
-  const [editForm, setEditForm] = useState({});
-  const [editSaving, setEditSaving] = useState(false);
-  // Aadhaar, PAN and the bank account arrive masked. Full values come from a
-  // separate endpoint that only org owners/admins may call, and every read of
-  // it is written to the audit log — so this stays null until asked for.
-  const [pii, setPii] = useState(null);
-  const [piiLoading, setPiiLoading] = useState(false);
-  const [form, setForm] = useState({
-    name: '', email: '', phone: '', employee_code: '', department: '', designation: '',
-    date_of_joining: '', date_of_birth: '', gender: '', employment_type: 'full_time',
-    pan: '', aadhaar: '', shift: 'general',
-  });
+  const [form, setForm] = useState(BLANK);
+  const [detailId, setDetailId] = useState(null);
 
-  useEffect(() => { load(); }, []);
+  const url = buildUrl(query);
+  const list = useList(url, [url]);
 
-  async function load() {
-    try {
-      let url = '/v1/manav/employees?';
-      if (search) url += `search=${encodeURIComponent(search)}&`;
-      if (deptFilter) url += `department=${encodeURIComponent(deptFilter)}&`;
-      const r = await api.get(url);
-      setEmployees(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load employees', type: 'error' }); }
-    finally { setLoading(false); }
-  }
+  function applyFilter() { setQuery({ search, department: deptFilter }); }
 
   async function save(e) {
     e.preventDefault();
@@ -46,257 +53,398 @@ export default function EmployeesTab({ onUpdate }) {
       await api.post('/v1/manav/employees', form);
       pushToast({ title: 'Employee added', type: 'success' });
       setShowForm(false);
-      setForm({ name: '', email: '', phone: '', employee_code: '', department: '', designation: '',
-        date_of_joining: '', date_of_birth: '', gender: '', employment_type: 'full_time',
-        pan: '', aadhaar: '', shift: 'general' });
-      load();
+      setForm(BLANK);
+      list.reload();
       onUpdate?.();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-    finally { setSaving(false); }
+    } catch (err) {
+      pushToast({ title: errText(err, 'The employee could not be added.'), type: 'error' });
+    } finally { setSaving(false); }
   }
 
-  async function loadDetail(id) {
+  if (detailId) {
+    return (
+      <EmployeeDetail
+        id={detailId}
+        onBack={() => { setDetailId(null); list.reload(); }}
+        onChanged={() => { list.reload(); onUpdate?.(); }}
+      />
+    );
+  }
+
+  return (
+    <div>
+      <div className="mn-bar">
+        <input
+          className="k-input mn-f--grow"
+          placeholder="Search employees…"
+          aria-label="Search employees by name or code"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && applyFilter()}
+        />
+        <input
+          className="k-input mn-f"
+          placeholder="Department"
+          aria-label="Filter by department"
+          value={deptFilter}
+          onChange={e => setDeptFilter(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && applyFilter()}
+        />
+        <button type="button" className="k-btn k-btn--ghost" onClick={applyFilter}>Filter</button>
+        <div className="mn-bar__gap" />
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+          + Add employee
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={save} className="k-formpanel">
+          <h3 className="k-section__title">New employee</h3>
+          <div className="k-formpanel__grid k-formpanel__grid--3">
+            <Field label="Name *">
+              <input className="k-formpanel__input" required value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })} />
+            </Field>
+            <Field label="Employee code">
+              <input className="k-formpanel__input" placeholder="e.g. EMP001" value={form.employee_code}
+                onChange={e => setForm({ ...form, employee_code: e.target.value })} />
+            </Field>
+            <Field label="Email">
+              <input className="k-formpanel__input" type="email" value={form.email}
+                onChange={e => setForm({ ...form, email: e.target.value })} />
+            </Field>
+            <Field label="Phone">
+              <input className="k-formpanel__input" value={form.phone}
+                onChange={e => setForm({ ...form, phone: e.target.value })} />
+            </Field>
+            <Field label="Department">
+              <input className="k-formpanel__input" value={form.department}
+                onChange={e => setForm({ ...form, department: e.target.value })} />
+            </Field>
+            <Field label="Designation">
+              <input className="k-formpanel__input" value={form.designation}
+                onChange={e => setForm({ ...form, designation: e.target.value })} />
+            </Field>
+            <Field label="Employment type">
+              <select className="k-formpanel__input" value={form.employment_type}
+                onChange={e => setForm({ ...form, employment_type: e.target.value })}>
+                {EMP_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+              </select>
+            </Field>
+            <Field label="Date of joining">
+              <input className="k-formpanel__input" type="date" value={form.date_of_joining}
+                onChange={e => setForm({ ...form, date_of_joining: e.target.value })} />
+            </Field>
+            <Field label="Date of birth">
+              <input className="k-formpanel__input" type="date" value={form.date_of_birth}
+                onChange={e => setForm({ ...form, date_of_birth: e.target.value })} />
+            </Field>
+            <Field label="Gender">
+              <select className="k-formpanel__input" value={form.gender}
+                onChange={e => setForm({ ...form, gender: e.target.value })}>
+                <option value="">—</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </Field>
+            <Field label="PAN">
+              <input className="k-formpanel__input" value={form.pan}
+                onChange={e => setForm({ ...form, pan: e.target.value })} />
+            </Field>
+            <Field label="Aadhaar">
+              <input className="k-formpanel__input" value={form.aadhaar}
+                onChange={e => setForm({ ...form, aadhaar: e.target.value })} />
+            </Field>
+          </div>
+          <p className="note note--info">
+            PAN and Aadhaar are stored masked and are shown in full only to an
+            org owner or admin. Every reveal is written to the audit log.
+          </p>
+          <div className="k-formpanel__actions">
+            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+              {saving ? 'Adding…' : 'Add employee'}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {list.loading ? <Shim count={6} />
+        : list.error ? <ErrorNote what="The employee directory" error={list.error} onRetry={list.reload} />
+          : list.items.length === 0 ? (
+            <Empty
+              icon="👥"
+              title={query.search || query.department ? 'No employees match that filter' : 'No employees yet'}
+              sub={query.search || query.department
+                ? 'Clear the search and department filters to see the whole directory.'
+                : 'Add your team members to manage attendance, leave and payroll from one place.'}
+            />
+          ) : (
+            <DataTable columns={['Code', 'Name', 'Department', 'Designation', 'Type', 'Status']}>
+              {list.items.map(e => (
+                <tr
+                  key={e.id}
+                  className="mn-t__row--click"
+                  onClick={() => setDetailId(e.id)}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open ${e.name}`}
+                  onKeyDown={ev => {
+                    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); setDetailId(e.id); }
+                  }}
+                >
+                  <Td className="mn-t__mono">{e.employee_code || '—'}</Td>
+                  <Td bold>{e.name}</Td>
+                  <Td className="mn-t__mute">{e.department || '—'}</Td>
+                  <Td className="mn-t__mute">{e.designation || '—'}</Td>
+                  <Td>{e.employment_type?.replace(/_/g, ' ')}</Td>
+                  <Td><Badge text={e.status} color={STATUS_COLORS[e.status] || 'var(--on-surface-3)'} /></Td>
+                </tr>
+              ))}
+            </DataTable>
+          )}
+    </div>
+  );
+}
+
+function buildUrl({ search, department }) {
+  const p = new URLSearchParams();
+  if (search) p.set('search', search);
+  if (department) p.set('department', department);
+  const q = p.toString();
+  return `/v1/manav/employees${q ? `?${q}` : ''}`;
+}
+
+/** A labelled form control. `k-formpanel__label` is already a flex column, so
+ *  the label text and the control are siblings rather than a nested span. */
+function Field({ label, children, wide }) {
+  return (
+    <label className={`k-formpanel__label${wide ? ' mn-fw' : ''}`}>
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   One employee
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function EmployeeDetail({ id, onBack, onChanged }) {
+  const { pushToast } = useToast();
+  const res = useResource(`/v1/manav/employees/${id}`, [id]);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
+  // Aadhaar, PAN and the bank account arrive masked. The full values come from
+  // a separate endpoint only org owners/admins may call, and every read of it
+  // is audited — so this stays null until explicitly asked for.
+  const [pii, setPii] = useState(null);
+  const [piiLoading, setPiiLoading] = useState(false);
+
+  function startEdit(emp) {
+    setEditForm({
+      name: emp.name || '', email: emp.email || '', phone: emp.phone || '',
+      department: emp.department || '', designation: emp.designation || '',
+      employment_type: emp.employment_type || 'full_time',
+    });
+    setEditing(true);
+  }
+
+  async function saveEdit(e) {
+    e.preventDefault();
+    setEditSaving(true);
     try {
-      const r = await api.get(`/v1/manav/employees/${id}`);
-      setDetail(r.data);
-      setPii(null);   // never carry a revealed value across employees
-    } catch { pushToast({ title: 'Failed to load employee', type: 'error' }); }
+      await api.patch(`/v1/manav/employees/${id}`, editForm);
+      pushToast({ title: 'Employee updated', type: 'success' });
+      setEditing(false);
+      res.reload();
+      onChanged?.();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The employee could not be updated.'), type: 'error' });
+    } finally { setEditSaving(false); }
   }
 
-  async function revealPii(id) {
+  async function revealPii() {
     setPiiLoading(true);
     try {
       const r = await api.get(`/v1/manav/employees/${id}/sensitive`);
       setPii(r.data.employee);
     } catch (err) {
       pushToast({
-        title: err.response?.status === 403
+        title: err?.response?.status === 403
           ? 'Only an org owner or admin can view identity documents'
-          : (err.response?.data?.detail || 'Could not reveal details'),
+          : errText(err, 'The identity documents could not be revealed.'),
         type: 'error',
       });
     } finally { setPiiLoading(false); }
   }
 
-  function startEditEmp(emp) {
-    setEditEmp(emp.id);
-    setEditForm({
-      name: emp.name || '', email: emp.email || '', phone: emp.phone || '',
-      department: emp.department || '', designation: emp.designation || '',
-      employment_type: emp.employment_type || 'full_time',
-    });
-  }
-
-  async function saveEditEmp(e) {
-    e.preventDefault();
-    setEditSaving(true);
-    try {
-      await api.patch(`/v1/manav/employees/${editEmp}`, editForm);
-      pushToast({ title: 'Employee updated', type: 'success' });
-      setEditEmp(null);
-      load();
-      if (detail) loadDetail(editEmp);
-      onUpdate?.();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update employee', type: 'error' }); }
-    finally { setEditSaving(false); }
-  }
-
-  if (detail) {
-    const emp = detail.employee;
+  if (res.loading) return <><BackButton onClick={onBack} label="Back to list" /><Shim count={5} /></>;
+  if (res.error) {
     return (
       <div>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12, marginBottom: 12 }} onClick={() => setDetail(null)}>← Back to list</button>
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{emp.name}</h3>
-              <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--ink-2)' }}>
-                {emp.employee_code && `${emp.employee_code} · `}{emp.designation} {emp.department && `· ${emp.department}`}
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <Badge text={emp.status} color={STATUS_COLORS[emp.status] || 'var(--on-surface-3)'} />
-              <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => startEditEmp(emp)}>Edit</button>
-            </div>
-          </div>
-
-          {editEmp === emp.id && (
-            <form onSubmit={saveEditEmp} style={{ background: 'var(--surface-0)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 16, marginBottom: 12 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name</span>
-                  <input className="k-input" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} /></label>
-                <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Email</span>
-                  <input className="k-input" type="email" value={editForm.email} onChange={e => setEditForm({ ...editForm, email: e.target.value })} /></label>
-                <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Phone</span>
-                  <input className="k-input" value={editForm.phone} onChange={e => setEditForm({ ...editForm, phone: e.target.value })} /></label>
-                <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Department</span>
-                  <input className="k-input" value={editForm.department} onChange={e => setEditForm({ ...editForm, department: e.target.value })} /></label>
-                <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Designation</span>
-                  <input className="k-input" value={editForm.designation} onChange={e => setEditForm({ ...editForm, designation: e.target.value })} /></label>
-                <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employment Type</span>
-                  <select className="k-input" value={editForm.employment_type} onChange={e => setEditForm({ ...editForm, employment_type: e.target.value })}>
-                    {EMP_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-                  </select></label>
-              </div>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-                <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditEmp(null)}>Cancel</button>
-                <button type="submit" className="k-btn k-btn--primary" disabled={editSaving}>{editSaving ? 'Saving…' : 'Save'}</button>
-              </div>
-            </form>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, fontSize: 13 }}>
-            <div><strong>Email:</strong> {emp.email || '—'}</div>
-            <div><strong>Phone:</strong> {emp.phone || '—'}</div>
-            <div><strong>Type:</strong> {emp.employment_type?.replace('_', ' ')}</div>
-            <div><strong>Joining:</strong> {emp.date_of_joining || '—'}</div>
-            <div><strong>DOB:</strong> {emp.date_of_birth || '—'}</div>
-            <div><strong>Gender:</strong> {emp.gender || '—'}</div>
-            <div><strong>PAN:</strong> {(pii ? pii.pan : emp.pan) || '—'}</div>
-            <div><strong>Aadhaar:</strong> {(pii ? pii.aadhaar : emp.aadhaar) || '—'}</div>
-            <div><strong>UAN:</strong> {emp.uan || '—'}</div>
-            <div><strong>Shift:</strong> {emp.shift}</div>
-            <div><strong>Blood Group:</strong> {emp.blood_group || '—'}</div>
-          </div>
-
-          {(emp.pan || emp.aadhaar) && (
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--rule-soft)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              {pii ? (
-                <>
-                  <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
-                    Identity documents shown in full. This access was logged.
-                  </span>
-                  <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => setPii(null)}>Hide</button>
-                </>
-              ) : (
-                <>
-                  <span style={{ fontSize: 12, color: 'var(--ink-2)' }}>
-                    Identity documents are masked. Revealing them is recorded in the audit log.
-                  </span>
-                  <button
-                    className="k-btn k-btn--ghost"
-                    style={{ fontSize: 12 }}
-                    disabled={piiLoading}
-                    onClick={() => revealPii(emp.id)}
-                  >
-                    {piiLoading ? 'Revealing…' : 'Reveal'}
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-
-        {detail.leave_balances?.length > 0 && (
-          <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24 }}>
-            <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Leave Balances (Current Year)</h4>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                  {['Leave Type', 'Allocated', 'Used', 'Carried', 'Available'].map(h => (
-                    <th key={h} style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {detail.leave_balances.map(lb => (
-                  <tr key={lb.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                    <td style={{ padding: '8px 10px', fontWeight: 600 }}>{lb.leave_name} ({lb.leave_code})</td>
-                    <td style={{ padding: '8px 10px' }}>{lb.allocated}</td>
-                    <td style={{ padding: '8px 10px', color: 'var(--danger)' }}>{lb.used}</td>
-                    <td style={{ padding: '8px 10px' }}>{lb.carried_forward}</td>
-                    <td style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--ok)' }}>{(lb.allocated + lb.carried_forward) - lb.used}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <BackButton onClick={onBack} label="Back to list" />
+        <ErrorNote what="This employee" error={res.error} onRetry={res.reload} />
       </div>
     );
   }
 
+  const emp = res.data?.employee;
+  if (!emp) {
+    return (
+      <div>
+        <BackButton onClick={onBack} label="Back to list" />
+        <ErrorNote
+          what="This employee"
+          error="The record came back without an employee. It may have been removed."
+          onRetry={res.reload}
+        />
+      </div>
+    );
+  }
+
+  const balances = res.data.leave_balances || [];
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-        <input className="k-input" style={{ flex: 1 }} placeholder="Search employees…" value={search}
-          onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} />
-        <input className="k-input" style={{ width: 150 }} placeholder="Department" value={deptFilter}
-          onChange={e => setDeptFilter(e.target.value)} />
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Filter</button>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ Add Employee</button>
+      <BackButton onClick={onBack} label="Back to list" />
+
+      <div className="k-detail">
+        <div className="k-detail__header">
+          <div>
+            <h3 className="k-detail__title">{emp.name}</h3>
+            <p className="k-detail__sub">
+              {emp.employee_code && `${emp.employee_code} · `}
+              {emp.designation}
+              {emp.department && ` · ${emp.department}`}
+            </p>
+          </div>
+          <div className="mn-rec__end">
+            <Badge text={emp.status} color={STATUS_COLORS[emp.status] || 'var(--on-surface-3)'} />
+            {!editing && (
+              <button type="button" className="k-btn k-btn--ghost" onClick={() => startEdit(emp)}>Edit</button>
+            )}
+          </div>
+        </div>
+
+        {editing && (
+          <form onSubmit={saveEdit} className="k-formpanel">
+            <div className="k-formpanel__grid k-formpanel__grid--3">
+              <Field label="Name">
+                <input className="k-formpanel__input" value={editForm.name}
+                  onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+              </Field>
+              <Field label="Email">
+                <input className="k-formpanel__input" type="email" value={editForm.email}
+                  onChange={e => setEditForm({ ...editForm, email: e.target.value })} />
+              </Field>
+              <Field label="Phone">
+                <input className="k-formpanel__input" value={editForm.phone}
+                  onChange={e => setEditForm({ ...editForm, phone: e.target.value })} />
+              </Field>
+              <Field label="Department">
+                <input className="k-formpanel__input" value={editForm.department}
+                  onChange={e => setEditForm({ ...editForm, department: e.target.value })} />
+              </Field>
+              <Field label="Designation">
+                <input className="k-formpanel__input" value={editForm.designation}
+                  onChange={e => setEditForm({ ...editForm, designation: e.target.value })} />
+              </Field>
+              <Field label="Employment type">
+                <select className="k-formpanel__input" value={editForm.employment_type}
+                  onChange={e => setEditForm({ ...editForm, employment_type: e.target.value })}>
+                  {EMP_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div className="k-formpanel__actions">
+              <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditing(false)}>Cancel</button>
+              <button type="submit" className="k-btn k-btn--primary" disabled={editSaving}>
+                {editSaving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        <dl className="mn-facts">
+          <Fact k="Email" v={emp.email} />
+          <Fact k="Phone" v={emp.phone} />
+          <Fact k="Type" v={emp.employment_type?.replace(/_/g, ' ')} />
+          <Fact k="Joining" v={emp.date_of_joining} />
+          <Fact k="Date of birth" v={emp.date_of_birth} />
+          <Fact k="Gender" v={emp.gender} />
+          <Fact k="PAN" v={pii ? pii.pan : emp.pan} mono />
+          <Fact k="Aadhaar" v={pii ? pii.aadhaar : emp.aadhaar} mono />
+          <Fact k="UAN" v={emp.uan} mono />
+          <Fact k="Shift" v={emp.shift} />
+          <Fact k="Blood group" v={emp.blood_group} />
+        </dl>
+
+        {(emp.pan || emp.aadhaar) && (
+          <div className="mn-pii">
+            {pii ? (
+              <>
+                <span className="mn-pii__note">
+                  Identity documents shown in full. This access was written to the audit log.
+                </span>
+                <button type="button" className="k-btn k-btn--ghost" onClick={() => setPii(null)}>Hide</button>
+              </>
+            ) : (
+              <>
+                <span className="mn-pii__note">
+                  Identity documents are masked. Revealing them is recorded in the audit log
+                  against your name.
+                </span>
+                <button type="button" className="k-btn k-btn--ghost" disabled={piiLoading} onClick={revealPii}>
+                  {piiLoading ? 'Revealing…' : 'Reveal'}
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
-      {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Employee</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
-              <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee Code</span>
-              <input className="k-input" placeholder="e.g. EMP001" value={form.employee_code} onChange={e => setForm({ ...form, employee_code: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Email</span>
-              <input className="k-input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Phone</span>
-              <input className="k-input" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Department</span>
-              <input className="k-input" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Designation</span>
-              <input className="k-input" value={form.designation} onChange={e => setForm({ ...form, designation: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employment Type</span>
-              <select className="k-input" value={form.employment_type} onChange={e => setForm({ ...form, employment_type: e.target.value })}>
-                {EMP_TYPES.map(t => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Date of Joining</span>
-              <input className="k-input" type="date" value={form.date_of_joining} onChange={e => setForm({ ...form, date_of_joining: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Date of Birth</span>
-              <input className="k-input" type="date" value={form.date_of_birth} onChange={e => setForm({ ...form, date_of_birth: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Gender</span>
-              <select className="k-input" value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value })}>
-                <option value="">—</option><option value="male">Male</option><option value="female">Female</option><option value="other">Other</option>
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>PAN</span>
-              <input className="k-input" value={form.pan} onChange={e => setForm({ ...form, pan: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Aadhaar</span>
-              <input className="k-input" value={form.aadhaar} onChange={e => setForm({ ...form, aadhaar: e.target.value })} /></label>
+      {balances.length > 0 && (
+        <section className="k-section">
+          <div className="k-section__head">
+            <h3 className="k-section__title">
+              Leave balances<span className="k-section__title-hi" lang="hi">अवकाश शेष</span>
+            </h3>
           </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Adding…' : 'Add Employee'}</button>
-          </div>
-        </form>
-      )}
-
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        employees.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>👥</div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No employees yet</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Add your team members to manage attendance, leaves, and payroll from one place.</div>
-          </div>
-        ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-              {['Code', 'Name', 'Department', 'Designation', 'Type', 'Status'].map(h => (
-                <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {employees.map(e => (
-              <tr key={e.id} style={{ borderBottom: '1px solid var(--rule-soft)', cursor: 'pointer' }} onClick={() => loadDetail(e.id)}>
-                <td style={{ padding: '10px', fontFamily: 'var(--font-mono)', fontSize: 12 }}>{e.employee_code || '—'}</td>
-                <td style={{ padding: '10px', fontWeight: 600 }}>{e.name}</td>
-                <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{e.department || '—'}</td>
-                <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{e.designation || '—'}</td>
-                <td style={{ padding: '10px' }}>{e.employment_type?.replace('_', ' ')}</td>
-                <td style={{ padding: '10px' }}><Badge text={e.status} color={STATUS_COLORS[e.status] || 'var(--on-surface-3)'} /></td>
+          <DataTable columns={[
+            'Leave type',
+            { label: 'Allocated', align: 'right' },
+            { label: 'Used', align: 'right' },
+            { label: 'Carried', align: 'right' },
+            { label: 'Available', align: 'right' },
+          ]}>
+            {balances.map(lb => (
+              <tr key={lb.id}>
+                <td>{lb.leave_name} <span className="mn-t__mute">({lb.leave_code})</span></td>
+                <Td align="right" mono>{lb.allocated}</Td>
+                <Td align="right" mono><span className="mn-t__n" style={{ '--c': 'var(--danger)' }}>{lb.used}</span></Td>
+                <Td align="right" mono>{lb.carried_forward}</Td>
+                <Td align="right" mono bold>
+                  <span className="mn-t__n" style={{ '--c': 'var(--ok)' }}>
+                    {(Number(lb.allocated) + Number(lb.carried_forward)) - Number(lb.used)}
+                  </span>
+                </Td>
               </tr>
             ))}
-          </tbody>
-        </table>
+          </DataTable>
+        </section>
       )}
+    </div>
+  );
+}
+
+function Fact({ k, v, mono }) {
+  return (
+    <div>
+      <dt className="mn-fact__k">{k}</dt>
+      <dd className={`mn-fact__v${mono ? ' mn-fact__v--mono' : ''}`}>{v || '—'}</dd>
     </div>
   );
 }

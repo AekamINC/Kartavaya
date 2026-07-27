@@ -9,7 +9,24 @@
 // Where a map needs more hues than the status ramp carries, --tertiary
 // (terracotta) and --secondary (olive) are the two remaining container-backed
 // families; both flip by theme and both clear AA in each.
-import React from 'react';
+//
+// ── The rule this module is built around ─────────────────────────────────────
+//
+// A FAILED FETCH MUST NEVER RENDER AS AN EMPTY STATE.
+//
+// This is HR. "No employees yet", "No attendance records" and "No leave
+// requests" are statements about the business. If the request failed, all three
+// are false — and `catch { toast() }` followed by `list.length === 0` prints
+// them anyway, because a caught error leaves the list at its initial `[]`.
+// Every tab in this directory did exactly that: eleven fetches, eleven empty
+// states reachable by failure. The Vetana agent found the identical shape on
+// payroll and named it; it was here too.
+//
+// `useList` below keeps loading, error and data apart and cannot collapse them:
+// `items` is null whenever `error` is set, so a call site cannot accidentally
+// render "nobody is absent" over a 500.
+import React, { useState, useEffect, useCallback } from 'react';
+import { api, rows as unwrapRows } from '../../lib/api';
 import Tag from '../../components/ui/Tag';
 import { PRIORITY_COLORS as TASK_PRIORITY_COLORS } from '../../lib/statusColors';
 import { inr } from '../../lib/inr';
@@ -81,4 +98,149 @@ export const FMT = inr;
 export function Badge({ text, color, children }) {
   const label = text ?? children;
   return <Tag color={color}>{typeof label === 'string' ? label.replace(/_/g, ' ') : label}</Tag>;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Loading · error · empty — the three states, kept apart
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The sentence to show for a failed request.
+ *
+ * The server's own words win wherever it wrote them. `manav.py` answers a
+ * refused identity-document read with a real explanation, and replacing that
+ * with "Failed" throws away the only text that says what to do next.
+ */
+export function errText(err, fallback = 'Retry, or check your connection.') {
+  const detail = err?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  const status = err?.response?.status;
+  if (status === 403) return 'You do not have access to this part of HR.';
+  if (status === 404) return 'That record no longer exists.';
+  if (status === 422) return 'The request was rejected as malformed. This is a defect, not something you can fix here.';
+  if (status >= 500) return 'The server failed on this request. Nothing was changed.';
+  if (err?.response == null) return 'No response from the server — check your connection.';
+  return fallback;
+}
+
+/**
+ * A GET with its three outcomes kept distinct: `loading`, `error`, `data`.
+ *
+ * `data` stays null while `error` is set. `reload` re-runs it. `deps` lets a
+ * caller re-run on a filter change without rebuilding the hook.
+ */
+export function useResource(path, deps = []) {
+  const [state, setState] = useState({ loading: true, error: '', data: null });
+
+  const run = useCallback(async () => {
+    setState(s => ({ ...s, loading: true, error: '' }));
+    try {
+      const r = await api.get(path);
+      setState({ loading: false, error: '', data: r.data });
+    } catch (err) {
+      setState({ loading: false, error: errText(err), data: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  useEffect(() => { run(); }, [run]);
+
+  return { ...state, reload: run };
+}
+
+/**
+ * The list form. Unwraps through `lib/api`'s `rows()` rather than reaching for
+ * `r.data.data` — 99 backend GET routes answer `{"data":[…]}` and 28 answer a
+ * bare array, and `rows()` makes the call site indifferent to which. Every
+ * Manav list route is the enveloped form, verified route by route, but the
+ * call sites do not encode that assumption.
+ *
+ * `items` is null on failure, never `[]`.
+ */
+export function useList(path, deps = []) {
+  const r = useResource(path, deps);
+  return { ...r, items: r.error ? null : unwrapRows({ data: r.data }) };
+}
+
+/**
+ * The failure block. Says it failed, says why, offers the way out.
+ *
+ * `role="status"` rather than `alert` — announced without stealing focus.
+ * Deliberately NOT the empty state: no illustration, no "get started".
+ */
+export function ErrorNote({ what, error, onRetry }) {
+  return (
+    <div className="note note--warn mn-err" role="status">
+      <b>{what} did not load.</b> {error}
+      {onRetry && (
+        <button type="button" className="k-btn k-btn--ghost mn-err__go" onClick={onRetry}>
+          Try again
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** The skeleton. One import per tab for the loading state. */
+export function Shim({ count = 4 }) {
+  return (
+    <div className="k-shimmer">
+      {Array.from({ length: count }, (_, i) => <div key={i} className="k-shimmer__tile" />)}
+    </div>
+  );
+}
+
+/**
+ * Loading, then failure, then empty — in that order, in one place, so no tab
+ * can forget one. `empty` is only ever reached when the request actually
+ * succeeded and actually returned nothing.
+ */
+export function Resource({ state, what, skeleton, empty, onRetry, children }) {
+  if (state.loading) return skeleton ?? <Shim count={4} />;
+  if (state.error) return <ErrorNote what={what} error={state.error} onRetry={onRetry ?? state.reload} />;
+  const list = state.items ?? state.data;
+  if (empty && (list == null || (Array.isArray(list) && list.length === 0))) return empty;
+  return children;
+}
+
+/** `09:02` from a timestamp, or an em dash. Attendance reads as times, not dates. */
+export function clockTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** The month just now, as `YYYY-MM` — what every month filter here speaks. */
+export function thisMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** Today as `YYYY-MM-DD`, local — `toISOString()` is UTC and rolls the date
+ *  over for every user east of Greenwich after 05:30 IST. */
+export function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** First and last day of a `YYYY-MM`. */
+export function monthRange(month) {
+  const [y, m] = (month || thisMonth()).split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, '0')}` };
+}
+
+/** The default shift colour.
+ *
+ *  A HEX, deliberately, and it must stay one. It feeds `<input type="color">`,
+ *  which accepts `#rrggbb` and NOTHING else — a token reference there is
+ *  silently coerced to #000000 by the browser — and it is persisted to
+ *  `manav_shift_definitions.color`, whose backend default is this same value.
+ *  This is the one colour in the module that cannot be a token. */
+export const DEFAULT_SHIFT_COLOR = '#3B82F6';
+
+/** True for a `#rgb`/`#rrggbb` string — the only values a colour input can show. */
+export function isHexColor(v) {
+  return typeof v === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim());
 }

@@ -1,215 +1,309 @@
-import React, { useState, useEffect } from 'react';
+// Manav → Recruitment. Job openings and the candidate pipeline.
+//
+// `loadOpenings()` and `loadCandidates()` both caught to a toast over lists
+// left at `[]`. The openings failure was the worse of the two: with `openings`
+// empty, `activeOpening` never got set, and the render fell through to
+// "Create a job opening to start tracking candidates" — telling someone to
+// create records that may already exist and simply failed to load.
+//
+// The stage-move chips were `<button>` elements carrying an eight-property
+// inline object each, with the tint computed in JS by `mixAlpha(colour, 9)`.
+// They are now `.mn-chip` with `--c` set per instance, so the text colour and
+// its background tint are derived from ONE value and cannot disagree.
+//
+// "Hire" is now confirmed. It creates an employee record from the candidate —
+// a write into the personnel directory — and it fired on a single click.
+import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
-import { Badge, CANDIDATE_STAGES, STAGE_COLORS_REC } from './_shared';
-import { mixAlpha } from '../../lib/statusColors';
+import { Empty } from '../../components/editorial';
+import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { Badge, CANDIDATE_STAGES, STAGE_COLORS_REC, useList, ErrorNote, Shim, errText } from './_shared';
 
 export default function RecruitmentTab() {
   const { pushToast } = useToast();
-  const [openings, setOpenings] = useState([]);
+  const openings = useList('/v1/manav/job-openings');
   const [activeOpening, setActiveOpening] = useState('');
-  const [candidates, setCandidates] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showOpeningForm, setShowOpeningForm] = useState(false);
-  const [showCandidateForm, setShowCandidateForm] = useState(false);
-  const [openingForm, setOpeningForm] = useState({ title: '', description: '' });
-  const [candidateForm, setCandidateForm] = useState({ full_name: '', email: '', phone: '', resume_url: '' });
-  const [saving, setSaving] = useState(false);
-  const [editingOpening, setEditingOpening] = useState(null);
-  const [editOpeningForm, setEditOpeningForm] = useState({});
-  const [editOpeningSaving, setEditOpeningSaving] = useState(false);
+  const [panel, setPanel] = useState(null);        // 'opening' | 'candidate' | 'edit' | null
+  const [confirm, setConfirm] = useState(null);
 
-  useEffect(() => { loadOpenings(); }, []);
-  useEffect(() => { if (activeOpening) loadCandidates(); }, [activeOpening]);
+  // The first opening becomes the selection once the list arrives, but only if
+  // nothing is chosen yet — a reload must not yank the person back to the top.
+  const list = openings.items;
+  const current = activeOpening || (list && list.length > 0 ? list[0].id : '');
 
-  async function loadOpenings() {
-    try {
-      const r = await api.get('/v1/manav/job-openings');
-      const data = r.data.data || [];
-      setOpenings(data);
-      if (!activeOpening && data.length > 0) setActiveOpening(data[0].id);
-    } catch { pushToast({ title: 'Failed to load job openings', type: 'error' }); }
-    finally { setLoading(false); }
-  }
-
-  async function loadCandidates() {
-    try {
-      const r = await api.get(`/v1/manav/candidates?job_opening_id=${activeOpening}`);
-      setCandidates(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load candidates', type: 'error' }); }
-  }
-
-  async function createOpening(e) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      const r = await api.post('/v1/manav/job-openings', openingForm);
-      pushToast({ title: 'Job opening created', type: 'success' });
-      setShowOpeningForm(false);
-      setOpeningForm({ title: '', description: '' });
-      await loadOpenings();
-      setActiveOpening(r.data.id);
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-    finally { setSaving(false); }
-  }
-
-  async function createCandidate(e) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await api.post('/v1/manav/candidates', { ...candidateForm, job_opening_id: activeOpening });
-      pushToast({ title: 'Candidate added', type: 'success' });
-      setShowCandidateForm(false);
-      setCandidateForm({ full_name: '', email: '', phone: '', resume_url: '' });
-      loadCandidates();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-    finally { setSaving(false); }
-  }
+  const candUrl = current ? `/v1/manav/candidates?job_opening_id=${current}` : null;
+  const candidates = useList(candUrl || '/v1/manav/candidates?job_opening_id=', [candUrl]);
 
   async function moveStage(candidateId, stage) {
     try {
       await api.patch(`/v1/manav/candidates/${candidateId}/stage`, { stage });
       pushToast({ title: `Moved to ${stage}`, type: 'success' });
-      loadCandidates();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Move failed', type: 'error' }); }
+      candidates.reload();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The candidate could not be moved.'), type: 'error' });
+    }
   }
 
   async function hire(candidateId) {
     try {
       await api.post(`/v1/manav/candidates/${candidateId}/hire`);
       pushToast({ title: 'Candidate hired — employee record created', type: 'success' });
-      loadCandidates();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+      candidates.reload();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The candidate could not be hired.'), type: 'error' });
+    }
   }
 
-  function startEditOpening() {
-    const o = openings.find(x => x.id === activeOpening);
-    if (!o) return;
-    setEditingOpening(o.id);
-    setEditOpeningForm({ title: o.title || '', description: o.description || '', status: o.status || 'open' });
+  if (openings.loading) return <Shim count={4} />;
+  if (openings.error) {
+    return <ErrorNote what="Job openings" error={openings.error} onRetry={openings.reload} />;
   }
 
-  async function saveEditOpening(e) {
-    e.preventDefault();
-    setEditOpeningSaving(true);
-    try {
-      await api.patch(`/v1/manav/job-openings/${editingOpening}`, editOpeningForm);
-      pushToast({ title: 'Job opening updated', type: 'success' });
-      setEditingOpening(null);
-      loadOpenings();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update job opening', type: 'error' }); }
-    finally { setEditOpeningSaving(false); }
-  }
-
-  if (loading) return <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p>;
+  const activeRow = list.find(o => o.id === current);
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select className="k-input" style={{ width: 220 }} value={activeOpening} onChange={e => setActiveOpening(e.target.value)}>
-          <option value="">Select job opening…</option>
-          {openings.map(o => <option key={o.id} value={o.id}>{o.title} ({o.candidate_count})</option>)}
-        </select>
-        {activeOpening && <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={startEditOpening}>Edit Opening</button>}
-        <div style={{ flex: 1 }} />
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 13 }} onClick={() => setShowOpeningForm(true)}>+ Job Opening</button>
-        {activeOpening && <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowCandidateForm(true)}>+ Candidate</button>}
+      <div className="mn-bar">
+        <label className="mn-field">
+          <span className="mn-field__l">Opening</span>
+          <select className="k-input mn-f--lg" value={current}
+            onChange={e => setActiveOpening(e.target.value)}>
+            <option value="">Select job opening…</option>
+            {list.map(o => (
+              <option key={o.id} value={o.id}>{o.title} ({o.candidate_count})</option>
+            ))}
+          </select>
+        </label>
+        {current && (
+          <button type="button" className="k-btn k-btn--ghost"
+            onClick={() => setPanel(panel === 'edit' ? null : 'edit')}>
+            Edit opening
+          </button>
+        )}
+        <div className="mn-bar__gap" />
+        <button type="button" className="k-btn k-btn--ghost"
+          onClick={() => setPanel(panel === 'opening' ? null : 'opening')}>
+          + Job opening
+        </button>
+        {current && (
+          <button type="button" className="k-btn k-btn--primary"
+            onClick={() => setPanel(panel === 'candidate' ? null : 'candidate')}>
+            + Candidate
+          </button>
+        )}
       </div>
 
-      {showOpeningForm && (
-        <form onSubmit={createOpening} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>New Job Opening</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title *</span>
-              <input className="k-input" required value={openingForm.title} onChange={e => setOpeningForm({ ...openingForm, title: e.target.value })} /></label>
-            <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
-              <textarea className="k-input" rows={2} value={openingForm.description} onChange={e => setOpeningForm({ ...openingForm, description: e.target.value })} style={{ resize: 'vertical', width: '100%' }} /></label>
-          </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowOpeningForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
-          </div>
-        </form>
+      {panel === 'opening' && (
+        <OpeningForm
+          onClose={() => setPanel(null)}
+          onCreated={id => { setPanel(null); openings.reload(); if (id) setActiveOpening(id); }}
+          pushToast={pushToast}
+        />
       )}
 
-      {editingOpening && (
-        <form onSubmit={saveEditOpening} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Edit Job Opening</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Title</span>
-              <input className="k-input" value={editOpeningForm.title} onChange={e => setEditOpeningForm({ ...editOpeningForm, title: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Status</span>
-              <select className="k-input" value={editOpeningForm.status} onChange={e => setEditOpeningForm({ ...editOpeningForm, status: e.target.value })}>
-                <option value="open">Open</option><option value="closed">Closed</option><option value="on_hold">On Hold</option>
-              </select></label>
-            <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
-              <textarea className="k-input" rows={2} value={editOpeningForm.description} onChange={e => setEditOpeningForm({ ...editOpeningForm, description: e.target.value })} style={{ resize: 'vertical', width: '100%' }} /></label>
-          </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditingOpening(null)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={editOpeningSaving}>{editOpeningSaving ? 'Saving…' : 'Save'}</button>
-          </div>
-        </form>
+      {panel === 'edit' && activeRow && (
+        <OpeningForm
+          existing={activeRow}
+          onClose={() => setPanel(null)}
+          onCreated={() => { setPanel(null); openings.reload(); }}
+          pushToast={pushToast}
+        />
       )}
 
-      {showCandidateForm && (
-        <form onSubmit={createCandidate} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Add Candidate</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Full Name *</span>
-              <input className="k-input" required value={candidateForm.full_name} onChange={e => setCandidateForm({ ...candidateForm, full_name: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Email</span>
-              <input className="k-input" type="email" value={candidateForm.email} onChange={e => setCandidateForm({ ...candidateForm, email: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Phone</span>
-              <input className="k-input" value={candidateForm.phone} onChange={e => setCandidateForm({ ...candidateForm, phone: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Resume URL</span>
-              <input className="k-input" value={candidateForm.resume_url} onChange={e => setCandidateForm({ ...candidateForm, resume_url: e.target.value })} /></label>
-          </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowCandidateForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Adding…' : 'Add'}</button>
-          </div>
-        </form>
+      {panel === 'candidate' && current && (
+        <CandidateForm
+          openingId={current}
+          onClose={() => setPanel(null)}
+          onCreated={() => { setPanel(null); candidates.reload(); openings.reload(); }}
+          pushToast={pushToast}
+        />
       )}
 
-      {!activeOpening ? (
-        <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Create a job opening to start tracking candidates.</p>
-      ) : (
-        <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 16 }}>
-          {CANDIDATE_STAGES.map(stage => {
-            const inStage = candidates.filter(c => c.stage === stage);
-            return (
-              <div key={stage} style={{ minWidth: 220, flex: '1 0 220px', background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 16 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                  <Badge text={stage} color={STAGE_COLORS_REC[stage]} />
-                  <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{inStage.length}</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {inStage.map(c => (
-                    <div key={c.id} style={{ background: 'var(--bg)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-sm)', padding: 10 }}>
-                      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{c.full_name}</div>
-                      {c.email && <div style={{ fontSize: 11, color: 'var(--ink-3)', marginBottom: 2 }}>{c.email}</div>}
-                      {c.resume_url && <a href={c.resume_url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: 'var(--k-primary)' }}>Resume ↗</a>}
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
-                        {stage === 'offer' && (
-                          <button onClick={() => hire(c.id)} style={{ fontSize: 'var(--t-label-sm)', padding: '2px 6px', borderRadius: 'var(--r-xs)', background: mixAlpha('var(--ok)', 9), color: 'var(--ok)', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Hire</button>
+      {!current ? (
+        <Empty
+          icon="📋"
+          title={list.length === 0 ? 'No job openings yet' : 'No opening selected'}
+          sub={list.length === 0
+            ? 'Create a job opening to start tracking candidates through the pipeline.'
+            : 'Choose an opening above to see its candidates.'}
+        />
+      ) : candidates.loading ? <Shim count={3} />
+        : candidates.error ? (
+          <ErrorNote what="Candidates for this opening" error={candidates.error} onRetry={candidates.reload} />
+        ) : (
+          <div className="mn-pipe">
+            {CANDIDATE_STAGES.map(stage => {
+              const inStage = candidates.items.filter(c => c.stage === stage);
+              return (
+                <section key={stage} className="mn-pipe__col">
+                  <div className="mn-pipe__head">
+                    <Badge text={stage} color={STAGE_COLORS_REC[stage]} />
+                    <span className="mn-pipe__n">{inStage.length}</span>
+                  </div>
+                  <div className="mn-pipe__body">
+                    {inStage.map(c => (
+                      <article key={c.id} className="mn-cand">
+                        <div className="mn-cand__n">{c.full_name}</div>
+                        {c.email && <div className="mn-cand__e">{c.email}</div>}
+                        {c.resume_url && (
+                          <a className="mn-cand__link" href={c.resume_url}
+                            target="_blank" rel="noreferrer">Resume ↗</a>
                         )}
-                        {CANDIDATE_STAGES.filter(s => s !== stage && s !== 'hired').map(s => (
-                          <button key={s} onClick={() => moveStage(c.id, s)}
-                            style={{ fontSize: 'var(--t-label-sm)', padding: '2px 6px', borderRadius: 'var(--r-xs)',
-                              background: mixAlpha(STAGE_COLORS_REC[s] || 'var(--on-surface-3)', 9),
-                              color: STAGE_COLORS_REC[s] || 'var(--on-surface-3)', border: 'none', cursor: 'pointer', fontWeight: 600 }}>{s}</button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {inStage.length === 0 && <p style={{ fontSize: 12, color: 'var(--ink-3)', textAlign: 'center', padding: 12 }}>No candidates</p>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                        <div className="mn-cand__move">
+                          {stage === 'offer' && (
+                            <button
+                              type="button"
+                              className="mn-chip"
+                              style={{ '--c': 'var(--ok)' }}
+                              onClick={() => setConfirm({
+                                title: `Hire ${c.full_name}?`,
+                                message: 'This creates an employee record in the personnel directory from this candidate. They will appear in the employee list, and can then be given attendance, leave and payroll.',
+                                confirmLabel: 'Hire',
+                                intent: 'neutral',
+                                onConfirm: () => hire(c.id),
+                              })}
+                            >
+                              Hire
+                            </button>
+                          )}
+                          {CANDIDATE_STAGES.filter(s => s !== stage && s !== 'hired').map(s => (
+                            <button
+                              key={s}
+                              type="button"
+                              className="mn-chip"
+                              style={{ '--c': STAGE_COLORS_REC[s] || 'var(--on-surface-3)' }}
+                              onClick={() => moveStage(c.id, s)}
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </article>
+                    ))}
+                    {inStage.length === 0 && (
+                      <p className="mn-pipe__none">None</p>
+                    )}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        )}
+
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
+  );
+}
+
+/** Create or edit — the same five fields either way. */
+function OpeningForm({ existing, onClose, onCreated, pushToast }) {
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState(existing
+    ? { title: existing.title || '', description: existing.description || '', status: existing.status || 'open' }
+    : { title: '', description: '' });
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      if (existing) {
+        await api.patch(`/v1/manav/job-openings/${existing.id}`, form);
+        pushToast({ title: 'Job opening updated', type: 'success' });
+        onCreated(existing.id);
+      } else {
+        const r = await api.post('/v1/manav/job-openings', form);
+        pushToast({ title: 'Job opening created', type: 'success' });
+        onCreated(r.data?.id);
+      }
+    } catch (err) {
+      pushToast({ title: errText(err, 'The job opening could not be saved.'), type: 'error' });
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <form onSubmit={submit} className="k-formpanel">
+      <h4 className="k-section__title">{existing ? 'Edit' : 'New'} job opening</h4>
+      <div className="k-formpanel__grid k-formpanel__grid--2">
+        <label className="k-formpanel__label">
+          <span>Title *</span>
+          <input className="k-formpanel__input" required value={form.title}
+            onChange={e => setForm({ ...form, title: e.target.value })} />
+        </label>
+        {existing && (
+          <label className="k-formpanel__label">
+            <span>Status</span>
+            <select className="k-formpanel__input" value={form.status}
+              onChange={e => setForm({ ...form, status: e.target.value })}>
+              <option value="open">Open</option>
+              <option value="closed">Closed</option>
+              <option value="on_hold">On hold</option>
+            </select>
+          </label>
+        )}
+        <label className="k-formpanel__label mn-fw">
+          <span>Description</span>
+          <textarea className="k-formpanel__input mn-ta" rows={2} value={form.description}
+            onChange={e => setForm({ ...form, description: e.target.value })} />
+        </label>
+      </div>
+      <div className="k-formpanel__actions">
+        <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+          {saving ? 'Saving…' : existing ? 'Save' : 'Create'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function CandidateForm({ openingId, onClose, onCreated, pushToast }) {
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ full_name: '', email: '', phone: '', resume_url: '' });
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/v1/manav/candidates', { ...form, job_opening_id: openingId });
+      pushToast({ title: 'Candidate added', type: 'success' });
+      onCreated();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The candidate could not be added.'), type: 'error' });
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <form onSubmit={submit} className="k-formpanel">
+      <h4 className="k-section__title">Add candidate</h4>
+      <div className="k-formpanel__grid k-formpanel__grid--2">
+        <label className="k-formpanel__label">
+          <span>Full name *</span>
+          <input className="k-formpanel__input" required value={form.full_name}
+            onChange={e => setForm({ ...form, full_name: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>Email</span>
+          <input className="k-formpanel__input" type="email" value={form.email}
+            onChange={e => setForm({ ...form, email: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>Phone</span>
+          <input className="k-formpanel__input" value={form.phone}
+            onChange={e => setForm({ ...form, phone: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>Resume URL</span>
+          <input className="k-formpanel__input" value={form.resume_url}
+            onChange={e => setForm({ ...form, resume_url: e.target.value })} />
+        </label>
+      </div>
+      <div className="k-formpanel__actions">
+        <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+          {saving ? 'Adding…' : 'Add'}
+        </button>
+      </div>
+    </form>
   );
 }

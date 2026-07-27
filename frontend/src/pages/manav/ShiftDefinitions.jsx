@@ -1,132 +1,204 @@
-import React, { useState, useEffect } from 'react';
+// Manav → Shifts → Definitions. The org's shift catalogue.
+//
+// ── The colour picker could not round-trip its own value ─────────────────────
+//
+// The form defaulted `color` to the STRING `'var(--st-in-progress)'` and fed it
+// straight to `<input type="color">`. A native colour input accepts `#rrggbb`
+// and nothing else: anything it cannot parse is silently coerced to `#000000`,
+// so the swatch opened black every time, and a shift created without touching
+// the picker POSTed the literal text `var(--st-in-progress)` into
+// `manav_shift_definitions.color` — a column whose backend default is the hex
+// `#3B82F6`.
+//
+// This is a token sweep applied one field too far. Every other colour in this
+// module SHOULD be a token; this one cannot be, because it is a user-chosen
+// value persisted per row and rendered through a native control that only
+// speaks hex. `DEFAULT_SHIFT_COLOR` in `_shared.jsx` carries that reasoning
+// next to the value so it does not get "fixed" again.
+//
+// Rows already written with a token string still exist. `isHexColor` guards the
+// input so those rows open on the default rather than silently becoming black,
+// and the swatch beside the name renders the stored value as-is — a token
+// string happens to be valid there, which is exactly why nobody noticed.
+import React, { useState } from 'react';
 import { api } from '../../lib/api';
+import { Empty } from '../../components/editorial';
+import {
+  useList, ErrorNote, Shim, errText, DEFAULT_SHIFT_COLOR, isHexColor,
+} from './_shared';
+
+const BLANK = {
+  name: '', start_time: '09:00', end_time: '17:00',
+  break_minutes: 30, color: DEFAULT_SHIFT_COLOR,
+};
 
 export default function ShiftDefinitions({ pushToast }) {
-  const [shifts, setShifts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const list = useList('/v1/manav/shifts');
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editingShift, setEditingShift] = useState(null);
-  const [editShiftForm, setEditShiftForm] = useState({});
-  const [editShiftSaving, setEditShiftSaving] = useState(false);
-  const [form, setForm] = useState({ name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, color: 'var(--st-in-progress)' });
-
-  useEffect(() => { load(); }, []);
-
-  async function load() {
-    try {
-      const r = await api.get('/v1/manav/shifts');
-      setShifts(r.data.data || r.data || []);
-    } catch { pushToast({ title: 'Failed to load shifts', type: 'error' }); }
-    finally { setLoading(false); }
-  }
+  const [form, setForm] = useState(BLANK);
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState(BLANK);
+  const [editSaving, setEditSaving] = useState(false);
 
   async function save(e) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.post('/v1/manav/shifts', { ...form, break_minutes: Number(form.break_minutes) });
+      await api.post('/v1/manav/shifts', { ...form, break_minutes: Number(form.break_minutes) || 0 });
       pushToast({ title: 'Shift created', type: 'success' });
       setShowForm(false);
-      setForm({ name: '', start_time: '09:00', end_time: '17:00', break_minutes: 30, color: 'var(--st-in-progress)' });
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-    finally { setSaving(false); }
+      setForm(BLANK);
+      list.reload();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The shift could not be created.'), type: 'error' });
+    } finally { setSaving(false); }
   }
 
-  function startEditShift(s) {
-    setEditingShift(s.id);
-    setEditShiftForm({ name: s.name || '', start_time: s.start_time || '09:00', end_time: s.end_time || '17:00', break_minutes: s.break_minutes ?? 30, color: s.color || 'var(--st-in-progress)' });
+  function startEdit(s) {
+    setEditingId(s.id);
+    setEditForm({
+      name: s.name || '',
+      start_time: s.start_time || '09:00',
+      end_time: s.end_time || '17:00',
+      break_minutes: s.break_minutes ?? 30,
+      // A stored value that is not a hex cannot be shown by the picker.
+      color: isHexColor(s.color) ? s.color : DEFAULT_SHIFT_COLOR,
+    });
   }
 
-  async function saveEditShift(e) {
+  async function saveEdit(e) {
     e.preventDefault();
-    setEditShiftSaving(true);
+    setEditSaving(true);
     try {
-      await api.patch(`/v1/manav/shifts/${editingShift}`, { ...editShiftForm, break_minutes: Number(editShiftForm.break_minutes) });
+      await api.patch(`/v1/manav/shifts/${editingId}`, {
+        ...editForm, break_minutes: Number(editForm.break_minutes) || 0,
+      });
       pushToast({ title: 'Shift updated', type: 'success' });
-      setEditingShift(null);
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Could not update shift', type: 'error' }); }
-    finally { setEditShiftSaving(false); }
+      setEditingId(null);
+      list.reload();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The shift could not be updated.'), type: 'error' });
+    } finally { setEditSaving(false); }
   }
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Shift Definitions</h3>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ Add Shift</button>
+      <div className="mn-head">
+        <h3 className="k-section__title">
+          Shift definitions<span className="k-section__title-hi" lang="hi">पारी</span>
+        </h3>
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+          + Add shift
+        </button>
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>New Shift</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
-              <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Start Time *</span>
-              <input className="k-input" type="time" required value={form.start_time} onChange={e => setForm({ ...form, start_time: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>End Time *</span>
-              <input className="k-input" type="time" required value={form.end_time} onChange={e => setForm({ ...form, end_time: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Break (mins)</span>
-              <input className="k-input" type="number" value={form.break_minutes} onChange={e => setForm({ ...form, break_minutes: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Color</span>
-              <input className="k-input" type="color" value={form.color} onChange={e => setForm({ ...form, color: e.target.value })} style={{ height: 36, padding: 2 }} /></label>
+        <form onSubmit={save} className="k-formpanel">
+          <h4 className="k-section__title">New shift</h4>
+          <div className="k-formpanel__grid k-formpanel__grid--3">
+            <label className="k-formpanel__label">
+              <span>Name *</span>
+              <input className="k-formpanel__input" required value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })} />
+            </label>
+            <label className="k-formpanel__label">
+              <span>Start time *</span>
+              <input className="k-formpanel__input" type="time" required value={form.start_time}
+                onChange={e => setForm({ ...form, start_time: e.target.value })} />
+            </label>
+            <label className="k-formpanel__label">
+              <span>End time *</span>
+              <input className="k-formpanel__input" type="time" required value={form.end_time}
+                onChange={e => setForm({ ...form, end_time: e.target.value })} />
+            </label>
+            <label className="k-formpanel__label">
+              <span>Break (minutes)</span>
+              <input className="k-formpanel__input" type="number" min="0" value={form.break_minutes}
+                onChange={e => setForm({ ...form, break_minutes: e.target.value })} />
+            </label>
+            <label className="k-formpanel__label">
+              <span>Colour</span>
+              <input className="k-formpanel__input mn-color" type="color" value={form.color}
+                onChange={e => setForm({ ...form, color: e.target.value })} />
+            </label>
           </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+          <div className="k-formpanel__actions">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Creating…' : 'Create Shift'}</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+              {saving ? 'Creating…' : 'Create shift'}
+            </button>
           </div>
         </form>
       )}
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        shifts.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>🕐</div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No shifts defined</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Create shift templates to schedule your team's working hours.</div>
-          </div>
-        ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
-          {shifts.map(s => (
-            <div key={s.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 16 }}>
-              {editingShift === s.id ? (
-                <form onSubmit={saveEditShift}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    <label style={{ fontSize: 12, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>Name</span>
-                      <input className="k-input" value={editShiftForm.name} onChange={e => setEditShiftForm({ ...editShiftForm, name: e.target.value })} /></label>
-                    <label style={{ fontSize: 12 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>Start</span>
-                      <input className="k-input" type="time" value={editShiftForm.start_time} onChange={e => setEditShiftForm({ ...editShiftForm, start_time: e.target.value })} /></label>
-                    <label style={{ fontSize: 12 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>End</span>
-                      <input className="k-input" type="time" value={editShiftForm.end_time} onChange={e => setEditShiftForm({ ...editShiftForm, end_time: e.target.value })} /></label>
-                    <label style={{ fontSize: 12 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>Break (mins)</span>
-                      <input className="k-input" type="number" value={editShiftForm.break_minutes} onChange={e => setEditShiftForm({ ...editShiftForm, break_minutes: e.target.value })} /></label>
-                    <label style={{ fontSize: 12 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 2 }}>Color</span>
-                      <input className="k-input" type="color" value={editShiftForm.color} onChange={e => setEditShiftForm({ ...editShiftForm, color: e.target.value })} style={{ height: 32, padding: 2 }} /></label>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
-                    <button type="button" className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => setEditingShift(null)}>Cancel</button>
-                    <button type="submit" className="k-btn k-btn--primary" style={{ fontSize: 11 }} disabled={editShiftSaving}>{editShiftSaving ? 'Saving…' : 'Save'}</button>
-                  </div>
-                </form>
-              ) : (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: s.color || 'var(--st-in-progress)', flexShrink: 0 }} />
-                    <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{s.name}</span>
-                    <button className="k-btn k-btn--ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => startEditShift(s)}>Edit</button>
-                  </div>
-                  <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>
-                    <div>{s.start_time} — {s.end_time}</div>
-                    <div>Break: {s.break_minutes ?? 0} mins</div>
-                  </div>
-                </>
-              )}
+      {list.loading ? <Shim count={4} />
+        : list.error ? <ErrorNote what="Shift definitions" error={list.error} onRetry={list.reload} />
+          : list.items.length === 0 ? (
+            <Empty
+              icon="🕐"
+              title="No shifts defined"
+              sub="Create shift templates to schedule working hours, post bids and run swaps."
+            />
+          ) : (
+            <div className="mn-grid">
+              {list.items.map(s => (
+                <div key={s.id} className="mn-card">
+                  {editingId === s.id ? (
+                    <form onSubmit={saveEdit}>
+                      <div className="k-formpanel__grid k-formpanel__grid--2">
+                        <label className="k-formpanel__label mn-fw">
+                          <span>Name</span>
+                          <input className="k-formpanel__input" value={editForm.name}
+                            onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                        </label>
+                        <label className="k-formpanel__label">
+                          <span>Start</span>
+                          <input className="k-formpanel__input" type="time" value={editForm.start_time}
+                            onChange={e => setEditForm({ ...editForm, start_time: e.target.value })} />
+                        </label>
+                        <label className="k-formpanel__label">
+                          <span>End</span>
+                          <input className="k-formpanel__input" type="time" value={editForm.end_time}
+                            onChange={e => setEditForm({ ...editForm, end_time: e.target.value })} />
+                        </label>
+                        <label className="k-formpanel__label">
+                          <span>Break (min)</span>
+                          <input className="k-formpanel__input" type="number" min="0" value={editForm.break_minutes}
+                            onChange={e => setEditForm({ ...editForm, break_minutes: e.target.value })} />
+                        </label>
+                        <label className="k-formpanel__label">
+                          <span>Colour</span>
+                          <input className="k-formpanel__input mn-color" type="color" value={editForm.color}
+                            onChange={e => setEditForm({ ...editForm, color: e.target.value })} />
+                        </label>
+                      </div>
+                      <div className="mn-card__act">
+                        <button type="button" className="k-btn k-btn--ghost k-btn--sm"
+                          onClick={() => setEditingId(null)}>Cancel</button>
+                        <button type="submit" className="k-btn k-btn--primary k-btn--sm" disabled={editSaving}>
+                          {editSaving ? 'Saving…' : 'Save'}
+                        </button>
+                      </div>
+                    </form>
+                  ) : (
+                    <>
+                      <div className="mn-card__head">
+                        <span className="mn-dot" style={{ '--c': s.color || 'var(--st-in-progress)' }} />
+                        <h4 className="mn-card__t">{s.name}</h4>
+                        <button type="button" className="k-btn k-btn--ghost k-btn--sm"
+                          onClick={() => startEdit(s)}>Edit</button>
+                      </div>
+                      <div className="mn-card__meta">
+                        <div className="mn-t__mono">{s.start_time} — {s.end_time}</div>
+                        <div>Break {s.break_minutes ?? 0} min</div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          )}
     </div>
   );
 }

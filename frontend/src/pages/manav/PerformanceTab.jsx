@@ -1,79 +1,109 @@
-import React, { useState, useEffect } from 'react';
-import { api } from '../../lib/api';
-import { useToast } from '../../components/ui/toast';
+// Manav → Performance. Attendance-derived metrics for a month.
+//
+// Two defects beyond the styling.
+//
+// 1 · `load()` caught to a toast over `data` left at `[]`, so a failed fetch
+//     rendered "No performance data — mark attendance first to see metrics",
+//     which tells someone to go and do work that is already done.
+//
+// 2 · The month picker did nothing until "Load" was pressed, because `load()`
+//     ran once on mount from a `useEffect` with an empty dependency array and
+//     then only on the button. Changing the month and reading the table gave
+//     you the previous month's numbers under the new month's label. The URL is
+//     now the state, so the two cannot disagree.
+//
+// The attendance percentage is computed here from present and absent days
+// rather than being sent, so the denominator is stated in the header: it is
+// present + absent, and it deliberately excludes leave, holidays and weekends.
+// A "92%" with an unstated denominator is not a measurement.
+import React, { useState } from 'react';
+import { Empty, DataTable, Td } from '../../components/editorial';
+import { useList, ErrorNote, Shim, thisMonth, monthRange } from './_shared';
 
 export default function PerformanceTab() {
-  const { pushToast } = useToast();
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [month, setMonth] = useState(new Date().toISOString().substring(0, 7));
-
-  useEffect(() => { load(); }, []);
-
-  async function load() {
-    try {
-      const [y, m] = month.split('-');
-      const from_date = `${y}-${m}-01`;
-      const lastDay = new Date(Number(y), Number(m), 0).getDate();
-      const to_date = `${y}-${m}-${String(lastDay).padStart(2, '0')}`;
-      const r = await api.get(`/v1/manav/performance/summary?from_date=${from_date}&to_date=${to_date}`);
-      setData(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load performance', type: 'error' }); }
-    finally { setLoading(false); }
-  }
+  const [month, setMonth] = useState(thisMonth());
+  const { from, to } = monthRange(month);
+  const url = `/v1/manav/performance/summary?from_date=${from}&to_date=${to}`;
+  const list = useList(url, [url]);
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center' }}>
-        <input className="k-input" type="month" value={month} onChange={e => setMonth(e.target.value)} style={{ width: 180 }} />
-        <button className="k-btn k-btn--primary" style={{ fontSize: 12 }} onClick={load}>Load</button>
+      <div className="mn-bar">
+        <label className="mn-field">
+          <span className="mn-field__l">Month</span>
+          <input
+            className="k-input mn-f--lg"
+            type="month"
+            value={month}
+            max={thisMonth()}
+            onChange={e => setMonth(e.target.value)}
+          />
+        </label>
+        <button type="button" className="k-btn k-btn--ghost" onClick={list.reload}>Refresh</button>
       </div>
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        data.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>📈</div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No performance data</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Attendance-based performance summary for the selected month. Mark attendance first to see metrics here.</div>
-          </div>
-        ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-              {['Employee', 'Department', 'Present', 'Absent', 'Late', 'Leaves Used', 'Total Hours', 'Avg Hours/Day', 'Attendance %'].map(h => (
-                <th key={h} style={{ textAlign: ['Present', 'Absent', 'Late', 'Leaves Used', 'Total Hours', 'Avg Hours/Day', 'Attendance %'].includes(h) ? 'right' : 'left',
-                  padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data.map(e => {
-              const present = Number(e.days_present || 0);
-              const absent = Number(e.days_absent || 0);
-              const totalDays = present + absent;
-              const attendance_pct = totalDays > 0 ? ((present / totalDays) * 100).toFixed(0) : '—';
-              const avg_hours = present > 0 ? (Number(e.total_work_hours || 0) / present).toFixed(1) : '—';
-              return (
-                <tr key={e.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                  <td style={{ padding: '10px', fontWeight: 600 }}>{e.name}</td>
-                  <td style={{ padding: '10px', color: 'var(--ink-2)' }}>{e.department || '—'}</td>
-                  <td className="mtbl__num" style={{ padding: '10px', color: 'var(--ok)' }}>{e.days_present}</td>
-                  <td className="mtbl__num" style={{ padding: '10px', color: 'var(--danger)' }}>{e.days_absent}</td>
-                  <td className="mtbl__num" style={{ padding: '10px', color: 'var(--st-in-review)' }}>{e.days_late}</td>
-                  <td className="mtbl__num" style={{ padding: '10px', color: 'var(--st-in-progress)' }}>{e.leaves_taken}</td>
-                  <td className="mtbl__num" style={{ padding: '10px' }}>{Number(e.total_work_hours || 0).toFixed(1)}</td>
-                  <td className="mtbl__num" style={{ padding: '10px' }}>{avg_hours}</td>
-                  <td className="mtbl__num" style={{ padding: '10px', fontWeight: 700 }}>
-                    <span style={{ color: Number(attendance_pct) >= 90 ? 'var(--ok)' : Number(attendance_pct) >= 75 ? 'var(--warn)' : 'var(--danger)' }}>
-                      {attendance_pct}%
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
+      {list.loading ? <Shim count={6} />
+        : list.error ? <ErrorNote what="The performance summary" error={list.error} onRetry={list.reload} />
+          : list.items.length === 0 ? (
+            <Empty
+              icon="📈"
+              title="Nothing to summarise for this month"
+              sub={`No attendance is recorded between ${from} and ${to}, so there is nothing to derive metrics from.`}
+            />
+          ) : (
+            <>
+              <p className="note note--info mn-bridge">
+                <b>Attendance % is present ÷ (present + absent).</b> Leave,
+                holidays and weekends are excluded from both sides, so a month
+                spent entirely on approved leave does not read as poor
+                attendance.
+              </p>
+              <DataTable columns={[
+                'Employee', 'Department',
+                { label: 'Present', align: 'right' },
+                { label: 'Absent', align: 'right' },
+                { label: 'Late', align: 'right' },
+                { label: 'Leave', align: 'right' },
+                { label: 'Hours', align: 'right' },
+                { label: 'Avg/day', align: 'right' },
+                { label: 'Attendance', align: 'right' },
+              ]}>
+                {list.items.map(e => {
+                  const present = Number(e.days_present || 0);
+                  const absent = Number(e.days_absent || 0);
+                  const counted = present + absent;
+                  const pct = counted > 0 ? Math.round((present / counted) * 100) : null;
+                  const avg = present > 0
+                    ? (Number(e.total_work_hours || 0) / present).toFixed(1)
+                    : '—';
+                  return (
+                    <tr key={e.id}>
+                      <Td bold>{e.name}</Td>
+                      <Td className="mn-t__mute">{e.department || '—'}</Td>
+                      <Td align="right" mono><span className="mn-t__n" style={{ '--c': 'var(--ok)' }}>{present}</span></Td>
+                      <Td align="right" mono><span className="mn-t__n" style={{ '--c': 'var(--danger)' }}>{absent}</span></Td>
+                      <Td align="right" mono><span className="mn-t__n" style={{ '--c': 'var(--tertiary)' }}>{e.days_late}</span></Td>
+                      <Td align="right" mono><span className="mn-t__n" style={{ '--c': 'var(--st-in-progress)' }}>{e.leaves_taken}</span></Td>
+                      <Td align="right" mono>{Number(e.total_work_hours || 0).toFixed(1)}</Td>
+                      <Td align="right" mono>{avg}</Td>
+                      <Td align="right" mono>
+                        {pct == null
+                          ? <span className="mn-t__mute">—</span>
+                          : <span className="mn-t__n mn-t__n--b" style={{ '--c': pctColor(pct) }}>{pct}%</span>}
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </DataTable>
+            </>
+          )}
     </div>
   );
+}
+
+/** The three bands. Written once so the table and any future chart agree. */
+function pctColor(pct) {
+  if (pct >= 90) return 'var(--ok)';
+  if (pct >= 75) return 'var(--warn)';
+  return 'var(--danger)';
 }

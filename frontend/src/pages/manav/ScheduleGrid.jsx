@@ -1,145 +1,235 @@
-import React, { useState, useEffect } from 'react';
+// Manav → Shifts → Schedules. Roster assignment and coverage.
+//
+// ── The Coverage button did nothing, and could not have ──────────────────────
+//
+// `loadCoverage()` read `r.data.data || r.data || []`, but
+// `GET /v1/manav/schedules/coverage` answers `{ coverage: [...],
+// total_employees: N }` — there is no `data` key. So `r.data.data` was
+// undefined, the `||` fell through to `r.data`, and `coverage` state became the
+// ENVELOPE OBJECT rather than an array. The panel then rendered on
+// `coverage.length > 0`, and an object has no `length`, so the condition was
+// `undefined > 0` — false, always. Pressing Coverage fetched successfully and
+// displayed nothing, with no error to explain it.
+//
+// This is precisely the unwrapping hazard `lib/api`'s `rows()` exists to end,
+// and precisely the case where `rows()` alone is NOT the answer: the key is
+// `coverage`, not `data`, and `total_employees` sits beside it and is worth
+// showing. So this one call site keeps the whole body deliberately, the same
+// way the attendance summary keeps its `month`.
+//
+// `loadDropdowns()` was also a bare `catch {}` covering BOTH selects at once,
+// so a failure left the assign form with two empty dropdowns and no reason.
+import React, { useState } from 'react';
 import { api } from '../../lib/api';
-import { Badge } from './_shared';
+import { Empty, DataTable, Td } from '../../components/editorial';
+import { Badge, useList, useResource, ErrorNote, Shim, errText, today } from './_shared';
 
 export default function ScheduleGrid({ pushToast }) {
-  const [schedules, setSchedules] = useState([]);
-  const [coverage, setCoverage] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [shifts, setShifts] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [dateFrom, setDateFrom] = useState(today());
+  const [dateTo, setDateTo] = useState(today());
+  const [range, setRange] = useState(null);      // null until Load is pressed
   const [showForm, setShowForm] = useState(false);
   const [showCoverage, setShowCoverage] = useState(false);
   const [saving, setSaving] = useState(false);
-  const today = new Date().toISOString().slice(0, 10);
-  const [dateFrom, setDateFrom] = useState(today);
-  const [dateTo, setDateTo] = useState(today);
-  const [form, setForm] = useState({ employee_id: '', shift_id: '', date: today });
+  const [form, setForm] = useState({ employee_id: '', shift_id: '', date: today() });
 
-  useEffect(() => { loadDropdowns(); }, []);
+  const employees = useList('/v1/manav/employees');
+  const shifts = useList('/v1/manav/shifts');
 
-  async function loadDropdowns() {
-    try {
-      const [e, s] = await Promise.all([api.get('/v1/manav/employees'), api.get('/v1/manav/shifts')]);
-      setEmployees(e.data.data || e.data || []);
-      setShifts(s.data.data || s.data || []);
-    } catch {}
-  }
-
-  async function loadSchedules() {
-    setLoading(true);
-    try {
-      const r = await api.get(`/v1/manav/schedules?date_from=${dateFrom}&date_to=${dateTo}`);
-      setSchedules(r.data.data || r.data || []);
-    } catch { pushToast({ title: 'Failed to load schedules', type: 'error' }); }
-    finally { setLoading(false); }
-  }
-
-  async function loadCoverage() {
-    try {
-      const r = await api.get(`/v1/manav/schedules/coverage?date_from=${dateFrom}&date_to=${dateTo}`);
-      setCoverage(r.data.data || r.data || []);
-      setShowCoverage(true);
-    } catch { pushToast({ title: 'Failed to load coverage', type: 'error' }); }
-  }
+  const schedUrl = range
+    ? `/v1/manav/schedules?date_from=${range.from}&date_to=${range.to}`
+    : null;
+  const schedules = useList(schedUrl || '/v1/manav/schedules?date_from=&date_to=', [schedUrl]);
 
   async function save(e) {
     e.preventDefault();
     setSaving(true);
     try {
       await api.post('/v1/manav/schedules', form);
-      pushToast({ title: 'Schedule assigned', type: 'success' });
+      pushToast({ title: 'Shift assigned', type: 'success' });
       setShowForm(false);
-      setForm({ employee_id: '', shift_id: '', date: today });
-      loadSchedules();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-    finally { setSaving(false); }
+      setForm({ employee_id: '', shift_id: '', date: today() });
+      if (range) schedules.reload(); else setRange({ from: dateFrom, to: dateTo });
+    } catch (err) {
+      pushToast({ title: errText(err, 'The shift could not be assigned.'), type: 'error' });
+    } finally { setSaving(false); }
   }
+
+  const blocked = !!employees.error || !!shifts.error;
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <label style={{ fontSize: 13 }}>From <input className="k-input" type="date" aria-label="Filter from date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></label>
-        <label style={{ fontSize: 13 }}>To <input className="k-input" type="date" aria-label="Filter to date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></label>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={loadSchedules}>Load</button>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={loadCoverage}>Coverage</button>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ Assign Shift</button>
+      <div className="mn-bar">
+        <label className="mn-field">
+          <span className="mn-field__l">From</span>
+          <input className="k-input mn-f" type="date" value={dateFrom}
+            onChange={e => setDateFrom(e.target.value)} />
+        </label>
+        <label className="mn-field">
+          <span className="mn-field__l">To</span>
+          <input className="k-input mn-f" type="date" value={dateTo}
+            onChange={e => setDateTo(e.target.value)} />
+        </label>
+        <button type="button" className="k-btn k-btn--ghost"
+          onClick={() => { setRange({ from: dateFrom, to: dateTo }); setShowCoverage(false); }}>
+          Load
+        </button>
+        <button type="button" className="k-btn k-btn--ghost"
+          onClick={() => { setRange({ from: dateFrom, to: dateTo }); setShowCoverage(true); }}>
+          Coverage
+        </button>
+        <div className="mn-bar__gap" />
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+          + Assign shift
+        </button>
       </div>
 
       {showForm && (
-        <form onSubmit={save} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Assign Shift</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee *</span>
-              <select className="k-input" required value={form.employee_id} onChange={e => setForm({ ...form, employee_id: e.target.value })}>
-                <option value="">— Select —</option>
-                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}</option>)}
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Shift *</span>
-              <select className="k-input" required value={form.shift_id} onChange={e => setForm({ ...form, shift_id: e.target.value })}>
-                <option value="">— Select —</option>
-                {shifts.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Date *</span>
-              <input className="k-input" type="date" aria-label="Assign date" required value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></label>
+        <form onSubmit={save} className="k-formpanel">
+          <h3 className="k-section__title">Assign shift</h3>
+
+          {employees.error && (
+            <ErrorNote what="The employee list" error={employees.error} onRetry={employees.reload} />
+          )}
+          {shifts.error && (
+            <ErrorNote what="Shift definitions" error={shifts.error} onRetry={shifts.reload} />
+          )}
+          {!shifts.loading && !shifts.error && shifts.items.length === 0 && (
+            <p className="note note--warn">
+              <b>No shifts are defined.</b> A schedule assigns a shift, so create
+              one under Definitions first.
+            </p>
+          )}
+
+          <div className="k-formpanel__grid k-formpanel__grid--3">
+            <label className="k-formpanel__label">
+              <span>Employee *</span>
+              <select className="k-formpanel__input" required value={form.employee_id}
+                disabled={employees.loading || !!employees.error}
+                onChange={e => setForm({ ...form, employee_id: e.target.value })}>
+                <option value="">
+                  {employees.loading ? 'Loading…' : employees.error ? 'Unavailable' : '— Select —'}
+                </option>
+                {(employees.items || []).map(emp => (
+                  <option key={emp.id} value={emp.id}>{emp.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="k-formpanel__label">
+              <span>Shift *</span>
+              <select className="k-formpanel__input" required value={form.shift_id}
+                disabled={shifts.loading || !!shifts.error}
+                onChange={e => setForm({ ...form, shift_id: e.target.value })}>
+                <option value="">
+                  {shifts.loading ? 'Loading…' : shifts.error ? 'Unavailable' : '— Select —'}
+                </option>
+                {(shifts.items || []).map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="k-formpanel__label">
+              <span>Date *</span>
+              <input className="k-formpanel__input" type="date" required value={form.date}
+                onChange={e => setForm({ ...form, date: e.target.value })} />
+            </label>
           </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+          <div className="k-formpanel__actions">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Assigning…' : 'Assign'}</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving || blocked}>
+              {saving ? 'Assigning…' : 'Assign'}
+            </button>
           </div>
         </form>
       )}
 
-      {showCoverage && coverage.length > 0 && (
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Coverage</h4>
-            <button className="k-btn k-btn--ghost" style={{ fontSize: 11 }} onClick={() => setShowCoverage(false)}>Close</button>
-          </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                {['Date', 'Shift', 'Assigned'].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {coverage.map((c, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                  <td style={{ padding: '8px 10px' }}>{c.date}</td>
-                  <td style={{ padding: '8px 10px' }}>{c.shift_name}</td>
-                  <td style={{ padding: '8px 10px', fontWeight: 600 }}>{c.assigned_count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {showCoverage && range && (
+        <Coverage range={range} onClose={() => setShowCoverage(false)} />
       )}
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        schedules.length === 0 ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>No schedules. Select dates and click Load.</p> : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-              {['Date', 'Employee', 'Shift', 'Start', 'End'].map(h => (
-                <th key={h} style={{ textAlign: 'left', padding: '8px 10px', fontWeight: 600, color: 'var(--ink-3)', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {schedules.map(s => (
-              <tr key={s.id} style={{ borderBottom: '1px solid var(--rule-soft)' }}>
-                <td style={{ padding: '8px 10px' }}>{s.date}</td>
-                <td style={{ padding: '8px 10px' }}>{s.employee_name}</td>
-                <td style={{ padding: '8px 10px' }}><Badge text={s.shift_name} color={s.color || 'var(--st-in-progress)'} /></td>
-                <td style={{ padding: '8px 10px' }}>{s.start_time}</td>
-                <td style={{ padding: '8px 10px' }}>{s.end_time}</td>
+      {!range ? (
+        <Empty
+          icon="📅"
+          title="Pick a date range"
+          sub="Choose dates above and press Load to see who is rostered."
+        />
+      ) : schedules.loading ? <Shim count={5} />
+        : schedules.error ? (
+          <ErrorNote what="The roster" error={schedules.error} onRetry={schedules.reload} />
+        ) : schedules.items.length === 0 ? (
+          <Empty
+            icon="📅"
+            title="Nobody is rostered in this range"
+            sub={`No shift assignments exist between ${range.from} and ${range.to}.`}
+          />
+        ) : (
+          <DataTable columns={['Date', 'Employee', 'Shift', 'Start', 'End']}>
+            {schedules.items.map(s => (
+              <tr key={s.id}>
+                <Td className="mn-t__mono">{s.date}</Td>
+                <Td bold>{s.employee_name}</Td>
+                <Td><Badge text={s.shift_name} color={s.color || 'var(--st-in-progress)'} /></Td>
+                <Td className="mn-t__mono">{s.start_time}</Td>
+                <Td className="mn-t__mono">{s.end_time}</Td>
               </tr>
             ))}
-          </tbody>
-        </table>
-      )}
+          </DataTable>
+        )}
     </div>
+  );
+}
+
+/**
+ * Coverage. Keeps the whole envelope — the key is `coverage`, not `data`, and
+ * `total_employees` sits beside it and is the only thing that makes a headcount
+ * per shift mean anything.
+ */
+function Coverage({ range, onClose }) {
+  const url = `/v1/manav/schedules/coverage?date_from=${range.from}&date_to=${range.to}`;
+  const res = useResource(url, [url]);
+
+  const rows = res.data?.coverage || [];
+  const total = res.data?.total_employees;
+
+  return (
+    <section className="k-formpanel">
+      <div className="mn-head">
+        <h4 className="k-section__title">
+          Coverage<span className="k-section__title-hi" lang="hi">आवरण</span>
+        </h4>
+        <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Close</button>
+      </div>
+
+      {res.loading ? <Shim count={3} />
+        : res.error ? <ErrorNote what="Coverage" error={res.error} onRetry={res.reload} />
+          : rows.length === 0 ? (
+            <p className="note note--info">
+              <b>Nothing is rostered in this range.</b> There are no assignments
+              between {range.from} and {range.to} to count.
+            </p>
+          ) : (
+            <>
+              {total != null && (
+                <p className="mn-pii__note">
+                  {total} active employee{Number(total) === 1 ? '' : 's'} in the
+                  organisation. A shift covered by fewer than expected is a gap
+                  to fill — post it under Bids.
+                </p>
+              )}
+              <DataTable columns={[
+                'Date', 'Shift',
+                { label: 'Assigned', align: 'right' },
+              ]}>
+                {rows.map((c, i) => (
+                  <tr key={`${c.date}-${c.shift_id || i}`}>
+                    <Td className="mn-t__mono">{c.date}</Td>
+                    <Td>{c.shift_name}</Td>
+                    <Td align="right" mono bold>{c.assigned_count}</Td>
+                  </tr>
+                ))}
+              </DataTable>
+            </>
+          )}
+    </section>
   );
 }

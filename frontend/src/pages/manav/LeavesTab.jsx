@@ -1,231 +1,466 @@
-import React, { useState, useEffect } from 'react';
+// Manav → Leave. Requests to action, leave types, and the clash check.
+//
+// ── The conflict checker was wired to an endpoint that does not exist ────────
+//
+// This is the find of this tab, and it had never worked once. `checkConflicts`
+// called `/v1/manav/leaves/check-conflicts?start_date=…&end_date=…&department=…`
+// while the route's signature is `(employee_id, start_date, end_date)` with
+// `employee_id` REQUIRED and no `department` parameter at all. FastAPI answers
+// a missing required query param with 422 before the handler runs, so every
+// press of "Check" produced a toast reading "Failed to check" and nothing else,
+// forever.
+//
+// Had it returned 200 the panel would still have rendered blank, because every
+// field it read is misnamed. The route answers
+// `{ conflicts, conflict_count, department, department_size, on_leave_count,
+//    exceeds_threshold }` and the panel read `overlap_count`,
+// `overlap_percentage`, `has_conflict` and `overlapping_leaves` — four names,
+// none of which the server has ever sent. It also printed `ol.leave_type`,
+// which the query does not select either.
+//
+// Rebuilt against the real contract: the employee is now chosen (it has to be —
+// the department the check runs over is derived from that employee's own), the
+// percentage is computed here from the two counts the server does send, and the
+// 30% threshold is read from `exceeds_threshold` rather than recomputed, so
+// this panel and the server cannot disagree about what "too many" means.
+//
+// ── And the usual defect ─────────────────────────────────────────────────────
+//
+// `load()` caught to a toast over a list left at `[]`, so a failed fetch
+// rendered "No leave requests — requests from employees will appear here for
+// approval". `loadTypes()` and `loadEmployees()` were bare `catch {}`.
+import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
-import { Badge, LEAVE_COLORS } from './_shared';
+import { Empty } from '../../components/editorial';
+import {
+  Badge, LEAVE_COLORS, useList, ErrorNote, Shim, errText,
+} from './_shared';
 
 export default function LeavesTab() {
   const { pushToast } = useToast();
-  const [leaves, setLeaves] = useState([]);
-  const [leaveTypes, setLeaveTypes] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
-  const [showRequest, setShowRequest] = useState(false);
-  const [showType, setShowType] = useState(false);
-  const [showConflict, setShowConflict] = useState(false);
-  const [conflicts, setConflicts] = useState(null);
-  const [conflictForm, setConflictForm] = useState({ start_date: '', end_date: '', department: '' });
-  const [reqForm, setReqForm] = useState({ employee_id: '', leave_type_id: '', start_date: '', end_date: '', days: 1, reason: '' });
-  const [typeForm, setTypeForm] = useState({ name: '', code: '', annual_quota: 12, is_paid: true, carry_forward: false });
-  const [saving, setSaving] = useState(false);
-  const [employees, setEmployees] = useState([]);
+  const [panel, setPanel] = useState(null);   // 'request' | 'type' | 'conflict' | null
+  const [acting, setActing] = useState('');
 
-  useEffect(() => { load(); loadTypes(); loadEmployees(); }, []);
-
-  async function loadEmployees() {
-    try { const r = await api.get('/v1/manav/employees'); setEmployees(r.data.data || []); } catch {}
-  }
-
-  async function load() {
-    try {
-      let url = '/v1/manav/leaves?';
-      if (statusFilter) url += `status=${statusFilter}&`;
-      const r = await api.get(url);
-      setLeaves(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load leaves', type: 'error' }); }
-    finally { setLoading(false); }
-  }
-
-  async function loadTypes() {
-    try {
-      const r = await api.get('/v1/manav/leave-types');
-      setLeaveTypes(r.data.data || []);
-    } catch {}
-  }
-
-  async function submitRequest(e) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await api.post('/v1/manav/leaves', reqForm);
-      pushToast({ title: 'Leave request submitted', type: 'success' });
-      setShowRequest(false);
-      setReqForm({ employee_id: '', leave_type_id: '', start_date: '', end_date: '', days: 1, reason: '' });
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-    finally { setSaving(false); }
-  }
-
-  async function createType(e) {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await api.post('/v1/manav/leave-types', typeForm);
-      pushToast({ title: 'Leave type created', type: 'success' });
-      setShowType(false);
-      setTypeForm({ name: '', code: '', annual_quota: 12, is_paid: true, carry_forward: false });
-      loadTypes();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-    finally { setSaving(false); }
-  }
+  const url = `/v1/manav/leaves${statusFilter ? `?status=${statusFilter}` : ''}`;
+  const leaves = useList(url, [url]);
+  const types = useList('/v1/manav/leave-types');
+  const employees = useList('/v1/manav/employees');
 
   async function actionLeave(leaveId, status) {
+    setActing(leaveId + status);
     try {
       await api.patch(`/v1/manav/leaves/${leaveId}/action`, { status });
       pushToast({ title: `Leave ${status}`, type: 'success' });
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-  }
-
-  async function checkConflicts(e) {
-    e.preventDefault();
-    try {
-      let url = `/v1/manav/leaves/check-conflicts?start_date=${conflictForm.start_date}&end_date=${conflictForm.end_date}`;
-      if (conflictForm.department) url += `&department=${encodeURIComponent(conflictForm.department)}`;
-      const r = await api.get(url);
-      setConflicts(r.data);
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed to check', type: 'error' }); }
+      leaves.reload();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The decision could not be recorded.'), type: 'error' });
+    } finally { setActing(''); }
   }
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select className="k-input" style={{ width: 130 }} value={statusFilter} onChange={e => { setStatusFilter(e.target.value); }}>
-          <option value="">All Status</option>
-          {['pending', 'approved', 'rejected', 'cancelled'].map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={load}>Filter</button>
-        <div style={{ flex: 1 }} />
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 13 }} onClick={() => setShowConflict(true)}>Check Conflicts</button>
-        <button className="k-btn k-btn--ghost" style={{ fontSize: 13 }} onClick={() => setShowType(true)}>+ Leave Type</button>
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowRequest(true)}>+ Request Leave</button>
+      <div className="mn-bar">
+        <label className="mn-field">
+          <span className="mn-field__l">Status</span>
+          <select className="k-input mn-f--sm" value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}>
+            <option value="">All statuses</option>
+            {['pending', 'approved', 'rejected', 'cancelled'].map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <div className="mn-bar__gap" />
+        <button type="button" className="k-btn k-btn--ghost"
+          onClick={() => setPanel(panel === 'conflict' ? null : 'conflict')}>
+          Check clashes
+        </button>
+        <button type="button" className="k-btn k-btn--ghost"
+          onClick={() => setPanel(panel === 'type' ? null : 'type')}>
+          + Leave type
+        </button>
+        <button type="button" className="k-btn k-btn--primary"
+          onClick={() => setPanel(panel === 'request' ? null : 'request')}>
+          + Request leave
+        </button>
       </div>
 
-      {showConflict && (
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--k-primary)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Check Leave Conflicts</h4>
-          <form onSubmit={checkConflicts} style={{ display: 'flex', gap: 12, alignItems: 'end', marginBottom: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Start *</span>
-              <input className="k-input" type="date" required value={conflictForm.start_date} onChange={e => setConflictForm({ ...conflictForm, start_date: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>End *</span>
-              <input className="k-input" type="date" required value={conflictForm.end_date} onChange={e => setConflictForm({ ...conflictForm, end_date: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Department</span>
-              <input className="k-input" placeholder="Optional" value={conflictForm.department} onChange={e => setConflictForm({ ...conflictForm, department: e.target.value })} /></label>
-            <button type="submit" className="k-btn k-btn--primary" style={{ fontSize: 12 }}>Check</button>
-            <button type="button" className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={() => { setShowConflict(false); setConflicts(null); }}>Close</button>
-          </form>
-          {conflicts && (
-            <div style={{ fontSize: 13 }}>
-              <div style={{ display: 'flex', gap: 16, marginBottom: 8 }}>
-                <span><strong>Overlap:</strong> {conflicts.overlap_count} of {conflicts.department_size} ({conflicts.overlap_percentage}%)</span>
-                <Badge text={conflicts.has_conflict ? 'Conflict' : 'OK'} color={conflicts.has_conflict ? 'var(--danger)' : 'var(--ok)'} />
-              </div>
-              {conflicts.has_conflict && (
-                <p style={{ color: 'var(--danger)', fontSize: 12, margin: '4px 0 0' }}>
-                  Over 30% of the department would be on leave. Consider rescheduling.
-                </p>
-              )}
-              {conflicts.overlapping_leaves?.length > 0 && (
-                <div style={{ marginTop: 8 }}>
-                  {conflicts.overlapping_leaves.map((ol, i) => (
-                    <div key={i} style={{ fontSize: 12, color: 'var(--ink-2)', padding: '4px 0' }}>
-                      {ol.employee_name} — {ol.start_date} → {ol.end_date} ({ol.leave_type})
+      {panel === 'conflict' && (
+        <ConflictCheck employees={employees} onClose={() => setPanel(null)} />
+      )}
+
+      {panel === 'type' && (
+        <LeaveTypeForm
+          onClose={() => setPanel(null)}
+          onCreated={() => { setPanel(null); types.reload(); }}
+          pushToast={pushToast}
+        />
+      )}
+
+      {panel === 'request' && (
+        <RequestForm
+          employees={employees}
+          types={types}
+          onClose={() => setPanel(null)}
+          onCreated={() => { setPanel(null); leaves.reload(); }}
+          pushToast={pushToast}
+        />
+      )}
+
+      {leaves.loading ? <Shim count={4} />
+        : leaves.error ? <ErrorNote what="Leave requests" error={leaves.error} onRetry={leaves.reload} />
+          : leaves.items.length === 0 ? (
+            <Empty
+              icon="🏖️"
+              title={statusFilter ? `No ${statusFilter} leave requests` : 'No leave requests'}
+              sub={statusFilter
+                ? 'Clear the status filter to see every request.'
+                : 'Requests from employees appear here for approval.'}
+            />
+          ) : (
+            <div className="mn-list">
+              {leaves.items.map(lr => (
+                <article key={lr.id} className="mn-rec">
+                  <div className="mn-rec__top">
+                    <div className="mn-rec__who">
+                      <span className="mn-rec__name">{lr.employee_name}</span>
+                      <span className="mn-rec__code">{lr.employee_code}</span>
                     </div>
-                  ))}
+                    <Badge text={lr.status} color={LEAVE_COLORS[lr.status] || 'var(--on-surface-3)'} />
+                  </div>
+                  <div className="mn-rec__body">
+                    <strong>{lr.leave_type_name}</strong> ({lr.leave_type_code}) ·{' '}
+                    {lr.start_date} → {lr.end_date} · {lr.days} day{Number(lr.days) === 1 ? '' : 's'}
+                    {lr.reason && <> · {lr.reason}</>}
+                    {lr.rejection_reason && (
+                      <span className="mn-rec__rej"> · Rejected: {lr.rejection_reason}</span>
+                    )}
+                  </div>
+                  {lr.status === 'pending' && (
+                    <div className="mn-rec__act">
+                      <button
+                        type="button"
+                        className="k-btn k-btn--primary k-btn--sm"
+                        disabled={!!acting}
+                        onClick={() => actionLeave(lr.id, 'approved')}
+                      >
+                        {acting === lr.id + 'approved' ? 'Approving…' : 'Approve'}
+                      </button>
+                      <button
+                        type="button"
+                        className="k-btn k-btn--ghost k-btn--sm k-btn--reject"
+                        disabled={!!acting}
+                        onClick={() => actionLeave(lr.id, 'rejected')}
+                      >
+                        {acting === lr.id + 'rejected' ? 'Rejecting…' : 'Reject'}
+                      </button>
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The clash check — rebuilt against the endpoint the server actually serves
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function ConflictCheck({ employees, onClose }) {
+  const [form, setForm] = useState({ employee_id: '', start_date: '', end_date: '' });
+  const [state, setState] = useState({ status: 'idle', data: null, error: '' });
+
+  async function run(e) {
+    e.preventDefault();
+    setState({ status: 'loading', data: null, error: '' });
+    const q = new URLSearchParams({
+      employee_id: form.employee_id,
+      start_date: form.start_date,
+      end_date: form.end_date,
+    });
+    try {
+      const r = await api.get(`/v1/manav/leaves/check-conflicts?${q}`);
+      setState({ status: 'done', data: r.data, error: '' });
+    } catch (err) {
+      setState({ status: 'error', data: null, error: errText(err, 'The clash check could not run.') });
+    }
+  }
+
+  const d = state.data;
+  // The server sends the two counts; the percentage is derived here rather
+  // than sent, and `exceeds_threshold` is the server's own verdict — this
+  // panel never recomputes the 30% rule, so the two cannot drift apart.
+  const pct = d && d.department_size > 0
+    ? Math.round((d.on_leave_count / d.department_size) * 100)
+    : null;
+
+  return (
+    <section className="k-formpanel">
+      <div className="mn-head">
+        <h4 className="k-section__title">
+          Check clashes<span className="k-section__title-hi" lang="hi">टकराव</span>
+        </h4>
+        <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Close</button>
+      </div>
+
+      <p className="mn-pii__note">
+        Counts who else in the same department is already booked off across
+        these dates. The department is the one that employee belongs to — which
+        is why the check needs a person, not just a range.
+      </p>
+
+      {employees.error && (
+        <ErrorNote what="The employee list" error={employees.error} onRetry={employees.reload} />
+      )}
+
+      <form onSubmit={run}>
+        <div className="k-formpanel__grid k-formpanel__grid--3">
+          <label className="k-formpanel__label">
+            <span>Employee *</span>
+            <select
+              className="k-formpanel__input"
+              required
+              value={form.employee_id}
+              disabled={employees.loading || !!employees.error}
+              onChange={e => setForm({ ...form, employee_id: e.target.value })}
+            >
+              <option value="">
+                {employees.loading ? 'Loading…' : employees.error ? 'Unavailable' : 'Select…'}
+              </option>
+              {(employees.items || []).map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="k-formpanel__label">
+            <span>Start *</span>
+            <input className="k-formpanel__input" type="date" required value={form.start_date}
+              onChange={e => setForm({ ...form, start_date: e.target.value })} />
+          </label>
+          <label className="k-formpanel__label">
+            <span>End *</span>
+            <input className="k-formpanel__input" type="date" required value={form.end_date}
+              onChange={e => setForm({ ...form, end_date: e.target.value })} />
+          </label>
+        </div>
+        <div className="k-formpanel__actions">
+          <button type="submit" className="k-btn k-btn--primary" disabled={state.status === 'loading'}>
+            {state.status === 'loading' ? 'Checking…' : 'Check'}
+          </button>
+        </div>
+      </form>
+
+      {state.status === 'error' && (
+        <p className="note note--warn" role="status">
+          <b>The clash check did not run.</b> {state.error}
+        </p>
+      )}
+
+      {state.status === 'done' && d && (
+        <div>
+          <div className="mn-conf__row">
+            <span>
+              <strong>{d.on_leave_count}</strong> of <strong>{d.department_size}</strong> in{' '}
+              <strong>{d.department || 'this department'}</strong> would be away
+              {pct != null && <> ({pct}%)</>}
+            </span>
+            <Badge
+              text={d.exceeds_threshold ? 'Over threshold' : 'Within threshold'}
+              color={d.exceeds_threshold ? 'var(--danger)' : 'var(--ok)'}
+            />
+          </div>
+
+          {d.exceeds_threshold && (
+            <p className="note note--warn">
+              <b>More than 30% of the department would be on leave.</b> The
+              request can still be approved — this is a staffing warning, not a
+              block.
+            </p>
+          )}
+
+          {d.department_size === 0 && (
+            <p className="note note--info">
+              That employee has no department set, so there is no group to
+              measure against. Set a department on their record for this check
+              to mean anything.
+            </p>
+          )}
+
+          {d.conflicts?.length > 0 && (
+            <div className="mn-conf__list">
+              {d.conflicts.map(c => (
+                <div key={c.id} className="mn-conf__item">
+                  {c.employee_name}{' '}
+                  <span className="mn-rec__code">{c.employee_code}</span> —{' '}
+                  {c.start_date} → {c.end_date} · {c.days} day
+                  {Number(c.days) === 1 ? '' : 's'} · {c.status}
                 </div>
-              )}
+              ))}
             </div>
           )}
         </div>
       )}
+    </section>
+  );
+}
 
-      {showType && (
-        <form onSubmit={createType} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>New Leave Type</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Name *</span>
-              <input className="k-input" required value={typeForm.name} onChange={e => setTypeForm({ ...typeForm, name: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Code *</span>
-              <input className="k-input" required placeholder="e.g. CL, SL, EL" value={typeForm.code} onChange={e => setTypeForm({ ...typeForm, code: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Annual Quota</span>
-              <input className="k-input" type="number" value={typeForm.annual_quota} onChange={e => setTypeForm({ ...typeForm, annual_quota: parseInt(e.target.value) || 0 })} /></label>
-          </div>
-          <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 13 }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="checkbox" checked={typeForm.is_paid} onChange={e => setTypeForm({ ...typeForm, is_paid: e.target.checked })} /> Paid</label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="checkbox" checked={typeForm.carry_forward} onChange={e => setTypeForm({ ...typeForm, carry_forward: e.target.checked })} /> Carry Forward</label>
-          </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowType(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
-          </div>
-        </form>
+/* ══════════════════════════════════════════════════════════════════════════
+   Forms
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function LeaveTypeForm({ onClose, onCreated, pushToast }) {
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    name: '', code: '', annual_quota: 12, is_paid: true, carry_forward: false,
+  });
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/v1/manav/leave-types', form);
+      pushToast({ title: 'Leave type created', type: 'success' });
+      onCreated();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The leave type could not be created.'), type: 'error' });
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <form onSubmit={submit} className="k-formpanel">
+      <h4 className="k-section__title">New leave type</h4>
+      <div className="k-formpanel__grid k-formpanel__grid--3">
+        <label className="k-formpanel__label">
+          <span>Name *</span>
+          <input className="k-formpanel__input" required value={form.name}
+            onChange={e => setForm({ ...form, name: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>Code *</span>
+          <input className="k-formpanel__input" required placeholder="e.g. CL, SL, EL" value={form.code}
+            onChange={e => setForm({ ...form, code: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>Annual quota</span>
+          <input className="k-formpanel__input" type="number" min="0" value={form.annual_quota}
+            onChange={e => setForm({ ...form, annual_quota: parseInt(e.target.value, 10) || 0 })} />
+        </label>
+        <label className="k-formpanel__label mn-check">
+          <input type="checkbox" checked={form.is_paid}
+            onChange={e => setForm({ ...form, is_paid: e.target.checked })} />
+          <span>Paid leave</span>
+        </label>
+        <label className="k-formpanel__label mn-check">
+          <input type="checkbox" checked={form.carry_forward}
+            onChange={e => setForm({ ...form, carry_forward: e.target.checked })} />
+          <span>Carries forward</span>
+        </label>
+      </div>
+      <div className="k-formpanel__actions">
+        <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+          {saving ? 'Creating…' : 'Create'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function RequestForm({ employees, types, onClose, onCreated, pushToast }) {
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    employee_id: '', leave_type_id: '', start_date: '', end_date: '', days: 1, reason: '',
+  });
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await api.post('/v1/manav/leaves', form);
+      pushToast({ title: 'Leave request submitted', type: 'success' });
+      onCreated();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The request could not be submitted.'), type: 'error' });
+    } finally { setSaving(false); }
+  }
+
+  const blocked = !!employees.error || !!types.error;
+
+  return (
+    <form onSubmit={submit} className="k-formpanel">
+      <h4 className="k-section__title">Request leave</h4>
+
+      {employees.error && (
+        <ErrorNote what="The employee list" error={employees.error} onRetry={employees.reload} />
+      )}
+      {types.error && (
+        <ErrorNote what="Leave types" error={types.error} onRetry={types.reload} />
+      )}
+      {!types.loading && !types.error && types.items.length === 0 && (
+        <p className="note note--warn">
+          <b>No leave types are defined.</b> A request has to be against a type,
+          so create one first with “+ Leave type”.
+        </p>
       )}
 
-      {showRequest && (
-        <form onSubmit={submitRequest} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Request Leave</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee *</span>
-              <select className="k-input" required value={reqForm.employee_id} onChange={e => setReqForm({ ...reqForm, employee_id: e.target.value })}>
-                <option value="">Select employee…</option>
-                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name} ({emp.employee_code})</option>)}
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Leave Type *</span>
-              <select className="k-input" required value={reqForm.leave_type_id} onChange={e => setReqForm({ ...reqForm, leave_type_id: e.target.value })}>
-                <option value="">Select…</option>
-                {leaveTypes.map(lt => <option key={lt.id} value={lt.id}>{lt.name} ({lt.code})</option>)}
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Days</span>
-              <input className="k-input" type="number" step="0.5" min="0.5" value={reqForm.days} onChange={e => setReqForm({ ...reqForm, days: parseFloat(e.target.value) || 1 })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Start Date *</span>
-              <input className="k-input" type="date" required value={reqForm.start_date} onChange={e => setReqForm({ ...reqForm, start_date: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>End Date *</span>
-              <input className="k-input" type="date" required value={reqForm.end_date} onChange={e => setReqForm({ ...reqForm, end_date: e.target.value })} /></label>
-            <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Reason</span>
-              <textarea className="k-input" rows={2} value={reqForm.reason}
-                onChange={e => setReqForm({ ...reqForm, reason: e.target.value })} style={{ resize: 'vertical' }} /></label>
-          </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowRequest(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Submitting…' : 'Submit'}</button>
-          </div>
-        </form>
-      )}
-
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        leaves.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>🏖️</div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No leave requests</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Leave requests from employees will appear here for approval.</div>
-          </div>
-        ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {leaves.map(lr => (
-            <div key={lr.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: '12px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <div>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>{lr.employee_name}</span>
-                  <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ink-3)' }}>{lr.employee_code}</span>
-                </div>
-                <Badge text={lr.status} color={LEAVE_COLORS[lr.status] || 'var(--on-surface-3)'} />
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>
-                <strong>{lr.leave_type_name}</strong> ({lr.leave_type_code}) · {lr.start_date} → {lr.end_date} · {lr.days} day{lr.days > 1 ? 's' : ''}
-                {lr.reason && <span> · {lr.reason}</span>}
-                {lr.rejection_reason && <span style={{ color: 'var(--danger)' }}> · Rejected: {lr.rejection_reason}</span>}
-              </div>
-              {lr.status === 'pending' && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                  <button className="k-btn k-btn--primary" style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => actionLeave(lr.id, 'approved')}>Approve</button>
-                  <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px', color: 'var(--danger)' }} onClick={() => actionLeave(lr.id, 'rejected')}>Reject</button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+      <div className="k-formpanel__grid k-formpanel__grid--2">
+        <label className="k-formpanel__label">
+          <span>Employee *</span>
+          <select className="k-formpanel__input" required value={form.employee_id}
+            disabled={employees.loading || !!employees.error}
+            onChange={e => setForm({ ...form, employee_id: e.target.value })}>
+            <option value="">
+              {employees.loading ? 'Loading…' : employees.error ? 'Unavailable' : 'Select employee…'}
+            </option>
+            {(employees.items || []).map(emp => (
+              <option key={emp.id} value={emp.id}>{emp.name} ({emp.employee_code})</option>
+            ))}
+          </select>
+        </label>
+        <label className="k-formpanel__label">
+          <span>Leave type *</span>
+          <select className="k-formpanel__input" required value={form.leave_type_id}
+            disabled={types.loading || !!types.error}
+            onChange={e => setForm({ ...form, leave_type_id: e.target.value })}>
+            <option value="">
+              {types.loading ? 'Loading…' : types.error ? 'Unavailable' : 'Select…'}
+            </option>
+            {(types.items || []).map(lt => (
+              <option key={lt.id} value={lt.id}>{lt.name} ({lt.code})</option>
+            ))}
+          </select>
+        </label>
+        <label className="k-formpanel__label">
+          <span>Days</span>
+          <input className="k-formpanel__input" type="number" step="0.5" min="0.5" value={form.days}
+            onChange={e => setForm({ ...form, days: parseFloat(e.target.value) || 1 })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>Start date *</span>
+          <input className="k-formpanel__input" type="date" required value={form.start_date}
+            onChange={e => setForm({ ...form, start_date: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>End date *</span>
+          <input className="k-formpanel__input" type="date" required value={form.end_date}
+            onChange={e => setForm({ ...form, end_date: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label mn-fw">
+          <span>Reason</span>
+          <textarea className="k-formpanel__input mn-ta" rows={2} value={form.reason}
+            onChange={e => setForm({ ...form, reason: e.target.value })} />
+        </label>
+      </div>
+      <div className="k-formpanel__actions">
+        <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving || blocked}>
+          {saving ? 'Submitting…' : 'Submit'}
+        </button>
+      </div>
+    </form>
   );
 }

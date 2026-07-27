@@ -1,34 +1,139 @@
-import React, { useState, useEffect } from 'react';
+// Manav → Expense claims. Reimbursement requests and their approval.
+//
+// `load()` caught to a toast and left `claims` at `[]`, so a failed fetch
+// rendered "No expense claims — employee reimbursement requests will show up
+// here": a claim of fact about money owed, printed when the truth is that the
+// request failed. `loadEmployees()` was a bare `catch {}`.
+//
+// The filter also re-fetched through a `useEffect` keyed on `statusFilter`
+// while `load()` closed over the previous value, so the list lagged the select
+// by one change. `useList` keyed on the URL removes that class of bug entirely:
+// the URL IS the state.
+import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
-import { Badge, CLAIM_COLORS, CLAIM_CATEGORIES } from './_shared';
+import { Empty } from '../../components/editorial';
+import { Badge, CLAIM_COLORS, CLAIM_CATEGORIES, useList, ErrorNote, Shim, errText } from './_shared';
 import { inr } from '../../lib/inr';
 
 export default function ExpensesTab() {
   const { pushToast } = useToast();
-  const [claims, setClaims] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ employee_id: '', category: 'travel', expense_date: '', amount: '', description: '', receipt_urls: [] });
-  const [receiptUrl, setReceiptUrl] = useState('');
-  const [employees, setEmployees] = useState([]);
+  const [acting, setActing] = useState('');
 
-  useEffect(() => { load(); loadEmployees(); }, [statusFilter]);
+  const url = `/v1/manav/expense-claims${statusFilter ? `?status=${statusFilter}` : ''}`;
+  const claims = useList(url, [url]);
+  const employees = useList('/v1/manav/employees');
 
-  async function loadEmployees() {
-    try { const r = await api.get('/v1/manav/employees'); setEmployees(r.data.data || []); } catch {}
+  async function action(claimId, decision) {
+    setActing(claimId + decision);
+    try {
+      await api.patch(
+        `/v1/manav/expense-claims/${claimId}/${decision}`,
+        decision === 'reject' ? { status: 'rejected' } : undefined,
+      );
+      pushToast({ title: `Claim ${decision === 'approve' ? 'approved' : 'rejected'}`, type: 'success' });
+      claims.reload();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The decision could not be recorded.'), type: 'error' });
+    } finally { setActing(''); }
   }
 
-  async function load() {
-    try {
-      let url = '/v1/manav/expense-claims?';
-      if (statusFilter) url += `status=${statusFilter}&`;
-      const r = await api.get(url);
-      setClaims(r.data.data || []);
-    } catch { pushToast({ title: 'Failed to load expense claims', type: 'error' }); }
-    finally { setLoading(false); }
+  return (
+    <div>
+      <div className="mn-bar">
+        <label className="mn-field">
+          <span className="mn-field__l">Status</span>
+          <select className="k-input mn-f--sm" value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}>
+            <option value="">All statuses</option>
+            {['pending', 'approved', 'rejected', 'paid'].map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+        <div className="mn-bar__gap" />
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+          + Submit claim
+        </button>
+      </div>
+
+      {showForm && (
+        <ClaimForm
+          employees={employees}
+          onClose={() => setShowForm(false)}
+          onCreated={() => { setShowForm(false); claims.reload(); }}
+          pushToast={pushToast}
+        />
+      )}
+
+      {claims.loading ? <Shim count={4} />
+        : claims.error ? <ErrorNote what="Expense claims" error={claims.error} onRetry={claims.reload} />
+          : claims.items.length === 0 ? (
+            <Empty
+              icon="🧾"
+              title={statusFilter ? `No ${statusFilter} claims` : 'No expense claims'}
+              sub={statusFilter
+                ? 'Clear the status filter to see every claim.'
+                : 'Employee reimbursement requests appear here for approval.'}
+            />
+          ) : (
+            <div className="mn-list">
+              {claims.items.map(c => (
+                <article key={c.id} className="mn-rec">
+                  <div className="mn-rec__top">
+                    <div className="mn-rec__who">
+                      <span className="mn-rec__name">{c.employee_name}</span>
+                      <span className="mn-rec__code">{c.employee_code}</span>
+                    </div>
+                    <div className="mn-rec__end">
+                      <span className="mn-rec__amt">{inr(Number(c.amount))}</span>
+                      <Badge text={c.status} color={CLAIM_COLORS[c.status] || 'var(--on-surface-3)'} />
+                    </div>
+                  </div>
+                  <div className="mn-rec__body">
+                    <strong className="mn-cap">{c.category}</strong> · {c.expense_date}
+                    {c.description && <> · {c.description}</>}
+                    {c.rejection_reason && (
+                      <span className="mn-rec__rej"> · Rejected: {c.rejection_reason}</span>
+                    )}
+                  </div>
+                  {c.status === 'pending' && (
+                    <div className="mn-rec__act">
+                      <button type="button" className="k-btn k-btn--primary k-btn--sm"
+                        disabled={!!acting} onClick={() => action(c.id, 'approve')}>
+                        {acting === c.id + 'approve' ? 'Approving…' : 'Approve'}
+                      </button>
+                      <button type="button" className="k-btn k-btn--ghost k-btn--sm k-btn--reject"
+                        disabled={!!acting} onClick={() => action(c.id, 'reject')}>
+                        {acting === c.id + 'reject' ? 'Rejecting…' : 'Reject'}
+                      </button>
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+    </div>
+  );
+}
+
+function ClaimForm({ employees, onClose, onCreated, pushToast }) {
+  const [saving, setSaving] = useState(false);
+  const [receiptUrl, setReceiptUrl] = useState('');
+  const [form, setForm] = useState({
+    employee_id: '', category: 'travel', expense_date: '',
+    amount: '', description: '', receipt_urls: [],
+  });
+
+  function addReceipt() {
+    const v = receiptUrl.trim();
+    if (!v) return;
+    setForm(f => ({ ...f, receipt_urls: [...f.receipt_urls, v] }));
+    setReceiptUrl('');
+  }
+
+  function dropReceipt(i) {
+    setForm(f => ({ ...f, receipt_urls: f.receipt_urls.filter((_, n) => n !== i) }));
   }
 
   async function submit(e) {
@@ -37,111 +142,88 @@ export default function ExpensesTab() {
     try {
       await api.post('/v1/manav/expense-claims', { ...form, amount: parseFloat(form.amount) || 0 });
       pushToast({ title: 'Expense claim submitted', type: 'success' });
-      setShowForm(false);
-      setForm({ employee_id: '', category: 'travel', expense_date: '', amount: '', description: '', receipt_urls: [] });
-      setReceiptUrl('');
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
-    finally { setSaving(false); }
-  }
-
-  function addReceipt() {
-    if (!receiptUrl.trim()) return;
-    setForm(f => ({ ...f, receipt_urls: [...f.receipt_urls, receiptUrl.trim()] }));
-    setReceiptUrl('');
-  }
-
-  async function action(claimId, decision) {
-    try {
-      await api.patch(`/v1/manav/expense-claims/${claimId}/${decision}`, decision === 'reject' ? { status: 'rejected' } : undefined);
-      pushToast({ title: `Claim ${decision === 'approve' ? 'approved' : 'rejected'}`, type: 'success' });
-      load();
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Failed', type: 'error' }); }
+      onCreated();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The claim could not be submitted.'), type: 'error' });
+    } finally { setSaving(false); }
   }
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        <select className="k-input" style={{ width: 130 }} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="">All Status</option>
-          {['pending', 'approved', 'rejected', 'paid'].map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <div style={{ flex: 1 }} />
-        <button className="k-btn k-btn--primary" style={{ fontSize: 13 }} onClick={() => setShowForm(true)}>+ Submit Claim</button>
-      </div>
+    <form onSubmit={submit} className="k-formpanel">
+      <h4 className="k-section__title">Submit expense claim</h4>
 
-      {showForm && (
-        <form onSubmit={submit} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700 }}>Submit Expense Claim</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee *</span>
-              <select className="k-input" required value={form.employee_id} onChange={e => setForm({ ...form, employee_id: e.target.value })}>
-                <option value="">Select employee…</option>
-                {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name} ({emp.employee_code})</option>)}
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Category</span>
-              <select className="k-input" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
-                {CLAIM_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Date *</span>
-              <input className="k-input" type="date" required value={form.expense_date} onChange={e => setForm({ ...form, expense_date: e.target.value })} /></label>
-            <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Amount (₹) *</span>
-              <input className="k-input" type="number" required value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} /></label>
-            <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Description</span>
-              <textarea className="k-input" rows={2} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} style={{ resize: 'vertical' }} /></label>
-            <label style={{ fontSize: 13, gridColumn: '1 / -1' }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Receipt URL</span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input className="k-input" placeholder="Paste receipt image/PDF URL" value={receiptUrl} onChange={e => setReceiptUrl(e.target.value)} style={{ flex: 1 }} />
-                <button type="button" className="k-btn k-btn--ghost" style={{ fontSize: 12 }} onClick={addReceipt}>Add</button>
-              </div>
-              {form.receipt_urls.length > 0 && (
-                <div style={{ marginTop: 6, fontSize: 12, color: 'var(--ink-3)' }}>{form.receipt_urls.length} receipt(s) attached</div>
-              )}
-            </label>
-          </div>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Submitting…' : 'Submit'}</button>
-          </div>
-        </form>
+      {employees.error && (
+        <ErrorNote what="The employee list" error={employees.error} onRetry={employees.reload} />
       )}
 
-      {loading ? <p style={{ color: 'var(--ink-3)', fontSize: 13, textAlign: 'center', padding: 24 }}>Loading…</p> :
-        claims.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <div style={{ fontSize: 32, marginBottom: 8 }}>🧾</div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>No expense claims</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-3)', maxWidth: 300, margin: '0 auto' }}>Employee reimbursement requests will show up here.</div>
+      <div className="k-formpanel__grid k-formpanel__grid--3">
+        <label className="k-formpanel__label">
+          <span>Employee *</span>
+          <select className="k-formpanel__input" required value={form.employee_id}
+            disabled={employees.loading || !!employees.error}
+            onChange={e => setForm({ ...form, employee_id: e.target.value })}>
+            <option value="">
+              {employees.loading ? 'Loading…' : employees.error ? 'Unavailable' : 'Select employee…'}
+            </option>
+            {(employees.items || []).map(emp => (
+              <option key={emp.id} value={emp.id}>{emp.name} ({emp.employee_code})</option>
+            ))}
+          </select>
+        </label>
+        <label className="k-formpanel__label">
+          <span>Category</span>
+          <select className="k-formpanel__input" value={form.category}
+            onChange={e => setForm({ ...form, category: e.target.value })}>
+            {CLAIM_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <label className="k-formpanel__label">
+          <span>Date *</span>
+          <input className="k-formpanel__input" type="date" required value={form.expense_date}
+            onChange={e => setForm({ ...form, expense_date: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>Amount *</span>
+          <input className="k-formpanel__input" type="number" min="0" step="0.01" required
+            value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label mn-fw">
+          <span>Description</span>
+          <textarea className="k-formpanel__input mn-ta" rows={2} value={form.description}
+            onChange={e => setForm({ ...form, description: e.target.value })} />
+        </label>
+        <div className="k-formpanel__label mn-fw">
+          <span>Receipts</span>
+          <div className="mn-inline">
+            <input
+              className="k-formpanel__input"
+              placeholder="Paste a receipt image or PDF URL"
+              aria-label="Receipt URL"
+              value={receiptUrl}
+              onChange={e => setReceiptUrl(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addReceipt(); } }}
+            />
+            <button type="button" className="k-btn k-btn--ghost" onClick={addReceipt}>Add</button>
           </div>
-        ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {claims.map(c => (
-            <div key={c.id} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: '12px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                <div>
-                  <span style={{ fontWeight: 700, fontSize: 14 }}>{c.employee_name}</span>
-                  <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ink-3)' }}>{c.employee_code}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{inr(Number(c.amount))}</span>
-                  <Badge text={c.status} color={CLAIM_COLORS[c.status] || 'var(--on-surface-3)'} />
-                </div>
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--ink-2)' }}>
-                <strong style={{ textTransform: 'capitalize' }}>{c.category}</strong> · {c.expense_date}
-                {c.description && <span> · {c.description}</span>}
-                {c.rejection_reason && <span style={{ color: 'var(--danger)' }}> · Rejected: {c.rejection_reason}</span>}
-              </div>
-              {c.status === 'pending' && (
-                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                  <button className="k-btn k-btn--primary" style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => action(c.id, 'approve')}>Approve</button>
-                  <button className="k-btn k-btn--ghost" style={{ fontSize: 12, padding: '4px 12px', color: 'var(--danger)' }} onClick={() => action(c.id, 'reject')}>Reject</button>
-                </div>
-              )}
-            </div>
-          ))}
+          {form.receipt_urls.length > 0 && (
+            <ul className="mn-chiplist">
+              {form.receipt_urls.map((u, i) => (
+                <li key={u + i} className="mn-chiplist__i">
+                  <span className="mn-chiplist__u">{u}</span>
+                  <button type="button" className="mn-chiplist__x"
+                    aria-label={`Remove receipt ${i + 1}`} onClick={() => dropReceipt(i)}>×</button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+      <div className="k-formpanel__actions">
+        <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving || !!employees.error}>
+          {saving ? 'Submitting…' : 'Submit'}
+        </button>
+      </div>
+    </form>
   );
 }

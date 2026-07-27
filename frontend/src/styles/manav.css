@@ -1,0 +1,418 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MANAV · मानव — HRMS surfaces.
+
+   `frontend/src/pages/manav/` carried 609 inline styles across 16 files.
+   `ManavPage.jsx` had already been reduced to an 84-line route shell, which
+   made the module LOOK finished — the split had moved the debt into the tab
+   directory rather than paying it. EmployeesTab alone held 87.
+
+   None of those literals tracked the Text size or Border radius preferences,
+   every table restated the same `padding: '8px 10px'` header cell, and every
+   one of the eleven tabs re-declared the same card, the same toolbar and the
+   same three-column form grid as a fresh object literal.
+
+   This file is the styled half of that conversion. It is a per-surface
+   stylesheet on the same footing as vetana.css, boards.css and sanvaad.css
+   rather than an addition to module.css, which is shared chrome and belongs to
+   every module at once.
+
+   ── What this file deliberately does NOT define ──────────────────────────────
+
+   Cards, forms, tables, detail panes, stat strips, shimmer and the note blocks
+   already exist as `k-*` in editorial.css. Manav consumes those. `mn-*` is only
+   for what is genuinely Manav's own: the shift sub-navigation, the recruitment
+   pipeline board, the leave and claim review rows, and the attendance ledger.
+   A second `.k-formpanel` under a different name is how two modules drift.
+
+   Everything below consumes tokens only. No literal colour, no literal radius.
+   Sizes below the 11px metadata floor (00 §12) are written as
+   max(11px, calc(var(--font-size-base) * n)) so they follow the Text size
+   preference and can never fall under the floor.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.mn-page { padding-bottom: 48px; }
+
+/* ── Toolbar ──────────────────────────────────────────────────────────────
+   Every tab opens with filters on the left and the create action on the right.
+   This was `display:flex; gap:8; marginBottom:16; alignItems:center` retyped
+   eleven times, once per tab, with three of them forgetting `flexWrap` and so
+   overflowing the moment a filter row met a narrow window. */
+.mn-bar {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; margin-bottom: 16px;
+}
+/* The spacer that pushes the primary action to the trailing edge. Was
+   `<div style={{ flex: 1 }} />` — a styled element standing in for alignment. */
+.mn-bar__gap { flex: 1 1 auto; }
+.mn-bar__lbl {
+  font-size: max(11px, calc(var(--font-size-base) * .86));
+  color: var(--on-surface-3); white-space: nowrap;
+}
+/* Filter controls size to their content rather than stretching. `.k-input` is
+   full-width by default, which is right in a form and wrong in a toolbar. */
+.mn-bar .mn-f      { width: 150px; }
+.mn-bar .mn-f--sm  { width: 130px; }
+.mn-bar .mn-f--lg  { width: 220px; }
+.mn-bar .mn-f--grow { flex: 1 1 220px; width: auto; min-width: 160px; }
+
+/* A labelled toolbar control. The date filters were bare inputs whose meaning
+   lived only in their position — "From" and "To" were plain text nodes beside
+   them, not labels bound to the field. */
+/* A form field that spans the whole grid — descriptions, bodies, receipt rows.
+   Was `style={{ gridColumn: '1 / -1' }}` repeated across six forms. */
+.mn-fw { grid-column: 1 / -1; }
+/* A textarea should grow vertically and never horizontally: a resize handle on
+   the x-axis inside a grid cell drags the column width with it. */
+.mn-ta { resize: vertical; min-height: 62px; }
+/* A native colour input needs a height and almost no padding, or the swatch is
+   a sliver inside a text-input box. */
+.mn-color { height: 36px; padding: 2px; }
+
+/* A checkbox field. `.k-formpanel__label` is a column; a checkbox and its text
+   belong on one line, aligned on the box rather than the baseline. */
+.mn-check {
+  flex-direction: row; align-items: center; gap: 8px;
+  align-self: end; padding-bottom: 9px;
+}
+.mn-check input { flex-shrink: 0; }
+
+/* An input with a trailing button on one line. */
+.mn-inline { display: flex; gap: 8px; align-items: center; }
+.mn-inline .k-formpanel__input { flex: 1 1 auto; min-width: 0; }
+
+/* The list of attached receipt URLs. Was a bare count — "2 receipt(s)
+   attached" — with no way to see or remove what had been pasted. */
+.mn-chiplist {
+  list-style: none; margin: 6px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.mn-chiplist__i {
+  display: flex; align-items: center; gap: 8px;
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  color: var(--on-surface-3);
+  background: var(--surface-2); border-radius: var(--r-xs);
+  padding: 4px 8px;
+}
+.mn-chiplist__u {
+  flex: 1; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.mn-chiplist__x {
+  background: none; border: none; cursor: pointer;
+  color: var(--danger); font-size: 15px; line-height: 1;
+  padding: 0 2px; flex-shrink: 0;
+}
+
+/* Category and stage names arrive lowercase from the API. */
+.mn-cap { text-transform: capitalize; }
+
+.mn-field { display: flex; flex-direction: column; gap: 3px; }
+.mn-field__l {
+  font-size: max(11px, calc(var(--font-size-base) * .82));
+  font-weight: 600; color: var(--on-surface-3);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+
+/* ── Section head ─────────────────────────────────────────────────────────── */
+.mn-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+}
+
+/* ── The failure block ────────────────────────────────────────────────────
+   Mirrors .vt-err. A failed fetch on an HR module must never render as an
+   empty state: "No employees yet" and "the employee list did not load" are
+   opposite claims about the business, and `catch {}` followed by
+   `length === 0` prints the first when the second is true. */
+.mn-err {
+  display: flex; align-items: baseline; gap: 8px;
+  flex-wrap: wrap; margin-bottom: 16px;
+}
+.mn-err__go {
+  margin-left: auto;
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+}
+
+/* ── Record list (leave requests, expense claims) ─────────────────────────
+   Both tabs rendered the same card by hand with the same four literals. */
+.mn-list { display: flex; flex-direction: column; gap: 8px; }
+.mn-rec {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-radius: var(--r-md); padding: 12px 16px;
+}
+.mn-rec__top {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; margin-bottom: 4px; flex-wrap: wrap;
+}
+.mn-rec__who { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.mn-rec__name { font-weight: 700; font-size: var(--t-body-sm); }
+.mn-rec__code {
+  font-family: var(--font-mono);
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  color: var(--on-surface-3);
+}
+.mn-rec__end { display: flex; align-items: center; gap: 10px; }
+.mn-rec__amt {
+  font-family: var(--font-mono); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mn-rec__body {
+  font-size: max(12px, calc(var(--font-size-base) * .93));
+  color: var(--on-surface-2); line-height: 1.55;
+}
+.mn-rec__rej { color: var(--danger); }
+.mn-rec__act { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+
+/* ── Card grid (departments, shifts, bids, swaps) ─────────────────────────
+   Four tabs each declared their own `repeat(auto-fill, minmax(Npx, 1fr))` with
+   N varying between 220 and 300 for no reason anyone recorded. One grid, one
+   minimum, so the four surfaces line up with each other. */
+.mn-grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.mn-card {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-radius: var(--r-md); padding: 16px;
+}
+.mn-card__t {
+  margin: 0 0 8px; font-size: var(--t-body);
+  font-weight: 700; letter-spacing: -.01em;
+}
+.mn-card__meta {
+  font-size: max(12px, calc(var(--font-size-base) * .93));
+  color: var(--on-surface-2);
+}
+.mn-card__meta > * + * { margin-top: 4px; }
+.mn-card__act { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+/* A single action that owns the whole card foot. */
+.mn-wide { flex: 1 1 auto; justify-content: center; }
+/* A quoted reason. Was `fontStyle: italic` around hand-typed quote marks — the
+   marks are the quotation, so the italic was doing the job twice. */
+.mn-quote {
+  color: var(--on-surface-3);
+  border-left: 2px solid var(--rule);
+  padding-left: 8px; margin-top: 4px;
+}
+.mn-card__head {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.mn-card__head .mn-card__t { margin: 0; flex: 1; min-width: 0; }
+
+/* The shift colour dot. `--c` is set per instance from the row's stored
+   colour — check-tokens deviation 2, the one inline form that survives. */
+.mn-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--c, var(--st-in-progress)); flex-shrink: 0;
+}
+
+/* ── Shift sub-navigation ─────────────────────────────────────────────────
+   Was four buttons carrying a nine-property inline object each, including the
+   active underline. Now a real tablist. */
+.mn-sub {
+  display: flex; gap: 4px; margin-bottom: 20px;
+  border-bottom: 1px solid var(--rule-soft); flex-wrap: wrap;
+}
+.mn-sub__b {
+  padding: 6px 14px; font-size: max(12px, calc(var(--font-size-base) * .93));
+  font-weight: 400; color: var(--on-surface-3);
+  background: none; border: none; cursor: pointer;
+  text-transform: capitalize; white-space: nowrap;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color calc(.15s * var(--ix)), border-color calc(.15s * var(--ix));
+}
+.mn-sub__b:hover { color: var(--on-surface); }
+.mn-sub__b.on {
+  font-weight: 700; color: var(--primary-text);
+  border-bottom-color: var(--k-primary);
+}
+.mn-sub__b:focus-visible {
+  outline: 2px solid var(--k-primary); outline-offset: -2px;
+}
+
+/* ── Recruitment pipeline ─────────────────────────────────────────────────
+   A horizontally scrolling board of stage columns. */
+.mn-pipe {
+  display: flex; gap: 12px; overflow-x: auto;
+  padding-bottom: 16px; scrollbar-width: thin;
+}
+.mn-pipe__col {
+  min-width: 220px; flex: 1 0 220px;
+  background: var(--surface); border: 1px solid var(--rule);
+  border-radius: var(--r-md); padding: 16px;
+}
+.mn-pipe__head {
+  display: flex; justify-content: space-between;
+  align-items: center; margin-bottom: 12px;
+}
+.mn-pipe__n {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  color: var(--on-surface-3); font-variant-numeric: tabular-nums;
+}
+.mn-pipe__body { display: flex; flex-direction: column; gap: 8px; }
+.mn-cand {
+  background: var(--bg); border: 1px solid var(--rule-soft);
+  border-radius: var(--r-sm); padding: 10px;
+}
+.mn-cand__n {
+  font-weight: 600; font-size: max(12px, calc(var(--font-size-base) * .93));
+  margin-bottom: 4px;
+}
+.mn-cand__e {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  color: var(--on-surface-3); margin-bottom: 2px;
+  overflow-wrap: anywhere;
+}
+.mn-cand__link {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  color: var(--primary-text);
+}
+.mn-cand__move { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.mn-pipe__none {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  color: var(--on-surface-3); text-align: center;
+  padding: 12px 0; margin: 0;
+}
+
+/* The stage-move chips. `--c` per instance; the tint is derived from it so a
+   single custom property drives both text and background and they can never
+   disagree. Was `background: mixAlpha(colour, 9)` computed in JS per button. */
+.mn-chip {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  padding: 2px 8px; border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--c, var(--on-surface-3)) 12%, transparent);
+  color: var(--c, var(--on-surface-3));
+  border: none; cursor: pointer; font-weight: 600;
+  text-transform: capitalize;
+  transition: background calc(.15s * var(--ix));
+}
+.mn-chip:hover {
+  background: color-mix(in srgb, var(--c, var(--on-surface-3)) 22%, transparent);
+}
+.mn-chip:focus-visible { outline: 2px solid var(--c, var(--k-primary)); outline-offset: 1px; }
+
+/* ── Employee detail ──────────────────────────────────────────────────────── */
+.mn-facts {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  font-size: max(12px, calc(var(--font-size-base) * .93));
+}
+.mn-fact__k {
+  display: block; color: var(--on-surface-3);
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 2px;
+}
+.mn-fact__v { font-weight: 500; overflow-wrap: anywhere; }
+.mn-fact__v--mono { font-family: var(--font-mono); }
+
+/* The identity-document row. Revealing Aadhaar or PAN is audited, so the
+   control states that before it is pressed rather than after. */
+.mn-pii {
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--rule-soft);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.mn-pii__note {
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+  color: var(--on-surface-2);
+}
+
+/* ── Announcements ────────────────────────────────────────────────────────── */
+.mn-ann {
+  background: var(--surface); border: 1px solid var(--rule);
+  border-radius: var(--r-md); padding: 16px 20px;
+}
+/* A pinned announcement is bordered, not merely prefixed with an emoji. */
+.mn-ann--pin { border-color: var(--k-primary); }
+.mn-ann__top {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px; margin-bottom: 8px;
+}
+.mn-ann__t {
+  margin: 0; font-size: var(--t-body);
+  font-weight: 700; letter-spacing: -.01em;
+}
+.mn-ann__pin {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--primary-text);
+}
+.mn-ann__body {
+  margin: 0 0 8px; font-size: max(12px, calc(var(--font-size-base) * .93));
+  color: var(--on-surface-2); white-space: pre-wrap; line-height: 1.6;
+}
+.mn-ann__foot {
+  display: flex; justify-content: space-between;
+  align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.mn-ann__when {
+  font-size: max(11px, calc(var(--font-size-base) * .8));
+  color: var(--on-surface-3);
+}
+.mn-ann__act { display: flex; gap: 8px; }
+
+/* ── Conflict check ───────────────────────────────────────────────────────── */
+.mn-conf__row {
+  display: flex; gap: 16px; align-items: center;
+  margin-bottom: 8px; flex-wrap: wrap;
+  font-size: max(12px, calc(var(--font-size-base) * .93));
+}
+.mn-conf__list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.mn-conf__item {
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+  color: var(--on-surface-2); padding: 4px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.mn-conf__item:last-child { border-bottom: none; }
+
+/* ── Table helpers ────────────────────────────────────────────────────────
+   `.k-modtable` carries the table; these are the two per-cell treatments the
+   HR tables need on top of it. */
+.mn-t__mono {
+  font-family: var(--font-mono);
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+}
+
+/* A cluster of small controls inside a table cell. Was a nested pair of inline
+   flex divs holding a select and three buttons captioned "OK" and "X". */
+.mn-rowact { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.mn-rowact .mn-f--sm { width: 140px; }
+
+/* An edit form opened inside a table row. `.k-formpanel` carries a bottom
+   margin meant for page flow, which inside a `<td>` leaves a gap under the
+   row it belongs to. */
+.mn-editrow { margin: 0 0 10px; }
+.mn-t__mute { color: var(--on-surface-3); }
+.mn-t__row--click { cursor: pointer; }
+.mn-t__row--click:hover { background: var(--surface-2); }
+
+/* Numeric emphasis in the attendance and performance ledgers. `--c` is set per
+   cell from the status ramp. */
+.mn-t__n { font-variant-numeric: tabular-nums; color: var(--c, inherit); }
+.mn-t__n--b { font-weight: 700; }
+
+/* ── The payroll bridge note ──────────────────────────────────────────────
+   Attendance is a payroll input. A row edited here is what Vetana prices, and
+   that consequence was nowhere on screen. */
+.mn-bridge { margin-bottom: 16px; }
+
+/* ── Responsive ───────────────────────────────────────────────────────────
+   The three-column form grid is the one that must collapse: a 3-up grid of
+   date pickers is unusable under about 700px, and `k-formpanel__grid--3` is
+   a fixed `repeat(3, 1fr)`. */
+@media (max-width: 760px) {
+  .mn-page .k-formpanel__grid--3,
+  .mn-page .k-formpanel__grid--2 { grid-template-columns: 1fr; }
+  .mn-bar .mn-f,
+  .mn-bar .mn-f--sm,
+  .mn-bar .mn-f--lg { width: 100%; }
+  .mn-bar__gap { display: none; }
+  .mn-facts { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .mn-rec__top { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .mn-rec__end { width: 100%; justify-content: space-between; }
+  .mn-ann__foot { align-items: flex-start; }
+}
