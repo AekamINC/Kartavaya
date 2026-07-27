@@ -113,3 +113,8 @@ backend/scripts/_email_preview/
 
 # Document harness output — regenerate with backend/scripts/render_documents.py
 backend/.doc-harness/
+
+# Design mockups staged for side-by-side comparison (see swarm-reports/_DESIGN-GAP.md).
+# Copied from design-reference/ at need; never committed, so the reference stays
+# single-source.
+frontend/public/__ref/
