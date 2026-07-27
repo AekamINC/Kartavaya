@@ -79,18 +79,67 @@ input, textarea, select { font-family: inherit; color: inherit; }
 
 /* Sidebar slot — hidden on tablet and phone, where MobileDrawer replaces it. */
 .kv__side { display: flex; flex-shrink: 0; }
-/* Overlay drawer scrim — hidden on desktop */
+/* Overlay drawer scrim — hidden on desktop.
+   Both halves of the pair, per animations.css §8's reconciled table: scrim is
+   dmFade --dur-base --ease-enter in, dmFadeOut --dur-fast --ease-exit out.
+   It had NEITHER — measured `animation-name: none`, `transition-duration: 0s`,
+   so it snapped to full opacity on open and vanished on close. A scrim is the
+   one surface whose whole job is to say "the thing behind is inert now"; an
+   instant black is indistinguishable from a repaint bug.
+
+   `both` on the exit, not the default: without it the node reverts to opacity 1
+   for the frame between the animation finishing and React unmounting it, which
+   is a flash of full scrim at the end of a fade-out. */
 .kv__scrim {
   display: none;
   position: fixed; inset: 0; z-index: 200;
   background: var(--scrim);
+  animation: dmFade var(--dur-base) var(--ease-enter) both;
 }
+/* `pointer-events: none` while leaving, so the 220ms the exit takes is not
+   220ms in which a full-screen invisible sheet still eats taps. A user who
+   dismisses the drawer and immediately reaches for what was underneath should
+   hit it. */
+.kv__scrim[data-closing="1"] {
+  animation: dmFadeOut var(--dur-fast) var(--ease-exit) both;
+  pointer-events: none;
+}
+
+/* The drawer itself.
+   Three things changed here, all measured before and after:
+
+   1. `--dur-slow` `--ease-emph-in`, not `--dur-base` `--ease-emph`. A drawer is
+      a drawer: animations.css §8's table gives the whole class 360ms on the
+      decelerate-in curve, and this was the one drawer in the build running at
+      220ms on the wrong half of the pair.
+   2. The travel rides `--motion-scale`. It was a fixed `translateX(-100%)`, so
+      under reduced motion the DURATION collapsed to 0.22ms while the DISTANCE
+      stayed a full panel width — the exact case the `--ix` / `--motion-scale`
+      split exists to handle, unused. At scale 0 the slide is gone and the
+      drawer arrives as a pure fade, which is a state change rather than motion.
+   3. It has an exit. `MobileDrawer.jsx` now holds the node for the duration of
+      `kv-drawer-out` and unmounts on `animationend`; before this the node was
+      dropped on the same tick as the close, so an exit could not have played
+      even if one had been declared. Measured: `document.getAnimations()` during
+      close returned `[]`, and the node was already absent on the next tick.
+
+   Exit is one duration step faster than the entrance and travels less — the
+   rule the whole table is built on. 360ms in, 220ms out; -100% in, -30% out. */
 .kv__drawer {
   position: absolute; left: 0; top: 0; bottom: 0;
   box-shadow: var(--shadow-4);
-  animation: kv-drawer-in var(--dur-base) var(--ease-emph);
+  animation: kv-drawer-in var(--dur-slow) var(--ease-emph-in) both;
 }
-@keyframes kv-drawer-in { from { transform: translateX(-100%) } to { transform: none } }
+.kv__drawer[data-closing="1"] {
+  animation: kv-drawer-out var(--dur-base) var(--ease-exit) both;
+}
+@keyframes kv-drawer-in {
+  from { transform: translateX(calc(-100% * var(--motion-scale, 1))); opacity: .3 }
+  to   { transform: none; opacity: 1 }
+}
+@keyframes kv-drawer-out {
+  to { transform: translateX(calc(-30% * var(--motion-scale, 1))); opacity: 0 }
+}
 
 /* Compact top bar — burger + brand + actions. Shown wherever .kv__side is not. */
 .kv__mobbar {
@@ -639,6 +688,17 @@ input, textarea, select { font-family: inherit; color: inherit; }
   cursor: pointer;
   position: relative;
   border-radius: var(--r-sm);
+  /* Measured `all 0s` — the only nav surface in the shell with no timing at
+     all, so the active slot changed colour on a single frame while the sidebar
+     item doing the same job took 140ms. Colour properties only: `all` on a slot
+     whose label can change length would animate the row reflowing.
+
+     The reference puts a pill behind the icon and transitions its background
+     over `--dur-base` (`.mnav__ic`, app.css:308). That pill is an element this
+     build does not have, and adding it is structure. The duration is not:
+     matched to the sidebar's `--dur-fast` so the two navigations agree. */
+  transition: color var(--dur-fast) var(--ease-standard),
+              background-color var(--dur-fast) var(--ease-standard);
 }
 .mnav__i.on { color: var(--primary-text); }
 .mnav__lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
