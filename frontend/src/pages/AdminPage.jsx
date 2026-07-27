@@ -474,8 +474,11 @@ function PlatformRolesPanel() {
 export default function AdminPage() {
   const { pushToast } = useToast();
   const [users, setUsers] = useState([]);
-  const [invites, setInvites] = useState([]);
-  const [teams, setTeams] = useState([]);
+  // Both null until their own request succeeds — never `[]` on failure.
+  const [invites, setInvites] = useState(null);
+  const [invitesErr, setInvitesErr] = useState(null);
+  const [teams, setTeams] = useState(null);
+  const [teamsErr, setTeamsErr] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
 
@@ -505,10 +508,22 @@ export default function AdminPage() {
   const load = useCallback(() => {
     if (!mayOpen) { setLoading(false); return Promise.resolve(); }
     setLoading(true);
+    setInvitesErr(null);
+    setTeamsErr(null);
+    /* Invites and teams are swallowed relative to `users` on purpose — one of
+       them failing must not blank the whole console. What they must NOT do is
+       leave their own section at `[]`, because the sections below render
+       "No projects yet" and "No pending invitations" off exactly that value.
+       Each keeps its own null-or-error pair so its own empty state stays a
+       statement about the organisation rather than about the request. */
     return Promise.all([
       api.get('/admin/users').then(r => setUsers(Array.isArray(r.data) ? r.data : [])),
-      api.get('/admin/invites').then(r => setInvites(Array.isArray(r.data) ? r.data : [])).catch(() => {}),
-      api.get('/admin/teams').then(r => setTeams(Array.isArray(r.data) ? r.data : [])).catch(() => {}),
+      api.get('/admin/invites')
+        .then(r => { setInvites(Array.isArray(r.data) ? r.data : []); })
+        .catch(e => { setInvites(null); setInvitesErr(e); }),
+      api.get('/admin/teams')
+        .then(r => { setTeams(Array.isArray(r.data) ? r.data : []); })
+        .catch(e => { setTeams(null); setTeamsErr(e); }),
     ])
       .then(() => setErr(null))
       .catch(setErr)
@@ -517,8 +532,11 @@ export default function AdminPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Null propagates: unknown invites give an unknown pending list, not zero.
   const pending = useMemo(
-    () => invites.filter(i => !i.accepted_at && new Date(i.expires_at) > new Date()),
+    () => (invites === null
+      ? null
+      : invites.filter(i => !i.accepted_at && new Date(i.expires_at) > new Date())),
     [invites],
   );
 
@@ -530,6 +548,7 @@ export default function AdminPage() {
   }, [users, q]);
 
   const shownTeams = useMemo(() => {
+    if (teams === null) return null;
     const needle = teamQ.trim().toLowerCase();
     if (!needle) return teams;
     return teams.filter(t => `${t.name} ${t.team_id}`.toLowerCase().includes(needle));
@@ -593,7 +612,15 @@ export default function AdminPage() {
         <StatTile label="Accounts" sanskrit="खाते" value={users.length} sub="across the platform" />
         <StatTile label="Members" sanskrit="सदस्य" value={roleCounts.member || 0} />
         <StatTile label="Clients" sanskrit="ग्राहक" value={roleCounts.client || 0} sub="portal access" />
-        <StatTile label="Pending invites" sanskrit="लंबित" value={pending.length} variant={pending.length ? 'warn' : 'neutral'} />
+        {/* An em dash, not 0. A tile reading "0 pending invites" over a failed
+            read tells an admin there is nothing to chase, which is the same
+            false statement as the empty state below, just smaller. */}
+        <StatTile
+          label="Pending invites"
+          sanskrit="लंबित"
+          value={pending === null ? '—' : pending.length}
+          variant={pending?.length ? 'warn' : 'neutral'}
+        />
       </div>
 
       <Card>
@@ -614,7 +641,11 @@ export default function AdminPage() {
             Attachments live under <code>projects/&#123;team_id&#125;/</code>. This is the
             lookup from a folder nobody can read to the project it belongs to.
           </p>
-          {shownTeams.length === 0 ? (
+          {teamsErr ? (
+            <ErrorState kind={errorKind(teamsErr)} grant="platform access to the console" onRetry={load} />
+          ) : shownTeams === null ? (
+            <SkeletonPage withTable />
+          ) : shownTeams.length === 0 ? (
             <EmptyState
               title={{ en: teams.length ? 'No project matches' : 'No projects yet', hi: 'कुछ नहीं' }}
               description={teams.length ? 'Clear the search to see every folder.' : 'Folders appear as projects are created.'}
@@ -775,9 +806,16 @@ export default function AdminPage() {
       </Card>
 
       <Card>
-        <CardHead title="Pending invites" actions={<span className="apg__secn">{pending.length}</span>} />
+        <CardHead title="Pending invites" actions={<span className="apg__secn">{pending === null ? '—' : pending.length}</span>} />
         <CardBody flush>
-          {pending.length === 0 ? (
+          {/* "Nothing is waiting" with the reassuring tick is the most
+              dangerous empty state on this page: an admin who reads it stops
+              chasing invitations. It must never appear over a failed read. */}
+          {invitesErr ? (
+            <ErrorState kind={errorKind(invitesErr)} grant="platform access to the console" onRetry={load} />
+          ) : pending === null ? (
+            <SkeletonPage withTable />
+          ) : pending.length === 0 ? (
             <EmptyState
               icon="check"
               tone="ok"
@@ -871,7 +909,7 @@ export default function AdminPage() {
         tabs={[
           { value: 'overview', label: 'Overview', content: overviewTab },
           { value: 'users', label: 'Accounts', count: users.length, content: usersTab },
-          { value: 'invites', label: 'Invites', count: pending.length, content: invitesTab },
+          { value: 'invites', label: 'Invites', count: pending?.length, content: invitesTab },
           { value: 'roles', label: 'Platform roles', content: <PlatformRolesPanel /> },
         ]}
       />

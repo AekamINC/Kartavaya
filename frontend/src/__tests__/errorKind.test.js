@@ -51,8 +51,37 @@ describe('errorKind()', () => {
     expect(errorKind({ response: { status: 500 } })).not.toBe('offline');
   });
 
-  it('falls back to server for unexpected 4xx', () => {
+  it('classifies every other 4xx as a request problem, not a server one', () => {
     setOnline(true);
-    expect(errorKind({ response: { status: 418 } })).toBe('server');
+    // The regression this guards is a live contradiction, not a nicety.
+    // `approvals_router.py:562` answers a spent magic link with
+    // `400 "This approval link is no longer active"`, and ApprovePage renders
+    // that sentence as ErrorState's `detail` under ErrorState's own title.
+    // While 400 mapped to `server`, the card read:
+    //
+    //     Something broke on our side, not yours
+    //     This approval link is no longer active.
+    //
+    // The first line is false and it is the one that tells the visitor to wait
+    // for us. 4xx is by definition a statement about the request.
+    for (const status of [400, 409, 410, 422, 429, 418]) {
+      expect(errorKind({ response: { status } })).toBe('request');
+    }
+  });
+
+  it('keeps 403 and 404 out of the generic request bucket', () => {
+    setOnline(true);
+    // Both are 4xx but both have their own copy and their own one correct
+    // action — "request access" and "go back". Collapsing them into `request`
+    // would lose that, so the specific checks must stay ahead of the range.
+    expect(errorKind({ response: { status: 403 } })).not.toBe('request');
+    expect(errorKind({ response: { status: 404 } })).not.toBe('request');
+  });
+
+  it('still reports a genuine 5xx as server', () => {
+    setOnline(true);
+    // The inverse guard: widening 4xx must not have swept 5xx along with it.
+    expect(errorKind({ response: { status: 500 } })).toBe('server');
+    expect(errorKind({ response: { status: 503 } })).toBe('server');
   });
 });

@@ -4,6 +4,7 @@ import { PageHeader, PriorityDot } from '../components/editorial';
 import { AVATAR_COLORS, userInitials } from '../lib/utils';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { EmptyState } from '../components/ui/EmptyState';
+import { ErrorState, errorKind } from '../components/ui/ErrorState';
 
 /**
  * TeamsPage — the reference migration onto the design system.
@@ -22,10 +23,15 @@ import { EmptyState } from '../components/ui/EmptyState';
  * Nothing about the behaviour changed. Same endpoints, same state, same flow.
  */
 export default function TeamsPage() {
-  const [projects,       setProjects]       = useState([]);
+  // `null` until the list actually arrives. "No teams created" sends the user
+  // off to build a project they already have; over a 500 it is both wrong and
+  // actively misleading.
+  const [projects,       setProjects]       = useState(null);
+  const [projectsErr,    setProjectsErr]    = useState(null);
   const [selectedId,     setSelectedId]     = useState('');
   const [projectDetail,  setProjectDetail]  = useState(null);
-  const [allUsers,       setAllUsers]       = useState([]);
+  const [detailErr,      setDetailErr]      = useState(null);
+  const [allUsers,       setAllUsers]       = useState(null);
   const [userSearch,     setUserSearch]     = useState('');
   const [selectedUser,   setSelectedUser]   = useState(null);
   const [inviteEmail,    setInviteEmail]    = useState('');
@@ -49,22 +55,33 @@ export default function TeamsPage() {
   };
 
   useEffect(() => {
-    loadProjects().catch(() => {});
-    api.get('/users').then(r => setAllUsers(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+    loadProjects().then(() => setProjectsErr(null)).catch(e => { setProjects(null); setProjectsErr(e); });
+    api.get('/users')
+      .then(r => setAllUsers(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setAllUsers(null));
   }, []); // eslint-disable-line
 
   useEffect(() => {
-    if (!selectedId) { setProjectDetail(null); return; }
-    loadDetail(selectedId).catch(() => {});
+    if (!selectedId) { setProjectDetail(null); setDetailErr(null); return; }
+    // Clearing first matters as much as recording the error. This kept the
+    // PREVIOUS project's members on screen under the newly selected project's
+    // name when the second fetch failed — a roster attributed to the wrong
+    // project is worse than no roster.
+    setProjectDetail(null);
+    setDetailErr(null);
+    loadDetail(selectedId).catch(e => { setProjectDetail(null); setDetailErr(e); });
   }, [selectedId]); // eslint-disable-line
 
   const yourRole = projectDetail?.your_role || 'member';
   const isAdmin  = yourRole === 'owner' || yourRole === 'admin';
   const members  = useMemo(() => projectDetail?.members || [], [projectDetail]);
 
-  const selectedProject = projects.find(p => p.team_id === selectedId);
+  const selectedProject = (projects || []).find(p => p.team_id === selectedId);
 
-  const filteredUsers = allUsers.filter(u => {
+  // Null when the directory never loaded, so the picker below can say it does
+  // not know rather than "No existing user found" — which offers to send an
+  // invitation to somebody who already has an account.
+  const filteredUsers = allUsers === null ? null : allUsers.filter(u => {
     const currentEmails = new Set(members.map(m => m.email));
     if (currentEmails.has(u.email)) return false;
     const q = userSearch.toLowerCase();
@@ -117,8 +134,16 @@ export default function TeamsPage() {
         lede="Manage who has access to each project and their role."
       />
 
-      {/* Project selector */}
-      {projects.length > 0 ? (
+      {/* Loading, then failure, then empty. */}
+      {projectsErr ? (
+        <ErrorState
+          kind={errorKind(projectsErr)}
+          grant="access to these projects"
+          onRetry={() => loadProjects().then(() => setProjectsErr(null)).catch(e => setProjectsErr(e))}
+        />
+      ) : projects === null ? (
+        <p className="k-note">Loading projects…</p>
+      ) : projects.length > 0 ? (
         <section className="card">
           <div className="card__body">
             <label className="fld">
@@ -249,7 +274,13 @@ export default function TeamsPage() {
                     {/* Hover was an onMouseEnter handler assigning
                         style.background — a JS repaint per row, and one that
                         could not follow the theme. It is a :hover rule now. */}
-                    {userSearch && filteredUsers.length > 0 && (
+                    {userSearch && filteredUsers === null && (
+                      <div className="menu menu__empty">
+                        The user directory did not load, so we cannot tell whether
+                        “{userSearch}” already has an account.
+                      </div>
+                    )}
+                    {userSearch && filteredUsers?.length > 0 && (
                       <div className="menu">
                         {filteredUsers.map(u => (
                           <button
@@ -265,7 +296,7 @@ export default function TeamsPage() {
                         ))}
                       </div>
                     )}
-                    {userSearch && filteredUsers.length === 0 && (
+                    {userSearch && filteredUsers?.length === 0 && (
                       <div className="menu menu__empty">
                         No existing user found.{' '}
                         <button className="btn btn--text btn--sm" onClick={() => { setInviteEmail(userSearch); setUserSearch(''); }}>
@@ -339,7 +370,14 @@ export default function TeamsPage() {
         )
       )}
 
-      {projectDetail && members.length === 0 && !adding && (
+      {detailErr && (
+        <ErrorState
+          kind={errorKind(detailErr)}
+          grant="access to this project’s members"
+          onRetry={() => { setDetailErr(null); loadDetail(selectedId).catch(e => setDetailErr(e)); }}
+        />
+      )}
+      {!detailErr && projectDetail && members.length === 0 && !adding && (
         <p className="k-note">No members yet — add someone above.</p>
       )}
 

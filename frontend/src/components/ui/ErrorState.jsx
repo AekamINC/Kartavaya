@@ -23,6 +23,14 @@ export function errorKind(err) {
   const s = err.response.status;
   if (s === 403) return 'denied';
   if (s === 404) return 'missing';
+  // Every other 4xx is a statement about the REQUEST, not about us. Falling
+  // through to `server` put "Something broke on our side, not yours" directly
+  // above the server's own "This approval link is no longer active"
+  // (approvals_router.py:562 raises 400, and lines 53/56/58 answer an expired
+  // or malformed magic-link token the same way). The two sentences contradict
+  // each other, and the one that is wrong is ours: a visitor told the server
+  // broke waits for us to fix something, when the link is simply spent.
+  if (s >= 400 && s < 500) return 'request';
   return 'server';
 }
 
@@ -43,6 +51,10 @@ const COPY = {
     title: 'This doesn’t exist, or it was deleted',
     detail: 'It may have been removed since you last saw it.',
   },
+  request: {
+    title: 'That request wasn’t accepted',
+    detail: 'Nothing was changed. Going back and starting again usually clears it.',
+  },
 };
 
 const ICONS = {
@@ -50,6 +62,7 @@ const ICONS = {
   server:  <><path d="M10 6v5" /><path d="M10 14h.01" /><circle cx="10" cy="10" r="8" /></>,
   denied:  <><rect x="4" y="9" width="12" height="8" rx="1.5" /><path d="M7 9V6.5a3 3 0 0 1 6 0V9" /></>,
   missing: <><circle cx="9" cy="9" r="6" /><path d="M13.5 13.5L18 18" /></>,
+  request: <><circle cx="10" cy="10" r="8" /><path d="M7 7l6 6M13 7l-6 6" /></>,
 };
 
 /**
@@ -76,8 +89,12 @@ export function ErrorState({ kind = 'server', grant, detail, onRetry, backTo, ba
 
       {kind === 'server' && onRetry && <Button variant="out" onClick={onRetry}>Try again</Button>}
       {kind === 'denied' && onRetry && <Button variant="out" onClick={onRetry}>Request access</Button>}
-      {kind === 'missing' && backTo && <Button variant="out" onClick={backTo}>{backLabel}</Button>}
-      {/* offline gets no action — it resolves itself. */}
+      {(kind === 'missing' || kind === 'request') && backTo && (
+        <Button variant="out" onClick={backTo}>{backLabel}</Button>
+      )}
+      {/* offline gets no action — it resolves itself. `request` gets no retry:
+          re-sending the request the server just rejected reproduces the same
+          rejection, and offering the button implies otherwise. */}
     </div>
   );
 }

@@ -34,16 +34,28 @@ const STATE_LABEL: Record<ClientState, string> = {
 
 export default function ClientPortalScreen({ onLogout }: Props) {
   const { t } = useTheme();
-  const [tasks,    setTasks]    = useState<ClientTask[]>([]);
+  /**
+   * `null` until a load succeeds, never `[]`.
+   *
+   * This is a client's only window onto the firm's work. "No tasks shared with
+   * you yet" over a rejected request tells a paying client the firm has not
+   * started — the swallowed catch below left the list at `[]` and the
+   * FlatList's `ListEmptyComponent` printed it. The comment thread has the
+   * same shape: "No comments yet. Be the first." over a failed read invites a
+   * duplicate of a message that is already there.
+   */
+  const [tasks,    setTasks]    = useState<ClientTask[] | null>(null);
+  const [tasksErr, setTasksErr] = useState(false);
   const [selected, setSelected] = useState<ClientTask | null>(null);
-  const [comments, setComments] = useState<Comment[]>([]);
+  const [comments, setComments] = useState<Comment[] | null>(null);
+  const [commErr,  setCommErr]  = useState(false);
   const [comment,  setComment]  = useState('');
   const [user]                  = useState<User | null>(getCachedUser);
 
   useEffect(() => {
     apiClient.get<ClientTask[]>('/client/tasks')
-      .then(r => setTasks(Array.isArray(r.data) ? r.data : []))
-      .catch(() => {});
+      .then(r => { setTasks(Array.isArray(r.data) ? r.data : []); setTasksErr(false); })
+      .catch(() => { setTasks(null); setTasksErr(true); });
   }, []);
 
   /**
@@ -56,9 +68,11 @@ export default function ClientPortalScreen({ onLogout }: Props) {
    */
   useEffect(() => {
     if (!selected) return;
+    setComments(null);
+    setCommErr(false);
     apiClient.get<Comment[]>(`/tasks/${selected.taskId}/comments`)
-      .then(r => setComments(r.data))
-      .catch(() => {});
+      .then(r => { setComments(Array.isArray(r.data) ? r.data : []); setCommErr(false); })
+      .catch(() => { setComments(null); setCommErr(true); });
   }, [selected]);
 
   const postComment = useCallback(async () => {
@@ -91,10 +105,16 @@ export default function ClientPortalScreen({ onLogout }: Props) {
         <Text style={[s.taskTitle, { color: t.ink }]} numberOfLines={2}>{selected.title}</Text>
       </View>
       <FlatList
-        data={comments}
+        data={comments ?? []}
         keyExtractor={c => c.comment_id}
         contentContainerStyle={s.commentList}
-        ListEmptyComponent={<Text style={[s.empty, { color: t.ink3 }]}>No comments yet. Be the first.</Text>}
+        ListEmptyComponent={
+          commErr
+            ? <Text style={[s.empty, { color: t.error }]}>The conversation did not load. This is not an empty thread.</Text>
+            : comments === null
+              ? <Text style={[s.empty, { color: t.ink3 }]}>Loading…</Text>
+              : <Text style={[s.empty, { color: t.ink3 }]}>No comments yet. Be the first.</Text>
+        }
         renderItem={({ item: c }) => (
           <View style={s.comment}>
             <View style={[s.commAvatar, { backgroundColor: t.primaryContainer }]}>
@@ -141,10 +161,16 @@ export default function ClientPortalScreen({ onLogout }: Props) {
       </View>
       <Text style={[s.sectionLabel, { color: t.primary }]}>Your Updates</Text>
       <FlatList
-        data={tasks}
+        data={tasks ?? []}
         keyExtractor={item => item.taskId}
         contentContainerStyle={s.list}
-        ListEmptyComponent={<Text style={[s.empty, { color: t.ink3 }]}>No tasks shared with you yet.</Text>}
+        ListEmptyComponent={
+          tasksErr
+            ? <Text style={[s.empty, { color: t.error }]}>Your updates did not load. This is not a list of everything shared with you.</Text>
+            : tasks === null
+              ? <Text style={[s.empty, { color: t.ink3 }]}>Loading…</Text>
+              : <Text style={[s.empty, { color: t.ink3 }]}>No tasks shared with you yet.</Text>
+        }
         renderItem={({ item }) => (
           <TouchableOpacity
             style={[s.taskCard, { backgroundColor: t.surface, borderColor: t.outline }]}

@@ -40,7 +40,10 @@ export default function ChannelDetails({ channel, meId, onClose, onChanged }) {
 
   const [members, setMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
-  const [people, setPeople] = useState([]);
+  // `null` while unknown. "Everyone in your organisation is already here" is a
+  // claim about the firm, and a failed directory read used to assert it.
+  const [people, setPeople] = useState(null);
+  const [dirErr, setDirErr] = useState(null);
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
@@ -70,8 +73,8 @@ export default function ChannelDetails({ channel, meId, onClose, onChanged }) {
     let dead = false;
     const t = setTimeout(() => {
       api.get('/v1/messaging/directory', { params: q.trim() ? { q: q.trim() } : undefined })
-        .then(r => { if (!dead) setPeople(Array.isArray(r.data) ? r.data : []); })
-        .catch(() => { if (!dead) setPeople([]); });
+        .then(r => { if (!dead) { setPeople(Array.isArray(r.data) ? r.data : []); setDirErr(null); } })
+        .catch(e => { if (!dead) { setPeople(null); setDirErr(e); } });
     }, 220);
     return () => { dead = true; clearTimeout(t); };
   }, [q, isDm]);
@@ -138,7 +141,9 @@ export default function ChannelDetails({ channel, meId, onClose, onChanged }) {
   };
 
   const inChannel = new Set(members.map(m => String(m.user_id)));
-  const addable = people.filter(p => !inChannel.has(String(p.user_id)));
+  // Stays null when the directory is unknown, so the render below cannot
+  // mistake "we could not ask" for "there is nobody left to add".
+  const addable = people === null ? null : people.filter(p => !inChannel.has(String(p.user_id)));
 
   return (
     <Sheet open onClose={onClose} title={isDm ? 'Direct message' : 'Channel settings'}>
@@ -222,12 +227,18 @@ export default function ChannelDetails({ channel, meId, onClose, onChanged }) {
               placeholder="Search people"
               aria-label="Search people to add"
             />
-            {addable.length === 0 && (
+            {dirErr ? (
+              <p className="sv__none">
+                The people list did not load, so this is not a list of who could be added.
+              </p>
+            ) : addable === null ? (
+              <p className="sv__none">Searching…</p>
+            ) : addable.length === 0 ? (
               <p className="sv__none">
                 {q.trim() ? `Nobody matches “${q.trim()}”.` : 'Everyone in your organisation is already here.'}
               </p>
-            )}
-            {addable.map(p => (
+            ) : null}
+            {(addable || []).map(p => (
               <div key={p.user_id} className="svd__row">
                 <Avatar name={p.full_name} src={p.avatar_url} size={28} />
                 <span className="svd__rn">{p.full_name}</span>
