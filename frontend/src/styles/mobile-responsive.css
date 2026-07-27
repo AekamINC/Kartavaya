@@ -428,16 +428,29 @@
     opacity: 0;
     pointer-events: none;
   }
+  /* var(--dur-fast), not the literal `140ms` it was written as — the two
+     resolve identically at --ix: 1, so this is a no-op at full motion and the
+     only difference is that the cue now follows the ladder.
+
+     Measured before: 140ms and a full scaleX(0→1) sweep at Animations = None,
+     and this rule is not in any prefers-reduced-motion block, so it rode
+     NEITHER --ix nor --motion-scale — the in-app preference reached it through
+     nothing at all. */
   .bd .bc:active::after {
-    animation: kv-press-hold 140ms var(--ease-standard, linear) forwards;
+    animation: kv-press-hold var(--dur-fast) var(--ease-standard, linear) forwards;
   }
   /* Once the library has taken over, its own `.drag` treatment is the signal
      and the press cue has done its job. */
   .bd .bc.drag::after { animation: none; opacity: 0; }
 }
 
+/* The sweep starts from `1 - 1 × --motion-scale`, so at Animations = None both
+   ends are scaleX(1): the bar appears already full rather than growing. That
+   keeps the affordance — the press still visibly registers — while removing the
+   motion, which is what the preference asks for. A bar that collapsed to
+   nothing would delete the feedback instead of stilling it. */
 @keyframes kv-press-hold {
-  from { transform: scaleX(0); opacity: 1; }
+  from { transform: scaleX(calc(1 - 1 * var(--motion-scale, 1))); opacity: 1; }
   to   { transform: scaleX(1); opacity: 1; }
 }
 

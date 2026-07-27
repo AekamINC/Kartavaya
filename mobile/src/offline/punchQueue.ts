@@ -87,6 +87,53 @@ export function getPunchCount(): number {
 }
 
 /**
+ * Count, the oldest capture time, and how long that punch has left.
+ *
+ * The 72 hours in `PUNCH_RETENTION_MS` was a promise the UI never showed. It was
+ * enforced silently by `pruneExpired` and only ever surfaced as an Alert AFTER a
+ * punch had already aged out — at which point the employee's options are a
+ * regularisation request and an awkward conversation. Naming the remaining
+ * window while it is still open is what makes the retention a promise rather
+ * than a deadline that arrives without warning.
+ *
+ * `hoursLeft` is measured from `captured_at`, matching `pruneExpired` exactly,
+ * so the number shown and the number enforced cannot drift apart. It floors at
+ * 0 rather than going negative: a punch past the window has no time left, and
+ * "-3 hours remaining" is not a sentence.
+ */
+export interface PunchSummary {
+  count: number;
+  /** ISO capture time of the oldest queued punch, or null when none are queued. */
+  oldestCapturedAt: string | null;
+  /** Whole hours before the oldest punch is retired. Null when nothing is queued. */
+  hoursLeft: number | null;
+}
+
+export function getPunchSummary(now = Date.now()): PunchSummary {
+  const q = read();
+  if (q.length === 0) return { count: 0, oldestCapturedAt: null, hoursLeft: null };
+
+  let oldest: number | null = null;
+  let oldestIso: string | null = null;
+  for (const punch of q) {
+    const at = new Date(punch.captured_at).getTime();
+    // Same rule as pruneExpired: an unparseable timestamp is kept, and it also
+    // does not get to claim it is the oldest.
+    if (Number.isNaN(at)) continue;
+    if (oldest === null || at < oldest) { oldest = at; oldestIso = punch.captured_at; }
+  }
+
+  if (oldest === null) return { count: q.length, oldestCapturedAt: null, hoursLeft: null };
+
+  const msLeft = PUNCH_RETENTION_MS - (now - oldest);
+  return {
+    count: q.length,
+    oldestCapturedAt: oldestIso,
+    hoursLeft: Math.max(0, Math.floor(msLeft / (60 * 60 * 1000))),
+  };
+}
+
+/**
  * Delete a punch selfie from the device.
  *
  * The queue itself holds no image bytes — only `photo_uri`, a path to a JPEG in

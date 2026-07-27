@@ -24,8 +24,9 @@ import {
   EmptyState, ErrorState, errorKind,
 } from '../components/ui';
 import { logger } from '../lib/utils';
-import ViewToolbar from '../components/views/ViewToolbar';
-import { VIEWS, FIELD_TYPES, IcPlus } from '../components/views/viewDefs';
+import BoardToolbar from '../components/views/BoardToolbar';
+import useBoardView from '../components/views/useBoardView';
+import { FIELD_TYPES, IcArchive, IcPlus } from '../components/views/viewDefs';
 import AutomationsPage from './AutomationsPage';
 import NewTaskModal from '../components/NewTaskModal';
 
@@ -47,6 +48,12 @@ export default function BoardsPage() {
   const [loading,     setLoading]     = useState(true);
   const [loadError,   setLoadError]   = useState(null);
   const [view,        setView]        = useState('kanban');
+  // The Archived filter existed on `/projects/:id` and not here, so the same
+  // seven views over the same task set could reach archived work on one route
+  // and not the other. It is a filter over whichever view is showing — not an
+  // eighth view — so it sits in the toolbar's trailing slot as a pressed-state
+  // button, which is where `ProjectBoardPage` already puts it.
+  const [showArchived, setShowArchived] = useState(false);
   const [newTaskEditor, setNewTaskEditor] = useState({ open: false, columnId: null, dueAt: '' });
 
   const { defs: fieldDefs, createField, deleteField } = useFields(activeId);
@@ -61,6 +68,11 @@ export default function BoardsPage() {
   const [newFieldType,    setNewFieldType]    = useState('text');
   const { tasks, setTasks } = useRealtimeTasks(activeId, rawTasks);
   const onlineUsers = usePresence(activeId, me);
+
+  // Search, filter, group and sort — in the URL, so a narrowed board is a link
+  // (IxViews 10.4). Every view below renders `board.filtered`, not `tasks`:
+  // the search box used to live inside `TableView` and reach nothing else.
+  const board = useBoardView({ tasks, columns, fieldDefs, boardKey: activeId });
 
   // A failed project list left `projects` empty, which renders exactly like an
   // account with no projects — the one state where "you have none" and "we
@@ -101,7 +113,7 @@ export default function BoardsPage() {
       const [projR, colR, taskR, membR] = await Promise.all([
         api.get(`/teams/${activeId}`),
         api.get(`/projects/${activeId}/columns`),
-        api.get('/tasks', { params: { team_id: activeId } }),
+        api.get('/tasks', { params: { team_id: activeId, ...(showArchived ? { archived: true } : {}) } }),
         // Members are the one part that may fail on its own without the board
         // being unusable — an avatar falls back to initials. The other three
         // are the board.
@@ -121,7 +133,7 @@ export default function BoardsPage() {
       setRawTasks([]);
     }
     finally { setLoading(false); }
-  }, [activeId]);
+  }, [activeId, showArchived]);
 
   useEffect(() => { loadBoard(); }, [loadBoard]);
 
@@ -209,21 +221,39 @@ export default function BoardsPage() {
 
       {/* One toolbar, shared with every other view — 04 §2. The switcher was a
           hand-rolled `.k-segctrl` in an inline-styled flex row here, and again
-          in ProjectBoardPage, which is why the two drifted. */}
-      <ViewToolbar
-        views={VIEWS}
+          in ProjectBoardPage, which is why the two drifted. `BoardToolbar` now
+          carries search, filter, group and fields too, so Table view no longer
+          stacks a second bar under this one. */}
+      <BoardToolbar
         view={view}
         onView={setView}
-        end={!loading && view !== 'kanban' && activeId && (
-          <button
-            type="button"
-            className="btn btn--fill btn--sm vtb__ico"
-            onClick={() => setNewTaskEditor({ open: true, columnId: null })}
-          >
-            {IcPlus}
-            New task
-          </button>
-        )}
+        board={board}
+        end={
+          <>
+            <button
+              type="button"
+              className="btn btn--out btn--sm vtb__ico pb__toggle"
+              aria-pressed={showArchived}
+              onClick={() => setShowArchived(v => !v)}
+            >
+              {IcArchive}
+              Archived
+            </button>
+            {/* Kanban has a composer per column, so a global button would be a
+                second way to do the same thing with less context — the same
+                rule `ProjectBoardPage` applies. */}
+            {!loading && view !== 'kanban' && activeId && (
+              <button
+                type="button"
+                className="btn btn--fill btn--sm vtb__ico"
+                onClick={() => setNewTaskEditor({ open: true, columnId: null })}
+              >
+                {IcPlus}
+                New task
+              </button>
+            )}
+          </>
+        }
       />
 
       {/* Field manager panel */}
@@ -326,7 +356,8 @@ export default function BoardsPage() {
           {view === 'kanban' && (
             <KanbanView
               columns={columns}
-              tasks={tasks}
+              tasks={board.filtered}
+              allTasks={tasks}
               teamMembers={teamMembers}
               fieldDefs={fieldDefs}
               teamId={activeId}
@@ -340,18 +371,24 @@ export default function BoardsPage() {
           )}
           {view === 'table' && (
             <TableView
-              tasks={tasks}
+              tasks={board.filtered}
               columns={columns}
               teamMembers={teamMembers}
               fieldDefs={fieldDefs}
               fieldValueMap={fieldValueMap}
               boardId={activeId}
               onTasksChange={handleTasksChange}
+              sort={board.sort}
+              onSort={board.setSort}
+              groupBy={board.groupBy}
+              shownFields={board.shownFields}
+              isFiltered={board.isFiltered}
+              onClearFilters={board.clearFilters}
             />
           )}
           {view === 'calendar' && (
             <CalendarView
-              tasks={tasks}
+              tasks={board.filtered}
               teamMembers={teamMembers}
               onTasksChange={handleTasksChange}
               onDayClick={date => {
@@ -362,7 +399,7 @@ export default function BoardsPage() {
           )}
           {view === 'timeline' && (
             <TimelineView
-              tasks={tasks}
+              tasks={board.filtered}
               columns={columns}
               teamMembers={teamMembers}
               onTasksChange={handleTasksChange}
@@ -370,13 +407,13 @@ export default function BoardsPage() {
           )}
           {view === 'workload' && (
             <WorkloadView
-              tasks={tasks}
+              tasks={board.filtered}
               teamMembers={teamMembers}
             />
           )}
           {view === 'priority' && (
             <PriorityView
-              tasks={tasks}
+              tasks={board.filtered}
               columns={columns}
               teamMembers={teamMembers}
               onTasksChange={handleTasksChange}
@@ -384,7 +421,7 @@ export default function BoardsPage() {
           )}
           {view === 'mytasks' && (
             <MyTasksView
-              tasks={tasks}
+              tasks={board.filtered}
               teamMembers={teamMembers}
               onTasksChange={handleTasksChange}
             />

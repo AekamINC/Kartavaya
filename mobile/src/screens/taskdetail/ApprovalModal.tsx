@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
-import {
-  Modal, View, Text, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, Pressable, Alert,
-} from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../theme/ThemeProvider';
+import { Dialog } from '../../components/Sheet';
 import { s } from './styles';
 import { BRAND_GRADIENT_2 } from '../../theme/tokens';
 
@@ -57,11 +55,14 @@ export function ApprovalModal({ visible, action, onClose, onConfirm }: Props) {
   const destructive = needsReason;
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <Pressable style={s.modalOverlay} onPress={onClose}>
-          <Pressable style={[s.approvalModal, { backgroundColor: t.surface }]} onPress={() => {}}>
-            <Text style={[s.approvalModalTitle, { color: t.ink }]}>{title}</Text>
+    <Dialog
+      visible={visible}
+      onClose={onClose}
+      closeLabel="Cancel and close"
+      panelStyle={[s.approvalModal, { backgroundColor: t.surface }]}
+      avoidKeyboard
+    >
+      <Text style={[s.approvalModalTitle, { color: t.ink }]}>{title}</Text>
             <Text style={[s.approvalModalLabel, { color: t.ink3 }]}>
               {needsReason ? 'REASON (REQUIRED)' : 'NOTES (OPTIONAL)'}
             </Text>
@@ -146,9 +147,6 @@ export function ApprovalModal({ visible, action, onClose, onConfirm }: Props) {
                 )}
               </TouchableOpacity>
             </View>
-          </Pressable>
-        </Pressable>
-      </KeyboardAvoidingView>
-    </Modal>
+    </Dialog>
   );
 }

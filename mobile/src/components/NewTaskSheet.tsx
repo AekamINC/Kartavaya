@@ -6,9 +6,8 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Modal, View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator,
-  Pressable,
+  View, Text, TextInput, TouchableOpacity, ScrollView,
+  StyleSheet, Platform, ActivityIndicator, Pressable,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +15,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme/ThemeProvider';
 import { useAuth } from '../hooks/useAuth';
 import { apiClient } from '../api/client';
+import Sheet from './Sheet';
 import AttachmentSourceSheet, { type PickedFile } from './AttachmentSourceSheet';
 import { enqueueMutation } from '../offline/mutationQueue';
 import NetInfo from '@react-native-community/netinfo';
@@ -184,15 +184,15 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
   const s = styles(t);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <Pressable style={s.backdrop} onPress={handleClose} />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={s.sheetWrap}
-      >
-        <View style={s.sheet}>
-          {/* Handle */}
-          <View style={s.handle} />
+    <Sheet
+      visible={visible}
+      onClose={handleClose}
+      closeLabel="Close new task sheet"
+      panelStyle={s.sheet}
+      avoidKeyboard
+    >
+      {/* Handle */}
+      <View style={s.handle} />
 
           {/* Header */}
           <View style={s.header}>
@@ -441,15 +441,13 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
               }
             </TouchableOpacity>
           </View>
-        </View>
-      </KeyboardAvoidingView>
       <AttachmentSourceSheet
         visible={showAttachPicker}
         onClose={() => setShowAttachPicker(false)}
         onPicked={handleFilePicked}
         maxFiles={MAX_ATTACHMENTS - attachments.length}
       />
-    </Modal>
+    </Sheet>
   );
 }
 
@@ -484,14 +482,9 @@ function FieldLabel({ children, t }: { children: string; t: ReturnType<typeof us
 }
 
 const styles = (t: ReturnType<typeof useTheme>['t']) => StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  sheetWrap: {
-    position: 'absolute',
-    bottom: 0, left: 0, right: 0,
-  },
+  // `backdrop` and `sheetWrap` are gone. The scrim and the bottom anchoring both
+  // belong to Sheet now — this file's copy was `rgba(0,0,0,0.4)`, one of five
+  // different scrim opacities the app was carrying (.4, .4, .45, .45, .55, .55).
   sheet: {
     backgroundColor: t.surface,
     borderTopLeftRadius:  24,

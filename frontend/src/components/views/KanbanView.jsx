@@ -10,7 +10,7 @@ import { playPraiseSound } from '../../lib/notifSound';
 import TaskCard from './TaskCard';
 import CardGhost from './CardGhost';
 import TaskDrawer from '../TaskDrawer';
-import { useToast, ConfirmDialog, EmptyState } from '../ui';
+import { useToast, ConfirmDialog, EmptyState, Menu } from '../ui';
 
 /**
  * KanbanView — columns, drag, and the drawer (04-boards-table-views.md §5).
@@ -62,6 +62,11 @@ const SYNTHETIC_IDS = new Set(['__requested__', '__pending_client__']);
 
 export default function KanbanView({
   columns, tasks, teamMembers,
+  // The board can now be searched and filtered from the shared toolbar, so
+  // `tasks` is what is VISIBLE and `allTasks` is what is on the board. The two
+  // are the same list until someone types in the search box; see `handleDragEnd`
+  // for why the difference matters.
+  allTasks,
   // `onColumnChange` is gone: its only action was `('new_task', columnId)`,
   // which opened the New Task modal from a column foot. IxViews 9.3 replaces
   // that with the inline composer below, so the callback had no remaining
@@ -116,6 +121,13 @@ export default function KanbanView({
   const [freshIds, setFreshIds] = useState(() => new Set());
   const [justIds, setJustIds] = useState(() => new Set());
   const [pendingIds, setPendingIds] = useState(() => new Set());
+  // Separate from `justIds` on purpose. `just` is 9.1's settle and fires on a
+  // DROP as well as a tick; the checkbox animation (9.4 → 2.2) must fire only
+  // when a click completed the task, or dragging an already-done card would
+  // spring its tick for no reason, and every done card on the board would
+  // spring on mount. 2.2's exit — "unchecking reverses with no spring" — falls
+  // out of the same gate, because uncompleting never enters this set.
+  const [tickIds, setTickIds] = useState(() => new Set());
 
   const markTransient = useCallback((setter, id, ms) => {
     setter(prev => new Set(prev).add(id));
@@ -219,6 +231,10 @@ export default function KanbanView({
     const next = task.status === 'done' ? 'todo' : 'done';
     const previous = task;
     setPendingIds(prev => new Set(prev).add(task.task_id));
+    // Before the await, not after: 2.2 recomputes client-side first, and a
+    // confirmation that waits for the round trip is not a confirmation of the
+    // click. 600ms covers the longest of the two (`--dur-slow` box overshoot).
+    if (next === 'done') markTransient(setTickIds, task.task_id, 600);
     onTasksChange?.(prev => prev.map(t => (t.task_id === task.task_id ? { ...t, status: next } : t)));
     try {
       const res = await api.patch(`/tasks/${task.task_id}`, { status: next });
@@ -259,11 +275,11 @@ export default function KanbanView({
     };
   }, [visibleColumns]);
 
-  const byCol = useMemo(() => {
+  const bucket = useCallback((list) => {
     const validColIds = new Set(visibleColumns.map(c => c.column_id));
     const m = {};
     visibleColumns.forEach(c => { m[c.column_id] = []; });
-    (tasks || []).forEach(t => {
+    (list || []).forEach(t => {
       if (showRequested && t.status === 'requested') { m.__requested__.push(t); return; }
       if (showClientApproval && t.approval_status === 'pending_client') { m.__pending_client__.push(t); return; }
       const cid = (t.column_id && validColIds.has(t.column_id))
@@ -273,7 +289,15 @@ export default function KanbanView({
     });
     Object.values(m).forEach(arr => arr.sort((a, b) => (a.order ?? a.sort_order ?? 0) - (b.order ?? b.sort_order ?? 0)));
     return m;
-  }, [visibleColumns, tasks, showRequested, showClientApproval, statusFallbackCol]);
+  }, [visibleColumns, showRequested, showClientApproval, statusFallbackCol]);
+
+  const byCol = useMemo(() => bucket(tasks), [bucket, tasks]);
+  // The same buckets over the UNFILTERED board. Identical objects when nothing
+  // is filtered, so this costs one extra pass and nothing else.
+  const byColAll = useMemo(
+    () => (allTasks && allTasks !== tasks ? bucket(allTasks) : byCol),
+    [bucket, allTasks, tasks, byCol],
+  );
 
   // Can this task be dragged by the current user?
   const canDrag = (task) => {
@@ -296,8 +320,28 @@ export default function KanbanView({
     if (SYNTHETIC_IDS.has(targetColId)) return;
     if (targetColId === srcColId && destination.index === source.index) return;
 
-    const newOrder = destination.index;
-    const previous = (tasks || []).find(t => t.task_id === taskId);
+    /**
+     * `destination.index` is an index into the list the user can SEE. Before
+     * the toolbar's search and filter reached this view those were the same
+     * list, so the index went straight to the server. They are not the same
+     * list any more: drop a card second in a column showing 3 of 11 tasks and
+     * `order: 1` puts it second among all eleven, which is not where it was
+     * dropped and not where it appears once the filter is cleared.
+     *
+     * So the index is resolved through the card it lands ABOVE. Both lists are
+     * taken without the dragged card, which is the frame pangea's index is
+     * already expressed in for a same-column move; past the end of the visible
+     * list means the end of the real one. With no filter active the visible
+     * and real lists are identical and this returns `destination.index`
+     * exactly, so the unfiltered path is unchanged.
+     */
+    const visible = (byCol[targetColId] || []).filter(t => t.task_id !== taskId);
+    const full    = (byColAll[targetColId] || []).filter(t => t.task_id !== taskId);
+    const anchor  = visible[destination.index];
+    const newOrder = anchor
+      ? Math.max(0, full.findIndex(t => t.task_id === anchor.task_id))
+      : full.length;
+    const previous = (allTasks || tasks || []).find(t => t.task_id === taskId);
 
     // flushSync: React 18+ batches state updates, but @hello-pangea/dnd needs
     // the DOM to reflect the move synchronously before its cleanup runs.
@@ -332,7 +376,7 @@ export default function KanbanView({
         return n;
       });
     }
-  }, [tasks, onTasksChange, pushToast, markTransient]);
+  }, [tasks, allTasks, byCol, byColAll, onTasksChange, pushToast, markTransient]);
 
   // A board with no columns rendered as an empty flex row — nothing at all for
   // a member who cannot add one, and no explanation. `canManageCols` decides
@@ -411,18 +455,35 @@ export default function KanbanView({
                         {colTasks.length + (snapshot.isDraggingOver && droppable
                           && !colTasks.some(t => t.task_id === draggingId) ? 1 : 0)}
                       </span>
+                      {/* 04 §2 gives the column header `dot · name · count · ⋯`
+                          and IxViews 9.3 says the menu is "the shared ⋯
+                          primitive from 5.1". It was a bare ✕ that could only
+                          delete, with rename reachable ONLY by double-clicking
+                          the name — an affordance that lives in a `title`
+                          attribute, which a keyboard user cannot reach and a
+                          touch user has no gesture for. `Menu` carries the
+                          portal, the roving tabindex and the Escape-returns-
+                          focus contract, so the two actions are now one
+                          discoverable control. Double-click still renames;
+                          it is a shortcut now rather than the only route. */}
                       {canManageCols && !isSynth && (
-                        <button
-                          type="button"
-                          className="bd__cx"
-                          onClick={() => deleteCol(col)}
-                          title="Delete column"
-                          aria-label={`Delete column ${col.name}`}
-                        >
-                          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                            <path d="M3 3l10 10M13 3L3 13" />
-                          </svg>
-                        </button>
+                        <Menu
+                          align="right"
+                          label={`Column actions for ${col.name}`}
+                          trigger={
+                            <span className="bd__cx" aria-hidden="true">
+                              <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" focusable="false">
+                                <circle cx="3" cy="8" r="1.4" /><circle cx="8" cy="8" r="1.4" /><circle cx="13" cy="8" r="1.4" />
+                              </svg>
+                            </span>
+                          }
+                          items={[
+                            { id: 'rename', label: 'Rename column', onSelect: () => startRename(col) },
+                            { id: 'add', label: 'Add task', onSelect: () => { setDraft(''); setComposeCol(col.column_id); } },
+                            { sep: true },
+                            { id: 'delete', label: 'Delete column', danger: true, onSelect: () => deleteCol(col) },
+                          ]}
+                        />
                       )}
                     </div>
 
@@ -453,6 +514,7 @@ export default function KanbanView({
                                 pending={pendingIds.has(task.task_id)}
                                 just={justIds.has(task.task_id)}
                                 fresh={freshIds.has(task.task_id)}
+                                tickpop={tickIds.has(task.task_id)}
                                 onComplete={readOnly || isSynth ? undefined : toggleComplete}
                                 onClick={() => !draggingId && setDrawerTaskId(task.task_id)}
                               />

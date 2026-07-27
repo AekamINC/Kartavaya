@@ -37,10 +37,22 @@
 
 /* The Devanagari apposition — 24-bilingual-devanagari.md: `--font-indic` on any
  * label that follows the user's language, one step down in size and weight so
- * the recognised word keeps the hierarchy (01-navigation.md). */
+ * the recognised word keeps the hierarchy (01-navigation.md).
+ *
+ * The floor is note 2 in the file header, applied to this rule. `.85em` is a
+ * ratio, so it re-derives whatever the parent happens to be — and on the two
+ * places where the parent is ALREADY the smallest step in the scale it lands
+ * below the floor the header refuses to write by hand. Measured, at the shipped
+ * defaults: `.sv__sep-t` and `.sv__newline` resolve `--t-label-sm` to 11.06px,
+ * and `.85em` of that is 9.4px for "आज", "कल" and "नए संदेश" — under the 11px
+ * 00 §12 sets for metadata, and under it in the one script whose conjuncts and
+ * matras suffer most from being shrunk. `max()` mirrors how `--t-label-sm`
+ * itself is built, so the ratio still governs every larger parent (the tab
+ * labels and `.sv__lt` stay at 11.07px, unchanged) and only the two separators
+ * move. */
 .sv__hi {
   font-family: var(--font-indic);
-  font-size: .85em;
+  font-size: max(11px, .85em);
   font-weight: 400;
   color: var(--on-surface-3);
 }
@@ -262,6 +274,49 @@
    `.msg--cont:hover .msg__gut` was written against. An invisible avatar also
    forced every grouped row to 32px; a grouped row is one line tall now. */
 .msg--cont { padding-top: 1px; }
+
+/* ── The two motion-only message states ───────────────────────────────────
+ *
+ * `MOTION-SPEC.md` §7.1: "Optimistic UI renders at `opacity .6` until
+ * acknowledged, then goes solid." `motion.css:517` is the reference —
+ * `.cd__m.sending { opacity: .6 }` — and `IxChat.jsx:138` pairs it with a
+ * "Sending…" caption. The build had neither: `Composer` awaited the POST before
+ * anything appeared, so a slow send emptied the box and showed nothing.
+ *
+ * No transition on the way out. The placeholder is REPLACED by the server's row
+ * (a different React key, because the id changes from `tmp:…` to the real one),
+ * so there is no element for a transition to run on — the swap is a remount and
+ * the new row simply paints solid. That is the correct reading anyway: solid is
+ * not a fade-up from .6, it is the acknowledgement having arrived.
+ */
+.msg--sending { opacity: .6; }
+/* The word, not just the opacity. `--motion-scale: 0` and a colour-blind or
+   low-vision reader must both still be told; 23-accessibility.md forbids a state
+   whose only carrier is a visual difference. `role="status"` is on the element. */
+.msg__sending {
+  margin-top: 3px;
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+}
+
+/* A message that arrived while the reader was watching.
+ *
+ * `MOTION-SPEC.md` §3 gives an inline row `translateY(-6px)` + fade at
+ * `--dur-base`, written for a subtask inserted INTO a list. A chat message is
+ * appended to the BOTTOM of a log that is pinned to the bottom, so the same 6px
+ * is travelled from below: dropping it in from above would have it cross the
+ * message it is landing under. Magnitude and duration are the spec's; only the
+ * sign is inverted, and this is the reason.
+ *
+ * `.msg--new` is applied by `mergeById(..., {markFresh:true})`, which is passed
+ * only by the poll — never by the first load and never by `loadOlder`. So this
+ * fires on the one row that just landed, not on fifty rows at first paint.
+ * `backwards` so the row is already at `opacity: 0` before the first frame. */
+@keyframes svMsgIn {
+  from { opacity: 0; transform: translateY(calc(6px * var(--motion-scale, 1))); }
+  to   { opacity: 1; transform: none; }
+}
+.msg--new { animation: svMsgIn var(--dur-base) var(--ease-enter) backwards; }
 /* `.av` sets `font-weight: 600`; 06 §1 gives `.msg__av{…font-weight:700}`. The
    32px box and the 13px initials already come from `<Avatar size={32}>`. */
 .msg__av { flex-shrink: 0; font-weight: 700; }
@@ -322,7 +377,13 @@
 }
 .msg__edit-hint { font-size: var(--t-label-sm); color: var(--on-surface-3); }
 
-/* The read receipt — `app.css:458`. */
+/* The read receipt — `app.css:458`.
+ *
+ * `seen_by` arrives on a poll tick, so the line appears under a message that has
+ * been sitting still for up to five seconds. Appearing instantly reads as a
+ * layout glitch; `dmFade` at `--dur-base` reads as information arriving. It is a
+ * one-shot on first render of the element and never replays, because the element
+ * is not remounted when the count changes. */
 .seen {
   display: flex;
   align-items: center;
@@ -330,6 +391,7 @@
   margin-top: 6px;
   font-size: var(--t-label-sm);
   color: var(--on-surface-3);
+  animation: dmFade var(--dur-base) var(--ease-enter) backwards;
 }
 .seen .ch__ic { width: 14px; margin-top: 0; }
 
@@ -384,10 +446,19 @@
   border: 1px solid var(--outline-variant);
   box-shadow: var(--shadow-2);
   opacity: 0;
+  /* MEASURED BUG, not a precaution. The tray is `top: -10px`, so it overhangs
+     ten pixels into the row ABOVE it, and `opacity: 0` removes neither hit
+     testing nor pointer events — `document.elementFromPoint` at the tray's top
+     edge returned `.msg__act`, not the message it was drawn over. The bottom
+     10px of every message therefore had five invisible quick-reaction buttons
+     sitting on it, and a click landing there posted a 👍 to the message BELOW.
+     `visibility` would fix the hit test but also drop the buttons out of the tab
+     order, which is what `:focus-within` above exists to keep. */
+  pointer-events: none;
   transition: opacity var(--dur-fast) var(--ease-standard);
   z-index: 2;
 }
-.msg:hover .msg__act, .msg:focus-within .msg__act { opacity: 1; }
+.msg:hover .msg__act, .msg:focus-within .msg__act { opacity: 1; pointer-events: auto; }
 .msg__actb {
   display: grid;
   place-items: center;
@@ -477,11 +548,17 @@
   font-weight: 600;
   cursor: pointer;
   z-index: 3;
-  animation: svJump var(--dur-base) var(--ease-enter);
+  animation: svJump var(--dur-base) var(--ease-enter) backwards;
 }
 .sv__jump:hover { background: var(--s-container); color: var(--on-surface); }
+/* The 8px was the one travel distance on this surface that did not ride
+   `--motion-scale`, so at Animations = None the pill still slid. Every other
+   amplitude in `animations.css` is multiplied; this one now is too, and the
+   entrance degrades to a pure fade rather than a shorter slide.
+   `backwards` added with it: without a fill mode the pill painted one frame at
+   its final opacity before the animation's first keyframe applied. */
 @keyframes svJump {
-  from { opacity: 0; transform: translate(-50%, 8px); }
+  from { opacity: 0; transform: translate(-50%, calc(8px * var(--motion-scale, 1))); }
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
@@ -573,6 +650,14 @@
 
 /* Emoji picker — the five quick reactions are content, not chrome, so they stay
    as emoji (06 §Plus). Everything that was emoji-as-interface is an SVG now. */
+/* `dmPop` from the 26 §6 registry, not a local keyframe — the reaction picker is
+   a popover and `MOTION-SPEC.md` §3 gives every popover the same pair. It sits
+   above the composer and is anchored to the emoji button at the left-hand end,
+   so it grows from its bottom-left corner; `transform-origin` is the one thing
+   `dmPop` cannot infer and the one that makes a menu unfold from the wrong side.
+   There is no exit: `Composer` unmounts it on the spot. Pairing an exit needs the
+   `closing` + `animationend` machinery `Popover.jsx` already has, and doing it
+   here without that would be a `dmPopOut` that never plays. */
 .emo {
   display: flex;
   gap: 2px;
@@ -581,6 +666,8 @@
   border-radius: var(--r-sm);
   background: var(--surface);
   box-shadow: var(--shadow-2);
+  transform-origin: bottom left;
+  animation: dmPop var(--dur-base) var(--ease-enter) backwards;
 }
 .emo__b {
   display: grid;
@@ -596,17 +683,109 @@
 }
 .emo__b:hover { background: var(--s-container); }
 
+/* ── Typing indicator ────────────────────────────────────────────────────── */
+
+/* `ScreensSanvaad.jsx:275` and `IxChat.jsx:173` both render this under the last
+ * message: three bouncing dots plus the names. The build had neither the markup
+ * nor the style.
+ *
+ * IT IS NOT WIRED, AND THAT IS DELIBERATE. `MOTION-SPEC.md` §8 specifies typing
+ * as "a throttled realtime broadcast, never persisted"; there is no such
+ * broadcast. `useChannelMessages.js` polls, `backend/routers/messaging.py` has no
+ * typing endpoint, and migration 058 publishes `samvada_messages` for realtime
+ * but nothing for presence. Rendering dots on a timer would be inventing a fact
+ * about another person — the exact failure §7.1 names. So the primitive is here,
+ * correct, for whoever wires presence; nothing renders it yet.
+ *
+ * THE REFERENCE'S VERSION OF THIS ANIMATION IS THE DEFECT THIS FILE AVOIDS.
+ * `app.css:344` is `animation: bounce 1.2s infinite` with no reduced-motion stop
+ * anywhere in the file — `app.css:289` disables the skeleton shimmer and nothing
+ * else — so under an OS reduce the reference keeps bouncing. Worse is what
+ * happens if somebody "fixes" it the way `16-animations.md:44` instructs, by
+ * putting the duration on `calc(1.2s * var(--ix))`: at `--ix: .001` that is a
+ * 1.2ms loop, i.e. three strobing dots delivered to the reader who just asked
+ * for less motion. An infinite decorative animation takes a FIXED duration and
+ * puts its amplitude on `--motion-scale`, which is what this does. The 1.2s and
+ * the two delays are the reference's own numbers.
+ */
+.sv__typing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 18px 8px;
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+}
+.sv__dots { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.sv__dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--on-surface-3);
+  animation: svDot 1.2s var(--ease-standard) infinite;
+}
+.sv__dots i:nth-child(2) { animation-delay: .16s; }
+.sv__dots i:nth-child(3) { animation-delay: .32s; }
+/* At `--motion-scale: 0` the rise is 0px and the dim step resolves to opacity 1
+   — identical to the 0%/100% keyframe — so the loop runs but is visually inert
+   and the dots read as three static marks. The `animation: none` at the foot of
+   this file is the second line of defence for the OS path. */
+@keyframes svDot {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: calc(1 - .6 * var(--motion-scale, 1));
+  }
+  30% {
+    transform: translateY(calc(-4px * var(--motion-scale, 1)));
+    opacity: 1;
+  }
+}
+
 /* ── Thread panel ────────────────────────────────────────────────────────── */
 
 /* The replies were unreachable: the old page posted `parent_message_id`,
    incremented `thread_count`, and clicking "3 replies" only re-set the reply
    target. `GET /messaging/messages/:id/thread` already existed server-side. */
+/* `MOTION-SPEC.md` §3: "Thread flexpane | slide from right, 324px · 300ms
+ * `--ease-emph` | slide out · `--dur-base` `--ease-exit`". The build opened and
+ * closed it with no animation at all — the third column of the grid simply
+ * existed or did not.
+ *
+ * 300ms is not a rung on the ladder (`--dur-base` 220, `--dur-slow` 360) and
+ * `16-animations.md` §1's first rule forbids writing it as a literal, because a
+ * literal is invisible to `--ix` and keeps animating for a user who asked it not
+ * to. `animations.css`'s reconciled table already settles this class of case:
+ * drawer-shaped surfaces are `--dur-slow` in with `--ease-emph-in` and
+ * `--dur-base` out with `--ease-exit`, and a flexpane is a drawer that happens to
+ * live in a grid column. So the pair is taken from the table, not from the prose.
+ *
+ * WHAT IS ANIMATED IS THE PANEL, NOT THE COLUMN. `.sv--thread` widens the grid
+ * the instant the panel mounts and the chat pane reflows in one step; the panel
+ * then slides into the space. Animating `grid-template-columns` instead would put
+ * a layout property on the compositor's critical path for every frame — the one
+ * thing `animations.css`'s performance note rules out — and would reflow the
+ * whole message log 60 times during the open. */
 .sv__thread {
   display: flex;
   flex-direction: column;
   min-height: 0;
   border-left: 1px solid var(--outline-variant);
   background: var(--s-low);
+  animation: svThreadIn var(--dur-slow) var(--ease-emph-in) backwards;
+}
+/* Exits travel less than entrances and are one step faster — MOTION-SPEC §3's
+   "decisive out, gentle in". Set by `ChannelsTab`, which keeps the panel mounted
+   until `animationend`; see the note there for why the unmount is event-driven
+   rather than a timer. */
+.sv__thread.is-closing {
+  animation: svThreadOut var(--dur-base) var(--ease-exit) both;
+}
+@keyframes svThreadIn {
+  from { opacity: 0; transform: translateX(calc(100% * var(--motion-scale, 1))); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes svThreadOut {
+  to { opacity: 0; transform: translateX(calc(40% * var(--motion-scale, 1))); }
 }
 .sv__thread-hd {
   display: flex;
@@ -695,6 +874,12 @@
   border-bottom-right-radius: var(--r-xs);
   align-self: flex-end;
 }
+/* The same .6 as `.msg--sending`, for the same reason and from the same rule.
+   A WhatsApp send is the slowest in the product — our API, then Meta's — so this
+   is the surface where an unacknowledged bubble is on screen longest.
+   `WaTicks.pending` (the clock) carries the state for anyone who cannot see the
+   opacity, and it was already in the map. */
+.wa__b--sending { opacity: .6; }
 
 /* THE OPACITY IS NOT ON THIS ROW, and that is the whole point.
  *
@@ -841,4 +1026,30 @@
   .sv { position: relative; }
   .msg, .sv__hd, .cmp, .wa__log { padding-left: 12px; padding-right: 12px; }
   .wa__b { max-width: 84%; }
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────────
+ *
+ * ONE rule, and it has to be the LAST declaration of `.sv__dots i` in the file.
+ * `@media` contributes no specificity, so an identical selector inside a media
+ * query loses to the same selector declared later on source order alone —
+ * `animations.css` §10 documents the same trap, found there by measurement after
+ * naming `.skeleton` from a block that sat above it.
+ *
+ * Nothing else on this surface needs naming here, and that is the point of the
+ * arithmetic rather than a coincidence. `.msg--new`, `.sv__jump`, `.seen`,
+ * `.emo` and both `.sv__thread` keyframes are finite and timed in `--dur-*`, so
+ * `--ix: .001` already collapses each of them to a fraction of a frame, and every
+ * travel distance is multiplied by `--motion-scale`, which the same media query
+ * sets to 0 — so they degrade to a state change with no movement, twice over.
+ * A blanket `animation: none` across the module was considered and rejected for
+ * the reason `animations.css` §9 gives: it would also stop the skeleton the log
+ * shows while a channel loads, and a loading indicator is functional motion.
+ *
+ * The dots are the exception because they are INFINITE. `--ix` cannot help an
+ * infinite loop — it makes it faster, which is a strobe — so the loop has to be
+ * stopped outright. This is exactly the case `16-animations.md:44` gets wrong,
+ * and `motion.css:117` implements wrongly; see the note beside `.sv__dots`. */
+@media (prefers-reduced-motion: reduce) {
+  .sv__dots i { animation: none; opacity: 1; }
 }

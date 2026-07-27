@@ -236,9 +236,20 @@
 .rv__r { transition: background var(--dur-fast) var(--ease-standard); }
 .rv__r.is-cursor { background: color-mix(in srgb, var(--primary) 5%, transparent); }
 
-.rv__n   { font-variant-numeric: tabular-nums; color: var(--on-surface-3); width: 26px; }
+/* Mono, and not as decoration. Measured in the rendered reference, both of
+   these columns are `var(--font-mono)`: the index at 10.5px right-aligned, the
+   time at 12px weight 500. Measured in the build they were both 13px Inter,
+   left-aligned — `font-variant-numeric: tabular-nums` was already here, which
+   buys equal-width DIGITS but leaves the colon and the am/pm proportional, so
+   a column of "09:33 am" over "06:32 pm" still walks.
+   Same argument this file already makes at `.mt__b .mt__n` and applies at
+   `.mtbl__num`: 00 §2 puts numbers in mono with tabular figures. A register is
+   a column of times that a reviewer scans vertically — it is the strongest
+   case for it on the surface, not the weakest.
+   Sizes are left to the shared table so the row height does not move. */
+.rv__n   { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--on-surface-3); width: 26px; }
 .rv__who { min-width: 0; }
-.rv__t   { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rv__t   { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rv__loc { font-size: max(11.5px, calc(var(--font-size-base) * .86)); color: var(--on-surface-2); }
 .rv__v   { white-space: nowrap; }
 
