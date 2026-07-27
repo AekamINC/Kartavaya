@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { flushSync } from 'react-dom';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
@@ -129,13 +129,40 @@ export default function KanbanView({
   // out of the same gate, because uncompleting never enters this set.
   const [tickIds, setTickIds] = useState(() => new Set());
 
+  /**
+   * Every id this has scheduled a clear for, so unmount can cancel them.
+   *
+   * `markTransient` fires its setState 400–600ms after the interaction. Leaving
+   * the board inside that window — closing the drawer, switching team, a route
+   * change straight after completing a task — landed the update on an unmounted
+   * component. React 18+ dropped the "setState on unmounted component" warning,
+   * so nothing said so in the browser; under jsdom the timer outlives the test
+   * environment and throws `ReferenceError: window is not defined` from
+   * `resolveUpdatePriority`, reported as an unhandled error against whichever
+   * file happened to be running.
+   *
+   * That made it a TIMING bug rather than a reproducible one: it surfaced on
+   * roughly two runs in five here and not at all on a shorter suite, which is
+   * the worst shape for a gate — an unhandled error is not a failed assertion,
+   * so `39 passed` sat above a non-zero exit code.
+   */
+  const transientTimers = useRef(new Set());
+  useEffect(() => () => {
+    for (const t of transientTimers.current) clearTimeout(t);
+    transientTimers.current.clear();
+  }, []);
+
   const markTransient = useCallback((setter, id, ms) => {
     setter(prev => new Set(prev).add(id));
-    setTimeout(() => setter(prev => {
-      const next = new Set(prev);
-      next.delete(id);
-      return next;
-    }), ms);
+    const t = setTimeout(() => {
+      transientTimers.current.delete(t);
+      setter(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, ms);
+    transientTimers.current.add(t);
   }, []);
 
   const canManageCols = !readOnly && !!teamId && ['admin', 'owner'].includes(currentUserRole);

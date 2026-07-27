@@ -1,63 +1,104 @@
-import React, { useState } from 'react';
-import { api } from '../../lib/api';
+// Ganit · timesheet billing — turn logged hours into an invoice.
+//
+// The contact was a free-text UUID box ("Contact ID"), which asked the user to
+// paste a database key. It is a picker now, loaded from the same contacts
+// endpoint the invoice form uses.
+import React, { useEffect, useState } from 'react';
+import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { inr } from '../../lib/inr';
 
 export default function TimesheetTab() {
   const { pushToast } = useToast();
   const [form, setForm] = useState({ date_from: '', date_to: '', contact_id: '', is_igst: false });
+  const [contacts, setContacts] = useState([]);
+  const [contactsFailed, setContactsFailed] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [result, setResult] = useState(null);
 
-  const FMT = v => inr(Number(v || 0));
+  useEffect(() => {
+    api.get('/v1/graha/contacts')
+      .then(r => setContacts(rows(r)))
+      .catch(() => setContactsFailed(true));
+  }, []);
 
   async function generate(e) {
     e.preventDefault();
-    if (!form.date_from || !form.date_to) { pushToast({ title: 'Select date range', type: 'error' }); return; }
+    if (!form.date_from || !form.date_to) {
+      pushToast({ title: 'Select a date range', type: 'error' });
+      return;
+    }
+    if (form.date_to < form.date_from) {
+      pushToast({ title: 'The end date falls before the start date', type: 'error' });
+      return;
+    }
     setGenerating(true);
     setResult(null);
     try {
-      const body = {
+      const payload = {
         employee_ids: [],
         date_from: form.date_from,
         date_to: form.date_to,
         is_igst: form.is_igst,
       };
-      if (form.contact_id) body.contact_id = form.contact_id;
-      const r = await api.post('/v1/ganit/invoices/from-time-entries', body);
-      setResult(r.data);
-      pushToast({ title: `Invoice ${r.data.invoice_number} created`, type: 'success' });
-    } catch (err) { pushToast({ title: err.response?.data?.detail || 'Generation failed', type: 'error' }); }
-    finally { setGenerating(false); }
+      if (form.contact_id) payload.contact_id = form.contact_id;
+      const r = await api.post('/v1/ganit/invoices/from-time-entries', payload);
+      const data = body(r);
+      setResult(data);
+      pushToast({ title: `Invoice ${data.invoice_number} created`, type: 'success' });
+    } catch (err) {
+      pushToast({ title: err.response?.data?.detail || 'Could not generate the invoice', type: 'error' });
+    } finally { setGenerating(false); }
   }
 
   return (
     <div>
-      <form onSubmit={generate} style={{ background: 'var(--surface-1)', border: '1px solid var(--rule-soft)', borderRadius: 'var(--r-md)', padding: 24, marginBottom: 16 }}>
-        <h3 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 700 }}>Generate Invoice from Timesheets</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-          <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>From Date *</span>
-            <input className="k-input" type="date" required value={form.date_from} onChange={e => setForm({ ...form, date_from: e.target.value })} /></label>
-          <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>To Date *</span>
-            <input className="k-input" type="date" required value={form.date_to} onChange={e => setForm({ ...form, date_to: e.target.value })} /></label>
-          <label style={{ fontSize: 13 }}><span style={{ fontWeight: 600, display: 'block', marginBottom: 4 }}>Contact ID</span>
-            <input className="k-input" placeholder="Optional" value={form.contact_id} onChange={e => setForm({ ...form, contact_id: e.target.value })} /></label>
+      <form className="gn-form" onSubmit={generate}>
+        <h3 className="gn-form__t">Invoice from timesheets</h3>
+
+        <div className="gn-form__grid gn-form__grid--flush">
+          <label className="fld">
+            <span className="fld__l">From date<span className="fld__req">*</span></span>
+            <input className="inp" type="date" required value={form.date_from}
+              onChange={e => setForm({ ...form, date_from: e.target.value })} />
+          </label>
+          <label className="fld">
+            <span className="fld__l">To date<span className="fld__req">*</span></span>
+            <input className="inp" type="date" required value={form.date_to}
+              onChange={e => setForm({ ...form, date_to: e.target.value })} />
+          </label>
+          <label className="fld">
+            <span className="fld__l">Customer</span>
+            <select className="inp" value={form.contact_id}
+              onChange={e => setForm({ ...form, contact_id: e.target.value })}>
+              <option value="">Unassigned</option>
+              {contacts.map(c => <option key={c.id} value={c.id}>{c.name}{c.company ? ` (${c.company})` : ''}</option>)}
+            </select>
+            {contactsFailed && (
+              <span className="fld__hint">Customers could not be loaded — the invoice can still be generated unassigned.</span>
+            )}
+          </label>
+          <label className="gn-chk">
+            <input type="checkbox" checked={form.is_igst}
+              onChange={e => setForm({ ...form, is_igst: e.target.checked })} />
+            <span>Inter-state (IGST)</span>
+          </label>
         </div>
-        <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-          <input type="checkbox" checked={form.is_igst} onChange={e => setForm({ ...form, is_igst: e.target.checked })} />
-          <span style={{ fontWeight: 600 }}>Inter-state (IGST)</span></label>
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          <button type="submit" className="k-btn k-btn--primary" disabled={generating}>{generating ? 'Generating…' : 'Generate Invoice'}</button>
+
+        <div className="gn-form__acts">
+          <button type="submit" className="btn btn--fill btn--sm" disabled={generating}>
+            {generating ? 'Generating…' : 'Generate invoice'}
+          </button>
         </div>
       </form>
 
       {result && (
-        <div style={{ background: 'var(--surface-1)', border: '1px solid var(--ok)', borderRadius: 'var(--r-md)', padding: 24 }}>
-          <h4 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: 'var(--ok)' }}>Invoice Created</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, fontSize: 13 }}>
-            <div><strong>Invoice #:</strong> <span style={{ fontFamily: 'var(--font-mono)' }}>{result.invoice_number}</span></div>
-            <div><strong>Total:</strong> <span style={{ fontWeight: 700 }}>{FMT(result.total)}</span></div>
-            <div><strong>Entries Billed:</strong> {result.entries_billed}</div>
+        <div className="gn-panel gn-panel--ok">
+          <h4 className="gn-panel__h gn-panel__h--ok">Invoice created</h4>
+          <div className="gn-facts">
+            <div>Invoice <span className="gn-facts__v">{result.invoice_number}</span></div>
+            <div>Total <span className="gn-facts__v">{inr(Number(result.total || 0))}</span></div>
+            <div>Entries billed <span className="gn-facts__v">{result.entries_billed}</span></div>
           </div>
         </div>
       )}

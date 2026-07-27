@@ -1,0 +1,409 @@
+/* ganit.css — Ganit · गणित (Finance & GST) module styling.
+ *
+ * The tab bodies carried 548 raw inline styles across 11 files when this file
+ * was written; `InvoicesTab.jsx` alone held 117. Splitting the route file had
+ * only MOVED that debt out of `GanitPage.jsx`, so the module read as finished
+ * while every panel still hard-coded its own padding, rule colour and type
+ * scale. None of those values followed the theme or the Density / Border-radius
+ * settings, so the whole module ignored three user preferences at once.
+ *
+ * Naming follows the per-module convention already in `module.css`:
+ * `vk-*` is Vikray, `d*` Dristi, `g*` Graha. Ganit takes `gn-*`, and the record
+ * drawer takes `gnd` to sit alongside Vikray's `vkd`.
+ *
+ * The only inline style permitted in the JSX is a CUSTOM PROPERTY feeding a
+ * rule here (`style={{ '--gn-li': '…' }}`) — check-tokens.mjs deviation 2. A
+ * per-instance grid track list is genuinely per-instance data; a raw
+ * `padding: 10px` never is.
+ *
+ * Everything below resolves through tokens so dark mode, the density scale and
+ * the radius setting all reach it. No literal hex, anywhere.
+ */
+
+/* ── Toolbars ──────────────────────────────────────────────────────────────
+ * The filter row above every list. `flex-wrap` matters: at 380px the type
+ * filter, status filter and "+ New" would otherwise push the primary action
+ * off-screen with no way to reach it.
+ */
+.gn-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-4);
+  flex-wrap: wrap;
+}
+.gn-bar__f { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.gn-bar__fl {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+/* Pushes what follows to the trailing edge. A flex spacer, so it collapses to
+   nothing once the bar wraps instead of forcing a ragged second line. */
+.gn-bar__sp { flex: 1 1 auto; min-width: 0; }
+.gn-bar__sel { width: auto; min-width: 130px; }
+
+/* ── Forms ─────────────────────────────────────────────────────────────── */
+.gn-form {
+  background: var(--surface-1);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-md);
+  padding: var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+/* The create form opened by the page header's "+ Invoice". Tinted edge so it
+   is visibly the thing that just appeared, not another panel in the list. */
+.gn-form--accent { border-color: var(--primary); }
+.gn-form__t {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--t-title);
+  font-weight: 700;
+}
+.gn-form__h {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--t-body);
+  font-weight: 700;
+}
+.gn-form__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+/* Two-up variants exist because a 2-column form auto-fitting to 3 at a wide
+   viewport looks accidental. These pin the intent. */
+.gn-form__grid--2 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.gn-form__grid--flush { margin-bottom: 0; }
+.gn-form__wide { grid-column: 1 / -1; }
+.gn-form__acts {
+  display: flex;
+  gap: var(--sp-2);
+  justify-content: flex-end;
+  margin-top: var(--sp-3);
+  flex-wrap: wrap;
+}
+.gn-form__foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+  flex-wrap: wrap;
+}
+.gn-ta { resize: vertical; width: 100%; min-height: 62px; }
+.gn-ta--mono { font-family: var(--font-mono); font-size: var(--t-label); }
+
+/* A checkbox that has to sit on the same baseline as the inputs beside it in
+   a grid row. `align-self: end` rather than the old `paddingTop: 20` guess —
+   that number was tuned against one font size and broke at the other two. */
+.gn-chk {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  align-self: end;
+  min-height: 38px;
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+}
+
+/* ── Line-item editor ──────────────────────────────────────────────────────
+ * `--gn-li` carries the track list. It is per-instance (the invoice editor,
+ * the recurring template and the vendor bill each want different columns) and
+ * is the one thing the JSX is allowed to set inline.
+ */
+.gn-li {
+  display: grid;
+  grid-template-columns: var(--gn-li, 2fr 1fr 60px 60px 1fr 60px 30px);
+  gap: 6px;
+  margin-bottom: 6px;
+  align-items: end;
+}
+.gn-li__l {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 11px;
+  color: var(--on-surface-3);
+}
+.gn-li__x {
+  background: none;
+  border: 0;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 0 8px;
+  border-radius: var(--r-xs);
+}
+.gn-li__x:hover:not(:disabled) { color: var(--danger); opacity: .75; }
+.gn-li__x:disabled { opacity: .35; cursor: not-allowed; }
+.gn-li__x:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* The running total under the line editor. Explicitly a PREVIEW — the server
+   computes and stores the figures that end up on the document. */
+.gn-est { text-align: right; font-size: var(--t-body-sm); }
+.gn-est__sub { color: var(--on-surface-3); }
+.gn-est__tot { font-weight: 700; font-size: var(--t-title); margin-top: var(--sp-1); }
+.gn-est__note { color: var(--on-surface-3); font-size: var(--t-label); }
+
+/* ── Stat strips ───────────────────────────────────────────────────────────
+ * `--gn-min` tunes the minimum track. Five bank figures want a tighter floor
+ * than three expense figures, and auto-fit does the rest.
+ */
+.gn-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--gn-min, 180px), 1fr));
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-5);
+}
+
+/* ── Tables ────────────────────────────────────────────────────────────────
+ * Built on the shared `.tbl` in components.css rather than a second table
+ * vocabulary. These are the Ganit-specific cells only.
+ */
+.gn-tbl__mono { font-family: var(--font-mono); font-size: var(--t-label); }
+.gn-tbl__id { font-family: var(--font-mono); font-size: var(--t-label); font-weight: 600; }
+.gn-tbl__row { cursor: pointer; }
+.gn-tbl__acts { display: flex; gap: var(--sp-2); white-space: nowrap; }
+.gn-tbl__ok { color: var(--ok); }
+.gn-tbl__due { color: var(--danger); }
+.gn-tbl__mute { color: var(--on-surface-3); }
+
+/* A record name that opens its editor. Underlined so it reads as actionable
+   without borrowing link blue — it does not navigate. */
+.gn-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--primary-text);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+.gn-link:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
+/* Bare text actions inside a row (Edit / Delete / Unmatch). Real buttons, so
+   they are reachable by keyboard — these were <button> with every style
+   stripped and no focus ring at all. */
+.gn-act {
+  background: none;
+  border: 0;
+  padding: 2px 4px;
+  font-size: var(--t-label);
+  color: var(--primary-text);
+  cursor: pointer;
+  border-radius: var(--r-xs);
+}
+.gn-act:hover { text-decoration: underline; }
+.gn-act:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.gn-act--danger { color: var(--danger); }
+
+/* ── Card lists ────────────────────────────────────────────────────────────
+ * Recurring schedules, contracts and vendor bills are rows, not tables: each
+ * carries a heading, a figure and a status, and none of them tabulates.
+ */
+.gn-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.gn-row {
+  background: var(--surface-1);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-md);
+  padding: var(--sp-3) var(--sp-4);
+  text-align: left;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+}
+/* A row that opens a record is a <button>. It was a <div> with onClick, which
+   is unreachable by keyboard and invisible to a screen reader. */
+button.gn-row { cursor: pointer; display: block; }
+button.gn-row:hover { background: var(--s-low); border-color: var(--outline-variant); }
+button.gn-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.gn-row__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-1);
+  flex-wrap: wrap;
+}
+.gn-row__t { font-weight: 700; font-size: var(--t-body); }
+.gn-row__ref { margin-left: var(--sp-2); font-size: 11px; color: var(--on-surface-3); }
+.gn-row__r { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.gn-row__v { font-family: var(--font-mono); font-weight: 700; font-variant-numeric: tabular-nums; }
+.gn-row__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  flex-wrap: wrap;
+}
+.gn-row__acts { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── Record drawer ─────────────────────────────────────────────────────────
+ * `gnd` layers onto the shared `.dr` chrome from drawer.css — the same scrim,
+ * focus trap, Escape handling and exit animation the task drawer and Vikray's
+ * order drawer use.
+ *
+ * This replaced a full-panel takeover (`if (detail) return …` plus a "← Back
+ * to list" button). Opening a record swapped the whole tab out, which is a
+ * second navigation model for "open this row" and the one users learn second
+ * is the one that costs them. Four Ganit tabs had it.
+ */
+.gnd__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: 0 var(--sp-5);
+  margin-bottom: var(--sp-2);
+}
+.gnd__num {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-title-lg);
+  font-weight: 700;
+}
+.gnd__when { font-size: var(--t-label); color: var(--on-surface-3); }
+.gnd__acts {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 0 var(--sp-5) var(--sp-3);
+}
+.gnd__party { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.gnd__co { color: var(--on-surface-3); font-weight: 400; }
+.gnd__contact { margin: 4px 0 0; font-size: var(--t-label); color: var(--on-surface-3); }
+.gnd__hsn { font-family: var(--font-mono); font-size: var(--t-label); }
+
+/* Totals. A description list, because that is what it is: term and value. */
+.gnd__totwrap { display: flex; justify-content: flex-end; }
+.gnd__tot { margin: 0; width: min(320px, 100%); font-size: var(--t-body-sm); }
+.gnd__totrow { display: flex; justify-content: space-between; gap: var(--sp-4); padding: 4px 0; }
+.gnd__totrow dt { margin: 0; }
+.gnd__totrow dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.gnd__totrow--sub { color: var(--on-surface-3); }
+.gnd__totrow--off { color: var(--danger); }
+.gnd__totrow--tot {
+  font-weight: 700;
+  border-top: 2px solid var(--rule-soft);
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-2);
+}
+.gnd__totrow--paid { color: var(--ok); }
+.gnd__totrow--due { color: var(--danger); font-weight: 600; }
+
+.gnd__stamps {
+  display: flex;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+}
+
+/* WhatsApp. `--wa-green` is fixed by an external brand and is already declared
+   (kartavaya-design.css) and already used by Sanvaad, so this is a second call
+   site for a token rather than a new colour. */
+.gnd__wa { border-color: color-mix(in srgb, var(--wa-green) 55%, var(--outline-variant)); }
+.gnd__wa:not(:disabled) { color: var(--wa-green); }
+.gnd__wa:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Payment history */
+.gn-pay__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: var(--t-body-sm);
+}
+.gn-pay__row:last-child { border-bottom: 0; }
+.gn-pay__amt { font-weight: 600; font-family: var(--font-mono); }
+.gn-pay__meta { margin-left: var(--sp-3); color: var(--on-surface-3); }
+.gn-pay__ref { margin-left: var(--sp-2); font-family: var(--font-mono); font-size: 11px; color: var(--on-surface-3); }
+.gn-pay__when { color: var(--on-surface-3); font-size: var(--t-label); }
+
+/* ── UPI block ─────────────────────────────────────────────────────────── */
+.gn-upi {
+  margin-top: var(--sp-4);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-md);
+  padding: var(--sp-5);
+}
+.gn-upi__head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.gn-upi__t { margin: 0; font-size: var(--t-body); font-weight: 700; }
+.gn-upi__hi { font-family: var(--font-indic); font-size: var(--t-label); color: var(--on-surface-3); }
+.gn-upi__body { display: flex; gap: var(--sp-3); align-items: center; flex-wrap: wrap; }
+.gn-upi__main { flex: 1 1 200px; min-width: 0; }
+.gn-upi__l { font-size: var(--t-label); color: var(--on-surface-3); margin-bottom: 4px; }
+.gn-upi__id { font-size: var(--t-body); font-weight: 600; font-family: var(--font-mono); word-break: break-all; }
+.gn-upi__ref { font-size: 11px; color: var(--on-surface-3); margin-top: 4px; }
+.gn-upi__acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+/* ── e-Sign ────────────────────────────────────────────────────────────── */
+.gn-sig__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: var(--t-body-sm);
+  flex-wrap: wrap;
+}
+.gn-sig__row:last-child { border-bottom: 0; }
+.gn-sig__name { font-weight: 600; }
+.gn-sig__email { margin-left: var(--sp-2); color: var(--on-surface-3); }
+.gn-sig__r { display: flex; align-items: center; gap: var(--sp-2); }
+.gn-sig__when { font-size: 11px; color: var(--on-surface-3); }
+.gn-sig__ip { margin-left: var(--sp-2); font-family: var(--font-mono); font-size: 11px; color: var(--on-surface-3); }
+
+/* ── Panels ────────────────────────────────────────────────────────────── */
+.gn-panel {
+  background: var(--surface-1);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-md);
+  padding: var(--sp-5);
+  margin-bottom: var(--sp-4);
+}
+.gn-panel--ok { border-color: var(--ok); }
+.gn-panel__h { margin: 0 0 var(--sp-3); font-size: var(--t-body); font-weight: 700; }
+.gn-panel__h--ok { color: var(--ok); }
+.gn-panel__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  flex-wrap: wrap;
+}
+.gn-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sp-3);
+  font-size: var(--t-body-sm);
+}
+.gn-facts__v { font-family: var(--font-mono); font-weight: 600; }
+
+/* The inline payment control on a vendor bill. */
+.gn-payline { display: flex; gap: var(--sp-2); align-items: flex-end; flex-wrap: wrap; }
+.gn-payline__in { width: 150px; }
+
+@media (max-width: 640px) {
+  .gn-form { padding: var(--sp-4); }
+  .gnd__title, .gnd__acts { padding-inline: var(--sp-4); }
+  /* The line editor cannot hold seven tracks on a phone. One field per row is
+     honest; a 40px "Description" input is not. */
+  .gn-li { grid-template-columns: 1fr; }
+  .gn-li__x { justify-self: end; padding-bottom: 0; }
+}
