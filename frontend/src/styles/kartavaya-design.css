@@ -323,7 +323,26 @@
   --side-ink:      22, 26, 24;
   --side-fg:       rgba(255, 255, 255, .8);
   --side-fg-mute:  rgba(255, 255, 255, .5);
-  --side-fg-faint: rgba(255, 255, 255, .28);
+  /* ALIASES --side-fg-mute, for exactly the reason --on-surface-faint aliases
+     --on-surface-3 above: the sidebar ramp was drawn with four foreground steps
+     and the ink only supports three.
+     The literal was rgba(255,255,255,.28). Measured against --side-ink — which
+     is a near-black INVERTED surface in BOTH themes, so this failed in both:
+       light  .28 on rgb(22,26,24)  2.52:1
+       dark   .24 on rgb(8,10,13)   2.06:1
+     The smallest alpha that clears 4.5:1 is .46 light / .45 dark, and
+     --side-fg-mute is already .5 / .46 (5.23:1 / 4.66:1) — so a compliant
+     fourth step would have to sit inside a 0.04 gap and would be
+     indistinguishable from the third anyway.
+     Every one of its call sites is CONTENT TEXT, which is why this is a
+     contrast bug and not a naming problem: the sidebar section headings and
+     their Devanagari twins (workspace/कार्यक्षेत्र, operations/प्रचालन,
+     team/दल, revenue/राजस्व, people/जन, growth/वृद्धि), the "by Aekam Inc"
+     byline, the signed-in user's role line, and three labels on the auth brand
+     panel that all four unauthenticated pages render. Twenty elements on every
+     single page of the product. Verified: zero non-text consumers.
+     The name survives because six rules reference it. */
+  --side-fg-faint: var(--side-fg-mute);
   --side-rule:     rgba(255, 255, 255, .1);
   --side-hover:    rgba(255, 255, 255, .08);
 }
@@ -400,7 +419,9 @@
   --side-ink:      8, 10, 13;
   --side-fg:       rgba(255, 255, 255, .78);
   --side-fg-mute:  rgba(255, 255, 255, .46);
-  --side-fg-faint: rgba(255, 255, 255, .24);
+  /* Aliased in dark for the same reason as light — see the light block. The
+     literal was rgba(255,255,255,.24), which measured 2.06:1 on --side-ink. */
+  --side-fg-faint: var(--side-fg-mute);
   --side-rule:     rgba(255, 255, 255, .08);
   --side-hover:    rgba(255, 255, 255, .07);
 }
