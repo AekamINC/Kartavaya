@@ -92,7 +92,13 @@ textarea.inp { resize: vertical; min-height: 76px; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
 /* ── Card ──────────────────────────────────────────────────────────────── */
-.card         { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: var(--r-md); box-shadow: var(--shadow-1); }
+/* `--r-lg` and `overflow: hidden`, both measured off the rendered reference
+   (`app.css:150`). `--r-md` put the card a full radius step below the stat
+   tiles and the table shell it sits beside — 12px against 17.4px — so the two
+   read as different families of object. `overflow: hidden` is what lets a
+   table or a list bleed to the card's edge and still be clipped by the corner;
+   without it the first row's corner squares off over the card's rounding. */
+.card         { background: var(--surface); border: 1px solid var(--outline-variant); border-radius: var(--r-lg); box-shadow: var(--shadow-1); overflow: hidden; }
 .card--flat   { background: var(--s-low); border-color: transparent; box-shadow: none; }
 /* 00 §6: glass is `blur(var(--glass-blur)) saturate(var(--glass-sat))`, and the
    -webkit- prefix always ships. The saturate half was missing here and only
@@ -255,13 +261,31 @@ textarea.inp { resize: vertical; min-height: 76px; }
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
   background: var(--scrim);
-  /* Was `calc(var(--dur-fast) * var(--ix))`. `--dur-fast` is ALREADY
-     `calc(140ms * var(--ix))` (kartavaya-design.css §5), so that squared the
-     scale: correct at --ix 1 by coincidence, but 35ms instead of 70ms at the
-     Customization "Reduced" setting (--ix .5). The token carries the scale;
-     nothing may multiply by --ix a second time. */
-  animation: modalIn var(--dur-fast) var(--ease-standard);
+  /* Was `modalIn calc(var(--dur-fast) * var(--ix))`, and both halves were
+     wrong.
+
+     The duration: `--dur-fast` is ALREADY `calc(140ms * var(--ix))`
+     (kartavaya-design.css §5), so the calc squared the scale — correct at
+     --ix 1 by coincidence, but 35ms instead of 70ms at the Customization
+     "Reduced" setting (--ix .5). The token carries the scale; nothing may
+     multiply by --ix a second time. That half was fixed first.
+
+     The keyframe and the ladder: `@keyframes modalIn` was `from { opacity: 0 }
+     to { opacity: 1 }` — byte-identical to `dmFade`, a second global name for
+     one animation, which is the duplicate-keyframe hazard animations.css opens
+     its header with. And this was the only scrim in the build not on the 26 §6
+     row for scrims (`dmFade --dur-base --ease-enter`): `.dr__scrim` and
+     `.sheet__scrim` both run it, and the reference agrees (motion.css:256,
+     `.ov-scrim`). At --dur-fast the dim finished 122ms before the panel it was
+     dimming for, so the dialog arrived onto a scrim that had already stopped
+     moving. `both` holds the from-state through the panel's 42ms delay. */
+  animation: dmFade var(--dur-base) var(--ease-enter) both;
 }
+/* Exit — reference `.ov-scrim.out` (motion.css:258) is the same fade run in
+   reverse at --dur-fast --ease-exit, which is what `dmFadeOut` is. Leaving is
+   one duration step faster than arriving, per 26 §6. It is made click-through
+   for the length of the exit by the shared rule in §8. */
+.modal__scrim.is-closing { animation: dmFadeOut var(--dur-fast) var(--ease-exit) both; }
 .modal__panel {
   width: 100%; max-height: calc(100vh - 32px);
   display: flex; flex-direction: column;
@@ -282,6 +306,16 @@ textarea.inp { resize: vertical; min-height: 76px; }
 /* Reference `@keyframes ovIn`, minus its translate(-50%,-50%) centring — this
    panel is centred by the scrim's flexbox, so only the 8px rise is ours. */
 @keyframes modalPanelIn { from { opacity: 0; transform: translateY(8px) scale(.96) } }
+/* Exit. The panel had an entrance and no way out: `modal.jsx` and
+   `ConfirmDialog.jsx` both did `if (!open) return null`, so every dialog in the
+   app arrived gracefully and then blinked out of existence — the asymmetry
+   MOTION-SPEC §7.3 is about ("exits are faster than entrances", not "exits do
+   not exist"). §3 gives the modal exit as `scale(.98)` + fade on `--dur-fast`,
+   and the reference implements it as `.ov-modal.out` / `.ov-cd.out`
+   (motion.css:262/273) with `@keyframes ovOut { to { opacity: 0; transform:
+   scale(.98) } }`. That is `dmPopOut` exactly, so it is reused rather than
+   declared a second time under a third name. */
+.modal__panel.is-closing { animation: dmPopOut var(--dur-fast) var(--ease-exit) both; }
 .modal__panel--sm { max-width: 420px; }
 .modal__panel--md { max-width: 620px; }
 .modal__panel--lg { max-width: 900px; }
@@ -300,7 +334,6 @@ textarea.inp { resize: vertical; min-height: 76px; }
   padding: 14px 20px; border-top: 1px solid var(--outline-variant);
   display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0;
 }
-@keyframes modalIn { from { opacity: 0 } to { opacity: 1 } }
 
 /* ConfirmDialog body. It shares .modal__* chrome rather than carrying a second
    set of inline styles that merely resemble it — the previous version painted
@@ -547,6 +580,32 @@ textarea.inp { resize: vertical; min-height: 76px; }
 @keyframes dmTip  { from { opacity: 0; transform: scale(.94) } }
 /* Linear, never eased — an eased spin looks like it is struggling. */
 @keyframes dmSpin { to { transform: rotate(360deg) } }
+/* The confirmation overshoot on a checkbox, MOTION-SPEC §4: "box overshoots to
+   scale(1.18) over --dur-slow --ease-spring". Declared HERE, in the registry
+   animations.css names as its single owner, because it was declared TWICE —
+   `bcTickPop` in boards.css and `drStPop` in drawer.css, byte-identical bodies
+   under two names. Two names for one animation is the softer half of the
+   duplicate-keyframe hazard: nothing breaks, but the board's tick and the
+   drawer's tick can now drift apart silently, and they are the same gesture on
+   the same object. Amplitude rides on --motion-scale so Animations = None
+   leaves the state change without the pop. */
+@keyframes dmTickPop { 40% { transform: scale(calc(1 + .18 * var(--motion-scale, 1))); } }
+/* The card-landed flash, IxViews 9.1: "one --primary flash so you can find it in
+   the new column". MOTION-SPEC §4 gives 540ms, which is `--dur-slow * 1.5`.
+
+   Declared here for the reason its two previous copies stated and could not
+   enforce. `bcJust` (boards.css) and `ixLanded` (animations.css) were
+   byte-identical, and animations.css said so out loud — "deliberately identical
+   to boards.css `bcJust` rather than improved: two boards in one product that
+   confirm a drop differently is the bug". That is exactly right, and two global
+   names is the one way of expressing it that a later edit can break silently.
+   One keyframe, two users, and the drift is now impossible rather than
+   discouraged. `.k-trow.is-just` keeps its own `kTrowJust`: the table's flash is
+   INSET, because an outer ring on a flush row paints over its neighbours. */
+@keyframes dmLanded {
+  0%   { box-shadow: 0 0 0 2px var(--primary); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
 /* Fires on the element, never a container. A whole flashing card is an alarm;
    a flashing cell is information. */
 @keyframes ixflash {
@@ -969,22 +1028,33 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 /* The other half of the pair. `tstIn` existed; dismissing removed the node in
    the same frame, so the only toast a user could not read was the one they
    clicked. MOTION-SPEC §3: out is `translateX(12px)` + fade — LESS travel than
-   the 16px entrance — on --dur-fast --ease-exit, which is the reconciled
-   table's toast exit and §7.3's rule that exits are faster than entrances.
+   the 16px entrance — over `180ms`, which is §7.3's rule that exits are faster
+   than entrances made into a number.
+
+   `calc(var(--dur-base) * .82)` is 180.4ms, and it is written that way rather
+   than as a literal `180ms` for the reason `.pop` uses
+   `calc(var(--dur-fast) * .85)` for its own 119ms and `.sheet`
+   `calc(var(--dur-slow) * .84)` for its 302ms: a duration between two rungs of
+   the ladder is a fraction of the token its own entrance uses, so it still
+   follows `--ix` and the user's Animations preference. A flat `--dur-fast`
+   (140ms) was 40ms short of the figure §3 states.
+
+   `is-closing`, not `is-out`: `.pop`, `.pk__pop`, `.sheet`, `.sheet__scrim`,
+   `.dr`, `.dr__scrim`, `.modal__*`, `.menu--float`, `.aso`, `.dr__lb` and
+   `.k-onboard` all key their exit on `is-closing`, and a tenth name for the
+   same state is how a component set stops being one.
 
    `both`, so the card holds its final transparent frame instead of flicking
    back to solid for the one frame between `animationend` and React's unmount.
-   `pointer-events: none` because a card on its way out must not be clickable —
-   a second Dismiss during the exit is a click the user did not mean. */
-.tst.is-out {
-  animation: tstOut var(--dur-fast) var(--ease-exit) both;
-  pointer-events: none;
-}
+   Click-through comes from the shared rule in §8 — a card on its way out must
+   not be clickable, and a second Dismiss during the exit is a click the user
+   did not mean. */
+.tst.is-closing { animation: tstOut calc(var(--dur-base) * .82) var(--ease-exit) both; }
 @keyframes tstOut { to { opacity: 0; transform: translateX(12px) } }
 @keyframes tstOutL { to { opacity: 0; transform: translateX(-12px) } }
 @keyframes tstOutM { to { opacity: 0; transform: translateY(12px) } }
-[data-toast-pos="tl"] .tst.is-out,
-[data-toast-pos="bl"] .tst.is-out { animation-name: tstOutL; }
+[data-toast-pos="tl"] .tst.is-closing,
+[data-toast-pos="bl"] .tst.is-closing { animation-name: tstOutL; }
 
 /* Mobile: the stack goes full width, so there is no side to arrive from and
    the reference switches to a vertical rise (`ovToastM`, MOTION-SPEC §3
@@ -993,16 +1063,18 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   .tst,
   [data-toast-pos="tl"] .tst,
   [data-toast-pos="bl"] .tst { animation-name: tstInM; }
-  /* The `.is-out` rules must be restated INSIDE the media block, after the
+  /* The `.is-closing` rules must be restated INSIDE the media block, after the
      entrance names above. `@media` adds no specificity, so `[data-toast-pos]
-     .tst` here — one attribute selector plus one class — outranks `.tst.is-out`
-     outside it, and a mobile toast in a left corner would have exited by
-     replaying its ENTRANCE keyframe. Same trap as animations.css §9/§10. */
-  .tst.is-out,
-  [data-toast-pos="tl"] .tst.is-out,
-  [data-toast-pos="bl"] .tst.is-out { animation-name: tstOutM; }
+     .tst` here — one attribute selector plus one class — outranks
+     `.tst.is-closing` outside it, and a mobile toast in a left corner would
+     have exited by replaying its ENTRANCE keyframe. Same trap as
+     animations.css §9/§10. */
+  .tst.is-closing,
+  [data-toast-pos="tl"] .tst.is-closing,
+  [data-toast-pos="bl"] .tst.is-closing { animation-name: tstOutM; }
 }
 @keyframes tstInM { from { opacity: 0; transform: translateY(12px) } }
+
 .tst__i { flex: none; margin-top: 1px; color: var(--tst-c, var(--on-surface-3)); font-size: 12px; font-weight: 700; }
 .tst__b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .tst__t { font-size: 13px; font-weight: 600; color: var(--on-surface); }
@@ -1021,11 +1093,58 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   position: fixed; z-index: 340; min-width: 200px; max-width: 340px; padding: var(--sp-3);
   border: 1px solid var(--outline-variant); border-radius: var(--r-md);
   background: var(--s-lowest); box-shadow: var(--shadow-3);
+  /* `dmPop` scales from `transform-origin`, and this rule had none — so the
+     origin was `center` and the panel expanded outward from its own middle
+     while its top-left corner stayed pinned to the trigger. Popover.jsx's
+     header already described the fix ("`--right` flips it") and the class it
+     names never existed; `.pk__pop` (line 641) has carried the same three
+     origins since it landed. Measured against it, this was the one surface on
+     the 340 rung growing from the wrong point. */
+  transform-origin: top left;
   /* Same pair as .pk__pop above — motion.css:143/145, MOTION-SPEC.md §3. */
   animation: dmPop var(--dur-fast) var(--ease-spring) both;
 }
+.pop--right { transform-origin: top right; }
 .pop.is-closing { animation: dmPopOut calc(var(--dur-fast) * .85) var(--ease-exit) both; }
-.menu--float { position: fixed; z-index: 340; top: auto; left: auto; right: auto; min-width: 180px; max-width: 320px; padding: 4px; }
+.menu--float {
+  position: fixed; z-index: 340; top: auto; left: auto; right: auto;
+  min-width: 180px; max-width: 320px; padding: 4px;
+  /* Menu was the ONE overlay on this rung with no entrance and no exit — it
+     appeared and vanished on a frame boundary while Popover and Picker, built
+     from the same portal/dismiss/z-index contract, both animated. MOTION-SPEC
+     §3 puts "Popover / menu" on a single row and §7.9 states the rule the
+     divergence broke: one popover primitive, four uses, and divergence between
+     them is the bug. Reference `.ov-menu` (motion.css:311-312) carries exactly
+     this pair, down to the `transform-origin: top right` on a right-aligned
+     menu — a menu hanging off the right edge of a row must grow out of the
+     button, not toward it. */
+  transform-origin: top left;
+  animation: dmPop var(--dur-fast) var(--ease-spring) both;
+}
+.menu--right { transform-origin: top right; }
+.menu--float.is-closing { animation: dmPopOut calc(var(--dur-fast) * .85) var(--ease-exit) both; }
+
+/* ── Every overlay is click-through while it leaves ───────────────────────
+   Stated ONCE, for all of them, because the alternative is what this file
+   briefly had: three closing surfaces that ignored the pointer and three that
+   did not, with nothing to say which was which.
+
+   An exit runs for 119–220ms and the node is fully painted for all of it. Until
+   it unmounts it is still a hit target sitting over the page, so a user who
+   dismisses a menu and immediately clicks the row underneath hits the menu — or
+   worse, hits a menu ITEM and fires an action they just cancelled. The reference
+   sidesteps this by unmounting on a timer; the build waits for `animationend`,
+   which is more correct and makes this rule necessary.
+
+   `.modal__scrim` covers its panel by inheritance; `.dr` and `.dr__scrim` carry
+   the same rule in drawer.css, which is where those two are declared. */
+.pop.is-closing,
+.menu--float.is-closing,
+.pk__pop.is-closing,
+.sheet.is-closing,
+.sheet__scrim.is-closing,
+.modal__scrim.is-closing,
+.tst.is-closing { pointer-events: none; }
 .menu--float .menu__item { border-bottom: 0; border-radius: var(--r-sm); padding: 7px 10px; }
 .menu__sep { height: 1px; margin: 4px 2px; background: var(--outline-variant); }
 .menu__item--danger { color: var(--danger); }

@@ -100,7 +100,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
    220ms in which a full-screen invisible sheet still eats taps. A user who
    dismisses the drawer and immediately reaches for what was underneath should
    hit it. */
-.kv__scrim[data-closing="1"] {
+.kv__scrim.is-closing {
   animation: dmFadeOut var(--dur-fast) var(--ease-exit) both;
   pointer-events: none;
 }
@@ -130,8 +130,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
   box-shadow: var(--shadow-4);
   animation: kv-drawer-in var(--dur-slow) var(--ease-emph-in) both;
 }
-.kv__drawer[data-closing="1"] {
+/* `.is-closing`, not `[data-closing="1"]`. The two select identically; the class
+   is what the other eleven leaving surfaces in the build use, and what
+   overlay-motion.test.jsx pairs an entrance with to decide whether a surface has
+   an exit at all. A private spelling makes a correct exit invisible to the test
+   that exists to find missing ones. */
+.kv__drawer.is-closing {
   animation: kv-drawer-out var(--dur-base) var(--ease-exit) both;
+  /* The panel is 300px of hit target for the whole 220ms of its exit. */
+  pointer-events: none;
 }
 @keyframes kv-drawer-in {
   from { transform: translateX(calc(-100% * var(--motion-scale, 1))); opacity: .3 }
@@ -1525,6 +1532,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
   letter-spacing: normal;
   color: var(--primary-text);
   font-weight: 400;
+  /* `.k-pageh__h1` sets -0.02em, and letter-spacing inherits as a resolved
+     absolute length rather than being recomputed against this element's own
+     size — so the h1's negative tracking landed here. Measured -0.88px at a
+     1440px viewport, where the h1 clamps to 44px. 24-bilingual-devanagari.md
+     forbids tracking on Devanagari: the script hangs its letters off a
+     continuous shirorekha and any tracking opens gaps in it. Same leak, same
+     reset, as `.bd__cn-hi` in boards.css and `.k-stat__hi` above. */
+  letter-spacing: normal;
 }
 .k-pageh__lede {
   font-size: 14px;
@@ -3580,9 +3595,18 @@ select.k-formpanel__input { appearance: none;
   border-radius: 8px;
   box-shadow: 0 12px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06);
   overflow: hidden;
-  animation: k-onboard-slide-up calc(.25s * var(--ix)) cubic-bezier(.25,.8,.25,1);
+  /* Was `calc(.25s * var(--ix)) cubic-bezier(.25,.8,.25,1)` — a literal base
+     and a one-off curve, on a surface the duration ladder already has a rung
+     for. `--dur-base` is 220ms against that 250, and `--ease-emph` is the
+     system's own emphasised curve. Nothing about this card justified being the
+     only overlay in the build off the ladder. */
+  animation: k-onboard-slide-up var(--dur-base) var(--ease-emph) both;
 }
-.k-onboard.is-closing { animation: k-onboard-slide-down calc(.2s * var(--ix)) ease-in forwards; }
+/* The exit existed, which is more than most of this build managed, but it ran
+   200ms with `ease-in` — SLOWER relative to its entrance than any other exit
+   here and on a keyword curve. `--dur-fast --ease-exit` is the pair every other
+   leaving surface uses. */
+.k-onboard.is-closing { animation: k-onboard-slide-down var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {
   .k-onboard, .k-onboard.is-closing { animation: none; }
 }
@@ -3652,9 +3676,12 @@ select.k-formpanel__input { appearance: none;
   border-radius: 8px;
   box-shadow: 0 8px 20px rgba(0,0,0,0.12);
   font-size: 13px; font-weight: 600; color: var(--ink);
-  animation: k-onboard-slide-up calc(.25s * var(--ix)) cubic-bezier(.25,.8,.25,1);
+  /* Same ladder move as `.k-onboard` above — the pill is the collapsed form of
+     that card and has to arrive and leave on the same timing, or expanding it
+     reads as two different objects. */
+  animation: k-onboard-slide-up var(--dur-base) var(--ease-emph) both;
 }
-.k-onboard-pill.is-closing { animation: k-onboard-slide-down calc(.2s * var(--ix)) ease-in forwards; }
+.k-onboard-pill.is-closing { animation: k-onboard-slide-down var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) {
   .k-onboard-pill, .k-onboard-pill.is-closing { animation: none; }
 }

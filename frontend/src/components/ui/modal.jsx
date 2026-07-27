@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { Button } from "./Button";
 import FocusTrap from "./FocusTrap";
+import { useExitAnimation } from "../../hooks/useExitAnimation";
 
 /**
  * Modal — scrim, focus trap, Escape, scroll lock.
@@ -16,9 +17,18 @@ import FocusTrap from "./FocusTrap";
  * Body scroll lock is new. Without it the page behind scrolls under the scrim
  * on wheel and on arrow keys, which makes the dialog feel detached and loses
  * the user's place in the list they were working from.
+ *
+ * THE EXIT. This ended `if (!open) return null` — an entrance of 262ms
+ * (scrim 220ms, panel 220ms starting 42ms in) followed by a hard cut. The exit
+ * now plays `.is-closing` on both layers and the node survives until
+ * `animationend`; see `hooks/useExitAnimation.js` for why that is an event and
+ * not a timer. `open` still means what it always meant to the caller — the hook
+ * absorbs the difference between "the parent says closed" and "the pixels have
+ * gone".
  */
 export function Modal({ open, onOpenChange, title, children, footer, dataTestId, size = 'md' }) {
   const titleId = dataTestId ? `${dataTestId}-title` : "modal-title";
+  const { alive, closing, onAnimationEnd } = useExitAnimation(open);
 
   useEffect(() => {
     if (!open) return;
@@ -31,27 +41,38 @@ export function Modal({ open, onOpenChange, title, children, footer, dataTestId,
       }
     };
     window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onOpenChange]);
 
+  // The scroll lock is keyed on `alive`, NOT on `open`. Releasing it the moment
+  // the parent flips `open` would let the page scroll under a dialog that is
+  // still on screen and still 98% opaque, and the content would jump behind the
+  // panel it is fading out through. Sheet.jsx documents the mirror-image bug:
+  // a lock that outlives its overlay.
+  useEffect(() => {
+    if (!alive) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [open, onOpenChange]);
+    return () => { document.body.style.overflow = prev; };
+  }, [alive]);
 
   // Focus restore lives in <FocusTrap>, which captures the trigger before moving
   // focus inward and restores it in its own cleanup. A second copy here would
-  // fire two restores on every close.
+  // fire two restores on every close. `active={open}` and not `alive`: focus
+  // goes back to the trigger when the user dismisses, not 140ms later once the
+  // pixels have caught up.
 
-  if (!open) return null;
+  if (!alive) return null;
 
   return (
     <div
       data-testid={dataTestId}
       role="presentation"
-      className="modal__scrim"
+      className={`modal__scrim ${closing ? 'is-closing' : ''}`.trim()}
+      // A dialog on its way out is closed as far as the accessibility tree is
+      // concerned. Without this the screen reader still sees an open modal for
+      // the length of the exit, and focus has already left it.
+      aria-hidden={closing || undefined}
       onClick={(e) => { if (e.target === e.currentTarget) onOpenChange(false); }}
     >
       <FocusTrap active={open}>
@@ -59,7 +80,8 @@ export function Modal({ open, onOpenChange, title, children, footer, dataTestId,
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
-          className={`modal__panel modal__panel--${size}`}
+          className={`modal__panel modal__panel--${size} ${closing ? 'is-closing' : ''}`.trim()}
+          onAnimationEnd={onAnimationEnd}
         >
           <div className="modal__head">
             <h2 id={titleId} data-testid={`${dataTestId}-title`} className="modal__title">

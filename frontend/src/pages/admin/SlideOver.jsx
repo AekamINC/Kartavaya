@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import FocusTrap from '../../components/ui/FocusTrap';
+import { useExitAnimation } from '../../hooks/useExitAnimation';
 
 /**
  * SlideOver — one right-side detail panel for the console.
@@ -18,27 +19,49 @@ import FocusTrap from '../../components/ui/FocusTrap';
  * removed that member), and FocusTrap checks `isConnected` before restoring.
  */
 export default function SlideOver({ open, onClose, title, subtitle, children, footer }) {
+  // It slid in over 220ms and then ceased to exist — `if (!open) return null`,
+  // the same defect Modal, ConfirmDialog and the command palette carried. See
+  // hooks/useExitAnimation.js for why the unmount waits on `animationend`.
+  const { alive, closing, onAnimationEnd } = useExitAnimation(open);
+
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); } };
     window.addEventListener('keydown', onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prev;
-    };
+    return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  // Keyed on `alive`, not `open`: releasing the lock the moment the parent flips
+  // `open` lets the console scroll under a panel that is still on screen.
+  useEffect(() => {
+    if (!alive) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [alive]);
+
+  if (!alive) return null;
 
   return createPortal(
     <>
       {/* A real button, so the scrim is reachable and announced rather than
           being a div that happens to have an onClick. */}
-      <button type="button" className="aso__scrim" aria-label="Close panel" onClick={onClose} />
+      <button
+        type="button"
+        className={`aso__scrim ${closing ? 'is-closing' : ''}`.trim()}
+        aria-label="Close panel"
+        aria-hidden={closing || undefined}
+        onClick={onClose}
+      />
       <FocusTrap active={open}>
-        <div role="dialog" aria-modal="true" aria-label={title} className="aso">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={title}
+          aria-hidden={closing || undefined}
+          className={`aso ${closing ? 'is-closing' : ''}`.trim()}
+          onAnimationEnd={onAnimationEnd}
+        >
           <header className="aso__head">
             <div className="aso__titles">
               <h2 className="aso__t">{title}</h2>

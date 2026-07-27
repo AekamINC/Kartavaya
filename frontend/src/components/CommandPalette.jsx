@@ -49,6 +49,7 @@ import { api } from '../lib/api';
 import { fuzzyMatch } from '../lib/fuzzyMatch';
 import { SCOPES, ENTITIES, rankCommands, loadRecent, pushRecent } from '../lib/commands';
 import { FocusTrap } from './ui';
+import { useExitAnimation } from '../hooks/useExitAnimation';
 
 const ICONS = {
   nav: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg>,
@@ -150,6 +151,10 @@ export default function CommandPalette({ open, onClose, onNewTask }) {
   // re-render, so arrowing past it is impossible.
   const keyboardNav = useRef(false);
   const navigate = useNavigate();
+  // The palette had an entrance (`k-cmdk-in-v2`, 220ms) and no way out — the
+  // component ended `if (!open) return null`, so ⌘K opened it gracefully and
+  // Escape deleted it between two frames. See hooks/useExitAnimation.js.
+  const exit = useExitAnimation(open);
 
   const search = useRecordSearch(query, scope, open);
   const showScopes = search.mode === 'live';
@@ -302,7 +307,7 @@ export default function CommandPalette({ open, onClose, onNewTask }) {
     else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight;
   }, [activeIdx, rows.length]);
 
-  if (!open) return null;
+  if (!exit.alive) return null;
 
   const q = query.trim();
   const activeId = rows[activeIdx] ? `cmdk-${rows[activeIdx].key}` : undefined;
@@ -350,12 +355,21 @@ export default function CommandPalette({ open, onClose, onNewTask }) {
 
   return (
     <div
-      className="k-cmdk-overlay"
+      className={`k-cmdk-overlay ${exit.closing ? 'is-closing' : ''}`.trim()}
       data-k-palette=""
+      aria-hidden={exit.closing || undefined}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <FocusTrap active initialFocus={inputRef}>
-        <div className="k-cmdk" role="dialog" aria-modal="true" aria-label="Search and commands">
+      {/* `active={open}`, not `alive`: focus goes back to whatever opened the
+          palette the moment the user dismisses it, not 160ms later. */}
+      <FocusTrap active={open} initialFocus={inputRef}>
+        <div
+          className={`k-cmdk ${exit.closing ? 'is-closing' : ''}`.trim()}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Search and commands"
+          onAnimationEnd={exit.onAnimationEnd}
+        >
           <div className="k-cmdk__input-wrap">
             <span className="k-cmdk__icon">{ICONS.search}</span>
             <input
