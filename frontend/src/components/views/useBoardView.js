@@ -48,12 +48,18 @@ const SORT_DIRS = new Set(['ascending', 'descending']);
  * otherwise split the clause, so the value is component-encoded on the way out
  * and decoded on the way in; the field and operator are enum ids and cannot
  * contain either.
+ *
+ * `~` has to be escaped BY HAND. It is one of the unreserved marks
+ * `encodeURIComponent` deliberately leaves alone (`- _ . ! ~ * ' ( )`), so a
+ * title filter typed as `a~b` came back out of the URL as two half-clauses and
+ * the second was silently dropped. `%7E` decodes to `~` on the way back, so
+ * only the separator changes.
  */
 function encodeClauses(clauses) {
   const usable = (clauses || []).filter(c => c && c.field && c.op);
   if (!usable.length) return '';
   return usable
-    .map(c => `${c.field}:${c.op}:${encodeURIComponent(c.value ?? '')}`)
+    .map(c => `${c.field}:${c.op}:${encodeURIComponent(c.value ?? '').replace(/~/g, '%7E')}`)
     .join('~');
 }
 
