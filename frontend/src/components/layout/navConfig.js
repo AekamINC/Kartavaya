@@ -129,26 +129,18 @@ export const NAV_FULL = [
     ],
   },
   {
-    // ── Clients · मुवक्किल ──────────────────────────────────────────────────
+    // ── Clients · ग्राहक ────────────────────────────────────────────────────
     //
     // eSign is a client-facing surface in the design, not a module among the
     // internal ten — it is the thing a customer's customer actually touches.
     //
-    // NOT `ग्राहक`, which this section carried when it was created and which is
-    // already the CRM row's label eleven lines up. One sidebar cannot use one
-    // word for two things; a reader has no way to tell which sense is meant.
-    //
-    // The reference avoids the clash by calling CRM `ग्रह`, freeing `ग्राहक` for
-    // this heading. The build went the other way for a documented reason —
-    // `ग्रह` means *planet*, and `Modules.jsx:28` already recorded that CRM is
-    // `ग्राहक`, customer. So the heading moves instead.
-    //
-    // `मुवक्किल` is the professional-services sense of client, as against `ग्राहक`
-    // for a retail customer — which is the right distinction for a firm that
-    // keeps customer records in CRM and sends documents to the people it acts
-    // for. OWNER: this is a vocabulary call made by a non-native speaker on a
-    // bilingual product; override it if a CA firm would say something else.
-    section: 'clients', sans: 'मुवक्किल', gu: 'અસીલ',
+    // This briefly read `मुवक्किल`, because when the section was created CRM was
+    // labelled `ग्राहक` and one sidebar cannot use one word for two things. The
+    // CRM row has since been settled as `ग्रह` on the design's own evidence (NAV,
+    // the page title, `Landing2.jsx:265`), which frees `ग्राहक` for this heading —
+    // which is where the reference puts it, and why it calls CRM `ग्रह` in the
+    // first place. The collision is gone, so the workaround goes with it.
+    section: 'clients', sans: 'ग्राहक', gu: 'ગ્રાહક',
     items: [
       { to: '/esign',   icon: 'esign',   en: 'E-Sign',    hi: 'प्रमाण',  gu: 'પ્રમાણ', module: 'esign' },
     ],

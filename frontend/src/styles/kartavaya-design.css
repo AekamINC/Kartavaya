@@ -166,7 +166,16 @@
      ~90ms snap plus a long invisible tail — the opposite of drawer.css's own
      stated intent that "entering is the system responding to you and can afford
      to be gracious". Distinctness was never the goal; travel time was. */
-  --ease-emph:        cubic-bezier(.2, 0, 0, 1);
+  /* expo-out, NOT `.2,0,0,1`. `00-tokens.md:133` documents this divergence
+     explicitly: the two tokens "were previously the identical curve", and M3's
+     emphasized easing has no single-cubic form, so this is deliberately more
+     dramatic than `--ease-standard`. The reference's own `tokens.css:47` still
+     carries the PRE-divergence value, so matching it collapses the two tokens
+     back into one and undoes the thing the handover records as fixed.
+     Standard for state changes; emphasized for anything entering or leaving.
+     Two agents measured the same number and disagreed on intent; this is the
+     line that settles it. */
+  --ease-emph:        cubic-bezier(.16, 1, .3, 1);
   --ease-enter:       cubic-bezier(0, 0, .2, 1);
   --ease-exit:        cubic-bezier(.4, 0, 1, 1);
   --ease-emph-in:     cubic-bezier(.05, .7, .1, 1);
