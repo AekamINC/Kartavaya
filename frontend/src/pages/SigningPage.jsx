@@ -136,17 +136,45 @@ export default function SigningPage() {
      Restored rather than removed on unmount — the bootstrap's value is what the
      rest of the app expects to find on <html> when this route is left.
 
-     THEMED_ACCENT: `applyPrefs` writes these four as INLINE styles chosen by
-     the theme it saw, and `DEFAULT_PREFS.mode` is 'light', so for a stranger it
+     THEMED_ACCENT: `applyPrefs` writes these as INLINE styles chosen by the
+     theme it saw, and `DEFAULT_PREFS.mode` is 'light', so for a stranger it
      writes the LIGHT values once and never re-runs. Flipping data-theme below
      moves the surfaces to the dark palette but an inline style outranks the
      `[data-theme="dark"]` block that exists to correct these, leaving dark-teal
      text on near-black. Removing them is right rather than recomputing: this
      branch is only reached when `k_prefs` is absent, so there is no chosen
      accent to preserve. Same defect and same repair as ApprovePage — see the
-     measured ratios in its docblock. */
+     measured ratios in its docblock.
+
+     The list was the four `--primary*` props, and that was HALF the defect.
+     `applyPrefs` also pins the brand-mark gradient trio, and those are just as
+     theme-dependent: kartavaya-design.css's dark block defines
+     `--k-mid: var(--primary)`, `--k-deep: var(--primary-hover)` and
+     `--side-active` as a color-mix of `--primary`, so all three flip with the
+     theme — while `--k-grad`/`--k-gradD` are written inline as fully-resolved
+     LIGHT literals that no `[data-theme]` rule can reach.
+
+     What that produced, MEASURED in headless Chrome under genuine OS-level
+     `prefers-color-scheme: dark` with no `k_prefs` (the exact stranger path):
+     the four above were correctly dropped, so the KLogo glyph moved to the dark
+     palette's `--on-primary` #00332F — but it was painted on the LIGHT
+     gradient, still pinned at `#005650 → #00897f → #05b7aa`. Dark ink on dark
+     teal:
+
+         glyph #00332F on gradient stop #005650  →  1.62:1
+                                        #00897f  →  3.23:1
+                                        #05b7aa  →  5.52:1
+
+     1.62:1 is the top-left stop, which is where the mark's stroke actually
+     sits. The Kartavaya logo — the first thing a stranger sees on the most
+     externally visible page in the product — was very nearly invisible.
+     Dropping the trio too lets `--k-grad` recompute from the dark palette
+     (`#6FE6DA → #4FD8CB → #05b7aa`), measured at 9.25 / 7.93 / 5.52:1. */
   useEffect(() => {
-    const THEMED_ACCENT = ['--primary', '--primary-hover', '--primary-text', '--on-primary'];
+    const THEMED_ACCENT = [
+      '--primary', '--primary-hover', '--primary-text', '--on-primary',
+      '--k-primary', '--k-mid', '--k-deep', '--k-grad', '--k-gradD', '--side-active',
+    ];
     const root = document.documentElement;
     let chosen = null;
     try { chosen = window.localStorage?.getItem('k_prefs'); } catch { chosen = null; }
@@ -435,7 +463,18 @@ export default function SigningPage() {
 
         {step === 'otp_send' && data && (
           <Card className="pub__card">
-            <CardHead title={`Sign: ${data.document_title}`} />
+            {/* `हस्ताक्षर` is what the design reference calls this module in
+                every surface that names it — Chrome.jsx's nav, Landing.jsx's
+                module list, Onboarding.jsx and `ScreenEsign`'s own page header.
+                The sibling public page carries `अनुमोदन` on the equivalent card,
+                and these two share one chrome by design (public.css), so a
+                bilingual head on one and not the other is the exact disagreement
+                that file exists to prevent. It goes through CardHead's `sanskrit`
+                prop rather than inline markup because `.card__hi` is the
+                spec-correct treatment: --font-indic, lang="hi" so the tracking
+                and leading rules fire, and aria-hidden so it does not announce
+                the same label twice (24-bilingual-devanagari.md §114). */}
+            <CardHead title={`Sign: ${data.document_title}`} sanskrit="हस्ताक्षर" />
             <CardBody>
               <div className="pub__stack">
                 {data.document_description && <p className="pub__lede">{data.document_description}</p>}
@@ -509,9 +548,17 @@ export default function SigningPage() {
 
         {step === 'sign' && data && (
           <Card className="pub__card">
-            <CardHead title={`Sign: ${data.document_title}`} />
+            <CardHead title={`Sign: ${data.document_title}`} sanskrit="हस्ताक्षर" />
             <CardBody>
               <div className="pub__stack">
+                {/* The description had the same asymmetry the file_url link below
+                    had, and for the same reason: it was written into the
+                    `otp_send` branch only. A signer whose document needs no OTP
+                    never saw what the document was FOR — measured: this step
+                    rendered the title and nothing else. What the agreement covers
+                    cannot depend on whether identity verification was switched
+                    on. */}
+                {data.document_description && <p className="pub__lede">{data.document_description}</p>}
                 <p className="pub__lede">
                   Signing as <strong>{data.signer_name}</strong> ({data.signer_email})
                 </p>
