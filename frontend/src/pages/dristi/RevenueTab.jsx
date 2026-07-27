@@ -7,15 +7,7 @@
 // is this going", the table answers "how much exactly".
 import React from 'react';
 import { DataTable, Td } from '../../components/editorial';
-import { useDristi, TabState, FMT, Panel, Bars, downloadCSV } from './_shared';
-
-/** `2026-07` → `Jul` — an axis label, not a date. */
-const short = (m) => {
-  const [y, mm] = String(m || '').split('-');
-  if (!y || !mm) return m;
-  const d = new Date(Number(y), Number(mm) - 1, 1);
-  return Number.isNaN(d.getTime()) ? m : d.toLocaleString('en-IN', { month: 'short' });
-};
+import { useDristi, TabState, FMT, MONEY, Panel, Bars, downloadCSV } from './_shared';
 
 export default function RevenueTab() {
   const state = useDristi('/v1/dristi/revenue');
@@ -44,8 +36,8 @@ export default function RevenueTab() {
               </button>}
             >
               <Bars
-                items={trend.map(r => ({ label: short(r.month), value: r.collected }))}
-                format={FMT}
+                items={trend.map(r => ({ label: r.month, value: r.collected }))}
+                format={MONEY}
                 empty="No invoices have been raised in this window."
               />
             </Panel>

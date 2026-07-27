@@ -29,12 +29,24 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../lib/api';
 import { Shimmer } from '../../components/editorial';
 import RestrictedNote from '../../components/module/RestrictedNote';
-import { inr, grouped } from '../../lib/inr';
+import { inr, inrShort, grouped } from '../../lib/inr';
 
 /** Indian digit grouping, one implementation — see lib/inr.js. */
 export const FMT = inr;
+/** Lakh/crore. What a bar or a tile gets: `₹26,40,000` over a 60px-wide column
+ *  collides with its neighbour, and the exact rupee was never the point of a
+ *  bar chart. Tables keep FMT, because there the exact figure IS the point. */
+export const MONEY = inrShort;
 export const NUM = grouped;
 export const PCT = v => `${Number(v || 0).toFixed(1)}%`;
+
+/** `2026-02` → `Feb`. Axis labels arrive raw from GROUP BY and do not fit. */
+export function monthLabel(v) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(v ?? ''));
+  if (!m) return String(v ?? '');
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, 1);
+  return Number.isNaN(d.getTime()) ? v : d.toLocaleString('en-IN', { month: 'short' });
+}
 
 /** The module a 403 on this path is really about, for the restricted note. */
 const MODULE_OF = {
@@ -164,11 +176,19 @@ export function Bars({ items, format = NUM, empty = 'Nothing in this period yet.
       {items.map((i, n) => (
         <div className="dbars__c" key={i.label}>
           <span className="dbars__v">{format(i.value)}</span>
-          <span
-            className={`dbars__b${n === items.length - 1 ? ' dbars__b--now' : ''}`}
-            style={{ '--h': `${pctOf(i.value, max)}%` }}
-          />
-          <span className="dbars__x">{i.label}</span>
+          {/* The bar sizes against this track, NOT against the column. Sized
+              against the column, the tallest bar took the column's whole height
+              and pushed the axis label out of the card — the 100% bar's label
+              was clipped on every chart. */}
+          <span className="dbars__t">
+            <span
+              className={`dbars__b${n === items.length - 1 ? ' dbars__b--now' : ''}`}
+              style={{ '--h': `${pctOf(i.value, max)}%` }}
+            />
+          </span>
+          {/* Raw GROUP BY labels arrive as `2026-02` and truncate to "2026…" in
+              a 60px column, which identifies nothing. */}
+          <span className="dbars__x" title={i.label}>{monthLabel(i.label)}</span>
         </div>
       ))}
     </div>
@@ -225,9 +245,9 @@ export function Meters({ items, empty = 'Nothing to compare yet.' }) {
 }
 
 /** A titled card. The reference's `Card`, on the classes this build already has. */
-export function Panel({ title, hi, right, wide, children }) {
+export function Panel({ title, hi, right, wide, half, children }) {
   return (
-    <section className={`dcard${wide ? ' dcard--wide' : ''}`}>
+    <section className={`dcard${wide ? ' dcard--wide' : ''}${half ? ' dcard--half' : ''}`}>
       <header className="dcard__h">
         <Bi en={title} hi={hi} />
         {right && <span className="dcard__r">{right}</span>}

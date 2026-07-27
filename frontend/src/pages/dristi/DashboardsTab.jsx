@@ -21,7 +21,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty, Shimmer } from '../../components/editorial';
-import { Panel, Bars, Funnel, Meters, FMT, NUM, Bi, downloadCSV } from './_shared';
+import { Panel, Bars, Funnel, Meters, MONEY, NUM, Bi, downloadCSV } from './_shared';
 
 /** The reference's CHARTS, re-pointed at queries the server can actually run. */
 const PRESETS = [
@@ -39,7 +39,7 @@ const KINDS = [['bar', 'Bar'], ['funnel', 'Funnel'], ['row', 'Rows'], ['table', 
 const MEASURES = [['count', 'Count'], ['sum', 'Sum'], ['avg', 'Average']];
 
 /** A measure of money gets rupees; a count never does. */
-const fmtFor = (measure) => (measure === 'count' ? NUM : FMT);
+const fmtFor = (measure) => (measure === 'count' ? NUM : MONEY);
 
 function Chart({ kind, rows, measure }) {
   const items = rows.map(r => ({ label: String(r.label ?? '—'), value: Number(r.value) || 0 }));

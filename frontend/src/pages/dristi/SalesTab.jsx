@@ -9,14 +9,7 @@
 // from the order book, so the server withholds it on its own and names it.
 import React from 'react';
 import { StatTile, Section } from '../../components/editorial';
-import { useDristi, TabState, FMT, NUM, Panel, Bars, Meters, Withheld, downloadCSV } from './_shared';
-
-const short = (m) => {
-  const [y, mm] = String(m || '').split('-');
-  if (!y || !mm) return m;
-  const d = new Date(Number(y), Number(mm) - 1, 1);
-  return Number.isNaN(d.getTime()) ? m : d.toLocaleString('en-IN', { month: 'short' });
-};
+import { useDristi, TabState, FMT, MONEY, NUM, Panel, Bars, Meters, Withheld, downloadCSV } from './_shared';
 
 export default function SalesTab() {
   const state = useDristi('/v1/dristi/sales');
@@ -49,8 +42,8 @@ export default function SalesTab() {
                 Export CSV
               </button>}>
               <Bars
-                items={trend.map(r => ({ label: short(r.month), value: r.value }))}
-                format={FMT}
+                items={trend.map(r => ({ label: r.month, value: r.value }))}
+                format={MONEY}
                 empty="No orders in the last six months."
               />
             </Panel>
@@ -60,7 +53,7 @@ export default function SalesTab() {
                 items={split.map(s => ({
                   label: s.status,
                   pct: orders ? (Number(s.count) / orders) * 100 : 0,
-                  value: `${NUM(s.count)} · ${FMT(s.value)}`,
+                  value: `${NUM(s.count)} · ${MONEY(s.value)}`,
                 }))}
                 empty="No orders on record."
               />
@@ -77,7 +70,7 @@ export default function SalesTab() {
                     pct: Number(r.pct) || 0,
                     // Both figures, because a bar at 96% of a small target is
                     // not the same achievement as 96% of a large one.
-                    value: `${r.pct ?? 0}% · ${FMT(r.actual_amount)} of ${FMT(r.target_amount)}`,
+                    value: `${r.pct ?? 0}% · ${MONEY(r.actual_amount)} of ${MONEY(r.target_amount)}`,
                     tone: Number(r.pct) >= 100 ? 'ok' : Number(r.pct) < 50 ? 'warn' : undefined,
                   }))}
                   empty="No sales targets are set for the current period. Set them in Vikray."

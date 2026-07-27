@@ -8,7 +8,7 @@
 // difference between those two is the whole value of the number.
 import React from 'react';
 import { Section, StatTile } from '../../components/editorial';
-import { useDristi, TabState, FMT, NUM, PCT, Withheld, Bars } from './_shared';
+import { useDristi, TabState, FMT, NUM, PCT, Withheld, Bars, Panel } from './_shared';
 
 /** Which module each withheld block reads — mirrors `_OVERVIEW_SOURCES`. */
 const SOURCE_LABEL = {
@@ -115,14 +115,19 @@ export default function OverviewTab() {
                 <StatTile label="Overdue" sanskrit="विलंबित" value={NUM(tasks.overdue_tasks)} variant="danger"
                   sub={Number(tasks.overdue_tasks) ? 'past due, not done' : 'nothing late'} />
               </div>
-              <Bars
-                items={[
-                  { label: 'Active', value: tasks.active_tasks },
-                  { label: 'Done', value: tasks.done_tasks },
-                  { label: 'Overdue', value: tasks.overdue_tasks },
-                ]}
-                empty="No tasks on record yet."
-              />
+              {/* Boxed and width-capped. Three bars stretched across the full
+                  page read as a layout fault rather than a chart — the
+                  reference draws every chart inside a card. */}
+              <Panel title="Split" hi="विभाजन" half>
+                <Bars
+                  items={[
+                    { label: 'Active', value: tasks.active_tasks },
+                    { label: 'Done', value: tasks.done_tasks },
+                    { label: 'Overdue', value: tasks.overdue_tasks },
+                  ]}
+                  empty="No tasks on record yet."
+                />
+              </Panel>
             </Section>
           </>
         );

@@ -130,8 +130,12 @@ export default function DristiPage() {
         }
       />
 
-      <ModuleTabs tabs={TABS.map(([id]) => ({ id }))} value={tab} onChange={setTab}
-        label="Dristi sections" />
+      {/* `hr` is the one id whose English label cannot be derived: .mt__en
+          capitalizes, so the shared `tabEn` turns it into "Hr". It is an
+          initialism. */}
+      <ModuleTabs
+        tabs={TABS.map(([id]) => (id === 'hr' ? { id, label: 'HR' } : { id }))}
+        value={tab} onChange={setTab} label="Dristi sections" />
 
       <KpiStrip items={kpi} loading={!kpi && !kpiErr} error={kpiErr} count={4} />
 
