@@ -17,6 +17,40 @@ export async function apiAcceptInvite(token, name, password) {
   return res.data;
 }
 
+/**
+ * What the invite is for, before anyone types a password into it.
+ *
+ * `GET /api/auth/invite/:token` is unauthenticated and answers one 404 with one
+ * string for every kind of dead token, so there is nothing here to branch on
+ * beyond "it resolved or it did not".
+ */
+export async function apiInvitePreview(token) {
+  const res = await api.get(`/auth/invite/${encodeURIComponent(token)}`);
+  return res.data;
+}
+
+/** Turn the invitation down. Expires the row; idempotent on the server. */
+export async function apiDeclineInvite(token) {
+  const res = await api.post(`/auth/invite/${encodeURIComponent(token)}/decline`);
+  return res.data;
+}
+
+/**
+ * Slide the session's window forward and pick up any role change with it.
+ *
+ * This EXTENDS a live session; it cannot revive an expired one — the endpoint
+ * is behind `require_user`, so an expired token is refused before the handler
+ * runs. Callers must treat a rejection as "carry on with what you have", never
+ * as "sign the user out": the token that failed to refresh may still be minutes
+ * from valid, and `api.js`'s 401 branch already owns the case where it is not.
+ */
+export async function apiRefreshSession() {
+  const res = await api.post('/auth/refresh');
+  localStorage.setItem('Kartavaya_user', JSON.stringify(res.data.user));
+  if (res.data.token) localStorage.setItem('auth_token', res.data.token);
+  return res.data;
+}
+
 export async function apiForgotPassword(email) {
   const res = await api.post('/auth/forgot-password', { email });
   return res.data;
