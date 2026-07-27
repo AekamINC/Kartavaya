@@ -801,8 +801,18 @@ async def dispatch_scheduled_posts(
     """Cron endpoint — process all posts whose scheduled_for has passed.
     Secured by PUBLISH_DISPATCH_SECRET env var (same pattern as task-reminders).
     """
+    # `!=` on a str short-circuits at the first differing byte, so the time to
+    # fail leaks how many leading bytes were correct — and a cron endpoint can be
+    # called as often as an attacker likes. `secret_matches` is constant-time and
+    # also returns False when either side is empty, so an unset env var cannot be
+    # matched by an omitted parameter. This is the same helper
+    # `scheduler._verify_cron`, `reports.dispatch_reports` and
+    # `task_reminders.dispatch_reminders` already use; this route was the only
+    # dispatch endpoint still comparing with `!=`.
+    from utils import secret_matches
+
     expected = os.getenv("PUBLISH_DISPATCH_SECRET", "")
-    if not expected or request_secret != expected:
+    if not secret_matches(request_secret, expected):
         raise HTTPException(403, "Invalid dispatch secret")
 
     results = await process_scheduled_posts()

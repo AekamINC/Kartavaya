@@ -656,6 +656,7 @@ async def process_payroll(
         "COALESCE(e.department, '') AS department_name "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "AND e.org_id = p.org_id "
         "WHERE p.run_id=$1::uuid AND e.email IS NOT NULL AND e.email != ''",
         run_id,
     )
@@ -767,6 +768,7 @@ async def get_run(
         "e.employee_code "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "AND e.org_id = p.org_id "
         "WHERE p.run_id=$1::uuid ORDER BY employee_name",
         run_id,
     )
@@ -874,7 +876,13 @@ async def list_payslips(
         "e.name AS employee_name, "
         "e.employee_code "
         "FROM staging.vetana_payslips p "
+        # `AND e.org_id = p.org_id` matches the tightening applied to
+        # `vikray.py:648`. The payslip is already org-filtered, so this changes
+        # nothing while referential integrity holds; it means a payslip whose
+        # `employee_id` ever pointed across a tenant boundary yields no row
+        # rather than another org's employee name and code.
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "AND e.org_id = p.org_id "
         "WHERE p.org_id=$1::uuid AND p.is_active=TRUE"
     )
     params: list = [org_id]
@@ -915,6 +923,7 @@ async def get_payslip(
         "e.user_id AS employee_user_id "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "AND e.org_id = p.org_id "
         "WHERE p.id=$1::uuid AND p.org_id=$2::uuid",
         payslip_id, org_id,
     )
@@ -1004,6 +1013,7 @@ async def download_payslip_pdf(
         "COALESCE(e.department, '') AS department_name "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "AND e.org_id = p.org_id "
         "WHERE p.id=$1::uuid AND p.org_id=$2::uuid",
         payslip_id, org_id,
     )
@@ -1165,6 +1175,7 @@ async def dashboard(
         "COALESCE(SUM(p.gross),0) AS dept_gross, COALESCE(SUM(p.net_pay),0) AS dept_net "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "AND e.org_id = p.org_id "
         "WHERE p.org_id=$1::uuid AND p.month=$2 "
         "GROUP BY e.department ORDER BY dept_gross DESC",
         org_id, latest_run["month"] if latest_run else "",
@@ -1200,6 +1211,7 @@ async def statutory_summary(
         "p.esi_employee, p.esi_employer, p.professional_tax, p.tds "
         "FROM staging.vetana_payslips p "
         "JOIN staging.manav_employees e ON e.id = p.employee_id "
+        "AND e.org_id = p.org_id "
         "WHERE p.org_id=$1::uuid AND p.month=$2 "
         "ORDER BY employee_name",
         org_id, month,

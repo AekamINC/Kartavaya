@@ -111,6 +111,26 @@ async def get_dashboard_data(dashboard_id: str, pool=Depends(get_pool), user=Dep
             return wid, {"tasks": [dict(t) for t in tasks]}
 
         elif wtype == "deadlines":
+            # `team_id` is OPTIONAL on this widget, and the guard above only
+            # fires when one is present (`and widget_team`). A widget saved
+            # without one therefore skipped the membership check and fell into
+            # the `$1 IS NULL` branch below, which disables the team filter
+            # entirely — returning the fifteen nearest deadlines from EVERY team
+            # in EVERY organisation, with task titles and assignee names, to any
+            # authenticated user who saved such a widget.
+            #
+            # The other three widget types are unaffected: `count` and `chart`
+            # compare `team_id=$1`, which matches no row when $1 is NULL, and
+            # `my_work` is filtered to the caller's own id.
+            #
+            # With no team chosen the widget's scope is the caller's own teams,
+            # never all of them. Platform staff keep the unrestricted view they
+            # have everywhere else — for them `_allowed_teams` is None.
+            scope_teams = None
+            if _allowed_teams is not None and not widget_team:
+                if not _allowed_teams:
+                    return wid, {"tasks": []}
+                scope_teams = list(_allowed_teams)
             tasks = await pool.fetch("""
                 SELECT task_id, title, status, priority, due_at,
                        COALESCE(u.full_name, u.name) AS assignee_name
@@ -118,8 +138,9 @@ async def get_dashboard_data(dashboard_id: str, pool=Depends(get_pool), user=Dep
                 LEFT JOIN users u ON u.user_id = ANY(t.assignee_user_ids::text[])
                 WHERE t.due_at IS NOT NULL AND t.due_at > NOW() AND t.status != 'done'
                   AND ($1::text IS NULL OR t.team_id=$1)
+                  AND ($2::text[] IS NULL OR t.team_id = ANY($2::text[]))
                 ORDER BY t.due_at ASC LIMIT 15
-            """, cfg.get("team_id"))
+            """, cfg.get("team_id"), scope_teams)
             return wid, {"tasks": [dict(t) for t in tasks]}
 
         elif wtype == "chart":
