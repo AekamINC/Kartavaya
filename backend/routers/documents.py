@@ -57,7 +57,7 @@ from __future__ import annotations
 import json
 import logging
 import traceback
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
@@ -1155,3 +1155,326 @@ async def download_project_report_pdf(
         raise _failed("project report", e, board_id=board_id, org=org_id) from e
 
     return _pdf_response(pdf, f"{report['report_number']}.pdf")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Data exports — Tally XML and GSTR-1 JSON
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# These two are EXPORTS, not documents. The distinction matters and is the whole
+# reason they exist in this shape:
+#
+#   · A document above is something the firm ISSUES — an invoice, a challan, a
+#     statement — and `doc_validation` refuses to emit one that is legally
+#     incomplete.
+#   · An export is the firm's own data, handed to the firm's own software. It
+#     asserts nothing. It is not a return, it is not a filing, and it does not
+#     compute a liability anyone should rely on. Kartavaya is not a GSP; nothing
+#     on either path contacts the GSTN, the IRP or any portal.
+#
+# Both are GET. An export READS — `middleware/subscription._is_write` treats GET
+# as a read unconditionally, so a viewer entitled to see these figures can
+# download them without being told to ask for Editor. Making either a POST would
+# have needed an entry in `READ_SHAPED_POSTS`; not needing one is better.
+#
+# Both carry `_ganit` — the same `require_module("ganit")` gate as every route
+# above — and both scope every query with `org_id=$1::uuid`. They join
+# `graha_contacts` and `ganit_vendors` for the counterparty NAME and GSTIN,
+# which is invoice data and the same join `download_invoice_pdf` and
+# `_prefiling_checks` already make behind this gate.
+
+def _period_bounds(period: str) -> tuple[str, str]:
+    """`2026-07` → the half-open range `['2026-07-01', '2026-08-01')`.
+
+    Half-open so an invoice dated the last of the month is inside and one dated
+    the first of the next is not, with no leap-year or 31-day special cases.
+    """
+    try:
+        datetime.strptime(period, "%Y-%m")
+    except (ValueError, TypeError):
+        raise HTTPException(400, "period must be YYYY-MM")
+    year, month = int(period[:4]), int(period[5:7])
+    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return f"{period}-01", end.isoformat()
+
+
+def _refuse_export(kind: str, message: str, **detail) -> HTTPException:
+    """422 for an export that would otherwise be an empty or misleading file.
+
+    NOT `document_incomplete`: nothing here is being issued, and borrowing that
+    payload would put "this document cannot be issued" in front of a user who
+    asked for a data file. `describeDocumentError` renders `detail.message`
+    under the caller's own title, which is the right shape for this.
+
+    422 rather than 404 or 204: the request was understood and the range is real
+    — there is simply nothing that can honestly be written, and a zero-byte or
+    empty-envelope download is the one outcome this task exists to prevent.
+    """
+    return HTTPException(422, detail={"error": kind, "message": message, **detail})
+
+
+# ── Tally ─────────────────────────────────────────────────────────────────────
+
+_TALLY_INVOICE_COLS = (
+    "i.invoice_number, i.invoice_type, i.invoice_date, i.is_igst, i.line_items, "
+    "i.subtotal, i.cgst, i.sgst, i.igst, i.cess, i.discount, i.total, i.currency, "
+    "c.name AS contact_name, c.company AS contact_company, c.gstin AS contact_gstin"
+)
+
+#: NO `b.is_igst` — **that column does not exist on `ganit_vendor_bills`**.
+#: `VendorBillCreate` carries an `is_igst` field, but it is an input to
+#: `_compute_invoice` that decides how the tax is split and is then discarded;
+#: the row keeps only the resulting cgst/sgst/igst figures. Selecting it here
+#: would raise `UndefinedColumnError` on every request. Checked against
+#: `information_schema`, which is the only thing that actually knows.
+_TALLY_BILL_COLS = (
+    "b.bill_number, b.internal_ref, b.bill_date, b.line_items, "
+    "b.subtotal, b.cgst, b.sgst, b.igst, b.cess, b.total, b.currency, "
+    "b.is_reverse_charge, v.name AS vendor_name, v.gstin AS vendor_gstin"
+)
+
+
+async def _tally_rows(pool, org_id: str, start: str, end: str):
+    """Sales-side and purchase-side rows for one date range.
+
+    Drafts, cancellations and soft-deleted rows are excluded HERE rather than in
+    the service, because they are a question about the store — is this row a
+    document at all — and the service's job starts once it is. Quotations and
+    proformas are excluded by the type filter: an offer is not a transaction.
+    """
+    invoices = await pool.fetch(
+        f"SELECT {_TALLY_INVOICE_COLS} "
+        "FROM staging.ganit_invoices i "
+        "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "WHERE i.org_id=$1::uuid AND i.is_active AND i.cancelled_at IS NULL "
+        "AND COALESCE(i.payment_status, '') <> 'cancelled' "
+        "AND COALESCE(i.doc_status, '') <> 'draft' "
+        "AND i.invoice_type IN ('tax_invoice','credit_note','debit_note') "
+        "AND i.invoice_date >= $2::date AND i.invoice_date < $3::date "
+        "ORDER BY i.invoice_date, i.invoice_number",
+        org_id, start, end,
+    )
+    bills = await pool.fetch(
+        f"SELECT {_TALLY_BILL_COLS} "
+        "FROM staging.ganit_vendor_bills b "
+        "JOIN staging.ganit_vendors v ON v.id = b.vendor_id "
+        "WHERE b.org_id=$1::uuid AND b.is_active "
+        "AND COALESCE(b.status, '') <> 'cancelled' "
+        "AND b.bill_date >= $2::date AND b.bill_date < $3::date "
+        "ORDER BY b.bill_date, b.internal_ref",
+        org_id, start, end,
+    )
+    return [dict(r) for r in invoices], [dict(r) for r in bills]
+
+
+async def _build_tally(pool, org_id: str, period: str):
+    from services.tally_xml import build_tally_xml
+
+    start, end = _period_bounds(period)
+    invoices, bills = await _tally_rows(pool, org_id, start, end)
+    org = await _load_org(pool, org_id)
+    return build_tally_xml(
+        invoices, bills, org,
+        period_from=start, period_to=end,
+        generated_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+    )
+
+
+@router.get("/tally/{period}/preview")
+async def tally_export_preview(
+    period: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_ganit),
+):
+    """What the Tally file would contain, without producing it.
+
+    Reads the SAME `build_tally_xml` the download does, so the screen cannot
+    claim a voucher count the file does not have. The XML is built and dropped;
+    a period is at most a few hundred vouchers, and a second build is cheaper
+    than a second implementation that can disagree with the first.
+    """
+    pool = await get_pool()
+    _xml, manifest = await _build_tally(pool, org_id, period)
+    return manifest
+
+
+@router.get("/tally/{period}")
+async def download_tally_xml(
+    period: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_ganit),
+):
+    """Sales, credit note, debit note and purchase vouchers as Tally import XML.
+
+    Refuses with 422 when the period produces no voucher. An export that answers
+    200 with an empty `<REQUESTDATA/>` looks like a successful export of a month
+    with no trade, and a firm that imports it learns nothing until the books do
+    not tie.
+    """
+    pool = await get_pool()
+    try:
+        xml, manifest = await _build_tally(pool, org_id, period)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("tally export failed: period=%s org=%s err=%s\n%s",
+                     period, org_id, e, traceback.format_exc())
+        raise HTTPException(500, "Failed to build the Tally export — please try again.")
+
+    if not manifest["voucher_count"]:
+        held = manifest.get("held_back") or []
+        detail = (
+            f"{len(held)} document(s) in this period could not be exported: "
+            + "; ".join(f"{h['document']} — {h['reason']}" for h in held[:5])
+            if held else
+            "There are no issued invoices or vendor bills in this period. Drafts, "
+            "quotations, proformas and cancelled documents are never exported."
+        )
+        raise _refuse_export("export_empty",
+                             f"Nothing to export for {period}. {detail}",
+                             held_back=held)
+
+    return Response(
+        content=xml.encode("utf-8"),
+        media_type="application/xml; charset=utf-8",
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="Kartavaya-Tally-{period}.xml"',
+            # So a caller that only downloads still learns what was left out,
+            # without parsing the comment block.
+            "X-Kartavaya-Voucher-Count": str(manifest["voucher_count"]),
+            "X-Kartavaya-Held-Back": str(len(manifest.get("held_back") or [])),
+        },
+    )
+
+
+# ── GSTR-1 ────────────────────────────────────────────────────────────────────
+
+_GSTR1_COLS = (
+    "i.invoice_number, i.invoice_type, i.invoice_date, i.is_igst, i.is_export, "
+    "i.place_of_supply, i.supply_nature, i.currency, i.line_items, "
+    "i.subtotal, i.cgst, i.sgst, i.igst, i.cess, i.total, "
+    "i.doc_status, i.payment_status, i.cancelled_at, i.is_active, "
+    "c.gstin AS contact_gstin"
+)
+
+
+async def _build_gstr1(pool, org_id: str, period: str):
+    """The GSTR-1 payload and its manifest for one period.
+
+    EVERY document type in the period is fetched, including cancelled ones and
+    drafts, because `doc_issue` reports the number SERIES — a series that
+    silently skipped its cancelled numbers would read as full of holes, and the
+    `cancel` column exists precisely to report them. The supply sections apply
+    their own exclusions inside `build_gstr1`, which is also what produces the
+    named list of what was left out.
+    """
+    from services.gstr1_json import build_gstr1
+
+    start, end = _period_bounds(period)
+    rows = await pool.fetch(
+        f"SELECT {_GSTR1_COLS} "
+        "FROM staging.ganit_invoices i "
+        "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "WHERE i.org_id=$1::uuid AND i.is_active "
+        "AND i.invoice_date >= $2::date AND i.invoice_date < $3::date "
+        "ORDER BY i.invoice_date, i.invoice_number",
+        org_id, start, end,
+    )
+    org = await _load_org(pool, org_id)
+
+    # A GSTR-1 is data about supplies made under ONE registration. Without the
+    # supplier's GSTIN there is no registration to attribute them to, and `gstin`
+    # is the first field of the schema. Refused rather than emitted with an empty
+    # string, which the offline utility would take and mis-file.
+    if not str(org.get("gstin") or "").strip():
+        raise _refuse_export(
+            "supplier_gstin_missing",
+            "Your organisation has no GSTIN on its company profile. GSTR-1 data "
+            "is reported under one registration, so there is nothing to attribute "
+            "these supplies to. Add it under Settings → Organisation → Company "
+            "Profile, then export again.",
+            fix="Settings → Organisation → Company Profile",
+        )
+
+    return build_gstr1([dict(r) for r in rows], org, period)
+
+
+@router.get("/gst/gstr1/{period}/preview")
+async def gstr1_export_preview(
+    period: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_ganit),
+):
+    """Which sections the file would carry, what was held back, and the tie-out.
+
+    The same `build_gstr1` the download uses. The screen shows the omitted
+    sections and their reasons from here rather than repeating them in JSX,
+    because a reason that lives in two places is a reason that will eventually
+    say two things.
+    """
+    pool = await get_pool()
+    _payload, manifest = await _build_gstr1(pool, org_id, period)
+    return manifest
+
+
+@router.get("/gst/gstr1/{period}/json")
+async def download_gstr1_json(
+    period: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_ganit),
+):
+    """Outward-supply data in the GSTN offline-utility shape.
+
+    NOT a return and not a filing. It is the firm's own invoice data in the
+    layout its own GSTR-1 software reads; the firm prepares, checks and files
+    from that software. Nothing here is uploaded and no liability is asserted.
+
+    Refuses with 422 when no section can be filled — an export that answers 200
+    with `{"gstin": "…", "fp": "072026"}` and nothing else is a file that says
+    "this month had no outward supplies", which is a statement, and one nobody
+    made.
+
+    The body is the strict GSTN payload with NO Kartavaya keys added. A
+    government utility validates what it is given, and an unrecognised top-level
+    key is a risk taken with someone else's filing rather than ours — so the
+    provenance rides on the filename and the response headers instead. That
+    trade-off is deliberate and is recorded in the export report.
+    """
+    pool = await get_pool()
+    try:
+        payload, manifest = await _build_gstr1(pool, org_id, period)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("gstr1 export failed: period=%s org=%s err=%s\n%s",
+                     period, org_id, e, traceback.format_exc())
+        raise HTTPException(500, "Failed to build the GSTR-1 export — please try again.")
+
+    if not manifest["sections_emitted"]:
+        held = manifest.get("held_back") or []
+        detail = (
+            f"{len(held)} document(s) could not be reported: "
+            + "; ".join(f"{h['document']} — {h['reason']}" for h in held[:5])
+            if held else
+            "No issued tax invoice in this period could be placed in a section "
+            "this export carries."
+        )
+        raise _refuse_export("export_empty",
+                             f"No GSTR-1 section can be filled for {period}. {detail}",
+                             held_back=held)
+
+    return Response(
+        content=json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"),
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition":
+                f'attachment; filename="Kartavaya-GSTR1-data-{manifest["fp"]}.json"',
+            "X-Kartavaya-Sections": ",".join(manifest["sections_emitted"]),
+            "X-Kartavaya-Held-Back": str(len(manifest.get("held_back") or [])),
+        },
+    )

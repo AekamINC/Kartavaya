@@ -71,6 +71,16 @@ const PAYMENT_TYPES = [
   ['400', '400 — TDS on regular assessment'],
 ];
 
+/**
+ * The two `useDocumentDownload` keys that belong to the exports panel.
+ *
+ * One hook serves four buttons across two panels, and its error carries the
+ * `key` of the button that failed precisely so the message can be shown against
+ * that button. Without this split, a failed Tally export reports itself under
+ * "File & share", two panels away from the control the user pressed.
+ */
+const EXPORT_KEYS = new Set(['gstr1', 'tally']);
+
 const BLANK_CHALLAN = {
   deposit_date: '', major_head: '', payment_type: '',
   bsr_code: '', challan_serial: '', challan_number: '', bank_name: '',
@@ -94,6 +104,125 @@ function challanProblems(c) {
   return bad;
 }
 
+/**
+ * What the two export files would contain — before anyone downloads one.
+ *
+ * This panel is the product's actual claim. Kartavaya does not file anything;
+ * what it offers a CA firm is data clean enough to file FROM, and the only
+ * honest way to offer that is to say, up front, which documents did not make it
+ * and why. A silent export that quietly drops four invoices is worse than no
+ * export, because the firm finds out when the books do not tie.
+ *
+ * Three states, kept genuinely distinct:
+ *   loading — the previews are in flight; no counts are shown, not even zeroes
+ *   error   — both previews failed; the panel says so and offers a retry
+ *   ready   — real counts, including an explicit zero, which is a fact here
+ *
+ * A zero voucher count is NOT the empty state: it is the answer, and the export
+ * buttons above will refuse with a 422 that says the same thing.
+ */
+function ExportSummary({ loading, error, onRetry, info }) {
+  if (loading) {
+    return (
+      <SkeletonRegion label="Checking what these exports would contain">
+        <SkeletonCardGrid count={2} columns={1} lines={2} />
+      </SkeletonRegion>
+    );
+  }
+
+  if (error) {
+    return <ErrorState kind={errorKind(error)} onRetry={onRetry} />;
+  }
+
+  const gstr1 = info?.gstr1;
+  const tally = info?.tally;
+  const held = [
+    ...(Array.isArray(tally?.held_back) ? tally.held_back : []),
+    ...(Array.isArray(gstr1?.held_back) ? gstr1.held_back : []),
+  ];
+  const omitted = Array.isArray(gstr1?.sections_omitted) ? gstr1.sections_omitted : [];
+  const notes = Array.isArray(gstr1?.credit_debit_notes_not_in_file)
+    ? gstr1.credit_debit_notes_not_in_file : [];
+  const sections = Array.isArray(gstr1?.sections_emitted) ? gstr1.sections_emitted : [];
+
+  return (
+    <>
+      {tally && (
+        <p className="gn-est__note">
+          <strong>Tally:</strong> {tally.voucher_count}{' '}
+          {tally.voucher_count === 1 ? 'voucher' : 'vouchers'} —{' '}
+          {tally.sales_count} sales, {tally.credit_note_count} credit,{' '}
+          {tally.debit_note_count} debit, {tally.purchase_count} purchase.
+          Quotations, proformas, drafts and cancelled documents are never exported.
+        </p>
+      )}
+
+      {gstr1 ? (
+        <p className="gn-est__note">
+          <strong>GSTR-1:</strong>{' '}
+          {sections.length
+            ? <>sections <span className="gn-chk__items">{sections.join(', ')}</span>,
+              from {gstr1.invoice_count}{' '}
+              {gstr1.invoice_count === 1 ? 'invoice' : 'invoices'}.</>
+            : <>no section can be filled for this period.</>}
+          {gstr1.reconciliation && (
+            <> Reported taxable value {inr(Number(gstr1.reconciliation.reported_taxable_value || 0))}
+              {' '}against {inr(Number(gstr1.reconciliation.source_taxable_value || 0))} on the
+              invoices themselves — a difference of{' '}
+              {inr(Number(gstr1.reconciliation.taxable_value_difference || 0))}.</>
+          )}
+        </p>
+      ) : (
+        <p className="gn-est__note">
+          <strong>GSTR-1:</strong> unavailable for this period. Most often this is a
+          missing organisation GSTIN — press the button above for the exact reason.
+        </p>
+      )}
+
+      {notes.length > 0 && (
+        <p className="gn-est__note">
+          <strong>Not in the GSTR-1 file:</strong> {notes.join('; ')}. Kartavaya stores
+          no link from a credit or debit note to the document it amends and no reason
+          code, so the cdnr section is left out rather than filled with a note that
+          cannot be tied to its original. Enter these on the portal yourself.
+        </p>
+      )}
+
+      {held.length > 0 && (
+        <ul className="gn-chk__list">
+          <li className="gn-chk__i gn-chk__i--bad">
+            <span className="gn-chk__t">
+              {held.length} {held.length === 1 ? 'document is' : 'documents are'} held
+              back from these exports
+            </span>
+            <span className="gn-chk__d">
+              Each is missing something the export cannot invent. They are absent from
+              the files above — fix them in Ganit → Invoices and export again.
+            </span>
+            {held.slice(0, 6).map((h) => (
+              <span className="gn-chk__items" key={`${h.document}-${h.reason}`}>
+                {h.document} — {h.reason}
+              </span>
+            ))}
+            {held.length > 6 && (
+              <span className="gn-chk__d">…and {held.length - 6} more.</span>
+            )}
+          </li>
+        </ul>
+      )}
+
+      {omitted.length > 0 && (
+        <p className="gn-est__note">
+          <strong>GSTR-1 sections this file never carries:</strong>{' '}
+          {omitted.map((o) => o.section).join(', ')}. Kartavaya has no store behind
+          them, and an empty section reads as “there were none” to whoever files from
+          it. They are omitted rather than sent blank.
+        </p>
+      )}
+    </>
+  );
+}
+
 export default function StatsTab() {
   const [period, setPeriod] = useState(currentMonth);
   const [data, setData] = useState(null);
@@ -103,6 +232,45 @@ export default function StatsTab() {
   const doc = useDocumentDownload();
   const [challan, setChallan] = useState(BLANK_CHALLAN);
   const [challanOpen, setChallanOpen] = useState(false);
+
+  // The export previews load INDEPENDENTLY of the GSTR-3B summary above. They
+  // are a different question ("what would come out of the export?") answered by
+  // different routes, and a failure in one must not blank the other — a screen
+  // that hides the filing summary because an export preview 422'd would be
+  // reporting the wrong problem.
+  const [exportsInfo, setExportsInfo] = useState(null);
+  const [exportsErr, setExportsErr] = useState(null);
+  const [exportsLoading, setExportsLoading] = useState(true);
+
+  const loadExports = useCallback(async () => {
+    setExportsLoading(true);
+    setExportsErr(null);
+    try {
+      // `allSettled`, not `all`: the GSTR-1 preview refuses when the org has no
+      // GSTIN, and that refusal must not take the Tally figures down with it.
+      const [g, t] = await Promise.allSettled([
+        api.get(`/v1/documents/gst/gstr1/${period}/preview`),
+        api.get(`/v1/documents/tally/${period}/preview`),
+      ]);
+      if (g.status === 'rejected' && t.status === 'rejected') {
+        setExportsInfo(null);
+        setExportsErr(t.reason);
+        return;
+      }
+      setExportsInfo({
+        gstr1: g.status === 'fulfilled' ? body(g.value) : null,
+        gstr1Error: g.status === 'rejected' ? g.reason : null,
+        tally: t.status === 'fulfilled' ? body(t.value) : null,
+      });
+    } catch (e) {
+      setExportsInfo(null);
+      setExportsErr(e);
+    } finally {
+      setExportsLoading(false);
+    }
+  }, [period]);
+
+  useEffect(() => { loadExports(); }, [loadExports]);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -314,26 +482,81 @@ export default function StatsTab() {
                 working paper yourself.
               </p>
 
-              <button
-                type="button" className="btn btn--out" disabled
-                title="No GSTR-1 JSON generator exists in Kartavaya yet — the portal's schema is not implemented."
-              >
-                Export GSTR-1 JSON
-              </button>
-              <button
-                type="button" className="btn btn--out" disabled
-                title="No Tally XML exporter exists in Kartavaya yet."
-              >
-                Tally export (XML)
-              </button>
               <p className="gn-est__note">
-                GSTR-1 JSON and Tally XML are not built. Kartavaya is not a GSP and
-                does not upload to the IRP — the working paper above is prepared for
-                filing on the portal by hand or by your CA.
+                Kartavaya is not a GSP and does not upload to the IRP — the working
+                paper above is prepared for filing on the portal by hand or by your CA.
               </p>
             </div>
 
-            <DocumentError error={doc.error} onDismiss={doc.clear} />
+            <DocumentError
+              error={EXPORT_KEYS.has(doc.error?.key) ? null : doc.error}
+              onDismiss={doc.clear}
+            />
+          </section>
+
+          {/* ── 3b · Data exports ───────────────────────────────────────────
+              Two files for software the FIRM already runs. Neither is a return
+              and neither is filed from here; see the note below, which says so
+              on screen because the artefacts say so on their own face. */}
+          <section className="gn-panel">
+            <div className="gn-panel__head">
+              <h3 className="gn-panel__h">
+                Data exports<span className="dr__lbl-hi" lang="hi">निर्यात</span>
+              </h3>
+              <span className="gn-tbl__mute">{periodLabel(period)}</span>
+            </div>
+
+            <div className="gn-gst__acts">
+              <button
+                type="button"
+                className="btn btn--out"
+                disabled={doc.busy === 'gstr1'}
+                onClick={() => doc.run('gstr1', {
+                  url: `/v1/documents/gst/gstr1/${period}/json`,
+                  filename: `Kartavaya-GSTR1-data-${period}.json`,
+                  fallback: 'Could not build the GSTR-1 export',
+                })}
+              >
+                {doc.busy === 'gstr1' ? 'Building…' : 'Export GSTR-1 JSON'}
+              </button>
+              <button
+                type="button"
+                className="btn btn--out"
+                disabled={doc.busy === 'tally'}
+                onClick={() => doc.run('tally', {
+                  url: `/v1/documents/tally/${period}`,
+                  filename: `Kartavaya-Tally-${period}.xml`,
+                  fallback: 'Could not build the Tally export',
+                })}
+              >
+                {doc.busy === 'tally' ? 'Building…' : 'Tally export (XML)'}
+              </button>
+
+              <p className="gn-est__note">
+                Both files are <strong>your own data, for your own software</strong>.
+                Neither is a return, neither is filed from Kartavaya, and neither
+                states a tax liability. The GSTR-1 file is outward-supply data in the
+                shape the GSTN offline utility reads; the Tally file is voucher XML
+                that Tally Prime and ERP 9 both import.
+              </p>
+
+              {/* A refusal belongs against the button that was pressed. The
+                  422 these routes answer says exactly WHY nothing came out —
+                  "no place of supply on INV-2026-0004" — and that sentence is
+                  the whole reason the backend refuses instead of sending an
+                  empty file. */}
+              <DocumentError
+                error={EXPORT_KEYS.has(doc.error?.key) ? doc.error : null}
+                onDismiss={doc.clear}
+              />
+
+              <ExportSummary
+                loading={exportsLoading}
+                error={exportsErr}
+                onRetry={loadExports}
+                info={exportsInfo}
+              />
+            </div>
           </section>
 
           {/* ── 4 · GSTR-2B reconciliation ──────────────────────────────── */}
