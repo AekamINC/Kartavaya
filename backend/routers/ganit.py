@@ -1278,8 +1278,16 @@ async def send_for_signature(
     for s in body.signers:
         if not s.get("name") or not s.get("email"):
             raise HTTPException(400, "Each signer must have name and email")
-    result = await _send(pool, str(contract_id), body.signers, org_id, user["user_id"])
-    return {"status": "sent", "signers": result}
+    result, failed = await _send(pool, str(contract_id), body.signers, org_id, user["user_id"])
+    # `status` used to be the literal "sent" whatever happened, while every send
+    # was in fact raising and being swallowed. The signer rows and their links
+    # are valid either way, so a partial failure is not an error — but it must
+    # be visible, or the firm never learns the client was not written to.
+    return {
+        "status": "sent" if not failed else "partial",
+        "signers": result,
+        "email_failed": failed,
+    }
 
 
 @router.get("/sign/{token}")

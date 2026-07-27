@@ -4,13 +4,19 @@ OTP verification + SHA-256 audit trail. IT Act §10A compliant.
 Provider interface kept open for Aadhaar eSign (Leegality) drop-in.
 """
 import hashlib
+import html
 import logging
+import os
 import secrets
 from datetime import datetime, timezone, timedelta
 
 from fastapi import HTTPException
 
 from db import get_pool
+# Root module, NOT `services.email_service` — that path does not exist and the
+# import error was being swallowed by a bare `except Exception`. Imported at
+# module scope so a wrong path fails at startup rather than silently at send.
+from email_service import send_email
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +41,21 @@ def hash_pdf(pdf_bytes: bytes) -> str:
 
 async def send_for_signature(
     pool, contract_id: str, signers: list[dict], org_id: str, sent_by: str
-) -> list[dict]:
-    """Create signer records and send signing links via email."""
+) -> tuple[list[dict], list[str]]:
+    """Create signer records and email each one its own signing link.
+
+    Returns `(created, failed_emails)`. The second element exists because this
+    used to report success unconditionally: every send raised, the exception was
+    swallowed, and the endpoint answered `{"status": "sent"}`. A firm that
+    believes an engagement letter went out does not chase it.
+    """
     created = []
+    # (email, name, token) per signer, kept LOCAL. The token must never enter
+    # `created`: the caller returns it verbatim as the HTTP body
+    # (`routers/ganit.py:1282` — `{"status": "sent", "signers": result}`), so a
+    # token there would hand every signer's signing link to whoever posted the
+    # request. That is the whole authority to sign, in a response body.
+    outbox: list[tuple[str, str, str]] = []
     for i, s in enumerate(signers):
         token = generate_token()
         row = await pool.fetchrow(
@@ -50,6 +68,7 @@ async def send_for_signature(
             s.get("order", i + 1), token,
         )
         created.append({"id": str(row["id"]), "name": s["name"], "email": s["email"]})
+        outbox.append((s["email"], s["name"], row["token"]))
 
         await _log_audit(pool, contract_id, str(row["id"]), "signature_requested", {
             "sent_by": sent_by, "signer_email": s["email"],
@@ -61,25 +80,57 @@ async def send_for_signature(
         contract_id, org_id,
     )
 
-    # Send emails (best-effort; the links work regardless)
-    try:
-        from services.email_service import send_email
-        for s_info, s_row in zip(signers, created):
-            backend_url = __import__("os").getenv("BACKEND_URL", "").rstrip("/")
-            frontend_url = __import__("os").getenv("FRONTEND_URL", "").rstrip("/")
-            sign_url = f"{frontend_url}/sign/{created[signers.index(s_info)].get('_token', token)}"
-            await send_email(
-                to=s_info["email"],
+    # ── Sending, and why this block was rewritten rather than patched ─────────
+    # Four independent faults sat here, and one `except Exception` hid all four,
+    # so the endpoint answered `{"status": "sent"}` while nothing was ever sent:
+    #
+    #   1. `from services.email_service import send_email` — that module does not
+    #      exist. `email_service` is at the backend ROOT. ModuleNotFoundError.
+    #   2. `await send_email(...)` — `send_email` is SYNCHRONOUS
+    #      (`email_service.py:435`) and returns bool, so the await raises.
+    #   3. `to=` / `html=` — the parameters are `to_email` / `html_content`.
+    #   4. `created[...].get('_token', token)` — `_token` was NEVER a key on
+    #      those dicts, so it always fell through to the loop variable, which
+    #      after the loop holds the LAST signer's token. Every signer would have
+    #      received the same link, and any one of them could have signed as any
+    #      other.
+    #
+    # Fault 4 is why fixing the import alone would have been worse than leaving
+    # this dead: it would have turned a feature that sends nothing into one that
+    # sends every party the authority to sign for every other party.
+    sent, failed = 0, []
+    for email, name, tok in outbox:
+        frontend_url = os.getenv("FRONTEND_URL", "").rstrip("/")
+        sign_url = f"{frontend_url}/sign/{tok}"
+        try:
+            ok = send_email(
+                to_email=email,
                 subject="Signature requested — please review and sign",
-                html=f"<p>Hi {s_info['name']},</p>"
-                     f"<p>You have been asked to sign a document. "
-                     f"<a href='{sign_url}'>Click here to review and sign</a>.</p>"
-                     f"<p>This link expires in {DEFAULT_EXPIRY_DAYS} days.</p>",
+                html_content=(
+                    f"<p>Hi {html.escape(name)},</p>"
+                    f"<p>You have been asked to sign a document. "
+                    f"<a href='{sign_url}'>Click here to review and sign</a>.</p>"
+                    f"<p>This link expires in {DEFAULT_EXPIRY_DAYS} days.</p>"
+                ),
             )
-    except Exception as e:
-        logger.warning("Failed to send signing email: %s", e)
+        except Exception as e:                       # noqa: BLE001 — reported, not swallowed
+            logger.warning("Signing email to %s raised: %s", email, e)
+            ok = False
+        if ok:
+            sent += 1
+        else:
+            failed.append(email)
 
-    return created
+    if failed:
+        # The signer rows and their links are already valid, so this is not
+        # fatal — but the caller must not be told "sent" when it was not. A firm
+        # that thinks an engagement letter went out will not chase it.
+        logger.error(
+            "Signature request: %d of %d emails failed (%s)",
+            len(failed), len(outbox), ", ".join(failed),
+        )
+
+    return created, failed
 
 
 async def get_signer_by_token(pool, token: str) -> dict | None:
@@ -110,16 +161,29 @@ async def issue_otp(pool, token: str, ip: str, ua: str) -> bool:
     await _log_audit(pool, str(signer["contract_id"]), str(signer["id"]),
                      "otp_issued", {"ip": ip, "ua": ua})
 
+    # Same three faults as the signature request had — wrong module path, await
+    # on a sync function, wrong parameter names — and the same bare `except`
+    # hiding them. This one mattered doubly: with the OTP mail dead, a signer who
+    # somehow received a valid link out of band still could not complete, so the
+    # whole flow was unreachable rather than merely awkward.
     try:
-        from services.email_service import send_email
-        await send_email(
-            to=signer["email"],
+        ok = send_email(
+            to_email=signer["email"],
             subject=f"Your verification code: {otp}",
-            html=f"<p>Your one-time verification code is: <strong>{otp}</strong></p>"
-                 f"<p>This code is valid for {OTP_EXPIRY_MINUTES} minutes.</p>",
+            html_content=(
+                f"<p>Your one-time verification code is: <strong>{otp}</strong></p>"
+                f"<p>This code is valid for {OTP_EXPIRY_MINUTES} minutes.</p>"
+            ),
         )
-    except Exception as e:
-        logger.warning("Failed to send OTP email: %s", e)
+    except Exception as e:                           # noqa: BLE001 — reported, not swallowed
+        logger.warning("OTP email to %s raised: %s", signer["email"], e)
+        ok = False
+
+    if not ok:
+        # The caller shows "we sent you a code". If it never left, saying so is
+        # the difference between the signer retrying and the signer giving up.
+        logger.error("OTP email to %s was not sent", signer["email"])
+        return False
 
     return True
 
