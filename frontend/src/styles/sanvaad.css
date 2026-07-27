@@ -862,6 +862,12 @@
   border-bottom-right-radius: var(--r-xs);
   align-self: flex-end;
 }
+/* The same .6 as `.msg--sending`, for the same reason and from the same rule.
+   A WhatsApp send is the slowest in the product — our API, then Meta's — so this
+   is the surface where an unacknowledged bubble is on screen longest.
+   `WaTicks.pending` (the clock) carries the state for anyone who cannot see the
+   opacity, and it was already in the map. */
+.wa__b--sending { opacity: .6; }
 
 /* THE OPACITY IS NOT ON THIS ROW, and that is the whole point.
  *

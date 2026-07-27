@@ -19,7 +19,9 @@ import { ErrorState, errorKind, SkeletonChat, useToast } from '../../components/
 import Message from './Message';
 import Composer from './Composer';
 import { SvIcons } from './icons';
-import { isContinuation, parseReactions, toggleReactionLocal } from './messageUtils';
+import {
+  isContinuation, optimisticMessage, parseReactions, toggleReactionLocal,
+} from './messageUtils';
 
 export default function ThreadPanel({
   channelId, root, me, meId, meName, onClose, onReplied, closing = false, onAnimationEnd,
@@ -53,25 +55,41 @@ export default function ThreadPanel({
     [rootMsg, replies]
   );
 
+  /**
+   * The comment this replaced called the post-response append "optimistic". It
+   * was not: nothing went on screen until the round trip finished. `Composer`
+   * now empties the box in the same frame the key is pressed, so without a real
+   * placeholder a slow reply would leave the panel showing nothing at all —
+   * which is precisely the state `MOTION-SPEC.md` §7.1 forbids.
+   *
+   * `get_thread` DOES join `sender_name`/`sender_avatar`, so the quiet reload is
+   * authoritative and replaces the placeholder with the server's row.
+   */
   const send = async (content) => {
+    const optimistic = optimisticMessage(content, { meId, me });
+    setReplies(prev => [...prev, optimistic]);
+    const drop = () => setReplies(prev => prev.filter(x => x.id !== optimistic.id));
     try {
       const r = await api.post(`/v1/messaging/channels/${channelId}/messages`, {
         content,
         parent_message_id: root.id,
       });
-      // `get_thread` DOES join `sender_name`/`sender_avatar`, so the reload is
-      // authoritative. The optimistic row exists only so the reply appears in
-      // the same frame the composer clears in; the reload replaces it by id.
       if (r?.data?.id) {
-        setReplies(prev => (prev.some(x => String(x.id) === String(r.data.id)) ? prev : [...prev, {
-          ...r.data,
-          sender_name: me?.full_name || me?.name || undefined,
-          sender_avatar: me?.avatar_url || undefined,
-        }]));
+        setReplies(prev => {
+          const without = prev.filter(x => x.id !== optimistic.id);
+          return without.some(x => String(x.id) === String(r.data.id)) ? without : [...without, {
+            ...r.data,
+            sender_name: me?.full_name || me?.name || undefined,
+            sender_avatar: me?.avatar_url || undefined,
+          }];
+        });
+      } else {
+        drop();
       }
       await load({ quiet: true });
       onReplied?.(root.id);
     } catch (e) {
+      drop();
       pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to send reply' });
       throw e;
     }
