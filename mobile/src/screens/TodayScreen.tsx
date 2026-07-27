@@ -260,7 +260,7 @@ const s = StyleSheet.create({
     lineHeight: IS_ANDROID ? 36 : 40,
     letterSpacing: -0.5,
     flex: 1,
-    fontFamily: IS_ANDROID ? undefined : 'Newsreader',
+    fontFamily: IS_ANDROID ? undefined : FAMILY.display,
   },
 
   chipsRow: {
@@ -307,7 +307,7 @@ const s = StyleSheet.create({
   sectionCount: {
     marginLeft: 'auto' as any,
     fontSize: 12,
-    fontFamily: 'SpaceMono',
+    fontFamily: FAMILY.mono,
   },
 
   cardWrap: { paddingHorizontal: 16 },

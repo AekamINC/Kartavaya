@@ -363,7 +363,7 @@ const s = StyleSheet.create({
     lineHeight: IS_ANDROID ? 36 : 40,
     letterSpacing: -0.5,
     marginBottom: 2,
-    fontFamily: IS_ANDROID ? undefined : 'Newsreader',
+    fontFamily: IS_ANDROID ? undefined : FAMILY.display,
   },
 
   chipsRow: {
@@ -392,7 +392,7 @@ const s = StyleSheet.create({
   },
   chipBadgeText: {
     fontSize: 10.5,
-    fontFamily: 'SpaceMono',
+    fontFamily: FAMILY.mono,
   },
 
   dayHead: {
@@ -418,7 +418,7 @@ const s = StyleSheet.create({
   dayCount: {
     marginLeft: 'auto' as any,
     fontSize: 12,
-    fontFamily: 'SpaceMono',
+    fontFamily: FAMILY.mono,
   },
 
   row: {
@@ -490,7 +490,7 @@ const s = StyleSheet.create({
   },
   timestamp: {
     fontSize: IS_ANDROID ? 11.5 : 11,
-    fontFamily: 'SpaceMono',
+    fontFamily: FAMILY.mono,
     paddingTop: 4,
   },
 

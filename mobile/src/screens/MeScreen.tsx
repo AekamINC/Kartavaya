@@ -378,7 +378,7 @@ const s = StyleSheet.create({
     lineHeight: IS_ANDROID ? 36 : 40,
     letterSpacing: -0.5,
     marginBottom: 8,
-    fontFamily: IS_ANDROID ? undefined : 'Newsreader',
+    fontFamily: IS_ANDROID ? undefined : FAMILY.display,
   },
 
   accountCard: {
