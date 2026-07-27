@@ -359,6 +359,98 @@
   .ix-pulse           { animation: none; }
 }
 
+/* ── 9b · Optimistic write — MOTION-SPEC §7.1 and IxViews 10.3 ────────────
+   "Never lie about state. Optimistic UI renders at `opacity .6` until
+   acknowledged, then goes solid. A failed write restores the old value and says
+   so — it does not keep the new one on screen."
+
+   `.bc.pending` in boards.css already encodes the first half, but it is scoped
+   to a board card. CRM deals, sales orders and invoices need the same contract
+   on rows, cells and chips, so it lives here as a bare utility instead of being
+   copied a fourth time.
+
+   `cursor: progress` is the non-motion half of the signal and is what makes this
+   survive `--motion-scale: 0`: opacity is not motion, so nothing here needs to
+   be reduced. */
+.ix-pending {
+  opacity: .6;
+  cursor: progress;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+
+/* The rollback tint. IxViews 10.3: "On failure the old value returns and the
+   cell tints --danger-container for 1.6s."
+
+   Deliberately NOT an animation. The 1.6s is a READING duration, not a motion
+   duration — it is how long the user needs to notice which cell went back. Run
+   it through `--ix` and a reduced-motion user gets a 1.6ms flash they cannot
+   see, which removes information rather than motion, and WCAG 2.3.3 governs
+   non-essential animation only. So the tint is a static state held by a JS
+   timer, and only the fade at either end rides the token ladder.
+
+   Pair it with the restored value, never instead of it: this class explains a
+   rollback, it does not perform one. */
+.ix-rollback {
+  background-color: var(--danger-container);
+  transition: background-color var(--dur-base) var(--ease-exit);
+}
+
+/* ── 9c · Tab panel entrance ──────────────────────────────────────────────
+   Reference `motion.css` `.dm-tabs__p` — `@keyframes dmPanel { from { opacity:
+   0; transform: translateX(var(--dx)) } }` on `--dur-base --ease-emph`, where
+   `--dx` carries the SIGN of the move: a panel to the right of the one you left
+   enters from the right. A panel that always slides the same way is a page
+   transition, not a tab, and it stops telling you where you are in the strip.
+
+   The travel is `8px * --motion-scale`, so Animations = None degrades it to a
+   pure cross-fade — still a state change, no movement. The caller sets
+   `--ix-dx: -1 | 1` and remounts the panel by keying it on the active tab; the
+   animation restarts because the node is new, not because a class was toggled.
+
+   `backwards` holds the from-state through the (zero) delay so the panel never
+   paints at its final position for one frame first. */
+@keyframes ixPanelIn {
+  from { opacity: 0; transform: translateX(calc(8px * var(--ix-dx, 1) * var(--motion-scale, 1))); }
+  to   { opacity: 1; transform: none; }
+}
+.ix-panel { animation: ixPanelIn var(--dur-base) var(--ease-emph) backwards; }
+
+/* ── 9d · Tab indicator ───────────────────────────────────────────────────
+   `.mt__b.on::after` (module.css:141) is the 2px underline on the selected
+   module tab. Measured before this rule: `animation-name: none`,
+   `transition-duration: 0s` — the underline teleports between tabs.
+
+   The reference slides ONE indicator (`.dm-tabs__ind`, `transition: left
+   --dur-base --ease-emph, width --dur-base --ease-emph`). That needs a single
+   shared element and a ref per tab, which is JS in `ModuleTabs` — a component
+   three other module families share and a sibling owns. So this is the
+   CSS-reachable half: the underline on the newly-selected tab grows out from
+   its own centre. It restarts on every tab change for free, because `.on` moves
+   to a different button and that button's `::after` is a brand new box.
+
+   ── ON WHY THIS RULE CAN LIVE HERE AT ALL ──
+   `.mt__b.on::after` is declared in module.css. index.css imports module.css
+   (line 10) BEFORE animations.css (line 12), and the two selectors have equal
+   specificity, so source order decides and this file wins. That is the same
+   mechanism §9 documents for `.skeleton` — and it cuts the other way there,
+   which is why that stop had to be repeated at the foot of §10. Verified by
+   measurement, not by reading: `animation-name` on `.mt__b.on::after` resolves
+   to `ixTabInd` with this rule present and to `none` without it.
+
+   If module.css ever moves after animations.css in index.css, this rule goes
+   silent and the underline snaps again. It will not throw; it will just stop.
+
+   `transform-origin: center` and scaleX only — no width animation, which would
+   relayout the button on every frame. */
+@keyframes ixTabInd {
+  from { transform: scaleX(calc(1 - .999 * var(--motion-scale, 1))); opacity: 0; }
+  to   { transform: scaleX(1); opacity: 1; }
+}
+.mt__b.on::after {
+  transform-origin: center;
+  animation: ixTabInd var(--dur-base) var(--ease-emph) backwards;
+}
+
 /* ── 10 · Legacy utility names ────────────────────────────────────────────
    Kept, not deleted: nothing in the app references them today, but they are
    public-looking names and an in-flight component may pick one up. Every one is

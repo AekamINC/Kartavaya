@@ -14,6 +14,7 @@ import { StatTile, Section, Badge, Shimmer, Empty, BackButton, ModCard, DataTabl
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import { ICONS } from '../components/layout/navIcons';
+import useTabPanelMotion from '../lib/tabPanelMotion';
 import { moduleMeta } from '../lib/moduleColors';
 import { ORDER_COLORS } from '../lib/statusColors';
 import { inr } from '../lib/inr';
@@ -30,6 +31,7 @@ const TABS = ['dashboard', 'orders', 'stock', 'targets'];
 export default function VikrayPage() {
   const [tab, setTab] = useState('dashboard');
   const meta = moduleMeta('vikray');
+  const motion = useTabPanelMotion(TABS, tab);
   return (
     <div style={{ padding: '0 0 48px' }}>
       <ModuleHeader
@@ -40,7 +42,13 @@ export default function VikrayPage() {
         icon={ICONS.vikray}
       />
       <ModuleTabs tabs={TABS.map(id => ({ id, label: id }))} value={tab} onChange={setTab} label="Vikray sections" />
-      <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
+      <div
+        role="tabpanel"
+        id={`mt-panel-${tab}`}
+        aria-labelledby={`mt-tab-${tab}`}
+        className="ix-panel"
+        {...motion}
+      >
         {tab === 'dashboard' && <DashboardTab />}
         {tab === 'orders' && <OrdersTab />}
         {tab === 'stock' && <StockTab />}
