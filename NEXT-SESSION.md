@@ -49,10 +49,19 @@ grant/revoke cycles.
 6. **Exports** — GST/Tally verified by file content; the *scheduled* report path
    (F11) still mails raw JSON.
 
-### Owner decisions still outstanding
-- Org GSTIN is `24AAAAA0000A1Z8` (was `...1Z5`) — changed in error by a write
-  probe, needs confirming.
-- Whether the owner's account should stay `org_admin` in QA Test Corp.
+### Owner decisions — SETTLED 2026-07-28, do not re-raise
+
+- **Org GSTIN stays `24AAAAA0000A1Z8`.** It was changed from `...1Z5` in error by
+  a write probe; the owner has confirmed the new value stands. `...1Z5` fails its
+  own check digit and can no longer be written anyway, now that the org profile
+  validates on write. **Do not attempt to restore it.**
+- **QA Test Corp and its accounts are KEPT for ongoing live testing.** They must
+  be exempted from the weekly test-data wipe. If the reset is scripted, add an
+  exclusion for org `fae87907-2f99-4b35-a241-c94d9e1e4a17` and the three
+  `kevalvshah03+qa*@gmail.com` users.
+- **The owner's account stays `org_admin` in QA Test Corp.** It was added there
+  to issue the invites and is deliberately left in place — it is how grants get
+  changed between tests.
 
 ### QA accounts — QA Test Corp `fae87907-2f99-4b35-a241-c94d9e1e4a17`
 
@@ -62,11 +71,13 @@ grant/revoke cycles.
 | `kevalvshah03+qamember@gmail.com` | `user_fc914df642c3` | org_member, no grants |
 | `kevalvshah03+qaviewer@gmail.com` | `user_31197c478761` | grantable per test |
 
-Tokens expire **2026-08-04**. After that, sign in and read
-`localStorage.getItem('auth_token')` in the console.
+Tokens expire **2026-08-04**. After that, ask the owner to sign in and read
+`localStorage.getItem('auth_token')` from the browser console — you cannot type
+a password into a login form, and you do not need to.
 
-**These accounts will be destroyed if the weekly test-data reset runs.** Exempt
-QA Test Corp if they should survive.
+**These accounts are KEPT deliberately** (owner decision, 2026-07-28) and must
+survive the weekly test-data reset. They are the only way to test RBAC as a real
+user; `platform_admin` bypasses the gates and proves nothing.
 
 Change grants (as the org_admin token):
 
@@ -94,18 +105,51 @@ Takes effect on the next request — verified across 22 cycles, no cache lag.
 ## Paste this
 
 ```
-Read swarm-reports/LIVE-SESSION-2026-07-28.md, final section first, then
-NEXT-SESSION.md at the repo root.
+Read NEXT-SESSION.md at the repo root first, then the final section of
+swarm-reports/LIVE-SESSION-2026-07-28.md.
 
-Test through the UI. Sign in as each role, open each page, CLICK every
-control, watch what happens. Do not substitute API probes — the last
-session did that and missed two user-facing defects.
+THE JOB IS THE UI SWEEP. Every module, every tab, every button, every
+CRUD path, as each role. Sign in as the role, open the page, CLICK the
+control, watch what happens.
 
-Work on staging only. https://staging.kartavaya.com
+Do NOT substitute API probes. The last session did that for the whole
+RBAC section, reported it correct, and missed two user-facing defects
+that twenty minutes of clicking found. A status code is evidence only
+where there is no control to click.
 
-Start with F32: write affordances render from the page shell rather than
-the caller's level. Confirmed on ganit and vetana. Check every module,
-then fix it centrally — the level is already resolved per request.
+Work on staging only: https://staging.kartavaya.com — never kartavaya.com.
+Push to `staging` only; `main` is production.
 
-QA tokens are in NEXT-SESSION.md; ask the owner for fresh ones if expired.
+START HERE, in order:
+
+1. F32 — write buttons render from the page shell, not the caller's
+   level. A ganit:viewer is handed the full Create Invoice form; a member
+   with no grants is offered "Run payroll". Check EVERY module for more
+   instances, then fix it centrally: the level is already resolved per
+   request and simply is not consulted at render time.
+
+2. F33 — the nav hides a module the user actually holds.
+   GET /v1/org/modules returns [] for a member with a live grant.
+
+3. Then the full sweep, module by module, role by role. 5 of 9 modules
+   have had any UI testing at all.
+
+QA accounts (QA Test Corp, org fae87907-2f99-4b35-a241-c94d9e1e4a17):
+  qaadmin  user_76cd525348e1  org_admin
+  qamember user_fc914df642c3  org_member, no grants
+  qaviewer user_31197c478761  grantable per test
+
+Tokens are in NEXT-SESSION.md and expire 2026-08-04. If expired, ask the
+owner for fresh ones — never type a password into a login form.
+
+Change grants as the org_admin token:
+  PUT /api/v1/org/members/{user_id}/modules
+  {"modules":[{"code":"ganit","role":"viewer"}]}
+Takes effect on the next request; verified over 22 cycles.
+
+SETTLED — do not re-raise: the org GSTIN stays 24AAAAA0000A1Z8, QA Test
+Corp and its accounts are kept, and the owner stays org_admin there.
+
+Read the "Traps" section before probing anything. Five specific mistakes
+cost hours on 2026-07-28 and are all repeatable.
 ```
