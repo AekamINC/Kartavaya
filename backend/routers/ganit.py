@@ -940,7 +940,7 @@ async def list_expenses(
         "SELECT e.id, e.title, e.category, e.amount, e.tax_amount, e.total, "
         "e.expense_date, e.vendor, e.reference, e.notes, e.receipt_urls, "
         "e.is_billable, e.contact_id, e.project_id, e.created_at, "
-        "c.name as contact_name "
+        "c.name as contact_name, COUNT(*) OVER() AS _total "
         "FROM staging.ganit_expenses e "
         "LEFT JOIN staging.graha_contacts c ON c.id = e.contact_id "
         "WHERE e.org_id=$1::uuid AND e.is_active=TRUE "
@@ -970,7 +970,7 @@ async def list_expenses(
 
     query += "ORDER BY e.expense_date DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=200)
 
 
 @router.post("/expenses")
@@ -1773,7 +1773,7 @@ async def list_vendor_bills(
 ):
     pool = await get_pool()
     q = (
-        "SELECT b.*, v.name AS vendor_name "
+        "SELECT b.*, v.name AS vendor_name, COUNT(*) OVER() AS _total "
         "FROM staging.ganit_vendor_bills b "
         "JOIN staging.ganit_vendors v ON v.id = b.vendor_id "
         "WHERE b.org_id=$1::uuid AND b.is_active=TRUE"
@@ -1787,7 +1787,7 @@ async def list_vendor_bills(
         q += f" AND b.vendor_id=${len(params)}::uuid"
     q += " ORDER BY b.bill_date DESC LIMIT 200"
     rows = await pool.fetch(q, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=200)
 
 
 @router.get("/payables-summary")
