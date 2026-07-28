@@ -30,6 +30,11 @@ router = APIRouter(prefix="/api/v1/ganit", tags=["ganit-invoicing"])
 
 _gate = require_module("ganit")
 
+# F4 (b). Shared with graha.py rather than re-implemented: two copies of a
+# response contract is how one of them ends up reporting a total the other does
+# not, and the whole point of this key is that a client can trust it.
+from routers.graha import _listed  # noqa: E402
+
 #: Ganit is a SEPARATED-DUTY module: administering the books and releasing money
 #: against them are different authorities, and holding `admin` does not confer
 #: `approver`. See middleware/role_tiers.py and middleware/module_levels.py.
@@ -373,7 +378,8 @@ async def list_invoices(
         "SELECT i.id, i.invoice_number, i.invoice_type, i.invoice_date, i.due_date, "
         "i.subtotal, i.cgst, i.sgst, i.igst, i.total, i.amount_paid, i.balance_due, "
         "i.payment_status, i.created_at, "
-        "c.name as contact_name, c.company as contact_company "
+        "c.name as contact_name, c.company as contact_company, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.ganit_invoices i "
         "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
         "WHERE i.org_id=$1::uuid AND i.is_active=TRUE "
@@ -393,7 +399,7 @@ async def list_invoices(
 
     query += "ORDER BY i.created_at DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=200)
 
 
 @router.post("/invoices")
