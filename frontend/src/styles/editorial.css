@@ -165,7 +165,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   flex-shrink: 0;
 }
-[data-platform="win"] .kv__mobbar { background: var(--s-low); }
+[data-platform="win"] .kv__mobbar { background: var(--s-low); -webkit-backdrop-filter: none; backdrop-filter: none; }
 /* The compact bar's page label. This slot used to hold `.kv__mobbar-brand`,
    the product name in the display face — the same six letters on every screen,
    in the only line of chrome a phone has. `.kv__top` is display:none below
@@ -255,7 +255,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-right: 1px solid var(--side-rule);
   transition: width var(--dur-base) var(--ease-emph);
 }
-[data-platform="win"] .side { background: rgb(var(--side-ink)); }
+[data-platform="win"] .side { background: rgb(var(--side-ink)); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .side--rail { width: 72px; }
 
 /* Two decorative blooms. pointer-events is moot — they are pseudo-elements
@@ -555,7 +555,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
 }
-[data-platform="win"] .top { background: var(--s-low); }
+[data-platform="win"] .top { background: var(--s-low); -webkit-backdrop-filter: none; backdrop-filter: none; }
 /* gap 9px, not 8 — `app.css:77`. */
 .crumb { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; min-width: 0; }
 /* The organisation, first segment. Quieter than `.crumb__cur` on purpose — it
@@ -688,7 +688,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
 }
-[data-platform="win"] .mnav { background: var(--s-low); }
+[data-platform="win"] .mnav { background: var(--s-low); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .mnav__i {
   flex: 1; min-width: 0; min-height: 48px;
   display: flex; flex-direction: column;

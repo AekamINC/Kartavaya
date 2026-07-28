@@ -211,6 +211,24 @@
   --m-safe-b: env(safe-area-inset-bottom, 0px);
 }
 
+/* Windows gets no glass — 00 §6 "replaces every glass background", and
+   `design-reference/Kartavaya Redesign/tokens.css:238` does it here, at the
+   token, rather than surface by surface. That placement is the point: every
+   glass surface already reads these two tokens, so one rule covers the ones
+   written today and the ones written next month. The per-surface overrides
+   this supersedes had drifted to covering eight of twelve surfaces, and each
+   new glass surface silently started out wrong.
+   The surface-level `backdrop-filter: none` rules stay: blur(0px) is visually
+   a no-op but still allocates a compositing layer, and 01 §43's reason for the
+   opt-out is Windows GPU/driver behaviour, not appearance. */
+[data-platform="win"] { --glass-blur: 0px; --glass-alpha: 1; }
+
+/* Same two tokens, for users who asked the OS to cut transparency. Absent
+   until now, so that request did nothing here. */
+@media (prefers-reduced-transparency: reduce) {
+  :root { --glass-blur: 0px; --glass-alpha: 1; }
+}
+
 /* ── 7 · Light palette (§7) ─────────────────────────────────────────────── */
 :root, [data-theme="light"] {
   --bg:         #F3EFE6;
