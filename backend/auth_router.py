@@ -20,7 +20,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 from db import get_pool
 from limiter import limiter
-from middleware.role_tiers import SENSITIVE_MODULES, modules_for, strongest
+from middleware.role_tiers import modules_for, strongest
 from services.audit import emit as audit
 
 _COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "1") != "0"
@@ -206,7 +206,25 @@ async def _module_grants(
         user_id,
         primary["org_id"],
     )
-    return sorted({r["module_code"] for r in rows} - SENSITIVE_MODULES)
+    # NOT `- SENSITIVE_MODULES`. That subtraction was F33: a member holding
+    # `ganit: viewer` got `module_grants: []`, so `navConfig.js:284` hid Finance
+    # from the sidebar while `/ganit` typed directly rendered the module in full
+    # with real financial data — because `middleware/subscription.require_module`
+    # honours the grant (gate 2 reads `org_member_modules` and applies no
+    # sensitive-module carve-out to org members; only the PLATFORM bypass above
+    # distinguishes sensitive modules).
+    #
+    # The subtraction was justified by reading `SENSITIVE_MODULES` as a
+    # prohibition. It is not one — `role_tiers.py:203` defines it as "modules
+    # whose grants are WITHHELD BY DEFAULT when a member is added without an
+    # explicit list". A default about what to grant says nothing about what to
+    # display once a grant exists, and `PUT /v1/org/members/{id}/modules`
+    # deliberately accepts these codes.
+    #
+    # So this must mirror `require_module` exactly: the nav shows what the API
+    # honours. Hiding a granted module does not protect anything — the data is
+    # reachable either way — it just means the member has to be told the URL.
+    return sorted({r["module_code"] for r in rows})
 
 
 #: What an invite preview says when the token is no good. ONE string for every

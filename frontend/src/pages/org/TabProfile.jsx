@@ -36,6 +36,31 @@ const EMPTY = {
   invoice_note: '',
 };
 
+/**
+ * A jsonb field as an OBJECT, whatever the server actually sent.
+ *
+ * `{...someString}` is legal JavaScript and silently yields `{0:'{', 1:'"', …}`
+ * — one key per character. That is not hypothetical: `GET /v1/org/profile`
+ * returned `billing_address` as a JSON *string*, this component spread it, and
+ * the org's address was saved back with 122 character-indexed keys while every
+ * address input rendered blank. The server side is fixed, but the guard stays:
+ * the failure is silent, produces no error anywhere, and corrupts the stored
+ * row rather than merely displaying it wrong.
+ *
+ * Numeric keys are dropped so a row already corrupted by the old build renders
+ * its real fields.
+ */
+function asObject(v) {
+  if (!v) return {};
+  let o = v;
+  // Twice: a doubly-encoded row parses to a string on the first pass.
+  for (let i = 0; i < 2 && typeof o === 'string'; i++) {
+    try { o = JSON.parse(o); } catch { return {}; }
+  }
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return {};
+  return Object.fromEntries(Object.entries(o).filter(([k]) => !/^\d+$/.test(k)));
+}
+
 /** label + input + persistent hint + stacked error (26 §3). */
 function F({ id, label, hint, error, mono, wide, value, onChange, onBlur, ...rest }) {
   return (
@@ -76,8 +101,8 @@ export default function TabProfile() {
         if (!alive) return;
         const merged = {
           ...EMPTY, ...r.data,
-          billing_address: { ...EMPTY.billing_address, ...(r.data.billing_address || {}) },
-          bank_details: { ...EMPTY.bank_details, ...(r.data.bank_details || {}) },
+          billing_address: { ...EMPTY.billing_address, ...asObject(r.data.billing_address) },
+          bank_details: { ...EMPTY.bank_details, ...asObject(r.data.bank_details) },
         };
         setProfile(merged);
         setLoaded(merged);

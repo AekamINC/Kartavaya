@@ -204,6 +204,32 @@ async def get_profile(
     if not row:
         raise HTTPException(404, "Organisation not found")
     d = dict(row)
+    # jsonb comes back as a STRING whenever the codec in `db.py` failed to
+    # register — `_init_conn` retries three times and then only warns, because
+    # PgBouncer drops connections mid-handshake. `documents.py:101` already
+    # carries this same guard for the same columns; without it here, the client
+    # receives a string where it declared a dict and spreads it character by
+    # character. Parse defensively so the response shape is the contract
+    # regardless of how the connection was set up.
+    for col in _JSONB_COLUMNS:
+        if isinstance(d.get(col), str):
+            try:
+                d[col] = json.loads(d[col] or "{}")
+            except json.JSONDecodeError:
+                d[col] = {}
+        # A doubly-encoded row written before the `::text::jsonb` fix decodes to
+        # a string a second time. Unwrap it rather than handing the caller the
+        # same broken shape the fix exists to prevent.
+        if isinstance(d.get(col), str):
+            try:
+                d[col] = json.loads(d[col] or "{}")
+            except json.JSONDecodeError:
+                d[col] = {}
+        # Strip the character-indexed keys a previous spread-of-a-string left
+        # behind, so an already-corrupted row renders its real fields instead of
+        # 122 junk ones.
+        if isinstance(d.get(col), dict):
+            d[col] = {k: v for k, v in d[col].items() if not k.isdigit()}
     # A stable response shape whether or not the migration has run. TabProfile
     # merges the response over a fixed EMPTY object and diffs against it on
     # save, so a key that appears and disappears between deploys would make a
@@ -279,7 +305,24 @@ async def update_profile(
         if key not in _PROFILE_COLUMNS:
             raise HTTPException(400, f"Unknown profile field: {key}")
         if key in _JSONB_COLUMNS:
-            sets.append(f"{key}=${idx}::jsonb")
+            # `::text::jsonb`, NOT `::jsonb`. `db.py` registers a jsonb codec
+            # whose encoder IS `json.dumps`, so binding an already-dumped string
+            # to a `$n::jsonb` parameter dumps it a SECOND time: the column ends
+            # up holding a JSON *string* scalar rather than an object, and the
+            # matching decoder hands that string back on read.
+            #
+            # That is not theoretical — it corrupted this org's address live.
+            # `TabProfile.jsx` merges the response with
+            # `{...EMPTY.billing_address, ...r.data.billing_address}`; spreading
+            # a STRING in JS yields `{0:'{', 1:'"', …}`, so the saved value came
+            # back with 122 character-indexed keys beside the six real ones, and
+            # every address field rendered blank while reporting "saved".
+            #
+            # Casting through `text` makes asyncpg infer the parameter as text,
+            # so the jsonb codec never applies and Postgres does the parse. That
+            # is correct whether or not the codec registered — which matters,
+            # because `_init_conn` only WARNS when PgBouncer defeats it.
+            sets.append(f"{key}=${idx}::text::jsonb")
             params.append(json.dumps(val or {}))
         else:
             sets.append(f"{key}=${idx}")
