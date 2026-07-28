@@ -2777,7 +2777,20 @@ async def create_document(
         "INSERT INTO staging.graha_documents "
         "(org_id, name, file_url, file_key, file_size, mime_type, folder, tags, "
         "contact_id, deal_id, description, uploaded_by) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::jsonb, "
+        # `$8::text::jsonb`, NOT `$8::jsonb`. `db.py` registers a jsonb codec
+        # whose encoder IS `json.dumps`, so binding an already-dumped string to
+        # a jsonb parameter dumps it twice and the column ends up holding a JSON
+        # *string* rather than an array.
+        #
+        # That crashed this tab. `tags` came back as the STRING "[]", and
+        # `DocumentsTab.jsx`'s `d.tags?.length > 0` guard passes for a string —
+        # `"[]".length` is 2 — so `d.tags.map(...)` threw
+        # `TypeError: r.tags.map is not a function` and the error boundary took
+        # the whole Graha page down for ANY org holding a document.
+        #
+        # Contacts and deals were never affected: `graha_contacts.tags` is
+        # `TEXT[]` and they bind `body.tags` directly.
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::text::jsonb, "
         "NULLIF($9,'')::uuid, NULLIF($10,'')::uuid, $11, $12) RETURNING *",
         org_id, body.name, body.file_url, body.file_key, body.file_size, body.mime_type,
         body.folder, json.dumps(body.tags),
@@ -2837,7 +2850,10 @@ async def update_document(
         if v is not None:
             vals.append(v); updates.append(f"{field}=${len(vals)}")
     if body.tags is not None:
-        vals.append(json.dumps(body.tags)); updates.append(f"tags=${len(vals)}::jsonb")
+        # `::text::jsonb` — see the INSERT above. Binding a dumped string to a
+        # jsonb parameter double-encodes it, because db.py's jsonb encoder is
+        # itself `json.dumps`.
+        vals.append(json.dumps(body.tags)); updates.append(f"tags=${len(vals)}::text::jsonb")
     if body.contact_id is not None:
         vals.append(body.contact_id); updates.append(f"contact_id=NULLIF(${len(vals)},'')::uuid")
     if body.deal_id is not None:

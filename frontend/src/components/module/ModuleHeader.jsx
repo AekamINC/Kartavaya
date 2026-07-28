@@ -70,7 +70,12 @@ export default function ModuleHeader({ module, en, hi, sub, icon, actions, kick 
           {/* The reason is announced once, to the group, rather than left to a
               title attribute a screen reader may never surface. */}
           {locked && <span className="k-sr-only">{reason}</span>}
-          <div className="mh__actin" inert={locked ? '' : undefined} aria-hidden={locked || undefined}>
+          {/* `inert={true}`, not `inert=""`. React 19 treats `inert` as a
+              BOOLEAN prop, so the empty string is falsy and the attribute is
+              dropped entirely — measured live: the header action rendered
+              greyed but stayed clickable. React 18 wanted the string; this
+              project is on 19. */}
+          <div className="mh__actin" inert={locked || undefined} aria-hidden={locked || undefined}>
             {actions}
           </div>
         </div>

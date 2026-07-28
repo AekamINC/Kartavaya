@@ -15,6 +15,25 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { Badge } from './_shared';
 
+/**
+ * A document's tags as an ARRAY, whatever shape actually arrived.
+ *
+ * `graha_documents.tags` is jsonb, and the write path double-encoded it, so the
+ * API returned the string `"[]"` rather than `[]`. Anything that reaches for
+ * `.map` on that throws, and this tab's row renderer did — one malformed field
+ * crashed the entire Graha page through the error boundary.
+ */
+function asTags(v) {
+  if (Array.isArray(v)) return v.filter(t => typeof t === 'string');
+  if (typeof v === 'string') {
+    try {
+      const parsed = JSON.parse(v);
+      return Array.isArray(parsed) ? parsed.filter(t => typeof t === 'string') : [];
+    } catch { return []; }
+  }
+  return [];
+}
+
 export default function DocumentsTab() {
   const { pushToast } = useToast();
   const [documents, setDocuments] = useState([]);
@@ -135,9 +154,16 @@ export default function DocumentsTab() {
                   <td>
                     <div className="gr__td--name">{d.name}</div>
                     {d.description && <div className="gr__ls">{d.description}</div>}
-                    {d.tags?.length > 0 && (
+                    {/* `Array.isArray`, NOT `d.tags?.length > 0`. That guard
+                        admits a STRING — `"[]".length` is 2 — and the server
+                        was returning exactly that, so `.map` threw
+                        `TypeError: r.tags.map is not a function` and the error
+                        boundary took the whole Graha page down for any org with
+                        a document. The server side is fixed; this stays because
+                        a malformed field should cost one cell, not the page. */}
+                    {asTags(d.tags).length > 0 && (
                       <div className="gr__chips gr__chips--tight">
-                        {d.tags.map(t => <Badge key={t} text={t} color="var(--st-in-review)" />)}
+                        {asTags(d.tags).map(t => <Badge key={t} text={t} color="var(--st-in-review)" />)}
                       </div>
                     )}
                   </td>
