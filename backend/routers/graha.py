@@ -29,6 +29,32 @@ router = APIRouter(prefix="/api/v1/graha", tags=["graha-crm"])
 _gate = require_module("graha")
 
 
+def _listed(rows, limit: int) -> dict:
+    """Wrap a capped list so the caller can tell a full page from a truncated one.
+
+    F4 (b). Every list in this router caps at a hardcoded LIMIT and returned only
+    the rows, so a client had no way to know whether it held all of them. The
+    consequence was measured on staging: the pipeline screen reported "199 deals
+    have no next step" against a true 510, because it computed a total from a
+    list that had already been cut to 200.
+
+    The count rides along as `_total` from a `COUNT(*) OVER()` window in the same
+    query, so it is computed over exactly the rows the filters selected. It is
+    stripped from each row here — it is metadata about the response, not a field
+    of a deal, and leaking it would put an underscore-prefixed key in every
+    record the frontend maps over.
+
+    `truncated` is the flag worth reading: `total > limit` is the condition that
+    makes any client-side aggregate wrong, and stating it once here means each
+    screen does not re-derive it.
+    """
+    out = [dict(r) for r in rows]
+    total = int(out[0].pop("_total", len(out))) if out else 0
+    for r in out[1:]:
+        r.pop("_total", None)
+    return {"data": out, "total": total, "limit": limit, "truncated": total > limit}
+
+
 # ── Pydantic Models ──────────────────────────────────────────
 
 class ContactCreate(BaseModel):
@@ -666,7 +692,19 @@ async def list_deals(
         "SELECT d.id, d.title, d.value, d.stage, d.probability, d.expected_close_date, "
         "d.assigned_to, d.created_at, d.tags, d.client_id, "
         "c.name as contact_name, c.company as contact_company, "
-        "cl.name as client_name "
+        "cl.name as client_name, "
+        # F4 (b): the row count BEFORE the LIMIT, so the caller can say
+        # "showing 200 of 510" instead of silently presenting 200 as all of them.
+        # Measured on staging: the pipeline screen showed "199 deals have no next
+        # step" against a true 510, because the client computed a total from a
+        # truncated list.
+        #
+        # A window function rather than a second COUNT query on purpose. The
+        # WHERE clause here is assembled from optional filters, so a separate
+        # count would have to rebuild it — and the first time the two drift, the
+        # denominator is wrong in a way that looks authoritative. COUNT(*) OVER()
+        # cannot disagree with the rows it is counted alongside.
+        "COUNT(*) OVER() AS _total "
         "FROM staging.graha_deals d "
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
         "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
@@ -687,7 +725,11 @@ async def list_deals(
 
     query += "ORDER BY d.created_at DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    # `total` is additive — every Graha list already returns {"data": [...]}, so
+    # a new sibling key cannot break a caller that reads `.data`. `limit` is
+    # reported rather than assumed, so the UI does not have to hardcode 200 to
+    # know whether it is looking at a truncated list.
+    return _listed(rows, limit=200)
 
 
 @router.post("/deals")
