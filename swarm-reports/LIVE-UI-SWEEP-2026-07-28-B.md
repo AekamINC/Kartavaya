@@ -222,6 +222,45 @@ Related, smaller: that toast is dense — three sentences and an instruction —
 **auto-dismisses in about 2 seconds**. Measured: absent at 150ms, present from
 ~400ms, gone by 2500ms.
 
+## The invoice PDF — downloaded, rendered and read. It is very good ✅
+
+`INV-2026-0044` downloaded through the drawer button, rendered at 140dpi and
+inspected as an image rather than trusted as a 200.
+
+| Check | Result |
+|---|---|
+| Page geometry | **210 × 297 mm exactly**, ONE page, no stray trailing page |
+| Letterhead | `12 Ashram Road, Ahmedabad, 380009, Gujarat` — **the F36 fix, end to end** |
+| GSTIN / PAN | present and correctly formatted |
+| Inter-state tax | Maharashtra supply → **IGST**, not CGST/SGST ✅ |
+| Arithmetic | ₹36,000 + ₹6,480 IGST = ₹42,480; paid ₹16,992; balance ₹25,488 — exact |
+| Amount in words | correct |
+| Rule 46 declaration | present |
+| Missing-field honesty | names `Recipient GSTIN`, explains B2C is normal, says where to set it |
+| Unset signatory | flagged in red rather than faked |
+| **Devanagari** | **`कर्तव्य` renders correctly** at weight 400, not letter-spaced |
+
+**That the address prints here is the strongest confirmation of the F36 fix**:
+the corrupted `billing_address` fed this letterhead, so before the fix a GST
+invoice went out with no supplier address at all.
+
+The Devanagari deserves a note: text extraction returned `क̃र्तव्य`, which looks
+like a broken conjunct. **It is not** — rendering the page shows correct
+shaping. Extraction mangles combining marks; only the image settles it.
+
+## F43 — 🟡 An invoice is accepted with a date five months in the future
+
+Seeding 2026 revealed this: `INV-2026-0044` carries `invoice_date 2026-12-20`
+while today is **2026-07-28**, and it was accepted with no warning and no block.
+
+The invoice date determines the GST tax period. A future-dated tax invoice lands
+in a return period that has not happened, and it is already counted in the live
+KPIs — `Collected ₹12.1 L` includes payments recorded against invoices dated
+months ahead.
+
+Caused by my own seed data, but the gap is the product's: nothing rejects or
+even questions a future invoice date.
+
 ## Business rules — checked by clicking, and CORRECT ✅
 
 The owner asked specifically whether a paid invoice can still be edited. Opened
