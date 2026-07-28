@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
@@ -1137,7 +1138,7 @@ async def create_label(
             "VALUES ($1::uuid, $2, $3) RETURNING id, name, color",
             org_id, body.name, body.color,
         )
-    except Exception:
+    except asyncpg.exceptions.UniqueViolationError:
         raise HTTPException(409, "Label with this name already exists")
     return {"status": "created", **dict(row)}
 
@@ -1185,7 +1186,7 @@ async def add_contact_label(
             "ON CONFLICT DO NOTHING",
             str(contact_id), str(label_id),
         )
-    except Exception:
+    except asyncpg.exceptions.ForeignKeyViolationError:
         raise HTTPException(400, "Could not add label")
     return {"status": "added"}
 
@@ -2297,7 +2298,7 @@ async def create_custom_field(
             org_id, body.entity_type, body.field_name, body.field_type,
             json.dumps(body.options), body.is_required, body.sort_order,
         )
-    except Exception:
+    except asyncpg.exceptions.UniqueViolationError:
         raise HTTPException(409, "Field with this name already exists for this entity type")
     return {"status": "created", **dict(row)}
 
@@ -2371,7 +2372,7 @@ async def create_web_form(
             json.dumps(body.settings),
             body.auto_assign_to, body.auto_source, user["user_id"],
         )
-    except Exception:
+    except asyncpg.exceptions.UniqueViolationError:
         raise HTTPException(409, "A form with this slug already exists")
     return {"status": "created", **dict(row)}
 
