@@ -1815,3 +1815,43 @@ Determining which needs a look at the live `hub_social_accounts` shape.
 **Not fixed here.** Guessing a column name into a money-adjacent module two and
 a half weeks before handover is exactly the false-confidence this report has
 withdrawn three findings to avoid.
+
+## Dristi — 6 of 8, and it corroborates the whole session
+
+6 walked, **6 distinct character counts, 0 errors.** Dristi is the cross-module
+reporting surface, so it is the one place that can contradict everything else.
+It does not — every figure ties to data created earlier in this session:
+
+| Leaf | What rendered | Ties to |
+|---|---|---|
+| Overview | 6 Active · 97 Done · 1 Overdue | task corpus |
+| Revenue | **₹3,11,672** | the `311671.60` in the revenue CSV read earlier |
+| Pipeline | Priya Patel · TechCorp India · 1 won · ₹3,00,000 | the Vikray order and Graha deal |
+| HR | `2026-07 · ₹2,593 gross · ₹2,415 net · ₹356 PF · 1 staff` | **the payroll run I processed**, with PF computed |
+| Sales | *No sales targets set… Set them in Vikray* | a cross-module empty state that names where to go |
+| Reports | five export buttons | F21, below |
+
+The HR row is the strongest corroboration in the session: a payroll run
+processed through Vetana appears in Dristi with gross, net and **PF ₹356**
+derived, so statutory computation runs and the reporting layer reads it.
+
+### F21 refined — the broken formats are not reachable from the UI
+
+The Reports tab offers **`overview CSV · revenue CSV · pipeline CSV · hr CSV ·
+sales CSV`** and nothing else. No XLSX button, no PDF button.
+
+So `format=xlsx` and `format=pdf` returning JSON — F21 — is an **API-surface
+defect that the UI never exercises**. That materially lowers its severity, and
+it is worth correcting the record rather than leaving F21 reading as though
+customers are downloading JSON files named `.pdf`.
+
+**What that leaves:**
+
+- **F11 stays the real problem** — scheduled reports mail raw JSON in the body,
+  and that path *is* customer-facing.
+- **F21 becomes latent** — the parameter is accepted and ignored, so the first
+  caller to use the documented API, or the first UI that adds a PDF button, gets
+  JSON. Worth fixing with F11 since they share the missing renderers, but not
+  urgent on its own.
+
+**Running total: 60 of 85 leaves.**
