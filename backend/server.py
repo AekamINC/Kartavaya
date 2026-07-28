@@ -303,6 +303,34 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # `allow_headers` governs REQUEST headers. Without `expose_headers` the
+    # browser hands JavaScript only the six CORS-safelisted RESPONSE headers,
+    # so everything below was set by a handler and then discarded before any
+    # caller could read it. The frontend is cross-origin from this API in every
+    # environment, so this was never not the case.
+    #
+    #   Content-Disposition   every document route sets it, and the name it
+    #                         carries is the real document number
+    #                         (SOA-1A2B3C4D-20260731.pdf). `lib/documents.js:34`
+    #                         documents this exact requirement and keeps a
+    #                         guessed fallback for when it is missing — and the
+    #                         fallback has been the only path in production,
+    #                         which is why downloads never carried their real
+    #                         names. There is even a test for the fallback.
+    #   X-Kartavaya-*         added by the Tally export so "a caller that only
+    #                         downloads still learns what was left out, without
+    #                         parsing the comment block" (documents.py:1352).
+    #                         No caller could read either one, so a held-back
+    #                         invoice could not be surfaced.
+    #
+    # Exposing a response header is not a grant of access: ALLOWED_ORIGINS
+    # still decides who may make the request at all, and none of these carry
+    # anything the body does not already contain.
+    expose_headers=[
+        "Content-Disposition",
+        "X-Kartavaya-Voucher-Count",
+        "X-Kartavaya-Held-Back",
+    ],
 )
 
 
