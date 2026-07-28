@@ -1210,3 +1210,56 @@ rather than a real firm's number — but two things follow regardless:
 
 Worth fixing before handover: validate the org GSTIN on write with the same
 helper the vendor path already uses.
+
+### F23 — FIXED in `37b4302d`
+
+`org_profile.update_profile` wrote `gstin` straight through. It now goes through
+the same `services.gstin.validate` the vendor path uses. Blank stays legal, and
+the handler refuses before writing anything rather than dropping the field —
+matching what it already does for a column that is not yet migrated.
+
+The frontend was already ahead of the server here: `TabProfile.jsx:112` calls
+`validateGSTIN` on save, and `:19` records that "PATCH sends only the keys that
+actually changed". Both matter. The first means client-side validation existed
+while the API had none — so the invalid value in the database arrived either
+before that check or through a path that bypasses the form. The second means
+this change **cannot block unrelated edits**: changing a phone number does not
+resend `gstin`, so the stale invalid value is only ever challenged if someone
+actually edits that field, at which point being forced to correct it is the
+point.
+
+7 tests, including one asserting that `24AAAAA0000A1Z5` — the dummy number in
+wide circulation — really is invalid, so the reason this was found survives in
+the suite.
+
+### A mistake worth recording: write probes fired before the deploy landed
+
+Verifying the fix, I sent `PATCH /v1/org/profile` with `24AAAAA0000A1Z5` and
+then with `abc`, expecting 400s. Both returned **200** — because the deploy was
+still building and the old code was live. So the probe did not test the fix; it
+**wrote `abc` into the org's GSTIN**.
+
+Restored immediately to `24AAAAA0000A1Z5`, byte-identical to the value read
+before the probe, and confirmed by re-reading the profile. Nothing else was
+touched and no other field was in the payload.
+
+Two things to take from it, both about this environment specifically:
+
+1. **A validation probe must not be a write.** Asserting that a bad value is
+   rejected is fine when the endpoint rejects it. When it does not, the probe
+   silently becomes the damage. A read-only check of the deployed SHA first, or
+   a probe against a throwaway record, would have cost nothing.
+2. **Confirm the deploy landed before testing behaviour that only exists after
+   it.** Railway was still `BUILDING`; the 200s were the honest answer from the
+   old build, and reading them as "the fix does not work" would have been the
+   second error on top of the first.
+
+Staging and production share one Supabase project, so this is the class of
+mistake that matters here more than the size of it suggests.
+
+**Consequence to be aware of:** once `37b4302d` is live, the org's stored
+`24AAAAA0000A1Z5` can be read but not re-saved. That is intended — the number is
+invalid — but it means the first person to edit the company profile's GSTIN
+field will have to enter a valid one. For the staging org the correct digit is
+`8`. Left as found rather than corrected, because changing a firm's GSTIN is not
+a call to make silently.
