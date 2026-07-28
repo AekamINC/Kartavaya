@@ -1514,3 +1514,38 @@ subsystem that decides whether a customer can use the product.
 **Consequence for this session's coverage:** the plan's scraper and AI/skills
 sections both need credits, and both are blocked by the same empty org wallet.
 That is one decision, not two.
+
+## Graha tab walk — and a correction to my own method
+
+Walked the six top-level leaves. **Zero console errors, zero error states**, real
+content throughout — `contacts` renders real rows (name, company, email,
+phone, source, per-row Delete), `pipeline` shows 512, `contacts` shows 4.
+
+**The other eleven leaves were NOT walked, despite my loop reporting them.**
+Graha's nested leaves live behind a **More +11** popover, and the popover
+*closes* when a leaf inside it is chosen. My loop collected all buttons once,
+up front, then clicked through the list — so after the first pick every
+remaining reference was a detached node. Those clicks did nothing, and each
+iteration re-read the panel that was already open.
+
+The tell was in the data and I nearly published it as a pass: eleven leaves
+reporting **byte-identical** 524 characters. Confirmed by then asking for
+`territories` and `web forms` directly — both came back *tab not found*,
+because the popover was shut.
+
+**So: 6 of 17 Graha leaves are verified. 11 are not.** Recorded that way rather
+than as "17 walked, all clean".
+
+### Method note, because this is the second time today
+
+A too-fast or too-naive probe manufactures a result that looks like a pass:
+
+- earlier, a 700 ms wait made five Ganit tabs look identical and nearly produced
+  "tabs do not switch" — a defect that does not exist
+- here, stale element references made eleven unvisited leaves look clean — a
+  pass that did not happen
+
+Both were caught by the same tell: **identical numbers where independent
+measurements should differ.** Re-query the DOM after every interaction that can
+re-render it, and treat repeated values as evidence of a broken probe until
+proven otherwise.
