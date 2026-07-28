@@ -41,11 +41,19 @@ function FontChip({ name, use }) {
   );
 }
 
-function SectionLabel({ children }) {
+/* The Devanagari comes in through `hi` rather than inside `children`, because
+   this label is uppercase, tracked at .12em and weight 800 — all three of which
+   Devanagari must not inherit. It previously carried --font-hindi in its own
+   stack with the Devanagari written straight into the label text and no `lang`,
+   so the global [lang] reset never fired and "रंग"/"फ़ॉन्ट" rendered
+   faux-bold and letter-spaced, which splits the conjuncts.
+   `.k-lbl__in` is the existing class for exactly this position. */
+function SectionLabel({ children, hi }) {
   return (
     <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase',
-      color: 'var(--ink-3)', marginBottom: 8, fontFamily: 'var(--font-ui), var(--font-hindi)' }}>
+      color: 'var(--ink-3)', marginBottom: 8, fontFamily: 'var(--font-ui)' }}>
       {children}
+      {hi && <span className="k-lbl__in" lang="hi">{hi}</span>}
     </div>
   );
 }
@@ -207,7 +215,7 @@ export default function BrandKit({ mode = 'display', value, onChange }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {hasColors && (
           <div>
-            <SectionLabel>Colors · रंग</SectionLabel>
+            <SectionLabel hi="रंग">Colors</SectionLabel>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {kit.colors.map((c, i) => <ColorSwatch key={i} {...c} />)}
             </div>
@@ -215,7 +223,7 @@ export default function BrandKit({ mode = 'display', value, onChange }) {
         )}
         {hasFonts && (
           <div>
-            <SectionLabel>Fonts · फ़ॉन्ट</SectionLabel>
+            <SectionLabel hi="फ़ॉन्ट">Fonts</SectionLabel>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {kit.fonts.map((f, i) => <FontChip key={i} {...f} />)}
             </div>
@@ -229,7 +237,7 @@ export default function BrandKit({ mode = 'display', value, onChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div>
-        <SectionLabel>Colors · रंग</SectionLabel>
+        <SectionLabel hi="रंग">Colors</SectionLabel>
         {!hasColors && (
           <div style={{ fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 8 }}>
             No colors saved yet.
@@ -238,7 +246,7 @@ export default function BrandKit({ mode = 'display', value, onChange }) {
         <EditableColors colors={kit.colors} onChange={handleColorsChange} saving={saving} />
       </div>
       <div>
-        <SectionLabel>Fonts · फ़ॉन्ट</SectionLabel>
+        <SectionLabel hi="फ़ॉन्ट">Fonts</SectionLabel>
         {!hasFonts && (
           <div style={{ fontSize: 12, color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 8 }}>
             No fonts saved yet.

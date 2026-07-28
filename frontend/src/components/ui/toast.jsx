@@ -189,7 +189,11 @@ export function ToastProvider({ children }) {
           the stack direction, so the newest toast is always the one nearest the
           screen edge rather than the one that jumps furthest as the stack
           grows. */}
-      <div className="k-toasts" role="region" aria-label="Notifications">
+      {/* "Alerts", not "Notifications" — NotifToast mounts a second region and
+          NotificationsModal a dialog, and all three were called Notifications.
+          Three identically-named landmarks give a screen-reader user no way to
+          tell the transient toast stack from the notification panel. */}
+      <div className="k-toasts" role="region" aria-label="Alerts">
         {toasts.map((t) => {
           const ts = TYPE_STYLES[t.type] || TYPE_STYLES.info;
           return (

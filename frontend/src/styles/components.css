@@ -47,7 +47,12 @@
 /* Labels that follow the user's language use --font-indic, never --font-hindi.
    --font-hindi is reserved for fixed decorative Devanagari (watermarks), and
    --font-devanagari was a third name that only existed in FormGroup.jsx. */
-.fld__hi   { font-family: var(--font-indic); text-transform: none; letter-spacing: 0; color: var(--primary-text); margin-left: 6px; }
+/* font-weight:400 alongside the other two resets. `.fld__l` is 600, and Tiro
+   Devanagari Hindi ships at 400 only — an inherited 600 is synthesised, which
+   thickens the शिरोरेखा unevenly and closes the counters on ठ and ढ. The
+   tracking and case were already reset here; weight is the third part of the
+   same defect and was the one left out. */
+.fld__hi   { font-family: var(--font-indic); font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--primary-text); margin-left: 6px; }
 .fld__req  { color: var(--danger); margin-left: 3px; }
 .fld__hint { font-size: var(--t-label); color: var(--on-surface-3); }
 .fld__err  { font-size: var(--t-label); color: var(--danger); }

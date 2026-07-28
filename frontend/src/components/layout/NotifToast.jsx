@@ -264,7 +264,7 @@ export function NotifToastContainer({ toasts, onDismiss }) {
         }
       `}</style>
 
-      <div role="region" aria-label="Notifications">
+      <div role="region" aria-label="New notifications">
         <div className="sr-only" aria-live="polite" aria-atomic="false">{politeText}</div>
         <div className="sr-only" aria-live="assertive" aria-atomic="false">{assertiveText}</div>
 

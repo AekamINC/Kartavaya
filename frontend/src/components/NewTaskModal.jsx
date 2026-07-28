@@ -395,7 +395,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: 2 }}>
 
-                {isClient ? 'REQUEST TASK' : 'NEW TASK'} · <span style={{ fontFamily: 'var(--font-indic)', textTransform: 'none', letterSpacing: 0 }}>{isClient ? 'अनुरोध' : 'नया कार्य'}</span>
+                {isClient ? 'REQUEST TASK' : 'NEW TASK'} · <span lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>{isClient ? 'अनुरोध' : 'नया कार्य'}</span>
 
               </div>
 
