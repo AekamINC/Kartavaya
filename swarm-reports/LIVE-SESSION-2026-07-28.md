@@ -901,3 +901,62 @@ A drawer link always opens on Details, exactly as the comparison predicted —
 `DrawerTabs` accepts `onChange` and `TaskDrawer` never passes it, while
 `useBoardView` does put search/filter/group/sort in the URL. The one that was
 missed.
+
+## F19 — 🔴 The RBAC section is BLOCKED, and this is why it keeps not happening
+
+The plan says "Creating them is possible; typing their password is not", and
+builds the whole RBAC approach on that. **The first half is not true**, which is
+the reason RBAC has now survived two sessions without starting.
+
+Traced every path to an account. `INSERT INTO users` appears in exactly **two**
+places in the entire backend:
+
+| Site | Creates a user? | Needs a password? |
+|---|---|---|
+| `auth_router.py:380` — `accept_invite` | yes | **yes** — `body.password`, hashed at `:385` |
+| `scripts/setup_local_db.py:352` | yes | yes, and it is a local bootstrap script, not a live route |
+
+Every other route that looks like it provisions someone requires the account to
+already exist:
+
+- `admin_orgs.create_org:97` — `404 No user found with email ... They must
+  register first`
+- `admin_orgs.add_member:713` — `404 No user found with email`
+- `invite_router` mints an **invite**, not a user. The row appears only when
+  somebody opens the link and sets a password.
+
+So the ladder cannot be built by any authorised means:
+
+- **Setting passwords via `accept-invite`** would work mechanically, but the
+  plan considered and rejected it — it chose the passwordless path precisely so
+  no password is handled, and knowing a password is the capability the rule
+  denies.
+- **Direct DB writes** are forbidden by the session rules.
+- **The passwordless path itself** issues a session for an *existing* user. It
+  does not create one, so it cannot bootstrap its own subjects.
+
+There is a genuine ordering gap in the brief: to test RBAC as those users the
+users must exist, and nothing authorised creates them.
+
+### Unblocking it — one mechanism, not two
+
+The cleanest resolution is a **single** QA-only facility that both provisions
+and signs in, carrying the properties the plan already specified for the
+passwordless path, since a second way in is the thing 08-rbac-screens warns
+against:
+
+- staging-only, gated on an env var that **fails closed** — no variable, no
+  provisioning and no token, never inferred from `NODE_ENV`
+- provisions only into the designated **QA org**, refusing every other org
+- accounts created with an **unusable** password hash, so the only way into them
+  is the audited path — they cannot be signed into normally, ever
+- session tokens short-lived and single-use, consumed on redemption
+- an audit row on provision, on issue and on use
+- staging branch only, named so a reviewer cannot mistake what it is
+
+That keeps one audited door rather than adding a second, and it means no
+password exists for any QA account at any point.
+
+**Not built yet** — recorded first because the blocker is the finding, and it
+is worth more than a half-built bypass. It is also the answer to why two
+sessions have bounced off this section.
