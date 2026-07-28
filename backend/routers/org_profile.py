@@ -51,6 +51,8 @@ from db import get_pool
 from middleware.roles import require_org_role
 from middleware.role_tiers import ORG_SETTINGS_ROLES
 from middleware.org_resolver import get_org_id
+from services.gstin import GSTINError
+from services.gstin import validate as validate_gstin
 
 router = APIRouter(prefix="/api/v1/org/profile", tags=["org-profile"])
 
@@ -239,6 +241,33 @@ async def update_profile(
             "migrations/PROPOSED_068_org_profile_fields.sql, then retry. "
             "Nothing was saved — your other edits were not written either.",
         )
+
+    # The GSTIN carries a check digit exactly so a typo is catchable at entry.
+    # `ganit._checked_gstin` has validated vendor and customer numbers for a
+    # while; this path — the org's OWN number, the one that goes on every
+    # invoice and into every return — did not, and accepted whatever was typed.
+    #
+    # Measured on staging 2026-07-28: the live org holds `24AAAAA0000A1Z5`,
+    # whose correct check digit is `8`. That is the common dummy number so it is
+    # very likely test data, but it could only have been stored because nothing
+    # here checked. GSTR-1 emits this value as `gstin`, so an unvalidated number
+    # does not surface until the portal rejects the return — the same
+    # months-later failure `_checked_gstin` was written to prevent, on the one
+    # number that appears in every document the firm sends.
+    #
+    # Blank stays legal, as it is for vendors: an unregistered firm has no
+    # GSTIN, and the Tally and GSTR-1 exports already refuse without one and say
+    # so. Refusing loudly here matches what this handler does two blocks above
+    # for a missing column — it never writes a partial update.
+    if "gstin" in fields:
+        raw = fields["gstin"]
+        if raw and str(raw).strip():
+            try:
+                fields["gstin"] = validate_gstin(raw)
+            except GSTINError as exc:
+                raise HTTPException(400, str(exc)) from exc
+        else:
+            fields["gstin"] = ""
 
     sets, params, idx = [], [], 1
     for key, val in fields.items():
