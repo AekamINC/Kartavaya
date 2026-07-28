@@ -1446,3 +1446,39 @@ with 50 staff would see roughly fifty times the inner cost, and nothing here
 rules that out. **A realistic timing needs a populated employee roster** — worth
 doing before handover, since payroll is the one job that must finish inside a
 request.
+
+## Decision verified — e-sign requires ALL signers ✅
+
+Listed in the brief as one of six decisions to check against what is built, and
+marked *not reached* by the first session. It **landed**.
+
+`esign.py:538-559`:
+
+```python
+new_completed = signer["signers_completed"] + 1
+all_signed    = new_completed >= signer["signers_total"]
+new_status    = "completed" if all_signed else "partially_signed"
+```
+
+`completed_at` is set, the `document_completed` audit row is written, and
+`_generate_signed_certificate` runs **only** when `all_signed`. Short of
+that the document sits at `partially_signed`. The response returns
+`signers_completed` and `signers_total` together, which is the "missing ones
+flagged" half — a caller can render *2 of 3* without a second request.
+
+**Six decisions, final status:** 290mm budget landed (but `report_generator.py`
+never adopted it) · Sanvaad defaults to editor landed · GSTR-3B 4(D)(1) advisory
+landed · Vikray quotes partial · Ganit dead link does not exist (the reverse
+does) · **e-sign all-signers landed** — the last one, now closed.
+
+### Two things worth keeping from the same file
+
+- **The write path guards document status, not just the read path.**
+  `_doc_status_guard` is called in `submit_signature` with the reasoning in
+  place: the signing page is fetched once and can sit open indefinitely, and the
+  POST can be replayed without the page at all, so a signer who loaded the link
+  before the firm cancelled could otherwise still record a valid signature with
+  a full audit trail. *"A withdrawal that the signing endpoint ignores is not a
+  withdrawal."* Already correct.
+- **OTP is required before a signature is accepted** (`:520`), not merely
+  offered.
