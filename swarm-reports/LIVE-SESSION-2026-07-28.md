@@ -1777,3 +1777,41 @@ of the session rather than the fourth confirmed one.
 — the module *looks* healthy and is not.
 
 **Running total: 54 of 85 leaves.**
+
+### F26 — diagnosed from the logs, not inferred
+
+```
+asyncpg.exceptions.UndefinedColumnError: column s.platform_user_name does not exist
+  File "/app/routers/prachar_ads.py", line 40, in list_ad_accounts
+```
+
+`prachar_ads.py:41` selects `s.platform_user_name` across a
+`LEFT JOIN staging.hub_social_accounts s`, and that column is **not on the
+live table**. Not CORS, not a missing table — one column.
+
+**Same class as F7** (`graha_inbound_emails` missing `contact_id`): a
+handler written against a schema shape the cloud database does not have. That is
+now the second confirmed instance of this pattern, which makes it a pattern
+rather than an incident, and it points back at the `081` finding — the DDL
+that ran against the live database has no artifact in the repo, so nothing can
+be reviewed from source.
+
+**Why it stayed invisible.** The failure is a 500 that escapes before
+`CORSMiddleware` attaches headers, so the browser reports it as a CORS
+violation and the network tab shows `net::ERR_FAILED` with no status. The Ads
+tab then renders *"…appear here once the platform answers"*, which reads as
+"no data yet" rather than "this endpoint has never worked". Nothing about the
+page looks wrong.
+
+**The fix is small and belongs to whoever owns the schema question**, because
+there are two honest options and they are not equivalent:
+
+- **(a)** the column exists under another name on `hub_social_accounts` — then
+  the query is wrong and the SELECT should name the real column;
+- **(b)** the column was never added — then a migration is owed, and per the
+  session rules migrations are the owner's to apply.
+
+Determining which needs a look at the live `hub_social_accounts` shape.
+**Not fixed here.** Guessing a column name into a money-adjacent module two and
+a half weeks before handover is exactly the false-confidence this report has
+withdrawn three findings to avoid.
