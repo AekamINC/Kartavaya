@@ -1617,3 +1617,47 @@ about, and exactly where it says defects survive.
 **So Manav is 6 of 15.** Recorded that way. Total verified across the app is now
 **34 of 85 leaves** — Graha 17/17, Ganit 10/10, Manav 6/15, plus the task
 drawer's 31 individual elements.
+
+## Vetana — 6 of 6, and the payroll chain proven end to end ✅
+
+6 walked, **6 distinct character counts, 0 errors.**
+
+The run I processed earlier appears correctly in all three places, which is the
+plan's *"salary structure → payroll run → payslip generation → download"* chain
+verified on real rows:
+
+| Leaf | What rendered |
+|---|---|
+| Dashboard | department breakdown — *Engineering · 1 · ₹2,593 gross · ₹2,415 net* |
+| Structures | *Amit Kumar · Effective 2026-07-17* |
+| Payroll | *July 2026 · 2026-07 · 1 employee · processed* |
+| Payslips | **`PS-2026-0001` · July 2026 · ₹2,415 · generated** |
+| Loans | copy — deductions clear automatically against payroll |
+| Statutory | 2,081 chars, the largest leaf — PF/ESI/TDS compliance |
+
+**A payslip was generated**, so processing produces documents and not just a
+run row.
+
+### A finding I checked and withdrew
+
+The payroll row reads `₹2,415 gross ₹2,593` and the API returned gross
+2592.59 / net 2414.81, which looks like the two are swapped on the money path.
+**They are not.** The markup is:
+
+```html
+<span class="vt-row__num">₹2,415</span><p class="vt-row__sub">gross ₹2,593</p>
+```
+
+Net is the headline — correct, it is what actually leaves the bank — with gross
+as the labelled subtitle. Withdrawn rather than reported.
+
+**L7 (LOW), the real residue:** the headline figure carries **no label** while
+the only label on the row says *gross*. A reader scanning the list can take
+₹2,415 for the gross. One word — `net` — on `.vt-row__num` closes it.
+
+That is the third time today that verifying before claiming stopped a false
+finding reaching this report. Recorded because the ratio matters: three
+withdrawn, and each would have cost someone an afternoon.
+
+**Running total: 40 of 85 leaves** — Graha 17/17 · Ganit 10/10 · Manav 6/15 ·
+Vetana 6/6 · plus the task drawer's 31 elements.
