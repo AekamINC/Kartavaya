@@ -84,6 +84,19 @@ fate. It is intact today only because nobody has saved bank details since.
 
 `94 backend tests pass`, `vite build` clean.
 
+### Verified live after deploy ✅
+
+Reloaded Settings → Organisation on staging once the fix shipped:
+
+- Every address field now renders its real value — `12 Ashram Road`,
+  `Ahmedabad`, `Gujarat`, `380009`, `India` — **recovered out of the corrupted
+  1500-character string** by the client guard.
+- Pressing Save then wrote a clean object back. `GET /v1/org/profile` now
+  returns `billing_address` as a **real object**, **0 numeric keys** (was 122),
+  with the six correct fields.
+
+**The corrupted QA Test Corp row is repaired**, not merely masked.
+
 ### NOT yet done — the scope beyond this one file
 
 `json.dumps` appears **170 times across 42 backend files**. Every site that dumps
@@ -93,8 +106,9 @@ site, and this report's predecessor was burned twice for asserting a pattern fro
 one measurement. `graha.py` (18), `hub.py` (20), `prachar.py` (10) and `ganit.py`
 (8) are the largest and should be checked first.
 
-**The QA Test Corp row is still corrupt in the database** — the fix prevents new
-corruption and hides the old, but the stored value needs rewriting once deployed.
+The QA Test Corp row has since been rewritten clean (see above). Any **other**
+org whose profile was saved through the old build carries the same corruption
+and needs the same one-save repair.
 
 ---
 
@@ -141,6 +155,30 @@ Ganit's `More +2` menu is titled **`ALL TABS · 10`** but contains only the two
 tabs that overflowed (Timesheet, GST Filing). Either the heading is wrong or the
 menu is incomplete.
 
+## F40 — 🟡 Sanvaad blames the wrong thing and offers a remedy that cannot work
+
+`/sanvaad` as **org_admin** returns 403 on `/v1/messaging/me`, `/channels` and
+`/whatsapp/conversations`. That refusal is *correct* — Sanvaad is not an active
+module for QA Test Corp. But the screen says:
+
+> **You don't have access to this**
+> Your channel list did not load. This is a read failure; no channel or message
+> was removed. **[Request access]**
+
+The cause is not access, it is **activation**. The API's own message says so —
+*"Module 'sanvaad' is not active. Contact your administrator to activate it."* —
+and the UI discards it for a generic one. `Request access` is the wrong remedy:
+no grant will ever open a module that is switched off at the subscription level,
+so the button sends the user down a road with no end.
+
+Compare Vetana's refusal, which the previous session rightly called the best in
+the product: it names the module, the exact level required, and why.
+
+**And an F32 instance on a module not previously examined**: beneath the refusal
+the panel still reads *"Pick a channel or a direct message on the left, **or
+create one** to start a conversation."* — inviting an action every endpoint on
+the page has just refused.
+
 ---
 
 ## Checked and deliberately NOT filed
@@ -163,6 +201,16 @@ four looked like findings and are not:
   product bug. Clicking `More` re-rendered the tab strip and detached the node
   references my loop was holding. Re-querying fresh each iteration, all 8 tabs
   land correctly.
+- **`/vetana` showing "This page didn't load"** — caused by **my own deploy**.
+  Pushing to `staging` redeployed Vercel and replaced the hashed assets while
+  the tab still held the previous `index.html`, so `VetanaPage-gh5ZUtOw.js`
+  404'd and the SPA fallback served HTML, tripping the module MIME check. A
+  reload fixed it and all 6 Vetana tabs then loaded. **Not a product defect** —
+  though it is worth knowing that any deploy strands open tabs on a dead-end
+  error, and `Try again` re-imports the same dead URL rather than reloading.
+- **Sanvaad returning 403 to an org_admin** — correct. The module is inactive
+  for this org; org_admin reaches every *active* module, not every module. What
+  is wrong is only the wording (F40).
 
 ---
 
@@ -188,16 +236,31 @@ deleted at the end of the week").
 | `/ganit` — all 8 visible tabs + both overflow tabs | org_admin | ~24 | done |
 | `/ganit` create form, empty submit, detail drawer, Esc close | org_admin | ~8 | done |
 | `/ganit` GST Filing — GSTR-1, GSTR-3B, held-back list | org_admin | ~5 | done |
-| `/settings/organisation` — profile CRUD, invalid + valid save, persistence | org_admin | ~12 | done |
+| `/settings/organisation` — profile CRUD, invalid + valid save, persistence, repair | org_admin | ~16 | done |
 | `/graha` — 8 tabs enumerated, Contacts CRUD ×5 | org_admin | ~15 | partial |
+| `/vikray` — 6 tabs | org_admin | ~7 | done |
+| `/manav` — 8 tabs | org_admin | ~9 | done |
+| `/vetana` — 6 tabs (after reload) | org_admin | ~7 | done |
+| `/prachar` — 8 tabs | org_admin | ~9 | done |
+| `/dristi` — 8 tabs | org_admin | ~9 | done |
+| `/sanvaad` — 2 tabs + refusal state | org_admin | ~4 | done |
+| `/esign` — 2 tabs | org_admin | ~3 | done |
 | `/dashboard` | org_admin | ~4 | done |
 
-**~68 events.** Console clean throughout except the two handled 422s on GSTR-1.
+**~120 events.** Console clean throughout except the two handled 422s on GSTR-1
+and the three expected Sanvaad 403s.
 
-**Not started:** Vikray, Manav, Vetana, Prachar, Dristi, Sanvaad, Srijan, Esign,
-Boards/Projects/Tasks, and every Graha tab past Contacts. **No role other than
-org_admin has been exercised at all this session** — so F32 and F33 remain
-unverified live, though F33's root cause is now fixed in code (below).
+Every tab in every module was confirmed to *land* (`aria-selected` matched the
+tab clicked) — the check that caught my own harness bug.
+
+**Not started:** Srijan/`hub`, Boards, Projects, Tasks, the task drawer,
+Approvals, Activity, Inbox, Teams, Templates, Categories; Graha tabs past
+Contacts; every detail drawer and edit form outside Ganit; downloads (invoice
+PDF, payslip, Tally XML, CSV exports); scrapers; AI/skills; notifications.
+
+**No role other than `org_admin` has been exercised this session** — so F32 and
+F33 remain unverified live, though F33's root cause is fixed in code (below).
+That gap is not a choice: it needs the `qamember`/`qaviewer` sessions.
 
 ## F33 — root cause found and fixed (code), NOT yet verified live
 
