@@ -1113,3 +1113,28 @@ separated so several tables can share a file and stay readable. `_csv_cell`
 normalises what asyncpg actually returns — `Decimal` to a number, aware
 `datetime` to ISO-8601, because `datetime.datetime(2026, 7, 1, 0, 0, ...)` is
 not a date any spreadsheet parses. 7 tests, `71011da0`.
+
+### F20 and F22 — verified on the deployed build
+
+```
+F20  fetch('/v1/documents/tally/2026-07') readable headers
+     before : content-type
+     after  : content-type, content-disposition, x-kartavaya-voucher-count,
+              x-kartavaya-held-back
+              content-disposition = attachment; filename="Kartavaya-Tally-2026-07.xml"
+              voucher-count = 2, held-back = 4
+
+F22  GET /v1/dristi/exports/revenue?format=csv
+     before : monthly,"[{'month': datetime.datetime(2026, 7, 1, 0, 0, tzinfo=...),
+                         'total': Decimal('311671.60'), 'count': 6}]"
+     after  : monthly
+              month,total,count
+              2026-07-01T00:00:00+00:00,311671.6,6
+```
+
+`pipeline` and `sales` produce real tables on the same pattern; `overview`
+and `hr` are unchanged, being scalars. Asserted across all four that no
+`Decimal(`, `datetime.datetime(` or `tzinfo=` survives anywhere in the body.
+
+The UI can now read that 4 invoices were held back from a Tally file the user
+just downloaded — which it previously had no way to know.
