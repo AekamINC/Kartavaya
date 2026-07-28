@@ -2061,3 +2061,42 @@ way these four were.
 **What is defensible: 66 leaves opened and inspected, across all nine modules,
 with zero console errors except Prachar's F26.** That is measured. The fraction
 is not, and this table is the start of making it so.
+
+### F28 escalated — two modules, same shortfall
+
+Dristi measured the same way:
+
+```
+Dristi   "ALL TABS · 8"  declared
+         6               rendered  (Overview · Revenue · Pipeline · HR · Sales · Reports)
+         0               behind More (no More button)
+```
+
+**Identical to Prachar: declares 8, renders 6, no overflow control.** Exactly two
+missing in both, which is a shared cause rather than two independent drifts.
+
+| Module | Declares | Renders | Short by |
+|---|---|---|---|
+| Ganit | 10 | 10 | 0 |
+| Graha | — | 17 | — |
+| **Prachar** | **8** | **6** | **2** |
+| **Dristi** | **8** | **6** | **2** |
+
+Ganit remains the control — declares 10 and has 10, six visible plus four behind
+a More popover — so the counter is capable of being right, and the mechanism for
+overflow exists and works.
+
+That both affected modules are short by the *same* number, and that both lack the
+More control Ganit uses, points away from "hardcoded counter drifted" and toward
+**two tabs being filtered out of the render while the counter is computed from
+the unfiltered list**. An entitlement or feature-flag check is the obvious
+candidate.
+
+Worth noting where these two modules sit: Prachar already owns **F26** (its ads
+endpoint is a 500) and the org owns **F27** (a deactivated module still renders).
+Three findings in the same neighbourhood — module gating — is the thread to pull.
+
+**Still not diagnosed.** It needs the tab configuration source and the predicate
+that filters it, which is a short read for a session with the context to verify
+what it finds. Asserting the cause from two data points is exactly what this
+report has withdrawn five findings for.
