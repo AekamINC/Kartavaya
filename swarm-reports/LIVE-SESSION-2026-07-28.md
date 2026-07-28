@@ -1138,3 +1138,75 @@ and `hr` are unchanged, being scalars. Asserted across all four that no
 
 The UI can now read that 4 invoices were held back from a Tally file the user
 just downloaded — which it previously had no way to know.
+
+## The Tally purchase path — exercised for the first time, and it is correct ✅
+
+The plan flagged this as never having run on real rows. It has now.
+
+**Created on staging** (synthetic, `example.invalid` addresses, wiped with the
+weekly reset): two vendors — one Gujarat `24BBBBB1111B1ZT` for the intra-state
+CGST/SGST path, one Maharashtra `27CCCCC2222C1Z8` for interstate IGST — and
+three vendor bills across July.
+
+| Bill | Vendor | Net | GST | Total |
+|---|---|---|---|---|
+| QA-BILL-001 | intra | 5,000 | 12% = 600 | 5,600 |
+| QA-BILL-002 | intra | 27,800 | 18% = 5,004 | 32,804 |
+| QA-BILL-003 | inter | 18,000 | 18% = 3,240 | 21,240 |
+
+### What the export does with them
+
+`purchase_count` **0 → 3**, `voucher_count` 2 → 5.
+
+Every voucher is a **balanced double entry** — all five sum to exactly zero.
+Checked by parsing each `<VOUCHER>` and summing its `ALLLEDGERENTRIES.LIST`.
+
+```
+QA-BILL-001  QA Stationers (Test)  5600 · Purchase -5000 · Input CGST -300 · Input SGST -300
+QA-BILL-003  QA Logistics (Test)  21240 · Purchase -18000 · Input IGST -3240
+```
+
+The parts that matter, and each was a way this could have been wrong:
+
+- **`Input` CGST/SGST/IGST on purchases, `Output` on sales.** The sales voucher
+  in the same file carries `Output SGST`. Getting this backwards would post
+  every purchase as a liability instead of a credit.
+- **`is_igst` drives the ledger split correctly** — the interstate bill produces
+  a single `Input IGST` line, the intra-state ones split CGST/SGST evenly.
+- **`ISDEEMEDPOSITIVE` signs follow Tally's convention** — party ledger `No` at
+  the gross, `Purchase` and the tax ledgers `Yes` at negative.
+- Structure carries `VOUCHERNUMBER`, `PARTYLEDGERNAME`, `PARTYGSTIN`,
+  `REFERENCE` (the internal `VB-2026-0001`) and a `NARRATION` naming line, HSN
+  and quantity.
+
+### GSTR-3B picks them up too
+
+`inward_count` **0 → 3**, and **Eligible ITC = 8,844**, which is
+600 + 5,004 + 3,240 exactly.
+
+So the whole chain — vendor bill → Tally purchase voucher → GSTR-3B input
+credit — is correct on real rows. No defect found in the purchase path.
+
+## F23 — 🟠 The org's own GSTIN fails the check-digit test the app enforces
+
+`POST /v1/ganit/vendors` rejected two synthetic GSTINs with *"GSTIN check digit
+does not match — the number is mistyped"*. That validation is real and correct:
+computing the mod-36 check digit independently and resubmitting was accepted for
+both vendors, so the implementation agrees with the standard algorithm.
+
+Which means the same algorithm can be turned on the org's own number.
+`staging.organisations` holds **`24AAAAA0000A1Z5`**, and the correct check digit
+for the prefix `24AAAAA0000A1Z` is **`8`**, not `5`.
+
+It is the widely copied dummy GSTIN, so this is almost certainly test data
+rather than a real firm's number — but two things follow regardless:
+
+1. **The org GSTIN is not validated on the way in**, while vendor and customer
+   GSTINs are. Whatever path set it did not call `_checked_gstin`. A real firm
+   mistyping their own GSTIN during onboarding would be accepted.
+2. **GSTR-1 export emits it as `gstin`.** A filing JSON carrying a GSTIN that
+   fails check-digit validation would be rejected by the portal, and the failure
+   surfaces at filing time rather than at entry.
+
+Worth fixing before handover: validate the org GSTIN on write with the same
+helper the vendor path already uses.
