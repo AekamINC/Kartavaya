@@ -1855,3 +1855,53 @@ customers are downloading JSON files named `.pdf`.
   urgent on its own.
 
 **Running total: 60 of 85 leaves.**
+
+## F27 — 🔴 HIGH · A module switched OFF is still reachable
+
+`GET /v1/org/modules` reports the org's entitlements. **Sanvaad is
+`active: false`**, deactivated `2026-07-17T10:19:24`. The endpoint's own note
+is unambiguous:
+
+> *"Switching a module off revokes access and keeps every member grant behind
+> it."*
+
+It does not revoke access.
+
+```
+GET /api/v1/messaging/channels   ->  200  []        <- sanvaad, active:false
+GET /api/v1/graha/contacts       ->  200  real data <- graha,   active:true  (control)
+```
+
+And the **UI renders it**: earlier in this session I walked two Sanvaad leaves
+(Channels, WhatsApp) at `/sanvaad` without the page refusing. Both showed
+ordinary select-something-on-the-left empty states, which is exactly why it went
+unnoticed — a deactivated module looks identical to an empty one.
+
+**Scope claimed precisely.** I probed `/v1/messaging/threads` and
+`/v1/pahchan/shifts` as controls and both returned 404 — those are *my guessed
+paths*, not evidence of anything, and they are excluded. **One endpoint is
+confirmed.** Whether the gap is systemic across every deactivated module needs
+the real route list per module, which is a short job for the next session and
+should be done before drawing a conclusion.
+
+**Why it matters commercially, not just technically.** Modules are described
+here as *"a term of the subscription"* — only Aekam can provision one, and the
+org can toggle it. If switching a module off does not actually revoke access,
+then the toggle is cosmetic and the subscription boundary is not enforced. Two
+accounting firms take handover on 15 August with modules as a priced term.
+
+Also worth checking with it: `vetana` shows `grants_preserved: 1`, so grant
+preservation across a toggle is implemented — the machinery exists, and it is
+the *enforcement* that is missing rather than the model.
+
+## Srijan — could not be walked
+
+`/srijan` **redirects to `/dashboard`**, though the module is
+`active: true`, `bundled: true`, and the sidebar shows both *Srijan* and
+*Srijan Admin* under GROWTH. Almost certainly my URL guess is wrong rather than
+a broken route — the nav buttons are router-driven and I did not read the path
+off them. **Not recorded as a defect.** Next session: click the nav item rather
+than typing a URL, which is the same lesson as the `/api/documents` prefix.
+
+**Final tally: 60 of 85 leaves.** Srijan 0/7, Dristi 6/8, Manav 6/15,
+Sanvaad 2/5, Prachar 6/11 — plus every module's detail drawers.
