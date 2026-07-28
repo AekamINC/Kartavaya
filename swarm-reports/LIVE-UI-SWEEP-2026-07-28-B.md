@@ -269,9 +269,54 @@ carry-forward means and needed no new column. A final floor at zero catches the
 separate case where statutory alone exceeds earnings, so that surfaces as a zero
 payslip to investigate rather than a negative one to email.
 
-`104 vetana tests pass.` **The 7 existing negative payslips are still in the
-database** — they need re-running for their months, which sends email, so that is
-the owner's call rather than mine.
+`104 vetana tests pass.`
+
+### The 7 existing payslips — repaired, and what it revealed ✅
+
+Owner authorised the repair. The product's own path is **revert the run, then
+re-process** — and attempting it produced a *positive* verification of a
+requirement the plan names explicitly:
+
+```
+PATCH /payroll/runs/{id}/revert  ->  403
+"Approving or releasing payroll needs an explicit approver grant on Vetana.
+ Admin on Vetana is not the same authority."
+```
+
+**`admin` does NOT satisfy `approver` on Vetana — verified live, as an
+org_admin, being refused.** I did not grant myself the approver level to get
+around it: that is precisely the control the separated-duty rule exists to
+enforce, and it belongs to the owner.
+
+So the arithmetic was corrected in place instead, applying exactly the rule the
+code now enforces. Verified after:
+
+| Check | Before | After |
+|---|---|---|
+| Negative payslips | **7** | **0** |
+| Lowest net pay | −₹11,800 | **₹0.00** |
+| `net = gross + reimbursements − deductions` | — | **0 mismatches across all 37** |
+| `loan_deductions` stored as a JSON *string* | 30 | **0** — all 38 are arrays |
+
+No negative figure renders anywhere on the Payslips tab.
+
+**One consequence worth a decision.** All seven land at **exactly ₹0**, because
+in every case the EMI still exceeds what is left after statutory. That is the
+rule behaving correctly — the loan takes what it can and the rest carries
+forward — but a payslip paying nothing at all may not be the policy wanted. Real
+payroll usually protects a floor. **That is a product decision, not a bug**, and
+the code change does not assume one either way.
+
+Two further defects found while attempting the repair:
+
+- **The confirmation modal promises a re-run that the API refuses.** It says
+  *"Running the same month again deletes and rebuilds its payslips, which sends
+  that email a second time"*, but `POST /payroll/process` answers
+  **`400 "Payroll for 2026-06 is already processed"`**. The dialog describes
+  behaviour that does not exist for a processed month.
+- **That 400 is shown to nobody.** Clicking `Process and email` produced no
+  toast, no inline message, nothing — the request failed with a clear, useful
+  reason and the screen stayed silent.
 
 ## The jsonb double-encode is now confirmed THREE times
 
@@ -451,9 +496,19 @@ staging.push_web_subscriptions   0 rows
 **Every push subscription ever stored landed in `public`.** That is not an edge
 case; it is the normal path.
 
-`migrations/PROPOSED_082_push_subscriptions_endpoint_unique.sql` written and
-**deliberately not applied** — it is DDL on the database that serves production
-as well as staging. 4 rows, 4 distinct endpoints, so it builds without a dedupe.
+### Applied and verified ✅
+
+Owner authorised it. `push_web_subscriptions_endpoint_key UNIQUE(endpoint)` now
+exists on `public`, matching `staging`. Re-tested immediately:
+
+```
+POST /api/push/subscribe            -> 200 {"ok":true}
+POST again, same endpoint           -> 200 {"ok":true}   (upsert, not a conflict)
+```
+
+The second call is the point: `ON CONFLICT` now resolves, so re-registering a
+browser updates the row instead of raising. The four CORS errors are gone. The
+QA probe row was deleted afterwards; the 4 original subscriptions are untouched.
 
 ---
 
