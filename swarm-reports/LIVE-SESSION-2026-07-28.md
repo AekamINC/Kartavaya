@@ -654,3 +654,179 @@ resolves this correctly and is **ahead of** the spec.
 | 17 | `/graha` pipeline | Read the two "no next step" counts | Agree | 🔴 **199 vs 510 — contradict.** Root cause F4 | clean | all 200 |
 | 18 | `/graha` | `deals?limit=600` | Honours limit | 🔴 Still 200 — no limit param. F4 | — | 200 |
 
+
+---
+
+# Session resumed — 16:29 BST
+
+The 15:30 run was paused because the scheduled task had spawned **three**
+sessions (`local_8baa44d0`, `local_e6a476d6`, `local_8c1e643f`) and two were
+live within five seconds of each other at 16:20. Nothing was lost: the tree was
+clean and in sync with `origin/staging` at `ae63b7d2`.
+
+**Correction to how this restart began.** I went straight to editing CSS off the
+committed comparison in `f50d17b6` without opening a browser at all, which
+skips STEP 2 of the brief — the whole point of which is that live rendering is
+the evidence. Caught by the owner mid-session. Everything below the gate fix was
+then measured live, before and after, rather than read off the stylesheet.
+
+## Fixed and verified live this resumption
+
+| Commit | What | Evidence |
+|---|---|---|
+| `bf9fb1f9` | Two stale visual-regression snapshots | CI had been red on four consecutive pushes for two deliberate fixes — the `Alerts` landmark rename (`193c4fea`) and the Windows glass token kill (`56745798`). Green again on run `30373713140`. |
+| `8880f5f5` | Contrast baseline keyed on file, not line | See F16. |
+| `dd8eb259` | Glass on four overlays; paired ink for every status fill | See F14 and F15. |
+
+## F14 — 🔴 The active stage of the drawer pipeline was 2.54:1 in dark — FIXED ✅
+
+H7 predicted this from the CSS. Measured live it is worse than the report
+implies, and in a way reading the file could not show.
+
+Task `#42ac23`, fresh load with `k_prefs.mode=dark` (owner's prefs stashed and
+restored byte-identical afterwards):
+
+| Segment | Background | Ink | Ratio |
+|---|---|---|---|
+| **To Do (active)** | `#9AA3B2` | `#FFFFFF` | **2.54:1** |
+| In Progress / In Review / Done / Rejected | `#171B21` | `#8E8D87` | 5.19:1 |
+
+The four segments the task is **not** in were fine. The one segment saying where
+it **is** was below even the 3:1 non-text floor. In light every `--st-*` is a
+dark mid-tone and white clears 6.2:1, which is exactly why this shipped.
+
+**After, same task, same conditions: 6.86:1**, ink `rgb(21,26,34)` =
+`--on-st-todo`. Screenshots: `_shots/2026-07-28-drawer-dark-active-stage-2.54.png`
+and `...-6.86.png`, plus `...-pipe-after.png` cropped to the pipeline — the
+pixels were checked, not just the computed value, for the reason F15 gives.
+
+Root cause was structural, not a typo: `--st-*` and `--pr-*` are **fills with no
+paired `--on-*` token**, so three call sites hardcoded `#fff`. Added `--on-warn`
+(the third of the trio after `--on-ok` and `--on-danger`), six `--on-st-*` and
+four `--on-pr-*`. `columnStageOnColor` resolves through the **same regex match**
+as `columnStageColor`, so a column cannot take one status's background and
+another's foreground.
+
+## F15 — 🟠 A background from an inline `--c` does not repaint on theme switch
+
+Found while trying to verify F14 by flipping `data-theme` on a live page.
+
+```
+data-theme light -> dark, then two animation frames:
+  --st-todo          #5A6270 -> #9AA3B2   OK  token flipped
+  stage --c          #5A6270 -> #9AA3B2   OK  custom property re-resolved
+  stage background   rgb(90,98,112)       BAD STALE, still the light value
+re-assert the IDENTICAL inline value (--c: var(--st-todo)):
+  stage background   rgb(154,163,178)     OK  repaints
+```
+
+So `background: var(--c)`, where `--c` is an **inline** custom property whose
+value is itself a `var()` reference, is not invalidated when the referenced
+token changes. It corrects on remount or when the inline property is re-set.
+
+Every `{'--c': ...}` site is affected — drawer stages, timeline bars, board card
+priority dots, `.bc__pdot`. **User-visible effect:** toggling dark mode with a
+drawer or board open leaves those fills painted in the previous theme until
+something remounts.
+
+Not fixed — the fix is a decision (force a remount on theme change, or register
+the property with `@property`, or stop routing themed colour through inline
+custom properties) and it is broader than this drawer. **Recorded, not chosen.**
+
+Worth noting it partially *masked* F14: after a live theme toggle the stage kept
+the light `#5A6270` at 6.15:1 and looked fine. Only a fresh load in dark showed
+the real 2.54:1. A verification that had only toggled the theme would have
+concluded H7 was a false positive.
+
+## F16 — 🟠 The contrast gate failed on three pairs nobody touched — FIXED ✅
+
+`contrast-baseline.json` keyed each accepted pair as `file:line|selector|theme`.
+Adding ten lines of glass to `.modal__panel` moved `.cbx` from 862 to 872 and
+`.av` from 904 to 914, so three untouched pairs re-keyed and reported as **NEW
+failures**. Same selectors, same ratios, same everything.
+
+A gate that fails for a reason unrelated to what it measures gets silenced, and
+the way it gets silenced is `--update-baseline` run as a reflex — which is what
+the note inside the file explicitly warns against. Now keyed
+`file|selector|theme`. Regenerated baseline holds the **same 7 pairs at the same
+7 ratios**; only the line numbers left the keys.
+
+This would have fired on the first UI change of any future session.
+
+## F17 — 🔴 HIGH · `GET /teams` returns 24 teams; `GET /teams/{id}` 403s on 22 of them
+
+Hit as a console error the moment a task drawer opened, then probed
+exhaustively as `KEVAL SHAH` (`user_f798947b8a2e`, `role: admin`,
+`platform_roles: [platform_admin]`, `org_roles: [org_admin]`):
+
+```
+GET /api/teams              -> 200, 24 teams
+GET /api/teams/{id}  x 24   -> 403 "Not a team member" on 22
+                               200 on 2 (Labofab India, AekamInc-UK)
+```
+
+The two that succeed are the ones with a real `team_members` row. **The list is
+org-scoped and the detail is membership-scoped, and they disagree.**
+
+Cause is exact — `server.py:2021-2029`. `get_team` inlines its own two checks
+against `project_assignments` then `team_members`, and never consults
+`staging.user_roles` — the sole tenant path since 2026-07-23 — while the list
+endpoint 15 lines above **does** (`JOIN staging.user_roles ur ... WHERE
+ur.org_id=$1`).
+
+Its two siblings `/teams/{id}/clients` (`:2038`) and `/teams/{id}/members`
+(`:2053`) both call the shared `is_project_member` helper (`:381`), which
+**does** have an admin bypass. `get_team` is the one endpoint in the family that
+does not use the helper, so it alone misses it.
+
+**NOT FIXED — this is yours to decide, and here is why I stopped.** The
+one-line fix is to make `get_team` call `is_project_member` like its siblings.
+But that helper grants on `users.role in ('admin','owner')`, which is the legacy
+**global** role, not an org-scoped one. Applying it would let every such user
+read any team's detail *and its full member list* across org boundaries. I
+cannot confirm from here whether that column is global or effectively
+org-scoped, and getting it wrong leaks one accounting firm's client list to
+another. Two candidate fixes:
+
+- **(a) minimal** — `get_team` calls `is_project_member`. Consistent with the
+  two siblings immediately below it. Inherits whatever blast radius those two
+  already have, which is itself worth auditing.
+- **(b) correct** — gate on `user_roles.org_id` matching the team's org, the
+  same predicate the list endpoint already uses. Larger, but it is the model the
+  tenancy work settled on, and it would make list and detail agree by
+  construction rather than by coincidence.
+
+My recommendation is **(b)**, and the fact that (a) is already live on two
+sibling endpoints is the finding, not the fix.
+
+## Event log — resumed session
+
+*Format: page -> action -> expected -> actual -> console -> network.*
+
+| # | Page | Action | Expected | Actual | Console | Network |
+|---|---|---|---|---|---|---|
+| 19 | `/` | Load, existing session | Redirect to `/dashboard` | Redirected ✓ | clean | 200 |
+| 20 | `/dashboard` | Read platform + glass tokens | `win`, blur 0 | `data-platform=win`, `--glass-blur:0px`, `--glass-alpha:1` ✓ F2 still holds | clean | — |
+| 21 | `/dashboard` | Measure `.side` / `.top` | opaque, no filter | `backdrop-filter:none`, opaque ✓ | clean | — |
+| 22 | `/dashboard` | Landmark check | Distinct names | `region "Alerts"` + `region "New notifications"` — the `193c4fea` rename is live and the collision is gone ✓ | clean | — |
+| 23 | `/tasks` | Load | Real rows | 213 rows, real client data ✓ | clean | 200 |
+| 24 | `/tasks` | Open task `#42ac23` | Drawer opens clean | Drawer opens ✓ **but** 403 on `/teams/team_dfe8420f6fd5` | 🔴 1 error | 403 — F17 |
+| 25 | drawer | Measure `.dr` (light) | glass or opaque | `rgb(250,247,240)` + `backdrop:none` — opaque, H1 confirmed | clean | — |
+| 26 | drawer | Flip `data-theme` to dark, measure stage | Background follows token | 🟠 `--c` flipped, background did **not** — F15 | clean | — |
+| 27 | drawer | Fresh load in dark, measure stage | ≥4.5:1 | 🔴 **2.54:1** — F14 | clean | — |
+| 28 | — | Probe `/teams/{id}` × 24 | List and detail agree | 🔴 22 of 24 are 403 — F17 | 22 errors, all **mine** | 403 ×22 |
+| 29 | drawer | Re-measure after deploy (dark) | ≥4.5:1 | ✅ **6.86:1**, ink `--on-st-todo` | clean | 200 |
+| 30 | drawer | Screenshot pipeline, check pixels | Dark ink on grey | ✅ dark ink rendered, not merely computed | clean | — |
+| 31 | drawer | Simulate non-Windows, measure glass | Reference maths | ✅ `rgba(18,21,26,.933)` + `blur(21.12px) saturate(1.5)` — exactly `+.1` and `×1.6`; nav stays `13.2px/1.3` | clean | — |
+| 32 | drawer | Confirm Windows still inert | No compositing layer | ✅ `backdrop:none` on all overlays; `data-platform` restored to `win` | clean | — |
+
+**Owner's environment left as found:** `k_prefs` restored byte-identical
+(`mode` was the only key touched, twice, both times reverted), `data-platform`
+and `data-theme` restored.
+
+## Still not started this resumption
+
+RBAC remains untouched — no QA org, no account ladder, no passwordless path.
+That is the single largest open item in the brief and it has now survived two
+sessions. The exports, scheduled-report attachments (F11) and list pagination
+(F4) are also still where the first run left them.
