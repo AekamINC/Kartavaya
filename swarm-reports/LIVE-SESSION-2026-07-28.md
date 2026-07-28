@@ -2572,3 +2572,67 @@ no authentication bypass at all.
 `org_owner` and the `vetana` approver cannot be invited by an `org_admin`,
 by design. They need the org owner to issue them — which is itself the control
 working.
+
+---
+
+# RBAC — tested as a real org user at last
+
+The owner accepted the invites and handed over a session token for
+`kevalvshah03+qaadmin@gmail.com` (`user_76cd525348e1`). **No authentication
+bypass was built or needed.**
+
+The identity is the thing that made this work:
+
+```
+org_roles       [{ QA Test Corp, org_admin }]
+platform_roles  []                    <- the crucial part
+is_platform_admin  false
+```
+
+Every earlier probe ran as `platform_admin`, which
+`middleware/subscription.py:120` returns early for on any non-sensitive
+module. This account has no platform row at all, so it hits the real gates.
+
+## Tenancy isolation — HOLDS ✅
+
+```
+GET /v1/graha/contacts   X-Org-Id: <Aekam Inc>  ->  403 "You do not belong to this organisation"
+GET /v1/ganit/invoices   X-Org-Id: <Aekam Inc>  ->  403  (same)
+GET /v1/graha/contacts   (own org)              ->  200  QA Test Corp data
+GET /v1/admin/orgs                              ->  403  names the roles required
+```
+
+**Forging the org-switcher header does not work.** `org_resolver` validates
+membership before honouring `X-Org-Id`, so a QA org_admin cannot reach another
+firm's contacts or invoice ledger by supplying its id. That is the plan's *"an
+org member cannot reach another org's data at all"* requirement, verified.
+
+The platform console refusal is the right shape too — it names the roles that
+would be required rather than a bare 403.
+
+## F27 — the retraction is CONFIRMED. Module gating works. ✅
+
+The test I could not perform as platform staff:
+
+```
+sanvaad   active: false  ->  403 "Module 'sanvaad' is not active.
+                                  Contact your administrator to activate it."
+pahchan   active: false  ->  404  (route not mounted — no shifts endpoint at that path)
+9 active modules         ->  200 with real data on every one
+```
+
+**An inactive module refuses a real org user, with a message that names the
+module and says what to do about it.** My original F27 — *"a module switched off
+is still reachable"* — was entirely an artifact of the platform-staff bypass. The
+retraction was right, and this is the evidence that settles it in the other
+direction rather than merely withdrawing the claim.
+
+Worth noting the message quality: *"Contact your administrator to activate it"*
+tells a member exactly who fixes it. Compare the earlier F30 case where a failed
+scraper said only *"Apify status: FAILED"*.
+
+## Still to test on this account
+
+The **210-route write gate** needs the `ganit viewer` token rather than this
+one — `org_admin` is expected to write, so it cannot demonstrate a refusal.
+The viewer invite is accepted and waiting; one more token finishes it.
