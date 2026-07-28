@@ -2007,3 +2007,57 @@ module and count rendered leaves, including whatever the design comparison meant
 by its extra counts — before reporting coverage as a fraction. A percentage
 against an unverified denominator is the kind of number that reads as rigour and
 is not.
+
+## F28 — 🟠 Prachar tells the user it has 8 tabs and renders 6
+
+Measured while deriving the leaf denominator properly, which is the one
+methodology gap I had flagged for the next session.
+
+```
+Prachar  "ALL TABS · 8"   declared by the page itself
+         6                actually in the DOM
+         0                behind More (no More button exists)
+         11               claimed by the design comparison
+```
+
+**Three sources, three numbers.** Rendered: Dashboard · Campaigns · Ads ·
+Sequences · Templates · Automations. Two of the eight the page promises are not
+there, and there is no overflow control to reach them.
+
+This is not a counting quirk — the `ALL TABS · N` strip is user-facing chrome.
+A user reads *8*, counts *6*, and has no way to find the other two.
+
+**Ganit is the control that makes this a defect rather than a pattern:** it
+declares `ALL TABS · 10` and genuinely has 10 — six visible plus four behind a
+More popover, all walked earlier this session. So the counter is capable of
+being correct, and on Prachar it is not.
+
+Two candidate causes, and they need different fixes:
+
+- **the count is hardcoded** and drifted when tabs were removed or renamed;
+- **two tabs are conditionally rendered** — an entitlement, a feature flag, or an
+  ads-account precondition — and the counter is computed from the full list
+  rather than the permitted one. Given **F26** (`/prachar/ads/accounts` is a
+  500) and **F27** (a deactivated module still renders), a gating bug in this
+  exact area is plausible and worth ruling out first.
+
+**Not diagnosed further** — that needs the tab config source, and this session
+has already withdrawn five findings for being asserted ahead of evidence.
+
+### The denominator, now partly measured
+
+| Module | Design report | Page declares | Rendered | Walked |
+|---|---|---|---|---|
+| Ganit | 10 | 10 | 10 | 10 |
+| Manav | 15 | — | **6** | 6 |
+| Prachar | 11 | **8** | **6** | 6 |
+| Graha | 17 | — | 17 | 17 |
+
+**The design comparison's leaf counts are not reliable** — wrong on Manav by 9
+and on Prachar by 5, correct on Ganit and Graha. The `85` total built from them
+should not be used as a coverage denominator until each module is counted the
+way these four were.
+
+**What is defensible: 66 leaves opened and inspected, across all nine modules,
+with zero console errors except Prachar's F26.** That is measured. The fraction
+is not, and this table is the start of making it so.
