@@ -202,10 +202,17 @@ async def test_pipeline_returns_data_and_a_full_stage_board(
 async def test_customers_returns_a_data_envelope(
     api_client, mock_pool, as_member, with_org_id, vikray_gate,
 ):
+    """The envelope now carries the count too (F4 step b).
+
+    `data` is unchanged and still first — that is what makes the change additive
+    for every existing caller. `total`, `limit` and `truncated` are new siblings
+    so a client can tell a full list from a page: this endpoint caps at 200, and
+    a customer beyond the cap was previously invisible with no signal at all.
+    """
     mock_pool.fetch.return_value = []
 
     resp = await api_client.get("/api/v1/vikray/customers")
-    assert resp.json() == {"data": []}
+    assert resp.json() == {"data": [], "total": 0, "limit": 200, "truncated": False}
 
 
 async def test_customer_search_is_parameterised(

@@ -690,7 +690,11 @@ async def list_customers(
         "COALESCE(SUM(o.total), 0) AS order_value, "
         "MAX(o.order_date) AS last_order_date, "
         "COUNT(*) FILTER (WHERE o.status <> 'closed') AS open_orders, "
-        "COUNT(*) FILTER (WHERE o.invoice_id IS NOT NULL) AS invoiced_orders "
+        "COUNT(*) FILTER (WHERE o.invoice_id IS NOT NULL) AS invoiced_orders, "
+        # After GROUP BY, a window counts GROUPS — customers — not order rows,
+        # which is the number this list is capped on. Getting that backwards
+        # would report the order count as the customer count and look plausible.
+        "COUNT(*) OVER() AS _total "
         "FROM staging.vikray_orders o "
         "LEFT JOIN staging.graha_contacts c ON c.id = o.contact_id AND c.org_id = o.org_id "
         "WHERE o.org_id=$1::uuid AND o.is_active=TRUE AND o.contact_id IS NOT NULL"
@@ -703,8 +707,9 @@ async def list_customers(
         " GROUP BY o.contact_id, c.name, c.company, c.gstin, c.email, c.phone "
         "ORDER BY order_value DESC LIMIT 200"
     )
+
     rows = await pool.fetch(sql, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=200)
 
 
 # ── Stock Ledger ─────────────────────────────────────────────
@@ -782,10 +787,13 @@ async def stock_moves(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT * FROM staging.vikray_stock_moves "
+        "SELECT *, COUNT(*) OVER() AS _total FROM staging.vikray_stock_moves "
         "WHERE org_id=$1::uuid AND product_id=$2::uuid ORDER BY created_at DESC LIMIT 100",
         org_id, product_id,
     )
-    return {"data": [dict(r) for r in rows]}
+    # 100, the tightest cap in the codebase, on a ledger that grows with every
+    # movement. A stock ledger truncated in the middle reads as a complete
+    # history of a shorter period, which is worse than an obviously empty one.
+    return _listed(rows, limit=100)
 
 
