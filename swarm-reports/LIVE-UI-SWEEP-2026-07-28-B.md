@@ -658,6 +658,43 @@ excluded — HSN/SAC code missing on a line"*, naming all eight.
 and not a hard block.** It is present, and as a note rather than a block:
 *"Already included in (A)(5) — shown here as its break-up, not added again."*
 
+## F49 — 🔴 The TDS challan can never be issued, and points at a field that does not exist
+
+Same shape as F42, on a different document.
+
+The ITNS-281 form itself is domain-accurate — correct major heads (`0020`
+company / `0021` non-company), payment types (`200` / `400`), BSR code, challan
+serial, collecting bank, a checkbox to include the 192B salary line from Vetana,
+and live validation naming the exact formats (*"BSR code (seven digits), challan
+serial (five digits)"*). Filled it completely; the validation hint cleared and
+`Download challan` enabled.
+
+Pressing it returns **422**:
+
+> **This TDS challan cannot be issued** — Missing: **TAN**. Set it in
+> **Settings → Organisation → Company Profile**. Nothing has been invented to
+> fill the gap.
+
+**There is no TAN field in Company Profile.** Enumerated it: 20 fields — Legal
+name, Email, Phone, Website, GSTIN, PAN, four address lines, Country, six bank
+fields, Footer note. The word "TAN" does not appear anywhere on the page.
+
+Confirmed three independent ways:
+
+| Evidence | Finding |
+|---|---|
+| The rendered form | 20 fields, **no TAN**, page never mentions it |
+| `org_profile.py` | **no occurrence of "tan"** — not in `_PROFILE_COLUMNS`, no write path |
+| `documents.py:108` | *"TAN has no column. Read it from `settings` if an org has put one there"* |
+
+So a TAN can only exist if someone writes it straight into
+`organisations.settings` as JSON. **No customer can ever produce a TDS challan
+through the product**, and the message sends them to a screen that cannot help.
+
+The refusal itself is excellent — it names the missing field and refuses to
+invent it. The defect is that the remedy it names does not exist, which is
+exactly F42's shape: *create works, correct does not.*
+
 ## The three files agree exactly
 
 | Figure | GSTR-1 JSON | GSTR-3B §3.1 | Tally XML |
