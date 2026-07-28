@@ -28,6 +28,19 @@ Order per the plan: **compare → implement → test**.
    silent-wrong-number class of bug immediately, and does not risk the money
    path this close to handover. **Your call, and I have not started it.**
 
+3. **Apply `PROPOSED_083`** (F5) — four `ALTER COLUMN ... TYPE TEXT` on three
+   empty tables. Until it runs, Graha automations and web forms cannot be
+   created at all. Free now, progressively less so once those tables hold rows.
+   I wrote it but did not apply it: migrations are yours by the session rules.
+
+4. **A live-vs-migrations schema diff for the nine tables migration 081
+   created** (F7). `081_APPLIED_cloud_schema_catchup.sql` contains **no SQL** —
+   it is 64 lines of comments — so what actually ran on 2026-07-27 has no
+   artifact in the repo and the live schema cannot be reviewed from source. One
+   missing column is already confirmed (`graha_inbound_emails.contact_id`, a
+   hard 500). I cannot enumerate the rest: direct database access is forbidden
+   this session, so I found that one by probing endpoints until one failed.
+
 ---
 
 ## Findings
@@ -187,6 +200,132 @@ the cap, exactly as the Graha "199" is — so this produces confidently displaye
 incorrect numbers, not just missing rows.
 
 **Not yet fixed** — see the decision note at the top of this file.
+
+### F5 — 🔴 HIGH · The 081 catch-up tables reject this app's user ids
+
+**Predicted by the plan, and it happened on the first write.** `graha_automations`
+had never held a row; creating one from the UI returns a 500.
+
+```
+asyncpg.exceptions.DataError: invalid input for query argument $7:
+'user_f798947b8a2e' (invalid UUID 'user_f798947b8a2e':
+ length must be between 32..36 characters, got 17)
+```
+
+User ids in this system are `user_` + 12 hex = 17 characters. They have never
+been UUIDs. But migration 081 created its tables from migrations 023/024/059
+verbatim, and those files declare the user-reference columns `UUID`.
+
+The control that isolates it:
+
+| Request | Table created | Result |
+|---|---|---|
+| `POST /graha/deals` | before 081 | **200** — same binding, same user id |
+| `POST /graha/automations` | by 081 | **500** DataError |
+| `POST /graha/web-forms` | by 081 | 500, but *disguised* — see F6 |
+| `POST /graha/territories` | by 081 | **200** — no user column, first row ever written ✓ |
+
+`041_helpdesk_tickets.sql` declares `created_by TEXT`, which settles which side
+is right: **TEXT is the convention and the `UUID` declarations are stale.** The
+migration files had drifted from the live schema well before 081, and 081
+reproduced the stale declaration faithfully.
+
+Four columns, all on empty tables: `graha_automations.created_by`,
+`graha_web_forms.created_by`, `graha_contact_merges.actor_id` and `.undone_by`.
+
+Written as **`backend/migrations/PROPOSED_083_catchup_tables_created_by_type.sql`**
+and **deliberately not applied** — migrations are the owner's call. It is a
+four-line `ALTER`, free to run while the tables are empty and progressively less
+so afterwards.
+
+**Why the browser blamed CORS.** The 500 escapes before `CORSMiddleware` attaches
+its headers, so the console reports *"No 'Access-Control-Allow-Origin' header"*
+and the network tab shows `net::ERR_FAILED`. Anyone debugging from the browser
+alone would chase a CORS misconfiguration that does not exist. Worth knowing as a
+general rule for this stack: **a CORS error on an endpoint whose GET works is a
+server exception, not a CORS problem.**
+
+Also seen: **one click produced four POST attempts.** The client retries a failed
+mutation. On a create that is a duplicate-row risk the moment the underlying
+error is intermittent rather than deterministic.
+
+### F6 — 🔴 HIGH · Four handlers reported every failure as "already exists" — FIXED ✅
+
+`POST /graha/web-forms` returned **409 "A form with this slug already exists"**
+against a table with **zero rows**.
+
+```python
+# graha.py:2374, before
+except Exception:
+    raise HTTPException(409, "A form with this slug already exists")
+```
+
+A bare `except Exception` caught the F5 `DataError` and relabelled it. This is
+worse than the raw 500 in F5: the 500 is merely unhelpful, whereas this message
+is confidently wrong and sends you looking for a duplicate that cannot exist.
+
+Three siblings did the same — `graha.py:1140` (labels), `:1188` (contact labels),
+`:2300` (custom fields). The contact-labels one already used
+`ON CONFLICT DO NOTHING`, so a unique violation was the one error it could never
+see, and its "Could not add label" was therefore always about something else.
+
+Fixed in `50134fef`: each now catches only what it names —
+`UniqueViolationError` for the three "already exists" cases and
+`ForeignKeyViolationError` for "Could not add label". Everything else propagates
+and is logged as the 500 it is.
+
+**Verified live after deploy:** `POST /web-forms` no longer returns the false
+409; it now surfaces the real underlying error, which is F5. That is the correct
+behaviour and it is what made F5 provable on that endpoint. 48 Graha backend
+tests pass.
+
+### F7 — 🔴 HIGH · `graha_inbound_emails` is missing `contact_id`, and 081 has no SQL
+
+`GET /api/v1/graha/inbound-emails` → **500**
+
+```
+asyncpg.exceptions.UndefinedColumnError: column "contact_id" does not exist
+```
+
+Migration 081's header states this table was *"referenced by live code and
+present in NO schema, local or cloud, and in no migration"*, and derived its
+columns from the INSERT at `graha.py:1490`:
+`(org_id, sender, subject, body_text, parsed_data, status)`.
+
+**That premise is wrong.** The table is fully defined at
+`022_crm_phase0.sql:34`, including `contact_id UUID REFERENCES graha_contacts(id)`.
+The INSERT simply never sets `contact_id` — two *other* statements do
+(`graha.py:1526` and `:1550`), and the list query selects it. Deriving the shape
+from one statement lost a column that three others need.
+
+Broken as a result: the list endpoint (confirmed 500), and both UPDATE paths that
+link a parsed lead email to its contact — i.e. **the inbound-lead feature fails
+at the point it does its actual job.**
+
+**Three of the five "schema-less" tables were already defined in migrations:**
+
+| Table | 081 says | Reality |
+|---|---|---|
+| `graha_inbound_emails` | no schema anywhere | `022_crm_phase0.sql:34` — **column lost** |
+| `hub_oauth_states` | no schema anywhere | `022_crm_phase0.sql` |
+| `graha_tickets` | no schema anywhere | `041_helpdesk_tickets.sql:2` |
+| `projects` | no schema anywhere | correct — genuinely absent |
+| `approval_requests` | no schema anywhere | correct — genuinely absent |
+
+I probed `graha_tickets` through `POST /dristi/query {source:"tickets"}` → 200,
+so that one is adequate for its reader despite the derivation.
+
+**The structural problem behind all of it:**
+`081_APPLIED_cloud_schema_catchup.sql` is **64 lines and contains no SQL** — it
+is entirely comments. The DDL that actually ran against the live database on
+2026-07-27 has **no artifact in this repo**. So the live schema cannot be
+reproduced, reviewed, or diffed from source control, and the only reason we know
+`contact_id` is missing is that a request 500'd.
+
+**Recommended, and needing the owner:** run a live-vs-migrations schema diff for
+the nine tables 081 created, rather than discovering the remaining gaps one 500
+at a time. I could not do this myself — the session forbids direct database
+access, which is why F7 was found by probing endpoints instead.
 
 ---
 
