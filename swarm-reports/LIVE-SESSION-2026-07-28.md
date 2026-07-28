@@ -1733,3 +1733,47 @@ focus restoration.
 **Zero console errors and zero error states across all 48.** Every leaf rendered
 real content or a purposeful empty state — the distinction the brief draws when
 it says a 200 rendering an empty table is still a bug.
+
+## F26 — 🔴 HIGH · `/v1/prachar/ads/accounts` is a 500 on every Prachar load
+
+Prachar is the **first module in this sweep to produce console errors** — 8 of
+them across the walk, 4 identical pairs:
+
+```
+Access to XMLHttpRequest at '…/api/v1/prachar/ads/accounts'
+  blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present
+Failed to load resource: net::ERR_FAILED
+```
+
+**It is not CORS.** This session's own earlier note records the trap: *"a CORS
+error on an endpoint whose GET works is a server exception, not CORS — the 500
+escapes before CORSMiddleware attaches headers. This misled the debugging
+twice."*
+
+Proven with a control, same origin, same bearer token, same router prefix:
+
+| Endpoint | Result |
+|---|---|
+| `/v1/prachar/ads/accounts` | **throws** `TypeError: Failed to fetch` — no status at all |
+| `/v1/prachar/campaigns` | 200, real data (*Q3 Onboarding Campaign*) |
+| `/v1/prachar/templates` | 200, real data (*Welcome Email*) |
+
+Two siblings answer normally and this one dies before any header is attached.
+A 4xx would return a status; only an unhandled exception produces this shape.
+
+**Impact:** it fires on **every** Prachar page load, not on a user action —
+4 loads in my walk produced 4 failures. The Ads tab renders its shell and then
+shows *"…appear here once the platform answers"*, so the page looks merely empty
+rather than broken, and the failure is visible only in the console. That is the
+worst combination: permanently broken, and permanently quiet.
+
+`routers/prachar_ads.py` is the router (prefix `/api/v1/prachar/ads`), added
+by the Prachar ad-insights build. **Not diagnosed further** — the exception text
+is in the Railway logs for the `Kartavya` staging service and reading it is
+the next step; guessing at the cause from here would be the third false finding
+of the session rather than the fourth confirmed one.
+
+**Prachar: 6 of 11 leaves walked**, 6 distinct character counts, 0 error states
+— the module *looks* healthy and is not.
+
+**Running total: 54 of 85 leaves.**
