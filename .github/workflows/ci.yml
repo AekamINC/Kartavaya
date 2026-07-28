@@ -5,8 +5,38 @@ on:
   # `[main, staging, feat/**]`, so work on fix/**, salvage/**, audit/** and the
   # agent/** branches — which is where most changes are actually written — ran
   # no checks at all until they were already merged into staging.
+  #
+  # Kept wide. What was burning the minutes was not the branch coverage, it was
+  # running the full backend AND frontend suites for commits that cannot
+  # possibly break either — see paths-ignore.
   push:
+    paths-ignore:
+      - '**.md'
+      - 'swarm-reports/**'
+      - 'design-handover/**'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - 'swarm-reports/**'
+      - 'design-handover/**'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+
+# One run per branch. A push that supersedes an earlier one cancels it rather
+# than letting both finish.
+#
+# This is the change that matters for agent sessions: they are instructed to
+# commit as they work, so several pushes land within a couple of minutes and
+# every superseded run was being paid for in full. Cancelling is safe here
+# because only the newest commit's result means anything — nobody merges on the
+# strength of a run against a commit that has already been replaced.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ── Backend: import smoke + unit tests ──────────────────────────────────────
