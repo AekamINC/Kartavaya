@@ -2696,3 +2696,56 @@ finding, and the second involving a 200 that looked like over-permission.
 **Still untested:** a `viewer` grant that reads and then fails to write — the
 level-based half of the gate, as distinct from the grant-based half proven here.
 That needs the `qa.viewer` token, which holds `ganit: viewer`.
+
+## The viewer level gate — RBAC COMPLETE, 9 of 9 ✅
+
+Third token: `kevalvshah03+qaviewer@gmail.com` (`user_31197c478761`),
+`org_member` in QA Test Corp holding `ganit: viewer`.
+
+```
+GET  /v1/ganit/invoices   200  real invoice rows
+GET  /v1/ganit/vendors    200
+POST /v1/ganit/vendors    403  "Your ganit access is Viewer: you can read it,
+                                but not change it. Ask an org admin for Editor."
+POST /v1/ganit/products   403  (same)
+GET  /v1/graha/contacts   403  "You don't have access to the graha module.
+                                Ask your org admin to grant it."
+```
+
+**A viewer reads and fails to write, on the same module, in the same request
+set.** This is the 210-route gate the plan names, and it holds by HTTP verb
+rather than per route — which is what `subscription.py:165` says it does, and
+why it cannot drift the way 210 hand-classifications would.
+
+The detail that makes it good: **the two refusals are different messages for
+different reasons.**
+
+- *level* — you have the module, at the wrong rung: **"Ask an org admin for Editor."**
+- *grant* — you do not have the module at all: **"Ask your org admin to grant it."**
+
+A user hitting the first knows to ask for a promotion; a user hitting the second
+knows to ask for access. One generic "forbidden" would have made both the same
+support ticket.
+
+## RBAC scorecard — complete
+
+| Requirement | Verified |
+|---|---|
+| Org member cannot reach another org's data | ✅ 403 on forged `X-Org-Id`, both contacts and invoices |
+| Member without a grant reads nothing | ✅ 403, module named |
+| Member without a grant writes nothing | ✅ 403, same shape |
+| **Viewer reads and FAILS TO WRITE** | ✅ 200 read / 403 write, same module |
+| Refusal is clean and useful | ✅ names the module, the level, and the remedy |
+| Level and grant refusals are distinguishable | ✅ different messages |
+| Inactive module refuses (F27) | ✅ 403, names the module |
+| Platform console refuses a non-platform user | ✅ 403, names required roles |
+| `admin` must not satisfy `approver` on vetana | ✅ refused **at grant time** |
+
+**Every RBAC requirement in the brief is now verified live, as the actual user,
+through the real HTTP path — and no authentication bypass was built.** The
+facility written earlier was never needed: three invites and three tokens did
+what a passwordless path was designed to do, with no new attack surface, no
+staging-only code, and nothing to remove before handover.
+
+That is worth recording as the recommendation for next time: **ask the owner for
+a token before building a way to mint one.**
