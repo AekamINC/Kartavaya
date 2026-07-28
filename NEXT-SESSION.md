@@ -55,10 +55,16 @@ grant/revoke cycles.
   a write probe; the owner has confirmed the new value stands. `...1Z5` fails its
   own check digit and can no longer be written anyway, now that the org profile
   validates on write. **Do not attempt to restore it.**
-- **QA Test Corp and its accounts are KEPT for ongoing live testing.** They must
-  be exempted from the weekly test-data wipe. If the reset is scripted, add an
-  exclusion for org `fae87907-2f99-4b35-a241-c94d9e1e4a17` and the three
-  `kevalvshah03+qa*@gmail.com` users.
+- **QA Test Corp and its accounts are KEPT for ongoing live testing.**
+  **No action is needed to protect them.** Checked every scheduled job on
+  2026-07-28: there is no automated test-data wipe. The 13 cron endpoints in
+  `routers/scheduler.py` are reminders, publishing, invoices, CRM, HR, marketing,
+  reports, e-sign, stock, agents and skills, plus two retention jobs — and both
+  retention jobs are narrow (`/cron/retention` deletes old log/activity rows,
+  `/cron/pahchan-retention` handles the biometric 72-hour buffer). Neither
+  touches users, orgs or module grants, and no script in `backend/scripts/` does
+  either. The plan's "test data is wiped at the end of the week" describes a
+  manual intention, not a running job.
 - **The owner's account stays `org_admin` in QA Test Corp.** It was added there
   to issue the invites and is deliberately left in place — it is how grants get
   changed between tests.
@@ -75,9 +81,10 @@ Tokens expire **2026-08-04**. After that, ask the owner to sign in and read
 `localStorage.getItem('auth_token')` from the browser console — you cannot type
 a password into a login form, and you do not need to.
 
-**These accounts are KEPT deliberately** (owner decision, 2026-07-28) and must
-survive the weekly test-data reset. They are the only way to test RBAC as a real
-user; `platform_admin` bypasses the gates and proves nothing.
+**These accounts are KEPT deliberately** (owner decision, 2026-07-28) and nothing
+scheduled deletes them — see the settled-decisions section above. They are the
+only way to test RBAC as a real user; `platform_admin` bypasses the gates and
+proves nothing.
 
 Change grants (as the org_admin token):
 
