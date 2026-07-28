@@ -16,9 +16,13 @@ how this session ran. Worth recording, because the same profile is how the next
 session gets in without the owner doing anything — and if it is ever cleared,
 tokens genuinely do become blocking.
 
-**Still blocked:** `qamember` and `qaviewer` sessions. F32 and F33 are defined by
-what those two roles see, and I cannot become them — that needs their tokens, or
-their sessions loaded into this profile.
+**Resolved mid-session:** the owner supplied all three tokens, so `qaviewer` and
+`qamember` were both driven live in the browser. F32 and F33 are verified as the
+actual users — see the RBAC section. Tokens expire **2026-08-04**.
+
+**Fixture left as found:** `qaviewer`'s `ganit` grant was added for the F33 test
+and **revoked afterwards** (`modules: []`, 200). The browser profile is signed
+back in as `qaadmin`.
 
 ---
 
@@ -258,9 +262,16 @@ Approvals, Activity, Inbox, Teams, Templates, Categories; Graha tabs past
 Contacts; every detail drawer and edit form outside Ganit; downloads (invoice
 PDF, payslip, Tally XML, CSV exports); scrapers; AI/skills; notifications.
 
-**No role other than `org_admin` has been exercised this session** — so F32 and
-F33 remain unverified live, though F33's root cause is fixed in code (below).
-That gap is not a choice: it needs the `qamember`/`qaviewer` sessions.
+Then, once the tokens arrived:
+
+| Surface | Role | Events | Result |
+|---|---|---|---|
+| sidebar after `ganit` grant | `ganit: viewer` | ~4 | **F33 fixed, verified** |
+| `/ganit` list + create form + full invoice + submit | `ganit: viewer` | ~10 | **F32 reproduced**, F41 found |
+| sidebar with no grants | grantless member | ~3 | correct — Payroll absent |
+| `/vetana` → Run payroll → tab → month → Process → modal → Cancel | grantless member | ~8 | **F32 escalation chain** |
+
+**~145 events total**, across three roles.
 
 ## F33 — root cause found and fixed (code), NOT yet verified live
 
@@ -287,7 +298,87 @@ Removed, with the reasoning in place so it is not reinstated.
 
 **This needs the `qaviewer` token to confirm live.**
 
-## F32 — diagnosed, not fixed
+---
+
+# RBAC verified live — the owner supplied all three tokens
+
+## F33 — ✅ VERIFIED FIXED, in the browser, as the user
+
+Granted `ganit: viewer` to `qaviewer`, loaded that session, reloaded the app.
+Signed in as **`Kev Ganit · Member · QA Test Corp`**:
+
+| | Before (2026-07-28 session A) | After the fix |
+|---|---|---|
+| Sidebar sections | WORKSPACE · OPERATIONS · TEAM · SETTINGS | WORKSPACE · OPERATIONS · TEAM · **REVENUE** · SETTINGS |
+| Finance entry | **absent** | **present** — `Finance गणित` |
+| `/auth/me` `module_grants` | `[]` | `["ganit"]` |
+
+And correctly **only** Finance under REVENUE — not CRM or Sales, which this user
+does not hold — with `Roles & access` and `Organisation` still hidden because
+they are `orgAdminOnly`. The nav now shows exactly what the API honours.
+
+## F32 — ✅ REPRODUCED LIVE on both modules, and it is worse than reported
+
+### As `ganit: viewer`
+
+`+ Invoice` and `+ New invoice` both render, **both enabled**, no tooltip, no
+disabled state. I opened the form and composed a complete invoice — customer,
+place of supply, description, 3 × ₹25,000 — watched the live preview compute
+**Subtotal ₹75,000 / Total ₹88,500**, and pressed **Create invoice**:
+
+> ✕ **Your ganit access is Viewer: you can read it, but not change it. Ask an
+> org admin for Editor.**
+
+**Two corrections to the session-A account of this finding:**
+
+1. **The typed data is NOT lost.** Session A said *"Everything typed is lost"*.
+   It is not — the form is retained after the refusal, so the work survives.
+   That lowers the severity from "destroys work" to "wastes it".
+2. **`/v1/org/modules` was never the mechanism** for F33 — see above.
+
+### As `org_member` with ZERO grants — the sharpest evidence
+
+`/vetana` renders **`Run payroll`, enabled**, to a member with no Vetana grant.
+No salary figures leak (verified: no `₹` anywhere on the page) and the refusal
+text is genuinely the best in the product.
+
+**But the page header and the nav disagree from the same data.** Payroll is
+correctly **absent from this member's sidebar** — `canSeeNavItem` consults
+`module_grants` and gets it right — while the page shell, ten pixels away,
+offers the button that executes payroll. That is F32 in one sentence: *the
+information is already on the client and one of the two consumers ignores it.*
+
+**And clicking it escalates.** `Run payroll` → switches to the Payroll tab →
+month picker → `Process payroll` → a **confirmation modal**:
+
+> *"Process payroll for June 2026? This writes a payslip for every employee with
+> a salary structure, and **emails each of them their payslip with the PDF
+> attached**. Running the same month again deletes and rebuilds its payslips,
+> which sends that email a second time."*
+
+**Four steps deep, all offered to a member with no grant at all**, ending at a
+`Process and email` button.
+
+**I did not press it.** It is an irreversible outbound action that would mail
+payslips to real addresses, and F32 is fully established without it. The API is
+expected to refuse (session A verified `POST` → 403), but "a previous session's
+probe says so" is not a reason to fire payroll emails. `Cancel` closed the modal
+cleanly.
+
+## F41 — 🟠 A viewer is told "You can still create the invoice"
+
+On the same viewer create-form, the customer dropdown fails to populate — the
+viewer holds `ganit` but not `graha`, so the contacts fetch 403s. The message:
+
+> ✕ **Could not load customers** — *"You can still create the invoice — pick the
+> customer later."*
+
+**False twice over.** This user cannot create *any* invoice, and a customer is
+not optional on a tax invoice — the GST Filing tab refuses to export exactly the
+invoices that lack one (F34). The reassurance actively encourages the user to
+spend more effort on something that cannot succeed.
+
+## F32 — the fix, diagnosed but not written
 
 Write affordances render from the page shell because **the client has no level to
 consult**. `_module_grants` returns module **codes only**; there is no level
