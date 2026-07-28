@@ -1331,3 +1331,41 @@ manufactures a defect that does not exist.
 **Module tabs are not in the URL** either — the active tab reads `/ganit` with
 no query param, the same class of gap as M10 on the drawer. A link to a module
 always opens on its first tab.
+
+## Sweep — scrapers, e-sign, payroll, notifications (read paths)
+
+Router prefixes read from source first this time, rather than guessed.
+
+| Endpoint | Status | What came back |
+|---|---|---|
+| `/v1/scrapers/catalog` | 200 | **22 entries**, real (Amazon India products, etc.) |
+| `/v1/scrapers/runs` | 200 | empty — no run has been executed |
+| `/v1/esign/documents` | 200 | empty, valid envelope |
+| `/v1/vetana/salary-structures` | 200 | real row |
+| `/v1/manav/employees` | 200 | real row, synthetic (`amit@qatest.com`) |
+| `/notifications` | 200 | **35 real notifications** |
+
+No 5xx anywhere.
+
+### The margin check passes — `cost_usd` is absent from tenant responses ✅
+
+The plan is specific that this must be read from the **live JSON, not the source
+allow-list**, because beside `billed_inr` a provider cost gives away the margin
+by subtraction. Searched the RAW response text so a nested or renamed field
+would still be caught:
+
+```
+cost_usd        absent
+any *usd* key   absent
+margin          absent
+provider_cost / apify_cost / unit_cost   absent
+```
+
+The catalog exposes `price_inr` — what the tenant pays — and nothing about what
+it costs to serve. Entry keys are exactly: `id · name · description · icon ·
+category · input_schema · price_inr · max_results · result_columns · is_active`.
+
+**Caveat, stated rather than glossed:** `/runs` is empty, so the run-shaped
+response has no rows to leak yet. The check is strong for the catalog and only
+structural for runs. Executing a real scraper run would close that, and spend is
+authorised — not done this session.
