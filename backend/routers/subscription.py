@@ -538,7 +538,28 @@ async def cost_report(
         "period_start": start.isoformat(),
         "period_end": date.today().isoformat(),
         "plan_credits": plan_credits,
-        "current_balance": max(0, plan_credits - total_used),
+        # The WALLET is the balance. It is fetched thirty lines above and was
+        # used only for `last_reset`, while this field was derived as
+        # `plan_credits - total_used` — a different number that nothing enforces.
+        #
+        # Measured live on staging 2026-07-28: this reported `current_balance`
+        # 2000 while `POST /v1/scrapers/run` refused the same org with
+        # "Insufficient credits. Need 2, have 0". Every debit path reads
+        # `staging.hub_org_credits.balance` (scrapers.py:138, ai_router.py:713,
+        # hub.py:1588); this report read none of them, so a customer was shown
+        # 2000 spendable credits they did not have.
+        #
+        # The derived figure could not be right, for two independent reasons:
+        # `total_used` counts only transactions inside the reporting window, so
+        # the number drifts UP as older spend falls out of a 30d period; and a
+        # top-up or admin adjustment moves the wallet without writing a debit
+        # here at all.
+        #
+        # The fallback keeps the previous behaviour for an org with no wallet
+        # row, which is the only case with nothing better to report.
+        "current_balance": (
+            wallet["balance"] if wallet is not None else max(0, plan_credits - total_used)
+        ),
         "last_reset": wallet["credits_reset_at"].isoformat() if wallet and wallet["credits_reset_at"] else None,
         "ai_credits_used": ai_credits,
         "scraper_credits_used": scraper_credits,
@@ -626,7 +647,12 @@ async def cost_report_pdf(
         "period_start": start.isoformat(),
         "period_end": date.today().isoformat(),
         "plan_credits": plan_credits,
-        "current_balance": max(0, plan_credits - total_used),
+        # Same fix as the JSON report above, and the same reason — this handler
+        # also fetched `wallet` and then never used it. Left divergent, the PDF
+        # a customer files would disagree with the screen it was generated from.
+        "current_balance": (
+            wallet["balance"] if wallet is not None else max(0, plan_credits - total_used)
+        ),
         "ai_credits_used": ai_credits,
         "scraper_credits_used": scraper_credits,
         "total_credits_used": total_used,
