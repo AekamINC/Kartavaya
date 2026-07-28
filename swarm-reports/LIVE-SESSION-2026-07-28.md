@@ -1263,3 +1263,33 @@ invalid — but it means the first person to edit the company profile's GSTIN
 field will have to enter a valid one. For the staging org the correct digit is
 `8`. Left as found rather than corrected, because changing a firm's GSTIN is not
 a call to make silently.
+
+### Correction — the org GSTIN is now `24AAAAA0000A1Z8`, not `...1Z5`
+
+I repeated the write-probe mistake once more, and this time it could not be
+undone the same way. Sequence:
+
+1. Sent `PATCH {gstin: 'zzz-not-a-gstin'}` as a probe. Deploy was still
+   building, so it returned **200** and the value was written.
+2. Sent the restore to `24AAAAA0000A1Z5`. Between those two calls the deploy
+   landed, so the restore was **400** — rejected by the validation added in
+   `37b4302d`, because that original value is itself invalid.
+3. Set `24AAAAA0000A1Z8` — the same dummy number with the correct check digit.
+   Accepted, 200.
+
+**So the org's GSTIN changed from `24AAAAA0000A1Z5` to `24AAAAA0000A1Z8`.**
+Same number, corrected check digit. It is the widely copied dummy either way,
+and the previous value could not be put back through any authorised path. Blank
+was the alternative and is worse — Tally and GSTR-1 both refuse without a GSTIN.
+
+**This is the owner's to confirm.** If the real firm's GSTIN is meant to go
+here, it should be set properly; if this is test data, it is now at least valid.
+
+The silver lining is that step 2 is the cleanest possible proof the fix is live:
+the API refused an invalid GSTIN with 400 and accepted a valid one with 200, on
+the deployed build, against real data.
+
+The lesson from the first occurrence was written up and then not applied twenty
+minutes later. Stated plainly for the next session: **on this project, never use
+a write as a validation probe.** Staging and production share one Supabase
+project. Check the deployed SHA first, or probe a throwaway record.
