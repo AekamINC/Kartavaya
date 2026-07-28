@@ -112,12 +112,85 @@ async def test_get_team_detail(api_client, mock_pool, as_admin):
     assert "team" in data or "team_id" in data
 
 
-async def test_get_team_not_found(api_client, mock_pool, as_admin):
-    """When project_assignments and team_members both miss → 403 (not a member)."""
+async def test_get_team_not_found(api_client, mock_pool, as_admin, monkeypatch):
+    """Both membership tables miss AND the team is not org-visible → 403."""
+    import server
+
+    async def no_teams(pool, user_id, *a, **kw):
+        return []
+
+    monkeypatch.setattr(server, "get_visible_team_ids", no_teams)
     mock_pool.fetchrow.return_value = None
     resp = await api_client.get("/api/teams/team_missing")
     # endpoint returns 403 "Not a team member" when no membership found
     assert resp.status_code == 403
+
+
+async def test_get_team_org_visible_without_membership_row(
+    api_client, mock_pool, as_admin, monkeypatch
+):
+    """An org admin with no membership row still reads the team.
+
+    Regression test for the live defect measured on staging 2026-07-28: GET
+    /teams listed 24 teams and GET /teams/{id} refused 22 of them, because the
+    list was org-scoped through user_roles and the detail was scoped to
+    membership rows only. The two endpoints must answer the same question, so
+    this asserts the detail honours the list's own visibility helper.
+    """
+    import server
+
+    async def visible(pool, user_id, *a, **kw):
+        return ["team_001"]
+
+    monkeypatch.setattr(server, "get_visible_team_ids", visible)
+
+    async def fetchrow_side(query, *args):
+        # neither membership table has a row for this caller
+        if "project_assignments" in query:
+            return None
+        if "team_members" in query and "SELECT role" in query:
+            return None
+        if "FROM teams WHERE team_id" in query:
+            return TEAM_ROW
+        return None
+
+    mock_pool.fetchrow.side_effect = fetchrow_side
+    mock_pool.fetch.return_value = []
+    resp = await api_client.get("/api/teams/team_001")
+    assert resp.status_code == 200
+    # org-level access reports the same synthetic role is_project_member uses,
+    # so the frontend needs no new branch for it
+    assert resp.json()["your_role"] == "admin"
+
+
+async def test_get_team_membership_row_still_wins(
+    api_client, mock_pool, as_admin, monkeypatch
+):
+    """A real membership row is used verbatim and does not consult visibility.
+
+    Guards the ordering: if the visibility check ran first, every member would
+    be reported as `admin` and the drawer would show owner-only controls to a
+    client.
+    """
+    import server
+
+    async def boom(pool, user_id, *a, **kw):
+        raise AssertionError("visibility must not be consulted when a row exists")
+
+    monkeypatch.setattr(server, "get_visible_team_ids", boom)
+
+    async def fetchrow_side(query, *args):
+        if "project_assignments" in query:
+            return {"role": "client"}
+        if "FROM teams WHERE team_id" in query:
+            return TEAM_ROW
+        return None
+
+    mock_pool.fetchrow.side_effect = fetchrow_side
+    mock_pool.fetch.return_value = []
+    resp = await api_client.get("/api/teams/team_001")
+    assert resp.status_code == 200
+    assert resp.json()["your_role"] == "client"
 
 
 # ── DELETE /api/teams/{team_id} ───────────────────────────────────────────────

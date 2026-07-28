@@ -2024,9 +2024,33 @@ async def get_team(team_id:str,pool=Depends(get_db),user=Depends(require_user)):
     # Check project_assignments first, fall back to team_members
     mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
     if not mem:
-        tm=await pool.fetchrow("SELECT role FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'",team_id,user["user_id"])
-        if not tm: raise HTTPException(403,_NOT_TEAM_MEMBER)
-        mem=tm
+        mem=await pool.fetchrow("SELECT role FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'",team_id,user["user_id"])
+    if not mem:
+        # No membership row of either kind. Before refusing, ask the SAME
+        # question GET /teams asks, via the same helper — otherwise list and
+        # detail answer differently and the UI contradicts itself.
+        #
+        # They did. Measured live on staging 2026-07-28 as an org_admin:
+        # GET /teams returned 24 teams and GET /teams/{id} returned 403 on 22
+        # of them, because the list is org-scoped through user_roles and this
+        # handler was scoped to membership rows only. Opening any task whose
+        # project the caller does not personally belong to logged a 403.
+        #
+        # get_visible_team_ids is the right predicate rather than
+        # is_project_member: its authority is staging.user_roles, and it holds
+        # an org admin to teams inside THEIR org. is_project_member still keys
+        # its bypass on the legacy users.role column, which line 348 above
+        # records as untrusted because it rode in the JWT and outlived the flag
+        # being revoked. Using it here would have granted cross-org reads.
+        #
+        # The call is request-cached, and on this path the list endpoint has
+        # usually already primed it, so it costs no extra query.
+        if team_id not in await get_visible_team_ids(pool,user["user_id"]):
+            raise HTTPException(403,_NOT_TEAM_MEMBER)
+        # Visible without a membership row means org-level access. "admin" is
+        # the label is_project_member already synthesises for that case, so the
+        # frontend's your_role handling needs no new branch.
+        mem={"role":"admin"}
     team=await pool.fetchrow("SELECT * FROM teams WHERE team_id=$1",team_id)
     members=await pool.fetch("""
         SELECT tm.*,COALESCE(u.full_name,u.name,u.email) AS display_name,
