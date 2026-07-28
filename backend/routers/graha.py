@@ -1058,7 +1058,7 @@ async def list_follow_ups(
         "SELECT f.id, f.title, f.description, f.due_at, f.remind_at, "
         "f.is_completed, f.completed_at, f.assigned_to, f.contact_id, f.deal_id, "
         "f.created_by, f.created_at, "
-        "c.name as contact_name, d.title as deal_title "
+        "c.name as contact_name, d.title as deal_title, COUNT(*) OVER() AS _total "
         "FROM staging.graha_follow_ups f "
         "LEFT JOIN staging.graha_contacts c ON c.id = f.contact_id "
         "LEFT JOIN staging.graha_deals d ON d.id = f.deal_id "
@@ -1091,7 +1091,7 @@ async def list_follow_ups(
 
     query += "ORDER BY f.due_at ASC LIMIT 200"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=200)
 
 
 @router.post("/follow-ups")
@@ -2640,7 +2640,7 @@ async def list_approval_requests(
 ):
     pool = await get_pool()
     q = (
-        "SELECT ar.*, ru.threshold_amount, ru.approver_role "
+        "SELECT ar.*, ru.threshold_amount, ru.approver_role, COUNT(*) OVER() AS _total "
         "FROM staging.graha_approval_requests ar "
         "JOIN staging.graha_approval_rules ru ON ru.id = ar.rule_id "
         "WHERE ar.org_id=$1::uuid"
@@ -2654,7 +2654,7 @@ async def list_approval_requests(
         q += f" AND ar.entity_type=${len(params)}"
     q += " ORDER BY ar.created_at DESC LIMIT 200"
     rows = await pool.fetch(q, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=200)
 
 
 @router.post("/approval-requests/{req_id}/approve")
