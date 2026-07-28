@@ -2167,3 +2167,46 @@ count (a different selector family).
 
 Six findings withdrawn this session. This is the only one that reached the report
 before being caught, and it is the one worth remembering.
+
+## H7 — CONFIRMED live. A Vikray order cannot be sent to anyone.
+
+Opened `SO-2026-0001`'s detail drawer and enumerated every control in it.
+
+```
+.dr.vkd  ->  ×  ·  Draft · Confirmed · Dispatched · Delivered · Closed
+             Mark dispatched  ·  Generate invoice  ·  Cancel order
+```
+
+**WhatsApp: absent. Email: absent. SMS: absent. Copy link: absent. PDF/print:
+absent.** The drawer moves the order through its lifecycle and mints an invoice,
+and offers no way to put it in front of the customer.
+
+The design comparison's H7 said exactly this — the reference gives a quote or
+order **WhatsApp · Email · SMS link · Copy link**, under the heading *"WhatsApp
+first — how Indian SMEs actually transact"* — and it is now verified rather than
+read. Worth restating why it stings: `pages/ganit/_shared.jsx:42-77` **already
+exports** `waLink()` and `waInvoiceText()`. Ganit sends invoices over
+WhatsApp today. Vikray simply does not import them.
+
+Note also **`Generate invoice`** is present, which is the other half of the
+"Ganit dead link" item: the link does not exist in the direction the brief
+assumed — Vikray mints an invoice and offers no route to the invoice it just
+created.
+
+### Method note — this nearly went the wrong way
+
+My first probe read `document.querySelector('main')` and reported the drawer as
+not open and every affordance absent. **Both wrong.** The drawer is portaled
+outside `<main>` (`.dr` is `position: fixed` on the body), exactly as the
+task drawer is.
+
+The finding is correct, but the first measurement would have produced the right
+answer for the wrong reason — and had the drawer *contained* a WhatsApp button, I
+would have reported its absence. Same failure family as the retracted F28:
+**querying the wrong container returns an empty set that reads exactly like an
+absent feature.**
+
+What saved it was a real Playwright click erroring with a strict-mode violation
+that named three matching nodes — `.vko__id`, `.dr__crumb-t`, `.vkd__num` —
+which proved the drawer *was* open. A tool that fails loudly beat a probe that
+returned a clean, confident, empty answer.
