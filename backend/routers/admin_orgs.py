@@ -15,6 +15,7 @@ from pydantic import BaseModel, EmailStr
 from auth_router import require_user
 from db import get_pool
 from middleware.roles import require_platform_role
+from services.encryption import encrypt
 from services.provider_costs import get_all_provider_costs
 from services.forex import get_usd_inr, get_usd_inr_sync
 from services.storage import create_org_bucket, verify_r2_credentials, clear_org_r2_cache
@@ -133,7 +134,9 @@ async def create_org(
 
     r2_account_id = body.r2.account_id if body.r2 else None
     r2_access_key = body.r2.access_key_id if body.r2 else None
-    r2_secret_key = body.r2.secret_access_key if body.r2 else None
+    # Encrypted at rest, like the update path below. `encrypt` returns None
+    # untouched, so an org created without R2 credentials is unaffected.
+    r2_secret_key = encrypt(body.r2.secret_access_key) if body.r2 else None
     r2_bucket = body.r2.bucket_name if body.r2 else None
 
     monthly_credits = body.monthly_credits if body.monthly_credits is not None else (plan["default_credits"] or 0)
@@ -1082,7 +1085,11 @@ async def set_org_r2(
         "UPDATE staging.organisations SET "
         "r2_account_id=$1, r2_access_key_id=$2, r2_secret_access_key=$3, "
         "r2_bucket_name=$4 WHERE id=$5::uuid",
-        body.account_id, body.access_key_id, body.secret_access_key,
+        # Encrypted at rest. This is a Cloudflare R2 secret — in the clear it
+        # turns a database dump or a leaked read-only connection string into
+        # write access on every org's file storage. `services/storage.py`
+        # decrypts on read; `encrypt` is idempotent so a re-save is safe.
+        body.account_id, body.access_key_id, encrypt(body.secret_access_key),
         body.bucket_name, org_id,
     )
 

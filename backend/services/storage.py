@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Optional
 import logging
 
+from services.encryption import decrypt
+
 log = logging.getLogger(__name__)
 
 LOCAL_STORAGE_PATH = os.getenv("LOCAL_STORAGE_PATH")
@@ -61,10 +63,13 @@ async def _get_org_r2(org_id: str) -> tuple[object, str] | tuple[None, None]:
         return None, None
 
     try:
+        # `decrypt` passes unmarked values straight through, so rows written
+        # before the column was encrypted keep working and no deploy ordering
+        # is required between this and the backfill.
         client = _build_client(
             row["r2_account_id"],
             row["r2_access_key_id"],
-            row["r2_secret_access_key"],
+            decrypt(row["r2_secret_access_key"]),
         )
         bucket = row["r2_bucket_name"] or f"kartavya-storage"
         _org_clients[org_id] = (client, bucket)

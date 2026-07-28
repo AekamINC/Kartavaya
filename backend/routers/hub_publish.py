@@ -19,6 +19,7 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import OPERATIONS_CONSOLE_ROLES, ORG_MANAGEMENT_ROLES
 from middleware.subscription import require_module
+from services.encryption import encrypt
 from services.social_publisher import publish_content, process_scheduled_posts
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub-publish"])
@@ -388,7 +389,11 @@ async def oauth_callback(
         "token_expires_at=EXCLUDED.token_expires_at, account_name=EXCLUDED.account_name, "
         "page_id=EXCLUDED.page_id, is_active=TRUE, updated_at=NOW()",
         cid, platform, account_name, account_id, page_id,
-        access_token, refresh_token or None, token_expires_at,
+        # Encrypted at rest. These are live OAuth tokens for a client's
+        # social accounts; in the clear a database dump lets anyone post as
+        # them. `services/social_publisher.py` decrypts before use.
+        encrypt(access_token), encrypt(refresh_token) if refresh_token else None,
+        token_expires_at,
         config["scopes"].split(","), state_data["user_id"],
     )
 
@@ -548,7 +553,8 @@ async def connect_social_account(
         "is_active=TRUE, updated_at=NOW() "
         "RETURNING id, platform, account_name",
         cid, body.platform, body.account_name, body.account_id,
-        body.page_id, body.access_token, body.refresh_token or None,
+        body.page_id, encrypt(body.access_token),
+        encrypt(body.refresh_token) if body.refresh_token else None,
         body.scopes or [], user["user_id"],
     )
     return {"status": "connected", **dict(row)}

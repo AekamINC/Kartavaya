@@ -11,6 +11,7 @@ from typing import Optional
 import httpx
 
 from db import get_pool
+from services.encryption import decrypt, encrypt
 from outbound import suppressed
 
 log = logging.getLogger(__name__)
@@ -44,7 +45,17 @@ async def _get_account(account_id: str) -> dict | None:
         "SELECT * FROM staging.hub_social_accounts WHERE id=$1::uuid AND is_active=TRUE",
         account_id,
     )
-    return dict(row) if row else None
+    if not row:
+        return None
+    # Decrypt at the point of read, so every caller downstream — refresh,
+    # publish, the platform SDKs — keeps seeing a plain token and needs no
+    # knowledge of how the column is stored. `decrypt` passes unmarked values
+    # through, so rows written before encryption keep working.
+    acct = dict(row)
+    for col in ("access_token", "refresh_token"):
+        if acct.get(col):
+            acct[col] = decrypt(acct[col])
+    return acct
 
 
 async def _refresh_token_if_needed(account: dict) -> dict:
@@ -72,7 +83,9 @@ async def _refresh_token_if_needed(account: dict) -> dict:
         await pool.execute(
             "UPDATE staging.hub_social_accounts SET access_token=$1, updated_at=NOW() "
             "WHERE id=$2::uuid",
-            new_token, str(account["id"]),
+            # Re-encrypted on write. A refresh that stored plaintext would
+            # silently undo the encryption for the busiest accounts first.
+            encrypt(new_token), str(account["id"]),
         )
         account["access_token"] = new_token
         log.info("Refreshed %s token for account %s", platform, account["id"])
