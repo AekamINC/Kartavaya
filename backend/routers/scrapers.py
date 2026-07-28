@@ -71,6 +71,62 @@ async def _deduct_extra_credits(pool, org_id: str, user_id: str, extra: int, run
         log.warning("Credit true-up failed for run %s: %s", run_id, e)
 
 
+async def _refund_credits(pool, org_id: str, user_id: str, amount: int, run_id: str, why: str):
+    """Return the upfront charge when a run produced nothing (F29).
+
+    Credits are debited BEFORE Apify is called, and the response tells the user
+    "minimum upfront — final charge after run completes". On success that promise
+    is kept by `_deduct_extra_credits`. On failure nothing ran, so the charge was
+    never final: measured on staging, a run that failed at Apify kept 2 credits
+    and recorded billed_inr 50 against 0 rows, and the balance never moved back.
+
+    Billing the customer for the platform's failure is the wrong default. It is
+    also the same class of defect as F24 — a money figure the customer can see
+    that does not match what actually happened.
+
+    `billed_inr` is zeroed with the refund. Leaving it at 50 while the credits
+    came back would leave the cost report attributing spend to a run that cost
+    nothing, which is how the two disagree again.
+
+    Best-effort and never raises: this runs in a background poller, and a failed
+    refund must not also lose the error that caused it. It logs loudly instead.
+    """
+    if amount <= 0:
+        return
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                wallet = await conn.fetchrow(
+                    "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid FOR UPDATE",
+                    org_id,
+                )
+                if not wallet:
+                    return
+                new_bal = wallet["balance"] + amount
+                await conn.execute(
+                    "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() WHERE org_id=$2::uuid",
+                    new_bal, org_id,
+                )
+                # 'credit', not a negative debit — the ledger has to show a
+                # refund as a refund, or a customer reconciling it sees the
+                # original charge and no reversal.
+                await conn.execute(
+                    "INSERT INTO staging.hub_org_credit_transactions "
+                    "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
+                    "VALUES ($1::uuid, $2, $3, $4, 'credit', $5, $2)",
+                    org_id, user_id or "", amount, new_bal,
+                    f"scraper refund run:{run_id[:8]} — {why}",
+                )
+                await conn.execute(
+                    "UPDATE staging.hub_scraper_runs SET billed_inr=0 WHERE id=$1::uuid",
+                    run_id,
+                )
+        log.info("Refunded %s credits for failed scraper run %s (%s)", amount, run_id, why)
+    except Exception as e:
+        log.error("Credit refund FAILED for run %s: %s — customer is owed %s credits",
+                  run_id, e, amount)
+
+
 class RunScraper(BaseModel):
     scraper_id: str
     inputs: dict = {}
@@ -263,18 +319,31 @@ async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_pa
             return
 
         if info["status"] in ("FAILED", "ABORTED", "TIMED-OUT"):
+            # F30: carry Apify's own message where it gives one. "Apify status:
+            # FAILED" restates the status column and tells nobody why — a user
+            # could not tell a bad input from an outage without opening a ticket.
+            detail = (info.get("error") or info.get("status_message") or "").strip()
+            msg = f"Apify status: {info['status']}"
+            if detail:
+                msg = f"{msg} — {detail}"[:500]
             await pool.execute(
                 "UPDATE staging.hub_scraper_runs SET status='failed', "
                 "error=$2, cost_usd=$3, finished_at=NOW() WHERE id=$1::uuid",
-                db_run_id, f"Apify status: {info['status']}", float(info.get("usage_usd", 0)),
+                db_run_id, msg, float(info.get("usage_usd", 0)),
             )
+            await _refund_credits(pool, org_id, user_id, min_credits_charged,
+                                  db_run_id, f"run {info['status'].lower()}")
             return
 
     # Timed out polling
     await pool.execute(
-        "UPDATE staging.hub_scraper_runs SET status='failed', error='Polling timeout' WHERE id=$1::uuid",
+        "UPDATE staging.hub_scraper_runs SET status='failed', "
+        "error='Polling timeout — the run did not report a result within 10 minutes', "
+        "finished_at=NOW() WHERE id=$1::uuid",
         db_run_id,
     )
+    await _refund_credits(pool, org_id, user_id, min_credits_charged,
+                          db_run_id, "polling timeout")
 
 
 async def _store_results_r2(org_id: str, run_id: str, results: list) -> str | None:
