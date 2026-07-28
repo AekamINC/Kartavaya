@@ -2446,3 +2446,38 @@ an object where they expected an array.
 session is precisely the shape of the two findings this report has already had
 to retract. It wants a session that can run the frontend against each changed
 endpoint, and it is well-specified enough now to be picked up cold.
+
+### F21 — verified e2e on the deployed build ✅
+
+Checked by **magic number**, not status code, because a 200 returning the wrong
+media type is the defect being fixed.
+
+| Request | Content-Type | Magic | Bytes |
+|---|---|---|---|
+| `revenue?format=xlsx` | `…spreadsheetml.sheet` | `PK\x03\x04` | 5,433 |
+| `pipeline?format=xlsx` | `…spreadsheetml.sheet` | `PK\x03\x04` | 5,467 |
+| `overview?format=pdf` | `application/pdf` | `%PDF` | 5,575 |
+| `revenue?format=pdf` | `application/pdf` | `%PDF` | 5,705 |
+
+**None returns JSON.** `Content-Disposition` arrives readable
+(`revenue_export.xlsx`, `overview_export.pdf`) — F20's fix carrying its own
+weight, since without `expose_headers` the filename would be invisible to the
+frontend downloader.
+
+**WeasyPrint renders on Railway.** The skip in
+`test_dristi_export_formats.py` is a Windows-native-libs condition only, not a
+gap in coverage — production has the GTK stack, which is also why invoice and
+payslip PDFs have always worked.
+
+### A monitor of mine that reported a false negative
+
+The deploy watcher I armed reported *"TIMEOUT: still not deployed after 8
+minutes"*. It was wrong. The probe used `curl -I` **with no Authorization
+header**, so it received a 401 with `content-type: application/json` on every
+poll and could never have matched a spreadsheet type — no deploy would have
+satisfied it.
+
+Recorded because it is the same family as the retracted F28 and the H7 near-miss:
+**a probe that cannot succeed reports absence, and absence reads like a finding.**
+Three occurrences now, each caught by a different means — here, by checking the
+Railway deployment list rather than trusting the watcher.
