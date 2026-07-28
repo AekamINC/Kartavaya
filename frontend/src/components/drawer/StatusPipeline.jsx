@@ -1,5 +1,5 @@
 import React from 'react';
-import { columnStageColor } from './constants';
+import { columnStageColor, columnStageOnColor } from './constants';
 
 /**
  * StatusPipeline — 03-task-drawer.md §1, replacing the static status badge.
@@ -15,6 +15,12 @@ import { columnStageColor } from './constants';
  * from one value. `columnStageColor` maps the board column's NAME onto a
  * `--st-*` token, because a column carries no status of its own; anything
  * unrecognised falls through to the accent rather than inventing a hue.
+ *
+ * `--on-c` is the ink for that fill and is set in the same place for the same
+ * reason. The active segment used to paint a hardcoded `#fff`, which is right
+ * in light — every `--st-*` is a dark mid-tone there — and 1.4–1.9:1 in dark,
+ * where the same three tokens invert to light tints. The stage the task is
+ * actually in was the one segment you could not read.
  *
  * Semantics: these buttons move the task between stages, so `aria-current="step"`
  * marks the active one and the label is read in full. A `div` with a class here
@@ -35,7 +41,10 @@ export default function StatusPipeline({ stages = [], current, onStageClick, lab
             key={stage.value}
             type="button"
             className={cls}
-            style={{ '--c': stage.color || columnStageColor(stage.label) }}
+            style={{
+              '--c': stage.color || columnStageColor(stage.label),
+              '--on-c': stage.onColor || columnStageOnColor(stage.label),
+            }}
             aria-current={on ? 'step' : undefined}
             disabled={!onStageClick}
             onClick={() => onStageClick?.(stage.value)}

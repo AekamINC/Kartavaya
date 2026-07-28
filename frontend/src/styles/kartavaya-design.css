@@ -330,6 +330,10 @@
      a light mint, where white measures 1.79:1 and fails even the 3:1 floor for
      a non-text control. A fill that inverts needs an ink that inverts with it. */
   --on-ok:               #FFFFFF;
+  /* The third of the trio, missing for the same reason --on-ok was: --warn is
+     used as a fill by the `requested` status and the `high` priority, and both
+     flip from #8B5206 (white at 6.32:1) to #E8B45C, where white is 2.09:1. */
+  --on-warn:             #FFFFFF;
 
   --scrim:      rgba(28, 26, 20, .34);
   --glass-tint: 250, 247, 240;
@@ -426,6 +430,10 @@
   /* Reuses the light theme's --on-ok-container green rather than inventing a
      third dark green: on --ok #5BD98A it measures 8.34:1. */
   --on-ok:               #06341A;
+  /* On --warn #E8B45C: 7.69:1. Same construction as --on-ok — a very dark tint
+     of the fill's own hue, so the pair reads as one colour rather than as ink
+     dropped on top of it. */
+  --on-warn:             #3A2504;
 
   --scrim:      rgba(0, 0, 0, .58);
   --glass-tint: 18, 21, 26;
@@ -457,6 +465,20 @@
   --st-done:        var(--ok);
   --st-rejected:    var(--danger);
 
+  /* Paired inks. §9 says meaning is constant and rendering cannot be — that
+     applies to what sits ON these fills just as much as to the fills, and the
+     pairing was the half that was never declared. In light every --st-* is a
+     dark mid-tone and white clears 6.2:1 on all six, which is exactly why the
+     hardcoded #fff in the drawer pipeline went unnoticed: it is correct here
+     and wrong in the block below. Three of the six defer, so darkening --warn,
+     --ok or --danger keeps moving their ink with them. */
+  --on-st-todo:        #FFFFFF;
+  --on-st-in-progress: #FFFFFF;
+  --on-st-in-review:   #FFFFFF;
+  --on-st-requested:   var(--on-warn);
+  --on-st-done:        var(--on-ok);
+  --on-st-rejected:    var(--on-danger);
+
   --ap-pending:        var(--warn);
   --ap-pending-client: #6E5AA0;
   --ap-approved:       var(--ok);
@@ -466,6 +488,13 @@
   --pr-high:   var(--warn);
   --pr-medium: #3E5C8A;
   --pr-low:    var(--on-surface-3);
+
+  /* Priority is a fill on the timeline bar, so it needs pairs for the same
+     reason status does. White clears 6.3:1 on all four here. */
+  --on-pr-urgent: var(--on-danger);
+  --on-pr-high:   var(--on-warn);
+  --on-pr-medium: #FFFFFF;
+  --on-pr-low:    #FFFFFF;
 }
 [data-theme="dark"] {
   --st-todo:           #9AA3B2;
@@ -475,6 +504,24 @@
   --pr-medium:         #8FAEDC;
   /* requested / done / rejected / urgent / high / low follow --warn, --ok,
      --danger and --on-surface-3, which already flip above. */
+
+  /* Here the three literal statuses invert to light tints, so white falls to
+     2.1–2.5:1 on them and the ink has to invert too. Each is a very dark tint
+     of its own fill's hue, matching how --on-ok and --on-warn are built:
+       #151A22 on --st-todo #9AA3B2        6.96:1
+       #0B1B30 on --st-in-progress #8FAEDC 7.65:1
+       #1D1430 on --st-in-review #B6A6E0   8.04:1
+     The other three inherit --on-warn / --on-ok / --on-danger from above. */
+  --on-st-todo:        #151A22;
+  --on-st-in-progress: #0B1B30;
+  --on-st-in-review:   #1D1430;
+
+  /* --pr-medium is the same #8FAEDC as --st-in-progress, so it takes the same
+     ink. --pr-low resolves to --on-surface-3 #8E8D87, where white is 3.33:1 —
+     it reads as fine and is not. urgent and high defer to --on-danger and
+     --on-warn. */
+  --on-pr-medium: #0B1B30;
+  --on-pr-low:    #191B17;   /* 5.23:1 on #8E8D87 */
 }
 
 /* Fixed literals — external meanings, so they do not flip. */

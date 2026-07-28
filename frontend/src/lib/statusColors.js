@@ -27,6 +27,24 @@ export const STATUS_COLORS = {
   rejected:    'var(--st-rejected)',    // = --danger
 };
 
+// The ink that goes ON a STATUS_COLORS fill. Same six keys, deliberately — a
+// map that can fall out of step with the one above is the drift this file
+// exists to stop, so they are edited together or not at all.
+//
+// This is 00 §9's rule ("non-text and text on a token fill take the paired
+// --on-* token") applied to the one family that had no pairs. The drawer
+// pipeline hardcoded #fff, which is right in light and 1.4–1.9:1 in dark; a
+// fill that inverts needs an ink that inverts with it, and neither the fill nor
+// the ink can be a literal at the call site.
+export const STATUS_ON_COLORS = {
+  todo:        'var(--on-st-todo)',
+  in_progress: 'var(--on-st-in-progress)',
+  in_review:   'var(--on-st-in-review)',
+  requested:   'var(--on-st-requested)',   // = --on-warn
+  done:        'var(--on-st-done)',        // = --on-ok
+  rejected:    'var(--on-st-rejected)',    // = --on-danger
+};
+
 export const APPROVAL_COLORS = {
   pending:        'var(--ap-pending)',
   pending_client: 'var(--ap-pending-client)',
@@ -170,6 +188,10 @@ export const billingLabel = s =>
 const FALLBACK = 'var(--on-surface-3)';
 
 export const statusColor   = s => STATUS_COLORS[s]   || FALLBACK;
+// Pairs with statusColor. The fallback is --on-surface for the same reason the
+// colour fallback is --on-surface-3: an unrecognised status must still be
+// readable, and guessing white would reproduce the bug this replaces.
+export const statusOnColor = s => STATUS_ON_COLORS[s] || 'var(--on-surface)';
 export const approvalColor = s => APPROVAL_COLORS[s] || FALLBACK;
 export const priorityColor = p => PRIORITY_COLORS[p] || FALLBACK;
 

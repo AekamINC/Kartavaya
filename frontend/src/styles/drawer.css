@@ -51,7 +51,16 @@
   position: fixed; z-index: 200; top: 0; right: 0; bottom: 0;
   width: min(560px, 92%);
   display: flex; flex-direction: column;
-  background: var(--surface);
+  /* Glass, per `app.css:238`. The prose (03 §1) says `background:var(--surface)`
+     and the reference says glass at `+.1`; the brief gives the reference
+     priority, and this is the one place the two were resolved the wrong way.
+     `--glass-tint` IS `--surface` in both themes (250,247,240 = #FAF7F0 light,
+     18,21,26 = #12151A dark), so at alpha 1 this rule collapses to exactly the
+     colour it replaces — which is why the Windows and reduced-transparency
+     paths below can keep the old value with no visual change at all. */
+  background: rgba(var(--glass-tint), calc(var(--glass-alpha) + .1));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.6)) saturate(1.5);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.6)) saturate(1.5);
   border-left: 1px solid var(--outline-variant);
   box-shadow: var(--shadow-4);
   /* `--ease-emph`, not `--ease-emph-in`. MOTION-SPEC §3 gives the desktop task
@@ -66,6 +75,18 @@
      match — a migration utility that produces different motion from the thing
      it replaces is worse than no utility. */
   animation: dmDrawerIn var(--dur-slow) var(--ease-emph) both;
+}
+/* The token opt-out in kartavaya-design.css already flattens `--glass-blur` to
+   0px and `--glass-alpha` to 1 on Windows, so appearance is handled. This rule
+   is here for the other half of 01 §43: blur(0px) is a visual no-op that still
+   allocates a compositing layer, and the reason for the opt-out is Windows
+   GPU/driver behaviour rather than how it looks. Same shape as boards.css:460.
+   The reference writes `var(--s-low)` here; `var(--surface)` is kept because
+   that is what `rgba(var(--glass-tint), 1)` actually resolves to, so Windows
+   and every other platform land on one colour instead of two. */
+[data-platform="win"] .dr { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (prefers-reduced-transparency: reduce) {
+  .dr { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
 .dr.is-closing { animation: dmDrawerOut var(--dur-base) var(--ease-exit) forwards; }
 /* Click-through while leaving, matching every other overlay (the shared rule in
@@ -219,7 +240,15 @@
 .dr__stage[disabled] { opacity: 1; cursor: default; }
 .dr__stage:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .dr__stage.past { background: color-mix(in srgb, var(--c) 15%, var(--surface)); color: var(--c); }
-.dr__stage.on   { background: var(--c); color: #fff; z-index: 3; }
+/* `--on-c`, not #fff — the pair is set together in StatusPipeline.jsx. In light
+   every --st-* is a dark mid-tone and white cleared 6.2:1, so this looked fine;
+   in dark the three literal statuses invert to light tints (#9AA3B2, #8FAEDC,
+   #B6A6E0) and white measures 1.4–1.9:1, making the stage the task is actually
+   in the one segment nobody could read. Same fix boards.css:307 made with
+   --on-ok, and the same reason: a fill that inverts needs an ink that inverts
+   with it. 03 §1's own CSS does say `color:#fff`, but its status colours
+   predate 00 §9. */
+.dr__stage.on   { background: var(--c); color: var(--on-c); z-index: 3; }
 .dr__stage:not(:last-child)::after {
   content: ''; position: absolute; right: 0; top: 50%;
   transform: translate(50%, -50%); z-index: 4;
@@ -297,7 +326,12 @@
   width: 16px; height: 16px; padding: 0; flex-shrink: 0;
   display: grid; place-items: center;
   border: 2px solid var(--on-surface-3); border-radius: var(--r-xs);
-  background: none; color: #fff; cursor: pointer;
+  /* --on-primary, not #fff. The `.on` state fills with --primary, which is
+     #1F6F68 in light (white at 5.9:1) and #4FD8CB in dark — a light mint where
+     white is 1.6:1, under even the 3:1 floor for a non-text control. This is
+     the most-repeated control in the drawer and it was invisible in dark.
+     boards.css:307 is the same fix on the board card's tick. */
+  background: none; color: var(--on-primary); cursor: pointer;
   transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
 }
 .dr__st-box.on { background: var(--primary); border-color: var(--primary); }

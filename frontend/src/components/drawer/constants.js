@@ -12,7 +12,7 @@ export {
   APPROVAL_COLORS as APPROVAL_STATUS_COLOR,
 } from '../../lib/statusColors';
 
-import { STATUS_COLORS as SC } from '../../lib/statusColors';
+import { STATUS_COLORS as SC, STATUS_ON_COLORS as SOC } from '../../lib/statusColors';
 
 // `lbl` — the exported INLINE STYLE OBJECT — is gone. It is `.dr__lbl` in
 // styles/drawer.css now. An inline style object cannot be themed, cannot be
@@ -44,8 +44,25 @@ const COLUMN_STATUS = [
   [/to[\s-]*do|todo|backlog|new|open|inbox/i, 'todo'],
 ];
 
+/** The matched status key for a column name, or null. */
+function columnStatusKey(name) {
+  const hit = COLUMN_STATUS.find(([re]) => re.test(name || ''));
+  return hit ? hit[1] : null;
+}
+
 /** The `--st-*` custom property for a column name, or the accent. */
 export function columnStageColor(name) {
-  const hit = COLUMN_STATUS.find(([re]) => re.test(name || ''));
-  return hit ? SC[hit[1]] : 'var(--primary)';
+  const key = columnStatusKey(name);
+  return key ? SC[key] : 'var(--primary)';
+}
+
+/**
+ * The ink for that fill. Resolved through the same regex list rather than
+ * re-derived, so a column can never take one status's background and another's
+ * foreground — the two must come from one match or they are not a pair.
+ * The accent fallback pairs with --on-primary for the same reason.
+ */
+export function columnStageOnColor(name) {
+  const key = columnStatusKey(name);
+  return key ? SOC[key] : 'var(--on-primary)';
 }

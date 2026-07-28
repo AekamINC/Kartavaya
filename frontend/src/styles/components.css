@@ -294,7 +294,12 @@ textarea.inp { resize: vertical; min-height: 76px; }
 .modal__panel {
   width: 100%; max-height: calc(100vh - 32px);
   display: flex; flex-direction: column;
-  background: var(--surface);
+  /* Glass at `+.08`, blur ×1.6 — `app.css:229`, the reference's `.sheet`, which
+     is the desktop modal. The most opaque of the three rungs: a modal is the
+     largest overlay and covers the most content, so it lets the least through. */
+  background: rgba(var(--glass-tint), calc(var(--glass-alpha) + .08));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.6)) saturate(1.5);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.6)) saturate(1.5);
   border: 1px solid var(--outline-variant);
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-3);
@@ -730,7 +735,12 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   position: absolute; z-index: 340; top: calc(100% + 5px); left: 0;
   min-width: 236px; max-width: 320px; padding: 5px;
   border: 1px solid var(--outline-variant); border-radius: var(--r-md);
-  background: var(--s-lowest); box-shadow: var(--shadow-3);
+  /* Same glass as `.pop` — the picker popover is a popover, and the two sitting
+     on different backgrounds was visible wherever a Picker opened beside one. */
+  background: rgba(var(--glass-tint), calc(var(--glass-alpha) + .12));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(1.5);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(1.5);
+  box-shadow: var(--shadow-3);
   /* Reference motion.css:143 (`.dm-pop`) and MOTION-SPEC.md §3 both say
      --dur-fast --ease-spring. The build had --dur-base --ease-enter: 220ms of
      decelerate where the reference wants 140ms with a small overshoot, which is
@@ -1097,7 +1107,13 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .pop {
   position: fixed; z-index: 340; min-width: 200px; max-width: 340px; padding: var(--sp-3);
   border: 1px solid var(--outline-variant); border-radius: var(--r-md);
-  background: var(--s-lowest); box-shadow: var(--shadow-3);
+  /* Glass at `+.12`, blur ×1.5 — `app.css:250`. Overlays sit one step more
+     opaque and one step less blurred than the drawer, because a popover is
+     small and its text has to stay legible over whatever it covers. */
+  background: rgba(var(--glass-tint), calc(var(--glass-alpha) + .12));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(1.5);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(1.5);
+  box-shadow: var(--shadow-3);
   /* `dmPop` scales from `transform-origin`, and this rule had none — so the
      origin was `center` and the panel expanded outward from its own middle
      while its top-left corner stayed pinned to the trigger. Popover.jsx's
@@ -1114,6 +1130,14 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .menu--float {
   position: fixed; z-index: 340; top: auto; left: auto; right: auto;
   min-width: 180px; max-width: 320px; padding: 4px;
+  /* Glassed with the other two on this rung. §7.9's "one popover primitive,
+     four uses, and divergence between them is the bug" applies to the surface
+     as much as to the motion — `.menu--float` was inheriting `.menu`'s opaque
+     `--surface` while `.pop` and `.pk__pop` floated. Plain `.menu` keeps it:
+     it is anchored inside a field, not floating over the page. */
+  background: rgba(var(--glass-tint), calc(var(--glass-alpha) + .12));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(1.5);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.5)) saturate(1.5);
   /* Menu was the ONE overlay on this rung with no entrance and no exit — it
      appeared and vanished on a frame boundary while Popover and Picker, built
      from the same portal/dismiss/z-index contract, both animated. MOTION-SPEC
@@ -1128,6 +1152,32 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 }
 .menu--right { transform-origin: top right; }
 .menu--float.is-closing { animation: dmPopOut calc(var(--dur-fast) * .85) var(--ease-exit) both; }
+
+/* ── The opt-out, stated once for every overlay declared in this file ──────
+   The token rule in kartavaya-design.css already flattens `--glass-blur` to 0px
+   and `--glass-alpha` to 1, so these five surfaces are visually opaque on
+   Windows and under reduced-transparency without any help. What that does NOT
+   do is remove the compositing layer: `blur(0px)` still allocates one, and 01
+   §43's reason for the opt-out is Windows GPU/driver behaviour, not appearance.
+   So the surfaces cancel the filter as well, in the shape boards.css:460 set.
+
+   Backgrounds resolve to the same colour either way — `--glass-tint` is
+   `--surface` in both themes — so this changes nothing that can be seen. It is
+   listed once rather than per rule because the previous per-surface overrides
+   drifted to covering eight of twelve surfaces, and each new glass surface
+   silently started out wrong. */
+[data-platform="win"] .pop,
+[data-platform="win"] .pk__pop,
+[data-platform="win"] .menu--float,
+[data-platform="win"] .modal__panel,
+[data-platform="win"] .sheet {
+  background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+@media (prefers-reduced-transparency: reduce) {
+  .pop, .pk__pop, .menu--float, .modal__panel, .sheet {
+    background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+}
 
 /* ── Every overlay is click-through while it leaves ───────────────────────
    Stated ONCE, for all of them, because the alternative is what this file
@@ -1163,7 +1213,12 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   position: fixed; z-index: 620; inset: auto 0 0 0;
   display: flex; flex-direction: column; max-height: 90vh;
   padding-bottom: env(safe-area-inset-bottom);
-  border-radius: var(--r-xl) var(--r-xl) 0 0; background: var(--surface);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  /* Same rung as `.modal__panel` — the mobile bottom sheet and the desktop
+     modal are the same object in the reference (`app.css:229`). */
+  background: rgba(var(--glass-tint), calc(var(--glass-alpha) + .08));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.6)) saturate(1.5);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.6)) saturate(1.5);
   box-shadow: var(--shadow-4);
   /* Curve was already right; the duration was not. Reference motion.css:97
      (`.dm-sheet`) runs `calc(var(--dur-slow) * .84)` — 302ms, which is the
