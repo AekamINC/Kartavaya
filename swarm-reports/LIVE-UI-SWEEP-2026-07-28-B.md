@@ -602,6 +602,77 @@ Finance, and an order in Sales priced off both.
 
 ---
 
+# Exports — all three downloaded, opened, and cross-reconciled ✅
+
+Both blockers the E2E plan names are now cleared: GSTR-1 needed a GSTIN on the
+org (set, see F36) and the **Tally purchase path had never run on real rows**
+(6 vendor bills seeded). So these ran properly for the first time.
+
+## Tally XML — the purchase path works
+
+`Kartavaya-Tally-2026-07.xml`, 10 KB. `Sales vouchers: 6`, **`Purchase
+vouchers: 1`** — one because only July's bill falls inside the period, which is
+correct rather than short.
+
+The purchase voucher is proper double entry and **balances to zero**:
+
+```
+Meridian IT Services   +35,990.00     (party)
+Purchase               −30,500.00
+Input CGST              −2,745.00
+Input SGST              −2,745.00
+```
+
+30,500 × 18% = 5,490, split CGST/SGST because the supply is intra-state. Exact.
+
+The file's own header is worth keeping: it states it is *"not a return, not a
+filing, and not a statement of tax liability"*, that Kartavaya is not a GSP,
+which ledgers the target company must already have, what is excluded by design
+(quotations, proformas, drafts, cancelled, stock entries), and it **repeats the
+held-back documents inside the file** so whoever imports it sees them.
+
+## GSTR-1 JSON — correct GST semantics
+
+```json
+"gstin": "24AAAAA0000A1Z8", "fp": "072026",
+b2cs: INTRA pos 24 → camt 4860, samt 4860 on txval 54000
+      INTER pos 27 → iamt 4500            on txval 25000
+```
+
+Intra-state splits CGST/SGST at 9% each, inter-state charges IGST at 18%, and
+the place-of-supply codes are right (24 Gujarat, 27 Maharashtra). `desc` is
+truncated to 30 characters, which is the GSTN field limit, not a bug.
+
+Everything sits in `b2cs` rather than `b2b` because no seeded contact carries a
+GSTIN — correct, and consistent with what the invoice PDF said about a B2C
+supply to an unregistered buyer.
+
+## GSTR-3B working paper — and the 4(D)(1) decision verified
+
+A4, 2 pages, the F36 address on the letterhead. States **`FILING STATUS:
+Working — not filed`** and **`ARN: Not generated`**, and declares its own
+provenance: *"computed from 3 outward invoices and 1 inward records. 8 records
+excluded — HSN/SAC code missing on a line"*, naming all eight.
+
+**The plan asks specifically whether the GSTR-3B 4(D)(1) advisory is a warning
+and not a hard block.** It is present, and as a note rather than a block:
+*"Already included in (A)(5) — shown here as its break-up, not added again."*
+
+## The three files agree exactly
+
+| Figure | GSTR-1 JSON | GSTR-3B §3.1 | Tally XML |
+|---|---|---|---|
+| Outward taxable | 54,000 + 25,000 = **79,000** | **79,000** | 6 sales vouchers |
+| CGST / SGST | 4,860 / 4,860 | **4,860 / 4,860** | — |
+| IGST | 4,500 | **4,500** | — |
+| Input CGST / SGST | — | **2,745 / 2,745** §4(A)(5) | **2,745 / 2,745** |
+
+**Three independent formats, produced by three different code paths, reconciling
+to the rupee.** That is the check worth having on an accounting product, and it
+passes.
+
+---
+
 # Boards, tasks and e-Sign — exercised end to end ✅
 
 ## Kanban drag-and-drop — works, persists, and is keyboard-accessible
