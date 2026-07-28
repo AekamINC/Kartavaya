@@ -326,6 +326,34 @@ four looked like findings and are not:
 
 ---
 
+## Analytics and CSV export — verified against a full year ✅
+
+With 2026 seeded, Dristi renders real trends rather than zeros: `OPEN PIPELINE
+₹10.5L`, `COLLECTED ₹14.2L`, `OUTSTANDING ₹5.4L`, a `Collected by month` chart
+and a month-by-month table of INVOICED / COLLECTED / EXPENSES / PROFIT.
+
+`Export CSV` downloaded `revenue-trend.csv` and it is **correct by content**:
+
+```
+Month,Invoiced,Collected,Expenses,Profit
+2026-02,168740,158120,77290,80830
+2026-03,47200,7080,73986,-66906
+...
+2026-07,410320,376820,342876,33944
+```
+
+Every row satisfies **Profit = Collected − Expenses** exactly (158120−77290=80830;
+376820−342876=33944). That is *cash-basis* profit, applied consistently.
+
+Two observations, neither filed as a defect:
+
+- The chart and table cover **Feb–Jul only** — a trailing six-month window.
+  January is outside it and Aug–Dec are future-dated, so both exclusions are
+  correct rather than missing data.
+- `PROFIT` sits beside `INVOICED` but is computed from `COLLECTED`. The number is
+  right and consistent; the column name alone does not say which basis it uses,
+  and a reader could take it as accrual.
+
 ## Data created in QA Test Corp
 
 Writing freely is authorised by `E2E-PLAN-2026-07-28.md` ("all test data gets
@@ -338,6 +366,17 @@ deleted at the end of the week").
   (customer), Rakesh Gupta (vendor), Sunita Rao (partner).
 - `INV-2026-0008` — the empty invoice from F34. **Left in place deliberately** as
   the evidence, and because it is what the export tab is counting.
+- **A full year of 2026**, so charts, trends, date ranges and monthly GST periods
+  have something real to render: 36 invoices with valid HSN/SAC across all twelve
+  months, mixed intra-state and inter-state so both CGST/SGST and IGST are
+  exercised; 32 payments, some full and some partial; 36 expenses; 3 vendors and
+  6 vendor bills for payables and ITC.
+- **5 products created through the UI form**, not the API — Statutory Audit, GST
+  Return Filing, TDS Compliance, Bookkeeping Retainer, ROC Annual Filing, each
+  with its SAC code, price and 18% rate, all verified in the table afterwards.
+- The vendor seed was **refused three times first**: synthetic GSTINs that failed
+  the check digit. That is the validation working exactly as intended, and it
+  only succeeded once the check digits were computed properly.
 
 ---
 
