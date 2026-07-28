@@ -1691,3 +1691,45 @@ Vetana 6/6 · Vikray 6/6 · plus the task drawer's 31 elements.
 
 Remaining: Prachar 11 · Dristi 8 · Srijan 7 · Sanvaad 5 · Manav's 9 nested ·
 plus every module's detail drawers.
+
+## Sanvaad — H9 confirmed live by measurement
+
+The design comparison's H9 says Sanvaad alone uses `PageHeader` + `ui/Tabs`
+where every other module page uses `ModuleHeader` + `ModuleTabs` +
+`KpiStrip`, and that it is *"the one page in the six that does not look like
+the others"*. Measured on the live page rather than read from source:
+
+```
+document.querySelectorAll('.mt__b').length   0   — no module tabs at all
+document.querySelector('.mh')                null — no module header chrome
+document.querySelector('[class*="kpi"]')     null — no KPI strip
+tabs found under                             .tabs__b
+```
+
+**H9 confirmed.** Three independent structural markers, all absent. This is not
+a styling near-miss; the page is built from a different set of components.
+
+2 leaves walked (Channels, WhatsApp), **0 errors**, both showing proper
+select-something-on-the-left empty states rather than blank panels. The design
+comparison counts Sanvaad at 5, so 3 are nested below these.
+
+**Running total: 48 of 85 leaves.**
+
+## Where the sweep stands
+
+| Module | Verified | Total |
+|---|---|---|
+| Graha | 17 | 17 |
+| Ganit | 10 | 10 |
+| Vetana | 6 | 6 |
+| Vikray | 6 | 6 |
+| Manav | 6 | 15 |
+| Sanvaad | 2 | 5 |
+| Prachar · Dristi · Srijan | 0 | 26 |
+
+Plus the task drawer's 31 individual elements, all three of its close paths and
+focus restoration.
+
+**Zero console errors and zero error states across all 48.** Every leaf rendered
+real content or a purposeful empty state — the distinction the brief draws when
+it says a 200 rendering an empty table is still a bug.
