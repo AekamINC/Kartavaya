@@ -37,8 +37,22 @@ class AnalyseRequest(BaseModel):
 @router.get("/accounts", dependencies=[Depends(_gate)])
 async def list_ad_accounts(user=Depends(require_user), org_id=Depends(get_org_id)):
     pool = await get_pool()
+    # `account_name`, not `platform_user_name`. The latter has never existed on
+    # staging.hub_social_accounts — 017:82-100 declares the table and the column
+    # it carries for a connected account's display name is `account_name`.
+    #
+    # This 500'd on EVERY Prachar page load, and did not look like a 500: the
+    # exception escapes before CORSMiddleware attaches headers, so the browser
+    # reported a CORS violation and the network tab showed net::ERR_FAILED with
+    # no status. The Ads tab then rendered "…appear here once the platform
+    # answers", so the page read as empty rather than broken. Confirmed from the
+    # Railway traceback: asyncpg.exceptions.UndefinedColumnError.
+    #
+    # Fixed by renaming the reference rather than adding the column. Adding
+    # `platform_user_name` would have given the table two columns for one fact,
+    # and `account_name` is already populated by both OAuth callback paths.
     rows = await pool.fetch(
-        "SELECT a.*, s.platform_user_name AS social_name "
+        "SELECT a.*, s.account_name AS social_name "
         "FROM staging.prachar_ad_accounts a "
         "LEFT JOIN staging.hub_social_accounts s ON s.id = a.social_account_id "
         "WHERE a.org_id=$1::uuid ORDER BY a.created_at DESC",
