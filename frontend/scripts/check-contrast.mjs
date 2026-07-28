@@ -617,7 +617,23 @@ else {
  * accepted and why, and shrinking it is the direction of travel.
  */
 const BASELINE_PATH = new URL('./contrast-baseline.json', import.meta.url);
-const keyOf = (r) => `${r.at}|${r.selector}|${r.theme}`;
+/*
+ * The key deliberately drops the LINE from `r.at` and keeps only the file.
+ *
+ * It used to be `file:line|selector|theme`, which made the baseline a tripwire
+ * on line numbers rather than on contrast: adding ten lines anywhere above a
+ * baselined rule re-keyed it, and the gate reported the same pair, at the same
+ * ratio, as a NEW failure. That happened on the first UI edit after the file
+ * was generated — glass on `.modal__panel` moved `.cbx` from 862 to 872 and
+ * `.av` from 904 to 914, and three untouched pairs failed the build.
+ *
+ * A gate that fails for a reason unrelated to what it measures gets silenced,
+ * and the way it gets silenced is `--update-baseline` run as a reflex — which
+ * is exactly what the note in the file warns against. `file|selector|theme` is
+ * still specific enough to identify a pair, and the ratio comparison below
+ * still catches a regression on it.
+ */
+const keyOf = (r) => `${r.at.replace(/:\d+$/, '')}|${r.selector}|${r.theme}`;
 
 let baseline = {};
 try {

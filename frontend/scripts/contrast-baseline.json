@@ -1,32 +1,32 @@
 {
   "note": "Known-failing pairs, accepted deliberately. NEW failures and REGRESSIONS still fail the gate. Shrink this file; do not grow it.",
-  "generated": "2026-07-27",
+  "generated": "2026-07-28",
   "pairs": {
-    "brand.css:121|.k-pill-high|dark": {
-      "ratio": 2.24,
-      "need": 4.5
-    },
-    "brand.css:173|.k-badge|light": {
+    "brand.css|.k-badge|light": {
       "ratio": 3.16,
       "need": 4.5
     },
-    "components.css:852|.cbx|dark": {
-      "ratio": 1.43,
+    "brand.css|.k-pill-high|dark": {
+      "ratio": 2.24,
       "need": 4.5
     },
-    "components.css:852|.cbx|light": {
-      "ratio": 1.01,
-      "need": 4.5
-    },
-    "components.css:904|.av|light": {
+    "components.css|.av|light": {
       "ratio": 1.31,
       "need": 4.5
     },
-    "sanvaad.css:1123|.msg--sys .msg__glyph|light": {
+    "components.css|.cbx|dark": {
+      "ratio": 1.43,
+      "need": 4.5
+    },
+    "components.css|.cbx|light": {
+      "ratio": 1.01,
+      "need": 4.5
+    },
+    "sanvaad.css|.msg--sys .msg__glyph|light": {
       "ratio": 3.39,
       "need": 4.5
     },
-    "sanvaad.css:831|.wahdr__ic|light": {
+    "sanvaad.css|.wahdr__ic|light": {
       "ratio": 2.35,
       "need": 4.5
     }
