@@ -1940,13 +1940,18 @@ async def list_automation_logs(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT al.id, al.automation_id, a.name AS automation_name, "
-        "al.trigger_data, al.result, al.error_message, al.created_at "
+        "al.trigger_data, al.result, al.error_message, al.created_at, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.graha_automation_logs al "
         "JOIN staging.graha_automations a ON a.id = al.automation_id "
         "WHERE al.org_id=$1::uuid ORDER BY al.created_at DESC LIMIT 100",
         org_id,
     )
-    return {"data": [dict(r) for r in rows]}
+    # An automation log is the record of what fired and what it did. Capped at
+    # 100 with no total, a busy org sees the last 100 events and cannot tell
+    # whether an automation ran 100 times or 10,000 — which is the question the
+    # log exists to answer.
+    return _listed(rows, limit=100)
 
 
 async def fire_automations(pool, org_id: str, trigger_type: str, context: dict):
@@ -2446,14 +2451,18 @@ async def list_form_submissions(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT s.id, s.data, s.contact_id, s.status, s.created_at "
+        "SELECT s.id, s.data, s.contact_id, s.status, s.created_at, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.graha_web_form_submissions s "
         "JOIN staging.graha_web_forms f ON f.id = s.form_id "
         "WHERE s.form_id=$1::uuid AND f.org_id=$2::uuid "
         "ORDER BY s.created_at DESC LIMIT 200",
         str(form_id), org_id,
     )
-    return {"data": [dict(r) for r in rows]}
+    # Inbound leads. A form that has taken more than 200 submissions shows the
+    # newest 200 and gives no sign the rest exist — the one list where a missing
+    # row is a lost customer rather than a stale figure.
+    return _listed(rows, limit=200)
 
 
 @router.post("/f/{slug}")
