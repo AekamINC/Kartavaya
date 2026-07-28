@@ -2318,3 +2318,75 @@ that could have proved it wrong and did not.
 
 **Question 5 in the handover list is withdrawn.** It asked whether the gating gap
 is systemic. There is no established gap.
+
+---
+
+# Owner answered — actioning the list
+
+## Credits topped up (#3), and it re-proves F24 ✅
+
+`POST /v1/admin/orgs/{org}/credits/topup` `{amount: 2000}` -> 200,
+`{"balance":2000,"added":2000}`.
+
+**The cost report read `current_balance: 0` immediately BEFORE the top-up and
+`2000` immediately after.** Before the F24 fix it claimed 2000 while the wallet
+held 0. That is the fix verified against a real state change rather than a
+re-read — the number now tracks the wallet in both directions.
+
+## A real scraper run — the section the plan could not reach ✅
+
+`POST /v1/scrapers/run` `gst_verification` -> 200 in 1.8s.
+
+```
+run_id        5a2eb084-8443-45eb-bdcd-ba0968a6bbdb
+apify_run_id  576OePal50ikPbyWj          <- a real Apify actor was started
+billed_inr    50                          <- matches catalog price_inr exactly
+credits       2 charged, "minimum upfront — final charge after run completes"
+balance       2000 -> 1998                <- moved by exactly the amount charged
+```
+
+**Credits move by the right amount** — the plan's explicit test, now verified.
+And the **margin check holds on live run data**, not just the catalog: no
+`cost_usd`, no `*usd*` key, in the run response *or* the runs list.
+
+The run **failed** at Apify, which handed me the plan's *"one that fails"* case.
+Two findings follow from it.
+
+## F29 — 🔴 A failed run keeps the charge
+
+```
+status          failed
+result_count    0
+credits_charged 2        <- not refunded
+billed_inr      50       <- recorded against a run that produced nothing
+balance         1998     <- unchanged after failure
+```
+
+The debit is taken upfront, before Apify is called, and the response promises
+*"final charge after run completes"*. The run completed as **failed** and no
+true-up occurred. The customer paid 2 credits and carries ₹50 for zero rows.
+
+That is defensible only if Apify billed for the attempt. If it did not, this
+bills the customer for the platform's failure — and it is a customer-visible
+money path, which puts it in the same class as F24. **Needs a decision on
+whether a failed run refunds, and if so whether partial.**
+
+## F30 — 🟠 The failure reason is a status echo, and the list omits it entirely
+
+```
+detail  error: "Apify status: FAILED"
+list    no error field at all — keys are id · scraper_id · status · result_count ·
+        billed_inr · credits_charged · created_at · finished_at · scraper_name · icon
+```
+
+The plan requires *"a failed run surfaces its error."* Half true:
+
+- the **detail** endpoint carries `error`, so it is not lost — but the value is
+  a restatement of the status. *"Apify status: FAILED"* tells the user the run
+  failed, which they already knew from `status`. It carries no reason, no
+  Apify error code, and nothing actionable.
+- the **list** carries no error field, so a user scanning their runs sees
+  `failed` with no way to tell a bad input from a platform outage without
+  opening each one.
+
+Apify returns a failure reason on the run object; it is not being captured.
