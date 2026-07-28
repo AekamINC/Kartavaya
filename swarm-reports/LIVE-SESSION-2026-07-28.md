@@ -1293,3 +1293,41 @@ The lesson from the first occurrence was written up and then not applied twenty
 minutes later. Stated plainly for the next session: **on this project, never use
 a write as a validation probe.** Staging and production share one Supabase
 project. Check the deployed SHA first, or probe a throwaway record.
+
+## Module sweep — API layer
+
+Probed 24 module list endpoints as the org owner. **17 answered 200, 0 answered
+5xx.**
+
+The result that matters: **all five Graha tables that had never held a row read
+cleanly** — `automations`, `web-forms`, `territories`, `custom-fields`,
+`scoring-rules`. The brief states a 500 in any of the 14 new tables is new
+rather than pre-existing, and there were none. Consistent with F5, which is a
+WRITE failure (`created_by` typed `uuid` against text ids), not a read one.
+
+Seven paths returned 404. **Not recorded as findings** — they are almost
+certainly my guessed URLs rather than missing routes, the same mistake made
+earlier in this session with `/api/documents/...` before finding the real
+prefix was `/api/v1/documents`. A false gap costs as much to chase as a real
+one, so they need the router prefixes read before anyone acts on them.
+
+### Ganit tab walk
+
+Ten tabs (`ALL TABS · 10`), matching the design comparison's count. Invoices,
+Products, Expenses, Payables, Contracts, E-Sign visible plus `More +4`
+(Recurring, Bank, Timesheet, GST Filing).
+
+The KPI strip carries real figures and picked up the vendor bills created
+earlier this session: **PAYABLES ₹59,644 / 3 open bills**, which is
+5,600 + 32,804 + 21,240 exactly.
+
+**A correction to my own measurement.** A first pass reported tabs 2-6 as
+identical (573 chars, 4 rows each) and I nearly logged it as "tabs do not
+switch". They do — a 700ms wait was catching a loading state. Re-run with 1.2s,
+Products renders its own table (`NAME · HSN/SAC · UNIT PRICE · GST · TYPE`
+with real rows). Recorded because the near-miss is the point: a too-fast probe
+manufactures a defect that does not exist.
+
+**Module tabs are not in the URL** either — the active tab reads `/ganit` with
+no query param, the same class of gap as M10 on the drawer. A link to a module
+always opens on its first tab.
