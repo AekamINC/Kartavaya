@@ -36,6 +36,10 @@ _gate = require_module("vikray")
 #: them, and the remedy is a ganit grant, not a hole in the gate.
 _ganit_gate = require_module("ganit")
 
+# F4 (b) — shared, not re-implemented. See the docstring in graha.py: two copies
+# of a response contract is how one ends up reporting a total the other does not.
+from routers.graha import _listed  # noqa: E402
+
 
 # ── Pydantic Models ──────────────────────────────────────────
 
@@ -160,7 +164,8 @@ async def list_orders(
 ):
     pool = await get_pool()
     q = (
-        "SELECT o.*, c.company AS contact_company, c.name AS contact_name "
+        "SELECT o.*, c.company AS contact_company, c.name AS contact_name, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.vikray_orders o "
         "LEFT JOIN staging.graha_contacts c ON c.id = o.contact_id "
         "WHERE o.org_id=$1::uuid AND o.is_active=TRUE"
@@ -174,7 +179,7 @@ async def list_orders(
         q += f" AND o.contact_id=${len(params)}::uuid"
     q += " ORDER BY o.created_at DESC LIMIT 200"
     rows = await pool.fetch(q, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=200)
 
 
 @router.post("/orders")
