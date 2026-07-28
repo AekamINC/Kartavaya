@@ -1905,3 +1905,61 @@ than typing a URL, which is the same lesson as the `/api/documents` prefix.
 
 **Final tally: 60 of 85 leaves.** Srijan 0/7, Dristi 6/8, Manav 6/15,
 Sanvaad 2/5, Prachar 6/11 — plus every module's detail drawers.
+
+## Srijan — 6 of 7, reached at `/hub/org`
+
+**Correcting my own record first:** `/srijan` redirecting to `/dashboard` was
+**my wrong URL, not a defect.** Clicking the nav item resolves to **`/hub/org`**.
+Recorded so nobody chases it. Same lesson as the `/api/documents` prefix and
+the guessed credit endpoints — read the route, do not invent it.
+
+6 walked, **6 distinct character counts, 0 errors.**
+
+| Leaf | What rendered |
+|---|---|
+| Skills | skill packs — *Social Media · instagram · linkedin · Email · Ad Copy* |
+| Content | *Nothing generated yet* + where it comes from |
+| Generate | prompts with costs — *festival campaign… 10 credits · image optional* |
+| Data catalog | 3,358 chars, the largest leaf — scraper entries with per-run credit costs |
+| Data runs | *Start one from the Data catalog tab* |
+| Credits | **"No wallet yet."** |
+
+### Two findings
+
+**1. Srijan puts the tab in the URL — the others do not.** The walk ended at
+`/hub/org?tab=credits`. Ganit and Graha both keep tab state component-local
+(`/ganit` with no param), and M10 records the same gap on the task drawer.
+
+So **M10 is inconsistent rather than universal**: one module already does it
+correctly. That changes the fix from "design and build tab-in-URL" to "adopt
+what Srijan does", which is a much smaller job and gives a working reference.
+
+**2. "No wallet yet" independently corroborates F24.** The Srijan credits tab
+states plainly that the org has no wallet row and that a debit would create one.
+At the same moment `GET /v1/subscription/cost-report` was reporting
+`current_balance: 2000`, and `POST /v1/scrapers/run` was refusing with
+*"have 0"*.
+
+**Three surfaces, and the cost report was the only one lying.** Srijan and the
+scraper agreed with the database; the report derived a number from the plan
+allocation instead. That is F24 confirmed from a surface I had not looked at
+when I fixed it.
+
+**Final tally: 66 of 85 leaves.**
+
+| Module | Verified | Total |
+|---|---|---|
+| Graha | 17 | 17 |
+| Ganit | 10 | 10 |
+| Vetana | 6 | 6 |
+| Vikray | 6 | 6 |
+| Dristi | 6 | 8 |
+| Srijan | 6 | 7 |
+| Manav | 6 | 15 |
+| Prachar | 6 | 11 |
+| Sanvaad | 2 | 5 |
+| **Total** | **66** | **85** |
+
+Plus the task drawer's 31 individual elements. **Zero console errors across all
+66 except Prachar**, where the single module that produced any turned out to
+have a permanently broken endpoint (F26).
