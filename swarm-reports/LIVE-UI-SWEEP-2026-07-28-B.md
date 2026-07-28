@@ -548,10 +548,45 @@ refuses the whole statement. **No approval decision could ever be recorded.**
 **Rejecting was unaffected**, which is why this survived: it sets `approved_by`
 alone, so there is only ever one type to deduce.
 
-**Fixed** with `$1::text` on the second use — the parameter pins to `text`, and
-assigning text to a varchar column is ordinary widening. `167 approval tests
-pass.` The two columns should also be reconciled to one type, but that is a
-migration on a shared database and this is the line that stops the 500 today.
+### Fixed — and the first attempt was not enough
+
+Casting only the second use left it failing, and the error message **flipped** to
+`"text versus character varying"`. That flip is the useful part: it proved the
+cast had deployed and taken effect rather than being ignored, and that the
+*uncast* `approved_by=$1` was still deducing varchar from its own side. Two
+deductions remained.
+
+**Both** uses are now cast to `text`, leaving Postgres one answer.
+
+### Verified live, end to end ✅
+
+```
+POST /approvals/{id}/review  ->  200 {"ok":true,"status":"approved"}
+task.approval_status  pending  ->  approved
+task.status           in_progress -> done
+approved_by / completed_by_user_id  ->  both set
+approval_notes        ->  recorded
+```
+
+And on screen: **`0 AWAITING YOUR NOD`, `PENDING 0`, `APPROVED 1 today`**, with
+the Work-approvals tab badge cleared and the item moved into history.
+
+`167 approval tests pass.` The two columns should still be reconciled to one
+type, but that is a migration on a shared database; this is the change that
+stops the 500.
+
+## Vikray — order CRUD, and the cross-module wiring holds ✅
+
+Created `SO-2026-0003` through the form: customer picked from the **Graha**
+contacts I had created, line item picked from the **Ganit** product catalogue.
+
+- Choosing `Statutory Audit` from the catalogue auto-filled **both** the
+  description and the HSN (`998221`) ✅
+- Total came to **₹53,100** — ₹45,000 + 18% GST, exact ✅
+- Order landed as `Draft`, dated correctly
+
+That is three modules agreeing: a contact created in CRM, a product created in
+Finance, and an order in Sales priced off both.
 
 ## Core PM surfaces — swept ✅
 
