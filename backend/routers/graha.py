@@ -186,14 +186,14 @@ async def list_clients(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    query = "SELECT cl.*, (SELECT COUNT(*) FROM staging.graha_contacts WHERE client_id=cl.id AND is_active=TRUE) AS contact_count, (SELECT COUNT(*) FROM staging.graha_deals WHERE client_id=cl.id AND is_active=TRUE) AS deal_count FROM staging.graha_clients cl WHERE cl.org_id=$1::uuid AND cl.is_active=TRUE "
+    query = "SELECT cl.*, (SELECT COUNT(*) FROM staging.graha_contacts WHERE client_id=cl.id AND is_active=TRUE) AS contact_count, (SELECT COUNT(*) FROM staging.graha_deals WHERE client_id=cl.id AND is_active=TRUE) AS deal_count, COUNT(*) OVER() AS _total FROM staging.graha_clients cl WHERE cl.org_id=$1::uuid AND cl.is_active=TRUE "
     params: list = [org_id]
     if search:
         query += "AND (cl.name ILIKE '%' || $2 || '%' OR cl.ref_no ILIKE '%' || $2 || '%' OR cl.gstin ILIKE '%' || $2 || '%') "
         params.append(search)
     query += "ORDER BY cl.created_at DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=200)
 
 
 @router.post("/clients")
@@ -305,7 +305,7 @@ async def list_contacts(
     query = (
         "SELECT c.id, c.name, c.email, c.phone, c.company, c.designation, c.contact_type, "
         "c.tags, c.source, c.lead_score, c.assigned_to, c.last_contacted_at, c.created_at, "
-        "c.client_id, cl2.name AS client_name "
+        "c.client_id, cl2.name AS client_name, COUNT(*) OVER() AS _total "
         "FROM staging.graha_contacts c "
         "LEFT JOIN staging.graha_clients cl2 ON cl2.id = c.client_id "
     )
@@ -334,7 +334,7 @@ async def list_contacts(
 
     query += "ORDER BY c.created_at DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=200)
 
 
 @router.post("/contacts")
