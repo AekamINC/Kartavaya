@@ -510,6 +510,61 @@ The second call is the point: `ON CONFLICT` now resolves, so re-registering a
 browser updates the row instead of raising. The four CORS errors are gone. The
 QA probe row was deleted afterwards; the 4 original subscriptions are untouched.
 
+## F48 — 🔴 Approving a task ALWAYS returned 500
+
+The approval workflow can be started and can never be finished.
+
+Driven the whole way through the UI: opened the task, pressed **Send for
+approval**, added approver notes, confirmed — `✓ Approval request sent`, task
+moved to `Awaiting Approval`. It arrived in `/approvals` correctly, under the
+right tab, with the requester, the elapsed time and the description I had typed.
+Pressed **Approve**, then **Approve & mark done** in the modal:
+
+```
+POST /api/approvals/task_approval--task_44b6dab098bb/review  ->  500
+AmbiguousParameterError: inconsistent types deduced for parameter $1
+DETAIL: character varying versus text
+```
+
+### Root cause — one parameter, two column types
+
+`server.py:1615` assigns `$1` to two columns that are not the same type:
+
+```sql
+UPDATE tasks SET approval_status='approved', approved_by=$1, ...
+  completed_at=NOW(), completed_by_user_id=$1, ... WHERE task_id=$4
+```
+
+Confirmed against the live database:
+
+| Column | Type |
+|---|---|
+| `tasks.approved_by` | **character varying** |
+| `tasks.completed_by_user_id` | **text** |
+
+Postgres deduces a different type for the same parameter from each side and
+refuses the whole statement. **No approval decision could ever be recorded.**
+
+**Rejecting was unaffected**, which is why this survived: it sets `approved_by`
+alone, so there is only ever one type to deduce.
+
+**Fixed** with `$1::text` on the second use — the parameter pins to `text`, and
+assigning text to a varchar column is ordinary widening. `167 approval tests
+pass.` The two columns should also be reconciled to one type, but that is a
+migration on a shared database and this is the line that stops the 500 today.
+
+## Core PM surfaces — swept ✅
+
+| Surface | Result |
+|---|---|
+| `/tasks` | 5 filters (Mine / All open / Overdue / Done / Archived) each correct — the task appears under All open only, and is rightly absent from Mine (unassigned), Overdue (no due date) and Done |
+| `/tasks` group-by | all three modes correct: `MEDIUM मध्यम`, project name, `IN PROGRESS चालू` |
+| `/tasks` Columns | 6 toggles — Project, Assignees, Category, Due, Last Updated, Status |
+| `/approvals` | KPIs move live (0 → 1 awaiting), correct tab badge, request renders with requester and description |
+| `/teams` | shows the new project, owner, and the role ladder (admin / owner / member / client) |
+| `/inbox` | mentions, assignments, approvals; `Mark all read`; quiet-hours notice |
+| `/settings/categories` | clean empty state with a create control |
+
 ---
 
 # Boards, tasks and e-Sign — exercised end to end ✅
@@ -646,6 +701,16 @@ four looked like findings and are not:
   real title was in the field's `value` all along.
 - **Responsive tap targets at 41px** — under the 44px iOS/AAA guideline but
   comfortably over WCAG 2.5.8 AA (24px). Not a failure; noted only.
+- **"The Approve button is dead"** — it opens a **modal**, which I did not check
+  for. Exactly the mistake I had already made once with the payroll confirm
+  dialog, repeated. The real defect (F48) was one screen further in.
+- **"`ApprovalsPage.jsx:136` posts to a backslash URL"** — the grep output
+  rendered `` `/approvals/${id}/review` `` with backslashes. Reading the file
+  showed correct forward slashes, and the fired request confirmed the URL was
+  right. **A tool's rendering is not the source.**
+- **"Tasks list shows 0 rows"** — the list renders grouped `div`s, not a
+  `<table>`; `tbody tr` was the wrong selector. The task was on screen.
+- **"Group by is missing"** — it is a `<select>`, not buttons.
 
 ---
 
