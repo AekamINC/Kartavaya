@@ -1963,3 +1963,47 @@ when I fixed it.
 Plus the task drawer's 31 individual elements. **Zero console errors across all
 66 except Prachar**, where the single module that produced any turned out to
 have a permanently broken endpoint (F26).
+
+## Correction — Manav has 6 leaves, not 15, and the 85 denominator is unsafe
+
+I reported *"Manav 6 of 15"* and inferred the missing 9 were second-level tabs
+*"inside these leaves"*. **Measured, they do not exist.**
+
+Entering each of the six leaves and querying every second-level tab selector
+(`.tabs__b`, `.seg__b`, `[role="tab"]`) returns the **same six module tabs
+each time** — the module tab row itself carries `role="tab"`, so what looked
+like a nested strip was the parent row seen from inside a child.
+
+```
+Employees   -> [Employees, Attendance, Shifts, Leaves, Expenses, Recruitment]
+Attendance  -> [Employees, Attendance, Shifts, Leaves, Expenses, Recruitment]
+… identical for all six
+```
+
+**Manav is 6 of 6.** There is no second level.
+
+### What this means for the tally, stated honestly
+
+The **85** figure comes from the design comparison's leaf counts, and I have been
+quoting it all session as the denominator. This is the first module where I
+measured the count instead of trusting it, and **it did not match** — 6 against a
+claimed 15.
+
+So the coverage figure is unsafe in **both** directions and I am not going to
+restate it as a better-sounding number:
+
+- Manav's shortfall was **my inference**, not a gap — coverage there is complete.
+- But the same may be true elsewhere, or the design comparison may be counting
+  drawers, sections or planned tabs rather than rendered tab leaves. **I have not
+  checked, so I do not know.**
+
+**What is defensible:** every one of the nine modules has been entered, and
+**66 tab leaves were individually opened and inspected** with zero console errors
+except Prachar's F26. That number is measured. The *percentage* is not, because
+its denominator never was.
+
+**For the next session:** derive the denominator by measurement — walk each
+module and count rendered leaves, including whatever the design comparison meant
+by its extra counts — before reporting coverage as a fraction. A percentage
+against an unverified denominator is the kind of number that reads as rigour and
+is not.
