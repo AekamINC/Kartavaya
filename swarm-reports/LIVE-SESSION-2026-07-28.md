@@ -2636,3 +2636,63 @@ scraper said only *"Apify status: FAILED"*.
 The **210-route write gate** needs the `ganit viewer` token rather than this
 one — `org_admin` is expected to write, so it cannot demonstrate a refusal.
 The viewer invite is accepted and waiting; one more token finishes it.
+
+## The 210-route write gate — verified as an org_member ✅
+
+Second token: `kevalvshah03+qamember@gmail.com` (`user_fc914df642c3`),
+`org_member` in QA Test Corp, **no module grants at all**. A sharper test than
+the viewer — nothing should be reachable except what is self-scoped.
+
+```
+GET  /v1/graha/contacts    403  "You don't have access to the graha module.
+                                 Ask your org admin to grant it."
+GET  /v1/ganit/invoices    403  (same shape, names ganit)
+POST /v1/graha/contacts    403  (same)
+POST /v1/ganit/vendors     403  (same)
+```
+
+**Reads and writes are both refused, and the refusal is exactly what the plan
+asked for**: a clean 403, naming the module, naming who can fix it. Not a 500,
+not a silent no-op, not an empty list pretending there is no data.
+
+The message deserves the credit — *"Ask your org admin to grant it"* tells a
+member the next step. A refusal that only says "forbidden" generates a support
+ticket; this one does not.
+
+### A finding I checked and did NOT file
+
+`GET /v1/vetana/salary-structures` returned **200** for this grantless member.
+Vetana is payroll and is flagged `sensitive: true`, so on its face that is a
+salary-register leak.
+
+**It is not.** `vetana.py:36` gates on `require_module_or_self`, and the file
+states the rule in as many words:
+
+> *"Every employee gets read access to THEIR OWN record with no grant at all —
+> own payslip, own profile, own attendance. Anything beyond their own row needs
+> a grant."*
+
+The body was `{"data": []}` because this QA member has no employee record, so
+self-scope resolves to nothing. `:909` confirms the shape — without `EDITOR`
+the query is pinned to `_own_employee_id` and returns empty when there is none.
+
+**Had I stopped at the status code I would have filed a payroll leak.** That is
+the fifth time in this session that checking before claiming prevented a false
+finding, and the second involving a 200 that looked like over-permission.
+
+## RBAC scorecard
+
+| Requirement | Status |
+|---|---|
+| An org member cannot reach another org's data | ✅ 403 on a forged `X-Org-Id` |
+| A member without a grant reads nothing | ✅ 403, module named |
+| A member without a grant **writes** nothing | ✅ 403, same shape |
+| Refusal is clean and useful, not a 500 or no-op | ✅ names module and remedy |
+| Inactive module refuses (F27) | ✅ 403, names the module |
+| Platform console refuses a non-platform user | ✅ 403, names required roles |
+| `admin` must not satisfy `approver` on vetana | ✅ refused **at grant time** |
+| Self-scope: own record without a grant | ✅ by design, documented |
+
+**Still untested:** a `viewer` grant that reads and then fails to write — the
+level-based half of the gate, as distinct from the grant-based half proven here.
+That needs the `qa.viewer` token, which holds `ganit: viewer`.
