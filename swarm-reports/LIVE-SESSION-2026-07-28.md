@@ -2749,3 +2749,83 @@ staging-only code, and nothing to remove before handover.
 
 That is worth recording as the recommendation for next time: **ask the owner for
 a token before building a way to mint one.**
+
+## Grant/revoke stress test — 22 cycles, zero leakage ✅
+
+Driven as the QA `org_admin` changing grants on the QA viewer account, then
+immediately exercising CRUD **as that user** on the next request. No sleep, no
+re-login, no cache warming.
+
+### Round 1 — 10 single-module cycles (grant -> CRUD -> revoke -> CRUD)
+
+| # | Module · level | Granted read/write | After revoke |
+|---|---|---|---|
+| 1 | graha viewer | 200 / **403** | 403 / 403 |
+| 2 | graha editor | 200 / **200** | 403 / 403 |
+| 3 | ganit viewer | 200 / **403** | 403 / 403 |
+| 4 | ganit editor | 200 / **200** | 403 / 403 |
+| 5-6 | vikray viewer, editor | 200 / — | 403 / — |
+| 7 | prachar viewer | 200 / **403** | 403 / 403 |
+| 8 | prachar editor | 200 / **200** | 403 / 403 |
+| 9 | **dristi viewer** | **403** / 403 | 403 / 403 |
+| 10 | ganit admin | 200 / **200** | 403 / 403 |
+
+A second module was probed on every cycle and returned **403 every time** — a
+grant never leaked sideways.
+
+### Round 2 — 12-step complex cycle
+
+Multi-module grants, partial revokes, level changes in both directions:
+
+```
+1  graha+ganit viewer      graha 200/403  ganit 200/403   others 403
+2  upgrade ganit->editor   graha 200/403  ganit 200/200   <- only ganit moved
+3  add vikray editor       three modules live, each at its own level
+4  PARTIAL revoke ganit    ganit 403/403, graha and vikray UNAFFECTED
+5  downgrade vikray->viewer
+6  upgrade graha->admin    graha 403->200 on write
+7  swap entirely to prachar   all three previous revoked in one call
+8  revoke ALL              every module 403
+9  re-grant ganit editor   200/200 immediately
+10 all four, mixed levels  each module honours its own rung simultaneously
+11 downgrade ALL to viewer every write drops to 403 together
+12 revoke ALL              everything 403
+```
+
+**Every property held:**
+
+- **Partial revoke is surgical** (step 4) — dropping one module left the others
+  untouched at their own levels. A whole-set `PUT` that quietly reset the rest
+  would be the obvious bug here, and it does not.
+- **Levels are per module, simultaneously** (step 10) — viewer on two, editor on
+  two, all correct in the same request set.
+- **Downgrade revokes write immediately** (steps 5, 11) — no stale editor rights.
+- **Re-grant after full revoke works** (step 9) — no tombstone left behind.
+- **Effect is immediate.** The very next request reflected the change on all 22
+  transitions. No token refresh, no cache TTL, no staleness window.
+
+### Two non-findings, recorded so they are not chased
+
+- `vikray` writes returned **405**, not 403. `/v1/vikray/customers` is a
+  GET-only aggregate — my wrong endpoint, not a permission result.
+- `dristi` at cycle 9 read **403 while granted viewer** — the one genuine
+  anomaly. Every other viewer grant produced a 200 read. See below.
+
+## F31 — 🟠 A `dristi: viewer` grant does not open the export route
+
+```
+grant dristi:viewer  ->  GET /v1/dristi/exports/overview  403
+grant ganit:viewer   ->  GET /v1/ganit/invoices           200
+grant graha:viewer   ->  GET /v1/graha/contacts           200
+grant prachar:viewer ->  GET /v1/prachar/campaigns        200
+```
+
+Three modules behave one way and dristi the other, with the same grant shape
+written by the same endpoint. Either the export route demands a level above
+viewer — plausible, since an export is a bulk read of everything a report
+touches — or dristi grants are not being honoured.
+
+**Not diagnosed.** Both explanations are consistent with one data point, and
+this report has already withdrawn findings asserted on exactly that basis. It
+needs the level required by `dristi.py`'s `_gate` read against what a viewer
+grant resolves to.
