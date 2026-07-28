@@ -1661,3 +1661,33 @@ withdrawn, and each would have cost someone an afternoon.
 
 **Running total: 40 of 85 leaves** — Graha 17/17 · Ganit 10/10 · Manav 6/15 ·
 Vetana 6/6 · plus the task drawer's 31 elements.
+
+## Vikray — 6 of 6 ✅
+
+6 walked, **6 distinct character counts, 0 errors.**
+
+| Leaf | What rendered |
+|---|---|
+| Dashboard | health copy — *every order has a delivery date in the future and every delivered one has been invoiced* |
+| Orders | `SO-2026-0001 · Priya Patel · ₹3L · Confirmed · 2026-07-17` |
+| Stock | real rows with `−1 / +1 / Adjust…` controls |
+| Pipeline | the same order in stage view |
+| Targets | copy + Set target |
+| Customers | `TechCorp India · Priya Patel · 1 open · ₹2,95,000 · 2026-07-17` |
+
+Cross-check: the ₹2,95,000 last-order figure ties to the `confirmed` order
+total in the Dristi sales export read earlier in this session. Two independent
+surfaces agreeing on the same number.
+
+**H7 stands unverified-but-consistent.** The design comparison records that
+Vikray has no send affordance — no WhatsApp, email or copy-link on an order —
+while `pages/ganit/_shared.jsx` already exports `waLink()` and
+`waInvoiceText()` that Vikray does not import. Nothing in the list view
+contradicts that; confirming it needs the order **detail** drawer, which is one
+level below this walk.
+
+**Running total: 46 of 85 leaves** — Graha 17/17 · Ganit 10/10 · Manav 6/15 ·
+Vetana 6/6 · Vikray 6/6 · plus the task drawer's 31 elements.
+
+Remaining: Prachar 11 · Dristi 8 · Srijan 7 · Sanvaad 5 · Manav's 9 nested ·
+plus every module's detail drawers.
