@@ -997,3 +997,119 @@ failing if its guard is removed:
 
 Until that runs, RBAC stays where it has been for three sessions. Nothing else
 in the brief is blocked by it.
+
+## Exports — the file, not the status code
+
+The plan's test is whether the file satisfies the *target's* import format, not
+whether a download happened. Probed live against real org data.
+
+### GST and Tally — F8's fix holds, and the files are genuinely right ✅
+
+| Export | Status | Verdict |
+|---|---|---|
+| `tally/2026-07` | 200, `application/xml`, 4,518 bytes | Structurally valid Tally import XML |
+| `tally/2026-07/preview` | 200 | 2 sales, 2 vouchers, 2 held back **with reasons** |
+| `gst/gstr1/2026-07/json` | 200, 1,235 bytes | Matches the portal's offline-utility schema |
+| `gst/gstr1/2026-07/preview` | 200 | Declares `sections_omitted` with reasons |
+| `gst/gstr3b/2026-07` | 200, 1,928 bytes | Rows with `recorded` flags, due date, state |
+
+Every structural element Tally's importer needs is present: `ENVELOPE`,
+`HEADER`, `TALLYREQUEST` = Import Data, `REQUESTDESC`, `REPORTNAME`,
+`REQUESTDATA`, `TALLYMESSAGE`, `VOUCHER`, `VOUCHERTYPENAME`, `PARTYLEDGERNAME`,
+`ALLLEDGERENTRIES.LIST`, `SVCURRENTCOMPANY`. The file's header comment also
+lists the ledgers the target company must already hold, and states plainly that
+this is not a return and not a filing — consistent with GST filing automation
+being out of scope.
+
+GSTR-1 arithmetic ties: `txval` 126000 at `rt` 18 gives 22680, split
+`camt` 11340 / `samt` 11340 with `iamt` 0 for an INTRA supply. GSTIN is the
+canonical synthetic `24AAAAA0000A1Z5`.
+
+The held-back reporting is the good part: `INV-2026-0002` and `INV-2026-0004`
+are excluded with *"no customer name — Tally needs a party ledger"* rather than
+being silently dropped or exported broken.
+
+**Still unexercised:** `purchase_count: 0` and GSTR-3B `inward_count: 0`. The
+plan calls this out — the Tally purchase path has never run on real rows, and
+vendor bills have to be created first. Not done.
+
+## F20 — 🔴 Three response headers were set and then thrown away — FIXED ✅
+
+`CORSMiddleware` had `allow_headers=["*"]` and **no `expose_headers`**. Those
+govern different directions: `allow_headers` is about the REQUEST. Without
+`expose_headers` the browser hands JavaScript only the six CORS-safelisted
+RESPONSE headers, and the frontend is cross-origin from this API in every
+environment — so this was never not the case.
+
+Thrown away:
+
+- **`Content-Disposition`** — every document route sets it, and the name carries
+  the real document number (`SOA-1A2B3C4D-20260731.pdf`).
+- **`X-Kartavaya-Voucher-Count`** and **`X-Kartavaya-Held-Back`** — added by the
+  Tally export so *"a caller that only downloads still learns what was left out,
+  without parsing the comment block"* (`documents.py:1352`).
+
+The sharp part: `lib/documents.js:34-37` **already documents this exact
+requirement** — *"only readable cross-origin when it is in
+`Access-Control-Expose-Headers`, so the caller's guess is kept as the fallback"*
+— and `documentDownload.test.js:111` is a test named *"falls back to the caller
+name when the header is not exposed"*. The defence was written, tested, and the
+header it defended against was never added. **That fallback has been the only
+path in production**, which is why downloaded documents never carried their real
+names.
+
+And the two `X-Kartavaya-*` headers exist solely to be read by a caller, so a
+held-back invoice could not be surfaced to the user at all — the UI has no way
+to know `INV-2026-0002` was dropped from the file the user just downloaded.
+
+Fixed in `024ed4d8`. Exposing a response header is not a grant of access:
+`ALLOWED_ORIGINS` still decides who may make the request, and none of the three
+carry anything the body does not already contain.
+
+## F21 — 🟠 `format=xlsx` and `format=pdf` silently return JSON
+
+All five Dristi report types, both formats:
+
+```
+GET /v1/dristi/exports/{overview|revenue|pipeline|hr|sales}?format=xlsx  -> 200
+GET ...?format=pdf                                                      -> 200
+content-type: application/json
+body: {"data": {...}, "format": "json"}
+```
+
+`dristi.py` implements `csv` and nothing else; every other value falls through
+to `return {"data": data, "format": "json"}`. The parameter is accepted and
+ignored, and the response even labels itself `"format":"json"` while answering a
+request for PDF.
+
+This is the download-side twin of **F11** (a scheduled PDF report delivering raw
+JSON in the mail body). One root cause: **the renderers do not exist.** The plan
+asks for "download report in every format offered — CSV, XLSX, PDF", and two of
+the three are not implemented anywhere.
+
+**Not changed.** Making it refuse loudly would be more honest than returning
+JSON dressed as a PDF, but it turns a wrong file into a broken button, and
+building the renderers is the same work F11 is already held on. **Owner's
+call, same decision as F11.**
+
+## F22 — 🔴 The report CSV contained Python source — FIXED ✅
+
+```
+GET /v1/dristi/exports/revenue?format=csv
+monthly,"[{'month': datetime.datetime(2026, 7, 1, 0, 0, tzinfo=datetime.timezone.utc),
+           'total': Decimal('311671.60'), 'count': 6}]"
+```
+
+One cell. `pipeline` and `sales` had the same shape; `overview` and `hr` looked
+correct only because every value they carry is a scalar, which is how this
+survived.
+
+Cause: the dict branch used `writerow([k, v])` for every value, but a value here
+is either a scalar or a list of rows and those two cannot share a cell. `csv`
+falls back to `str()` for what it does not recognise, so the whole list went in.
+
+Rows now get their own titled block with a real header row, blank-line
+separated so several tables can share a file and stay readable. `_csv_cell`
+normalises what asyncpg actually returns — `Decimal` to a number, aware
+`datetime` to ISO-8601, because `datetime.datetime(2026, 7, 1, 0, 0, ...)` is
+not a date any spreadsheet parses. 7 tests, `71011da0`.
