@@ -2829,3 +2829,74 @@ touches — or dristi grants are not being honoured.
 this report has already withdrawn findings asserted on exactly that basis. It
 needs the level required by `dristi.py`'s `_gate` read against what a viewer
 grant resolves to.
+
+---
+
+# LIVE UI PENETRATION TEST — as the viewer, in the browser
+
+**Correction to how I ran this section.** The brief and
+`feedback_testing_precision` both say RBAC must be tested *"live through the
+UI — actually being that user and watching the refusal happen, not inferring it
+from a grant row or an API probe. Behind-the-doors verification does not
+count."* I ran API probes for the whole RBAC section and only moved into the UI
+when the owner pushed back. He was right, and the UI immediately produced two
+findings the probes could not.
+
+Signed into the browser as **`Kev Ganit · Member · QA Test Corp`** holding
+**`ganit: viewer`** and nothing else.
+
+## F32 — 🔴 A viewer is offered the full invoice-creation form
+
+The Finance page renders `+ Invoice` and `+ New invoice`. Clicking
+`+ New invoice` opens **Create invoice** in full and interactive:
+
+> Type · Customer · Place of supply · Invoice date · Due date · Inter-state
+> (IGST) · Foreign/export · **Line items** with Description, HSN/SAC, Qty, Rate,
+> Product, GST% · + Add line · Flat discount · live Subtotal / GST / Total
+
+Screenshot: `_shots/2026-07-28-viewer-gets-create-form.png`
+
+**The API refuses the submit** — that is verified, and the message is good:
+`403 "Your ganit access is Viewer: you can read it, but not change it. Ask an
+org admin for Editor."` So this is not a data-integrity hole.
+
+**It is a UX and trust hole.** A viewer can compose an entire invoice — several
+line items, tax treatment, a discount — and only learns it cannot be saved when
+they press Create. Everything typed is lost, and the user's reasonable
+conclusion is that the product is broken rather than that they lack a
+permission.
+
+The plan states the rule as *"the nav hides what the API refuses"*. Here the UI
+**advertises** what the API refuses, which is the same rule violated in the more
+expensive direction.
+
+Note the API probe I ran earlier reported this area as fully correct — a clean
+403 with a useful message. It was correct, and it was not the whole picture.
+
+## F33 — 🟠 The nav hides a module the user *does* have
+
+The left nav for this account shows only **WORKSPACE · OPERATIONS · TEAM ·
+SETTINGS**. There is no REVENUE section and no Finance entry — yet the user
+holds `ganit: viewer`, and `/ganit` typed directly renders the module fully
+with real financial data (₹3.2 L receivables, 7 invoices, customer names).
+
+Screenshot: `_shots/2026-07-28-viewer-sees-finance.png`
+
+`GET /v1/org/modules` as this member returns **`modules: []`** — zero — while
+the same endpoint as an org_admin returns nine. If the nav derives from that
+response, it cannot show a module the member actually holds, which matches
+exactly what is on screen.
+
+**Not a security hole** — the user is entitled to Ganit and the API agrees. It
+is the inverse of one: a granted module is unreachable through navigation, so a
+member has to be told the URL. Worth confirming whether `/v1/org/modules` is
+meant to return org-level state or the caller's own grants; the nav reads it as
+the latter and it behaves as the former.
+
+## Direct-URL access is NOT a bypass here
+
+Typing `/ganit` reached the module — but that is correct, because this user is
+granted it. The plan's requirement is that *the API still refuses when the nav
+is bypassed*, and it does: the same session was refused `/v1/graha/contacts`
+with 403 while `/v1/ganit/invoices` returned 200. Navigation is not being used
+as the control.
