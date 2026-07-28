@@ -1482,3 +1482,35 @@ does) · **e-sign all-signers landed** — the last one, now closed.
   withdrawal."* Already correct.
 - **OTP is required before a signature is accepted** (`:520`), not merely
   offered.
+
+## F25 — 🟠 Credit accounting has THREE stores, and the cost report reads one
+
+Found while checking whether the 0 balance also blocks AI. It does, but the
+more useful finding is why the number is hard to get right.
+
+| Store | Keyed by | Written by |
+|---|---|---|
+| `staging.hub_org_credits` | `org_id` | scrapers (`scrapers.py:138`), `deduct_org_credits` |
+| `staging.hub_credit_wallets` | `client_id` | `deduct_credits` (`ai_router.py:614`) |
+| `staging.hub_user_credits` | `(org_id, user_id)` | `deduct_org_credits`, **checked FIRST** (`:697`) |
+
+`deduct_org_credits` spends a user's personal allocation **before** touching
+the org wallet. So a user can run AI generations that consume their allocation
+and move `hub_org_credits.balance` **not at all** — while a different code
+path, `deduct_credits`, spends from a per-**client** wallet the org report
+never looks at.
+
+**This qualifies my own F24 fix.** Reporting `wallet["balance"]` is strictly
+better than the derived `plan_credits - total_used`, because it is at least a
+number the system enforces somewhere. But it is not the whole picture: what a
+given user can actually spend is the org balance **plus** their remaining
+personal allocation, and which store a debit lands in depends on the call path.
+
+Not fixed. Deciding what `current_balance` should *mean* when there are three
+stores is a product question, not a bug fix — and the three-store design itself
+may be the thing to revisit, two and a half weeks before handover, on the
+subsystem that decides whether a customer can use the product.
+
+**Consequence for this session's coverage:** the plan's scraper and AI/skills
+sections both need credits, and both are blocked by the same empty org wallet.
+That is one decision, not two.
