@@ -66,22 +66,35 @@ const more = () => $('.mt__more');
 const click = (el) => act(() => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
 
 describe('ModuleTabs · overflow', () => {
-  it('shows six inline and puts the rest behind More', () => {
+  // The inline cap is 8, raised from 6. At 6, four of the nine module pages
+  // pushed leaves into the menu that fit on the strip — Dristi hid `Dashboards`
+  // and `Pivot` behind "More +2" on a 1600px viewport with room to spare. A tab
+  // behind a menu is materially less discoverable than one on the strip, which
+  // is the whole reason this component exists.
+  it('shows eight inline and puts the rest behind More', () => {
     mount();
-    expect(tabs()).toHaveLength(6);
+    expect(tabs()).toHaveLength(8);
     expect(more()).toBeTruthy();
   });
 
   it('says how many it is hiding — the difference between a menu and lost content', () => {
     mount();
-    expect(more().textContent).toContain('+11');   // 17 − 6
+    expect(more().textContent).toContain('+9');    // 17 − 8
   });
 
   it('lists every hidden tab, and counts the whole set', () => {
     mount();
     click(more());
     expect($('.mt__pop-head').textContent).toBe('All tabs · 17');
-    expect($$('.mt__pop-row')).toHaveLength(11);
+    expect($$('.mt__pop-row')).toHaveLength(9);
+  });
+
+  it('shows every tab inline when the module has 8 or fewer, with no More', () => {
+    // Dristi's real shape: 8 leaves. Before the cap moved, two of them were
+    // behind a menu on a viewport with room for all eight.
+    mount('overview', CRM.slice(0, 8));
+    expect(tabs()).toHaveLength(8);
+    expect(more()).toBeFalsy();
   });
 
   it('reaches a tab that exists only in the menu', () => {
@@ -97,7 +110,7 @@ describe('ModuleTabs · overflow', () => {
     // back behind More the instant it becomes current.
     mount('dedupe');
     expect(tabs().some(t => t.textContent.includes('dedupe'))).toBe(true);
-    expect(tabs()).toHaveLength(6);
+    expect(tabs()).toHaveLength(8);
   });
 
   it('closes on Escape — the trigger sits inside a tablist', () => {

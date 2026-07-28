@@ -33,7 +33,25 @@ import { TAB_HI, tabEn } from './tabLabels';
  * strip has to say how much it is not showing. That is the whole difference
  * between an overflow menu and hidden content.
  */
-export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', max = 6 }) {
+/*
+ * `max` is 8, not 6.
+ *
+ * At 6, four of the nine module pages pushed leaves into the overflow menu that
+ * comfortably fit on the strip: Dristi hid `Dashboards` and `Pivot` behind
+ * "More +2" on a 1600px viewport with room to spare, and Prachar did the same
+ * with two of its eight. A tab behind a menu is materially less discoverable
+ * than one on the strip — that is the whole reason this component exists — so
+ * hiding a leaf that fits is the same defect in miniature.
+ *
+ * 8 covers every module except Graha (17), which genuinely needs the menu and
+ * is the case the component was written for. Ganit at 10 now shows 8 inline
+ * with 2 in the tail rather than 6 and 4.
+ *
+ * This is a display cap, not a layout guarantee: the strip is still
+ * `overflow-x: auto`, so a narrow viewport scrolls as before. The cap exists to
+ * bound how many tabs compete for the row, not to promise they all fit.
+ */
+export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', max = 8 }) {
   const [openMore, setOpenMore] = useState(false);
   const wrapRef = useRef(null);
 
