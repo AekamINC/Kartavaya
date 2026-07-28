@@ -1124,7 +1124,7 @@ async def list_contracts(
         "SELECT ct.id, ct.title, ct.description, ct.contract_value, "
         "ct.start_date, ct.end_date, ct.status, ct.renewal_reminder_days, "
         "ct.file_url, ct.notes, ct.created_at, "
-        "c.name as contact_name "
+        "c.name as contact_name, COUNT(*) OVER() AS _total "
         "FROM staging.ganit_contracts ct "
         "LEFT JOIN staging.graha_contacts c ON c.id = ct.contact_id "
         "WHERE ct.org_id=$1::uuid AND ct.is_active=TRUE "
@@ -1140,13 +1140,19 @@ async def list_contracts(
     query += "ORDER BY ct.created_at DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
     from services.storage import sign_key
+    # This list post-processes each row to mint a signed file URL, so it cannot
+    # hand `rows` straight to `_listed`. The envelope is assembled by hand from
+    # the same `_total` window column, and `_total` is popped inside the loop so
+    # it cannot ride out on a document the frontend maps over.
+    total = int(dict(rows[0]).get("_total", len(rows))) if rows else 0
     docs = []
     for r in rows:
         d = dict(r)
+        d.pop("_total", None)
         if d.get("file_key"):
             d["file_url"] = await sign_key(org_id, d["file_key"]) or d.get("file_url", "")
         docs.append(d)
-    return {"data": docs}
+    return {"data": docs, "total": total, "limit": 200, "truncated": total > 200}
 
 
 @router.post("/contracts")
@@ -1993,7 +1999,8 @@ async def list_bank_statements(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    q = "SELECT * FROM staging.ganit_bank_statement_lines WHERE org_id=$1::uuid"
+    q = ("SELECT *, COUNT(*) OVER() AS _total "
+         "FROM staging.ganit_bank_statement_lines WHERE org_id=$1::uuid")
     params: list = [org_id]
     if reconciled == "true":
         q += " AND is_reconciled=TRUE"
@@ -2004,7 +2011,7 @@ async def list_bank_statements(
         q += f" AND batch_id=${len(params)}"
     q += " ORDER BY statement_date DESC, created_at DESC LIMIT 500"
     rows = await pool.fetch(q, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=500)
 
 
 @router.post("/bank-statements/{line_id}/match")
