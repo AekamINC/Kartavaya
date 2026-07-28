@@ -1588,3 +1588,32 @@ Two things worth drawing out:
   `No documents found.`, `No merges yet` — not blank panels, which is the
   distinction the brief draws when it says a 200 rendering an empty table is
   still a bug.
+
+## Manav — 6 top-level leaves, and the tree is deeper than the top row
+
+6 walked, **6 distinct character counts, 0 errors**. Real content or a proper
+empty state on every one.
+
+| Leaf | What rendered |
+|---|---|
+| Employees | real rows — *Neha Gupta · Sales · Sales Manager · full time · active* |
+| Attendance | *"between 2026-07-28 and 2026-07-28. Widen the dates, or mark attendance for a day."* |
+| Shifts | copy about templates, bids and swaps |
+| Leaves | *No leave requests* + who they come from |
+| Expenses | *No expense claims* + who they come from |
+| Recruitment | *Create a job opening to start tracking candidates* |
+
+**The attendance empty state is the best one in the app so far** and worth
+copying elsewhere: it names the *cause* (a same-day date range), and it offers
+the two fixes (widen the range, or mark a day). Most empty states in this build
+say what is absent; this one says why and what to do.
+
+**Coverage caveat, stated rather than claimed away.** The design comparison
+counts Manav at **15** leaves. I walked 6 and found **no More popover**, so the
+remaining 9 are second-level tabs *inside* these leaves — the "tabs inside
+sections inside pages, with second-level tabs inside those" the brief warns
+about, and exactly where it says defects survive.
+
+**So Manav is 6 of 15.** Recorded that way. Total verified across the app is now
+**34 of 85 leaves** — Graha 17/17, Ganit 10/10, Manav 6/15, plus the task
+drawer's 31 individual elements.
