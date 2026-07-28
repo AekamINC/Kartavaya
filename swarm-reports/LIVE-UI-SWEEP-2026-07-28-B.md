@@ -183,6 +183,61 @@ the panel still reads *"Pick a channel or a direct message on the left, **or
 create one** to start a conversation."* — inviting an action every endpoint on
 the page has just refused.
 
+## F42 — 🔴 An invoice can never be edited, and the product tells you to edit it
+
+**A dead end for real data, found by pressing `Download PDF`.**
+
+`GET /v1/ganit/invoices/{id}/pdf` returns **422** for `INV-2026-0005`
+(₹2,06,500). The refusal is one of the best in the codebase — it names the GST
+rule, the field, and the line:
+
+> `document_incomplete` · *"This tax invoice cannot be issued — 1 mandatory
+> field(s) are missing or inconsistent. Nothing has been invented to fill the
+> gap."*
+> `invoice.line_items.hsn_code` — *"Rule 46(g) — every line needs an HSN or SAC
+> code. Line 1 has neither."*
+
+The toast the user sees is equally good, and ends:
+
+> **"Set it in Ganit → the invoice → Edit."**
+
+**There is no Edit.** Verified on all 8 invoices, opened one at a time: every
+drawer offers only `Download PDF · Send on WhatsApp · Mark sent|Mark final ·
+Record payment`, and **zero editable fields** — including `INV-2026-0005`, which
+carries a `draft` badge and a `Mark final` action, so it is explicitly still
+pre-issue.
+
+The consequences compound:
+
+- the invoice can never acquire its HSN code, so its **PDF can never be issued**;
+- it stays in the GST Filing tab's **held-back list** forever (F34);
+- it is excluded from **Tally and GSTR-1 export** permanently;
+- the only remedy the product names is a control that does not exist.
+
+`+ New invoice` will happily create another one in the same state (F34).
+**Create works, correct does not.** For an accounting product where a wrong HSN
+or a typo'd GSTIN is routine, an unfixable invoice is not an edge case.
+
+Related, smaller: that toast is dense — three sentences and an instruction — and
+**auto-dismisses in about 2 seconds**. Measured: absent at 150ms, present from
+~400ms, gone by 2500ms.
+
+## Business rules — checked by clicking, and CORRECT ✅
+
+The owner asked specifically whether a paid invoice can still be edited. Opened
+every invoice and compared its actions against its status:
+
+| Invoice | Status | `Record payment` | `Mark sent` |
+|---|---|---|---|
+| INV-2026-0007 | **paid** | **absent** ✅ | present |
+| INV-2026-0008, 0006, 0003, 0001, CN-0002 | unpaid | present | present |
+| INV-2026-0005 | unpaid, **draft** | present | `Mark final` instead ✅ |
+| INV-2026-0004 | unpaid | present | absent |
+
+**A settled invoice correctly stops offering `Record payment`**, and the draft
+correctly offers `Mark final` rather than `Mark sent`. The lifecycle is enforced.
+The gap is not the rules — it is that no state, including draft, permits an edit.
+
 ---
 
 ## Checked and deliberately NOT filed
@@ -215,6 +270,20 @@ four looked like findings and are not:
 - **Sanvaad returning 403 to an org_admin** — correct. The module is inactive
   for this org; org_admin reaches every *active* module, not every module. What
   is wrong is only the wording (F40).
+- **"8 invoice drawers did not open"** — harness bug. I queried `.dr__panel`,
+  which does not exist; the drawer is `[role=dialog]` inside `.dr__scrim`. All 8
+  open correctly, via click, via keyboard, and close via Esc, via ×, and via a
+  click on the scrim.
+- **"Enter does not open the record"** — harness bug. A synthetic
+  `KeyboardEvent` does not trigger a native button activation. With a real
+  Playwright keypress, Enter opens the drawer. Keyboard access is fine.
+- **"Download PDF fails silently"** — wrong, and nearly filed. The toast appears
+  at ~400ms; I sampled at 150ms and again after it had auto-dismissed. The
+  message is excellent. The real defect it exposes is F42.
+- **Graha `Documents` failing to load** — this one WAS real (a crash, now
+  fixed), and is the counter-example to the four above: the distinguishing test
+  each time was the console. A stale-chunk MIME error, a `TypeError`, and a
+  mis-timed toast look identical from "the page is not right".
 
 ---
 
