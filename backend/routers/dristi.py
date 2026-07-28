@@ -11,7 +11,7 @@ def _parse_time(s: str) -> _dt_time:
     parts = s.split(":")
     return _dt_time(int(parts[0]), int(parts[1]))
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 
 from auth_router import require_user
@@ -933,6 +933,111 @@ async def export_report(
             iter([output.getvalue()]),
             media_type="text/csv",
             headers={"Content-Disposition": f"attachment; filename={report_type}_export.csv"},
+        )
+
+    # ── xlsx and pdf ─────────────────────────────────────────────────────────
+    #
+    # Both formats were accepted and silently ignored: every value other than
+    # `csv` fell through to the JSON return below, so a caller asking for PDF
+    # received JSON, and the body labelled itself `"format":"json"` while doing
+    # it. Measured live on staging across all five report types.
+    #
+    # Neither needs a new dependency. `openpyxl` and `weasyprint` are both in
+    # requirements.txt, and `doc_render.render_pdf` is described there as "the
+    # single PDF path" — the same toolchain behind invoice and payslip PDFs, so
+    # a report PDF cannot drift from the documents the firm already sends.
+    #
+    # The shape rule is the one the CSV branch established: a value is either a
+    # scalar or a list of rows, and the two cannot share a presentation. Scalars
+    # become a summary block; each row-list becomes its own sheet or its own
+    # table.
+    if format in ("xlsx", "pdf"):
+        scalars, tables = [], []
+        if isinstance(data, list) and data:
+            tables = [(report_type, data)]
+        elif isinstance(data, dict):
+            scalars = [(k, v) for k, v in data.items() if not _is_row_list(v)]
+            tables = [(k, v) for k, v in data.items() if _is_row_list(v)]
+
+        title = f"{report_type.title()} report"
+        if format == "xlsx":
+            import io
+            from openpyxl import Workbook
+            from openpyxl.styles import Font
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Summary"
+            ws.append([title])
+            ws["A1"].font = Font(bold=True, size=14)
+            ws.append([])
+            for k, v in scalars:
+                ws.append([k, _csv_cell(v)])
+            if not scalars:
+                ws.append(["No summary values for this report."])
+
+            for k, rows in tables:
+                # Excel sheet names cap at 31 chars and reject []:*?/\
+                safe = "".join(c for c in str(k) if c not in "[]:*?/\\")[:31] or "Data"
+                sheet = wb.create_sheet(safe)
+                headers = list(rows[0].keys())
+                sheet.append(headers)
+                for cell in sheet[1]:
+                    cell.font = Font(bold=True)
+                for row in rows:
+                    sheet.append([_csv_cell(row.get(h)) for h in headers])
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            return Response(
+                content=buf.getvalue(),
+                media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                headers={"Content-Disposition":
+                         f'attachment; filename="{report_type}_export.xlsx"'},
+            )
+
+        # pdf
+        from html import escape
+
+        def _table_html(name, rows):
+            headers = list(rows[0].keys())
+            head = "".join(f"<th>{escape(str(h))}</th>" for h in headers)
+            body = "".join(
+                "<tr>" + "".join(f"<td>{escape(str(_csv_cell(r.get(h))))}</td>"
+                                 for h in headers) + "</tr>"
+                for r in rows
+            )
+            return (f"<h2>{escape(str(name))}</h2>"
+                    f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>")
+
+        summary = "".join(
+            f"<tr><th>{escape(str(k))}</th><td>{escape(str(_csv_cell(v)))}</td></tr>"
+            for k, v in scalars
+        )
+        parts = [f"<h1>{escape(title)}</h1>"]
+        if summary:
+            parts.append(f"<table class='kv'><tbody>{summary}</tbody></table>")
+        parts += [_table_html(k, rows) for k, rows in tables]
+        if len(parts) == 1:
+            parts.append("<p>This report produced no rows for the current period.</p>")
+
+        html_doc = (
+            "<html><head><meta charset='utf-8'><style>"
+            # 290mm, not 297: the same budget doc_render.py:143 enforces, so a
+            # long report reserves its tail instead of clipping it.
+            "@page{size:A4;margin:14mm} body{font-family:sans-serif;font-size:11px;"
+            "max-height:290mm} h1{font-size:18px;margin:0 0 10px}"
+            "h2{font-size:13px;margin:16px 0 6px} table{border-collapse:collapse;width:100%}"
+            "th,td{border:1px solid #ccc;padding:5px 7px;text-align:left}"
+            "thead th{background:#f2f2f2} .kv th{width:38%}"
+            "</style></head><body>" + "".join(parts) + "</body></html>"
+        )
+        from services.doc_render import render_pdf
+        return Response(
+            content=render_pdf(html_doc),
+            media_type="application/pdf",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{report_type}_export.pdf"'},
         )
 
     return {"data": data, "format": "json"}
