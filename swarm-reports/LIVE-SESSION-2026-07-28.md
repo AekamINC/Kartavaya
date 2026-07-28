@@ -2516,3 +2516,59 @@ the SELECT, return `_listed(rows, limit=N)` — and `_listed` is already tested.
 crosses the wire on the money path, and it wants the frontend reading `total`
 first so a raised cap does not simply move the silent truncation to a larger
 number.
+
+---
+
+# RBAC — first live evidence, from the invite path
+
+A **QA Test Corp** org already existed (`fae87907-2f99-4b35-a241-c94d9e1e4a17`,
+active), so the ladder did not need creating from nothing. Added the owner's
+account to it as `org_admin` via the platform console, then created the ladder
+through `POST /v1/org/invites` with the `X-Org-Id` switcher header.
+
+## Three invites issued ✅
+
+Org Admin · Org Member · **Ganit Viewer** (`module_grants: [{code: ganit, role:
+viewer}]`). Plus-addressed to the owner's real inbox so the mail is deliverable
+and the accounts can actually be accepted.
+
+## Two REFUSED — and the refusals are the finding 🔒
+
+Issued as `org_admin`, both were correctly rejected:
+
+```
+org_role: org_owner
+  403  "Only an organisation owner can invite another owner."
+
+module_grants: [{code: vetana, role: approver}]
+  403  "Only an organisation owner can grant approver on vetana.
+        Administering a module and releasing money against it are
+        deliberately separate."
+```
+
+**This is the plan's separated-duty requirement — `admin` must NOT satisfy
+`approver` on `vetana` — verified live**, and verified in the stronger place:
+**at the point of granting, not the point of use.** An admin cannot mint an
+approver and then act through them. Refusing only at use time would leave the
+grant sitting in the table looking valid.
+
+The message is also the right kind: it states the rule and the reason in one
+line, so an org admin hitting it learns the model rather than filing a ticket.
+
+Privilege escalation via invite is the classic path — `invite_router.py:47-51`
+records that `create_invite`, `update_user` and `change_user_role` each
+validated the role string and stopped there, with no comparison against the
+caller, so *"a platform_staff could invite an admin and then sign in as them"*.
+That hole is closed on this path too.
+
+## What is still not verified, and why
+
+The **refusals a user experiences** — a viewer reading and failing to write across
+the 210-route gate, the nav hiding what the API refuses, an org member unable to
+reach another org — still need a session as those users. Three invites are
+waiting; accepting one and handing over its token is enough to start, and needs
+no authentication bypass at all.
+
+`org_owner` and the `vetana` approver cannot be invited by an `org_admin`,
+by design. They need the org owner to issue them — which is itself the control
+working.
