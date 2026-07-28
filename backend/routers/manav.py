@@ -32,6 +32,10 @@ MODULE = "manav"
 #: reads their own profile, attendance, leave and claims.
 _gate = require_module_or_self(MODULE)
 
+# F4 (b) — shared, not re-implemented. See graha.py's docstring: two copies of a
+# response contract is how one ends up reporting a total the other does not.
+from routers.graha import _listed  # noqa: E402
+
 # Reading an identity document needs more than module membership. Declared here
 # rather than inline so tests can override it, same as `_gate`. The role names
 # come from role_tiers, not from two string literals written out here.
@@ -379,7 +383,8 @@ async def list_employees(
     pool = await get_pool()
     query = (
         "SELECT id, employee_code, name, email, phone, department, designation, "
-        "employment_type, status, date_of_joining, shift, created_at "
+        "employment_type, status, date_of_joining, shift, created_at, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.manav_employees "
         "WHERE org_id=$1::uuid AND is_active=TRUE "
     )
@@ -391,7 +396,11 @@ async def list_employees(
     if not _can(levels, VIEWER):
         own = await _own_employee_id(pool, user, org_id)
         if not own:
-            return {"data": []}
+            # Same envelope as the populated path below. A caller reading
+            # `total` must not get `undefined` here just because the list is
+            # empty for a permissions reason rather than a data one — that is
+            # how a "showing N of M" strip ends up rendering "showing 0 of".
+            return {"data": [], "total": 0, "limit": 500, "truncated": False}
         query += f"AND id=${idx}::uuid "
         params.append(own)
         idx += 1
@@ -411,7 +420,7 @@ async def list_employees(
 
     query += "ORDER BY name LIMIT 500"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=500)
 
 
 @router.post("/employees")
