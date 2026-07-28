@@ -839,6 +839,38 @@ async def get_report_logs(
     return {"logs": [dict(r) for r in rows]}
 
 
+def _is_row_list(v) -> bool:
+    """True for a list of dicts — the one shape that needs its own table."""
+    return isinstance(v, list) and bool(v) and all(isinstance(r, dict) for r in v)
+
+
+def _csv_cell(v):
+    """A spreadsheet-safe scalar.
+
+    asyncpg hands back `Decimal` and timezone-aware `datetime`, and csv falls
+    back to `str()` for both. `str(Decimal('311671.60'))` is harmless, but the
+    same fallback on a nested structure produced Python source in a cell, and
+    `datetime.datetime(2026, 7, 1, 0, 0, tzinfo=...)` is not a date any
+    spreadsheet will parse. Numbers go out as numbers and instants as ISO-8601,
+    which Excel and Google Sheets both read.
+    """
+    from datetime import date, datetime
+    from decimal import Decimal
+
+    if v is None:
+        return ""
+    if isinstance(v, Decimal):
+        return float(v)
+    if isinstance(v, (datetime, date)):
+        return v.isoformat()
+    if isinstance(v, (dict, list, tuple, set)):
+        # Should be unreachable for a row value now that tables are split out,
+        # but a nested blob must never silently become Python source again.
+        import json
+        return json.dumps(v, default=str)
+    return v
+
+
 @router.get("/exports/{report_type}", dependencies=[Depends(_gate)])
 async def export_report(
     report_type: str,
@@ -869,11 +901,33 @@ async def export_report(
         if isinstance(data, list) and data:
             writer = csv.DictWriter(output, fieldnames=data[0].keys())
             writer.writeheader()
-            writer.writerows(data)
+            writer.writerows([{k: _csv_cell(v) for k, v in row.items()} for row in data])
         elif isinstance(data, dict):
             writer = csv.writer(output)
-            for k, v in data.items():
-                writer.writerow([k, v])
+            # A value here is either a scalar or a list of rows, and the two
+            # cannot share a shape. `writerow([k, v])` was used for both, so a
+            # list of rows went through str() and landed in ONE cell as Python
+            # source: measured live on staging, revenue_export.csv contained
+            #   monthly,"[{'month': datetime.datetime(2026, 7, 1, 0, 0, ...),
+            #              'total': Decimal('311671.60'), 'count': 6}]"
+            # which is not openable as a spreadsheet in any useful sense.
+            # pipeline and sales had the same shape; overview and hr looked
+            # correct only because every value they carry is a scalar.
+            scalars = [(k, v) for k, v in data.items() if not _is_row_list(v)]
+            tables = [(k, v) for k, v in data.items() if _is_row_list(v)]
+            for k, v in scalars:
+                writer.writerow([k, _csv_cell(v)])
+            for k, rows in tables:
+                # Blank line then a titled block, so several tables can share
+                # one file and still be readable. Excel keeps the sections
+                # visually separate and a parser can split on the empty row.
+                if output.getvalue():
+                    writer.writerow([])
+                writer.writerow([k])
+                headers = list(rows[0].keys())
+                writer.writerow(headers)
+                for row in rows:
+                    writer.writerow([_csv_cell(row.get(h)) for h in headers])
         from fastapi.responses import StreamingResponse
         return StreamingResponse(
             iter([output.getvalue()]),
