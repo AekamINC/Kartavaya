@@ -2100,3 +2100,70 @@ Three findings in the same neighbourhood — module gating — is the thread to 
 that filters it, which is a short read for a session with the context to verify
 what it finds. Asserting the cause from two data points is exactly what this
 report has withdrawn five findings for.
+
+---
+
+# RETRACTION — F28 is withdrawn in full. It was my measurement error.
+
+**There is no tab-count defect.** Prachar and Dristi both have 8 tabs, exactly as
+their `ALL TABS · 8` strips declare. I reported 6 and called the difference a
+bug, then escalated it across two modules. Both were wrong.
+
+### What actually happened
+
+`ModuleTabs.jsx:120` renders `All tabs · {norm.length}` **inside**
+`{openMore && (…)}` — the counter only exists while the popover is open, and
+the popover is `.mt__pop` with `.mt__pop-row` children.
+
+My denominator script queried `.pop button`. That selector does not match
+`.mt__pop`, so it found zero hidden tabs. Worse, it then reported *"no More
+button exists"* — but re-checking Dristi directly shows the button is right
+there, reading **`More +2`**.
+
+```
+claimed by F28 :  declares 8, renders 6, no More control  -> 2 tabs unreachable
+actual         :  declares 8, renders 6 inline + "More +2" -> 8 tabs, all reachable
+```
+
+6 + 2 = 8. The counter was correct the whole time. So was the component — its own
+docstring states the point plainly: *"the strip has to say how much it is not
+showing. That is the whole difference between an overflow menu and hidden
+content."* It does exactly that, and `moduleTabs.test.jsx:83` already asserts
+it with `All tabs · 17` and 11 popover rows.
+
+### Why this one is worse than the other five
+
+The five findings withdrawn earlier in this session were caught **before** they
+were written up. **F28 was published, and then escalated** — I took a second
+module, measured it with the same broken selector, got the same wrong answer, and
+read the agreement as corroboration. Two measurements sharing one bug agree
+perfectly, and that looked like evidence.
+
+The tell was available and I walked past it: on Graha, earlier in the same
+session, I had used `'.pop button, .mt__pop button'` — the correct pair — and it
+worked. The denominator script dropped `.mt__pop` and I did not notice the
+selector had changed between the two.
+
+### What survives
+
+- **`ALL TABS · N` is accurate.** No action needed.
+- **The Manav correction stands** — 6 leaves, no second level, verified by a
+  different method (querying every sub-tab selector from inside each leaf and
+  getting the parent row back). That one does not depend on `.mt__pop`.
+- **The design comparison's counts are still unreliable** — Manav 15 vs a measured
+  6 is unaffected by this error. But Prachar 11 vs 8 and Dristi 8 vs 8 now need
+  re-checking with a correct probe before anything is concluded.
+- **F26 and F27 are unaffected.** Both were confirmed by different means — F26
+  from the Railway traceback (`UndefinedColumnError: column s.platform_user_name
+  does not exist`), F27 from an HTTP status against a control.
+
+### The lesson, stated for whoever reads this next
+
+**Two agreeing measurements are not corroboration when they share an
+implementation.** F28 escalated precisely because the second module confirmed the
+first — and it confirmed the bug, not the finding. Corroboration requires a
+*different method*, which is what saved F26 (logs, not probes) and the Manav
+count (a different selector family).
+
+Six findings withdrawn this session. This is the only one that reached the report
+before being caught, and it is the one worth remembering.
