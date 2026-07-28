@@ -2481,3 +2481,38 @@ Recorded because it is the same family as the retracted F28 and the H7 near-miss
 **a probe that cannot succeed reports absence, and absence reads like a finding.**
 Three occurrences now, each caught by a different means — here, by checking the
 Railway deployment list rather than trusting the watcher.
+
+## F4 (b) — verified live on three endpoints ✅
+
+```
+GET /v1/graha/deals     200 rows   total 514   limit 200   truncated true
+GET /v1/graha/contacts    4 rows   total 4     limit 200   truncated false
+GET /v1/graha/clients     0 rows   total 0     limit 200   truncated false
+_total leaked into a row: false, on all three
+```
+
+**This is the documented contradiction, closed at the source.** The deals
+endpoint still returns 200 rows — raising the cap is step (a) — but it now
+states that 514 exist and that the list is truncated. The pipeline screen's
+*"199 deals have no next step"* was computed from those 200 rows with no way to
+know they were a page; `truncated: true` is exactly the flag that makes such
+an aggregate refusable.
+
+Both design points hold under real data:
+
+- **`_total` never reaches a row.** Verified on a 200-row response, not just in
+  a unit test — it would otherwise appear in every record the frontend maps over.
+- **`total` is additive.** `data` is untouched, so every existing caller
+  reading `.data` is unaffected. That is what lets the remaining 23 sites land
+  incrementally rather than as one atomic change across 7 routers and all their
+  consumers.
+
+**3 of 26 done.** Remaining: graha 7 · ganit 5 (invoices · expenses · contracts ·
+vendor bills · bank statements at 500) · manav 5 · vikray 3 · hub · prachar ·
+scrapers. Each is the same two-line edit — add `COUNT(*) OVER() AS _total` to
+the SELECT, return `_listed(rows, limit=N)` — and `_listed` is already tested.
+
+**Step (a), the cap raise, is deliberately NOT done.** It changes how much data
+crosses the wire on the money path, and it wants the frontend reading `total`
+first so a raised cap does not simply move the silent truncation to a larger
+number.
