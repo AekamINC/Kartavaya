@@ -2253,3 +2253,68 @@ That narrows the question I need answered: it is not *"build module gating"*, it
 is *"which surfaces skip the check that Pivot performs"*. A grep for the gate
 helper against the router list would answer it quickly, with the context to
 verify the result.
+
+---
+
+# RETRACTION — F27 is withdrawn. It was the platform-staff bypass, working as designed.
+
+**I reported that a module switched off is still reachable, and called it the
+session's most commercially serious finding. It is not a finding at all.**
+
+### What the gate actually does
+
+`middleware/subscription.py:73` — `require_module(module_code)`:
+
+```python
+if user:
+    platform_role = <strongest platform role for this user>
+    if platform_role:
+        if not can_reach_module(platform_role, module_code):
+            raise HTTPException(403, …)
+        if module_code not in SENSITIVE_MODULES:
+            return                      # <-- unconditional early return
+```
+
+I am `platform_admin`. `sanvaad` is `sensitive: false` — confirmed by the
+org-modules response itself. So the call returns at that line and **never reaches
+the subscription/activation check further down**. The 200 on
+`/v1/messaging/channels` is the bypass behaving exactly as documented:
+
+> *"Platform staff bypass the per-user module grant check."*
+
+`messaging.py:71` does carry `_gate = require_module("sanvaad")`. The gate is
+present and wired. I simply cannot trip it from this account.
+
+### The control was worthless and I should have seen it
+
+I used `/v1/graha/contacts` returning 200 as the contrast. **Graha is active.**
+An active module answering 200 says nothing whatever about whether a *deactivated*
+one should. A valid control needed a **non-platform user** against the same
+deactivated module — and that is precisely the account I do not have, because
+creating one is F19 and signing in as one is the RBAC blocker.
+
+### The honest finding underneath
+
+**Module activation cannot be tested from a platform-staff account, by design.**
+Anything I concluded about it from this session's probes is unfounded in both
+directions — I cannot show the gate fails, and I have not shown it works.
+
+That is now a third distinct thing gated behind the same blocker: the RBAC
+ladder, the viewer/editor write refusals, **and** module activation all need a
+plain org user to observe.
+
+### Two published findings, two retractions, one cause
+
+F28 and F27 were both **published**, and both were wrong for the same underlying
+reason: **I drew a conclusion from a single measurement with no valid control.**
+
+- F28: one selector, no cross-check that the selector matched anything.
+- F27: one 200, and a "control" that could not discriminate.
+
+The findings that survived did not share that shape — **F26** was confirmed from a
+Railway traceback naming the exact exception, **F24** from three surfaces
+disagreeing, **H7** from enumerating a complete control set. Each had something
+that could have proved it wrong and did not.
+
+**Question 5 in the handover list is withdrawn.** It asked whether the gating gap
+is systemic. There is no established gap.
