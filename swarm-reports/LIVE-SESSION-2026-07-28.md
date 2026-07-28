@@ -2390,3 +2390,59 @@ The plan requires *"a failed run surfaces its error."* Half true:
   opening each one.
 
 Apify returns a failure reason on the run object; it is not being captured.
+
+## F21 built (#7) — xlsx and pdf renderers ✅
+
+Both formats were accepted and ignored; only `csv` existed and everything else
+fell through to the JSON return, which then labelled itself `"format":"json"`
+while answering a request for PDF.
+
+**Neither needed a new dependency.** `openpyxl==3.1.5` and `weasyprint==68.0`
+are both already in `requirements.txt`, and `services/doc_render.render_pdf`
+is described there as *"the single PDF path"* — the same toolchain behind invoice
+and payslip PDFs, so a report PDF cannot drift from the documents the firm
+already sends.
+
+Both follow the shape rule the CSV branch established: scalars become a summary
+block, each row-list becomes its own sheet (xlsx) or titled table (pdf), and every
+cell goes through `_csv_cell` so `Decimal` and aware `datetime` land as a
+number and an ISO string. **The F22 defect is not repeated in two new formats.**
+
+Three details worth keeping:
+
+- **Excel sheet names** cap at 31 chars and reject `[]:*?/\`. A key like
+  `revenue[2026]:by/month` would raise; the name is sanitised and truncated.
+- **The PDF holds the 290mm budget** (`doc_render.py:143`), not 297, so a long
+  report reserves its tail rather than clipping — the gap
+  `report_generator.py:607` still has.
+- **Every cell is HTML-escaped.** A report cell is user data and must not inject
+  markup into a generated document.
+
+**F11 can now reuse these.** Scheduled reports mailing raw JSON share this exact
+root cause — the renderers did not exist. Not wired here.
+
+## F4 scope, measured rather than estimated (#6)
+
+The owner chose **(b) then (a)** — raise the caps with a visible *showing N of M*
+first, full pagination after handover.
+
+**(b) is a response-envelope change at 26 sites across 7 routers**, not a config
+tweak:
+
+| Router | Hardcoded `LIMIT` sites |
+|---|---|
+| graha | 10 |
+| ganit | 5 — invoices · expenses · contracts · vendor bills · bank statements (500) |
+| manav | 5 |
+| vikray | 3 |
+| hub · prachar · scrapers | 1 each |
+
+Each returns a bare array today, so *showing N of M* needs a second
+`COUNT(*)` and a wrapped response — and **every frontend consumer of those 26
+endpoints has to be updated in the same change**, or the lists silently render
+an object where they expected an array.
+
+**Not started.** A 26-site envelope change that cannot be verified in the same
+session is precisely the shape of the two findings this report has already had
+to retract. It wants a session that can run the frontend against each changed
+endpoint, and it is well-specified enough now to be picked up cold.
