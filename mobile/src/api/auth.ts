@@ -26,8 +26,34 @@ export async function clearToken() {
   delete apiClient.defaults.headers.common['Authorization'];
 }
 
+/**
+ * QA only — seed the session from a token supplied at build time.
+ *
+ * There is no way to sign this app in without typing a password, which makes
+ * every automated sweep of the UI depend on a human at the keyboard. This lets
+ * a QA token be handed to a dev build instead, so the sweep can run as any role
+ * on demand.
+ *
+ * It cannot reach a shipped app. `__DEV__` is false in every EAS profile, and
+ * Metro eliminates the branch from the release bundle outright; the value is
+ * read from the environment rather than written here, and `mobile/.env` is
+ * gitignored, so no token is ever committed. Point it only at staging.
+ *
+ * The header is set synchronously because `restoreToken()` is fired without
+ * `await` at App.tsx:28, and AuthProvider's `apiMe()` can win that race.
+ */
+const DEV_TOKEN = __DEV__ ? process.env.EXPO_PUBLIC_DEV_TOKEN : undefined;
+if (DEV_TOKEN) {
+  apiClient.defaults.headers.common['Authorization'] = `Bearer ${DEV_TOKEN}`;
+}
+
 /** Call once on app boot — prefers SecureStore, falls back to MMKV shadow. */
 export async function restoreToken() {
+  if (DEV_TOKEN) {
+    // Persist it too, so a reload behaves exactly like a real signed-in session.
+    await saveToken(DEV_TOKEN);
+    return;
+  }
   const secure = await SecureStore.getItemAsync(TOKEN_KEY);
   const token = secure ?? storage.getString(TOKEN_KEY) ?? null;
   if (token) {

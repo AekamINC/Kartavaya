@@ -20,7 +20,9 @@ from pydantic import BaseModel, EmailStr, Field
 
 from db import get_pool
 from limiter import limiter
-from middleware.role_tiers import modules_for, strongest
+from middleware.role_tiers import (
+    ADMIN, DEFAULT_GRANT_LEVEL, LEVELS, modules_for, strongest,
+)
 from services.audit import emit as audit
 
 _COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "1") != "0"
@@ -129,6 +131,7 @@ def _safe_user(
     platform_roles: list[str] | None = None,
     org_roles: list[dict] | None = None,
     module_grants: list[str] | None = None,
+    module_levels: dict[str, str] | None = None,
 ) -> dict:
     """Return a public-safe subset of user fields for API responses."""
     out = {
@@ -150,7 +153,67 @@ def _safe_user(
     # module links in the sidebar of a member who gets 403 on every one.
     if module_grants is not None:
         out["module_grants"] = module_grants
+    # Same three-state contract as `module_grants`, and for the same reason: an
+    # empty MAP means "granted nothing", an ABSENT key means "no opinion — this
+    # caller writes everywhere its subscription reaches". `is not None` keeps
+    # those apart. See `_module_levels`.
+    if module_levels is not None:
+        out["module_levels"] = module_levels
     return out
+
+
+async def _module_levels(
+    pool, user_id: str, platform_roles: list[str], org_roles: list[dict]
+) -> dict[str, str] | None:
+    """
+    The caller's LEVEL on each module — `{"ganit": "viewer", …}`.
+
+    F32: write affordances render from the module's page shell rather than from
+    the caller's level, so a `ganit:viewer` is handed the full Create Invoice
+    form and a member with no grants is offered `Run payroll`. The API refuses
+    every one, so nothing is at risk but the user's effort and trust.
+
+    The reason it was never fixed on the client is that **the client had nothing
+    to consult**. `_module_grants` answers reach — which modules appear in the
+    nav — and says nothing about depth. `useSanvaadAccess.js` says so in its own
+    header and works around it by fetching a bespoke `/v1/messaging/me`, which
+    is one module's answer to a question every module has.
+
+    This is that answer for all of them, mirroring
+    `middleware/subscription.require_module` gate for gate so the button and the
+    endpoint cannot disagree:
+
+      gate 1  platform staff bypass the level check entirely -> ADMIN on every
+              module `role_tiers.modules_for()` lets them reach
+      gate 2  org_owner / org_admin short-circuit the grant lookup -> None,
+              "no opinion", they write everywhere the subscription reaches
+      gate 3  org_member gets exactly the level on its grant row
+
+    A row holding a level the ladder does not know reads as the WEAKEST level,
+    exactly as `require_module` does — failing upward would advertise write
+    access that the API then refuses, which is the bug this field exists to end.
+    """
+    platform_role = strongest(platform_roles)
+    if platform_role:
+        return {code: ADMIN for code in sorted(modules_for(platform_role))}
+
+    if not org_roles:
+        return None
+
+    primary = org_roles[0]
+    if primary.get("role_code") in ("org_owner", "org_admin"):
+        return None
+
+    rows = await pool.fetch(
+        "SELECT module_code, role FROM staging.org_member_modules "
+        "WHERE user_id=$1 AND org_id=$2::uuid",
+        user_id,
+        primary["org_id"],
+    )
+    return {
+        r["module_code"]: (r["role"] if r["role"] in LEVELS else DEFAULT_GRANT_LEVEL)
+        for r in rows
+    }
 
 
 async def _module_grants(
@@ -498,18 +561,31 @@ async def login(request: Request, body: LoginBody):
         user["user_id"],
     )
     platform_roles = [r["role_code"] for r in pr]
+    # ORDER BY granted_at for the same reason `/me` and `/refresh` do it, and it
+    # was missing here alone: `org_roles[0]` must be the org
+    # `middleware/org_resolver.py` falls back to when no `X-Org-Id` is sent, or
+    # the nav is gated against one org while every request it fires is scoped to
+    # another. Without the clause the row order is whatever the planner returns.
     or_rows = await pool.fetch(
         "SELECT ur.org_id::text, ur.role_code, o.name AS org_name "
         "FROM staging.user_roles ur "
         "JOIN staging.organisations o ON o.id = ur.org_id "
         "WHERE ur.user_id=$1 AND ur.org_id IS NOT NULL "
-        "AND ur.role_code IN ('org_owner','org_admin','org_member')",
+        "AND ur.role_code IN ('org_owner','org_admin','org_member') "
+        "ORDER BY ur.granted_at",
         user["user_id"],
     )
     org_roles = [dict(r) for r in or_rows]
+    # Login sent NEITHER field, so between signing in and the first `/auth/me`
+    # the client had "no opinion" on both: every module in the sidebar and every
+    # write button enabled, for a member entitled to neither. The window is
+    # short, but it is the first screen a new member ever sees.
+    grants = await _module_grants(pool, user["user_id"], platform_roles, org_roles)
+    levels = await _module_levels(pool, user["user_id"], platform_roles, org_roles)
     token = _create_token(user["user_id"])
     audit("auth.login", request, user_id=user["user_id"])
-    return _auth_response(token, {"token": token, "user": _safe_user(dict(user), platform_roles, org_roles)})
+    return _auth_response(token, {"token": token, "user": _safe_user(
+        dict(user), platform_roles, org_roles, grants, levels)})
 
 
 @router.post("/refresh")
@@ -556,10 +632,12 @@ async def refresh(request: Request, current_user: dict = Depends(require_user)):
     platform_roles = [r["role_code"] for r in pr]
     org_roles = [dict(r) for r in or_rows]
     grants = await _module_grants(pool, user_id, platform_roles, org_roles)
+    levels = await _module_levels(pool, user_id, platform_roles, org_roles)
     token = _create_token(user_id)
     return _auth_response(
         token,
-        {"token": token, "user": _safe_user(current_user, platform_roles, org_roles, grants)},
+        {"token": token, "user": _safe_user(
+            current_user, platform_roles, org_roles, grants, levels)},
     )
 
 
@@ -656,4 +734,5 @@ async def me(current_user: dict = Depends(require_user)):
     platform_roles = [r["role_code"] for r in pr]
     org_roles = [dict(r) for r in or_rows]
     grants = await _module_grants(pool, current_user["user_id"], platform_roles, org_roles)
-    return _safe_user(current_user, platform_roles, org_roles, grants)
+    levels = await _module_levels(pool, current_user["user_id"], platform_roles, org_roles)
+    return _safe_user(current_user, platform_roles, org_roles, grants, levels)

@@ -16,6 +16,8 @@ import { inr } from '../../lib/inr';
 import { Badge, INV_TYPE_LABELS, STATUS_COLORS } from './_shared';
 import InvoiceForm from './InvoiceForm';
 import InvoiceDetail from './InvoiceDetail';
+import { currentUser } from '../../lib/auth';
+import { canWriteModule, writeDenialReason } from '../../lib/moduleAccess';
 
 /**
  * `newNonce` lets the page header's "+ Invoice" button open this tab's create
@@ -24,6 +26,16 @@ import InvoiceDetail from './InvoiceDetail';
  * effect would not re-run.
  */
 export default function InvoicesTab({ newNonce = 0 }) {
+  // F32, measured live: a `ganit: viewer` opened this form, composed a complete
+  // invoice — customer, place of supply, 3 x Rs 25,000, live total Rs 88,500 —
+  // and only then learned on submit that the level does not permit it. The
+  // refusal is correct and its wording is good; offering the form was not.
+  //
+  // `canWrite` is TRUE for anyone the server expressed no opinion about
+  // (org_admin, org_owner, platform staff), so this changes nothing for them.
+  const me = currentUser();
+  const canWrite = canWriteModule(me, 'ganit');
+  const denial = canWrite ? null : writeDenialReason(me, 'ganit', 'create invoices');
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -77,12 +89,21 @@ export default function InvoicesTab({ newNonce = 0 }) {
           </select>
         </label>
         <span className="gn-bar__sp" />
-        <button type="button" className="btn btn--fill btn--sm" onClick={() => setShowForm(v => !v)}>
+        <button
+          type="button"
+          className="btn btn--fill btn--sm"
+          onClick={() => setShowForm(v => !v)}
+          disabled={!canWrite}
+          title={denial || undefined}
+        >
           {showForm ? 'Close form' : '+ New invoice'}
         </button>
       </div>
 
-      {showForm && (
+      {/* `canWrite &&` as well as `showForm`: the header's "+ Invoice" reaches
+          this tab through `newNonce`, so gating only the button above would
+          still let that path open the form for a viewer. */}
+      {showForm && canWrite && (
         <InvoiceForm
           onCancel={() => setShowForm(false)}
           onCreated={() => { setShowForm(false); load(); }}
@@ -106,9 +127,14 @@ export default function InvoicesTab({ newNonce = 0 }) {
           <EmptyState
             illustration="invoice"
             title={{ en: 'No invoices yet', hi: 'कोई बीजक नहीं' }}
-            description="An invoice records what a customer owes you, with the HSN codes and tax split a GST return needs. Add your products first and the lines fill themselves."
-            action="+ New invoice"
-            onAction={() => setShowForm(true)}
+            /* A viewer is told what the ledger IS and why it is empty, but is
+               not handed a create button the API will refuse. The empty state
+               is the one screen where that invitation is most persuasive. */
+            description={canWrite
+              ? 'An invoice records what a customer owes you, with the HSN codes and tax split a GST return needs. Add your products first and the lines fill themselves.'
+              : `An invoice records what a customer owes you, with the HSN codes and tax split a GST return needs. ${denial}`}
+            action={canWrite ? '+ New invoice' : undefined}
+            onAction={canWrite ? () => setShowForm(true) : undefined}
           />
         )
       ) : (

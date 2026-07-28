@@ -82,6 +82,16 @@
 .mh__hi  { font-family: var(--font-indic); font-size: 15px; color: var(--primary-text); }
 .mh__sub { font-size: 12.5px; color: var(--on-surface-3); margin-top: 3px; }
 .mh__act { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.mh__actin { display: flex; gap: 8px; align-items: center; }
+
+/* F32 — a write action the caller's level does not permit.
+   DISABLED, NOT HIDDEN, deliberately: a greyed control carrying the API's own
+   sentence in its tooltip teaches what the level means; a hidden one teaches
+   nothing, and an enabled one that fails on submit teaches distrust.
+   `inert` on .mh__actin already removes it from the tab order and swallows
+   pointer events — this is only the part the eye needs. */
+.mh__act--locked { cursor: not-allowed; }
+.mh__act--locked .mh__actin { opacity: .45; filter: grayscale(1); }
 
 /* ── Tabs ──────────────────────────────────────────────────────────────────
    flex-shrink:0 on the tab and overflow-x:auto on the strip — a module with
