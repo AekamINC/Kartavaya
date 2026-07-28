@@ -77,9 +77,21 @@ grant/revoke cycles.
 | `kevalvshah03+qamember@gmail.com` | `user_fc914df642c3` | org_member, no grants |
 | `kevalvshah03+qaviewer@gmail.com` | `user_31197c478761` | grantable per test |
 
-Tokens expire **2026-08-04**. After that, ask the owner to sign in and read
-`localStorage.getItem('auth_token')` from the browser console — you cannot type
-a password into a login form, and you do not need to.
+**CORRECTION, 2026-07-28 session B — there are NO tokens in this file, and there
+never were.** The line below said "tokens expire 2026-08-04" without any token
+beside it; there is no JWT anywhere in the repo or in any ignored file. A session
+nearly reported itself blocked on that.
+
+**How to actually get in: the Playwright browser profile is already signed in as
+`qaadmin`.** Open `https://staging.kartavaya.com` with the Playwright MCP tools
+and the session is live — `localStorage.Kartavaya_user` reads
+`user_76cd525348e1`, org_admin, QA Test Corp. That is a full org_admin sweep with
+no owner involvement.
+
+**`qamember` and `qaviewer` are still blocking**, and F32/F33 are defined by what
+those two see. Getting them needs the owner to sign in as each and read
+`localStorage.getItem('auth_token')` from the browser console — you cannot type a
+password into a login form, and you do not need to.
 
 **These accounts are KEPT deliberately** (owner decision, 2026-07-28) and nothing
 scheduled deletes them — see the settled-decisions section above. They are the
