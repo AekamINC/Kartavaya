@@ -2952,3 +2952,65 @@ disable these controls is present at render time; it is simply not consulted.
 the API returns. A greyed `Run payroll` reading *"needs editor on Vetana"*
 teaches the model; a hidden button teaches nothing, and an enabled one that
 fails teaches distrust.
+
+---
+
+# HANDOVER — the UI sweep is the job, and it is barely started
+
+## The correction, stated plainly
+
+The brief says RBAC and everything else must be exercised **through the UI, as
+the user, clicking the controls**. `feedback_testing_precision` says the same:
+*"he wants real Playwright, not source inspection"*, and *"behind-the-doors
+verification does not count"*.
+
+**I ran API probes for the whole RBAC section anyway** and only opened the
+browser when the owner insisted. The probes reported that area as fully correct.
+Twenty minutes of actual clicking then produced **F32** and **F33** — a viewer
+being handed a complete invoice-creation form, and a granted module missing from
+the nav. Neither is visible from a status code. Both are user-facing.
+
+The owner's summary is accurate: hours went into the wrong method.
+
+**Rule for the next session, and it is not negotiable:**
+
+1. Sign in as the role. Open the page. **Click the control.** Watch what happens.
+2. A status code is evidence only where no control exists to click.
+3. `200` and `403` say nothing about whether the button should have been
+   there, what the form did with the input, or what the user was told.
+
+## What UI testing has actually covered
+
+| Surface | Role | Result |
+|---|---|---|
+| `/ganit` invoices list | ganit viewer | renders real data; **write buttons offered** (F32) |
+| `/ganit` create form | ganit viewer | **full form opens**, refused only on submit (F32) |
+| `/vetana` payroll | member, no grants | ✅ no data, excellent in-page refusal, retry offered |
+| `/vetana` header | member, no grants | **`Run payroll` offered** (F32) |
+| left nav | ganit viewer | **no REVENUE section despite holding ganit** (F33) |
+
+**That is five surfaces.** The app has nine modules, ~85 tab leaves, detail
+drawers on most, and CRUD on nearly all of them. Everything else in this report
+was verified by API, which the owner has correctly rejected as insufficient.
+
+## What still needs doing, in the right way
+
+- **Every module page as each of the four roles** — owner, admin, member,
+  viewer — clicking every button, opening every drawer, submitting every form.
+- **Every CRUD path through the UI**: create, read, update, delete, and the
+  confirmation dialog on each.
+- **Every empty, loading and error state as rendered**, not as a status code.
+- Three QA accounts exist and are usable: `qaadmin` (org_admin), `qamember`
+  (org_member, no grants), `qaviewer` (grantable to any module at any level).
+  Grants can be changed per test in one call — 22 cycles proved the change takes
+  effect on the next request.
+
+## The one finding that generalises so far
+
+**F32 — write affordances are rendered from the page shell, not from the
+caller's level.** Confirmed on two modules with two different roles. The API
+refuses every one, so nothing is at risk but the user's trust. The level is
+already resolved per request; it simply is not consulted at render time.
+
+Every additional module tested through the UI is likely to add another instance
+until that is fixed centrally.
