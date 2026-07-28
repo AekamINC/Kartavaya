@@ -2210,3 +2210,46 @@ What saved it was a real Playwright click erroring with a strict-mode violation
 that named three matching nodes — `.vko__id`, `.dr__crumb-t`, `.vkd__num` —
 which proved the drawer *was* open. A tool that fails loudly beat a probe that
 returned a clean, confident, empty answer.
+
+## Dristi completed — 8 of 8, and the retraction independently confirmed
+
+Opened the overflow with the **correct** selector (`.mt__pop-row`, the one whose
+absence caused F28):
+
+```
+More +2      "All tabs · 8"      hidden: Dashboards पटल · Pivot सारणी
+```
+
+That is the third independent confirmation that **F28 was my error and not a
+defect** — the button says +2, the head says 8, and the two hidden leaves are
+named and reachable. 6 inline + 2 = 8.
+
+Both walked, 2 distinct character counts, **0 errors**:
+
+| Leaf | What rendered |
+|---|---|
+| Dashboards | *No saved dashboards — a dashboard is a set of charts you keep together; build one above and pin charts to it* |
+| Pivot | pivot builder + **Export to CSV** |
+
+**Dristi: 8 of 8.**
+
+### A line in Pivot that bears directly on F27
+
+> *"Sources belonging to modules your role can't read are not offered."*
+
+So **module-aware gating IS implemented** — the pivot builder filters its source
+list by what the caller may read, which is exactly the behaviour F27 found
+missing on messaging. That matters for how F27 should be read:
+
+- the capability exists and is used in at least one place;
+- `server.py`'s pivot source list carries a `module` per source and checks it
+  before querying (the comment there calls out that without it the builder was
+  *"a general-purpose reader over eight tables — including the invoice ledger and
+  the employee register — behind the dristi grant alone"*);
+- so **F27 is an inconsistency, not an absent feature.** Some surfaces gate,
+  messaging does not.
+
+That narrows the question I need answered: it is not *"build module gating"*, it
+is *"which surfaces skip the check that Pivot performs"*. A grep for the gate
+helper against the router list would answer it quickly, with the context to
+verify the result.
