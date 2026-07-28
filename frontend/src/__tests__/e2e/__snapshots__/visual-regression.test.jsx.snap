@@ -14,7 +14,7 @@ button "Show password"
 input:checkbox
 button "Forgot password?"
 button "Sign in"
-region "Notifications""
+region "Alerts""
 `;
 
 exports[`e2e · visual · the theme palette baseline > light and dark resolve every semantic token, side by side > semantic-palette 1`] = `
@@ -25,8 +25,8 @@ exports[`e2e · visual · the theme palette baseline > light and dark resolve ev
 --bg-soft                    light=var(--s-low)  dark=var(--s-low)
 --danger                     light=#B42318  dark=#F2867A
 --danger-container           light=#FBDAD5  dark=#55201B
---glass-alpha                light=calc(1 - (.28 * var(--glass-mix)))  dark=calc(1 - (.28 * var(--glass-mix)))
---glass-blur                 light=calc(22px * var(--glass-mix))  dark=calc(22px * var(--glass-mix))
+--glass-alpha                light=1  dark=1
+--glass-blur                 light=0px  dark=0px
 --glass-mix                  light=.6  dark=.6
 --glass-sat                  light=calc(1 + .5 * var(--glass-mix))  dark=calc(1 + .5 * var(--glass-mix))
 --glass-tint                 light=250, 247, 240  dark=18, 21, 26
