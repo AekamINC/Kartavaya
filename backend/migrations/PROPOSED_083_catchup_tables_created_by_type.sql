@@ -48,6 +48,16 @@
 --   graha_contact_merges.actor_id    024_graha_dedupe_merge.sql:93
 --   graha_contact_merges.undone_by   024_graha_dedupe_merge.sql:96
 --
+-- Added 2026-07-28 review — same class, missed by the original sweep because
+-- it is only reachable from an INSERT, not a live request during that pass:
+--   graha_web_forms.auto_assign_to   023_crm_phase1_phase3.sql:134
+-- `routers/graha.py` casts it `NULLIF($6,'')::uuid` from a plain `str` field
+-- (`WebFormCreate.auto_assign_to`) that the app populates with a `user_...`
+-- id whenever a form is set to auto-assign new leads to someone. Currently
+-- dormant only because `frontend/src/pages/graha/WebFormsTab.jsx` never
+-- surfaces the field — a direct API call with this field set 500s the same
+-- way `created_by` did. Included in the ALTER below.
+--
 -- ── Why TEXT and not "make user ids UUIDs" ───────────────────────────────────
 --
 -- Because TEXT is already what the rest of the live schema uses for these
@@ -82,7 +92,8 @@ ALTER TABLE staging.graha_automations
     ALTER COLUMN created_by TYPE TEXT USING created_by::text;
 
 ALTER TABLE staging.graha_web_forms
-    ALTER COLUMN created_by TYPE TEXT USING created_by::text;
+    ALTER COLUMN created_by     TYPE TEXT USING created_by::text,
+    ALTER COLUMN auto_assign_to TYPE TEXT USING auto_assign_to::text;
 
 ALTER TABLE staging.graha_contact_merges
     ALTER COLUMN actor_id   TYPE TEXT USING actor_id::text,
