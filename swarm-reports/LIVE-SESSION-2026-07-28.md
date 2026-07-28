@@ -9,11 +9,27 @@ Order per the plan: **compare → implement → test**.
 
 *(kept at the top, updated as the session runs)*
 
+0. **Read this first — what shipped vs what is waiting.**
+   Fixed, deployed and verified live this session: the Windows glass opt-out
+   (`56745798`), four handlers that misreported every failure as a duplicate
+   (`50134fef`), **all three GST/Tally exports, which had never worked**
+   (`da868d34`), and five Devanagari faux-bold sites plus three colliding
+   landmarks (`193c4fea`). Design comparison for all six areas is in
+   `f50d17b6`. Items 1–5 below are the ones I could not close alone.
+
 1. **RBAC sign-ins.** I can create the account ladder under a QA org and can
    verify the grant rows and the nav, but I cannot type a password, so the
-   actual refusals must be observed by you — one sign-in per account. See
-   the RBAC section for exactly which refusal to look for on each.
-   *(status: pending — accounts not yet created at time of writing)*
+   actual refusals must be observed by you — one sign-in per account.
+   *(status: NOT started — the session went into the three hard 500s and the
+   broken exports instead, which I judged the better use of the time. Nothing
+   about RBAC is verified live yet.)*
+
+5. **`report_generator.py` never adopted the 290mm budget.** `doc_render.py`
+   did, and has a test measuring ink extent to prove it; `report_generator.py:607`
+   still hard-codes `height: 297mm; margin: 0; overflow: hidden`, so a long
+   report **clips** rather than reserving the tail. Small fix, but it changes
+   generated output, so it is worth you deciding whether it lands before or
+   after handover.
 
 2. **A product decision on F4 — invoice/deal list pagination.** Every list
    endpoint silently truncates (invoices at 200, deals at 200, vendor bills at
@@ -326,6 +342,155 @@ reproduced, reviewed, or diffed from source control, and the only reason we know
 the nine tables 081 created, rather than discovering the remaining gaps one 500
 at a time. I could not do this myself — the session forbids direct database
 access, which is why F7 was found by probing endpoints instead.
+
+### F8 — 🔴 HIGH · Every GST and Tally export was a 500 — FIXED and verified ✅
+
+The GST filing tab sat on **"Loading the GST position" forever**. All three of
+its calls 500'd, and the tab has **no error state**, so it spins indefinitely.
+
+```
+asyncpg.exceptions.DataError: invalid input for query argument $2:
+'2026-07-01' ('str' object has no attribute 'toordinal')
+```
+
+`_period_bounds` returns strings and the queries bound them as `$2::date`. That
+cast reads like it converts the string and does the opposite: it makes Postgres
+describe the parameter as `date`, so asyncpg calls `.toordinal()` on a `str`
+before anything reaches the database. Written `$2::text::date` the parameter is
+described as text and Postgres does the conversion — which is what the code
+always appeared to be doing.
+
+Seven bindings across four builders: `_assemble_gstr3b`, `_tally_rows`,
+`_build_gstr1`, `_prefiling_checks`. **These paths had never worked.**
+
+`_prefiling_checks` matters beyond its own endpoint — it computes the GSTR-3B
+advisory warnings, so those could never have been raised.
+
+Fixed in `da868d34`. **Verified live after deploy:**
+
+| Endpoint | Before | After |
+|---|---|---|
+| `gst/gstr1/{p}/preview` | 500 | **422** `supplier_gstin_missing`, with the real explanation |
+| `tally/{p}/preview` | 500 | **200** — real preview, `held_back` naming each excluded document and why |
+| `gst/gstr3b/{p}` | 500 | **200** — rows, due date, period |
+
+The GSTR-1 refusal is the behaviour the plan predicted ("refuses without a
+GSTIN"). **It had never been reachable** — it was a 500. After setting a
+synthetic GSTIN (`24AAAAA0000A1Z5`) on the org, GSTR-1 preview returns **200**
+with `sections_emitted` / `sections_omitted` and a stated reason per omission.
+
+Backend suite 1640 passed / 136 skipped.
+
+### F9 — Document-completeness gate is genuinely good, and answers a decision ✅
+
+Asked to verify "GSTR-3B 4(D)(1) is advisory and NOT a hard block". The pattern
+is real and correctly built. `GET /ganit/invoices/{id}/pdf` on an incomplete
+invoice returns **422** with **`blocking` and `advisory` as separate arrays**:
+
+```
+blocking: invoice.line_items.hsn_code — "Rule 46(g) — every line needs an HSN
+          or SAC code. Line 1, 2 has neither."
+advisory: place_of_supply, org.pan, org.billing_address, contact.gstin
+message:  "…1 mandatory field(s) are missing or inconsistent.
+           Nothing has been invented to fill the gap."
+```
+
+Each carries the rule, the reason and where to fix it. **This is the right
+behaviour for an accounting product** and it is worth saying so plainly: it
+refuses rather than emitting a defective tax invoice, and it never fabricates.
+
+Completing the record end to end produced a real document:
+INV-2026-0007, 2 lines with HSN, subtotal ₹63,000 + 18% GST ₹11,340 =
+**₹74,340 — arithmetic correct**. PDF: **200, `application/pdf`, 25,655 bytes,
+`%PDF-1.7`, terminates with `%%EOF`.**
+
+🟠 **One thing to look at:** an invoice saved with **no recipient at all** was
+still accepted and stored with `doc_status: "final"`. Only the PDF step refuses.
+"Final" on a tax invoice with no recipient is a state that probably should not
+be reachable — the gate is on rendering, not on issuing. Not fixed; it is a
+product judgement about what `final` means.
+
+### F10 — Devanagari was being faux-bolded in five places — FIXED and verified ✅
+
+`24-bilingual-devanagari.md` allows `--font-hindi` at **weight 400 only**, and
+Tiro Devanagari Hindi ships exactly one weight. Anything else is synthesised —
+the rasteriser thickens the शिरोरेखा unevenly and closes the counters on ठ and ढ.
+
+`editorial.css:3146` already neutralises *tracking* app-wide via a `[lang]` rule,
+and the comment above `.k-lbl__in` is explicit that weight and case are the other
+two thirds of the same defect. Five places inherited a weight anyway:
+
+| Site | Was |
+|---|---|
+| `.fld__hi` (`components.css`) | reset case + tracking, **never weight** → inherits 600, ~35 Field sites |
+| `.k-shortcuts__hi` | inherits 500 |
+| `.k-hero__greet` | declared **300** — as synthetic as 700 |
+| `NewTaskModal.jsx:398` | inherits 800, **and no `lang`**, so it was letter-spaced too |
+| `BrandKit.jsx` SectionLabel | **800 + .12em + uppercase**, `--font-hindi` in its own stack, Devanagari written straight into the label, no `lang` |
+
+BrandKit now passes the Devanagari through a `hi` prop rendered in
+**`.k-lbl__in`** — the class that already existed for precisely this position —
+instead of letting it inherit the label's styling, and `--font-hindi` is dropped
+from the outer stack since no Devanagari sits there now.
+
+Fixed in `193c4fea`. **Verified live after deploy:** across **76 Devanagari leaf
+elements** on the dashboard, **zero** now violate weight, tracking or case;
+`.k-hero__greet` computes `font-weight: 400`.
+
+Also fixed there: **three landmarks were all named "Notifications"** — both toast
+containers and the panel dialog — leaving a screen-reader user no way to tell the
+transient stack from the panel. Now `Alerts` / `New notifications` /
+`Notifications`, verified live. *(That there are two separate toast systems at
+all is a real finding — recorded in the design reports, not fixed here.)*
+
+---
+
+## Design comparison — all six areas, committed in `f50d17b6`
+
+Six parallel agents compared `design-handover/` + `design-reference/` against the
+implementation, per area. **62 HIGH and ~90 MED**, each with spec file:line,
+implementation file:line and a severity — plus, deliberately, an explicit
+**NOT-A-GAP** list per area, because a false gap costs as much to chase as a real
+one. Full detail in `swarm-reports/DESIGN-COMPARE-*.md`.
+
+**The decisions I was asked to verify actually landed:**
+
+| Decision | Verdict |
+|---|---|
+| 290mm document budget | ✅ **landed** — `doc_render.py:143`, enforced by a test that measures ink extent. **But** `report_generator.py:607` never adopted it and clips at `height:297mm; overflow:hidden` instead of reserving |
+| Sanvaad defaults to editor | ✅ landed — `NEW_GRANT_LEVEL_BY_MODULE`, via `default_level_for()` on all four grant paths |
+| GSTR-3B 4(D)(1) advisory, not a hard block | ✅ landed — separate `blocking`/`advisory` arrays, confirmed live (F9) |
+| Vikray quotes real/downloadable/WhatsApp-able | 🟠 **partial** — real, PDF-able and `wa.me`-able, but they live in Ganit as `invoice_type='quotation'`; Vikray has no quote object and none of the three affordances |
+| Signing order requires all signers | not reached this session |
+| Ganit dead link fixed | ✅ **no such dead link exists** from those modules — the real problem is the reverse: Vikray mints an invoice and offers no route to it |
+
+**Highest-signal design gaps** (not fixed — they are design work, not defects):
+
+- **Drawer, sheet and popover have no glass at all**, against a reference that
+  specifies each with its own alpha offset and blur multiplier.
+- **⌘K is unreachable on phones** — the topbar that holds search is hidden below
+  1023px and the mobile bar has no search slot. `palette.css:454` already
+  documents the hole; its mobile styling is dead CSS.
+- **No theme control in the shell** — the reference gives every screen a sun/moon
+  Appearance popover; here dark mode requires navigating to `/settings/customize`.
+- **`components/ui/Table.jsx` has zero importers** — so no sort, row select, bulk
+  bar or pagination exists on any of the 42 Graha/Ganit/Manav tab leaves.
+  (This compounds F4: no pagination component *and* no paginated API.)
+- **Graha + Manav are entirely on legacy `k-btn`/`k-input` while Ganit is fully
+  migrated** to the spec's `.btn`/`.inp` — the half-migration `02` forbids.
+- **All 11 Graha deletes use native `window.confirm()`** where Ganit and Manav
+  already use `ConfirmDialog`.
+- **`lib/gst.js` does not exist** — `is_igst` is a manual checkbox in 4 places,
+  never derived from place of supply. A wrong tax split is one mistyped tick away.
+
+**Tab trees enumerated** — Graha 17 · Ganit 10 · Manav 15 · Vetana 6 · Vikray 6 ·
+Prachar 11 · Dristi 8 · Srijan 7 · Sanvaad 5 = **85 leaves**. That tree is the
+input to exhaustive element testing and is in the reports.
+
+**Two corrections to the brief itself:** `--motion-scale` does not exist anywhere
+in `design-reference/`, and the reference contradicts itself on reduced motion
+(`tokens.css:241` = `0s` vs `motion.css:24` = `.001`). The implementation
+resolves this correctly and is **ahead of** the spec.
 
 ---
 
