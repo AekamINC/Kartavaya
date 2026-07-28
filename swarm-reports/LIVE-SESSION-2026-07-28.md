@@ -49,13 +49,27 @@ Order per the plan: **compare → implement → test**.
    created at all. Free now, progressively less so once those tables hold rows.
    I wrote it but did not apply it: migrations are yours by the session rules.
 
-4. **A live-vs-migrations schema diff for the nine tables migration 081
-   created** (F7). `081_APPLIED_cloud_schema_catchup.sql` contains **no SQL** —
-   it is 64 lines of comments — so what actually ran on 2026-07-27 has no
-   artifact in the repo and the live schema cannot be reviewed from source. One
-   missing column is already confirmed (`graha_inbound_emails.contact_id`, a
-   hard 500). I cannot enumerate the rest: direct database access is forbidden
-   this session, so I found that one by probing endpoints until one failed.
+4. ~~A live-vs-migrations schema diff~~ — **DONE**, you authorised Supabase
+   access mid-session. Full result in **F13**. Short version: the diff found
+   **no new hard failures** beyond what probing had already found. Two things
+   need fixing and both are additive — `PROPOSED_083`, plus adding
+   `contact_id` to `graha_inbound_emails`. Everything else either matches or is
+   a known deliberate absence. `081_APPLIED_cloud_schema_catchup.sql` still
+   contains **no SQL**, so that file should not be trusted as a record.
+
+6. **Scheduled reports attach nothing** (F11). A weekly PDF schedule "sends"
+   successfully and delivers **raw JSON in the email body, truncated at 5000
+   characters**. The `format` field is stored and ignored. `send_report_email()`
+   already does PDF/Excel MIME attachments and the team-report path uses it —
+   Dristi never reaches it. Fixing it means building PDF/XLSX rendering for
+   Dristi report types, which is real work, not a wire-up. **Your call on when.**
+
+7. **The AI-skills boxes should not be ticked** (F12). The plan says that work is
+   built and to tick the boxes. **18 of the 23 skill files are imported by
+   nothing**, and five query a `staging.tasks` table that does not exist against
+   a task shape that does not exist either. Seven scheduled-job categories are
+   deliberate stubs that return "not available yet". Ticking those boxes would
+   record a subsystem as delivered when nothing calls it.
 
 ---
 
@@ -442,6 +456,127 @@ containers and the panel dialog — leaving a screen-reader user no way to tell 
 transient stack from the panel. Now `Alerts` / `New notifications` /
 `Notifications`, verified live. *(That there are two separate toast systems at
 all is a real finding — recorded in the design reports, not fixed here.)*
+
+### F11 — 🔴 HIGH · Scheduled reports send no attachment at all
+
+The plan asks: *create a weekly/monthly schedule, let it produce, confirm the
+mail arrives with the file attached and the file opens.*
+
+**No file is ever attached.** Created a weekly PDF schedule and ran it:
+
+```
+POST /api/v1/dristi/scheduled-reports        → 200  (first row ever in that table)
+POST /api/v1/dristi/scheduled-reports/{id}/run-now → 200 {"status":"sent","recipients":1}  in 558ms
+```
+
+558ms is too fast to have rendered a PDF, and it hadn't. `dristi.py:786`:
+
+```python
+safe_data = _html.escape(json.dumps(data, indent=2, default=str)[:5000])
+send_email(to_email=recipient, subject=f"Report: {report['name']}",
+           html_content=f"…<pre>{safe_data}</pre>")
+```
+
+The recipient gets **raw JSON pasted into the email body, truncated at 5000
+characters**. The schedule's `format` field — I set `pdf` — is stored and never
+read. A real report is silently cut off mid-JSON.
+
+It then writes a `'sent'` row to `dristi_report_logs` and returns
+`{"status":"sent"}`. **This is exactly the case the plan flags: it looks
+completely successful from the app's side.**
+
+**The capability already exists and is not being used.** `email_service.py:980`
+`send_report_email()` does full raw-MIME with `pdf_bytes` and `excel_bytes`
+parameters, and `routers/reports.py:481` — the *team* report path — calls it
+properly. Dristi's scheduled reports simply never reach it.
+
+Related, same area: `GET /api/v1/dristi/exports/{type}` offers **`json` and
+`csv` only**. The plan asks for CSV, XLSX and PDF; two of the three do not
+exist for Dristi reports.
+
+**Not fixed.** Wiring it needs a decision — `send_report_email` takes
+`pdf_bytes`/`excel_bytes` and Dristi can currently produce neither, so this is
+"build PDF/XLSX rendering for Dristi report types", not a wire-up. That is a
+real piece of work and it is yours to schedule.
+
+### F12 — 🟠 18 of 23 skill files are dead code, and the plan says to tick them off
+
+`E2E-PLAN-2026-07-28.md` says the AI skills work is **built** — *"23 skill files
+across `action/`, `data/` and `detect/` plus the dispatcher… Do not rebuild any
+of it. Tick the boxes instead."*
+
+The files exist. **18 of the 23 are imported by nothing.** Checked every symbol
+against the whole backend:
+
+- unreferenced (18): `attendance_auto_mark`, `campaign_sender`, `escalation_chain`,
+  `leave_balance_manager`, `recurring_invoice_generator`, `sequence_step_executor`,
+  `shift_auto_assign`, `deadline_scanner`, `leave_conflict_checker`,
+  `overdue_finder`, `schedule_gap_finder`, `stock_scanner`, `anomaly_detector`,
+  `attendance_pattern`, `candidate_scorer`, `deal_health_scorer`,
+  `expense_policy_checker`, `reconciliation_matcher`
+- the 5 "referenced" ones are referenced only by `scripts/preview_emails.py`
+  (a dev script) and by a **comment** in `project_report_pdf.py`
+
+**Ticking those boxes would record as delivered a subsystem nothing calls.**
+
+Worse, five of them query a table that does not exist. `staging.tasks` **is not
+in the database** — tasks live in `public.tasks`, and all 17 router references
+use the bare name. These five use `staging.tasks`:
+`deadline_scanner`, `kpi_aggregator`, `overdue_finder`, `workload_calculator`,
+`escalation_chain`.
+
+And re-qualifying them would not fix it, because they were written against a
+task shape that does not exist anywhere. Real `public.tasks` has **`due_at`** not
+`due_date`, **`assignee_user_ids`** not `assigned_to`, no `is_active` (it has
+`archived_at`), and **no `project_id` at all** — a task belongs to a board, not
+a project. `workload_calculator` joins `project_assignments ON pa.project_id =
+t.project_id`, which cannot resolve.
+
+`project_report_pdf.py:21` already carries a note about this, but that note is
+now **stale in the other direction**: it says `staging.projects` does not exist,
+and migration 081 created it on 2026-07-27.
+
+**Seven scheduled-job categories are also stubs** — `scheduler.py` imports
+`invoice_skills`, `crm_skills`, `hr_skills`, `marketing_skills`, `report_skills`,
+`esign_skills`, `stock_skills`, and **none of those modules exists**. This one is
+*deliberate and safe*: each import sits in `try/except ImportError` returning
+`{"error": "… not available yet"}`, with a comment saying so. It degrades rather
+than crashing — but overdue-invoice detection, recurring invoices, stale-deal
+flagging, auto attendance, campaign sending, report execution, signing reminders
+and low-stock alerts all currently do nothing.
+
+### F13 — Full live-vs-repo schema diff (you asked me to check Supabase) ✅
+
+Ran read-only against `kartavya-sg`. **154 tables referenced in backend code
+checked against the live `staging` schema.**
+
+**Tables referenced in code but absent:**
+
+| Table | Verdict |
+|---|---|
+| `graha_ticket_messages` | declared in `041` — **but referenced by no code**, so harmless |
+| `staging.tasks` | **real** — see F12; tasks are `public.tasks` |
+| `account_requests`, `org_module_approvers`, `org_security`, `platform_support_sessions`, `user_totp`, `user_mfa_factors` | all six are the **known deliberate absences**; correct |
+
+So the only genuine missing-table problem is `staging.tasks`, and that is a code
+bug rather than a missing table.
+
+**Column-level diff of the 14 tables migration 081 created:**
+
+| Table | Live vs authoritative migration |
+|---|---|
+| `graha_inbound_emails` | **missing `contact_id`** (022 declares it) — confirmed cause of the F7 500 |
+| `graha_tickets` | **missing 6 columns** vs `041`: `description`, `assigned_to`, `sla_due_at`, `closed_at`, `created_by`, `updated_at`. Harmless today — only Dristi reads it, and only the columns that exist |
+| `graha_automations.created_by` | `uuid` — confirmed F5 |
+| `graha_web_forms.created_by` | `uuid` — confirmed F5 |
+| `graha_contact_merges.actor_id`, `.undone_by` | both `uuid` — confirmed F5 |
+| `graha_territories` | live has an **extra** `round_robin_index` not in `023` — superset, fine |
+| the other 8 | match |
+
+**Bottom line: the diff found no new hard failures beyond the ones already
+found by probing.** `PROPOSED_083` plus a `contact_id` column on
+`graha_inbound_emails` closes everything the schema is responsible for. I have
+**not** applied either — you asked me to check, not to change.
 
 ---
 
