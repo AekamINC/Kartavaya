@@ -2900,3 +2900,55 @@ granted it. The plan's requirement is that *the API still refuses when the nav
 is bypassed*, and it does: the same session was refused `/v1/graha/contacts`
 with 403 while `/v1/ganit/invoices` returned 200. Navigation is not being used
 as the control.
+
+## Payroll, as a member with NO grants — refuses correctly ✅
+
+`/vetana` as `kshah org · Member · QA Test Corp`, zero module grants.
+Screenshot: `_shots/2026-07-28-member-payroll-refused.png`
+
+**No salary data of any kind rendered.** No figures, no employee names, no
+payslips. Two in-page notices instead:
+
+> *"These figures did not load. This action needs 'editor' on Vetana. Without a
+> grant you can see your own payroll records and nothing else."*
+
+> *"The payroll dashboard did not load. This action needs 'editor' on Vetana.
+> Without a grant you can see your own payroll records and nothing else."*
+> — with a **Try again** button.
+
+**This is the best refusal in the product.** It names the module, names the
+exact level required, states the self-scope rule so the user understands *why*
+they see nothing, and offers a retry in case it was transient. Compare F30's
+`"Apify status: FAILED"`.
+
+It is also the correct answer to the most sensitive surface in the app —
+the salary register — reached by typing the URL with no grant at all.
+
+## F32 CONFIRMED as a pattern, not one button
+
+The same page renders **`Run payroll`** in the header.
+
+A member who cannot read the payroll dashboard is offered the button that
+*executes* payroll. Combined with the viewer being offered the full Create
+Invoice form on Ganit, this is not an isolated slip on one screen:
+
+| Module | Level held | Write action offered |
+|---|---|---|
+| ganit | viewer | `+ Invoice`, `+ New invoice` -> opens the full create form |
+| vetana | **none** | `Run payroll` |
+
+**Write affordances are rendered from the module's page shell, not from the
+caller's level.** The API stops every one of them — that is verified and the
+messages are good — so no data is at risk. What is at risk is the user's
+understanding: the product invites an action, accepts the effort, and refuses at
+the last step.
+
+The fix has a natural shape given what already exists: the level is already
+resolved per request (`_gate` returns the caller's level set, and Vetana's own
+copy calls it *"the gate AND the answer"*). The information needed to hide or
+disable these controls is present at render time; it is simply not consulted.
+
+**Recommended before handover** — disable rather than hide, with the same text
+the API returns. A greyed `Run payroll` reading *"needs editor on Vetana"*
+teaches the model; a hidden button teaches nothing, and an enabled one that
+fails teaches distrust.
