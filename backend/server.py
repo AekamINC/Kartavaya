@@ -1628,12 +1628,16 @@ async def _approve_task_mark_done(
         # never be recorded. Rejecting was unaffected: it sets `approved_by`
         # alone, so there was only ever one type to deduce.
         #
-        # Casting the second use pins the parameter to `text`; assigning text to
-        # the varchar column is an ordinary widening and needs nothing further.
+        # BOTH uses are cast, not just one. Casting only the second flipped the
+        # error to "text versus character varying" and left it failing: the
+        # uncast `approved_by=$1` still deduced varchar from its own side, so
+        # there were still two deductions for one parameter. Pinning both sides
+        # to `text` leaves Postgres with a single answer, and assigning text to
+        # the varchar column is an ordinary widening.
+        #
         # The columns should also be reconciled to one type, but that is a
-        # migration on a shared database and this is the one-line fix that stops
-        # the 500 today.
-        "UPDATE tasks SET approval_status='approved', approved_by=$1, approval_notes=$2,"
+        # migration on a shared database; this is the change that stops the 500.
+        "UPDATE tasks SET approval_status='approved', approved_by=$1::text, approval_notes=$2,"
         " approval_decided_at=NOW(), column_id=$3, status='done',"
         " completed_at=NOW(), completed_by_user_id=$1::text, updated_at=NOW() WHERE task_id=$4",
         user["user_id"], notes, new_col_id, task_id,
