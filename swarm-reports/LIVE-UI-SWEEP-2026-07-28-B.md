@@ -408,6 +408,53 @@ sample rendered `rgb(36,57,8)`, which is `#243908` exactly.
 Whether it matches the *reference's* preview in full is a separate question, but
 "there is no live preview" is no longer true.
 
+## F47 — 🟠 Push registration 500s, disguised as a CORS error
+
+Four CORS errors on `POST /api/push/subscribe` appeared the moment a fresh
+service worker registered. **It is not CORS** — it is the trap `NEXT-SESSION.md`
+names: the exception escapes before `CORSMiddleware` attaches headers.
+
+Proved by contrast on the same route, same origin, same headers:
+
+| Body | Result |
+|---|---|
+| `{}` | **422**, headers present, body readable — CORS is fine |
+| `{endpoint, keys:{p256dh, auth}}` | request dies, no headers |
+
+An *invalid* body answers cleanly; only a *valid* one — the one that reaches the
+database — fails. The four repeats are `lib/api.js` retrying a 5xx three more
+times, which is itself confirmation the client saw a server error.
+
+### Root cause — the two schemas disagree
+
+`save_subscription` upserts `ON CONFLICT (endpoint)`, which requires a unique
+index on that column. Queried against the live database:
+
+| Schema | index on `endpoint` |
+|---|---|
+| `staging.push_web_subscriptions` | `push_web_subscriptions_endpoint_key` UNIQUE ✅ |
+| `public.push_web_subscriptions` | **none** — only PK(id) and a non-unique `user_id` ❌ |
+
+In `public`, Postgres raises *"no unique or exclusion constraint matching the ON
+CONFLICT specification"*.
+
+**And `public` is what gets reached.** The table name is unqualified, so it
+resolves through `search_path`, and `db.py:63` sets it inside a try/except that
+only **warns** — the same warn-only fragility as the jsonb codec three lines
+above, for the same PgBouncer reason. The row counts settle it:
+
+```
+public.push_web_subscriptions    4 rows, 4 distinct endpoints
+staging.push_web_subscriptions   0 rows
+```
+
+**Every push subscription ever stored landed in `public`.** That is not an edge
+case; it is the normal path.
+
+`migrations/PROPOSED_082_push_subscriptions_endpoint_unique.sql` written and
+**deliberately not applied** — it is DDL on the database that serves production
+as well as staging. 4 rows, 4 distinct endpoints, so it builds without a dedupe.
+
 ---
 
 # Boards, tasks and e-Sign — exercised end to end ✅
