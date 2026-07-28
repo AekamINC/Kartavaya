@@ -1369,3 +1369,50 @@ category · input_schema · price_inr · max_results · result_columns · is_act
 response has no rows to leak yet. The check is strong for the catalog and only
 structural for runs. Executing a real scraper run would close that, and spend is
 authorised — not done this session.
+
+## F24 — 🔴 HIGH · The cost report showed 2,000 credits the org did not have — FIXED ✅
+
+Found by trying to run a scraper, which is how it should have been found: the
+number is only wrong when something spends against it.
+
+```
+GET  /v1/subscription/cost-report   ->  current_balance: 2000
+POST /v1/scrapers/run               ->  402 "Insufficient credits. Need 2, have 0."
+```
+
+Same org, same second. Both handlers fetch `staging.hub_org_credits`. **Only
+one used it.**
+
+`subscription.py:503` reads the wallet and then uses it for `last_reset`
+only; `current_balance` was derived as `plan_credits - total_used`. Every
+debit path in the product reads the wallet — `scrapers.py:138`,
+`ai_router.py:713`, `hub.py:1588` — so the enforced balance was 0 and the
+displayed balance was 2,000.
+
+The derived figure could not have been right, for two reasons that are
+independent of each other:
+
+- `total_used` counts only transactions **inside the reporting window**, so
+  the displayed balance **drifts upward** as older spend falls out of a 30-day
+  period. Change the period and the "balance" changes with it.
+- A top-up or an admin adjustment moves the wallet without writing a debit here,
+  so the two have no fixed relationship even within one period.
+
+Fixed in both places — `:650`, the **PDF export**, had the identical bug and
+also fetched the wallet without using it. Left divergent, a cost report a
+customer files would disagree with the screen it was generated from. Fallback
+to the old derivation only when there is no wallet row at all.
+
+A money-adjacent number, shown to a paying customer, two and a half weeks
+before handover.
+
+### The scraper run itself is still blocked, and correctly so
+
+The org's real scraper balance is **0**, so `POST /v1/scrapers/run` refuses
+with a clear 402 naming the cost, the balance and what to do
+(*"Contact Aekam to top up"*). That is the right behaviour and the message is
+good. It does mean the plan's scraper coverage — several runs, one large, one
+empty, one failing, queued→running→finished transitions, results landing in R2 —
+**cannot proceed until the org has credits**. Topping up is a commercial action
+and an admin endpoint exists (`admin_orgs.py:1417`); not done here, since
+granting an org credits is not a QA decision.
