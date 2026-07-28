@@ -463,7 +463,7 @@ async def _assemble_gstr3b(
         "FROM staging.ganit_invoices "
         "WHERE org_id=$1::uuid AND is_active AND cancelled_at IS NULL "
         "AND invoice_type IN ('tax_invoice','credit_note','debit_note') "
-        "AND invoice_date >= $2::date AND invoice_date < $3::date",
+        "AND invoice_date >= $2::text::date AND invoice_date < $3::text::date",
         org_id, start, end_exclusive.isoformat(),
     )
 
@@ -516,7 +516,7 @@ async def _assemble_gstr3b(
         "COALESCE(SUM(sgst),0) AS sgst, COUNT(*) AS n "
         "FROM staging.ganit_vendor_bills "
         "WHERE org_id=$1::uuid AND is_active "
-        "AND bill_date >= $2::date AND bill_date < $3::date",
+        "AND bill_date >= $2::text::date AND bill_date < $3::text::date",
         org_id, start, end_exclusive.isoformat(),
     )
     bill_row = dict(bills[0]) if bills else {"igst": 0, "cgst": 0, "sgst": 0, "n": 0}
@@ -662,7 +662,7 @@ async def _prefiling_checks(
         "JOIN staging.graha_contacts c ON c.id = i.contact_id "
         "WHERE i.org_id=$1::uuid AND i.is_active AND i.cancelled_at IS NULL "
         "AND i.invoice_type IN ('tax_invoice','credit_note','debit_note') "
-        "AND i.invoice_date >= $2::date AND i.invoice_date < $3::date "
+        "AND i.invoice_date >= $2::text::date AND i.invoice_date < $3::text::date "
         "AND COALESCE(c.gstin, '') <> ''",
         org_id, start, end_exclusive,
     )
@@ -688,7 +688,7 @@ async def _prefiling_checks(
         "SELECT COUNT(*) FROM staging.ganit_invoices "
         "WHERE org_id=$1::uuid AND is_active AND cancelled_at IS NULL "
         "AND invoice_type IN ('tax_invoice','credit_note','debit_note') "
-        "AND invoice_date >= $2::date AND invoice_date < $3::date "
+        "AND invoice_date >= $2::text::date AND invoice_date < $3::text::date "
         "AND COALESCE(place_of_supply, '') = ''",
         org_id, start, end_exclusive,
     ) or 0
@@ -1188,6 +1188,13 @@ def _period_bounds(period: str) -> tuple[str, str]:
 
     Half-open so an invoice dated the last of the month is inside and one dated
     the first of the next is not, with no leap-year or 31-day special cases.
+
+    Returns STRINGS, and callers must bind them as `$n::text::date` rather than
+    `$n::date`. A bare `::date` makes Postgres describe the parameter as `date`,
+    so asyncpg calls `.toordinal()` on the value and a str raises DataError —
+    the cast that looks like it converts the string is what stops it arriving.
+    `_build_tally` also passes these straight into the Tally XML, so they stay
+    strings rather than becoming `date` objects for the query's benefit.
     """
     try:
         datetime.strptime(period, "%Y-%m")
@@ -1250,7 +1257,7 @@ async def _tally_rows(pool, org_id: str, start: str, end: str):
         "AND COALESCE(i.payment_status, '') <> 'cancelled' "
         "AND COALESCE(i.doc_status, '') <> 'draft' "
         "AND i.invoice_type IN ('tax_invoice','credit_note','debit_note') "
-        "AND i.invoice_date >= $2::date AND i.invoice_date < $3::date "
+        "AND i.invoice_date >= $2::text::date AND i.invoice_date < $3::text::date "
         "ORDER BY i.invoice_date, i.invoice_number",
         org_id, start, end,
     )
@@ -1260,7 +1267,7 @@ async def _tally_rows(pool, org_id: str, start: str, end: str):
         "JOIN staging.ganit_vendors v ON v.id = b.vendor_id "
         "WHERE b.org_id=$1::uuid AND b.is_active "
         "AND COALESCE(b.status, '') <> 'cancelled' "
-        "AND b.bill_date >= $2::date AND b.bill_date < $3::date "
+        "AND b.bill_date >= $2::text::date AND b.bill_date < $3::text::date "
         "ORDER BY b.bill_date, b.internal_ref",
         org_id, start, end,
     )
@@ -1379,7 +1386,7 @@ async def _build_gstr1(pool, org_id: str, period: str):
         "FROM staging.ganit_invoices i "
         "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
         "WHERE i.org_id=$1::uuid AND i.is_active "
-        "AND i.invoice_date >= $2::date AND i.invoice_date < $3::date "
+        "AND i.invoice_date >= $2::text::date AND i.invoice_date < $3::text::date "
         "ORDER BY i.invoice_date, i.invoice_number",
         org_id, start, end,
     )
