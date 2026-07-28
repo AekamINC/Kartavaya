@@ -1612,9 +1612,30 @@ async def _approve_task_mark_done(
     )
     new_col_id = done_col["column_id"] if done_col else task["column_id"]
     await pool.execute(
+        # `$1::text` on the SECOND use, and it is not decoration.
+        #
+        # `$1` is assigned to two columns that are NOT the same type —
+        # `tasks.approved_by` is `character varying` and
+        # `tasks.completed_by_user_id` is `text` — so Postgres deduced a
+        # different type for the same parameter from each side and refused the
+        # whole statement:
+        #
+        #     AmbiguousParameterError: inconsistent types deduced for parameter $1
+        #     DETAIL: character varying versus text
+        #
+        # Which means **approving a task always returned 500**. The request
+        # could be raised and appeared in the queue, and the decision could
+        # never be recorded. Rejecting was unaffected: it sets `approved_by`
+        # alone, so there was only ever one type to deduce.
+        #
+        # Casting the second use pins the parameter to `text`; assigning text to
+        # the varchar column is an ordinary widening and needs nothing further.
+        # The columns should also be reconciled to one type, but that is a
+        # migration on a shared database and this is the one-line fix that stops
+        # the 500 today.
         "UPDATE tasks SET approval_status='approved', approved_by=$1, approval_notes=$2,"
         " approval_decided_at=NOW(), column_id=$3, status='done',"
-        " completed_at=NOW(), completed_by_user_id=$1, updated_at=NOW() WHERE task_id=$4",
+        " completed_at=NOW(), completed_by_user_id=$1::text, updated_at=NOW() WHERE task_id=$4",
         user["user_id"], notes, new_col_id, task_id,
     )
     if task["created_by_user_id"] and task["created_by_user_id"] != user["user_id"]:
