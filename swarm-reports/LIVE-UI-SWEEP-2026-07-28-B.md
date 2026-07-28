@@ -340,6 +340,140 @@ every invoice and compared its actions against its status:
 correctly offers `Mark final` rather than `Mark sent`. The lifecycle is enforced.
 The gap is not the rules — it is that no state, including draft, permits an edit.
 
+## F45 — 🟠 A project created by an org_admin is invisible to them
+
+`POST /api/teams` → **200**. `GET /api/teams` → **`[]`**. Created a project
+through the UI twice, both writes succeeded, and the page still read *"No
+projects yet"*. With no project there is also no board, so **Boards is
+permanently empty too** — which is why drag-and-drop could not be reached.
+
+`get_visible_team_ids` (`server.py:383`) resolves an org_owner/org_admin's
+projects as *every team in my org*:
+
+```sql
+SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL
+```
+
+`create_team` (`server.py:1991`) never set `org_id`. So every project an
+administrator creates lands with `org_id NULL` and is invisible to the person
+who just created it.
+
+**Ordinary members were unaffected, which is why it survived.** Their branch of
+that query UNIONs `project_assignments` and `team_members`, and the create path
+writes both rows. Only the org-scoped branch reads `org_id` — and only
+administrators take it, who are exactly the people who create projects.
+
+**Fixed**: `org_id` resolves from `staging.user_roles` at the earliest grant,
+matching the org `org_resolver` falls back to. `43 team/project tests pass`.
+Two orphaned `org_id NULL` projects from this test remain and stay invisible.
+
+## F46 — 🟡 Boards showed the VENDOR's name to every customer
+
+`BoardsPage.jsx:182` hardcoded `kicker="AEKAM INC"`. Every other page in the
+build uses its sidebar section — `OPERATIONS`, `SETTINGS`, `TEAM`, `PEOPLE`,
+`REVIEW` — and Boards' three siblings in the same nav group (Tasks, Projects,
+ProjectBoard) all say `WORKSPACE`.
+
+Aekam Inc is the **vendor**. An accounting firm opening its own planning board
+was told it belonged to Aekam, whichever org was signed in. Fixed to `WORKSPACE`.
+
+---
+
+## Two items from the E2E plan re-measured — one CLOSED, one STALE
+
+### The Windows glass override — now COMPLETE ✅
+
+`E2E-PLAN-2026-07-28.md` lists this as **OPEN**, with `.side`, `.top` and
+`.mnav` keeping `blur(13.2px) saturate(1.3)` alive under an opaque background.
+Measured live on `data-platform="win"`:
+
+| Element | background | backdrop-filter |
+|---|---|---|
+| `.side` | `rgb(22,26,24)` opaque | **`none`** ✅ |
+| `.top` | opaque | **`none`** ✅ |
+| `.mnav` | opaque | **`none`** ✅ |
+
+All three now cancel the effect as well as the colour. **That item is resolved**
+and the plan can be updated.
+
+### "Customisation has no live preview" — STALE, it does ✅
+
+The plan names this as a known gap. It is not one: `TabAppearance.jsx:52`
+renders `AccentPreview`, and `TabTypography.jsx:81` renders `TypePreview`.
+`AccentPreview` shows the accent on a filled button, a tonal button, an outline
+button, a link, a tag, the sidebar active bar and a meter — live off the tokens
+`applyPrefs` has already written. Confirmed live: with Forest selected the
+sample rendered `rgb(36,57,8)`, which is `#243908` exactly.
+
+Whether it matches the *reference's* preview in full is a separate question, but
+"there is no live preview" is no longer true.
+
+---
+
+# Boards, tasks and e-Sign — exercised end to end ✅
+
+## Kanban drag-and-drop — works, persists, and is keyboard-accessible
+
+Only reachable after F45 was fixed (no project → no board). The board is
+`react-beautiful-dnd`, so I drove it the way a keyboard user would: focus the
+drag handle, `Space` to lift, `ArrowRight`, `Space` to drop.
+
+- Card moved **To Do → In Progress** ✅
+- `GET /api/tasks/{id}` returns `status: "in_progress"` — **it persisted**, not
+  just moved on screen ✅
+- The move appears in the task's own Activity tab: *"Org Admin changed status
+  todo → in_progress"* ✅
+
+Seven columns render: Requested · To Do · In Progress · In Review · Approval ·
+Done · Awaiting Client Approval.
+
+## The task drawer — 13 events
+
+Five tabs (Details, Comments, Files, Time, Activity), all switching correctly.
+
+| Action | Result |
+|---|---|
+| Create task from the column composer (⏎) | created, counter → 1 ✅ |
+| Type a description, blur | **persisted** — confirmed against the API ✅ |
+| Add a subtask | appears ✅ |
+| Priority control | opens Low / Medium / High / Urgent ✅ |
+| Post a comment | posted; API count 1; **tab badge updated live to `Comments 1`** ✅ |
+| Files tab | states its limits — 25 MB documents, 50 MB video |
+| Activity tab | real audit entries with authors and relative times ✅ |
+
+Note the comment badge updates immediately here, which is what makes F38 (the
+stale Ganit invoice badge) a defect rather than a house style.
+
+## e-Sign — create → upload → signers → send → audit trail ✅
+
+| Step | Result |
+|---|---|
+| Title + expiry (14 days) | accepted; expiry resolved to **11 Aug 2026**, exactly 14 days ✅ |
+| **Upload a real PDF** (the invoice from earlier) | accepted, shown as `INV-2026-0044.pdf · 30 KB`, `accept=".pdf"`, 20 MB cap stated ✅ |
+| Add two signers | saved with **`sign_order` 1 and 2**, status `pending` ✅ |
+| Create | status `draft`, card reads **`Signed 0/2`** ✅ |
+| **Send for signing** | status → **`sent`**; both signers `sent`, UI shows `Awaiting` with a `Remind` action; `Send for signing` correctly replaced by `Cancel document` ✅ |
+| Audit trail | `document_created` → `file_uploaded` → `document_sent`, each timestamped with the actor ✅ |
+
+Both signer addresses are the owner's own Gmail plus-addresses, so the real mail
+this sent stays in his inbox.
+
+**The lifecycle stops here deliberately.** `sign → completed` requires opening
+the signer's emailed link and passing the OTP, which is a separate unauthenticated
+surface reached from an inbox. The legal framing on the page is worth recording
+as correct and unusually careful:
+
+> *"Signing here is an electronic signature under s.10A of the Information
+> Technology Act, 2000, evidenced by email and OTP plus the audit trail on each
+> document. It is not a Digital Signature Certificate — filings that require a
+> DSC still require one."*
+
+## Pahchan — out of scope by the plan's own instruction
+
+`E2E-PLAN-2026-07-28.md` § *Manual, not drivable from this browser*: **"Pahchan —
+biometric attendance is a mobile PWA needing a camera. Manual check on a phone."**
+Not attempted, by instruction rather than omission.
+
 ---
 
 ## Checked and deliberately NOT filed
@@ -386,6 +520,30 @@ four looked like findings and are not:
   fixed), and is the counter-example to the four above: the distinguishing test
   each time was the console. A stale-chunk MIME error, a `TypeError`, and a
   mis-timed toast look identical from "the page is not right".
+- **"Filled / Tonal / Outline is a dead control"** — **RETRACTED.** I measured
+  that clicking them stores no pref, sets no attribute and changes no rendering,
+  and concluded it was a switch that accepts a click and does nothing. It is not
+  a control at all: `AccentPreview.jsx:27-29` renders those three as **preview
+  samples**, `tabIndex={-1}` inside an `aria-hidden="true"` container, showing
+  what the accent looks like as a fill, a tonal and an outline. Doing nothing on
+  click is correct. Reading the component, not the DOM, is what settled it — the
+  DOM evidence was accurate and the conclusion drawn from it was wrong.
+- **"No project was created"** — my network filter was `project`; the endpoint is
+  `/api/teams`. Both POSTs had in fact returned 200. The real defect was one
+  layer further in (F45), and I would have missed it by filing the wrong one.
+- **The Devanagari `कर्तव्य` in the invoice PDF** — extraction returns what looks
+  like a broken conjunct; the rendered page is correct.
+- **"The task description, subtask and comment were all LOST on reopen"** — no.
+  The description was in the database the whole time; I read the reopened drawer
+  before it had loaded. The comment genuinely had not posted, but because my
+  selector had typed into the wrong field — the box is
+  `textarea[placeholder^="Add a comment"]` and I had matched a sibling `.inp`.
+  Retyped properly, it posted and the badge updated. **Three "defects" in one
+  batch, none real.**
+- **"Untitled task" in the task drawer title** — that is the PLACEHOLDER; the
+  real title was in the field's `value` all along.
+- **Responsive tap targets at 41px** — under the 44px iOS/AAA guideline but
+  comfortably over WCAG 2.5.8 AA (24px). Not a failure; noted only.
 
 ---
 
