@@ -830,3 +830,74 @@ RBAC remains untouched — no QA org, no account ladder, no passwordless path.
 That is the single largest open item in the brief and it has now survived two
 sessions. The exports, scheduled-report attachments (F11) and list pagination
 (F4) are also still where the first run left them.
+
+## F17 — FIXED and verified live ✅
+
+`5d893e91`, deployed to Railway `4b1c2948`. Same probe, same account, re-run
+against the deployed build:
+
+```
+GET /api/teams              -> 200, 24 teams
+GET /api/teams/{id}  x 24   -> 200 x 24, 403 x 0
+your_role split             -> admin x 22, member x 2
+```
+
+The role split is the part worth reading. The two teams that already worked are
+the ones with a real membership row, and they still report **`member`** — their
+own role, verbatim — while only the 22 reached through org visibility report the
+synthetic `admin`. That is the ordering guard holding on production data: a
+membership row short-circuits before the visibility check. Without it every
+member would report as `admin` and the drawer would offer owner-only controls to
+a client. It is covered by `test_get_team_membership_row_still_wins`.
+
+Opening task `#42ac23` afterwards: `GET /teams/team_dfe8420f6fd5` **200**,
+console **0 errors**. The 403 that fired on every drawer open is gone.
+
+Still open, deliberately: `/teams/{id}/clients` and `/teams/{id}/members` remain
+gated on `is_project_member`, whose bypass keys on the legacy `users.role`
+column. Not changed — narrowing them could revoke access mid-session for anyone
+holding legacy admin without a `user_roles` row. **Owner's call.**
+
+## F18 — 🟡 `/api/teams` is fetched three times on one page load
+
+Requests 29, 33 and 38 of a single `/tasks` load, all `GET /api/teams`, all 200.
+`get_visible_team_ids` is request-cached inside the backend, so the cost is
+three round trips rather than three sets of queries — but it is still three.
+Recorded, not chased; it wants a look at who calls the teams hook.
+
+## Task drawer — element-level walk
+
+Real Playwright events, not synthetic dispatch, except where noted.
+
+**31 interactive elements** in the drawer alone, which is the brief's point
+about a module page hiding forty events behind one line item:
+
+3 header icon buttons (Archive · Delete · Close) · title input · 5 pipeline
+stages · 4 pickers (Priority · Status · Category · Assignees) · due-date input ·
+reminder trigger + 6 channel toggles (In-app/Push/Email x2 rows) · 5 tabs ·
+description textarea · new-subtask input · Add · Send for approval.
+
+| Element | Action | Expected | Actual |
+|---|---|---|---|
+| Drawer | Close by **X** | closes, focus restored | ✅ closed; focus returned to `div.k-trow`, the triggering row — not `<body>` |
+| Drawer | Close by **Esc** | closes | ✅ closed, scrim unmounted with it |
+| Drawer | Close by **click-outside** | closes | ✅ closed; focus returned to `div.k-trow` |
+| Scrim | Hit-test at (120, 331) | scrim on top | ✅ `div.dr__scrim` is the top element outside the panel |
+| Drawer | Width at 1052px viewport | `min(560px, 92%)` | ✅ 560px, x 492→1052 |
+| Drawer | Width at 1600px viewport | stays 560 | ✅ 560px, x 1040→1600 — confirms the reference's fixed cap rather than a growing panel |
+| Tabs | Click all 5 | switch, `aria-selected` tracks | ✅ 5/5 switched, `aria-selected` correct each time |
+| Details | Render | real content | ✅ description + subtasks + approval |
+| Comments | Render | empty state, not blank | ✅ "No comments yet" |
+| Files | Render | attach affordances | ✅ "Attach files · Attach video · 0/10 · up to 25 MB" |
+| Time | Render | empty state | ✅ "Start timer · Log · No time logged yet" |
+| Activity | Render | real rows | ✅ 3 entries with author and relative time |
+
+The close-three-ways and focus-restore behaviour the comparison listed under
+"Verified NOT gaps" is now confirmed **live** rather than by reading
+`FocusTrap.jsx`.
+
+**M10 confirmed live.** `tab=` never appears in the URL on any of the five tabs.
+A drawer link always opens on Details, exactly as the comparison predicted —
+`DrawerTabs` accepts `onChange` and `TaskDrawer` never passes it, while
+`useBoardView` does put search/filter/group/sort in the URL. The one that was
+missed.
