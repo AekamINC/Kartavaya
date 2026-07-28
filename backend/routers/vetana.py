@@ -309,7 +309,8 @@ async def create_structure(
         "special_allowance, conveyance, medical, other_allowances, "
         "pf_enabled, esi_enabled, pt_applicable, tds_regime, notes, created_by) "
         "VALUES ($1::uuid, $2::uuid, COALESCE(NULLIF($3,'')::date, CURRENT_DATE), "
-        "$4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16, $17) "
+        # `::text::jsonb`, not `::jsonb` — see the payslip INSERT below.
+        "$4, $5, $6, $7, $8, $9, $10, $11::text::jsonb, $12, $13, $14, $15, $16, $17) "
         "RETURNING *",
         org_id, body.employee_id, body.effective_from,
         body.ctc_annual, body.basic, body.hra, body.da,
@@ -368,7 +369,7 @@ async def update_structure(
             updates.append(f"{field}=${len(vals)}")
     if body.other_allowances is not None:
         vals.append(json.dumps(body.other_allowances))
-        updates.append(f"other_allowances=${len(vals)}::jsonb")
+        updates.append(f"other_allowances=${len(vals)}::text::jsonb")
     if not updates:
         raise HTTPException(400, "Nothing to update")
     updates.append(f"updated_at=NOW()")
@@ -582,16 +583,6 @@ async def process_payroll(
             "ORDER BY disbursed_date",
             org_id, emp_id,
         )
-        loan_deductions = []
-        loan_total = 0.0
-        for loan in active_loans:
-            amt = min(float(loan["emi_amount"]), float(loan["balance_remaining"]))
-            if amt > 0:
-                loan_deductions.append({"loan_id": str(loan["id"]), "amount": round(amt, 2)})
-                loan_total += amt
-
-        total_ded = stat["pf_employee"] + stat["esi_employee"] + stat["professional_tax"] + stat["tds"] + loan_total
-
         approved_claims = await pool.fetch(
             "SELECT id, amount FROM staging.manav_expense_claims "
             "WHERE org_id=$1::uuid AND employee_id=$2::uuid "
@@ -601,7 +592,54 @@ async def process_payroll(
         reimbursement_total = sum(float(c["amount"]) for c in approved_claims)
         claim_ids = [str(c["id"]) for c in approved_claims]
 
+        # ── Loan recovery, CAPPED AT WHAT THE SALARY CAN BEAR ────────────────
+        #
+        # This used to be `min(emi_amount, balance_remaining)` — capped against
+        # the LOAN and never against the pay. An employee on ₹15,000 gross with a
+        # ₹25,000 EMI produced `total_deductions 26,800` and
+        # **`net_pay -6,800`**, and the payslip was written, marked "generated"
+        # and queued to be emailed to them. Seven of the thirty-seven payslips in
+        # the QA org were negative when this was found.
+        #
+        # Net pay cannot be negative. A payslip is a statement of what is being
+        # PAID; an employer does not pay a negative amount, and a recovery that
+        # would exceed earnings is deferred, not inverted.
+        #
+        # Statutory deductions come first and are never trimmed — PF, ESI, PT and
+        # TDS are owed to the state regardless of what is left for the lender.
+        # Loans take whatever remains, in disbursement order (the query above is
+        # `ORDER BY disbursed_date`), so the oldest loan recovers first and the
+        # shortfall simply stays in `balance_remaining` for the next run.
+        statutory = (
+            stat["pf_employee"] + stat["esi_employee"]
+            + stat["professional_tax"] + stat["tds"]
+        )
+        loan_capacity = max(0.0, gross + reimbursement_total - statutory)
+
+        loan_deductions = []
+        loan_total = 0.0
+        for loan in active_loans:
+            if loan_capacity <= 0:
+                break
+            amt = min(
+                float(loan["emi_amount"]),
+                float(loan["balance_remaining"]),
+                loan_capacity,
+            )
+            if amt > 0:
+                loan_deductions.append({"loan_id": str(loan["id"]), "amount": round(amt, 2)})
+                loan_total += amt
+                loan_capacity -= amt
+
+        total_ded = statutory + loan_total
+
         net = round(gross - total_ded + reimbursement_total, 2)
+        # Belt and braces. `loan_capacity` already floors this at zero for the
+        # loan path; this catches the remaining case where statutory alone
+        # exceeds earnings, which must surface as a zero payslip to be
+        # investigated rather than as a negative one to be emailed.
+        if net < 0:
+            net = 0.0
 
         ps_number = await next_doc_number(pool, org_id, "vetana_payslips", "payslip_number", "PS")
 
@@ -615,7 +653,12 @@ async def process_payroll(
             "VALUES ($1::uuid, $2, $3::uuid, $4, $5, "
             "$6, $7, $8, $9, $10, "
             "$11, $12, $13, $14, $15, $16, $17, $18, "
-            "$19, $20, $21, $22, $23, $24, $25, $26::jsonb, $27, $28, $29) RETURNING id",
+            # `$26::text::jsonb` — `db.py` registers a jsonb codec whose encoder
+            # IS `json.dumps`, so binding an already-dumped string to a `::jsonb`
+            # parameter encodes it twice and the column holds a JSON *string*.
+            # Measured live: `loan_deductions` came back as `"[{...}]"` rather
+            # than an array, the same defect that crashed Graha's Documents tab.
+            "$19, $20, $21, $22, $23, $24, $25, $26::text::jsonb, $27, $28, $29) RETURNING id",
             org_id, run_id, emp_id, ps_number, month,
             working_days, present_days, paid_leaves, unpaid_leaves, ot_hours,
             round(basic_pay, 2), round(hra_pay, 2), round(da_pay, 2),

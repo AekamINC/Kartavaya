@@ -222,6 +222,69 @@ Related, smaller: that toast is dense — three sentences and an instruction —
 **auto-dismisses in about 2 seconds**. Measured: absent at 150ms, present from
 ~400ms, gone by 2500ms.
 
+## F44 — 🔴 Payroll generates payslips with NEGATIVE net pay
+
+**Seven of the thirty-seven payslips in this org pay a negative amount**, and
+every one is marked `generated` — meaning it was written, is downloadable, and is
+queued to be emailed to the employee with a PDF attached.
+
+Found by opening the Payslips tab and reading the list: `Vikram Joshi ·
+PS-2026-0026 · June 2026 · **₹-11,800** · generated`.
+
+The breakdown settles it:
+
+```
+basic            15,000
+gross            15,000
+pf_employee       1,800
+loan_deduction   25,000     <- EMI larger than the entire salary
+total_deductions 26,800
+net_pay          -6,800
+```
+
+Affected: `PS-2026-0020 (-6,800)`, `0038 (-11,800)`, `0036 (-5,800.93)`,
+`0033 (-9,049.39)`, `0034 (-1,325.93)`, `0032 (-11,800)`, `0026 (-11,800)`.
+
+### Root cause — one `min()` short of correct
+
+`vetana.py:588` capped the EMI against the LOAN and never against the PAY:
+
+```python
+amt = min(float(loan["emi_amount"]), float(loan["balance_remaining"]))
+```
+
+Nothing anywhere asked whether the salary could bear it.
+
+**A payslip is a statement of what is being paid, and an employer does not pay a
+negative amount.** A recovery that would exceed earnings is deferred, not
+inverted — the employee does not owe the difference back.
+
+### Fixed
+
+Statutory deductions are taken first and never trimmed (PF, ESI, PT and TDS are
+owed to the state regardless of what is left for a lender). Loans then take
+whatever remains, in disbursement order, so the oldest recovers first and the
+shortfall simply stays in `balance_remaining` for the next run — which is what
+carry-forward means and needed no new column. A final floor at zero catches the
+separate case where statutory alone exceeds earnings, so that surfaces as a zero
+payslip to investigate rather than a negative one to email.
+
+`104 vetana tests pass.` **The 7 existing negative payslips are still in the
+database** — they need re-running for their months, which sends email, so that is
+the owner's call rather than mine.
+
+## The jsonb double-encode is now confirmed THREE times
+
+`loan_deductions` came back as the STRING `"[{\"loan_id\": …}]"`, not an array —
+the same defect as F36 (`billing_address`) and the Graha Documents crash
+(`tags`). Fixed here on `loan_deductions`, `other_allowances` (both write paths)
+with `::text::jsonb`.
+
+**This is now a confirmed pattern rather than a hypothesis**, and the three
+instances were found in three unrelated modules by three unrelated symptoms —
+silent data loss, a page crash, and a string where an array was expected. The
+remaining `json.dumps` sites bound to `::jsonb` should be swept deliberately.
+
 ## The invoice PDF — downloaded, rendered and read. It is very good ✅
 
 `INV-2026-0044` downloaded through the drawer button, rendered at 140dpi and
