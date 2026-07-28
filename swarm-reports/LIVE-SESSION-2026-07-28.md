@@ -1416,3 +1416,33 @@ empty, one failing, queued→running→finished transitions, results landing in 
 **cannot proceed until the org has credits**. Topping up is a commercial action
 and an admin endpoint exists (`admin_orgs.py:1417`); not done here, since
 granting an org credits is not a QA decision.
+
+## Payroll — the heaviest handler, timed ✅
+
+The plan singles this out: *"`POST /payroll/process` is the heaviest handler in
+the codebase (14 sequential queries) — time it, note anything over ~3s."*
+
+```
+POST /v1/vetana/payroll/process  {"month":"2026-07"}
+200 in 863 ms
+{"ok":true,"run_id":"5c2a30cd-…","employee_count":1,
+ "total_gross":2592.59,"total_net":2414.81}
+```
+
+**863 ms, comfortably under the 3-second bar.** No existing run was displaced —
+`/payroll/runs` was empty beforehand, so this created the first draft. Read
+before writing this time.
+
+The handler is also correctly gated and correctly scoped: it requires ADMIN and
+not APPROVER, with the reason stated in the code — *"Processing computes the run
+from the structures. It does not release money — approving does, so this is the
+admin half."* That is the separated duty the brief asks to verify on `vetana`,
+present by construction rather than by convention.
+
+**Caveat, and it matters:** the org has **one** active employee, so the
+per-employee work ran once. 863 ms is the floor for this handler, not evidence
+that it scales. If the 14 queries are per-employee rather than per-run, a firm
+with 50 staff would see roughly fifty times the inner cost, and nothing here
+rules that out. **A realistic timing needs a populated employee roster** — worth
+doing before handover, since payroll is the one job that must finish inside a
+request.
