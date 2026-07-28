@@ -1988,7 +1988,35 @@ async def create_team(payload:TeamCreate,pool=Depends(get_db),user=Depends(requi
     """Create a new project and set the caller as owner with default kanban columns."""
     team_id=f"team_{uuid.uuid4().hex[:12]}"
     bs = json.dumps(payload.brand_settings or {"colors":[],"fonts":[]})
-    row=await pool.fetchrow("INSERT INTO teams (team_id,name,created_by,brand_settings) VALUES ($1,$2,$3,$4::jsonb) RETURNING *",team_id,payload.name,user["user_id"],bs)
+    # org_id is SET HERE, and it is load-bearing rather than tidy metadata.
+    #
+    # `get_visible_team_ids` resolves an org_owner/org_admin's projects as
+    # "every team in my org" — `SELECT team_id FROM teams WHERE org_id=$1`
+    # (server.py:383). This INSERT never set org_id, so every project an
+    # administrator created landed with org_id NULL and was invisible to the
+    # person who had just created it. Measured live: two POSTs returned 200 and
+    # the page still read "No projects yet".
+    #
+    # It did NOT affect ordinary members, which is why it survived: their branch
+    # of that query UNIONs `project_assignments` and `team_members`, and both of
+    # those rows ARE written below. Only the org-scoped branch reads org_id, and
+    # only administrators take it — the same people who create projects.
+    #
+    # Resolved from `staging.user_roles`, the sole tenant path, taking the
+    # earliest grant so it matches the org `middleware/org_resolver.py` falls
+    # back to when no `X-Org-Id` header is sent. A user with no org row gets
+    # NULL, exactly as before, so nothing that worked before starts failing.
+    org_id = await pool.fetchval(
+        "SELECT org_id::text FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id IS NOT NULL "
+        "AND role_code IN ('org_owner','org_admin','org_member') "
+        "ORDER BY granted_at LIMIT 1",
+        user["user_id"],
+    )
+    row=await pool.fetchrow(
+        "INSERT INTO teams (team_id,name,created_by,brand_settings,org_id) "
+        "VALUES ($1,$2,$3,$4::text::jsonb,NULLIF($5,'')::uuid) RETURNING *",
+        team_id,payload.name,user["user_id"],bs,org_id or "")
     await pool.execute("INSERT INTO team_members (member_id,team_id,email,user_id,role,status) VALUES ($1,$2,$3,$4,'owner','active')",f"mem_{uuid.uuid4().hex[:12]}",team_id,user["email"],user["user_id"])
     await pool.execute("INSERT INTO project_assignments (assignment_id,team_id,user_id,role,assigned_by) VALUES ($1,$2,$3,'owner',$4)",f"assign_{uuid.uuid4().hex[:12]}",team_id,user["user_id"],user["user_id"])
     await _ensure_default_owner(pool,team_id,creator=user)

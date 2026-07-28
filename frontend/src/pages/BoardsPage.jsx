@@ -178,8 +178,19 @@ export default function BoardsPage() {
           build had no equivalent node on this page at all.
           `फलक`, not `फ़लक` — the nuqta on फ़ is the Perso-Arabic /f/ and does not
           belong in phalak. `navConfig` and the reference both spell it फलक. */}
+      {/* `WORKSPACE`, not `AEKAM INC`. The kicker names the SIDEBAR SECTION the
+          page belongs to — every other page in the build does exactly that
+          (`OPERATIONS`, `SETTINGS`, `TEAM`, `PEOPLE`, `REVIEW`), and Boards'
+          three siblings in the same nav group — Tasks, Projects and
+          ProjectBoard — all say `WORKSPACE`.
+
+          `AEKAM INC` is the VENDOR's name, hardcoded. It rendered on every
+          customer's board regardless of which organisation was signed in, so an
+          accounting firm opening its own planning board was told it belonged to
+          Aekam. Measured live as an org_admin of QA Test Corp: the page read
+          "AEKAM INC / Select a project". */}
       <PageHeader
-        kicker="AEKAM INC"
+        kicker="WORKSPACE"
         sanskrit="फलक"
         title={project?.name || activeProject?.name || 'Select a project'}
         lede="Move work across the board. Click any card to open."
