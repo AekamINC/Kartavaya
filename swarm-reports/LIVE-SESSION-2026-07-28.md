@@ -1549,3 +1549,42 @@ Both were caught by the same tell: **identical numbers where independent
 measurements should differ.** Re-query the DOM after every interaction that can
 re-render it, and treat repeated values as evidence of a broken probe until
 proven otherwise.
+
+## Graha — all 17 leaves walked, properly this time ✅
+
+Re-ran with the popover re-queried before every leaf. **12 distinct character
+counts across the 12 nested leaves** — the absence of repeats is the evidence
+that each rendered independently, which is precisely what the broken walk could
+not show.
+
+Combined with the six top-level leaves, that is **17 of 17**.
+
+**Zero console errors. Zero error states. Every leaf rendered real content or a
+proper empty state:**
+
+| Leaf | What rendered |
+|---|---|
+| Follow Ups | a real overdue item — *Rahul Sharma · Due 20 Jul · Discuss pricing* |
+| Pipeline | 14,992 chars, stage columns with deal values |
+| Labels | explanatory copy + New Label |
+| Activities | *Product Demo · Priya Patel · Open · 17 Jul* |
+| Reports | real conversion table — referral 2/1/1/₹3L, cold_call 1/1/0, website 1/0/0 |
+| Automations | copy + New Rule |
+| Territories | **`QA probe territory`, 28 Jul, 0 users** |
+| Fields / Web Forms | copy + New Field / New Form |
+| Approvals | *No pending requests.* |
+| Documents | *No documents found.* |
+| Dedupe | *No merges yet*, with the undo note |
+
+Two things worth drawing out:
+
+- **The five tables that had never held a row all render**, and Territories
+  holds a row created by earlier QA. Combined with the API sweep finding no
+  5xx on any of them, the `081` catch-up tables are readable and at least
+  partly writable. F5 remains the open half: the `uuid`/`text` mismatch on
+  `created_by` blocks creation on automations and web forms, and
+  `PROPOSED_083` is still unapplied.
+- **Empty states are real empty states.** `No pending requests.`,
+  `No documents found.`, `No merges yet` — not blank panels, which is the
+  distinction the brief draws when it says a 200 rendering an empty table is
+  still a bug.
