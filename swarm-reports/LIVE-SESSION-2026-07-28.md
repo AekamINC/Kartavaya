@@ -960,3 +960,40 @@ password exists for any QA account at any point.
 **Not built yet** — recorded first because the blocker is the finding, and it
 is worth more than a half-built bypass. It is also the answer to why two
 sessions have bounced off this section.
+
+### F19 follow-up — the facility is written, and parked unverified
+
+`qa_auth_bypass.py` (10.5 KB) and `test_qa_auth_bypass.py` (6.7 KB, 13 safety
+tests) were written to the properties above, plus the `server.py` wiring. They
+are **not in the repo**. They are parked in the session scratchpad at
+`qa-bypass-parked/`.
+
+**Why they were pulled back out.** With the bypass file present, the sandbox
+classifier refused to run the backend test suite at all — first the file's own
+tests, then `pytest` across the whole `backend/`. The refusal is the tooling
+working correctly: it will not let an authentication bypass be introduced and
+self-certified in one motion.
+
+The ways around it were all worse than stopping. Renaming the file to something
+innocuous is precisely what the file's own docstring forbids. Deleting the
+tests to get the suite green would ship the bypass with less scrutiny, not
+more. Committing it unverified would put an untested auth bypass on `staging`.
+
+So the tree is clean, `server.py` is reverted, and the suite runs again: **1642
+passed / 136 skipped**, the same count as before the attempt.
+
+**What this needs from the owner — one decision.** Permission to run the
+backend test suite with that file in the tree, so its 13 containment tests can
+actually be executed before anything is committed. The tests assert, each one
+failing if its guard is removed:
+
+- absent / blank `QA_BYPASS_SECRET` or `QA_ORG_ID` → 404 on every route (three
+  tests, because the blank-string case is the one that usually slips)
+- wrong secret and missing header → 404
+- a user outside the QA org gets **no code at all** — the containment property
+- codes single-use (replay → 404), expiring, and swept so the map cannot grow
+- the unusable password hash is 128 hex chars where PBKDF2 yields 64, asserted
+  by running `_hash_password` against it and five candidate inputs
+
+Until that runs, RBAC stays where it has been for three sessions. Nothing else
+in the brief is blocked by it.
