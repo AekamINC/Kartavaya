@@ -40,9 +40,10 @@ grant/revoke cycles.
 > below; check `git log` before trusting any priority list, including this one.
 
 1. **The UI sweep** — 5 surfaces done of 9 modules, ~85 leaves, CRUD on most.
-   **Still the job**, and now the only way to close F32 properly: it is defined
-   by what a viewer SEES, and none of the work below was verified in a browser.
-2. **F32 — written across all nine modules, verified in a browser NOWHERE.**
+   **Still the job.** F32's gating is now driven in a browser (see below), but
+   that is one finding on stubbed data; the sweep is every module, every tab,
+   every CRUD path, as each role, against real records.
+2. **F32 — written across all nine modules, driven in a browser, not on staging.**
    ~130 write controls now gate on the caller's level, detail drawers included.
    The machinery: `/auth/me` carries `module_levels`, `ModuleAccess` publishes
    the module code from `AppShell` for every route in `ROUTE_META`, and
