@@ -1868,7 +1868,6 @@ async def update_org_brand(
 QUICK_SKILL_PROMPTS = {
     "social_post": {
         "agent_type": "social_media",
-        "credits": 3,
         "system": (
             "You are an expert social media content creator for Indian businesses. "
             "Create engaging, professional content with proper formatting.\n\n"
@@ -1892,7 +1891,6 @@ QUICK_SKILL_PROMPTS = {
     },
     "email_campaign": {
         "agent_type": "email",
-        "credits": 3,
         "system": (
             "You are a marketing email specialist for Indian businesses. "
             "Create compelling email content with proper structure.\n\n"
@@ -1910,7 +1908,6 @@ QUICK_SKILL_PROMPTS = {
     },
     "ad_copy": {
         "agent_type": "ad_copy",
-        "credits": 3,
         "system": (
             "You are an advertising copywriter for Indian market. "
             "Create high-converting ad copy.\n\n"
@@ -1929,7 +1926,6 @@ QUICK_SKILL_PROMPTS = {
     },
     "blog_post": {
         "agent_type": "blog",
-        "credits": 5,
         "system": (
             "You are a content writer for Indian businesses. "
             "Create SEO-friendly blog content with proper structure.\n\n"
@@ -1948,7 +1944,6 @@ QUICK_SKILL_PROMPTS = {
     },
     "whatsapp_broadcast": {
         "agent_type": "whatsapp",
-        "credits": 1,
         "system": (
             "You are a WhatsApp marketing specialist for Indian businesses. "
             "Create short, engaging broadcast messages.\n\n"
@@ -1966,7 +1961,6 @@ QUICK_SKILL_PROMPTS = {
     },
     "proposal": {
         "agent_type": "lead_magnet",
-        "credits": 5,
         "system": (
             "You are a business proposal writer for Indian companies. "
             "Create professional, structured proposals.\n\n"
@@ -1987,7 +1981,6 @@ QUICK_SKILL_PROMPTS = {
     },
     "festival_campaign": {
         "agent_type": "campaign",
-        "credits": 5,
         "system": (
             "You are an Indian festival marketing expert. "
             "Create culturally appropriate, engaging festival campaigns.\n\n"
@@ -2025,7 +2018,23 @@ async def quick_generate(
 
     pool = await get_pool()
 
-    # Deduct credits
+    # ONE figure for the price of a run.
+    #
+    # `QUICK_SKILL_PROMPTS[...]["credits"]` was a second, decorative one: the
+    # wallet is debited by AGENT TYPE through `CREDIT_COSTS`, and the skill
+    # config's own number went into the reply and into
+    # `hub_content_items.credits_used`. Four of the seven disagreed —
+    #
+    #   social_post       reported 3, charged 2
+    #   email_campaign    reported 3, charged 2
+    #   proposal          reported 5, charged 8
+    #   festival_campaign reported 5, charged 10
+    #
+    # — so a festival campaign took ten credits and told the reader it took
+    # five, on the same screen whose card had just said ten. Measured against
+    # the ledger 2026-07-29: a social post debits −2 under a footer reading
+    # "3 credits used".
+    charged = CREDIT_COSTS.get(skill_cfg["agent_type"], 2)
     try:
         await deduct_org_credits(org_id, user["user_id"], skill_cfg["agent_type"],
                                   f"Quick generate: {body.skill}")
@@ -2086,7 +2095,7 @@ async def quick_generate(
         f"{body.skill}: {body.topic[:60]}",
         result["text"],
         body.platform,
-        skill_cfg["credits"],
+        charged,
         json.dumps({
             "skill": body.skill, "images": result.get("images", []),
             "provider": result.get("provider"), "model": result.get("model"),
@@ -2099,7 +2108,7 @@ async def quick_generate(
         "text": result["text"],
         "images": result.get("images", []),
         "skill": body.skill,
-        "credits_used": skill_cfg["credits"],
+        "credits_used": charged,
         "provider": result.get("provider"),
         "model": result.get("model"),
     }
