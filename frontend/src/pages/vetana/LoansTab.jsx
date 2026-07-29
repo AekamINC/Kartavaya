@@ -10,10 +10,13 @@ import { useToast } from '../../components/ui/toast';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge, Empty, ModCard } from '../../components/editorial';
 import { useList, ErrorNote, FMT, Shim, LOAN_COLORS, errText, empName } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const BLANK = { employee_id: '', principal_amount: 0, emi_amount: 0, disbursed_date: '', notes: '' };
 
 export default function LoansTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'issue loans' });
   const { pushToast } = useToast();
   const list = useList('/v1/vetana/loans');
   const [showForm, setShowForm] = useState(false);
@@ -84,6 +87,8 @@ export default function LoansTab() {
         <button
           type="button"
           className="k-btn k-btn--primary"
+          disabled={!canWrite}
+          title={denial || undefined}
           onClick={() => { if (showForm) setShowForm(false); else openForm(); }}
         >
           {showForm ? 'Cancel' : '+ New loan'}
@@ -160,9 +165,11 @@ export default function LoansTab() {
             <Empty
               icon="🏦"
               title="No loans or advances"
-              sub="Record a salary advance or loan and its EMI is deducted from payroll automatically each month until the balance clears."
-              cta="+ New loan"
-              onCta={openForm}
+              sub={canWrite
+                ? 'Record a salary advance or loan and its EMI is deducted from payroll automatically each month until the balance clears.'
+                : `A loan or salary advance has its EMI deducted from payroll automatically each month until the balance clears. ${denial}`}
+              cta={canWrite ? '+ New loan' : undefined}
+              onCta={canWrite ? openForm : undefined}
             />
           ) : (
             <div className="vt-list">

@@ -9,6 +9,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Section, Empty, BackButton, ModCard, DataTable, Td } from '../../components/editorial';
 import { useList, ErrorNote, FMT, Shim, errText, empName } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const COMPONENTS = [
   ['Basic', 'basic'], ['HRA', 'hra'], ['DA', 'da'],
@@ -22,6 +23,8 @@ const BLANK = {
 };
 
 export default function StructuresTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change salary structures' });
   const { pushToast } = useToast();
   const list = useList('/v1/vetana/salary-structures');
   const [showForm, setShowForm] = useState(false);
@@ -97,6 +100,8 @@ export default function StructuresTab() {
         <button
           type="button"
           className="k-btn k-btn--primary"
+          disabled={!canWrite}
+          title={denial || undefined}
           onClick={() => { if (showForm) { setShowForm(false); } else { openForm(); } }}
         >
           {showForm ? 'Cancel' : '+ New structure'}
@@ -208,9 +213,11 @@ export default function StructuresTab() {
             <Empty
               icon="💰"
               title="No salary structures"
-              sub="A payroll run prices salary structures. Until an employee has one, they are skipped by every run."
-              cta="+ New structure"
-              onCta={openForm}
+              sub={canWrite
+                ? 'A payroll run prices salary structures. Until an employee has one, they are skipped by every run.'
+                : `A payroll run prices salary structures, and an employee without one is skipped by every run. ${denial}`}
+              cta={canWrite ? '+ New structure' : undefined}
+              onCta={canWrite ? openForm : undefined}
             />
           ) : (
             <div className="vt-list">

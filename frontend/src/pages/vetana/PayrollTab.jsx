@@ -34,6 +34,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import {
   Section, StatTile, Badge, Empty, BackButton, ModCard, DataTable, Td,
@@ -44,6 +45,12 @@ import {
 
 export default function PayrollTab({ runNonce, onChanged }) {
   const { pushToast } = useToast();
+  // F32, the sharpest instance measured on staging: a member with NO Vetana
+  // grant was offered `Run payroll` in the header, and pressing it walked them
+  // through this tab, a month picker and a confirmation modal to `Process and
+  // email` — which writes a payslip for every employee and mails each of them
+  // the PDF. The API refused throughout; the UI advertised it throughout.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'run payroll' });
   const runs = useList('/v1/vetana/payroll/runs');
   const [month, setMonth] = useState('');
   const [processing, setProcessing] = useState(false);
@@ -105,7 +112,8 @@ export default function PayrollTab({ runNonce, onChanged }) {
           <button
             type="button"
             className="k-btn k-btn--primary"
-            disabled={processing || !month}
+            disabled={processing || !month || !canWrite}
+            title={denial || undefined}
             onClick={() => setConfirm({
               title: `Process payroll for ${monthName(month)}?`,
               message:
