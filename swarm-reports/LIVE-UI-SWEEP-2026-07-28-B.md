@@ -602,6 +602,93 @@ Finance, and an order in Sales priced off both.
 
 ---
 
+# F50 — 🔴 THE HEADLINE: the jsonb double-encode is systemic — 38 columns, ~1,550 rows
+
+Four separate defects this session traced to the same cause. Rather than keep
+finding them one screen at a time, I asked the database directly which jsonb
+columns actually hold a JSON **string** instead of an object or array.
+
+**38 columns across 26 tables. Roughly 1,550 corrupted rows.**
+
+The worst of it:
+
+| Table · column | Corrupted | Total | Why it matters |
+|---|---|---|---|
+| `staging.ganit_invoices.line_items` | **50** | **50** | **every invoice's line items** — the taxable value, HSN and rate behind every GST figure |
+| `public.tasks.subtasks` | 199 | 201 | |
+| `public.tasks.custom_fields` | 199 | 201 | |
+| `staging.audit_log.detail` | **172** | **172** | **the audit trail** |
+| `staging.sign_audit_log.details` | **95** | **95** | **the e-signature audit trail** — the evidence a signature relies on |
+| `staging.hub_org_skill_runs.outputs` | 61 | 99 | |
+| `staging.hub_content_items.metadata` | 48 | 48 | |
+| `staging.subscription_events.metadata` | 44 | 44 | |
+| `staging.graha_contacts.billing_address` / `shipping_address` | 13 / 13 | 13 | |
+| `staging.ganit_vendors.address` | 11 | 11 | |
+| `staging.ganit_vendor_bills.line_items` | 9 | 9 | |
+| `staging.vetana_salary_structures.other_allowances` | 7 | 7 | |
+| `staging.vikray_orders.line_items` | 4 | 4 | |
+| …and 25 more columns | | | |
+
+**Why it has stayed invisible.** Most read paths either never touch the field or
+parse defensively, so the data still renders. It surfaces only when something
+treats the value as the type it is declared to be — and then it is not a wrong
+number, it is a **500 or a crash**:
+
+- `mask_bank` did `dict(details)` → **every employee detail 500'd**
+- `DocumentsTab` did `d.tags.map()` → **the whole Graha page crashed**
+- `TabProfile` did `{...billing_address}` → **122 junk keys written back**
+
+Every one of those was a different symptom of one bug.
+
+## The single clearest proof, in one statement
+
+`manav.py`'s employee INSERT writes three jsonb columns side by side:
+
+```python
+body.emergency_contact,        # passed as a dict  -> stored as object  ✅
+json.dumps(body.address),      # dumped first      -> stored as STRING  ❌
+json.dumps(body.bank_details), # dumped first      -> stored as STRING  ❌
+```
+
+Same table, same statement, same request. The only difference is the extra
+`json.dumps`, because `db.py`'s jsonb **encoder is `json.dumps`** — so dumping
+first encodes twice.
+
+## Fixed so far (write paths)
+
+`org_profile` (billing_address, bank_details) · `graha` documents (tags) ·
+`vetana` (loan_deductions, other_allowances) · `manav` (address, bank_details) ·
+`server.py` teams (brand_settings). Plus defensive readers in `TabProfile.jsx`,
+`DocumentsTab.jsx` and `services/pii.py`.
+
+## Rows repaired so far
+
+`organisations.billing_address` (both orgs) · all 38 `vetana_payslips.loan_deductions` ·
+all 10 `manav_employees` (address + bank_details).
+
+### A correction I owe on this
+
+I previously reported the QA Test Corp address row as *"repaired, not merely
+masked."* **That was wrong.** What I verified was the API *response*, which was
+clean because `org_profile.py`'s GET now parses defensively — the stored column
+was still a string carrying the 122 character-indexed keys. It is genuinely
+repaired now, verified in the column: both orgs are objects with **0 numeric
+keys**. Checking the response where the claim was about storage is exactly the
+kind of shortcut this report keeps catching elsewhere.
+
+## NOT repaired — needs the owner's decision
+
+The remaining ~1,500 rows across the other columns. The unwrap itself is
+mechanical and safe (`(col #>> '{}')::jsonb`, guarded on `jsonb_typeof`), and I
+have run exactly that on three tables already. But this is the database that
+serves **production as well as staging**, and 26 tables including two audit
+trails is a different blast radius from one column.
+
+**The write paths matter more than the rows.** Until every `json.dumps` bound to
+a jsonb parameter is corrected, repaired rows are re-corrupted on the next save.
+
+---
+
 # Exports — all three downloaded, opened, and cross-reconciled ✅
 
 Both blockers the E2E plan names are now cleared: GSTR-1 needed a GSTIN on the
