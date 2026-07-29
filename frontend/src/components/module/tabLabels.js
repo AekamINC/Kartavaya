@@ -47,6 +47,7 @@ export const TAB_HI = {
   holidays: 'छुट्टी',
   performance: 'प्रदर्शन',
   assets: 'संपत्ति',
+  exits: 'निर्गम',
   dashboard: 'मुख्य',
   structures: 'संरचना',
   payroll: 'वेतन',

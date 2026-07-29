@@ -22,8 +22,9 @@ import DepartmentsTab from './manav/DepartmentsTab';
 import HolidaysTab from './manav/HolidaysTab';
 import PerformanceTab from './manav/PerformanceTab';
 import AssetsTab from './manav/AssetsTab';
+import ExitsTab from './manav/ExitsTab';
 
-const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'recruitment', 'announcements', 'departments', 'holidays', 'performance', 'assets'];
+const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'recruitment', 'announcements', 'departments', 'holidays', 'performance', 'assets', 'exits'];
 
 export default function ManavPage() {
   const [tab, setTab] = useState('employees');
@@ -127,6 +128,7 @@ export default function ManavPage() {
         {tab === 'holidays' && <HolidaysTab />}
         {tab === 'performance' && <PerformanceTab />}
         {tab === 'assets' && <AssetsTab />}
+        {tab === 'exits' && <ExitsTab />}
       </div>
     </div>
   );
