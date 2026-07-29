@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { Button, ErrorState, SkeletonCard, useToast } from '../../components/ui';
-import { validateGSTIN, validatePAN, validateIFSC, panFromGSTIN } from '../../lib/validators';
+import { validateGSTIN, validatePAN, validateTAN, validateIFSC, panFromGSTIN } from '../../lib/validators';
 import LogoUpload from './LogoUpload';
 
 /**
@@ -30,7 +30,7 @@ import LogoUpload from './LogoUpload';
  */
 
 const EMPTY = {
-  name: '', gstin: '', pan: '', logo_url: '', email: '', phone: '', website: '',
+  name: '', gstin: '', pan: '', tan: '', logo_url: '', email: '', phone: '', website: '',
   billing_address: { line1: '', line2: '', city: '', state: '', pincode: '', country: 'India' },
   bank_details: { account_name: '', account_number: '', ifsc: '', bank_name: '', branch: '', upi_id: '' },
   invoice_note: '',
@@ -136,6 +136,7 @@ export default function TabProfile() {
     const found = {
       gstin: validateGSTIN(profile.gstin),
       pan: validatePAN(profile.pan),
+      tan: validateTAN(profile.tan),
       ifsc: validateIFSC(profile.bank_details.ifsc),
     };
     if (Object.values(found).some(Boolean)) {
@@ -221,6 +222,16 @@ export default function TabProfile() {
             error={errors.pan || panMismatch}
             onBlur={check('pan', validatePAN)}
             onChange={e => set('pan', e.target.value)} />
+          {/* TAN. Absent until now, and the omission was load-bearing: the TDS
+              challan (ITNS-281) refuses without one and told the user to "Set
+              it in Settings → Organisation → Company Profile", which is this
+              screen, which had no TAN field. The challan form is otherwise
+              complete, so it could be filled in full and then never issued. */}
+          <F id="org-tan" label="TAN" mono value={profile.tan}
+            hint="10 characters: four letters, five digits, a letter. Needed for the TDS challan."
+            error={errors.tan}
+            onBlur={check('tan', validateTAN)}
+            onChange={e => set('tan', e.target.value)} />
         </div>
       </section>
 

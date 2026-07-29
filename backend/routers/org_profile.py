@@ -41,6 +41,7 @@ The day `PROPOSED_068` is applied the probe re-runs and the fields start working
 with no code change. Nothing here needs a redeploy to notice.
 """
 import json
+import re
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -64,10 +65,30 @@ router = APIRouter(prefix="/api/v1/org/profile", tags=["org-profile"])
 #: to mint a fresh signed `logo_url`, and it is not part of the profile a caller
 #: edits.
 _PROFILE_COLUMNS = (
-    "name", "gstin", "pan", "billing_address", "logo_url", "email", "phone",
+    # `tan` sits beside gstin/pan because it is the same kind of thing — a
+    # statutory registration number printed on documents the firm issues.
+    #
+    # It was missing, and the consequence was not cosmetic: the TDS challan
+    # (ITNS-281) refuses without a TAN and told the user "Set it in Settings →
+    # Organisation → Company Profile", where there was no such field. The form
+    # was otherwise complete and correct, so the challan could be filled in full
+    # and then never issued — the same shape as the invoice that cannot be
+    # edited. Measured live on 2026-07-29.
+    #
+    # `staging.organisations.tan` already existed as a column; nothing was wired
+    # to it. `documents.py` still carried a comment saying TAN had no column and
+    # read it out of `settings` instead — that is now stale and is corrected
+    # there.
+    "name", "gstin", "pan", "tan", "billing_address", "logo_url", "email", "phone",
     "website", "bank_details", "invoice_note",
     "description", "industry", "team_size", "founded_year",
 )
+
+#: TAN — four letters, five digits, one letter (e.g. `AHMA12345B`). Unlike a
+#: GSTIN it carries no check digit, so shape is the only thing that can be
+#: verified at entry; that still catches the transposition and length mistakes
+#: which are what people actually make.
+_TAN_RE = re.compile(r"^[A-Z]{4}[0-9]{5}[A-Z]$")
 
 #: Columns held as jsonb. Anything here is dumped and cast; everything else is
 #: passed as-is.
@@ -130,6 +151,7 @@ class ProfileUpdate(BaseModel):
     name: str | None = None
     gstin: str | None = None
     pan: str | None = None
+    tan: str | None = None
     billing_address: dict | None = None
     logo_url: str | None = None
     email: str | None = None
@@ -294,6 +316,25 @@ async def update_profile(
                 raise HTTPException(400, str(exc)) from exc
         else:
             fields["gstin"] = ""
+
+    # Same treatment as the GSTIN above, and blank stays legal for the same
+    # reason: a firm that deducts no tax at source has no TAN, and the challan
+    # already refuses without one and says so. Uppercased before checking
+    # because a TAN is conventionally written in caps and nobody types it that
+    # way reliably — rejecting `ahma12345b` would be pedantry, not validation.
+    if "tan" in fields:
+        raw = fields["tan"]
+        if raw and str(raw).strip():
+            candidate = str(raw).strip().upper().replace(" ", "")
+            if not _TAN_RE.match(candidate):
+                raise HTTPException(
+                    400,
+                    "TAN must be four letters, five digits and one letter — "
+                    f"for example AHMA12345B. Got '{str(raw).strip()}'.",
+                )
+            fields["tan"] = candidate
+        else:
+            fields["tan"] = ""
 
     sets, params, idx = [], [], 1
     for key, val in fields.items():

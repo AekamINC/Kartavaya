@@ -15,6 +15,10 @@ const norm = v => String(v ?? '').trim().toUpperCase().replace(/\s+/g, '');
 
 /** PAN: AAAAA9999A — five letters, four digits, one letter. */
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+//: TAN — four letters, five digits, one letter. Mirrors `_TAN_RE` in
+//: `routers/org_profile.py`; the two must agree or the client passes something
+//: the server then refuses.
+const TAN_RE = /^[A-Z]{4}[0-9]{5}[A-Z]$/;
 
 /** GSTIN: 2-digit state code, the holder's PAN, entity digit, 'Z', checksum. */
 const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$/;
@@ -64,6 +68,24 @@ export function validatePAN(value) {
   if (!v) return null;
   if (v.length !== 10) return `PAN is 10 characters (this is ${v.length}).`;
   if (!PAN_RE.test(v)) return 'PAN must be five letters, four digits, then a letter.';
+  return null;
+}
+
+/**
+ * TAN — four letters, five digits, one letter (e.g. `AHMA12345B`).
+ *
+ * Unlike a GSTIN it carries no check digit, so shape is all that can be
+ * verified at entry. That still catches the length and transposition mistakes
+ * people actually make, which is the point of checking at all.
+ *
+ * Blank is legal: a firm that deducts no tax at source has no TAN, and the TDS
+ * challan already refuses without one and says so.
+ */
+export function validateTAN(value) {
+  const v = norm(value);
+  if (!v) return null;
+  if (v.length !== 10) return `TAN is 10 characters (this is ${v.length}).`;
+  if (!TAN_RE.test(v)) return 'TAN must be four letters, five digits, then a letter.';
   return null;
 }
 

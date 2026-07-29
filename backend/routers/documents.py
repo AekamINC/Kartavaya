@@ -75,12 +75,19 @@ router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
 _ganit = require_module("ganit")
 
-#: The org columns every letterhead needs. `tan` is NOT here — no such column
-#: exists yet (see the module docstring); it is read from `settings` instead so
-#: the document can carry one the day it is stored, without a migration this
-#: agent is not permitted to apply.
+#: The org columns every letterhead needs.
+#:
+#: `tan` IS here now. The note that used to sit on this line said no such column
+#: existed and read it from `settings` instead — that was stale:
+#: `staging.organisations.tan` is a `character varying` column and has been for
+#: some time, with nothing wired to it. The consequence was that the TDS challan
+#: refused for want of a TAN and pointed the user at a Company Profile screen
+#: that had no TAN field, so the challan could never be issued at all.
+#:
+#: `settings` is still selected and still consulted as a fallback below, so an
+#: org that stored a TAN there before the column was wired keeps working.
 _ORG_COLS = (
-    "name, gstin, pan, billing_address, logo_url, logo_key, email, phone, website, "
+    "name, gstin, pan, tan, billing_address, logo_url, logo_key, email, phone, website, "
     "bank_details, invoice_note, settings, "
     "COALESCE(authorized_signatory_name, '') AS authorized_signatory_name, "
     "COALESCE(authorized_signatory_designation, '') AS authorized_signatory_designation"
@@ -105,11 +112,13 @@ async def _load_org(pool, org_id: str) -> dict:
             except json.JSONDecodeError:
                 org[field] = {}
 
-    # TAN has no column. Read it from `settings` if an org has put one there, so
-    # the challan can carry a real TAN today; the validator still blocks when it
-    # is absent rather than the document inventing one.
+    # The column wins; `settings.tan` is the fallback for orgs that stored one
+    # there while the column was unwired. Either way the validator still blocks
+    # when it is absent rather than letting the document invent a TAN.
     settings = org.get("settings") or {}
-    if isinstance(settings, dict) and settings.get("tan"):
+    if org.get("tan"):
+        org["tan"] = str(org["tan"]).strip().upper()
+    elif isinstance(settings, dict) and settings.get("tan"):
         org["tan"] = str(settings["tan"]).strip().upper()
 
     if org.get("logo_key"):
