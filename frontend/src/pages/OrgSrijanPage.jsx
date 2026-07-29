@@ -106,14 +106,23 @@ export default function OrgSrijanPage() {
   const org = credits?.org_balance || {};
   const you = credits?.user_allocation || {};
   const plan = org.plan_credits ?? 0;
-  const orgLeft = plan > 0 ? Math.max(0, plan - (org.used ?? 0)) : org.balance;
+  // `org.balance`, not `plan - used`. This screen recomputed the balance a
+  // SECOND time from the month's usage, on top of a reply that was already
+  // inventing it the same way — and neither number was the one the server
+  // refuses against. Measured 2026-07-29: this strip read 744 while the wallet
+  // held 324. The balance is a fact the server keeps; reading it is the whole
+  // job here.
+  const orgLeft = org.balance;
   const yourLeft = (you.allocated ?? 0) - (you.used ?? 0);
 
   const kpi = credits ? [
     {
       label: 'Org balance', hi: 'संस्था', tone: 'p',
       value: orgLeft ?? '—',
-      sub: plan > 0 ? `of ${plan} this month` : 'no plan allocation',
+      // "of 1000 this month" claimed balance + used adds up to the plan. It does
+      // not: the balance carries whatever was left when the month turned, and
+      // the plan is what the reset tops it back up to.
+      sub: plan > 0 ? `plan gives ${plan} a month` : 'no plan allocation',
     },
     {
       label: 'Used this month', hi: 'प्रयोग',

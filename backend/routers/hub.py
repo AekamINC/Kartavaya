@@ -22,7 +22,10 @@ from middleware.role_tiers import (
     OPERATIONS_CONSOLE_ROLES, SRIJAN_COMMERCIAL_ROLES,
 )
 from middleware.subscription import require_module
-from services.ai_router import generate, generate_image, generate_rich_content, deduct_credits, deduct_org_credits, CREDIT_COSTS
+from services.ai_router import (
+    generate, generate_image, generate_rich_content, deduct_credits,
+    deduct_org_credits, _maybe_reset_monthly_credits, CREDIT_COSTS,
+)
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
 
@@ -1520,6 +1523,15 @@ async def get_org_credits(
     )
     plan_credits = (org_row["monthly_credits"] or org_row["default_credits"] or 0) if org_row else 0
 
+    # The reset is otherwise LAZY — it lives inside `deduct_org_credits` and so
+    # fires only when somebody spends. A wallet nobody has touched since the
+    # month turned therefore reports last month's balance until the next run,
+    # and the first run of the month is charged against it. Reading is the other
+    # moment the answer has to be current.
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await _maybe_reset_monthly_credits(conn, org_id)
+
     wallet = await pool.fetchrow(
         "SELECT * FROM staging.hub_org_credits WHERE org_id=$1::uuid", org_id
     )
@@ -1553,8 +1565,18 @@ async def get_org_credits(
 
     return {
         "org_balance": {
+            # The STORED balance, which is the one `deduct_org_credits` reads
+            # under `FOR UPDATE` and refuses against.
+            #
+            # This used to answer `max(0, plan_credits - monthly_used)` — a
+            # figure invented for the reply out of the month's debit rows, which
+            # nothing enforces and which drifts from the column the moment a
+            # balance carries anything older than this month. Measured on QA Test
+            # Corp, 2026-07-29: stored 324, reported 744, and the ledger's own
+            # latest `balance_after` 324. The org was being shown 420 credits it
+            # would have been refused for spending, and the refusal names a third
+            # number again ("have 324"), so nothing on screen agreed with it.
             **dict(wallet),
-            "balance": max(0, plan_credits - monthly_used),
             "plan_credits": plan_credits,
             "used": monthly_used,
         },
