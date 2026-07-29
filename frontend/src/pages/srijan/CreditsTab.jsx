@@ -16,7 +16,13 @@ export default function CreditsTab({ credits, loading, error, onRetry }) {
   const you = credits?.user_allocation || {};
   const plan = org.plan_credits ?? 0;
   const orgUsed = org.used ?? 0;
-  const orgLeft = plan > 0 ? Math.max(0, plan - orgUsed) : (org.balance ?? null);
+  // `org.balance` — the stored wallet, which is the figure `deduct_org_credits`
+  // holds FOR UPDATE and refuses against. `plan - used` was a third independent
+  // computation of the same number (the reply did it, `OrgSrijanPage` did it,
+  // and so did this), and all three drifted from the wallet the moment a
+  // balance carried anything older than this month: 744 on screen, 324
+  // enforceable, measured 2026-07-29.
+  const orgLeft = org.balance ?? null;
   const yourLeft = (you.allocated ?? 0) - (you.used ?? 0);
   const txns = credits?.recent_transactions || [];
   const costs = credits?.credit_costs || {};
@@ -25,7 +31,7 @@ export default function CreditsTab({ credits, loading, error, onRetry }) {
     <div className="sr-credits">
       <div className="sr-figs">
         {[
-          ['Organisation balance', 'संस्था', orgLeft, plan > 0 ? `${orgUsed} of ${plan} used this month` : 'no plan allocation set'],
+          ['Organisation balance', 'संस्था', orgLeft, plan > 0 ? `${orgUsed} spent this month · plan gives ${plan}` : 'no plan allocation set'],
           ['Your allocation', 'आवंटन', you.allocated ?? 0, 'set by an org admin'],
           ['You have used', 'प्रयोग', you.used ?? 0, 'this month'],
           ['You have left', 'शेष', yourLeft, yourLeft <= 0 ? 'ask an admin to raise your allocation' : 'available to spend'],
