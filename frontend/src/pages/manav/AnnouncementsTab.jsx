@@ -16,7 +16,13 @@ import { Badge, PRIORITY_COLORS, useList, ErrorNote, Shim, errText } from './_sh
 
 const BLANK = { title: '', body: '', priority: 'normal', pinned: false, expires_at: '' };
 
-export default function AnnouncementsTab() {
+// `onUpdate` refreshes the KPI strip on ManavPage. Without it the list
+// below updates and the headline figure above does not — measured live:
+// approving a leave flipped the row to "approved" while the strip still
+// read "5 awaiting approval", and only a reload corrected it to 4.
+// EmployeesTab already took this prop, which is why the employee count was
+// the one figure that stayed right.
+export default function AnnouncementsTab({ onUpdate }) {
   const { pushToast } = useToast();
   const list = useList('/v1/manav/announcements');
   const [showForm, setShowForm] = useState(false);
@@ -38,6 +44,8 @@ export default function AnnouncementsTab() {
       }
       close();
       list.reload();
+      list.reload();
+      onUpdate?.();
     } catch (err) {
       pushToast({ title: errText(err, 'The announcement could not be saved.'), type: 'error' });
     } finally { setSaving(false); }
@@ -48,6 +56,8 @@ export default function AnnouncementsTab() {
       await api.delete(`/v1/manav/announcements/${id}`);
       pushToast({ title: 'Announcement removed', type: 'success' });
       list.reload();
+      list.reload();
+      onUpdate?.();
     } catch (err) {
       pushToast({ title: errText(err, 'The announcement could not be removed.'), type: 'error' });
     }

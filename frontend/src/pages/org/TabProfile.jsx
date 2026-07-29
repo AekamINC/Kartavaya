@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { Button, ErrorState, SkeletonCard, useToast } from '../../components/ui';
 import { validateGSTIN, validatePAN, validateTAN, validateIFSC, panFromGSTIN } from '../../lib/validators';
@@ -85,7 +85,12 @@ function F({ id, label, hint, error, mono, wide, value, onChange, onBlur, ...res
 }
 
 export default function TabProfile() {
-  const { pushToast } = useToast();
+  const { pushToast, dismiss } = useToast();
+  // The id of the validation toast currently on screen, so a later SUCCESS
+  // can take it down. F37: correcting a bad GSTIN and saving again showed
+  // “✓ Company profile saved” beside a still-live “✕ Fix the highlighted
+  // codes before saving” — the screen said the save both worked and did not.
+  const validationToast = useRef(null);
   const [profile, setProfile] = useState(EMPTY);
   const [loaded, setLoaded] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -141,9 +146,24 @@ export default function TabProfile() {
     };
     if (Object.values(found).some(Boolean)) {
       setErrors(found);
-      pushToast({ type: 'error', title: 'Fix the highlighted codes before saving' });
+      // Replace rather than stack: pressing Save three times with the same
+      // typo should not leave three identical cards on screen.
+      if (validationToast.current) dismiss(validationToast.current);
+      validationToast.current = pushToast({
+        type: 'error', title: 'Fix the highlighted codes before saving',
+      });
       return;
     }
+
+    // Validation passed, so any complaint still on screen is about a value
+    // the user has since corrected. Clear it BEFORE the request, not after:
+    // if the save then fails for another reason, its own toast should be the
+    // only one showing.
+    if (validationToast.current) {
+      dismiss(validationToast.current);
+      validationToast.current = null;
+    }
+    setErrors({});
 
     const changed = {};
     for (const [k, v] of Object.entries(profile)) {

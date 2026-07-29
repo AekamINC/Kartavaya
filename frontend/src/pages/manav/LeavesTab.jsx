@@ -37,7 +37,13 @@ import {
   Badge, LEAVE_COLORS, useList, ErrorNote, Shim, errText,
 } from './_shared';
 
-export default function LeavesTab() {
+// `onUpdate` refreshes the KPI strip on ManavPage. Without it the list
+// below updates and the headline figure above does not — measured live:
+// approving a leave flipped the row to "approved" while the strip still
+// read "5 awaiting approval", and only a reload corrected it to 4.
+// EmployeesTab already took this prop, which is why the employee count was
+// the one figure that stayed right.
+export default function LeavesTab({ onUpdate }) {
   const { pushToast } = useToast();
   const [statusFilter, setStatusFilter] = useState('');
   const [panel, setPanel] = useState(null);   // 'request' | 'type' | 'conflict' | null
@@ -54,6 +60,8 @@ export default function LeavesTab() {
       await api.patch(`/v1/manav/leaves/${leaveId}/action`, { status });
       pushToast({ title: `Leave ${status}`, type: 'success' });
       leaves.reload();
+      leaves.reload();
+      onUpdate?.();
     } catch (err) {
       pushToast({ title: errText(err, 'The decision could not be recorded.'), type: 'error' });
     } finally { setActing(''); }
@@ -104,7 +112,7 @@ export default function LeavesTab() {
           employees={employees}
           types={types}
           onClose={() => setPanel(null)}
-          onCreated={() => { setPanel(null); leaves.reload(); }}
+          onCreated={() => { setPanel(null); leaves.reload(); onUpdate?.(); }}
           pushToast={pushToast}
         />
       )}

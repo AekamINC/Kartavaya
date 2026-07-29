@@ -135,7 +135,19 @@ export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', 
 
           {openMore && (
             <div className="mt__pop" role="menu">
-              <div className="mt__pop-head">All tabs · {norm.length}</div>
+              {/* Counts what is IN the menu, not what exists.
+                  This read `All tabs · {norm.length}` and listed only `tail`,
+                  so Ganit's menu was headed "ALL TABS · 10" above two rows and
+                  Graha's "ALL TABS · 17" above nine. A heading that promises ten
+                  and shows two reads as a broken menu, and the reader's next
+                  move is to hunt for the missing eight — which are on screen
+                  behind them.
+
+                  The total is still worth saying, so it is said as context
+                  rather than as the count of the list. */}
+              <div className="mt__pop-head">
+                {tail.length} more · {norm.length} tabs in all
+              </div>
               {tail.map(t => (
                 <button
                   key={t.id}

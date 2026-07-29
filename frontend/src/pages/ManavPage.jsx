@@ -118,17 +118,17 @@ export default function ManavPage() {
         {...motion}
       >
         {tab === 'employees' && <EmployeesTab onUpdate={loadStats} />}
-        {tab === 'attendance' && <AttendanceTab />}
+        {tab === 'attendance' && <AttendanceTab onUpdate={loadStats} />}
         {tab === 'shifts' && <ShiftsTab />}
-        {tab === 'leaves' && <LeavesTab />}
+        {tab === 'leaves' && <LeavesTab onUpdate={loadStats} />}
         {tab === 'expenses' && <ExpensesTab />}
         {tab === 'recruitment' && <RecruitmentTab />}
-        {tab === 'announcements' && <AnnouncementsTab />}
-        {tab === 'departments' && <DepartmentsTab />}
+        {tab === 'announcements' && <AnnouncementsTab onUpdate={loadStats} />}
+        {tab === 'departments' && <DepartmentsTab onUpdate={loadStats} />}
         {tab === 'holidays' && <HolidaysTab />}
         {tab === 'performance' && <PerformanceTab />}
         {tab === 'assets' && <AssetsTab />}
-        {tab === 'exits' && <ExitsTab />}
+        {tab === 'exits' && <ExitsTab onUpdate={loadStats} />}
       </div>
     </div>
   );

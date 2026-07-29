@@ -210,9 +210,17 @@ export default function ChannelList({
         {!loading && error && (
           <ErrorState
             kind={errorKind(error)}
+            /* The SERVER'S sentence wins when it has one.
+               Measured live as an org_admin: Sanvaad is not an active module for
+               the org, and the API says exactly that — "Module 'sanvaad' is not
+               active. Contact your administrator to activate it." This screen
+               threw that away and showed "You don't have access to this",
+               which named the wrong cause (activation, not access) and sent the
+               reader to ask for a grant that would not have helped. */
             detail={errorKind(error) === 'offline'
               ? 'Your channels need a connection to load. Nothing has been lost — messages sent while you were away are waiting.'
-              : 'Your channel list did not load. This is a read failure; no channel or message was removed.'}
+              : (error?.response?.data?.detail
+                || 'Your channel list did not load. This is a read failure; no channel or message was removed.')}
             onRetry={onRetry}
           />
         )}

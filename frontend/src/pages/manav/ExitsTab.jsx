@@ -82,7 +82,7 @@ function asClearance(v) {
   return [];
 }
 
-export default function ExitsTab() {
+export default function ExitsTab({ onUpdate }) {
   const { pushToast } = useToast();
   const exits = useList('/v1/manav/offboarding');
   const employees = useList('/v1/manav/employees');
@@ -154,6 +154,9 @@ export default function ExitsTab() {
       pushToast({ title: `${row.employee_name} offboarded`, type: 'success' });
       exits.reload();
       employees.reload();
+      // Completing an exit takes someone off the register, so the
+      // headline employee count above is now wrong until refreshed.
+      onUpdate?.();
     } catch (err) {
       // The server refuses while clearance is outstanding and NAMES what is
       // left, so surface its message rather than a generic one.

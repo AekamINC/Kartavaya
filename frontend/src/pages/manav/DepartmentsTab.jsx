@@ -13,7 +13,13 @@ import { Empty } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useList, ErrorNote, Shim, errText } from './_shared';
 
-export default function DepartmentsTab() {
+// `onUpdate` refreshes the KPI strip on ManavPage. Without it the list
+// below updates and the headline figure above does not — measured live:
+// approving a leave flipped the row to "approved" while the strip still
+// read "5 awaiting approval", and only a reload corrected it to 4.
+// EmployeesTab already took this prop, which is why the employee count was
+// the one figure that stayed right.
+export default function DepartmentsTab({ onUpdate }) {
   const { pushToast } = useToast();
   const list = useList('/v1/manav/departments');
   const [showForm, setShowForm] = useState(false);
@@ -33,6 +39,8 @@ export default function DepartmentsTab() {
       setShowForm(false);
       setForm({ name: '' });
       list.reload();
+      list.reload();
+      onUpdate?.();
     } catch (err) {
       pushToast({ title: errText(err, 'The department could not be created.'), type: 'error' });
     } finally { setSaving(false); }
@@ -46,6 +54,8 @@ export default function DepartmentsTab() {
       pushToast({ title: 'Department updated', type: 'success' });
       setEditingId(null);
       list.reload();
+      list.reload();
+      onUpdate?.();
     } catch (err) {
       pushToast({ title: errText(err, 'The department could not be updated.'), type: 'error' });
     } finally { setEditSaving(false); }
@@ -56,6 +66,8 @@ export default function DepartmentsTab() {
       await api.delete(`/v1/manav/departments/${id}`);
       pushToast({ title: 'Department deleted', type: 'success' });
       list.reload();
+      list.reload();
+      onUpdate?.();
     } catch (err) {
       pushToast({ title: errText(err, 'The department could not be deleted.'), type: 'error' });
     }

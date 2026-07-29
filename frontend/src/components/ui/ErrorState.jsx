@@ -88,7 +88,20 @@ export function ErrorState({ kind = 'server', grant, detail, onRetry, backTo, ba
       {body && <p className="k-err__d">{body}</p>}
 
       {kind === 'server' && onRetry && <Button variant="out" onClick={onRetry}>Try again</Button>}
-      {kind === 'denied' && onRetry && <Button variant="out" onClick={onRetry}>Request access</Button>}
+      {/* `Try again`, NOT `Request access`.
+          This button calls `onRetry` — the same reload that just failed. It
+          requested nothing from anybody: there is no request-approval flow
+          behind it, which `LockedComposer.jsx` already says in as many words
+          ("names who can grant the level instead, because there is no
+          request-approval flow behind such a button").
+
+          So the label promised an action the product does not have, and
+          pressing it re-ran the identical failing fetch. Naming it for what it
+          does is the honest half; the useful half is the `detail` above, which
+          callers now fill with the server's own sentence — the API says which
+          module and what to do about it, and that is worth more than a button
+          that cannot help. */}
+      {kind === 'denied' && onRetry && <Button variant="out" onClick={onRetry}>Try again</Button>}
       {(kind === 'missing' || kind === 'request') && backTo && (
         <Button variant="out" onClick={backTo}>{backLabel}</Button>
       )}

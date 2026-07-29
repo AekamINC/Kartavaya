@@ -33,7 +33,13 @@ import {
   useList, useResource, ErrorNote, Shim, errText, clockTime, today,
 } from './_shared';
 
-export default function AttendanceTab() {
+// `onUpdate` refreshes the KPI strip on ManavPage. Without it the list
+// below updates and the headline figure above does not — measured live:
+// approving a leave flipped the row to "approved" while the strip still
+// read "5 awaiting approval", and only a reload corrected it to 4.
+// EmployeesTab already took this prop, which is why the employee count was
+// the one figure that stayed right.
+export default function AttendanceTab({ onUpdate }) {
   const { pushToast } = useToast();
   const [dateFrom, setDateFrom] = useState(today());
   const [dateTo, setDateTo] = useState(today());
@@ -89,7 +95,7 @@ export default function AttendanceTab() {
       {showMark && (
         <MarkForm
           onClose={() => setShowMark(false)}
-          onMarked={() => { setShowMark(false); records.reload(); }}
+          onMarked={() => { setShowMark(false); records.reload(); onUpdate?.(); }}
           pushToast={pushToast}
         />
       )}
