@@ -307,10 +307,33 @@
 .mrestrict__p  { font-size: 12.5px; line-height: 1.55; color: var(--on-surface-2); margin: 0; }
 
 /* ── Note blocks — state a constraint honestly ─────────────────────────── */
-.note          { padding: 11px 13px; border-radius: var(--r-sm); font-size: 12px; line-height: 1.55; background: var(--s-container); color: var(--on-surface-2); }
-.note--info    { background: color-mix(in srgb, var(--primary) 8%, transparent); color: var(--on-surface-2); }
-.note--warn    { background: var(--warn-container); color: var(--warn); }
-.note--danger  { background: var(--danger-container); color: var(--danger); }
+/* ── Notes ─────────────────────────────────────────────────────────────────
+   A note is a SURFACE, and every other surface in this system is bounded:
+   `.mk__c`, `.gn-form`, `.vt-src` and the rest all carry
+   `1px solid var(--rule-soft)` over a solid background token. Notes carried
+   neither a border nor, in the `--info` case, a solid fill — so a note dropped
+   between two cards read as unbounded text rather than a block.
+
+   Measured live on Vetana → Payroll, where the "Pick a month to process" note
+   sits directly between the run cards:
+
+     .note--info   background color(srgb … / 0.08)   border 0px   radius 6.96px
+     .mk__c        background rgb(250,247,240)       border 0.8px radius 12px
+
+   An 8% tint of `--primary` over `transparent` is also the wrong mechanism.
+   `--warn` and `--danger` already use their solid `*-container` tokens, which
+   are defined for both themes and contrast-checked; `--info` was the only one
+   mixing its own colour, so it was the only one that changed appearance
+   depending on what happened to be behind it. `--primary-container` exists for
+   exactly this and flips correctly in dark mode (#B4F1E8 / #00514B).
+
+   `--r-sm` is kept rather than raised to the cards' `--r-md`: a note is a
+   smaller block than a card and the scale is deliberate. The border is what it
+   was missing, not the radius. */
+.note          { padding: 11px 13px; border-radius: var(--r-sm); font-size: 12px; line-height: 1.55; background: var(--s-container); color: var(--on-surface-2); border: 1px solid var(--outline-variant); }
+.note--info    { background: var(--primary-container); color: var(--on-primary-container); border-color: color-mix(in srgb, var(--primary) 26%, var(--outline-variant)); }
+.note--warn    { background: var(--warn-container); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 26%, var(--outline-variant)); }
+.note--danger  { background: var(--danger-container); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 26%, var(--outline-variant)); }
 .note b        { font-weight: 600; }
 
 /* ══════════════════════════════════════════════════════════════════════════
