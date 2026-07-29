@@ -42,19 +42,26 @@ grant/revoke cycles.
 1. **The UI sweep** — 5 surfaces done of 9 modules, ~85 leaves, CRUD on most.
    **Still the job**, and now the only way to close F32 properly: it is defined
    by what a viewer SEES, and none of the work below was verified in a browser.
-2. **F32 — application, not design.** The machinery is done and tested:
-   `/auth/me` carries `module_levels`, `ModuleAccess` publishes the module code
-   from `AppShell` for every route in `ROUTE_META`, and `useModuleWrite` /
-   `WriteGate` answer for any component under it. Gated so far: **Ganit**
-   (thoroughly — toolbars, forms, empty states, row Edit/Delete, and the
-   invoice record's Edit / Record payment / Accept estimate / Convert /
-   doc_status advance), **Vetana** (payroll run, loans, structures),
-   **Graha** (5 tabs' create control), **Vikray** (2), **Sanvaad** (the empty
-   panel's text).
-   **Remaining: Manav, Prachar, Pahchan, Dristi, Esign, Srijan have no in-tab
-   gating at all**, and row-level Edit/Delete is done only on Ganit's
-   catalogue. Add `useModuleWrite({ label: '…' })` and set `disabled` + `title`;
-   use `WriteGate` only where the JSX cannot take a prop.
+2. **F32 — written across all nine modules, verified in a browser NOWHERE.**
+   ~130 write controls now gate on the caller's level, detail drawers included.
+   The machinery: `/auth/me` carries `module_levels`, `ModuleAccess` publishes
+   the module code from `AppShell` for every route in `ROUTE_META`, and
+   `useModuleWrite` / `WriteGate` answer for any component under it.
+   `npm run check` includes `check-write-gates.mjs`, which catches the hook
+   being declared in a tab and spent in a sibling component — valid JSX that
+   builds clean and white-screens the drawer at runtime.
+
+   **What is left is looking at it.** Sign in as `ganit: viewer` and as a
+   grantless member and walk the modules. The rule applied was
+   `require_module`'s own — gated exactly when the click issues a non-GET —
+   so the two things to watch for are a *read* that got greyed out (GST filing
+   and the leave conflict-check are GETs and were deliberately left alone) and
+   a write that was missed.
+
+   **Sanvaad still has its own `useSanvaadAccess`**, deliberately: two access
+   models beside each other are free to disagree. Its bespoke
+   `GET /v1/messaging/me` predates `module_levels` and is now redundant —
+   folding it into `useModuleWrite` is real, bounded work nobody has done.
 3. **F4 step (a)** — raise the caps. Needs the frontend reading `total` first.
    Step (b) is **done**: all 26 `LIMIT` sites now carry `total`/`truncated`.
 4. **Exports** — GST/Tally verified by file content; the *scheduled* report path
