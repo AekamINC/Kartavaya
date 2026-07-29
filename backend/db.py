@@ -22,6 +22,56 @@ DB_SCHEMA = os.getenv("DB_SCHEMA", "public")
 
 
 def _json_encoder(value):
+    """Serialise a value for a json/jsonb parameter — WITHOUT encoding it twice.
+
+    ── Why this is not simply `json.dumps` ───────────────────────────────────
+
+    asyncpg applies this encoder to every parameter it infers as json/jsonb.
+    Roughly 120 call sites in this codebase already call `json.dumps(...)`
+    themselves before binding, which is the natural thing to write and is what
+    you must do when no codec is registered. With a codec registered, that value
+    was dumped a SECOND time here, and the column ended up holding a JSON
+    *string* — `"{\"line1\": …}"` — instead of an object. The matching decoder
+    then handed that string back on read.
+
+    Audited against the live database on 2026-07-29: **38 jsonb columns across
+    26 tables, ~1,550 rows**, including `ganit_invoices.line_items` (50 of 50 —
+    the taxable value and HSN behind every GST figure), `audit_log.detail`
+    (172 of 172) and `sign_audit_log.details` (95 of 95).
+
+    It stayed invisible because most readers either skip the field or parse
+    defensively. Where something trusted the declared type it was not a wrong
+    number but a hard failure: `dict(bank_details)` returned 500 for every
+    employee, `tags.map()` crashed the whole Graha page, and spreading the
+    string on the client wrote 122 character-indexed keys back into the org
+    profile.
+
+    Fixing it here rather than at 120 call sites is deliberate. Correcting them
+    individually leaves the trap armed for the next `json.dumps` anyone writes —
+    and the failure is silent, so it would not be noticed again until something
+    crashed.
+
+    ── The rule ─────────────────────────────────────────────────────────────
+
+    A `str` that is already a serialised JSON **object or array** is passed
+    through untouched. Anything else — dict, list, number, bool, None, or a
+    plain string that is not JSON — is encoded exactly as before.
+
+    The check is deliberately narrow. It requires the text to start with `{` or
+    `[` AND to parse, so a genuine JSON string scalar keeps its old behaviour:
+    `"123"` still stores as the string "123" and not the number 123, and
+    `"true"` does not become a boolean. Only the object/array shapes these
+    columns actually hold take the new path.
+    """
+    if isinstance(value, str):
+        head = value.lstrip()[:1]
+        if head in ("{", "["):
+            try:
+                json.loads(value)
+            except (ValueError, TypeError):
+                pass          # not valid JSON after all — encode it as a string
+            else:
+                return value  # already serialised; encoding again would nest it
     return json.dumps(value)
 
 
