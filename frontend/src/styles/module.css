@@ -332,6 +332,7 @@
    was missing, not the radius. */
 .note          { padding: 11px 13px; border-radius: var(--r-sm); font-size: 12px; line-height: 1.55; background: var(--s-container); color: var(--on-surface-2); border: 1px solid var(--outline-variant); }
 .note--info    { background: var(--primary-container); color: var(--on-primary-container); border-color: color-mix(in srgb, var(--primary) 26%, var(--outline-variant)); }
+.note--ok      { background: var(--ok-container); color: var(--on-ok-container); border-color: color-mix(in srgb, var(--ok) 26%, var(--outline-variant)); }
 .note--warn    { background: var(--warn-container); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 26%, var(--outline-variant)); }
 .note--danger  { background: var(--danger-container); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 26%, var(--outline-variant)); }
 .note b        { font-weight: 600; }

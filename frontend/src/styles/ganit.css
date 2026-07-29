@@ -84,13 +84,26 @@
   margin-top: var(--sp-3);
   flex-wrap: wrap;
 }
-.gn-form__foot {
+/* The sheet header of `ScreensWork.jsx:181`: title, its Devanagari, and the
+   document number pushed to the trailing edge in mono. The form previously
+   opened on a bare <h3> with neither the second script nor the number, so the
+   one identifier the reader carries to another screen was not on the panel that
+   creates it. */
+.gn-form__hd {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  gap: var(--sp-4);
-  margin-top: var(--sp-4);
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
   flex-wrap: wrap;
+}
+.gn-form__hd .gn-form__t { margin: 0; }
+.gn-form__hi { font-size: var(--t-body); color: var(--primary-text); }
+.gn-form__no {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
 }
 .gn-ta { resize: vertical; width: 100%; min-height: 62px; }
 .gn-ta--mono { font-family: var(--font-mono); font-size: var(--t-label); }
@@ -155,12 +168,175 @@
    --primary is what every other focus rule in the codebase uses. */
 .gn-li__x:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
-/* The running total under the line editor. Explicitly a PREVIEW — the server
-   computes and stores the figures that end up on the document. */
-.gn-est { text-align: right; font-size: var(--t-body-sm); }
-.gn-est__sub { color: var(--on-surface-3); }
-.gn-est__tot { font-weight: 700; font-size: var(--t-title); margin-top: var(--sp-1); }
-.gn-est__note { color: var(--on-surface-3); font-size: var(--t-label); }
+/* ── The line table ────────────────────────────────────────────────────────
+ * `ScreensWork.jsx:203` draws the line items as a bordered `.tbl` with ONE
+ * `tbl__head` above the rows. This editor drew none of that: the rows were bare
+ * inputs on the panel background with the column names printed above the FIRST
+ * row only, so from line two down nothing said which box held the rate and
+ * which the quantity, and the block had no edge to read as a table at all.
+ *
+ * The head and the rows share `--gn-li`, set once on `.gn-lines` — a single
+ * track list is what keeps a header aligned to its column, and two copies of it
+ * is how headers stop being aligned to their columns.
+ */
+.gn-lines {
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--surface-1);
+  margin-bottom: var(--sp-2);
+}
+.gn-lines__head {
+  display: grid;
+  grid-template-columns: var(--gn-li);
+  gap: var(--sp-2);
+  align-items: center;
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  background: var(--s-container);
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+.gn-lines .gn-li {
+  grid-template-columns: var(--gn-li);
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-2);
+  align-items: center;
+  border-bottom: 1px solid var(--outline-variant);
+}
+.gn-lines .gn-li:last-child { border-bottom: 0; }
+/* The per-row labels are rendered on EVERY row and hidden here, where the head
+   carries them. They come back at 640px, where the grid stacks to one column
+   and a column head has nothing left to sit over. */
+.gn-lines .gn-li__l { display: none; }
+.gn-lines .gn-li__x { padding: 0; }
+
+/* Figures right-aligned and monospaced, in the head as well as the cell — a
+   right-aligned column under a left-aligned heading reads as two columns. */
+.gn-num { text-align: right; }
+.gn-mono, input.gn-num, .gn-li__amt {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.gn-li__amtc { min-width: 0; text-align: right; }
+.gn-li__amt {
+  display: block;
+  font-size: var(--t-body-sm);
+  color: var(--on-surface);
+  padding-right: 2px;
+}
+
+.gn-lines__acts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+/* A product FILLS a line; it is not a property of one. It sat as a seventh
+   column inside every row, carrying no value of its own and resetting to
+   "Pick…" the instant it was used. */
+.gn-lines__pick { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.gn-lines__pickl {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+.gn-lines__picks { width: auto; min-width: 150px; }
+
+/* ── Derived place of supply ───────────────────────────────────────────────
+ * The `ok-container` strip of `ScreensWork.jsx:193`. It turns `--warn` when the
+ * invoice disagrees with the derivation, because at that point it is no longer
+ * reporting a fact — it is reporting a discrepancy.
+ */
+.gn-supply {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4);
+}
+.gn-supply__t { flex: 1 1 320px; min-width: 0; }
+.gn-supply__code { font-family: var(--font-mono); }
+.gn-supply__b { flex: none; }
+
+/* ── The optional disclosure ───────────────────────────────────────────────
+ * `ScreensWork.jsx:226`. Notes and terms travel on the payload and print on the
+ * document, and this form had no field for either — `terms` went out as the
+ * hard-coded "Payment due within 30 days." on every invoice the UI has created.
+ */
+.gn-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-3) 0;
+  border: 0;
+  border-top: 1px solid var(--outline-variant);
+  background: none;
+  font: inherit;
+  color: var(--on-surface-2);
+  text-align: left;
+  cursor: pointer;
+}
+.gn-more__l {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+.gn-more__c {
+  color: var(--on-surface-3);
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.gn-more[aria-expanded="true"] .gn-more__c { transform: rotate(90deg); }
+.gn-more:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── The running total ─────────────────────────────────────────────────────
+ * Label and figure on one row with the figure trailing, per
+ * `ScreensWork.jsx:235`, and a rule above the total. It was three bare
+ * right-aligned strings ("Subtotal ₹0", "GST ₹0", "Total ₹0") in the body face,
+ * so no two amounts lined up by digit and none of them was mono.
+ *
+ * Explicitly a PREVIEW — the server computes and stores the figures that end up
+ * on the document.
+ */
+.gn-tot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: min(280px, 100%);
+  margin: var(--sp-4) 0 0 auto;
+}
+.gn-tot__r {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-4);
+  font-size: var(--t-body-sm);
+}
+.gn-tot__l { color: var(--on-surface-3); }
+.gn-tot__v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.gn-tot__r--sum {
+  margin-top: 2px;
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--outline-variant);
+  font-size: var(--t-title);
+  font-weight: 600;
+}
+.gn-tot__r--sum .gn-tot__l { color: var(--on-surface); }
+.gn-tot__r--sum .gn-tot__v { color: var(--primary-text); }
+.gn-tot__note { margin: 2px 0 0; text-align: right; }
+.gn-tot__note, .gn-est__note { color: var(--on-surface-3); font-size: var(--t-label); }
 
 /* ── Stat strips ───────────────────────────────────────────────────────────
  * `--gn-min` tunes the minimum track. Five bank figures want a tighter floor
@@ -504,6 +680,17 @@ button.gn-row:focus-visible { outline: 2px solid var(--primary); outline-offset:
      honest; a 40px "Description" input is not. */
   .gn-li { grid-template-columns: 1fr; }
   .gn-li__x { justify-self: end; padding-bottom: 0; }
+  /* Stacked, the head row has nothing to head — it would print six column names
+     in a column of its own above the first field. The per-row labels take over
+     and each field carries its own again. */
+  .gn-lines__head { display: none; }
+  /* The track list is overridden here rather than by redefining `--gn-li`: the
+     custom property is set inline on `.gn-lines`, and only `!important` beats an
+     inline declaration. Overriding the PROPERTY it feeds needs no such thing. */
+  .gn-lines .gn-li { grid-template-columns: 1fr; padding: var(--sp-3); gap: var(--sp-2); }
+  .gn-lines .gn-li__l { display: block; }
+  .gn-li__amtc { text-align: left; }
+  .gn-tot { margin-left: 0; }
   /* Below the summary's two numeric tracks, stack rather than crush them. */
   .gn-gst__row { flex-direction: column; align-items: stretch; }
   .gn-gst__nums { justify-content: space-between; gap: var(--sp-3); }

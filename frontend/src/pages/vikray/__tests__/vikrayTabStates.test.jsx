@@ -114,8 +114,11 @@ describe('Vikray tabs · a failed load is never an empty state', () => {
       const text = container.textContent;
 
       expect(container.querySelector('[role="alert"]')).toBeTruthy();
-      // `errorKind` maps 403 to `denied`, which offers access rather than retry.
-      expect(text).toContain('Request access');
+      // `errorKind` maps 403 to `denied`. The button there used to read
+      // "Request access", and it requested nothing from anybody: it calls
+      // `onRetry`, the same fetch that just returned 403, and there is no
+      // request-approval flow behind it. It is named for what it does.
+      expect(text).toContain('Try again');
       expect(text).not.toContain(EMPTY_COPY[name]);
     });
 

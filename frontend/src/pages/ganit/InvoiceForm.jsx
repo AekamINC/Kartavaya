@@ -3,10 +3,11 @@
 // Split out of `InvoicesTab` for the same reason Vikray split `OrderForm`: the
 // tab was 542 lines carrying a list, a record view and a multi-line editor, and
 // the styling diff was unreviewable while all three shared a file.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { inr } from '../../lib/inr';
+import { stateFromGSTIN } from '../../lib/validators';
 import { INV_TYPE_LABELS } from './_shared';
 
 const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
@@ -16,6 +17,16 @@ const BLANK = {
   notes: '', terms: 'Payment due within 30 days.', discount: 0,
   line_items: [{ ...EMPTY_LINE }],
 };
+
+/**
+ * The line editor's track list.
+ *
+ * `ScreensWork.jsx:203` (`InvoiceSheet`) sets `minmax(0,1fr) 90px 80px 100px`
+ * over a single `tbl__head`; this adds the two columns that sheet's mock data
+ * did not need — quantity and GST rate — and keeps the shape: one flexible
+ * description, fixed numeric tracks, the amount last and right-aligned.
+ */
+const LINE_COLS = 'minmax(0,1.6fr) 92px 62px 92px 66px minmax(92px,1fr) 30px';
 
 /**
  * An existing invoice mapped onto the form's shape.
@@ -82,24 +93,95 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
   const [form, setForm] = useState(() => (editing ? fromInvoice(editing) : { ...BLANK }));
   const [contacts, setContacts] = useState([]);
   const [products, setProducts] = useState([]);
+  const [orgGstin, setOrgGstin] = useState(null);
   const [saving, setSaving] = useState(false);
+  // The design keeps place of supply and the tax treatment DERIVED and out of
+  // sight, behind a "Change" (`ScreensWork.jsx:193`). They are revealed when
+  // there is nothing to derive from, or when the reader asks.
+  const [showSupply, setShowSupply] = useState(false);
+  const [showOpt, setShowOpt] = useState(false);
 
   useEffect(() => {
-    // Both are pickers, not the panel's own content. If either fails the form
-    // is still usable — the customer select simply carries no options and the
-    // user types the line items by hand — so this does NOT set the panel's
-    // error state. It does say so, rather than presenting an empty dropdown as
-    // though the org had no contacts.
+    // Contacts and products are pickers, not the panel's own content. If either
+    // fails the form is still usable — the customer select simply carries no
+    // options and the user types the line items by hand — so this does NOT set
+    // the panel's error state. It does say so, rather than presenting an empty
+    // dropdown as though the org had no contacts.
+    //
+    // The org profile is read for ONE field: our own GSTIN, whose state code
+    // decides inter-state versus intra-state. A failure there costs the derived
+    // note and nothing else, so it stays silent.
     (async () => {
-      const [c, p] = await Promise.allSettled([
+      const [c, p, o] = await Promise.allSettled([
         api.get('/v1/graha/contacts'),
         api.get('/v1/ganit/products'),
+        api.get('/v1/org/profile'),
       ]);
       if (c.status === 'fulfilled') setContacts(rows(c.value));
       else pushToast({ title: 'Could not load customers', message: 'You can still create the invoice — pick the customer later.', type: 'error' });
       if (p.status === 'fulfilled') setProducts(rows(p.value));
+      if (o.status === 'fulfilled') setOrgGstin(o.value?.data?.gstin || null);
     })();
   }, [pushToast]);
+
+  const customer = useMemo(
+    () => contacts.find(c => String(c.id) === String(form.contact_id)) || null,
+    [contacts, form.contact_id],
+  );
+
+  /**
+   * Place of supply and the CGST/SGST-versus-IGST split, read off the two
+   * GSTINs — ours and the customer's.
+   *
+   * Section 12(2)(a) of the IGST Act puts the place of supply at the recipient's
+   * registered address, which is exactly what their GSTIN prefix encodes. Until
+   * now this form asked the user to type the state by hand and tick "Inter-state
+   * (IGST)" themselves, so the tax treatment on every invoice rested on a free
+   * text field and an unchecked checkbox — and getting it wrong misfiles the
+   * supply in GSTR-1 and hands the customer an unclaimable credit.
+   */
+  const derived = useMemo(() => {
+    const them = stateFromGSTIN(customer?.gstin);
+    const us = stateFromGSTIN(orgGstin);
+    if (!them) return null;
+    return { ...them, igst: us ? us.code !== them.code : null, homeCode: us?.code || null };
+  }, [customer, orgGstin]);
+
+  // Export overrides the domestic split entirely, so the note has nothing to
+  // say about a foreign invoice.
+  const agrees = derived
+    && form.place_of_supply === derived.name
+    && (derived.igst === null || form.is_igst === derived.igst);
+  const noteVisible = !!derived && !form.is_export;
+
+  function applyDerived() {
+    if (!derived) return;
+    setForm(f => ({
+      ...f,
+      place_of_supply: derived.name,
+      is_igst: derived.igst === null ? f.is_igst : derived.igst,
+    }));
+    setShowSupply(false);
+  }
+
+  /**
+   * Picking the customer applies the derivation immediately, because that is
+   * the moment the two facts become known. It does NOT run on mount: an invoice
+   * opened for correction keeps the state and treatment it was issued under
+   * until someone asks for the change in as many words.
+   */
+  function pickCustomer(id) {
+    const c = contacts.find(x => String(x.id) === String(id));
+    const s = stateFromGSTIN(c?.gstin);
+    const us = stateFromGSTIN(orgGstin);
+    setForm(f => ({
+      ...f,
+      contact_id: id,
+      ...(s && !f.is_export
+        ? { place_of_supply: s.name, ...(us ? { is_igst: us.code !== s.code } : {}) }
+        : {}),
+    }));
+  }
 
   function updateLine(idx, field, val) {
     setForm(f => {
@@ -109,26 +191,44 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
     });
   }
 
-  function fillFromProduct(idx, productId) {
+  /**
+   * A product appends a PREFILLED line rather than overwriting one.
+   *
+   * It used to be a seventh column inside every row — a "Product" select
+   * wedged between Rate and GST% that carried no value of its own and reset to
+   * "Pick…" the moment it was used. It made the row's columns disagree with any
+   * reading of the design's line table, and it is not a property of the line: it
+   * is how the line got filled in.
+   */
+  function addFromProduct(productId) {
     const p = products.find(x => String(x.id) === String(productId));
     if (!p) return;
+    const line = {
+      ...EMPTY_LINE,
+      description: p.name,
+      hsn_code: p.hsn_code || p.sac_code || '',
+      rate: Number(p.price) || 0,
+      gst_rate: Number(p.gst_rate) || 0,
+      unit: p.unit || 'NOS',
+    };
     setForm(f => {
-      const items = [...f.line_items];
-      items[idx] = {
-        ...items[idx],
-        description: p.name,
-        hsn_code: p.hsn_code || p.sac_code || '',
-        rate: Number(p.price),
-        gst_rate: Number(p.gst_rate),
-        unit: p.unit || 'NOS',
-      };
-      return { ...f, line_items: items };
+      // A single untouched blank line is filled rather than left above the new
+      // one — otherwise the first thing a product does is leave an empty row
+      // the user has to delete.
+      const only = f.line_items.length === 1 && !f.line_items[0].description && !Number(f.line_items[0].rate);
+      return { ...f, line_items: only ? [line] : [...f.line_items, line] };
     });
   }
 
   const subtotal = form.line_items.reduce((s, li) => s + lineTaxable(li), 0);
   const gst = form.line_items.reduce((s, li) => s + lineTaxable(li) * (Number(li.gst_rate) || 0) / 100, 0);
   const total = subtotal + gst - (Number(form.discount) || 0);
+
+  // The rate is named only when every line carries the same one. "CGST 9%" over
+  // a mix of 5% and 18% lines would be a figure the reader could not reproduce.
+  const rates = [...new Set(form.line_items.map(li => Number(li.gst_rate) || 0))];
+  const oneRate = rates.length === 1 ? rates[0] : null;
+  const half = n => (n == null ? '' : ` ${n / 2}%`);
 
   async function save(e) {
     e.preventDefault();
@@ -157,9 +257,19 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
 
   return (
     <form className="gn-form" onSubmit={save}>
-      <h3 className="gn-form__t">
-        {editing ? `Edit ${editing.invoice_number || 'invoice'}` : 'Create invoice'}
-      </h3>
+      {/* The sheet header of `ScreensWork.jsx:181` — title, its Devanagari, and
+          the document's own number held out to the trailing edge in mono. A new
+          invoice has no number to show yet and says so, rather than borrowing
+          the mock's INV-2608. */}
+      <div className="gn-form__hd">
+        <h3 className="gn-form__t">
+          {editing ? `Edit ${editing.invoice_number || 'invoice'}` : 'Create invoice'}
+        </h3>
+        <span className="gn-form__hi" lang="hi">बीजक</span>
+        <span className="gn-form__no">
+          {editing ? (editing.invoice_number || '') : 'Number assigned on save'}
+        </span>
+      </div>
 
       <div className="gn-form__grid">
         <label className="fld">
@@ -170,15 +280,10 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
         </label>
         <label className="fld">
           <span className="fld__l">Customer</span>
-          <select className="inp" value={form.contact_id} onChange={e => setForm({ ...form, contact_id: e.target.value })}>
+          <select className="inp" value={form.contact_id} onChange={e => pickCustomer(e.target.value)}>
             <option value="">Select…</option>
             {contacts.map(c => <option key={c.id} value={c.id}>{c.name}{c.company ? ` (${c.company})` : ''}</option>)}
           </select>
-        </label>
-        <label className="fld">
-          <span className="fld__l">Place of supply</span>
-          <input className="inp" placeholder="e.g. Maharashtra" value={form.place_of_supply}
-            onChange={e => setForm({ ...form, place_of_supply: e.target.value })} />
         </label>
         <label className="fld">
           <span className="fld__l">Invoice date</span>
@@ -190,11 +295,54 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
           <input className="inp" type="date" value={form.due_date}
             onChange={e => setForm({ ...form, due_date: e.target.value })} />
         </label>
-        <label className="gn-chk">
-          <input type="checkbox" checked={form.is_igst} disabled={form.is_export}
-            onChange={e => setForm({ ...form, is_igst: e.target.checked })} />
-          <span>Inter-state (IGST)</span>
-        </label>
+      </div>
+
+      {/* Derived, and stated in full — the prefix it read, the state it means and
+          the tax that follows. A reader who disagrees can see exactly which of
+          the three to argue with. */}
+      {noteVisible && (
+        <p className={`note ${agrees ? 'note--ok' : 'note--warn'} gn-supply`}>
+          <span className="gn-supply__t">
+            {agrees ? 'Derived from GSTIN prefix ' : 'GSTIN prefix '}
+            <b className="gn-supply__code">{derived.code}</b>
+            {' — place of supply '}<b>{derived.name}</b>
+            {derived.igst === null
+              ? '. Your own GSTIN is not set, so the CGST/SGST split cannot be worked out here.'
+              : <>, tax as <b>{derived.igst ? 'IGST' : 'CGST + SGST'}</b>.</>}
+            {!agrees && (
+              <> This invoice is set to <b>{form.place_of_supply || 'no state'}</b>
+                {derived.igst !== null && <>, <b>{form.is_igst ? 'IGST' : 'CGST + SGST'}</b></>}.
+              </>
+            )}
+          </span>
+          {!agrees && (
+            <button type="button" className="btn btn--out btn--sm gn-supply__b" onClick={applyDerived}>
+              Use derived
+            </button>
+          )}
+          <button type="button" className="btn btn--out btn--sm gn-supply__b"
+            onClick={() => setShowSupply(v => !v)} aria-expanded={showSupply}>
+            {showSupply ? 'Done' : 'Change'}
+          </button>
+        </p>
+      )}
+
+      {(showSupply || !noteVisible) && (
+        <div className="gn-form__grid gn-form__grid--2">
+          <label className="fld">
+            <span className="fld__l">Place of supply</span>
+            <input className="inp" placeholder="e.g. Maharashtra" value={form.place_of_supply}
+              onChange={e => setForm({ ...form, place_of_supply: e.target.value })} />
+          </label>
+          <label className="gn-chk">
+            <input type="checkbox" checked={form.is_igst} disabled={form.is_export}
+              onChange={e => setForm({ ...form, is_igst: e.target.checked })} />
+            <span>Inter-state (IGST)</span>
+          </label>
+        </div>
+      )}
+
+      <div className="gn-form__grid gn-form__grid--2">
         <label className="gn-chk">
           <input type="checkbox" checked={form.is_export}
             onChange={e => setForm({ ...form, is_export: e.target.checked, currency: e.target.checked ? form.currency : 'INR' })} />
@@ -211,67 +359,155 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
       </div>
 
       <h4 className="gn-form__h">Line items</h4>
-      {form.line_items.map((li, i) => (
-        // The track list is the one thing allowed inline: it is per-instance
-        // data feeding a rule in ganit.css, which is check-tokens deviation 2.
-        <div key={i} className="gn-li" style={{ '--gn-li': '2fr 1fr 70px 90px 1fr 70px 30px' }}>
-          <div>
-            {i === 0 && <span className="gn-li__l">Description</span>}
-            <input className="inp" placeholder="Item description" value={li.description}
-              onChange={e => updateLine(i, 'description', e.target.value)} />
+      {/* One bordered table with ONE head row, per `ScreensWork.jsx:203`.
+          It was seven bare inputs floating on the panel background with the
+          column names printed above the first row only, so from the second line
+          down nothing said which box was the rate and which the quantity, and
+          the block had no edge to read as a table at all. */}
+      <div className="gn-lines" style={{ '--gn-li': LINE_COLS }}>
+        <div className="gn-lines__head" aria-hidden="true">
+          <span>Item</span>
+          <span>HSN/SAC</span>
+          <span className="gn-num">Qty</span>
+          <span className="gn-num">Rate</span>
+          <span className="gn-num">GST%</span>
+          <span className="gn-num">Amount</span>
+          <span />
+        </div>
+        {form.line_items.map((li, i) => (
+          <div key={i} className="gn-li">
+            <div>
+              {/* Repeated on every row and hidden above 640px, where the head
+                  row carries them. Below it the grid stacks to one column, and
+                  a stack of unlabelled inputs is not a table. */}
+              <span className="gn-li__l">Description</span>
+              <input className="inp" placeholder="Item description" value={li.description}
+                aria-label={`Line ${i + 1} description`}
+                onChange={e => updateLine(i, 'description', e.target.value)} />
+            </div>
+            <div>
+              <span className="gn-li__l">HSN/SAC</span>
+              <input className="inp gn-mono" value={li.hsn_code} aria-label={`Line ${i + 1} HSN or SAC code`}
+                onChange={e => updateLine(i, 'hsn_code', e.target.value)} />
+            </div>
+            <div>
+              <span className="gn-li__l">Qty</span>
+              <input className="inp gn-num" type="number" min="1" value={li.quantity}
+                aria-label={`Line ${i + 1} quantity`}
+                onChange={e => updateLine(i, 'quantity', parseFloat(e.target.value) || 1)} />
+            </div>
+            <div>
+              <span className="gn-li__l">Rate</span>
+              <input className="inp gn-num" type="number" value={li.rate}
+                aria-label={`Line ${i + 1} rate`}
+                onChange={e => updateLine(i, 'rate', parseFloat(e.target.value) || 0)} />
+            </div>
+            <div>
+              <span className="gn-li__l">GST%</span>
+              <input className="inp gn-num" type="number" value={li.gst_rate}
+                aria-label={`Line ${i + 1} GST percentage`}
+                onChange={e => updateLine(i, 'gst_rate', parseFloat(e.target.value) || 0)} />
+            </div>
+            {/* The design's fourth column, and the one this editor never had:
+                quantity times rate, per line. Without it a six-line invoice
+                could only be checked by re-doing the arithmetic by hand. */}
+            <div className="gn-li__amtc">
+              <span className="gn-li__l">Amount</span>
+              <span className="gn-li__amt">{inr(lineTaxable(li))}</span>
+            </div>
+            <button type="button" className="gn-li__x" aria-label={`Remove line ${i + 1}`}
+              disabled={form.line_items.length === 1}
+              onClick={() => setForm(f => ({ ...f, line_items: f.line_items.filter((_, j) => j !== i) }))}>
+              ×
+            </button>
           </div>
-          <div>
-            {i === 0 && <span className="gn-li__l">HSN/SAC</span>}
-            <input className="inp" value={li.hsn_code} onChange={e => updateLine(i, 'hsn_code', e.target.value)} />
-          </div>
-          <div>
-            {i === 0 && <span className="gn-li__l">Qty</span>}
-            <input className="inp" type="number" min="1" value={li.quantity}
-              onChange={e => updateLine(i, 'quantity', parseFloat(e.target.value) || 1)} />
-          </div>
-          <div>
-            {i === 0 && <span className="gn-li__l">Rate</span>}
-            <input className="inp" type="number" value={li.rate}
-              onChange={e => updateLine(i, 'rate', parseFloat(e.target.value) || 0)} />
-          </div>
-          <div>
-            {i === 0 && <span className="gn-li__l">Product</span>}
-            <select className="inp" value="" onChange={e => fillFromProduct(i, e.target.value)}>
+        ))}
+      </div>
+
+      <div className="gn-lines__acts">
+        <button type="button" className="btn btn--ghost btn--sm"
+          onClick={() => setForm(f => ({ ...f, line_items: [...f.line_items, { ...EMPTY_LINE }] }))}>
+          + Add line
+        </button>
+        {products.length > 0 && (
+          <label className="gn-lines__pick">
+            <span className="gn-lines__pickl">From product</span>
+            <select className="inp gn-lines__picks" value=""
+              onChange={e => { addFromProduct(e.target.value); e.target.value = ''; }}>
               <option value="">Pick…</option>
               {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-          </div>
-          <div>
-            {i === 0 && <span className="gn-li__l">GST%</span>}
-            <input className="inp" type="number" value={li.gst_rate}
-              onChange={e => updateLine(i, 'gst_rate', parseFloat(e.target.value) || 0)} />
-          </div>
-          <button type="button" className="gn-li__x" aria-label={`Remove line ${i + 1}`}
-            disabled={form.line_items.length === 1}
-            onClick={() => setForm(f => ({ ...f, line_items: f.line_items.filter((_, j) => j !== i) }))}>
-            ×
-          </button>
-        </div>
-      ))}
-      <button type="button" className="btn btn--ghost btn--sm"
-        onClick={() => setForm(f => ({ ...f, line_items: [...f.line_items, { ...EMPTY_LINE }] }))}>
-        + Add line
-      </button>
+          </label>
+        )}
+      </div>
 
-      <div className="gn-form__foot">
-        <label className="fld">
-          <span className="fld__l">Flat discount (₹)</span>
-          <input className="inp gn-payline__in" type="number" value={form.discount}
-            onChange={e => setForm({ ...form, discount: parseFloat(e.target.value) || 0 })} />
-        </label>
-        <div className="gn-est">
-          <div>Subtotal {inr(subtotal)}</div>
-          <div className="gn-est__sub">GST {inr(gst)}</div>
-          <div className="gn-est__tot">Total {inr(total)}</div>
-          {/* Stated, not implied. The server recomputes and stores the figures
-              that reach the document; rounding here is a preview only. */}
-          <div className="gn-est__note">A preview — the server computes the figures it stores.</div>
+      {/* `ScreensWork.jsx:226` — the optional block folded away. Notes and terms
+          are on the document and were on the payload, but this form had no field
+          for either: `terms` went out as the hard-coded "Payment due within 30
+          days." on every invoice the UI has ever created. */}
+      <button type="button" className="gn-more" onClick={() => setShowOpt(v => !v)} aria-expanded={showOpt}>
+        <span className="gn-more__l">Optional — notes, terms, flat discount</span>
+        <span className="gn-more__c" aria-hidden="true">›</span>
+      </button>
+      {showOpt && (
+        <div className="gn-form__grid gn-form__grid--2">
+          <label className="fld gn-form__wide">
+            <span className="fld__l">Notes</span>
+            <textarea className="inp gn-ta" value={form.notes} placeholder="Shown on the invoice"
+              onChange={e => setForm({ ...form, notes: e.target.value })} />
+          </label>
+          <label className="fld gn-form__wide">
+            <span className="fld__l">Terms</span>
+            <textarea className="inp gn-ta" value={form.terms} placeholder="Payment terms"
+              onChange={e => setForm({ ...form, terms: e.target.value })} />
+          </label>
+          <label className="fld">
+            <span className="fld__l">Flat discount (₹)</span>
+            <input className="inp gn-num" type="number" value={form.discount}
+              onChange={e => setForm({ ...form, discount: parseFloat(e.target.value) || 0 })} />
+          </label>
         </div>
+      )}
+
+      {/* Taxable value, then the tax NAMED as it will appear on the document —
+          CGST and SGST as two lines when the supply is intra-state, because that
+          is how they are charged, filed and claimed. A single "GST" row matched
+          nothing the customer will see. */}
+      <div className="gn-tot">
+        <div className="gn-tot__r">
+          <span className="gn-tot__l">Taxable value</span>
+          <span className="gn-tot__v">{inr(subtotal)}</span>
+        </div>
+        {form.is_igst ? (
+          <div className="gn-tot__r">
+            <span className="gn-tot__l">IGST{oneRate != null ? ` ${oneRate}%` : ''}</span>
+            <span className="gn-tot__v">{inr(gst)}</span>
+          </div>
+        ) : (
+          <>
+            <div className="gn-tot__r">
+              <span className="gn-tot__l">CGST{half(oneRate)}</span>
+              <span className="gn-tot__v">{inr(gst / 2)}</span>
+            </div>
+            <div className="gn-tot__r">
+              <span className="gn-tot__l">SGST{half(oneRate)}</span>
+              <span className="gn-tot__v">{inr(gst / 2)}</span>
+            </div>
+          </>
+        )}
+        {Number(form.discount) > 0 && (
+          <div className="gn-tot__r">
+            <span className="gn-tot__l">Flat discount</span>
+            <span className="gn-tot__v">−{inr(Number(form.discount))}</span>
+          </div>
+        )}
+        <div className="gn-tot__r gn-tot__r--sum">
+          <span className="gn-tot__l">Total</span>
+          <span className="gn-tot__v">{inr(total)}</span>
+        </div>
+        {/* Stated, not implied. The server recomputes and stores the figures
+            that reach the document; rounding here is a preview only. */}
+        <p className="gn-tot__note">A preview — the server computes the figures it stores.</p>
       </div>
 
       <div className="gn-form__acts">

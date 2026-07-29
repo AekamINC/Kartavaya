@@ -190,9 +190,9 @@ export default function ExitsTab({ onUpdate }) {
   if (exits.error) return <ErrorNote what="Exits" error={exits.error} onRetry={exits.reload} />;
 
   return (
-    <div className="mv-tab">
+    <div>
       <div className="gn-bar">
-        <span className="mv-count">
+        <span className="mn-count">
           {counts.live} in progress · {counts.completed} completed · {counts.interviews} interviewed
         </span>
         <span className="gn-bar__sp" />
@@ -246,7 +246,7 @@ export default function ExitsTab({ onUpdate }) {
               <input type="number" min="0" className="inp" value={form.notice_period_days}
                 onChange={e => setForm(f => ({ ...f, notice_period_days: Number(e.target.value) }))} />
             </label>
-            <label className="of__f of__f--check">
+            <label className="mn-chk">
               <input type="checkbox" checked={form.notice_waived}
                 onChange={e => setForm(f => ({ ...f, notice_waived: e.target.checked }))} />
               <span>Notice waived or bought out</span>
@@ -290,7 +290,7 @@ export default function ExitsTab({ onUpdate }) {
                 const open = openId === r.id;
                 return (
                   <React.Fragment key={r.id}>
-                    <tr className="tbl__row--click" onClick={() => setOpenId(open ? null : r.id)}>
+                    <tr className="mn-t__row--click" onClick={() => setOpenId(open ? null : r.id)}>
                       <td>
                         <div className="gr__td--name">{r.employee_name}</div>
                         {r.employee_code && <div className="gr__ls">{r.employee_code}</div>}
@@ -312,7 +312,7 @@ export default function ExitsTab({ onUpdate }) {
                     {open && (
                       <tr>
                         <td colSpan={7}>
-                          <div className="mv-exit__panel">
+                          <div className="mn-exit__panel">
                             {r.reason && <p className="of__h">“{r.reason}”</p>}
                             <p className="of__h">
                               Notice {r.notice_period_days} day{r.notice_period_days === 1 ? '' : 's'}
@@ -324,10 +324,10 @@ export default function ExitsTab({ onUpdate }) {
                             {items.length === 0 ? (
                               <p className="of__h">No checklist on this exit.</p>
                             ) : (
-                              <ul className="mv-exit__list">
+                              <ul className="mn-exit__list">
                                 {items.map((c, i) => (
                                   <li key={`${r.id}-${i}`}>
-                                    <label className="of__f--check">
+                                    <label className="mn-chk">
                                       <input type="checkbox" checked={!!c.done}
                                         disabled={busy === r.id || r.status === 'completed'}
                                         onChange={() => toggleClearance(r, i)} />
@@ -399,12 +399,12 @@ export default function ExitsTab({ onUpdate }) {
                 {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} / 5</option>)}
               </select>
             </label>
-            <label className="of__f of__f--check">
+            <label className="mn-chk">
               <input type="checkbox" checked={interview.would_recommend === true}
                 onChange={e => setInterview(f => ({ ...f, would_recommend: e.target.checked }))} />
               <span>Would recommend us as an employer</span>
             </label>
-            <label className="of__f of__f--check">
+            <label className="mn-chk">
               <input type="checkbox" checked={interview.would_return === true}
                 onChange={e => setInterview(f => ({ ...f, would_return: e.target.checked }))} />
               <span>Would consider returning</span>

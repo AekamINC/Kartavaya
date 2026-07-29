@@ -103,4 +103,47 @@ export function panFromGSTIN(value) {
   return GSTIN_RE.test(v) ? v.slice(2, 12) : null;
 }
 
+/**
+ * GST state codes 01–38, plus 97 (Other Territory) and 99 (Centre
+ * Jurisdiction) — the first two characters of every GSTIN.
+ *
+ * The same table as `backend/services/gstr1_json.py:STATE_CODES`, in the
+ * direction this side needs: code → name. The backend maps name → code because
+ * `ganit_invoices.place_of_supply` is free text and it has to read whatever was
+ * typed; the invoice form has the GSTIN and needs the name to WRITE that column,
+ * so the two are inverses rather than duplicates.
+ *
+ * 28 is deliberately absent. It is pre-bifurcation Andhra Pradesh: historical
+ * documents still carry it, so the backend accepts it on input, but nothing
+ * issued today should be given that name.
+ */
+export const GST_STATES = {
+  '01': 'Jammu and Kashmir', '02': 'Himachal Pradesh', '03': 'Punjab',
+  '04': 'Chandigarh', '05': 'Uttarakhand', '06': 'Haryana', '07': 'Delhi',
+  '08': 'Rajasthan', '09': 'Uttar Pradesh', 10: 'Bihar', 11: 'Sikkim',
+  12: 'Arunachal Pradesh', 13: 'Nagaland', 14: 'Manipur', 15: 'Mizoram',
+  16: 'Tripura', 17: 'Meghalaya', 18: 'Assam', 19: 'West Bengal',
+  20: 'Jharkhand', 21: 'Odisha', 22: 'Chhattisgarh', 23: 'Madhya Pradesh',
+  24: 'Gujarat', 25: 'Daman and Diu',
+  26: 'Dadra and Nagar Haveli and Daman and Diu', 27: 'Maharashtra',
+  29: 'Karnataka', 30: 'Goa', 31: 'Lakshadweep', 32: 'Kerala',
+  33: 'Tamil Nadu', 34: 'Puducherry', 35: 'Andaman and Nicobar Islands',
+  36: 'Telangana', 37: 'Andhra Pradesh', 38: 'Ladakh',
+  97: 'Other Territory', 99: 'Centre Jurisdiction',
+};
+
+/**
+ * The state a GSTIN belongs to — `{ code, name }`, or null.
+ *
+ * Deliberately NOT gated on `validateGSTIN`. The prefix is readable from the
+ * first two characters and is correct long before the check digit is, so a
+ * half-typed GSTIN can still say which state it is from. A code outside the
+ * table returns null rather than a guess.
+ */
+export function stateFromGSTIN(value) {
+  const code = norm(value).slice(0, 2);
+  const name = GST_STATES[code];
+  return name ? { code, name } : null;
+}
+
 export { norm as normaliseCode };

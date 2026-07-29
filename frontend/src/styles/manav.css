@@ -416,3 +416,41 @@
   .mn-rec__end { width: 100%; justify-content: space-between; }
   .mn-ann__foot { align-items: flex-start; }
 }
+
+/* ── Exits · offboarding and the exit interview ────────────────────────────
+ * These four carried an `mv-` / `of__f--check` prefix when the tab was written
+ * — Vetana's and the org settings page's namespaces, neither of which is this
+ * module. `check-classes.mjs` reported them as six selectors with no rule, and
+ * a class with no rule renders unstyled: the summary line took the body face at
+ * full contrast, the expanded panel had no inset, and the clearance checkboxes
+ * stacked as block labels with the box above the wording.
+ */
+.mn-count { font-size: var(--t-body-sm); color: var(--on-surface-3); }
+
+/* The row expands in place, so the panel needs to read as INSIDE its row and
+   not as the next one. */
+.mn-exit__panel {
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  background: var(--surface-2);
+  border-left: 2px solid var(--primary);
+}
+.mn-exit__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* A checkbox and its wording on ONE line. `.of__f` is a column, which is right
+   for a label above an input and wrong for every checkbox in the module. */
+.mn-chk {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 34px;
+  font-size: var(--t-body-sm);
+  cursor: pointer;
+}
+.mn-chk input { flex: none; }

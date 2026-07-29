@@ -85,7 +85,11 @@ describe('ModuleTabs · overflow', () => {
   it('lists every hidden tab, and counts the whole set', () => {
     mount();
     click(more());
-    expect($('.mt__pop-head').textContent).toBe('All tabs · 17');
+    // "All tabs · 17" over a list of NINE was the header's old wording, and it
+    // was wrong twice: the menu holds only what did not fit, and the figure
+    // beside it counts the whole module. A reader who trusted it looked for
+    // seventeen rows.
+    expect($('.mt__pop-head').textContent).toBe('9 more · 17 tabs in all');
     expect($$('.mt__pop-row')).toHaveLength(9);
   });
 
