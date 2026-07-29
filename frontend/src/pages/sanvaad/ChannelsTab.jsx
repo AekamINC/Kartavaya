@@ -258,7 +258,15 @@ export default function ChannelsTab() {
           <EmptyState
             icon={ChatArt}
             title={{ en: 'Select a channel', hi: 'संवाद शुरू करने के लिए एक चैनल चुनें' }}
-            description="Pick a channel or a direct message on the left, or create one to start a conversation."
+            /* F32, found in the sweep on a module not previously examined. This
+               read "…or create one to start a conversation" for everyone, while
+               the `+` that creates one is gated on `canPost` and every endpoint
+               on the page had just refused. Inviting an action the product does
+               not offer is the same defect as offering a button that fails —
+               the sentence has to agree with the control beside it. */
+            description={access.canPost
+              ? 'Pick a channel or a direct message on the left, or create one to start a conversation.'
+              : 'Pick a channel or a direct message on the left to read the conversation.'}
           />
         </div>
       )}

@@ -25,6 +25,7 @@ import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { inr, grouped } from '../../lib/inr';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 /** The quarter containing `d`, as the two ISO dates the API wants. */
 function quarterOf(d = new Date()) {
@@ -185,6 +186,8 @@ function TargetForm({ onSaved, onCancel }) {
 }
 
 export default function TargetsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'set targets' });
   const { pushToast } = useToast();
   const [targets, setTargets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -258,12 +261,14 @@ export default function TargetsTab() {
         <p className="vk-bar__note">
           Actuals come from deals marked <b>Won</b> in Graha (CRM) inside the target period.
         </p>
-        <button type="button" className="btn btn--fill btn--sm vk-bar__new" onClick={() => setShowForm(v => !v)}>
+        <button type="button" className="btn btn--fill btn--sm vk-bar__new"
+          disabled={!canWrite} title={denial || undefined}
+          onClick={() => setShowForm(v => !v)}>
           {showForm ? 'Close form' : '+ Set target'}
         </button>
       </div>
 
-      {showForm && <TargetForm onCancel={() => setShowForm(false)} onSaved={() => { setShowForm(false); load(); }} />}
+      {showForm && canWrite && <TargetForm onCancel={() => setShowForm(false)} onSaved={() => { setShowForm(false); load(); }} />}
 
       {lead.length > 0 && (
         <section className="card vk-card vk-lead">
@@ -295,9 +300,11 @@ export default function TargetsTab() {
         <Empty
           icon="teams"
           title="No targets set"
-          sub="A target is a person, a period and a number. Set one and this table tracks it against the deals they close."
-          cta="+ Set target"
-          onCta={() => setShowForm(true)}
+          sub={canWrite
+            ? 'A target is a person, a period and a number. Set one and this table tracks it against the deals they close.'
+            : `A target is a person, a period and a number, tracked against the deals they close. ${denial}`}
+          cta={canWrite ? '+ Set target' : undefined}
+          onCta={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : (
         <div className="tbl__wrap">

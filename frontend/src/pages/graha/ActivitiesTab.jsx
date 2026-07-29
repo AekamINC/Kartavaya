@@ -26,6 +26,7 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge, ACTIVITY_TYPES, ACT_ICONS } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const TYPE_COLORS = {
   call: 'var(--st-in-progress)', email: 'var(--st-in-review)',
@@ -33,6 +34,8 @@ const TYPE_COLORS = {
 };
 
 export default function ActivitiesTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'log activities' });
   const { pushToast } = useToast();
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -107,7 +110,7 @@ export default function ActivitiesTab() {
           {ACTIVITY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <div className="gr__spacer" />
-        <button className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>+ Log Activity</button>
+        <button className="k-btn k-btn--primary" onClick={() => setShowForm(true)} disabled={!canWrite} title={denial || undefined}>+ Log Activity</button>
       </div>
 
       {showForm && (

@@ -20,6 +20,7 @@ import ContactTimeline from './ContactTimeline';
 import { inr } from '../../lib/inr';
 import { useDocumentDownload } from '../../lib/documents';
 import DocumentError from '../../components/ui/DocumentError';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 /**
  * The Indian financial year to date: 1 April → today.
@@ -36,6 +37,8 @@ function financialYearToDate(today = new Date()) {
 }
 
 export default function ContactsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'add contacts' });
   const { pushToast } = useToast();
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -354,7 +357,7 @@ export default function ContactsTab() {
           {CONTACT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <button className="k-btn k-btn--ghost" onClick={load}>Filter</button>
-        <button className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>+ Add Contact</button>
+        <button className="k-btn k-btn--primary" onClick={() => setShowForm(true)} disabled={!canWrite} title={denial || undefined}>+ Add Contact</button>
       </div>
 
       {showForm && (

@@ -14,6 +14,7 @@ import { useToast } from '../../components/ui/toast';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { Badge } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 /**
  * A document's tags as an ARRAY, whatever shape actually arrived.
@@ -35,6 +36,8 @@ function asTags(v) {
 }
 
 export default function DocumentsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'add documents' });
   const { pushToast } = useToast();
   const [documents, setDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -118,7 +121,7 @@ export default function DocumentsTab() {
           onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && load()} />
         <button className="k-btn k-btn--ghost" onClick={load}>Search</button>
         <div className="gr__spacer" />
-        <button className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>+ Add Document</button>
+        <button className="k-btn k-btn--primary" onClick={() => setShowForm(true)} disabled={!canWrite} title={denial || undefined}>+ Add Document</button>
       </div>
 
       {showForm && (

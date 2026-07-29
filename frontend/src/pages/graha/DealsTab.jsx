@@ -14,6 +14,7 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { RotBadge, Badge, stageColor } from './_shared';
 import { inr } from '../../lib/inr';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 /**
  * `newNonce` lets the page header's "New deal" button open this tab's create
@@ -22,6 +23,8 @@ import { inr } from '../../lib/inr';
  * the effect would not re-run.
  */
 export default function DealsTab({ newNonce = 0 }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change deals' });
   const navigate = useNavigate();
   const { pushToast } = useToast();
   const [deals, setDeals] = useState([]);
@@ -194,7 +197,8 @@ export default function DealsTab({ newNonce = 0 }) {
         </select>
         <button className="k-btn k-btn--ghost" onClick={load}>Filter</button>
         <div className="gr__spacer" />
-        <button className="k-btn k-btn--primary" onClick={() => { setShowForm(true); loadFormData(); }}>+ New Deal</button>
+        <button className="k-btn k-btn--primary" disabled={!canWrite} title={denial || undefined}
+          onClick={() => { setShowForm(true); loadFormData(); }}>+ New Deal</button>
       </div>
 
       {showForm && (

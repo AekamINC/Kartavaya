@@ -13,10 +13,13 @@ import { ORDER_FLOW } from './_shared';
 import OrderRows from './OrderRows';
 import OrderForm from './OrderForm';
 import OrderDetail from './OrderDetail';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 /** `newNonce` — the page header's "+ New order" opens the form on this tab.
  *  A counter, not a boolean, so a second press re-opens it after a cancel. */
 export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId, onOpen }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'record orders' });
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -56,12 +59,13 @@ export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId,
           </select>
         </label>
         <button type="button" className="btn btn--fill btn--sm vk-bar__new"
+          disabled={!canWrite} title={denial || undefined}
           onClick={() => setShowForm(v => !v)}>
           {showForm ? 'Close form' : '+ New order'}
         </button>
       </div>
 
-      {showForm && (
+      {showForm && canWrite && (
         <OrderForm
           onCancel={() => setShowForm(false)}
           onCreated={o => { setShowForm(false); load(); onOpen(o.id); }}
@@ -85,9 +89,11 @@ export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId,
           <Empty
             icon="invoice"
             title="No orders yet"
-            sub="A sales order records what a customer has agreed to buy. Confirm one and it moves your stock; deliver it and it becomes an invoice."
-            cta="+ New order"
-            onCta={() => setShowForm(true)}
+            sub={canWrite
+              ? 'A sales order records what a customer has agreed to buy. Confirm one and it moves your stock; deliver it and it becomes an invoice.'
+              : `A sales order records what a customer has agreed to buy — confirming one moves your stock, delivering it makes an invoice. ${denial}`}
+            cta={canWrite ? '+ New order' : undefined}
+            onCta={canWrite ? () => setShowForm(true) : undefined}
           />
         )
       ) : (

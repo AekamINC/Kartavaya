@@ -11,8 +11,11 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function FollowUpsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'set follow-ups' });
   const { pushToast } = useToast();
   const [followUps, setFollowUps] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -110,7 +113,8 @@ export default function FollowUpsTab() {
         </select>
         <button className="k-btn k-btn--ghost" onClick={load}>Filter</button>
         <div className="gr__spacer" />
-        <button className="k-btn k-btn--primary" onClick={() => { setShowForm(true); loadOptions(); }}>+ New Follow-up</button>
+        <button className="k-btn k-btn--primary" disabled={!canWrite} title={denial || undefined}
+          onClick={() => { setShowForm(true); loadOptions(); }}>+ New Follow-up</button>
       </div>
 
       {showForm && (
