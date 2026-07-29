@@ -303,9 +303,19 @@ async def list_contacts(
 ):
     pool = await get_pool()
     query = (
+        # `gstin` travels with the list because the invoice form derives place of
+        # supply and the CGST/SGST-versus-IGST split from the customer's state
+        # code (s.12(2)(a) IGST Act), and it only ever holds the LIST — the
+        # detail route is a second request it does not make. Without it the
+        # derivation had nothing to read and the tax treatment of every invoice
+        # rested on a free text box and an unticked checkbox.
+        #
+        # It is not a disclosure: a GSTIN is a public registration, this route is
+        # behind the same `_gate` as the detail route that already prints it, and
+        # the two return the same rows.
         "SELECT c.id, c.name, c.email, c.phone, c.company, c.designation, c.contact_type, "
-        "c.tags, c.source, c.lead_score, c.assigned_to, c.last_contacted_at, c.created_at, "
-        "c.client_id, cl2.name AS client_name, COUNT(*) OVER() AS _total "
+        "c.gstin, c.tags, c.source, c.lead_score, c.assigned_to, c.last_contacted_at, "
+        "c.created_at, c.client_id, cl2.name AS client_name, COUNT(*) OVER() AS _total "
         "FROM staging.graha_contacts c "
         "LEFT JOIN staging.graha_clients cl2 ON cl2.id = c.client_id "
     )
