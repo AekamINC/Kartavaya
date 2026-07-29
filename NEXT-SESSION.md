@@ -56,9 +56,14 @@ grant/revoke cycles.
    drives real Chromium over all ten module pages as a viewer AND as an
    administrator — 22 checks, all passing. It runs the frontend locally with
    the API stubbed, which is legitimate for F32 only because the decision is
-   entirely client-side and no request takes part in it. `npm run
-   test:e2e:gating` from `frontend/`, with vite up and
-   `VITE_BACKEND_URL` set to anything (the app refuses to boot without it).
+   entirely client-side and no request takes part in it.
+
+   **`cd frontend && npm run test:e2e:gating`.** That is the whole thing — its
+   config starts vite itself and supplies the `VITE_BACKEND_URL` the app
+   refuses to boot without. It uses `frontend/playwright.config.ts`, NOT the
+   root one: the root config sits beside no `package.json`, so with only the
+   documented `cd frontend && npm ci` it dies with MODULE_NOT_FOUND before
+   loading a test. Verified by deleting the root `node_modules` and running it.
 
    **What that still does not cover** is staging's own data and the API's
    refusals. The rule applied was `require_module`'s own — gated exactly when
