@@ -750,16 +750,33 @@ async def get_sequence(seq_id: str, user=Depends(require_user), org_id=Depends(g
         seq_id,
     )
     enrollments = await pool.fetch(
-        "SELECT e.*, c.name AS contact_name, c.email AS contact_email "
+        "SELECT e.*, c.name AS contact_name, c.email AS contact_email, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.prachar_sequence_enrollments e "
         "JOIN staging.graha_contacts c ON c.id = e.contact_id "
         "WHERE e.sequence_id=$1::uuid ORDER BY e.enrolled_at DESC LIMIT 100",
         seq_id,
     )
+    # F4 (b). A capped list nested inside a detail response, so it cannot BE the
+    # `_listed` envelope without changing the shape `SequencesTab.jsx:453` maps
+    # over. The same three facts ride alongside instead, under prefixed names.
+    #
+    # It is worth reporting even though it is not a page of its own: a sequence
+    # with more than 100 enrolled contacts silently showed 100, and "how many
+    # people are in this sequence" is the question the panel exists to answer.
+    enrolled_total = int(dict(enrollments[0]).get("_total", len(enrollments))) if enrollments else 0
+    rows = []
+    for e in enrollments:
+        d = dict(e)
+        d.pop("_total", None)
+        rows.append(d)
     return {
         "sequence": dict(seq),
         "steps": [dict(s) for s in steps],
-        "enrollments": [dict(e) for e in enrollments],
+        "enrollments": rows,
+        "enrollments_total": enrolled_total,
+        "enrollments_limit": 100,
+        "enrollments_truncated": enrolled_total > 100,
     }
 
 

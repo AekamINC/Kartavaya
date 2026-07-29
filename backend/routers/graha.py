@@ -1013,7 +1013,8 @@ async def list_activities(
     pool = await get_pool()
     query = (
         "SELECT id, deal_id, contact_id, activity_type, title, description, "
-        "scheduled_at, completed_at, is_completed, created_by, created_at "
+        "scheduled_at, completed_at, is_completed, created_by, created_at, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.graha_activities WHERE org_id=$1::uuid "
     )
     params: list = [org_id]
@@ -1032,7 +1033,7 @@ async def list_activities(
         idx += 1
     query += "ORDER BY created_at DESC LIMIT 100"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=100)
 
 
 @router.patch("/activities/{activity_id}/complete")
@@ -1640,12 +1641,13 @@ async def list_inbound_emails(
         raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT id, sender, subject, status, contact_id, created_at "
+        "SELECT id, sender, subject, status, contact_id, created_at, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.graha_inbound_emails "
         "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 100",
         org_id,
     )
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=100)
 
 
 @router.get("/inbound-emails/{email_id}")
@@ -2749,7 +2751,8 @@ async def list_documents(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    q = "SELECT * FROM staging.graha_documents WHERE org_id=$1::uuid AND is_active=TRUE"
+    q = ("SELECT *, COUNT(*) OVER() AS _total FROM staging.graha_documents "
+         "WHERE org_id=$1::uuid AND is_active=TRUE")
     params: list = [org_id]
     if folder:
         params.append(folder)
@@ -2766,13 +2769,19 @@ async def list_documents(
     q += " ORDER BY created_at DESC LIMIT 200"
     rows = await pool.fetch(q, *params)
     from services.storage import sign_key
+    # Post-processes each row to mint a signed file URL, so it cannot hand
+    # `rows` straight to `_listed` — same shape as `ganit.list_contracts`. The
+    # envelope is assembled from the same `_total` window column, popped inside
+    # the loop so it cannot ride out on a document the frontend maps over.
+    total = int(dict(rows[0]).get("_total", len(rows))) if rows else 0
     docs = []
     for r in rows:
         d = dict(r)
+        d.pop("_total", None)
         if d.get("file_key"):
             d["file_url"] = await sign_key(org_id, d["file_key"]) or d.get("file_url", "")
         docs.append(d)
-    return {"data": docs}
+    return {"data": docs, "total": total, "limit": 200, "truncated": total > 200}
 
 
 @router.post("/documents")

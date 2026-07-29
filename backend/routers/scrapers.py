@@ -15,6 +15,11 @@ from middleware.roles import require_platform_role
 from middleware.role_tiers import FINANCE_CONSOLE_ROLES, OPERATIONS_CONSOLE_ROLES
 from middleware.subscription import require_module
 
+# F4 (b). Shared with graha.py rather than re-implemented: two copies of a
+# response contract is how one of them ends up reporting a total the other does
+# not, and the whole point of this key is that a client can trust it.
+from routers.graha import _listed
+
 import math
 
 log = logging.getLogger(__name__)
@@ -626,13 +631,21 @@ async def list_runs(
     # cost against billed_inr, so it goes out through the same projection.
     rows = await pool.fetch(
         "SELECT r.id, r.scraper_id, r.status, r.result_count, r.billed_inr, "
-        "r.credits_charged, r.created_at, r.finished_at, c.name as scraper_name, c.icon "
+        "r.credits_charged, r.created_at, r.finished_at, c.name as scraper_name, c.icon, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.hub_scraper_runs r "
         "JOIN staging.hub_scraper_catalog c ON c.id = r.scraper_id "
         "WHERE r.org_id=$1::uuid ORDER BY r.created_at DESC LIMIT 50",
         org_id,
     )
-    return {"data": [_tenant_run(r) for r in rows]}
+    # `_tenant_run` is the projection that keeps supplier cost off a tenant
+    # response, so the rows cannot go straight to `_listed`. It drops `_total`
+    # with everything else it does not name, so the count is read first.
+    total = int(dict(rows[0]).get("_total", len(rows))) if rows else 0
+    return {
+        "data": [_tenant_run(r) for r in rows],
+        "total": total, "limit": 50, "truncated": total > 50,
+    }
 
 
 # ── Admin: billing overview ──────────────────────────────
@@ -681,7 +694,8 @@ async def admin_runs(
 ):
     pool = await get_pool()
     q = (
-        "SELECT r.id, r.org_id, r.scraper_id, r.user_id, r.status, r.result_count, "
+        "SELECT COUNT(*) OVER() AS _total, "
+        "r.id, r.org_id, r.scraper_id, r.user_id, r.status, r.result_count, "
         "r.billed_inr, r.cost_usd, r.credits_charged, r.error, r.created_at, r.finished_at, "
         "c.name as scraper_name, c.icon, o.name as org_name "
         "FROM staging.hub_scraper_runs r "
@@ -694,4 +708,4 @@ async def admin_runs(
         params.append(org_id)
     q += "ORDER BY r.created_at DESC LIMIT 100"
     rows = await pool.fetch(q, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=100)

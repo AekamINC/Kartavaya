@@ -241,10 +241,11 @@ async def _module_grants(
     answer and is returned deliberately: it means "nothing", and the nav must
     show nothing.
 
-    Sensitive modules are subtracted for anyone below org_admin regardless of what
-    the grant table holds. `RBAC-SPEC.md`: "Sensitive modules are role-derived, not
-    granted … a grant row naming a sensitive module is invalid input." Filtering
-    here keeps a stale row from re-advertising Payroll in the sidebar.
+    Sensitive modules are NOT subtracted. This paragraph used to say they were,
+    and it outlived the code it described: the subtraction WAS F33, it was
+    removed at the return below, and this text stayed behind arguing for it.
+    A docstring that recommends the bug is how the bug comes back — see the
+    return for why the reading was wrong.
     """
     platform_role = strongest(platform_roles)
     if platform_role:

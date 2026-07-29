@@ -1248,7 +1248,8 @@ async def list_leave_requests(
         "SELECT lr.id, lr.start_date, lr.end_date, lr.days, lr.reason, lr.status, "
         "lr.rejection_reason, lr.created_at, "
         "e.name as employee_name, e.employee_code, "
-        "lt.name as leave_type_name, lt.code as leave_type_code "
+        "lt.name as leave_type_name, lt.code as leave_type_code, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.manav_leave_requests lr "
         "JOIN staging.manav_employees e ON e.id = lr.employee_id "
         "JOIN staging.manav_leave_types lt ON lt.id = lr.leave_type_id "
@@ -1262,7 +1263,10 @@ async def list_leave_requests(
     if not _can(levels, VIEWER):
         own = await _own_employee_id(pool, user, org_id)
         if not own:
-            return {"data": []}
+            # Same envelope as the populated path — a caller reading `total` must
+            # not get `undefined` because the list is empty for a permissions
+            # reason rather than a data one.
+            return {"data": [], "total": 0, "limit": 200, "truncated": False}
         if employee_id and employee_id != own:
             raise HTTPException(403, "You can only view your own leave requests")
         employee_id = own
@@ -1278,7 +1282,7 @@ async def list_leave_requests(
 
     query += "ORDER BY lr.created_at DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=200)
 
 
 @router.post("/leaves")
@@ -1849,7 +1853,8 @@ async def list_schedules(
     pool = await get_pool()
     query = (
         "SELECT s.*, e.name AS employee_name, e.department, "
-        "sd.name AS shift_name, sd.start_time, sd.end_time, sd.color "
+        "sd.name AS shift_name, sd.start_time, sd.end_time, sd.color, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.manav_schedules s "
         "JOIN staging.manav_employees e ON e.id = s.employee_id "
         "JOIN staging.manav_shift_definitions sd ON sd.id = s.shift_id "
@@ -1881,7 +1886,7 @@ async def list_schedules(
         idx += 1
     query += "ORDER BY s.date, sd.start_time LIMIT 500"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=500)
 
 
 @router.post("/schedules")
@@ -1980,7 +1985,8 @@ async def list_availability(
     levels=Depends(_gate),
 ):
     pool = await get_pool()
-    query = "SELECT a.*, e.name AS employee_name FROM staging.manav_availability a " \
+    query = "SELECT a.*, e.name AS employee_name, COUNT(*) OVER() AS _total " \
+            "FROM staging.manav_availability a " \
             "JOIN staging.manav_employees e ON e.id = a.employee_id " \
             "WHERE a.org_id=$1::uuid "
     params: list = [org_id]
@@ -2009,7 +2015,7 @@ async def list_availability(
         idx += 1
     query += "ORDER BY a.date LIMIT 500"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=500)
 
 
 @router.post("/availability")
@@ -2257,7 +2263,8 @@ async def list_expense_claims(
     pool = await get_pool()
     is_admin = await _is_org_admin(pool, user, org_id)
     q = (
-        "SELECT c.*, e.name AS employee_name, e.employee_code "
+        "SELECT c.*, e.name AS employee_name, e.employee_code, "
+        "COUNT(*) OVER() AS _total "
         "FROM staging.manav_expense_claims c "
         "JOIN staging.manav_employees e ON e.id = c.employee_id "
         "WHERE c.org_id=$1::uuid AND c.is_active=TRUE"
@@ -2274,7 +2281,7 @@ async def list_expense_claims(
         q += f" AND c.status=${len(params)}"
     q += " ORDER BY c.created_at DESC LIMIT 200"
     rows = await pool.fetch(q, *params)
-    return {"data": [dict(r) for r in rows]}
+    return _listed(rows, limit=200)
 
 
 @router.get("/expense-claims/pending-count")

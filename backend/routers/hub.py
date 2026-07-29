@@ -1794,7 +1794,8 @@ async def list_org_content(
 ):
     """List content generated at org level."""
     pool = await get_pool()
-    query = "SELECT * FROM staging.hub_content_items WHERE org_id=$1::uuid"
+    query = ("SELECT *, COUNT(*) OVER() AS _total FROM staging.hub_content_items "
+             "WHERE org_id=$1::uuid")
     params: list = [org_id]
 
     if status:
@@ -1806,12 +1807,17 @@ async def list_org_content(
 
     query += " ORDER BY created_at DESC LIMIT 100"
     rows = await pool.fetch(query, *params)
+    # Refreshes a signed URL per row, so it cannot hand `rows` straight to
+    # `_listed` — same shape as `ganit.list_contracts`. `_total` is popped in
+    # the same pass so it cannot ride out on an item the frontend maps over.
+    total = int(dict(rows[0]).get("_total", len(rows))) if rows else 0
     data = [dict(r) for r in rows]
     from services.storage import refresh_signed_url
     for item in data:
+        item.pop("_total", None)
         if item.get("image_url") and not item["image_url"].startswith("data:"):
             item["image_url"] = await refresh_signed_url(org_id, item["image_url"])
-    return {"data": data}
+    return {"data": data, "total": total, "limit": 100, "truncated": total > 100}
 
 
 @router.get("/org/brand")
