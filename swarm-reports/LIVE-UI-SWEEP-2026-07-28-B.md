@@ -676,7 +676,51 @@ repaired now, verified in the column: both orgs are objects with **0 numeric
 keys**. Checking the response where the claim was about storage is exactly the
 kind of shortcut this report keeps catching elsewhere.
 
-## NOT repaired — needs the owner's decision
+## RESOLVED — fixed at the root, and every row repaired ✅
+
+**The fix is one change in `db.py`, not 120 at the call sites.** The encoder now
+passes through a `str` that is already a serialised JSON object or array, and
+encodes everything else exactly as before. The check is narrow — the text must
+start with `{` or `[` **and** parse — so a genuine JSON string scalar keeps its
+old meaning: `"123"` still stores as the string, `"true"` does not become a
+boolean, malformed text still stores as a string. Verified across eleven cases.
+
+Fixing it at the root was deliberate. Correcting 120 call sites leaves the trap
+armed for the next `json.dumps` anyone writes, and the failure is silent — it
+would not be noticed again until something crashed.
+
+**Verified live**, same endpoint, same payload, only the deploy differing:
+
+| Invoice | Created | `line_items` |
+|---|---|---|
+| `INV-2026-0045` | **after** the fix | **`array`** ✅ |
+| `INV-2026-0044` | before | `string` |
+| `INV-2026-0043` | before | `string` |
+
+Full backend suite after the change: **1671 passed, 137 skipped** — baseline.
+
+### Every row repaired
+
+Two migrations, deliberately separate:
+
+| Migration | Scope | Result |
+|---|---|---|
+| `repair_double_encoded_jsonb_business_tables` | all jsonb columns **except** the two audit tables | business tables clean |
+| `repair_double_encoded_jsonb_audit_tables` | `audit_log.detail` (172), `sign_audit_log.details` (95) | audit trails clean |
+
+The audit tables were split out because they are **evidentiary** —
+`sign_audit_log` is what an electronic signature's weight rests on under s.10A —
+so a change to them should be a discrete, findable entry in the history rather
+than one line inside a sweep of 26 tables. The repair does not alter what any
+record *says*: the value held the JSON text of the detail rather than the detail
+itself, and unwrapping restores the object the writer intended. Confirmed after:
+`{"via":"platform_bypass","path":"/api/v1/documents/tally/…","role":"platform_admin","method":"GET"}`.
+
+**Final audit: 0 columns, 0 rows corrupted** — from 38 columns and ~1,550 rows.
+
+Because the root is fixed, repaired rows stay repaired.
+
+## Superseded — the earlier "needs the owner's decision"
 
 The remaining ~1,500 rows across the other columns. The unwrap itself is
 mechanical and safe (`(col #>> '{}')::jsonb`, guarded on `jsonb_typeof`), and I
