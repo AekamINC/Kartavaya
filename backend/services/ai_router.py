@@ -207,6 +207,7 @@ async def generate(
     language: str = "en",
     agent_type: str = "social_media",
     task: str = "content",
+    org_id: Optional[str] = None,
 ) -> dict:
     """Generate text using smart provider routing.
     Routes based on language (Indic → Sarvam-M), task type (quality → Qwen),
@@ -242,12 +243,23 @@ async def generate(
             latency = int((time.monotonic() - start) * 1000)
             cost_usd = result.get("cost_usd", 0.0)
 
+            # `org_id` as well as `client_id`. Every TEXT generation was written
+            # with neither: the org routes reach this function without a client
+            # (there is no `hub_clients` row behind `/org/generate`), and the
+            # column was simply never passed. Measured 2026-07-29 over 21 calls —
+            # 18 landed with `org_id` NULL and only the three IMAGE rows, which
+            # go through `generate_image` and do pass it, were attributable.
+            #
+            # `hub_ai_logs` is the only place a call's provider, model, tokens,
+            # latency and USD cost are recorded, so an org's entire text spend
+            # was unattributable to it — and `GET /hub/analytics/spend`, which is
+            # org-scoped, could only ever report the images.
             await pool.execute(
                 "INSERT INTO staging.hub_ai_logs "
-                "(client_id, provider, model, prompt_tokens, completion_tokens, "
+                "(client_id, org_id, provider, model, prompt_tokens, completion_tokens, "
                 " latency_ms, status, cost_usd, generation_id) "
-                "VALUES ($1::uuid, $2, $3, $4, $5, $6, 'success', $7, $8)",
-                client_id, code, model,
+                "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, 'success', $8, $9)",
+                client_id, org_id, code, model,
                 result["prompt_tokens"], result["completion_tokens"],
                 latency, cost_usd, result.get("generation_id", ""),
             )
@@ -278,11 +290,14 @@ async def generate(
             last_error = e
             log.warning("AI provider %s failed: %s", code, e)
 
+            # The failures matter as much as the successes: a provider ahead of
+            # the working one in the chain charges every call its round trip.
+            # Two of them are 400ing on every request as of 2026-07-29.
             await pool.execute(
                 "INSERT INTO staging.hub_ai_logs "
-                "(client_id, provider, model, latency_ms, status, error_message) "
-                "VALUES ($1::uuid, $2, $3, $4, 'error', $5)",
-                client_id, code, model, latency, str(e)[:500],
+                "(client_id, org_id, provider, model, latency_ms, status, error_message) "
+                "VALUES ($1::uuid, $2::uuid, $3, $4, $5, 'error', $6)",
+                client_id, org_id, code, model, latency, str(e)[:500],
             )
 
     raise RuntimeError(f"All AI providers failed. Last error: {last_error}")

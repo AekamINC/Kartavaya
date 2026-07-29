@@ -429,6 +429,7 @@ async def generate_content(
         prompt=user_prompt,
         system=system_prompt,
         client_id=cid,
+        org_id=org_id,
         max_tokens=2048 if body.agent_type != "blog" else 4096,
         language=body.language,
         agent_type=body.agent_type,
@@ -890,6 +891,7 @@ async def run_skill(
             prompt=prompt,
             system=system_prompt,
             client_id=cid,
+            org_id=org_id,
             max_tokens=4096 if agent_type in ("blog", "seo", "campaign") else 2048,
             language=language,
             agent_type=agent_type,
@@ -1413,7 +1415,11 @@ async def run_org_skill(
         result = await generate(
             prompt=prompt,
             system=system_prompt,
-            client_id=org_id,
+            # `org_id=`, not `client_id=`. This passed the ORG uuid in the
+            # CLIENT column, which names a `hub_clients` row — and an org route
+            # has none behind it, so the value pointed at nothing while the
+            # column that would have made the call attributable stayed NULL.
+            org_id=org_id,
             max_tokens=4096 if agent_type in ("blog", "seo", "campaign") else 2048,
             language=language,
             agent_type=agent_type,
@@ -1727,7 +1733,7 @@ async def generate_org_content(
 
     result = await generate(
         prompt=user_prompt, system=system_prompt,
-        client_id=org_id,
+        org_id=org_id,
         max_tokens=2048 if body.agent_type != "blog" else 4096,
         language=body.language, agent_type=body.agent_type,
     )
@@ -2049,6 +2055,7 @@ async def quick_generate(
         max_tokens=4096,
         language=body.language,
         agent_type=skill_cfg["agent_type"],
+        org_id=org_id,
     )
     result = {**text_result, "images": []}
 

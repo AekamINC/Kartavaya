@@ -355,6 +355,7 @@ async def send_chat_message(
             language="en",
             agent_type="chatbot",
             client_id=client_id,
+            org_id=org_id,
         )
 
         assistant_text = ai_result.get("text", "I couldn't generate a response.")

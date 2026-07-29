@@ -237,6 +237,7 @@ async def analyse_ads(
         system="You are an expert digital advertising analyst. Analyse the campaign data and provide actionable insights.",
         agent_type="ad_analysis",
         task="analysis",
+        org_id=org_id,
     )
 
     return {"analysis": result.get("text", ""), "campaigns_analysed": len(rows)}

@@ -96,6 +96,9 @@ async def _run_llm_step(step: dict, variables: dict, org_id: str) -> dict:
         language=variables.get("language", "en"),
         agent_type=agent_type,
         task="content",
+        # `org_id` was already a parameter of this function and was not being
+        # handed on, so every skill step charged an org and logged to nobody.
+        org_id=org_id,
     )
     return result
 
