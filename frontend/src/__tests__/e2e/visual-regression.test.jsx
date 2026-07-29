@@ -204,10 +204,25 @@ describe('e2e · visual · the pixel baseline strategy is documented, not implie
   });
 
   it('no binary baseline has been committed', () => {
+    /*
+     * COMMITTED, which is what this has always claimed — not merely present on
+     * disk, which is what it used to check.
+     *
+     * `test-results/` is written by every local Playwright run, and
+     * `e2e/f32-write-gating.spec.ts` gives people a reason to do that often. On
+     * an existence check this failed for anyone who had run the browser suite,
+     * on a directory .gitignore already excludes — so the guard punished the
+     * workflow it was meant to protect, and the fix everyone would reach for is
+     * to delete the test.
+     *
+     * `git ls-files` answers the real question. An empty listing means nothing
+     * is tracked under that path, whatever is sitting there untracked.
+     */
     // eslint-disable-next-line global-require
-    const { existsSync } = require('node:fs');
-    for (const dir of ['visual-baselines', 'frontend/visual-baselines', 'test-results']) {
-      expect(existsSync(dir), `${dir} is committed — pixel baselines must not be`).toBe(false);
+    const { execFileSync } = require('node:child_process');
+    for (const dir of ['visual-baselines', 'frontend/visual-baselines', 'test-results', 'frontend/test-results']) {
+      const tracked = execFileSync('git', ['ls-files', '--', dir], { encoding: 'utf8' }).trim();
+      expect(tracked, `${dir} is COMMITTED — pixel baselines must not be`).toBe('');
     }
   });
 });
