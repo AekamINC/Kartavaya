@@ -134,6 +134,13 @@ _gate = require_module_or_self(MODULE)
 #: the fallback while Vetana works through real grants.
 _RELEASE_LEVEL = APPROVER
 
+#: The share of gross an employee keeps regardless of what a loan would recover.
+#: Owner's decision, 2026-07-29: 50%. Loan recovery stops at this line and the
+#: remainder carries forward in `balance_remaining`; statutory deductions are
+#: not subject to it. A full and final settlement ignores it — see
+#: `process_payroll`.
+_NET_PAY_FLOOR_PCT = 0.50
+
 
 def _can(levels, required: str) -> bool:
     """Does this caller's level set satisfy `required` on Vetana?
@@ -231,6 +238,10 @@ class SalaryStructureUpdate(BaseModel):
 
 class PayrollProcessRequest(BaseModel):
     month: str  # YYYY-MM
+    #: Full and final settlement — recover the whole outstanding advance rather
+    #: than stopping at the take-home floor. There is no next month to carry a
+    #: balance into. See the note in `process_payroll`; nothing sets this yet.
+    final_settlement: bool = False
 
 
 class LoanCreate(BaseModel):
@@ -462,6 +473,21 @@ async def process_payroll(
     # Processing computes the run from the structures. It does not release money
     # — approving does — so this is the admin half, not the approver half.
     _require(levels, ADMIN)
+
+    # A monthly run always applies the take-home floor. A FULL AND FINAL
+    # SETTLEMENT does not: on exit the whole outstanding advance comes out of
+    # what is due, which is the owner's instruction and standard practice —
+    # there is no next month to carry a balance into.
+    #
+    # Nothing sets this yet. `process_payroll` selects structures joined on
+    # `e.is_active=TRUE`, so an offboarded employee is excluded from the monthly
+    # run entirely, and **no full-and-final settlement path exists anywhere in
+    # the codebase** (searched: settlement, fnf, final_settlement — no hits;
+    # `manav.py:626` only flips `is_active` and `status`). The flag is threaded
+    # through here so that feature has the recovery rule it needs already
+    # written and tested, rather than reimplementing it and diverging.
+    final_settlement = bool(getattr(body, "final_settlement", False))
+
     month = body.month  # YYYY-MM
     parts = month.split("-")
     if len(parts) != 2:
@@ -614,7 +640,27 @@ async def process_payroll(
             stat["pf_employee"] + stat["esi_employee"]
             + stat["professional_tax"] + stat["tds"]
         )
-        loan_capacity = max(0.0, gross + reimbursement_total - statutory)
+
+        # ── The take-home floor ──────────────────────────────────────────────
+        #
+        # Capping loan recovery at "whatever is left after statutory" stops net
+        # pay going NEGATIVE, but it still lets it reach exactly ZERO — and it
+        # did, on all seven payslips repaired on 2026-07-28. A payslip that pays
+        # nothing at all is a grievance and a retention problem, and several
+        # states cap total deductions by statute regardless.
+        #
+        # Owner's decision, 2026-07-29: recover a loan only down to **50% of
+        # gross**, and carry the rest forward. No new plumbing is needed for the
+        # carry-forward — an amount not recovered simply stays in
+        # `balance_remaining` and the next run takes it.
+        #
+        # Statutory deductions are NOT subject to the floor. PF, ESI, PT and TDS
+        # are owed to the state whatever is left for a lender, so the floor
+        # governs the discretionary recovery only. Where statutory alone already
+        # takes pay below 50%, `max(0.0, …)` simply yields no loan recovery at
+        # all rather than a negative capacity.
+        floor = 0.0 if final_settlement else round(gross * _NET_PAY_FLOOR_PCT, 2)
+        loan_capacity = max(0.0, gross + reimbursement_total - statutory - floor)
 
         loan_deductions = []
         loan_total = 0.0

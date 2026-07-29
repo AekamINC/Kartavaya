@@ -452,6 +452,96 @@ async def create_invoice(
     return {"status": "created", **dict(row)}
 
 
+@router.patch("/invoices/{invoice_id}")
+async def update_invoice(
+    invoice_id: UUID,
+    body: InvoiceCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Correct a DRAFT invoice. Totals are recomputed, never taken from the client.
+
+    ── Why this exists ──────────────────────────────────────────────────────
+    There was no way to change an invoice after creating one. Measured live on
+    2026-07-28: `INV-2026-0005` was a draft whose only line had no HSN, so
+    `GET /invoices/{id}/pdf` refused it under Rule 46(g) — correctly — and the
+    refusal told the user to "Set it in Ganit → the invoice → Edit". No such
+    control existed anywhere. The invoice could therefore never acquire its HSN,
+    never be issued as a PDF, and stayed permanently held back from the Tally
+    and GSTR-1 exports. Create worked; correct did not.
+
+    ── Why only a draft ─────────────────────────────────────────────────────
+    A tax invoice that has been issued is not editable under GST — the remedy
+    for a wrong one is a credit note, which this module already supports. So the
+    boundary is the one the product already draws with `doc_status` and its
+    `Mark final` action, rather than a new concept:
+
+      draft            editable
+      final/sent/…     refused, and the message names the credit-note remedy
+      any payment      refused — the figures a receipt was matched against
+                       must not move underneath it
+
+    The `is_active` guard keeps a cancelled document out too.
+
+    Totals, tax split and per-line amounts all come from `_compute_invoice`,
+    exactly as on create, so an edited invoice cannot end up with figures a
+    created one could not have. The invoice NUMBER is never reassigned: a
+    document number that changes is a different document.
+    """
+    pool = await get_pool()
+
+    if not body.line_items:
+        raise HTTPException(400, "At least one line item is required")
+
+    existing = await pool.fetchrow(
+        "SELECT invoice_number, doc_status, total, balance_due, is_active "
+        "FROM staging.ganit_invoices WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(invoice_id), org_id,
+    )
+    if not existing or not existing["is_active"]:
+        raise HTTPException(404, "Invoice not found")
+
+    if existing["doc_status"] != "draft":
+        raise HTTPException(
+            409,
+            f"{existing['invoice_number']} has been issued ({existing['doc_status']}) "
+            "and cannot be edited. An issued tax invoice is corrected with a "
+            "credit note, not by changing it — raise one from the Invoices tab.",
+        )
+
+    paid = float(existing["total"] or 0) - float(existing["balance_due"] or 0)
+    if paid > 0:
+        raise HTTPException(
+            409,
+            f"{existing['invoice_number']} has ₹{paid:,.2f} recorded against it "
+            "and cannot be edited. Reverse the payment first, or issue a credit "
+            "note.",
+        )
+
+    computed = _compute_invoice(body.line_items, body.is_igst, body.discount)
+    inv_date = date.fromisoformat(body.invoice_date) if body.invoice_date else date.today()
+    due = date.fromisoformat(body.due_date) if body.due_date else None
+
+    row = await pool.fetchrow(
+        "UPDATE staging.ganit_invoices SET "
+        " contact_id=NULLIF($1,'')::uuid, invoice_date=$2::date, due_date=$3::date,"
+        " place_of_supply=$4, is_igst=$5, is_export=$6, currency=$7,"
+        " line_items=$8, subtotal=$9, cgst=$10, sgst=$11, igst=$12,"
+        " discount=$13, total=$14, balance_due=$14, notes=$15, terms=$16,"
+        " updated_at=NOW() "
+        "WHERE id=$17::uuid AND org_id=$18::uuid "
+        "RETURNING id, invoice_number, total, doc_status",
+        body.contact_id, inv_date, due, body.place_of_supply, body.is_igst,
+        body.is_export, body.currency or "INR",
+        computed["line_items"],
+        computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
+        computed["discount"], computed["total"],
+        body.notes, body.terms, str(invoice_id), org_id,
+    )
+    return {"status": "updated", **dict(row)}
+
+
 @router.get("/invoices/{invoice_id}")
 async def get_invoice(
     invoice_id: UUID,

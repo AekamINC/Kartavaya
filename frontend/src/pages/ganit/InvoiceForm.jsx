@@ -17,15 +17,69 @@ const BLANK = {
   line_items: [{ ...EMPTY_LINE }],
 };
 
+/**
+ * An existing invoice mapped onto the form's shape.
+ *
+ * `line_items` is defensive about arriving as a STRING: jsonb columns were
+ * double-encoded across this codebase, and while the encoder is fixed and rows
+ * repaired, an unrepaired row must open the editor rather than throw on
+ * `.map`. That is the whole point of being able to edit it.
+ */
+function fromInvoice(inv) {
+  let items = inv.line_items;
+  if (typeof items === 'string') {
+    try { items = JSON.parse(items); } catch { items = []; }
+  }
+  if (!Array.isArray(items)) items = [];
+  return {
+    ...BLANK,
+    contact_id: inv.contact_id || '',
+    invoice_type: inv.invoice_type || 'tax_invoice',
+    invoice_date: (inv.invoice_date || '').slice(0, 10),
+    due_date: (inv.due_date || '').slice(0, 10),
+    place_of_supply: inv.place_of_supply || '',
+    is_igst: !!inv.is_igst,
+    is_export: !!inv.is_export,
+    currency: inv.currency || 'INR',
+    discount: Number(inv.discount) || 0,
+    notes: inv.notes || '',
+    terms: inv.terms || '',
+    line_items: items.length ? items.map(li => ({
+      product_id: li.product_id || '',
+      description: li.description || '',
+      hsn_code: li.hsn_code || li.sac_code || '',
+      quantity: Number(li.quantity) || 1,
+      unit: li.unit || 'NOS',
+      rate: Number(li.rate) || 0,
+      gst_rate: Number(li.gst_rate) ?? 18,
+      discount_pct: Number(li.discount_pct) || 0,
+    })) : BLANK.line_items,
+  };
+}
+
 /** One line's taxable value, after its own percentage discount. */
 function lineTaxable(li) {
   const gross = (Number(li.quantity) || 0) * (Number(li.rate) || 0);
   return li.discount_pct > 0 ? gross * (1 - li.discount_pct / 100) : gross;
 }
 
-export default function InvoiceForm({ onCancel, onCreated }) {
+/**
+ * `editing` — an existing invoice to correct, or null to create a new one.
+ *
+ * The same form serves both because the fields are identical and a second copy
+ * would drift. Only a DRAFT is ever passed here; `InvoiceDetail` offers the
+ * control on nothing else, and the server refuses an issued or part-paid
+ * invoice regardless.
+ *
+ * This existed as nothing at all until 2026-07-29: an invoice could be created
+ * and never corrected, so a draft whose line had no HSN could never be issued
+ * as a PDF (Rule 46(g)) and stayed permanently out of the Tally and GSTR-1
+ * exports — while the PDF's own error told the user to fix it "in Ganit → the
+ * invoice → Edit".
+ */
+export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
   const { pushToast } = useToast();
-  const [form, setForm] = useState({ ...BLANK });
+  const [form, setForm] = useState(() => (editing ? fromInvoice(editing) : { ...BLANK }));
   const [contacts, setContacts] = useState([]);
   const [products, setProducts] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -84,18 +138,28 @@ export default function InvoiceForm({ onCancel, onCreated }) {
     }
     setSaving(true);
     try {
-      const r = await api.post('/v1/ganit/invoices', form);
-      pushToast({ title: 'Invoice created', type: 'success' });
-      setForm({ ...BLANK });
+      const r = editing
+        ? await api.patch(`/v1/ganit/invoices/${editing.id}`, form)
+        : await api.post('/v1/ganit/invoices', form);
+      pushToast({ title: editing ? 'Invoice updated' : 'Invoice created', type: 'success' });
+      // Only reset on create. Clearing an edit would discard what the user is
+      // still looking at if the parent keeps the panel open.
+      if (!editing) setForm({ ...BLANK });
       onCreated?.(r.data);
     } catch (err) {
-      pushToast({ title: err.response?.data?.detail || 'Could not create the invoice', type: 'error' });
+      pushToast({
+        title: err.response?.data?.detail
+          || (editing ? 'Could not update the invoice' : 'Could not create the invoice'),
+        type: 'error',
+      });
     } finally { setSaving(false); }
   }
 
   return (
     <form className="gn-form" onSubmit={save}>
-      <h3 className="gn-form__t">Create invoice</h3>
+      <h3 className="gn-form__t">
+        {editing ? `Edit ${editing.invoice_number || 'invoice'}` : 'Create invoice'}
+      </h3>
 
       <div className="gn-form__grid">
         <label className="fld">
@@ -213,7 +277,7 @@ export default function InvoiceForm({ onCancel, onCreated }) {
       <div className="gn-form__acts">
         <button type="button" className="btn btn--ghost btn--sm" onClick={onCancel}>Cancel</button>
         <button type="submit" className="btn btn--fill btn--sm" disabled={saving}>
-          {saving ? 'Creating…' : 'Create invoice'}
+          {saving ? (editing ? 'Saving…' : 'Creating…') : (editing ? 'Save changes' : 'Create invoice')}
         </button>
       </div>
     </form>

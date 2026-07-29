@@ -18,6 +18,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, body } from '../../lib/api';
+import InvoiceForm from './InvoiceForm';
 import { useToast } from '../../components/ui/toast';
 import FocusTrap from '../../components/ui/FocusTrap';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
@@ -46,6 +47,7 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
   // specification; see `services/quotation_pdf.py`.
   const quote = useDocumentDownload();
   const [busy, setBusy] = useState('');
+  const [editing, setEditing] = useState(false);
   const [showPay, setShowPay] = useState(false);
   const [payForm, setPayForm] = useState({ amount: '', payment_method: 'bank_transfer', reference: '', notes: '' });
 
@@ -245,6 +247,24 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                   Send on WhatsApp
                 </button>
 
+                {/* Edit — DRAFTS ONLY, and unpaid.
+                    An issued tax invoice is corrected with a credit note, not by
+                    changing it, so the boundary is the one `doc_status` already
+                    draws. The server enforces the same two rules and answers 409
+                    with the credit-note remedy named, so this button is the
+                    convenience and not the control.
+
+                    Its absence was F42: the PDF refuses a line with no HSN under
+                    Rule 46(g) and tells the user to fix it "in Ganit → the
+                    invoice → Edit", which did not exist anywhere. The invoice
+                    could never be issued and never exported. */}
+                {inv.doc_status === 'draft' && Number(inv.total || 0) - Number(inv.balance_due || 0) <= 0 && (
+                  <button type="button" className="btn btn--out btn--sm" disabled={!!busy}
+                    onClick={() => setEditing(true)}>
+                    Edit
+                  </button>
+                )}
+
                 {NEXT_DOC_STATUS[inv.doc_status] && (
                   <button type="button" className="btn btn--out btn--sm" disabled={!!busy}
                     onClick={() => advanceDoc(NEXT_DOC_STATUS[inv.doc_status])}>
@@ -279,7 +299,21 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
               <DocumentError error={quote.error} onDismiss={quote.clear} />
 
               <div className="dr__body">
-                {inv.contact_name && (
+                {/* The editor replaces the record view rather than sitting
+                    beside it: the fields it edits are the same ones displayed
+                    below, and showing both invites the reader to trust whichever
+                    one they looked at last. */}
+                {editing && (
+                  <section className="dr__sec">
+                    <InvoiceForm
+                      editing={inv}
+                      onCancel={() => setEditing(false)}
+                      onCreated={() => { setEditing(false); load(); onChanged?.(); }}
+                    />
+                  </section>
+                )}
+
+                {!editing && inv.contact_name && (
                   <section className="dr__sec">
                     <h3 className="dr__lbl">Billed to<span className="dr__lbl-hi" lang="hi">ग्राहक</span></h3>
                     <p className="gnd__party">
