@@ -1586,7 +1586,17 @@ async def get_org_credits(
             "plan_credits": plan_credits,
             "used": monthly_used,
         },
-        "user_allocation": dict(user_alloc) if user_alloc else {"allocated": 0, "used": 0},
+        # `None`, not `{"allocated": 0, "used": 0}`. NO ROW and A ROW OF ZERO are
+        # different facts and `deduct_org_credits` treats them differently: it
+        # caps the user only `if user_wallet:`, so someone with no row spends
+        # freely from the org pool while someone allocated zero is refused.
+        #
+        # Serving zero for both told every user without an allocation that their
+        # balance was 0 — the Generate form printed "Balance 0 · this run spends
+        # 1" and then ran the generation anyway, and the KPI strip advised
+        # "ask an admin to raise it" when there was nothing to raise. Measured
+        # 2026-07-29 as org_admin on QA Test Corp, which has no allocation row.
+        "user_allocation": dict(user_alloc) if user_alloc else None,
         "recent_transactions": [dict(r) for r in recent_tx],
         "credit_costs": CREDIT_COSTS,
         # `price_per_credit_inr` was served here. Our rupee price is not a tenant

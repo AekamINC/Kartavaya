@@ -13,7 +13,11 @@ export default function CreditsTab({ credits, loading, error, onRetry }) {
   if (error) return <ErrorNote what="Your credit balance" error={error} onRetry={onRetry} />;
 
   const org = credits?.org_balance || {};
-  const you = credits?.user_allocation || {};
+  // null when no allocation row exists — not the same as an allocation of zero.
+  // Without a row `deduct_org_credits` applies no personal cap and the run comes
+  // out of the org pool.
+  const you = credits?.user_allocation || null;
+  const capped = !!you;
   const plan = org.plan_credits ?? 0;
   const orgUsed = org.used ?? 0;
   // `org.balance` — the stored wallet, which is the figure `deduct_org_credits`
@@ -23,7 +27,7 @@ export default function CreditsTab({ credits, loading, error, onRetry }) {
   // balance carried anything older than this month: 744 on screen, 324
   // enforceable, measured 2026-07-29.
   const orgLeft = org.balance ?? null;
-  const yourLeft = (you.allocated ?? 0) - (you.used ?? 0);
+  const yourLeft = capped ? (you.allocated ?? 0) - (you.used ?? 0) : orgLeft;
   const txns = credits?.recent_transactions || [];
   const costs = credits?.credit_costs || {};
 
@@ -32,9 +36,11 @@ export default function CreditsTab({ credits, loading, error, onRetry }) {
       <div className="sr-figs">
         {[
           ['Organisation balance', 'संस्था', orgLeft, plan > 0 ? `${orgUsed} spent this month · plan gives ${plan}` : 'no plan allocation set'],
-          ['Your allocation', 'आवंटन', you.allocated ?? 0, 'set by an org admin'],
-          ['You have used', 'प्रयोग', you.used ?? 0, 'this month'],
-          ['You have left', 'शेष', yourLeft, yourLeft <= 0 ? 'ask an admin to raise your allocation' : 'available to spend'],
+          ['Your allocation', 'आवंटन', capped ? you.allocated : '—', capped ? 'set by an org admin' : 'no personal cap set'],
+          ['You have used', 'प्रयोग', capped ? you.used : '—', capped ? 'this month' : 'counted against the org pool'],
+          ['You have left', 'शेष', yourLeft ?? '—',
+            !capped ? 'you spend from the org pool'
+              : yourLeft <= 0 ? 'ask an admin to raise your allocation' : 'available to spend'],
         ].map(([label, hi, value, sub]) => (
           <div className="sr-fig" key={label}>
             <div className="sr-fig__l">

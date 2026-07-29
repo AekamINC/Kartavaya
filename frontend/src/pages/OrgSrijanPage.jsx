@@ -104,7 +104,11 @@ export default function OrgSrijanPage() {
   }, [setParams]);
 
   const org = credits?.org_balance || {};
-  const you = credits?.user_allocation || {};
+  // `user_allocation` is null when no allocation row exists, which is not the
+  // same as an allocation of zero: without a row the server applies no personal
+  // cap at all and the run comes out of the org pool.
+  const you = credits?.user_allocation || null;
+  const capped = !!you;
   const plan = org.plan_credits ?? 0;
   // `org.balance`, not `plan - used`. This screen recomputed the balance a
   // SECOND time from the month's usage, on top of a reply that was already
@@ -113,7 +117,7 @@ export default function OrgSrijanPage() {
   // held 324. The balance is a fact the server keeps; reading it is the whole
   // job here.
   const orgLeft = org.balance;
-  const yourLeft = (you.allocated ?? 0) - (you.used ?? 0);
+  const yourLeft = capped ? (you.allocated ?? 0) - (you.used ?? 0) : orgLeft;
 
   const kpi = credits ? [
     {
@@ -131,14 +135,18 @@ export default function OrgSrijanPage() {
     },
     {
       label: 'Your allocation', hi: 'आवंटन',
-      value: you.allocated ?? 0,
-      sub: 'set by an org admin',
+      value: capped ? you.allocated : '—',
+      sub: capped ? 'set by an org admin' : 'no personal cap set',
     },
     {
       label: 'You have left', hi: 'शेष',
       tone: yourLeft <= 0 ? 'warn' : 'ok',
-      value: yourLeft,
-      sub: yourLeft <= 0 ? 'ask an admin to raise it' : 'available to spend',
+      value: yourLeft ?? '—',
+      // "ask an admin to raise it" was printed to everyone with no allocation
+      // row — advice to fix something that is not broken, beside a zero that
+      // was not their balance.
+      sub: !capped ? 'you spend from the org pool'
+        : yourLeft <= 0 ? 'ask an admin to raise it' : 'available to spend',
     },
   ] : null;
 
