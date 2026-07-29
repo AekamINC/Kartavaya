@@ -15,6 +15,7 @@ import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { Badge, BILL_STATUS_COLORS } from './_shared';
 import { inr } from '../../lib/inr';
 import VendorBillDetail from './VendorBillDetail';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
 const BLANK_BILL = {
@@ -31,6 +32,8 @@ const AGE_LABEL = {
 
 export default function PayablesTab() {
   const { pushToast } = useToast();
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'record payables' });
   const [bills, setBills] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -161,15 +164,21 @@ export default function PayablesTab() {
           </select>
         </label>
         <span className="gn-bar__sp" />
-        <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowVendorForm(v => !v)}>
+        <button
+          type="button" className="btn btn--ghost btn--sm" onClick={() => setShowVendorForm(v => !v)}
+          disabled={!canWrite} title={denial || undefined}
+        >
           {showVendorForm ? 'Close' : '+ Vendor'}
         </button>
-        <button type="button" className="btn btn--fill btn--sm" onClick={() => setShowForm(v => !v)}>
+        <button
+          type="button" className="btn btn--fill btn--sm" onClick={() => setShowForm(v => !v)}
+          disabled={!canWrite} title={denial || undefined}
+        >
           {showForm ? 'Close form' : '+ Vendor bill'}
         </button>
       </div>
 
-      {showVendorForm && (
+      {showVendorForm && canWrite && (
         <form className="gn-form" onSubmit={saveVendor}>
           <h4 className="gn-form__h">New vendor</h4>
           <div className="gn-form__grid gn-form__grid--2 gn-form__grid--flush">
@@ -203,7 +212,7 @@ export default function PayablesTab() {
         </form>
       )}
 
-      {showForm && (
+      {showForm && canWrite && (
         <form className="gn-form" onSubmit={saveBill}>
           <h4 className="gn-form__h">New vendor bill</h4>
           <div className="gn-form__grid">
@@ -309,9 +318,11 @@ export default function PayablesTab() {
           <EmptyState
             illustration="generic"
             title={{ en: 'No vendor bills yet', hi: 'कोई बिल नहीं' }}
-            description="Record what your suppliers have invoiced you. Payables, ageing and the input tax credit all follow from these."
-            action="+ Vendor bill"
-            onAction={() => setShowForm(true)}
+            description={canWrite
+              ? 'Record what your suppliers have invoiced you. Payables, ageing and the input tax credit all follow from these.'
+              : `Vendor bills record what your suppliers have invoiced you — payables, ageing and the input tax credit all follow from them. ${denial}`}
+            action={canWrite ? '+ Vendor bill' : undefined}
+            onAction={canWrite ? () => setShowForm(true) : undefined}
           />
         )
       ) : (

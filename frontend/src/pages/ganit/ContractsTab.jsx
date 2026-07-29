@@ -8,6 +8,7 @@ import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { Badge, CONTRACT_COLORS } from './_shared';
 import { inr } from '../../lib/inr';
 import ContractDetail from './ContractDetail';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const STATUSES = ['draft', 'active', 'expired', 'cancelled', 'renewed'];
 const BLANK = {
@@ -17,6 +18,8 @@ const BLANK = {
 
 export default function ContractsTab() {
   const { pushToast } = useToast();
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change contracts' });
   const [contracts, setContracts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -78,12 +81,13 @@ export default function ContractsTab() {
         </label>
         <span className="gn-bar__sp" />
         <button type="button" className="btn btn--fill btn--sm"
+          disabled={!canWrite} title={denial || undefined}
           onClick={() => (showForm ? setShowForm(false) : openForm())}>
           {showForm ? 'Close form' : '+ New contract'}
         </button>
       </div>
 
-      {showForm && (
+      {showForm && canWrite && (
         <form className="gn-form" onSubmit={save}>
           <h3 className="gn-form__t">New contract</h3>
           <div className="gn-form__grid gn-form__grid--2 gn-form__grid--flush">
@@ -153,8 +157,8 @@ export default function ContractsTab() {
             illustration="generic"
             title={{ en: 'No contracts yet', hi: 'कोई अनुबंध नहीं' }}
             description="Record retainers and long-term agreements here. Kartavaya reminds you before one lapses, and invoices raised against it stay linked."
-            action="+ New contract"
-            onAction={openForm}
+            action={canWrite ? '+ New contract' : undefined}
+            onAction={canWrite ? openForm : undefined}
           />
         )
       ) : (

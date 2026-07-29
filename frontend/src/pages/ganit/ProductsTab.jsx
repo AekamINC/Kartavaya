@@ -8,6 +8,7 @@ import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const BLANK = { name: '', hsn_code: '', sac_code: '', unit: 'NOS', price: '', gst_rate: 18, description: '', is_service: false };
 const GST_RATES = [0, 5, 12, 18, 28];
@@ -57,6 +58,11 @@ function ProductFields({ value, onChange }) {
 
 export default function ProductsTab() {
   const { pushToast } = useToast();
+  // F32. The module comes from the route, so this tab never names it — the
+  // string 'ganit' appearing in ten tab files is ten chances to write the wrong
+  // one. `canWrite` is TRUE for org_admin, org_owner and platform staff, so
+  // nothing below changes for them.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change the catalogue' });
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -134,12 +140,21 @@ export default function ProductsTab() {
     <div>
       <div className="gn-bar">
         <span className="gn-bar__sp" />
-        <button type="button" className="btn btn--fill btn--sm" onClick={() => setShowForm(v => !v)}>
+        <button
+          type="button"
+          className="btn btn--fill btn--sm"
+          onClick={() => setShowForm(v => !v)}
+          disabled={!canWrite}
+          title={denial || undefined}
+        >
           {showForm ? 'Close form' : '+ Add product or service'}
         </button>
       </div>
 
-      {showForm && (
+      {/* `canWrite &&` as well as `showForm`, matching InvoicesTab: the button
+          above is not the only way this flag gets set, and a form opened by any
+          other path is one the API will refuse on submit. */}
+      {showForm && canWrite && (
         <form className="gn-form" onSubmit={save}>
           <h3 className="gn-form__t">New product or service</h3>
           <ProductFields value={form} onChange={setForm} />
@@ -160,9 +175,13 @@ export default function ProductsTab() {
         <EmptyState
           illustration="generic"
           title={{ en: 'No products yet', hi: 'कोई वस्तु नहीं' }}
-          description="Add your products and services with their HSN or SAC codes and GST rates. Invoice lines then fill themselves from this catalogue."
-          action="+ Add product or service"
-          onAction={() => setShowForm(true)}
+          /* A viewer is told what the catalogue is for and why it is empty, but
+             is not handed a create button the API will refuse. */
+          description={canWrite
+            ? 'Add your products and services with their HSN or SAC codes and GST rates. Invoice lines then fill themselves from this catalogue.'
+            : `The catalogue holds your products and services with their HSN or SAC codes and GST rates. ${denial}`}
+          action={canWrite ? '+ Add product or service' : undefined}
+          onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : (
         <div className="tbl__wrap">
@@ -183,7 +202,12 @@ export default function ProductsTab() {
                 <React.Fragment key={p.id}>
                   <tr>
                     <td>
-                      <button type="button" className="gn-link" onClick={() => startEdit(p)}>{p.name}</button>
+                      {/* The name is a control only because it opens the
+                          editor. With no edit to open it is a label, and
+                          rendering it as a button would promise one. */}
+                      {canWrite ? (
+                        <button type="button" className="gn-link" onClick={() => startEdit(p)}>{p.name}</button>
+                      ) : p.name}
                     </td>
                     <td className="gn-tbl__mono">{p.hsn_code || p.sac_code || '—'}</td>
                     <td>{p.unit}</td>
@@ -197,11 +221,17 @@ export default function ProductsTab() {
                     </td>
                     <td>
                       <span className="gn-tbl__acts">
-                        <button type="button" className="gn-act" onClick={() => startEdit(p)}>Edit</button>
+                        <button
+                          type="button" className="gn-act" onClick={() => startEdit(p)}
+                          disabled={!canWrite} title={denial || undefined}
+                        >
+                          Edit
+                        </button>
                         {/* Deleting a catalogue entry that invoices already
                             reference is not obviously reversible, so it asks. */}
                         <button
                           type="button" className="gn-act gn-act--danger"
+                          disabled={!canWrite} title={denial || undefined}
                           onClick={() => setConfirm({
                             title: `Delete ${p.name}?`,
                             message: 'The product is removed from the catalogue. Invoices already raised keep their lines.',
@@ -214,7 +244,7 @@ export default function ProductsTab() {
                       </span>
                     </td>
                   </tr>
-                  {editId === p.id && (
+                  {editId === p.id && canWrite && (
                     <tr>
                       <td colSpan={7}>
                         <form className="gn-form gn-form--accent" onSubmit={saveEdit}>

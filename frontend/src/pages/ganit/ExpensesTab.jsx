@@ -21,6 +21,7 @@ import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const BLANK = {
   title: '', category: 'general', amount: '', tax_amount: 0, expense_date: '',
@@ -76,6 +77,8 @@ function ExpenseFields({ value, onChange, categories }) {
 
 export default function ExpensesTab() {
   const { pushToast } = useToast();
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'record expenses' });
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -246,15 +249,21 @@ export default function ExpensesTab() {
           </select>
         </label>
         <span className="gn-bar__sp" />
-        <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowCatForm(v => !v)}>
+        <button
+          type="button" className="btn btn--ghost btn--sm" onClick={() => setShowCatForm(v => !v)}
+          disabled={!canWrite} title={denial || undefined}
+        >
           {showCatForm ? 'Close' : '+ Category'}
         </button>
-        <button type="button" className="btn btn--fill btn--sm" onClick={() => setShowForm(v => !v)}>
+        <button
+          type="button" className="btn btn--fill btn--sm" onClick={() => setShowForm(v => !v)}
+          disabled={!canWrite} title={denial || undefined}
+        >
           {showForm ? 'Close form' : '+ Add expense'}
         </button>
       </div>
 
-      {showCatForm && (
+      {showCatForm && canWrite && (
         <form className="gn-form" onSubmit={saveCat}>
           <h4 className="gn-form__h">New category</h4>
           <div className="gn-form__grid gn-form__grid--flush">
@@ -276,7 +285,7 @@ export default function ExpensesTab() {
         </form>
       )}
 
-      {showForm && (
+      {showForm && canWrite && (
         <form className="gn-form" onSubmit={save}>
           <h3 className="gn-form__t">Record an expense</h3>
           <ExpenseFields value={form} onChange={setForm} categories={categories} />
@@ -306,9 +315,11 @@ export default function ExpensesTab() {
           <EmptyState
             illustration="generic"
             title={{ en: 'No expenses recorded', hi: 'कोई व्यय नहीं' }}
-            description="Log what the business spends, with the tax component split out, and the input tax credit and billable recharges follow from it."
-            action="+ Add expense"
-            onAction={() => setShowForm(true)}
+            description={canWrite
+              ? 'Log what the business spends, with the tax component split out, and the input tax credit and billable recharges follow from it.'
+              : `Expenses record what the business spends, with the tax component split out for input tax credit. ${denial}`}
+            action={canWrite ? '+ Add expense' : undefined}
+            onAction={canWrite ? () => setShowForm(true) : undefined}
           />
         )
       ) : (

@@ -8,9 +8,12 @@ import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function BankTab() {
   const { pushToast } = useToast();
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'import statements' });
   const [statements, setStatements] = useState([]);
   const [stats, setStats] = useState(null);
   const [statsFailed, setStatsFailed] = useState(false);
@@ -126,12 +129,15 @@ export default function BankTab() {
           </select>
         </label>
         <span className="gn-bar__sp" />
-        <button type="button" className="btn btn--fill btn--sm" onClick={() => setShowImport(v => !v)}>
+        <button
+          type="button" className="btn btn--fill btn--sm" onClick={() => setShowImport(v => !v)}
+          disabled={!canWrite} title={denial || undefined}
+        >
           {showImport ? 'Close' : 'Import CSV'}
         </button>
       </div>
 
-      {showImport && (
+      {showImport && canWrite && (
         <form className="gn-form" onSubmit={handleImport}>
           <h4 className="gn-form__h">Import a bank statement</h4>
           <label className="fld">
@@ -175,8 +181,8 @@ export default function BankTab() {
             illustration="generic"
             title={{ en: 'No bank statements imported', hi: 'कोई विवरण नहीं' }}
             description="Import your bank's CSV export and Kartavaya matches the lines against invoices and bills automatically."
-            action="Import CSV"
-            onAction={() => setShowImport(true)}
+            action={canWrite ? 'Import CSV' : undefined}
+            onAction={canWrite ? () => setShowImport(true) : undefined}
           />
         )
       ) : (

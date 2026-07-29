@@ -8,6 +8,7 @@ import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const EMPTY_ITEM = { description: '', quantity: 1, rate: 0, gst_rate: 18 };
 const BLANK = {
@@ -18,6 +19,10 @@ const BLANK = {
 const FREQUENCIES = ['weekly', 'monthly', 'quarterly', 'yearly'];
 
 export default function RecurringTab() {
+  // F32 — the module is read from the route, never named here. `Generate now`
+  // raises a real invoice and `Deactivate` stops a revenue schedule; both were
+  // offered to a viewer at full strength.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change schedules' });
   const { pushToast } = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -100,12 +105,13 @@ export default function RecurringTab() {
       <div className="gn-bar">
         <span className="gn-bar__sp" />
         <button type="button" className="btn btn--fill btn--sm"
+          disabled={!canWrite} title={denial || undefined}
           onClick={() => (showForm ? setShowForm(false) : openForm())}>
           {showForm ? 'Close form' : '+ New recurring invoice'}
         </button>
       </div>
 
-      {showForm && (
+      {showForm && canWrite && (
         <form className="gn-form" onSubmit={save}>
           <h3 className="gn-form__t">Recurring invoice</h3>
 
@@ -197,9 +203,11 @@ export default function RecurringTab() {
         <EmptyState
           illustration="generic"
           title={{ en: 'No recurring invoices', hi: 'कोई नियमित बीजक नहीं' }}
-          description="Set up auto-generated invoices for retainers, subscriptions or monthly services. The schedule raises the invoice; you decide whether it sends itself."
-          action="+ New recurring invoice"
-          onAction={openForm}
+          description={canWrite
+            ? 'Set up auto-generated invoices for retainers, subscriptions or monthly services. The schedule raises the invoice; you decide whether it sends itself.'
+            : `A recurring invoice raises itself on a schedule, for retainers, subscriptions or monthly services. ${denial}`}
+          action={canWrite ? '+ New recurring invoice' : undefined}
+          onAction={canWrite ? openForm : undefined}
         />
       ) : (
         <div className="gn-list">
@@ -223,12 +231,14 @@ export default function RecurringTab() {
                 </span>
                 {r.is_active && (
                   <span className="gn-row__acts">
-                    <button type="button" className="btn btn--out btn--sm" disabled={busyId === r.id}
+                    <button type="button" className="btn btn--out btn--sm"
+                      disabled={busyId === r.id || !canWrite} title={denial || undefined}
                       onClick={() => generateNow(r)}>
                       {busyId === r.id ? 'Working…' : 'Generate now'}
                     </button>
                     <button
-                      type="button" className="btn btn--ghost btn--sm" disabled={busyId === r.id}
+                      type="button" className="btn btn--ghost btn--sm"
+                      disabled={busyId === r.id || !canWrite} title={denial || undefined}
                       onClick={() => setConfirm({
                         title: 'Deactivate this schedule?',
                         message: 'No further invoices are raised from it. Invoices already generated are untouched.',

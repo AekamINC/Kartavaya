@@ -93,6 +93,20 @@
 .mh__act--locked { cursor: not-allowed; }
 .mh__act--locked .mh__actin { opacity: .45; filter: grayscale(1); }
 
+/* `WriteGate` — the same treatment for the write controls INSIDE a tab, which
+   is every one that does not pass through .mh__act. Ganit alone has fifteen.
+
+   `.wg` carries the locked look with no `--locked` beside it, and there is no
+   unlocked rule: WriteGate returns its children with no wrapper at all when the
+   caller may write, so for every org_admin this element is never in the
+   document. There is no second state to name.
+
+   inline-flex rather than contents: the wrapper needs a real box for the
+   tooltip to have something to hover and the filter something to apply to.
+   Inheriting the control's own display would collapse both. */
+.wg { display: inline-flex; align-items: center; cursor: not-allowed; }
+.wg__in { display: inline-flex; gap: 8px; align-items: center; opacity: .45; filter: grayscale(1); }
+
 /* ── Tabs ──────────────────────────────────────────────────────────────────
    flex-shrink:0 on the tab and overflow-x:auto on the strip — a module with
    seventeen tabs (Graha has seventeen) must scroll, never compress to

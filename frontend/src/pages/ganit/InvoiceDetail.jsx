@@ -27,6 +27,7 @@ import { inr } from '../../lib/inr';
 import { describeDocumentError } from '../../lib/docErrors';
 import { useDocumentDownload } from '../../lib/documents';
 import DocumentError from '../../components/ui/DocumentError';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   safeArray, Badge, UpiPayBlock, waLink, waInvoiceText,
   INV_TYPE_LABELS, STATUS_COLORS, DOC_STATUS_COLORS, PAY_METHODS,
@@ -37,6 +38,12 @@ const NEXT_DOC_LABEL = { draft: 'Mark final', final: 'Mark sent', sent: 'Mark vi
 
 export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
   const { pushToast } = useToast();
+  // F32 — the module is read from the route, never named here. Everything
+  // gated below MUTATES the ledger: advancing doc_status issues a tax invoice,
+  // `Record payment` settles one, `Accept estimate` and `Convert to invoice`
+  // both create documents. Reading the invoice stays open to a viewer, as does
+  // `Download PDF` — the whole point of viewer.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change invoices' });
   const [detail, setDetail] = useState(null);
   const [err, setErr] = useState(null);
   const [downloading, setDownloading] = useState(false);
@@ -259,26 +266,30 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                     invoice → Edit", which did not exist anywhere. The invoice
                     could never be issued and never exported. */}
                 {inv.doc_status === 'draft' && Number(inv.total || 0) - Number(inv.balance_due || 0) <= 0 && (
-                  <button type="button" className="btn btn--out btn--sm" disabled={!!busy}
+                  <button type="button" className="btn btn--out btn--sm"
+                    disabled={!!busy || !canWrite} title={denial || undefined}
                     onClick={() => setEditing(true)}>
                     Edit
                   </button>
                 )}
 
                 {NEXT_DOC_STATUS[inv.doc_status] && (
-                  <button type="button" className="btn btn--out btn--sm" disabled={!!busy}
+                  <button type="button" className="btn btn--out btn--sm"
+                    disabled={!!busy || !canWrite} title={denial || undefined}
                     onClick={() => advanceDoc(NEXT_DOC_STATUS[inv.doc_status])}>
                     {NEXT_DOC_LABEL[inv.doc_status]}
                   </button>
                 )}
 
                 {inv.invoice_type === 'quotation' && inv.estimate_status !== 'accepted' && inv.estimate_status !== 'converted' && (
-                  <button type="button" className="btn btn--out btn--sm" disabled={!!busy} onClick={acceptEstimate}>
+                  <button type="button" className="btn btn--out btn--sm"
+                    disabled={!!busy || !canWrite} title={denial || undefined} onClick={acceptEstimate}>
                     Accept estimate
                   </button>
                 )}
                 {inv.invoice_type === 'quotation' && inv.estimate_status === 'accepted' && (
-                  <button type="button" className="btn btn--tonal btn--sm" disabled={!!busy} onClick={convertToInvoice}>
+                  <button type="button" className="btn btn--tonal btn--sm"
+                    disabled={!!busy || !canWrite} title={denial || undefined} onClick={convertToInvoice}>
                     Convert to invoice
                   </button>
                 )}
@@ -290,7 +301,9 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                   />
                 )}
                 {!settled && (
-                  <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowPay(v => !v)}>
+                  <button type="button" className="btn btn--ghost btn--sm"
+                    disabled={!canWrite} title={denial || undefined}
+                    onClick={() => setShowPay(v => !v)}>
                     {showPay ? 'Close' : 'Record payment'}
                   </button>
                 )}

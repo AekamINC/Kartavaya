@@ -66,6 +66,7 @@ import { useCustomize } from '../CustomizePanel';
 import { urlBase64ToUint8Array } from '../../lib/push';
 import { playNotifSound } from '../../lib/notifSound';
 import ErrorBoundary from '../ErrorBoundary';
+import ModuleAccess from '../module/ModuleAccess';
 import {
   NotificationProvider, askAfterAction, clearAskReason,
   notifPermission, readNotifPrefs, shouldDeliver, useNotifications,
@@ -435,7 +436,23 @@ export default function AppShell() {
                 error, so without it the first throw would poison every
                 subsequent route for the rest of the session. */}
             <ErrorBoundary key={location.pathname} scope="page">
-              <Outlet context={{ teamId, teams }} />
+              {/* F32 — every module page renders under here, so the module code
+                  is published once, from the route, rather than threaded
+                  through nine page files and every tab beneath them.
+                  `resolveRouteMeta` is the same longest-prefix match the topbar
+                  title uses, and `ROUTE_META` has carried `module` since the
+                  nav needed it. A non-module route (Today, Settings, the admin
+                  consoles) resolves to undefined, which `useModuleWrite` reads
+                  as "no opinion" and gates nothing.
+
+                  Deliberately HERE and not in the pages: reading the route in
+                  a leaf would put `useLocation` in every gated component, and
+                  `useLocation` throws outside a Router — which broke eleven
+                  existing tests that render a tab standalone. The provider is
+                  route-derived; its consumers only ever read context. */}
+              <ModuleAccess module={resolveRouteMeta(location.pathname)?.module}>
+                <Outlet context={{ teamId, teams }} />
+              </ModuleAccess>
             </ErrorBoundary>
           </main>
 
