@@ -33,6 +33,7 @@ import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   Badge, LEAVE_COLORS, useList, ErrorNote, Shim, errText,
 } from './_shared';
@@ -44,6 +45,8 @@ import {
 // EmployeesTab already took this prop, which is why the employee count was
 // the one figure that stayed right.
 export default function LeavesTab({ onUpdate }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const { pushToast } = useToast();
   const [statusFilter, setStatusFilter] = useState('');
   const [panel, setPanel] = useState(null);   // 'request' | 'type' | 'conflict' | null
@@ -90,7 +93,8 @@ export default function LeavesTab({ onUpdate }) {
           + Leave type
         </button>
         <button type="button" className="k-btn k-btn--primary"
-          onClick={() => setPanel(panel === 'request' ? null : 'request')}>
+          onClick={() => setPanel(panel === 'request' ? null : 'request')}
+          disabled={!canWrite} title={denial || undefined}>
           + Request leave
         </button>
       </div>
@@ -151,9 +155,8 @@ export default function LeavesTab({ onUpdate }) {
                       <button
                         type="button"
                         className="k-btn k-btn--primary k-btn--sm"
-                        disabled={!!acting}
-                        onClick={() => actionLeave(lr.id, 'approved')}
-                      >
+                        disabled={!!acting || !canWrite}
+                        onClick={() => actionLeave(lr.id, 'approved')} title={denial || undefined}>
                         {acting === lr.id + 'approved' ? 'Approving…' : 'Approve'}
                       </button>
                       <button
@@ -321,6 +324,9 @@ function ConflictCheck({ employees, onClose }) {
    ══════════════════════════════════════════════════════════════════════════ */
 
 function LeaveTypeForm({ onClose, onCreated, pushToast }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: '', code: '', annual_quota: 12, is_paid: true, carry_forward: false,
@@ -370,7 +376,7 @@ function LeaveTypeForm({ onClose, onCreated, pushToast }) {
       </div>
       <div className="k-formpanel__actions">
         <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
-        <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>
           {saving ? 'Creating…' : 'Create'}
         </button>
       </div>
@@ -379,6 +385,9 @@ function LeaveTypeForm({ onClose, onCreated, pushToast }) {
 }
 
 function RequestForm({ employees, types, onClose, onCreated, pushToast }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     employee_id: '', leave_type_id: '', start_date: '', end_date: '', days: 1, reason: '',
@@ -465,7 +474,7 @@ function RequestForm({ employees, types, onClose, onCreated, pushToast }) {
       </div>
       <div className="k-formpanel__actions">
         <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
-        <button type="submit" className="k-btn k-btn--primary" disabled={saving || blocked}>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving || blocked || !canWrite} title={denial || undefined}>
           {saving ? 'Submitting…' : 'Submit'}
         </button>
       </div>

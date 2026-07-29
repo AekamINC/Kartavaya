@@ -13,8 +13,11 @@ import { useToast } from '../../components/ui/toast';
 import { Empty, DataTable, Td } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge, useList, ErrorNote, Shim, errText } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function HolidaysTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const { pushToast } = useToast();
   const list = useList('/v1/manav/holidays');
   const [showForm, setShowForm] = useState(false);
@@ -50,7 +53,8 @@ export default function HolidaysTab() {
     <div>
       <div className="mn-bar">
         <div className="mn-bar__gap" />
-        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}
+          disabled={!canWrite} title={denial || undefined}>
           + Add holiday
         </button>
       </div>
@@ -80,7 +84,7 @@ export default function HolidaysTab() {
           </p>
           <div className="k-formpanel__actions">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>
               {saving ? 'Adding…' : 'Add holiday'}
             </button>
           </div>

@@ -351,7 +351,12 @@ const EXTRA_ROUTES = [
   { to: '/admin/billing',         en: 'Admin Billing',   hi: 'बिलिंग प्रशासन' },
   { to: '/admin/orgs',            en: 'Organisations',   hi: 'संस्थाएँ' },
   { to: '/admin/costs',           en: 'Cost Dashboard',  hi: 'लागत' },
-  { to: '/hub/clients',           en: 'Srijan Clients',  hi: 'सृजन ग्राहक' },
+  // `module` here for the same reason NAV_FULL carries it: this key claims the
+  // whole `/hub/clients/*` subtree by longest-prefix, and the client detail
+  // page renders the SAME Srijan tabs as `/hub`. Without it those tabs resolve
+  // to no module and `useModuleWrite` fails open, so one Generate button gated
+  // itself at `/hub` and the identical one did not two routes away.
+  { to: '/hub/clients',           en: 'Srijan Clients',  hi: 'सृजन ग्राहक', module: 'srijan' },
   { to: '/settings',              en: 'Settings',        hi: 'व्यवस्था' },
   // Routed but nav-less, and each one previously fell through to the app name.
   { to: '/onboarding',            en: 'Set up',          hi: 'आरम्भ' },
@@ -385,7 +390,7 @@ export const ROUTE_META = (() => {
       claim(it.to.split('?')[0], { en: it.en, hi: it.hi, gu: it.gu, module: it.module });
     }
   }
-  for (const r of EXTRA_ROUTES) claim(r.to, { en: r.en, hi: r.hi });
+  for (const r of EXTRA_ROUTES) claim(r.to, { en: r.en, hi: r.hi, module: r.module });
   return map;
 })();
 

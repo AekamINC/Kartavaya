@@ -78,6 +78,37 @@ describe('route metadata', () => {
   });
 });
 
+describe('the module a route belongs to (F32 — what `ModuleAccess` publishes)', () => {
+  it('gives every module route its grant code', () => {
+    expect(resolveRouteMeta('/ganit').module).toBe('ganit');
+    expect(resolveRouteMeta('/vetana').module).toBe('vetana');
+    // Deep paths resolve through the same longest-prefix match.
+    expect(resolveRouteMeta('/ganit/anything/deeper').module).toBe('ganit');
+  });
+
+  it('gives the WHOLE /hub/clients subtree the srijan module', () => {
+    // `/hub/clients` claims this subtree by longest prefix, beating `/hub`.
+    // Without a module on it the client detail page — which renders the same
+    // Srijan tabs as `/hub` — resolved to nothing and every write control on
+    // it failed open, so one Generate button gated itself at `/hub` and the
+    // identical one did not two routes away.
+    expect(resolveRouteMeta('/hub').module).toBe('srijan');
+    expect(resolveRouteMeta('/hub/org').module).toBe('srijan');
+    expect(resolveRouteMeta('/hub/clients').module).toBe('srijan');
+    expect(resolveRouteMeta('/hub/clients/abc-123').module).toBe('srijan');
+    expect(resolveRouteMeta('/hub/clients/abc-123/skills').module).toBe('srijan');
+  });
+
+  it('leaves non-module routes with no module, so nothing is gated there', () => {
+    // Today, Tasks and Settings are not module-gated. A module code here would
+    // disable their controls for anyone holding a partial grant set.
+    expect(resolveRouteMeta('/dashboard').module).toBeUndefined();
+    expect(resolveRouteMeta('/tasks').module).toBeUndefined();
+    expect(resolveRouteMeta('/settings').module).toBeUndefined();
+    expect(resolveRouteMeta('/admin/orgs').module).toBeUndefined();
+  });
+});
+
 describe('canSeeNavItem', () => {
   it('treats consoleOnly as narrower than adminOnly', () => {
     const ctx = navContext({ platform_roles: ['srijan_admin'] });

@@ -3,10 +3,13 @@ import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { AGENT_LABELS, LANGUAGES, errText } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const EMPTY = { agent_type: 'social_media', brief: '', platform: '', language: 'en', extra_instructions: '' };
 
 export default function GenerateTab({ clientId, wallet, onSpent }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
   const { pushToast } = useToast();
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);
@@ -90,7 +93,7 @@ export default function GenerateTab({ clientId, wallet, onSpent }) {
               ? 'Credit balance unavailable'
               : <>Credits available: <b className="hb-num">{balance}</b></>}
           </span>
-          <button type="submit" className="k-btn k-btn--primary" disabled={busy || !form.brief.trim()}>
+          <button type="submit" className="k-btn k-btn--primary" disabled={busy || !form.brief.trim() || !canWrite} title={denial || undefined}>
             {busy ? 'Generating…' : 'Generate'}
           </button>
         </div>

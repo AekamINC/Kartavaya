@@ -21,6 +21,7 @@ import { api } from '../../lib/api';
 import { Shimmer } from '../../components/editorial';
 import RestrictedNote from '../../components/module/RestrictedNote';
 import { Panel, FMT, NUM, downloadCSV } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const MEASURES = [['count', 'Count'], ['sum', 'Sum'], ['avg', 'Average']];
 
@@ -28,6 +29,8 @@ const MEASURES = [['count', 'Count'], ['sum', 'Sum'], ['avg', 'Average']];
 const isDateish = (c) => /(_date|_at|joining)$/.test(String(c || ''));
 
 export default function PivotTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change reports' });
   const [meta, setMeta] = useState(null);
   const [metaErr, setMetaErr] = useState('');
   const [restricted, setRestricted] = useState(false);
@@ -272,7 +275,7 @@ export default function PivotTab() {
           </div>
 
           <button type="button" className="k-btn k-btn--primary"
-            disabled={running || !rowDim} onClick={run}>
+            disabled={running || !rowDim || !canWrite} onClick={run} title={denial || undefined}>
             {running ? 'Running…' : 'Run query'}
           </button>
 

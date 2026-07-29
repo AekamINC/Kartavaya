@@ -9,8 +9,11 @@ import { useToast } from '../../components/ui/toast';
 import LineItemEditor from '../../components/LineItemEditor';
 import { inr } from '../../lib/inr';
 import { emptyLine, previewTotals, probeGanit } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function OrderForm({ onCreated, onCancel }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'create orders' });
   const { pushToast } = useToast();
   const [contacts, setContacts] = useState([]);
   const [products, setProducts] = useState([]);
@@ -134,7 +137,7 @@ export default function OrderForm({ onCreated, onCancel }) {
       </label>
 
       <div className="vk-form__acts">
-        <button type="submit" className="btn btn--fill btn--sm" disabled={saving}>
+        <button type="submit" className="btn btn--fill btn--sm" disabled={saving || !canWrite} title={denial || undefined}>
           {saving ? 'Creating…' : 'Create order'}
         </button>
         <button type="button" className="btn btn--ghost btn--sm" onClick={onCancel} disabled={saving}>

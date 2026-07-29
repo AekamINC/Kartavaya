@@ -7,6 +7,7 @@ import EmptyState from '../../components/ui/EmptyState';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import Note from '../../components/module/Note';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 /**
  * Corrections — `POST`/`GET`/`PATCH /api/v1/pahchan/regularisations`.
@@ -57,6 +58,8 @@ function clockOf(v) {
 }
 
 export default function Corrections() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change attendance' });
   const { pushToast } = useToast();
   const [state, setState] = useState('loading');
   const [errKind, setErrKind] = useState('server');
@@ -244,9 +247,8 @@ export default function Corrections() {
                         </button>
                         <button
                           className="btn btn--fill btn--sm"
-                          disabled={busy === r.id}
-                          onClick={() => decide(r, 'approved')}
-                        >
+                          disabled={busy === r.id || !canWrite}
+                          onClick={() => decide(r, 'approved')} title={denial || undefined}>
                           {busy === r.id ? 'Saving…' : 'Approve'}
                         </button>
                       </span>
@@ -277,9 +279,8 @@ export default function Corrections() {
                         <div className="ph__acts">
                           <button
                             className="btn btn--fill btn--sm"
-                            disabled={busy === r.id || !note.trim()}
-                            onClick={() => decide(r, 'declined', note)}
-                          >
+                            disabled={busy === r.id || !note.trim() || !canWrite}
+                            onClick={() => decide(r, 'declined', note)} title={denial || undefined}>
                             {busy === r.id ? 'Saving…' : 'Decline this correction'}
                           </button>
                           <button

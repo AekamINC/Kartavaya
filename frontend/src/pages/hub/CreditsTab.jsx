@@ -13,8 +13,11 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { DataTable, Td } from '../../components/editorial';
 import { Resource, StatusPill, TX_TONE, useResource, creditLabel, errText, stamp, words } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function CreditsTab({ clientId, wallet, onRefresh }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
   const { pushToast } = useToast();
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
@@ -96,7 +99,7 @@ export default function CreditsTab({ clientId, wallet, onRefresh }) {
             <input className="k-input" placeholder="Why this top-up happened"
               value={notes} onChange={e => setNotes(e.target.value)} />
           </label>
-          <button type="submit" className="k-btn k-btn--primary hb-btn--block" disabled={busy}>
+          <button type="submit" className="k-btn k-btn--primary hb-btn--block" disabled={busy || !canWrite} title={denial || undefined}>
             {busy ? 'Adding…' : 'Add credits'}
           </button>
           <p className="hb-cap hb-form__note">

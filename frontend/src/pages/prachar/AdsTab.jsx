@@ -15,6 +15,7 @@ import React, { useState } from 'react';
 import { Badge, DataTable, Td } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
 import { inr } from '../../lib/inr';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   api, rows, body, Panel, Bar, useResource, useMutate,
   CAMPAIGN_COLORS, humanise, plural, pct, fmtDate,
@@ -23,6 +24,8 @@ import {
 const VIEWS = [['overview', 'Overview'], ['campaigns', 'Campaigns'], ['insights', 'Insights'], ['analysis', 'AI analysis']];
 
 export default function AdsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const [view, setView] = useState('overview');
 
   return (
@@ -246,6 +249,9 @@ function Insights() {
 /* ── AI analysis ──────────────────────────────────────────────────────── */
 
 function Analysis() {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
   const { busy, go } = useMutate(pushToast);
   const [brief, setBrief] = useState('');
@@ -271,7 +277,7 @@ function Analysis() {
           onChange={(e) => setBrief(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
         />
-        <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={run} disabled={busy}>
+        <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={run} disabled={busy || !canWrite} title={denial || undefined}>
           {busy ? 'Analysing…' : 'Analyse'}
         </button>
       </div>

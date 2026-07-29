@@ -13,8 +13,11 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function ClientsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change CRM settings' });
   const { pushToast } = useToast();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -151,8 +154,7 @@ export default function ClientsTab() {
         <input className="k-input gr__search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients…" />
         <button
           className="k-btn k-btn--primary"
-          onClick={() => { setShowForm(true); setEditId(null); setForm({ name: '', ref_no: '', gstin: '', website: '', notes: '', address: {} }); }}
-        >
+          onClick={() => { setShowForm(true); setEditId(null); setForm({ name: '', ref_no: '', gstin: '', website: '', notes: '', address: {} }); }} disabled={!canWrite} title={denial || undefined}>
           + Add Client
         </button>
       </div>
@@ -174,7 +176,7 @@ export default function ClientsTab() {
           <label className="gr__f gr__f--block"><span className="gr__fl">Notes</span>
             <textarea className="k-input gr__ta" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></label>
           <div className="gr__acts gr__acts--start">
-            <button className="k-btn k-btn--primary" onClick={save}>{editId ? 'Update' : 'Create'}</button>
+            <button className="k-btn k-btn--primary" onClick={save} disabled={!canWrite} title={denial || undefined}>{editId ? 'Update' : 'Create'}</button>
             <button className="k-btn k-btn--ghost" onClick={() => { setShowForm(false); setEditId(null); }}>Cancel</button>
           </div>
         </div>
@@ -185,8 +187,8 @@ export default function ClientsTab() {
           illustration="generic"
           title={{ en: 'No clients yet', hi: 'कोई ग्राहक नहीं' }}
           description="A client is the company a contact and a deal belong to. Add your first company to group them."
-          action="Add Client"
-          onAction={() => { setShowForm(true); setEditId(null); }}
+          action={canWrite ? 'Add Client' : undefined}
+          onAction={canWrite ? () => { setShowForm(true); setEditId(null); } : undefined}
         />
       ) : (
         <div className="gr__tblwrap">

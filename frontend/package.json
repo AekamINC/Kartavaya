@@ -23,10 +23,11 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "vitest run src/__tests__/e2e",
-    "check": "node scripts/check-tokens.mjs && node scripts/check-classes.mjs && node scripts/check-contrast.mjs",
+    "check": "node scripts/check-tokens.mjs && node scripts/check-classes.mjs && node scripts/check-contrast.mjs && node scripts/check-write-gates.mjs",
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:tokens": "node scripts/check-tokens.mjs",
-    "check:classes": "node scripts/check-classes.mjs"
+    "check:classes": "node scripts/check-classes.mjs",
+    "check:gates": "node scripts/check-write-gates.mjs"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.6.3",

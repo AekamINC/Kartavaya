@@ -15,11 +15,14 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const TRIGGERS = ['lead_created', 'deal_stage_changed', 'deal_created', 'activity_created', 'contact_updated', 'deal_stale', 'followup_overdue'];
 const ACTIONS = ['assign_to', 'create_followup', 'create_activity', 'update_score', 'change_stage', 'send_notification', 'add_label'];
 
 export default function AutomationsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change CRM settings' });
   const { pushToast } = useToast();
   const [automations, setAutomations] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -83,7 +86,7 @@ export default function AutomationsTab() {
     <div>
       <div className="gr__shead">
         <h3 className="gr__st">Sales Automations ({automations.length})</h3>
-        <button className="k-btn k-btn--primary" onClick={() => setShowForm(!showForm)}>+ New Rule</button>
+        <button className="k-btn k-btn--primary" onClick={() => setShowForm(!showForm)} disabled={!canWrite} title={denial || undefined}>+ New Rule</button>
       </div>
 
       {showForm && (
@@ -102,7 +105,7 @@ export default function AutomationsTab() {
           </div>
           <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary">Create</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={!canWrite} title={denial || undefined}>Create</button>
           </div>
         </form>
       )}
@@ -112,8 +115,8 @@ export default function AutomationsTab() {
           illustration="generic"
           title={{ en: 'No automations yet', hi: 'कोई स्वचालन नहीं' }}
           description="An automation watches for a trigger — a new lead, a stale deal — and takes an action without anyone remembering to."
-          action="New Rule"
-          onAction={() => setShowForm(true)}
+          action={canWrite ? 'New Rule' : undefined}
+          onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : automations.map(a => (
         <div key={a.id} className="gr__lrow gr__lrow--tight">

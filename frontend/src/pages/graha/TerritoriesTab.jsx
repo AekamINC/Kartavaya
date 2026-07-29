@@ -9,8 +9,11 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function TerritoriesTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change CRM settings' });
   const { pushToast } = useToast();
   const [territories, setTerritories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -67,7 +70,7 @@ export default function TerritoriesTab() {
     <div>
       <div className="gr__shead">
         <h3 className="gr__st">Territories ({territories.length})</h3>
-        <button className="k-btn k-btn--primary" onClick={() => setShowForm(!showForm)}>+ New Territory</button>
+        <button className="k-btn k-btn--primary" onClick={() => setShowForm(!showForm)} disabled={!canWrite} title={denial || undefined}>+ New Territory</button>
       </div>
 
       {showForm && (
@@ -96,7 +99,7 @@ export default function TerritoriesTab() {
           </div>
           <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary">Create</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={!canWrite} title={denial || undefined}>Create</button>
           </div>
         </form>
       )}
@@ -106,8 +109,8 @@ export default function TerritoriesTab() {
           illustration="generic"
           title={{ en: 'No territories yet', hi: 'कोई क्षेत्र नहीं' }}
           description="A territory names a region and the people who cover it, so leads route to whoever owns the patch."
-          action="New Territory"
-          onAction={() => setShowForm(true)}
+          action={canWrite ? 'New Territory' : undefined}
+          onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : territories.map(t => (
         <div key={t.id} className="gr__lrow">

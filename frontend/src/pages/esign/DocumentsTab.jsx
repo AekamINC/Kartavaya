@@ -3,6 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Chip, ChipRow, EmptyState, ErrorState, errorKind, SkeletonList } from '../../components/ui';
 import { EsignStatusPill, formatDate, relSigned } from '../../components/documents';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 /**
  * The document list.
@@ -25,6 +26,8 @@ const FILTERS = ['', 'draft', 'sent', 'partially_signed', 'completed', 'cancelle
 const label = s => (s ? String(s).replace(/_/g, ' ') : '—');
 
 export default function DocumentsTab({ onOpen, onCreate }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'create documents' });
   const [docs, setDocs] = useState([]);
   const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
@@ -68,11 +71,16 @@ export default function DocumentsTab({ onOpen, onCreate }) {
         <EmptyState
           illustration="invoice"
           title={filter ? `No ${label(filter)} documents` : 'No documents yet'}
+          /* The CTA is two different actions behind one prop. `Clear filter`
+             is a READ and stays available to everyone — only the create
+             branch is a write, so only that branch is gated. */
           description={filter
             ? 'Nothing in this state right now. Clear the filter to see everything.'
-            : 'Create a document, add signers, and send it for signature.'}
-          action={filter ? 'Clear filter' : 'New document'}
-          onAction={filter ? () => setFilter('') : onCreate}
+            : canWrite
+              ? 'Create a document, add signers, and send it for signature.'
+              : `A document is prepared here, signed by the people you name, and kept with its audit trail. ${denial}`}
+          action={filter ? 'Clear filter' : (canWrite ? 'New document' : undefined)}
+          onAction={filter ? () => setFilter('') : (canWrite ? onCreate : undefined)}
         />
       )}
 

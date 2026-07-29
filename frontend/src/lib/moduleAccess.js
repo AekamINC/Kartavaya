@@ -49,11 +49,40 @@ export const LEVELS = [VIEWER, EDITOR, APPROVER, ADMIN];
  */
 const SEPARATED_DUTY = new Set(['vetana', 'ganit']);
 
+/**
+ * Surface ids that are not grant codes.
+ *
+ * `moduleColors.js` keys a module page's IDENTITY — its colour, its label —
+ * and it carries two entries for Srijan, because it is two surfaces:
+ * `hub` is the agency console at `/hub`, `srijan` the org's own at `/hub/org`.
+ * `org_member_modules` knows only ONE of those names, `srijan`, which is what
+ * `navConfig` maps both routes to.
+ *
+ * `ModuleHeader` takes a single `module` prop and spends it twice — on
+ * `moduleColor()` and on `canWriteModule()`. For nine modules the colour id and
+ * the grant code are the same string and the conflation is invisible. For the
+ * three Hub pages, which pass `module="hub"`, it is not: a member holding
+ * `srijan: editor` was asked about a code no grant row can ever contain, and
+ * `levelSatisfies(undefined, …)` is false, so the page's primary action was
+ * greyed out for the very user entitled to it.
+ *
+ * That is the F32 failure in reverse and the worse direction of the two —
+ * refusing someone who holds the grant, rather than inviting someone who does
+ * not. Translating here rather than at the three call sites keeps the next
+ * page that passes a colour id from reintroducing it.
+ */
+const GRANT_CODE = { hub: 'srijan' };
+
+/** The grant code a surface id maps to. Identity for all nine plain modules. */
+export function grantCode(code) {
+  return GRANT_CODE[code] || code;
+}
+
 /** The caller's level on `code`, or `null` when the server expressed no opinion. */
 export function moduleLevel(user, code) {
   const levels = user?.module_levels;
   if (!levels || typeof levels !== 'object') return null;
-  const held = levels[code];
+  const held = levels[grantCode(code)];
   return LEVELS.includes(held) ? held : null;
 }
 
@@ -80,14 +109,16 @@ export function levelSatisfies(held, required, code) {
 export function canWriteModule(user, code) {
   const levels = user?.module_levels;
   if (!levels || typeof levels !== 'object') return true;   // no opinion
-  return levelSatisfies(levels[code], EDITOR, code);
+  const grant = grantCode(code);
+  return levelSatisfies(levels[grant], EDITOR, grant);
 }
 
 /** May this user APPROVE on `code`? Separated-duty aware. */
 export function canApproveModule(user, code) {
   const levels = user?.module_levels;
   if (!levels || typeof levels !== 'object') return true;
-  return levelSatisfies(levels[code], APPROVER, code);
+  const grant = grantCode(code);
+  return levelSatisfies(levels[grant], APPROVER, grant);
 }
 
 /**
@@ -107,11 +138,14 @@ export function canApproveModule(user, code) {
 export function writeDenialReason(user, code, label = 'change it') {
   const levels = user?.module_levels;
   if (!levels || typeof levels !== 'object') return null;
-  const held = levels[code];
+  // The GRANT code, not the surface id — the sentence names the thing the
+  // reader has to go and ask an admin for, and no admin can grant "hub".
+  const grant = grantCode(code);
+  const held = levels[grant];
   if (!held) {
-    return `You don't have access to the ${code} module. Ask your org admin to grant it.`;
+    return `You don't have access to the ${grant} module. Ask your org admin to grant it.`;
   }
   const shown = held.charAt(0).toUpperCase() + held.slice(1);
-  return `Your ${code} access is ${shown}: you can read it, but not ${label}. `
+  return `Your ${grant} access is ${shown}: you can read it, but not ${label}. `
        + 'Ask an org admin for Editor.';
 }

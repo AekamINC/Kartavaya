@@ -6,8 +6,11 @@ import { Empty } from '../../components/editorial';
 import { Resource, StatusPill, useList, errText } from '../hub/_shared';
 import { SkillGlyph, CATEGORY_TONE, CATEGORY_LABELS, parseSteps, extractVariables, estimateCredits } from '../hub/skills/_shared';
 import { AGENT_LABELS, LANGUAGES, words, creditLabel } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function SkillsTab({ canAssign, costs, onSpent }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'run skills' });
   const { pushToast } = useToast();
   const mine = useList('/v1/hub/org/skills', []);
   const catalog = useList('/v1/hub/skills/templates', []);
@@ -152,7 +155,7 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
                         <span className="hb-cap">
                           {est != null ? `About ${creditLabel(est)}${withImages ? ', more with images' : ''}` : 'Cost table unavailable'}
                         </span>
-                        <button type="submit" className="k-btn k-btn--primary" disabled={busyId === skill.id}>
+                        <button type="submit" className="k-btn k-btn--primary" disabled={busyId === skill.id || !canWrite} title={denial || undefined}>
                           {busyId === skill.id ? 'Running…' : 'Run now'}
                         </button>
                       </div>
@@ -204,7 +207,7 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
                     </div>
                     <div className="sk-card__act">
                       <button type="button" className="k-btn k-btn--primary hb-btn--sm sk-card__go"
-                        disabled={busyId === t.id || !canAssign} onClick={() => assign(t.id)}>
+                        disabled={busyId === t.id || !canAssign || !canWrite} onClick={() => assign(t.id)} title={denial || undefined}>
                         {busyId === t.id ? 'Adding…' : canAssign ? 'Add to organisation' : 'Needs an admin'}
                       </button>
                     </div>

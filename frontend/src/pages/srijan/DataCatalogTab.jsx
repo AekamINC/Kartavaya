@@ -15,8 +15,11 @@ import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import { Resource, StatusPill, useList, errText } from '../hub/_shared';
 import { SCRAPER_CATEGORIES, RUN_TONE, creditLabel, parseSchema } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function DataCatalogTab({ onViewRun, onSpent }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'run data skills' });
   const { pushToast } = useToast();
   const catalog = useList('/v1/scrapers/catalog', []);
   const [picked, setPicked] = useState(null);
@@ -160,7 +163,7 @@ export default function DataCatalogTab({ onViewRun, onSpent }) {
                   <button type="button" className="k-btn k-btn--ghost" onClick={close}>Close</button>
                   {(run.status === 'succeeded' || run.stale) && (
                     <button type="button" className="k-btn k-btn--primary"
-                      onClick={() => { const id = run.id; close(); onViewRun(id); }}>
+                      onClick={() => { const id = run.id; close(); onViewRun(id); }} disabled={!canWrite} title={denial || undefined}>
                       {run.stale ? 'Open in Data runs' : 'View the results'}
                     </button>
                   )}
@@ -194,7 +197,7 @@ export default function DataCatalogTab({ onViewRun, onSpent }) {
 
                 <div className="hb-form__foot hb-form__foot--end">
                   <button type="button" className="k-btn k-btn--ghost" onClick={close}>Cancel</button>
-                  <button type="submit" className="k-btn k-btn--primary" disabled={starting}>
+                  <button type="submit" className="k-btn k-btn--primary" disabled={starting || !canWrite} title={denial || undefined}>
                     {starting ? 'Starting…' : `Run · ${creditLabel(picked.credit_cost ?? 2)}`}
                   </button>
                 </div>

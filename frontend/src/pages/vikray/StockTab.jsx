@@ -23,6 +23,7 @@ import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import { Modal } from '../../components/ui/modal';
 import Tag from '../../components/ui/Tag';
 import { grouped } from '../../lib/inr';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const REASONS = [
   ['restock', 'Restock — goods received'],
@@ -81,6 +82,9 @@ function Threshold({ row, onSaved }) {
 
 /** The real adjustment: a quantity and a reason, both of which the API takes. */
 function AdjustDialog({ row, onClose, onDone }) {
+  // F32 — this dialog owns its own write control, so it asks the same
+  // question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'adjust stock' });
   const { pushToast } = useToast();
   const [delta, setDelta] = useState('');
   const [reason, setReason] = useState('restock');
@@ -116,7 +120,7 @@ function AdjustDialog({ row, onClose, onDone }) {
       dataTestId="vk-adjust"
       footer={<>
         <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
-        <button type="submit" form="vk-adjust-form" className="btn btn--fill" disabled={!valid || saving}>
+        <button type="submit" form="vk-adjust-form" className="btn btn--fill" disabled={!valid || saving || !canWrite} title={denial || undefined}>
           {saving ? 'Saving…' : 'Record adjustment'}
         </button>
       </>}
@@ -187,6 +191,8 @@ function Moves({ productId }) {
 }
 
 export default function StockTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'adjust stock' });
   const [stock, setStock] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);

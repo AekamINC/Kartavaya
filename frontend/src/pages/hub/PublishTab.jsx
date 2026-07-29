@@ -18,6 +18,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api, rows as unwrapRows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   PLATFORMS, MANUAL_PAGE_FIELD, QUEUE_TONE, StatusPill, ErrorNote, Shim,
   errText, stamp, thisMonth, words, platformOf,
@@ -28,6 +29,8 @@ const BLANK_MANUAL = { account_name: '', account_id: '', page_id: '', access_tok
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function PublishTab({ clientId }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
   const { pushToast } = useToast();
 
   const [accounts, setAccounts] = useState({ loading: true, error: '', list: null });
@@ -260,7 +263,7 @@ export default function PublishTab({ clientId }) {
             </div>
             <div className="hb-form__foot hb-form__foot--end">
               <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowMgmt(false)}>Cancel</button>
-              <button type="button" className="k-btn k-btn--primary" disabled={busy} onClick={saveEnabled}>
+              <button type="button" className="k-btn k-btn--primary" disabled={busy || !canWrite} onClick={saveEnabled} title={denial || undefined}>
                 {busy ? 'Saving…' : `Enable ${pending.length} platform${pending.length === 1 ? '' : 's'}`}
               </button>
             </div>
@@ -326,7 +329,8 @@ export default function PublishTab({ clientId }) {
                         )}
                       </span>
                       <button type="button" className="k-btn k-btn--ghost hb-btn--sm hb-btn--danger"
-                        onClick={() => disconnect(a.id)}>Disconnect</button>
+                        onClick={() => disconnect(a.id)}
+          disabled={!canWrite} title={denial || undefined}>Disconnect</button>
                     </div>
                   );
                 })}
@@ -334,7 +338,7 @@ export default function PublishTab({ clientId }) {
                 <div className="hb-plat__act">
                   {!p.manualOnly && (
                     <button type="button" className="k-btn k-btn--primary hb-btn--sm hb-plat__go"
-                      disabled={connecting === p.key} onClick={() => connectOAuth(p.key)}>
+                      disabled={connecting === p.key || !canWrite} onClick={() => connectOAuth(p.key)} title={denial || undefined}>
                       {connecting === p.key ? 'Redirecting…' : live ? 'Reconnect' : `Connect ${p.label}`}
                     </button>
                   )}
@@ -359,7 +363,7 @@ export default function PublishTab({ clientId }) {
                       value={manual.access_token} onChange={e => setManual({ ...manual, access_token: e.target.value })} />
                     <div className="hb-form__foot hb-form__foot--end">
                       <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={() => setManualFor(null)}>Cancel</button>
-                      <button type="submit" className="k-btn k-btn--primary hb-btn--sm" disabled={busy}>
+                      <button type="submit" className="k-btn k-btn--primary hb-btn--sm" disabled={busy || !canWrite} title={denial || undefined}>
                         {busy ? 'Connecting…' : 'Connect'}
                       </button>
                     </div>
@@ -381,8 +385,8 @@ export default function PublishTab({ clientId }) {
             ))}
           </div>
           <button type="button" className="k-btn k-btn--primary hb-btn--sm"
-            disabled={!accList?.length}
-            onClick={() => { setShowSchedule(true); loadContent(); }}>
+            disabled={!accList?.length || !canWrite}
+            onClick={() => { setShowSchedule(true); loadContent(); }} title={denial || undefined}>
             Schedule a post
           </button>
         </div>
@@ -436,7 +440,7 @@ export default function PublishTab({ clientId }) {
 
             <div className="hb-form__foot hb-form__foot--end">
               <button type="button" className="k-btn k-btn--ghost" onClick={() => { setShowSchedule(false); setTargets([]); }}>Cancel</button>
-              <button type="submit" className="k-btn k-btn--primary" disabled={busy || targets.length === 0}>
+              <button type="submit" className="k-btn k-btn--primary" disabled={busy || targets.length === 0 || !canWrite} title={denial || undefined}>
                 {busy ? 'Scheduling…' : targets.length > 1 ? `Schedule to ${targets.length} accounts` : 'Schedule post'}
               </button>
             </div>
@@ -491,9 +495,11 @@ export default function PublishTab({ clientId }) {
                           {q.status === 'scheduled' && (
                             <>
                               <button type="button" className="k-btn k-btn--primary hb-btn--sm"
-                                onClick={() => queueAction(q.id, 'publish-now', 'Publishing now')}>Publish now</button>
+                                onClick={() => queueAction(q.id, 'publish-now', 'Publishing now')}
+          disabled={!canWrite} title={denial || undefined}>Publish now</button>
                               <button type="button" className="k-btn k-btn--ghost hb-btn--sm hb-btn--danger"
-                                onClick={() => queueAction(q.id, 'cancel', 'Post cancelled')}>Cancel</button>
+                                onClick={() => queueAction(q.id, 'cancel', 'Post cancelled')}
+          disabled={!canWrite} title={denial || undefined}>Cancel</button>
                             </>
                           )}
                           {q.platform_url && (

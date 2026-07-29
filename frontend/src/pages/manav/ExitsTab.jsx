@@ -24,6 +24,7 @@ import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useList, ErrorNote, Shim, errText } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const EXIT_TYPES = [
   ['resignation', 'Resignation'],
@@ -83,6 +84,8 @@ function asClearance(v) {
 }
 
 export default function ExitsTab({ onUpdate }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const { pushToast } = useToast();
   const exits = useList('/v1/manav/offboarding');
   const employees = useList('/v1/manav/employees');
@@ -197,7 +200,8 @@ export default function ExitsTab({ onUpdate }) {
         </span>
         <span className="gn-bar__sp" />
         <button type="button" className="btn btn--fill btn--sm"
-          onClick={() => setShowForm(v => !v)}>
+          onClick={() => setShowForm(v => !v)}
+          disabled={!canWrite} title={denial || undefined}>
           {showForm ? 'Close form' : '+ Start an exit'}
         </button>
       </div>
@@ -261,7 +265,7 @@ export default function ExitsTab({ onUpdate }) {
           <div className="gn-form__acts">
             <button type="button" className="btn btn--ghost btn--sm"
               onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="btn btn--fill btn--sm" disabled={saving}>
+            <button type="submit" className="btn btn--fill btn--sm" disabled={saving || !canWrite} title={denial || undefined}>
               {saving ? 'Starting…' : 'Start exit'}
             </button>
           </div>
@@ -349,7 +353,7 @@ export default function ExitsTab({ onUpdate }) {
                                 {Number(r.has_interview) > 0 ? 'Edit exit interview' : 'Record exit interview'}
                               </button>
                               <button type="button" className="btn btn--fill btn--sm"
-                                disabled={busy === r.id || r.status === 'completed'}
+                                disabled={busy === r.id || r.status === 'completed' || !canWrite}
                                 onClick={() => setConfirm({
                                   title: `Complete ${r.employee_name}’s exit?`,
                                   // Says exactly what completing does, because this is
@@ -363,7 +367,7 @@ export default function ExitsTab({ onUpdate }) {
                                     + 'are off the payroll.',
                                   confirmLabel: 'Complete exit',
                                   onConfirm: () => completeExit(r),
-                                })}>
+                                })} title={denial || undefined}>
                                 {r.status === 'completed' ? 'Completed' : 'Complete exit'}
                               </button>
                             </div>
@@ -419,7 +423,7 @@ export default function ExitsTab({ onUpdate }) {
           <div className="gn-form__acts">
             <button type="button" className="btn btn--ghost btn--sm"
               onClick={() => setInterviewFor(null)}>Cancel</button>
-            <button type="submit" className="btn btn--fill btn--sm" disabled={saving}>
+            <button type="submit" className="btn btn--fill btn--sm" disabled={saving || !canWrite} title={denial || undefined}>
               {saving ? 'Saving…' : 'Save interview'}
             </button>
           </div>

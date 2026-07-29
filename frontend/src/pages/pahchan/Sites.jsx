@@ -6,6 +6,7 @@ import EmptyState from '../../components/ui/EmptyState';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import Note from '../../components/module/Note';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 /**
  * Sites — `GET` / `POST /api/v1/pahchan/sites`.
@@ -46,6 +47,8 @@ function CoordField({ label, value, onChange, placeholder }) {
 }
 
 export default function Sites() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change attendance' });
   const { pushToast } = useToast();
   const [state, setState] = useState('loading');
   const [errKind, setErrKind] = useState('server');
@@ -155,7 +158,8 @@ export default function Sites() {
       title="Sites"
       hi="स्थान"
       right={!adding && state === 'ready' && (
-        <button className="btn btn--fill btn--sm" onClick={() => setAdding(true)}>
+        <button className="btn btn--fill btn--sm" onClick={() => setAdding(true)}
+          disabled={!canWrite} title={denial || undefined}>
           Add a site
         </button>
       )}
@@ -229,7 +233,7 @@ export default function Sites() {
           </p>
 
           <div className="ph__acts">
-            <button className="btn btn--fill btn--sm" disabled={saving} onClick={save}>
+            <button className="btn btn--fill btn--sm" disabled={saving || !canWrite} onClick={save} title={denial || undefined}>
               {saving ? 'Saving…' : 'Add site'}
             </button>
             <button
@@ -247,8 +251,8 @@ export default function Sites() {
           icon="generic"
           title={{ en: 'No sites yet', hi: 'कोई स्थान नहीं' }}
           description="Every punch is recorded, and none of them is measured against anything. Add the places your team works from."
-          action="Add a site"
-          onAction={() => setAdding(true)}
+          action={canWrite ? 'Add a site' : undefined}
+          onAction={canWrite ? () => setAdding(true) : undefined}
         />
       )}
 

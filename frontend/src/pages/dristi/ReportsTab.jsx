@@ -23,6 +23,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { DataTable, Td, Badge, Empty, Shimmer } from '../../components/editorial';
 import { Panel, NUM } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const FREQ_COLORS = {
   daily: 'var(--st-in-review)', weekly: 'var(--st-in-progress)', monthly: 'var(--ok)',
@@ -36,6 +37,8 @@ const FORMATS = ['pdf', 'csv', 'json'];
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function ReportsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change reports' });
   const [reports, setReports] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -286,7 +289,7 @@ export default function ReportsTab() {
 
             <div className="dform__act">
               <button type="button" className="k-btn k-btn--primary"
-                disabled={!canSubmit || saving} onClick={submitCreate}>
+                disabled={!canSubmit || saving || !canWrite} onClick={submitCreate} title={denial || undefined}>
                 {saving ? 'Scheduling…' : 'Schedule'}
               </button>
               <button type="button" className="k-btn k-btn--ghost" onClick={() => setView('list')}>
@@ -321,7 +324,8 @@ export default function ReportsTab() {
           </div>
           <div className="dform__act">
             <button type="button" className="k-btn k-btn--primary"
-              onClick={() => runNow(selected.id)}>Run now</button>
+              onClick={() => runNow(selected.id)}
+          disabled={!canWrite} title={denial || undefined}>Run now</button>
             <button type="button" className="k-btn k-btn--ghost ddanger"
               onClick={() => remove(selected.id)}>Delete</button>
           </div>
@@ -361,13 +365,17 @@ export default function ReportsTab() {
   return (
     <div className="dstack">
       <Panel title="Scheduled reports" hi="अनुसूचित"
-        right={<button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={openCreate}>
+        right={<button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={openCreate}
+          disabled={!canWrite} title={denial || undefined}>
           + Schedule report
         </button>}>
         {reports.length === 0 ? (
           <Empty title="No scheduled reports"
-            sub="A scheduled report emails itself to the people you name, on the days you choose."
-            cta="Schedule a report" onCta={openCreate} />
+            sub={canWrite
+              ? 'A scheduled report emails itself to the people you name, on the days you choose.'
+              : `A scheduled report emails itself to the people you name, on the days you choose. ${denial}`}
+            cta={canWrite ? 'Schedule a report' : undefined}
+            onCta={canWrite ? openCreate : undefined} />
         ) : (
           <ul className="dlist">
             {reports.map(r => (

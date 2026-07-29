@@ -13,6 +13,7 @@ import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge, PRIORITY_COLORS, useList, ErrorNote, Shim, errText } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const BLANK = { title: '', body: '', priority: 'normal', pinned: false, expires_at: '' };
 
@@ -23,6 +24,8 @@ const BLANK = { title: '', body: '', priority: 'normal', pinned: false, expires_
 // EmployeesTab already took this prop, which is why the employee count was
 // the one figure that stayed right.
 export default function AnnouncementsTab({ onUpdate }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const { pushToast } = useToast();
   const list = useList('/v1/manav/announcements');
   const [showForm, setShowForm] = useState(false);
@@ -79,7 +82,8 @@ export default function AnnouncementsTab({ onUpdate }) {
       <div className="mn-bar">
         <div className="mn-bar__gap" />
         <button type="button" className="k-btn k-btn--primary"
-          onClick={() => { setEditing(null); setForm(BLANK); setShowForm(true); }}>
+          onClick={() => { setEditing(null); setForm(BLANK); setShowForm(true); }}
+          disabled={!canWrite} title={denial || undefined}>
           + New announcement
         </button>
       </div>
@@ -118,7 +122,7 @@ export default function AnnouncementsTab({ onUpdate }) {
           </div>
           <div className="k-formpanel__actions">
             <button type="button" className="k-btn k-btn--ghost" onClick={close}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>
               {saving ? 'Saving…' : editing ? 'Update' : 'Publish'}
             </button>
           </div>

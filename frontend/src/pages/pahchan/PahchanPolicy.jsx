@@ -6,6 +6,7 @@ import Note from '../../components/module/Note';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonCard } from '../../components/ui/Skeleton';
 import Sites from './Sites';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 /**
  * Attendance policy — geofence, flag thresholds, retention and reports.
@@ -93,6 +94,8 @@ const RETENTION = [
 ];
 
 export default function PahchanPolicy() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change attendance' });
   const { pushToast } = useToast();
   const [state, setState] = useState('loading');
   const [policy, setPolicy] = useState(null);
@@ -353,7 +356,7 @@ export default function PahchanPolicy() {
       </Section>
 
       <div className="ph__save">
-        <button className="btn btn--fill" onClick={save} disabled={saving || !!shiftProblem}>
+        <button className="btn btn--fill" onClick={save} disabled={saving || !!shiftProblem || !canWrite} title={denial || undefined}>
           {saving ? 'Saving…' : 'Save policy'}
         </button>
       </div>

@@ -20,6 +20,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   Section, Badge, Empty, BackButton, ModCard, DataTable, Td,
 } from '../../components/editorial';
@@ -28,6 +29,8 @@ import {
 } from './_shared';
 
 export default function PayslipsTab({ onChanged }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'disburse payroll' });
   const [monthFilter, setMonthFilter] = useState('');
   const list = useList(
     `/v1/vetana/payslips${monthFilter ? `?month=${encodeURIComponent(monthFilter)}` : ''}`,
@@ -106,6 +109,9 @@ export default function PayslipsTab({ onChanged }) {
    ══════════════════════════════════════════════════════════════════════════ */
 
 function PayslipDetail({ id, onBack, onChanged }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'disburse payroll' });
   const { pushToast } = useToast();
   const [state, setState] = useState({ loading: true, error: '', data: null });
   const [busy, setBusy] = useState('');
@@ -236,9 +242,8 @@ function PayslipDetail({ id, onBack, onChanged }) {
               <button
                 type="button"
                 className="k-btn k-btn--primary"
-                disabled={busy === 'disburse'}
-                onClick={disburse}
-              >
+                disabled={busy === 'disburse' || !canWrite}
+                onClick={disburse} title={denial || undefined}>
                 {busy === 'disburse' ? 'Marking…' : 'Mark disbursed'}
               </button>
             )}

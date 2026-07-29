@@ -14,6 +14,7 @@ import React, { useState } from 'react';
 import { Badge, BackButton, DataTable, Td } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
 import { api, rows, Panel, Bar, useResource, useMutate, humanise, plural } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 // The enums `prachar.py` writes. Each carries the sentence that says what it
 // actually does — "Score above" is not self-explanatory to the person choosing
@@ -40,6 +41,8 @@ const label = (pairs, id) => pairs.find((p) => p[0] === id)?.[1] || humanise(id)
 const why = (pairs, id) => pairs.find((p) => p[0] === id)?.[2] || '';
 
 export default function AutomationsTab({ onChanged }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
   const { busy, go } = useMutate(pushToast);
   const [form, setForm] = useState(null);
@@ -128,7 +131,7 @@ export default function AutomationsTab({ onChanged }) {
           </label>
 
           <div className="k-formpanel__actions">
-            <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={save} disabled={busy}>
+            <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={save} disabled={busy || !canWrite} title={denial || undefined}>
               {busy ? 'Creating…' : 'Create automation'}
             </button>
             <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={() => setForm(null)}>Cancel</button>
@@ -147,7 +150,7 @@ export default function AutomationsTab({ onChanged }) {
           onClick={() => setForm({
             name: '', trigger_type: 'contact_created', action_type: 'send_email', is_active: true,
           })}
-        >
+          disabled={!canWrite} title={denial || undefined}>
           + New automation
         </button>
       </Bar>

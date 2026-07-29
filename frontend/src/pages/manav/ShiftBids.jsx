@@ -8,8 +8,11 @@ import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { Empty } from '../../components/editorial';
 import { useList, ErrorNote, Shim, errText, today } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function ShiftBids({ pushToast }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const bids = useList('/v1/manav/shift-bids?status=open');
   const shifts = useList('/v1/manav/shifts');
   const [showForm, setShowForm] = useState(false);
@@ -50,7 +53,8 @@ export default function ShiftBids({ pushToast }) {
         <h3 className="k-section__title">
           Shift bids<span className="k-section__title-hi" lang="hi">बोली</span>
         </h3>
-        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}
+          disabled={!canWrite} title={denial || undefined}>
           + Post bid
         </button>
       </div>
@@ -95,7 +99,7 @@ export default function ShiftBids({ pushToast }) {
           </div>
           <div className="k-formpanel__actions">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving || !!shifts.error}>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving || !!shifts.error || !canWrite} title={denial || undefined}>
               {saving ? 'Posting…' : 'Post bid'}
             </button>
           </div>
@@ -124,9 +128,8 @@ export default function ShiftBids({ pushToast }) {
                     <button
                       type="button"
                       className="k-btn k-btn--primary k-btn--sm mn-wide"
-                      disabled={applying === b.id}
-                      onClick={() => applyBid(b.id)}
-                    >
+                      disabled={applying === b.id || !canWrite}
+                      onClick={() => applyBid(b.id)} title={denial || undefined}>
                       {applying === b.id ? 'Applying…' : 'Apply'}
                     </button>
                   </div>

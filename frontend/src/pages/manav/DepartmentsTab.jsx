@@ -12,6 +12,7 @@ import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useList, ErrorNote, Shim, errText } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 // `onUpdate` refreshes the KPI strip on ManavPage. Without it the list
 // below updates and the headline figure above does not — measured live:
@@ -20,6 +21,8 @@ import { useList, ErrorNote, Shim, errText } from './_shared';
 // EmployeesTab already took this prop, which is why the employee count was
 // the one figure that stayed right.
 export default function DepartmentsTab({ onUpdate }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const { pushToast } = useToast();
   const list = useList('/v1/manav/departments');
   const [showForm, setShowForm] = useState(false);
@@ -77,7 +80,8 @@ export default function DepartmentsTab({ onUpdate }) {
     <div>
       <div className="mn-bar">
         <div className="mn-bar__gap" />
-        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}
+          disabled={!canWrite} title={denial || undefined}>
           + Add department
         </button>
       </div>
@@ -93,7 +97,7 @@ export default function DepartmentsTab({ onUpdate }) {
           </div>
           <div className="k-formpanel__actions">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>
               {saving ? 'Creating…' : 'Create'}
             </button>
           </div>
@@ -120,7 +124,7 @@ export default function DepartmentsTab({ onUpdate }) {
                           onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
                       </label>
                       <div className="mn-card__act">
-                        <button type="submit" className="k-btn k-btn--primary k-btn--sm" disabled={editSaving}>
+                        <button type="submit" className="k-btn k-btn--primary k-btn--sm" disabled={editSaving || !canWrite} title={denial || undefined}>
                           {editSaving ? 'Saving…' : 'Save'}
                         </button>
                         <button type="button" className="k-btn k-btn--ghost k-btn--sm"

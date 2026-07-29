@@ -15,6 +15,7 @@
 import React, { useState, useMemo } from 'react';
 import { Badge, BackButton, DataTable, Td } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   api, rows, Panel, Bar, useResource, useMutate,
   EVENT_STATUS_COLORS, EVENT_TYPE_COLORS, humanise, plural, fmtDate, fmtDateTime,
@@ -24,6 +25,8 @@ const TYPES = ['webinar', 'meetup', 'workshop', 'conference', 'other'];
 const STATUSES = ['draft', 'published', 'ongoing', 'completed', 'cancelled'];
 
 export default function EventsTab({ onChanged }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
   const { busy, go } = useMutate(pushToast);
   const [form, setForm] = useState(null);
@@ -100,7 +103,8 @@ export default function EventsTab({ onChanged }) {
           <option value="">All statuses</option>
           {STATUSES.map((s) => <option key={s} value={s}>{humanise(s)}</option>)}
         </select>
-        <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={() => setForm(blankEvent())}>
+        <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={() => setForm(blankEvent())}
+          disabled={!canWrite} title={denial || undefined}>
           + New event
         </button>
       </Bar>
@@ -190,6 +194,9 @@ export default function EventsTab({ onChanged }) {
 /* ── Expanded event ───────────────────────────────────────────────────── */
 
 function EventDetail({ ev, onChanged }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
   const { busy, go } = useMutate(pushToast);
   const [reg, setReg] = useState(null);
@@ -265,7 +272,7 @@ function EventDetail({ ev, onChanged }) {
             value={reg.email} onChange={(e) => setReg({ ...reg, email: e.target.value })} />
           <input className="k-formpanel__input" placeholder="Phone (optional)" aria-label="Attendee phone"
             value={reg.phone} onChange={(e) => setReg({ ...reg, phone: e.target.value })} />
-          <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={register} disabled={busy}>
+          <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={register} disabled={busy || !canWrite} title={denial || undefined}>
             {busy ? 'Adding…' : 'Register'}
           </button>
           <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={() => setReg(null)}>Cancel</button>
@@ -347,6 +354,9 @@ const toForm = (ev) => ({
 });
 
 function EventForm({ form, setForm, onSave, onCancel, busy }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   return (
     <div>
@@ -394,7 +404,7 @@ function EventForm({ form, setForm, onSave, onCancel, busy }) {
           </label>
         </div>
         <div className="k-formpanel__actions">
-          <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={onSave} disabled={busy}>
+          <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={onSave} disabled={busy || !canWrite} title={denial || undefined}>
             {busy ? 'Saving…' : (form.id ? 'Save event' : 'Create event')}
           </button>
           <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={onCancel}>Cancel</button>

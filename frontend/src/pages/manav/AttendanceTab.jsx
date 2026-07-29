@@ -28,6 +28,7 @@ import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty, DataTable, Td } from '../../components/editorial';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   Badge, ATT_STATUSES, ATT_COLORS,
   useList, useResource, ErrorNote, Shim, errText, clockTime, today,
@@ -40,6 +41,8 @@ import {
 // EmployeesTab already took this prop, which is why the employee count was
 // the one figure that stayed right.
 export default function AttendanceTab({ onUpdate }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const { pushToast } = useToast();
   const [dateFrom, setDateFrom] = useState(today());
   const [dateTo, setDateTo] = useState(today());
@@ -80,7 +83,8 @@ export default function AttendanceTab({ onUpdate }) {
           Monthly summary
         </button>
         <div className="mn-bar__gap" />
-        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowMark(true)}>
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowMark(true)}
+          disabled={!canWrite} title={denial || undefined}>
           Mark attendance
         </button>
       </div>
@@ -137,6 +141,9 @@ export default function AttendanceTab({ onUpdate }) {
    ══════════════════════════════════════════════════════════════════════════ */
 
 function MarkForm({ onClose, onMarked, pushToast }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const employees = useList('/v1/manav/employees');
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -221,7 +228,7 @@ function MarkForm({ onClose, onMarked, pushToast }) {
 
       <div className="k-formpanel__actions">
         <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
-        <button type="submit" className="k-btn k-btn--primary" disabled={saving || !!employees.error}>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving || !!employees.error || !canWrite} title={denial || undefined}>
           {saving ? 'Marking…' : 'Mark'}
         </button>
       </div>

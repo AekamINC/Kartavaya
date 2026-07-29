@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { errText } from '../hub/_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   QUICK_SKILLS, PLATFORMS, TONES, LANGUAGES, PLATFORM_HINTS, Markdown, creditLabel,
 } from './_shared';
@@ -10,6 +11,8 @@ import {
 const BLANK = { topic: '', platform: 'Instagram', tone: 'Professional', language: 'en', extra: '', with_image: true };
 
 export default function GenerateTab({ credits, costs, onSpent }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'generate content' });
   const { pushToast } = useToast();
   const [picked, setPicked] = useState(null);
   const [form, setForm] = useState(BLANK);
@@ -182,7 +185,7 @@ export default function GenerateTab({ credits, costs, onSpent }) {
               {balance == null ? 'Credit balance unavailable' : <>Balance <b className="hb-num">{balance}</b></>}
               {cost != null && <> · this run spends <b className="hb-num">{cost}</b></>}
             </span>
-            <button type="submit" className="k-btn k-btn--primary" disabled={busy || !form.topic.trim()}>
+            <button type="submit" className="k-btn k-btn--primary" disabled={busy || !form.topic.trim() || !canWrite} title={denial || undefined}>
               {busy ? 'Generating…' : `Generate ${picked.label.toLowerCase()}`}
             </button>
           </div>

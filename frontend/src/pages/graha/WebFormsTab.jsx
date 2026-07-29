@@ -16,8 +16,11 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function WebFormsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change CRM settings' });
   const { pushToast } = useToast();
   const [forms, setForms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +79,7 @@ export default function WebFormsTab() {
     <div>
       <div className="gr__shead">
         <h3 className="gr__st">Web-to-Lead Forms ({forms.length})</h3>
-        <button className="k-btn k-btn--primary" onClick={() => setShowCreate(!showCreate)}>+ New Form</button>
+        <button className="k-btn k-btn--primary" onClick={() => setShowCreate(!showCreate)} disabled={!canWrite} title={denial || undefined}>+ New Form</button>
       </div>
 
       {showCreate && (
@@ -91,7 +94,7 @@ export default function WebFormsTab() {
           </div>
           <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowCreate(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary">Create</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={!canWrite} title={denial || undefined}>Create</button>
           </div>
         </form>
       )}
@@ -101,8 +104,8 @@ export default function WebFormsTab() {
           illustration="generic"
           title={{ en: 'No web forms yet', hi: 'कोई प्रपत्र नहीं' }}
           description="A web form gives your site a public endpoint that turns a submission straight into a CRM contact."
-          action="New Form"
-          onAction={() => setShowCreate(true)}
+          action={canWrite ? 'New Form' : undefined}
+          onAction={canWrite ? () => setShowCreate(true) : undefined}
         />
       ) : forms.map(f => (
         <div key={f.id} className="gr__lrow">

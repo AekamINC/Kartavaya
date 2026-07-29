@@ -9,6 +9,7 @@ import { useToast } from '../../components/ui/toast';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 // The one literal in this module that stays a literal. A label colour is USER
 // DATA: it is persisted to the DB and fed to <input type="color">, which accepts
@@ -18,6 +19,8 @@ import { EmptyState } from '../../components/ui/EmptyState';
 const DEFAULT_LABEL_COLOR = '#6366f1';
 
 export default function LabelsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change CRM settings' });
   const { pushToast } = useToast();
   const [labels, setLabels] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -86,7 +89,7 @@ export default function LabelsTab() {
   return (
     <div>
       <div className="gr__bar">
-        <button className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>+ New Label</button>
+        <button className="k-btn k-btn--primary" onClick={() => setShowForm(true)} disabled={!canWrite} title={denial || undefined}>+ New Label</button>
         <button className="k-btn k-btn--ghost" onClick={() => { setShowAssign(true); loadContacts(); }}>Assign to Contact</button>
       </div>
 
@@ -101,7 +104,7 @@ export default function LabelsTab() {
           </div>
           <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>{saving ? 'Creating…' : 'Create'}</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>{saving ? 'Creating…' : 'Create'}</button>
           </div>
         </form>
       )}
@@ -123,7 +126,7 @@ export default function LabelsTab() {
           </div>
           <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowAssign(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary">Assign</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={!canWrite} title={denial || undefined}>Assign</button>
           </div>
         </form>
       )}
@@ -137,8 +140,8 @@ export default function LabelsTab() {
           illustration="generic"
           title={{ en: 'No labels yet', hi: 'कोई नाम नहीं' }}
           description="A label groups contacts across type and company — priority, region, campaign, whatever you sort by."
-          action="New Label"
-          onAction={() => setShowForm(true)}
+          action={canWrite ? 'New Label' : undefined}
+          onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : (
         <div className="gr__lcards">

@@ -18,6 +18,7 @@ import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty, BackButton, DataTable, Td } from '../../components/editorial';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   Badge, EMP_TYPES, STATUS_COLORS,
   useList, useResource, ErrorNote, Shim, errText,
@@ -30,6 +31,8 @@ const BLANK = {
 };
 
 export default function EmployeesTab({ onUpdate }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const { pushToast } = useToast();
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
@@ -92,7 +95,8 @@ export default function EmployeesTab({ onUpdate }) {
         />
         <button type="button" className="k-btn k-btn--ghost" onClick={applyFilter}>Filter</button>
         <div className="mn-bar__gap" />
-        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}
+          disabled={!canWrite} title={denial || undefined}>
           + Add employee
         </button>
       </div>
@@ -163,7 +167,7 @@ export default function EmployeesTab({ onUpdate }) {
           </p>
           <div className="k-formpanel__actions">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>
               {saving ? 'Adding…' : 'Add employee'}
             </button>
           </div>
@@ -232,6 +236,9 @@ function Field({ label, children, wide }) {
    ══════════════════════════════════════════════════════════════════════════ */
 
 function EmployeeDetail({ id, onBack, onChanged }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const { pushToast } = useToast();
   const res = useResource(`/v1/manav/employees/${id}`, [id]);
   const [editing, setEditing] = useState(false);
@@ -361,7 +368,7 @@ function EmployeeDetail({ id, onBack, onChanged }) {
             </div>
             <div className="k-formpanel__actions">
               <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditing(false)}>Cancel</button>
-              <button type="submit" className="k-btn k-btn--primary" disabled={editSaving}>
+              <button type="submit" className="k-btn k-btn--primary" disabled={editSaving || !canWrite} title={denial || undefined}>
                 {editSaving ? 'Saving…' : 'Save'}
               </button>
             </div>

@@ -19,6 +19,7 @@
 import React, { useState } from 'react';
 import { BackButton } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   api, rows, Panel, Bar, useResource, useMutate,
   TEMPLATE_CATEGORIES, isMarketingCategory, humanise, fmtDate,
@@ -35,6 +36,8 @@ const varsIn = (t) => {
 };
 
 export default function TemplatesTab({ onChanged }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
   const { busy, go } = useMutate(pushToast);
   const [form, setForm] = useState(null);
@@ -110,7 +113,8 @@ export default function TemplatesTab({ onChanged }) {
           <option value="">All categories</option>
           {TEMPLATE_CATEGORIES.map((c) => <option key={c} value={c}>{humanise(c)}</option>)}
         </select>
-        <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={() => setForm(blank())}>
+        <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={() => setForm(blank())}
+          disabled={!canWrite} title={denial || undefined}>
           + New template
         </button>
       </Bar>
@@ -210,6 +214,9 @@ const toForm = (t) => ({
 });
 
 function TemplateForm({ form, setForm, onSave, onCancel, busy }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const vars = varsIn(form);
   return (
@@ -246,7 +253,7 @@ function TemplateForm({ form, setForm, onSave, onCancel, busy }) {
         </p>
 
         <div className="k-formpanel__actions">
-          <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={onSave} disabled={busy}>
+          <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={onSave} disabled={busy || !canWrite} title={denial || undefined}>
             {busy ? 'Saving…' : (form.id ? 'Save template' : 'Create template')}
           </button>
           <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={onCancel}>Cancel</button>

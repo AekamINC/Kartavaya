@@ -7,8 +7,11 @@ import React, { useEffect, useState } from 'react';
 import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { inr } from '../../lib/inr';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function TimesheetTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'invoice time' });
   const { pushToast } = useToast();
   const [form, setForm] = useState({ date_from: '', date_to: '', contact_id: '', is_igst: false });
   const [contacts, setContacts] = useState([]);
@@ -86,7 +89,7 @@ export default function TimesheetTab() {
         </div>
 
         <div className="gn-form__acts">
-          <button type="submit" className="btn btn--fill btn--sm" disabled={generating}>
+          <button type="submit" className="btn btn--fill btn--sm" disabled={generating || !canWrite} title={denial || undefined}>
             {generating ? 'Generating…' : 'Generate invoice'}
           </button>
         </div>

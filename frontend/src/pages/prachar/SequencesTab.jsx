@@ -23,12 +23,15 @@
 import React, { useState } from 'react';
 import { Badge, BackButton, DataTable, Td } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   api, rows, body, Panel, Bar, useResource, useMutate,
   SEQ_COLORS, STEP_CHANNELS, humanise, plural, pct,
 } from './_shared';
 
 export default function SequencesTab({ onChanged }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
   const { busy, go } = useMutate(pushToast);
   const [form, setForm] = useState(null);
@@ -99,7 +102,7 @@ export default function SequencesTab({ onChanged }) {
             Stop sending to a contact once they reply
           </label>
           <div className="k-formpanel__actions">
-            <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={save} disabled={busy}>
+            <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={save} disabled={busy || !canWrite} title={denial || undefined}>
               {busy ? 'Creating…' : 'Create sequence'}
             </button>
             <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={() => setForm(null)}>Cancel</button>
@@ -116,7 +119,7 @@ export default function SequencesTab({ onChanged }) {
           type="button"
           className="k-btn k-btn--primary k-btn--sm"
           onClick={() => setForm({ name: '', description: '', exit_on_reply: true })}
-        >
+          disabled={!canWrite} title={denial || undefined}>
           + New sequence
         </button>
       </Bar>
@@ -167,6 +170,9 @@ export default function SequencesTab({ onChanged }) {
 /* ── Detail ───────────────────────────────────────────────────────────── */
 
 function SequenceDetail({ seq, onBack }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
   const { busy, go } = useMutate(pushToast);
   const [stepForm, setStepForm] = useState(null);
@@ -261,7 +267,7 @@ function SequenceDetail({ seq, onBack }) {
           </div>
           <div className="k-detail__actions">
             {s.status !== 'active' && steps.length > 0 && (
-              <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={() => setStatus('active')} disabled={busy}>
+              <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={() => setStatus('active')} disabled={busy || !canWrite} title={denial || undefined}>
                 Activate
               </button>
             )}
@@ -315,7 +321,7 @@ function SequenceDetail({ seq, onBack }) {
               step_order: steps.length + 1, channel: 'email', delay_days: 1,
               subject: '', body_html: '', notes: '',
             })}
-          >
+          disabled={!canWrite} title={denial || undefined}>
             + Add step
           </button>
         )}
@@ -396,7 +402,7 @@ function SequenceDetail({ seq, onBack }) {
             Saving over an existing position replaces that step rather than adding a second one at the same number.
           </p>
           <div className="k-formpanel__actions">
-            <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={addStep} disabled={busy}>
+            <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={addStep} disabled={busy || !canWrite} title={denial || undefined}>
               {busy ? 'Saving…' : 'Save step'}
             </button>
             <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={() => setStepForm(null)}>Cancel</button>
@@ -434,7 +440,7 @@ function SequenceDetail({ seq, onBack }) {
               </option>
             ))}
           </select>
-          <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={enroll} disabled={busy || !picked.length}>
+          <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={enroll} disabled={busy || !picked.length || !canWrite} title={denial || undefined}>
             {picked.length ? `Enrol ${plural(picked.length, 'contact')}` : 'Enrol'}
           </button>
         </div>

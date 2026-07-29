@@ -399,8 +399,8 @@ export default function ContactsTab() {
           illustration="contacts"
           title={{ en: 'No contacts yet', hi: 'कोई संपर्क नहीं' }}
           description="Add leads, customers, vendors, or partners to start building relationships here."
-          action="Add Contact"
-          onAction={() => setShowForm(true)}
+          action={canWrite ? 'Add Contact' : undefined}
+          onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : (
         <div className="gr__tblwrap gr__tblwrap--bare">

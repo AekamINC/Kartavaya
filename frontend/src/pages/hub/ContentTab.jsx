@@ -10,6 +10,7 @@ import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   AGENT_LABELS, Resource, StatusPill, useList, errText, shortStamp, words,
   creditLabel,
@@ -25,6 +26,8 @@ const FILTERS = [
 ];
 
 export default function ContentTab({ clientId, onReviewed }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
   const { pushToast } = useToast();
   const [status, setStatus] = useState('');
   const [busyId, setBusyId] = useState(null);
@@ -110,11 +113,11 @@ export default function ContentTab({ clientId, onReviewed }) {
                   {(item.status === 'draft' || item.status === 'pending_review') && (
                     <span className="hb-item__act">
                       <button type="button" className="k-btn k-btn--primary hb-btn--sm"
-                        disabled={busyId === item.id} onClick={() => review(item.id, 'approved')}>
+                        disabled={busyId === item.id || !canWrite} onClick={() => review(item.id, 'approved')} title={denial || undefined}>
                         {busyId === item.id ? 'Saving…' : 'Approve'}
                       </button>
                       <button type="button" className="k-btn k-btn--ghost hb-btn--sm hb-btn--danger"
-                        disabled={busyId === item.id} onClick={() => review(item.id, 'rejected')}>
+                        disabled={busyId === item.id || !canWrite} onClick={() => review(item.id, 'rejected')} title={denial || undefined}>
                         Reject
                       </button>
                     </span>

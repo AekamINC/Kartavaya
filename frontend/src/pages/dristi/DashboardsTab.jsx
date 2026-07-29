@@ -22,6 +22,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty, Shimmer } from '../../components/editorial';
 import { Panel, Bars, Funnel, Meters, MONEY, NUM, Bi, downloadCSV } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 /** The reference's CHARTS, re-pointed at queries the server can actually run. */
 const PRESETS = [
@@ -60,6 +61,8 @@ function Chart({ kind, rows, measure }) {
 }
 
 export default function DashboardsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change reports' });
   const { pushToast } = useToast();
 
   // ── Saved dashboards ──────────────────────────────────────────────────────
@@ -303,7 +306,7 @@ export default function DashboardsTab() {
               onKeyDown={e => { if (e.key === 'Enter') createBoard(); }} />
           </label>
           <button type="button" className="k-btn k-btn--primary"
-            disabled={!name.trim() || creating} onClick={createBoard}>
+            disabled={!name.trim() || creating || !canWrite} onClick={createBoard} title={denial || undefined}>
             {creating ? 'Creating…' : 'Create'}
           </button>
         </div>

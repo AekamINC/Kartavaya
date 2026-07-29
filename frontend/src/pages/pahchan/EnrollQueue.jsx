@@ -6,6 +6,7 @@ import EmptyState from '../../components/ui/EmptyState';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import Note from '../../components/module/Note';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 /**
  * Enrollment queue — the reference pairs that make the register possible.
@@ -81,6 +82,8 @@ function RefThumb({ photoId, name }) {
 }
 
 export default function EnrollQueue() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change attendance' });
   const { pushToast } = useToast();
   const [state, setState] = useState('loading');
   const [errKind, setErrKind] = useState('server');
@@ -177,9 +180,8 @@ export default function EnrollQueue() {
                 <Td>
                   <button
                     className="btn btn--fill btn--sm"
-                    disabled={busy === p.id}
-                    onClick={() => approve(p.id, p.employee_name)}
-                  >
+                    disabled={busy === p.id || !canWrite}
+                    onClick={() => approve(p.id, p.employee_name)} title={denial || undefined}>
                     {busy === p.id ? 'Approving…' : 'Approve'}
                   </button>
                 </Td>

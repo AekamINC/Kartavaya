@@ -25,6 +25,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Badge, BackButton, DataTable, Td } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   api, rows, body, Panel, Bar, useResource, useMutate,
   CAMPAIGN_COLORS, CHANNELS, channelColor, channelLabel,
@@ -48,6 +49,8 @@ const mondayIndex = (d) => (d.getDay() + 6) % 7;
 const isMovable = (c) => c.status === 'draft' || c.status === 'scheduled';
 
 export default function CampaignsTab({ scheduleNonce = 0, onChanged }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
   const { busy, go } = useMutate(pushToast);
 
@@ -157,7 +160,8 @@ export default function CampaignsTab({ scheduleNonce = 0, onChanged }) {
             </button>
           ))}
         </div>
-        <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={() => setForm(blank())}>
+        <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={() => setForm(blank())}
+          disabled={!canWrite} title={denial || undefined}>
           + Schedule
         </button>
       </Bar>
@@ -405,6 +409,9 @@ function CampaignList({ list, onOpen }) {
 /* ── Detail ───────────────────────────────────────────────────────────── */
 
 function CampaignDetail({ campaign, onBack, onEdit, onChanged }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
   const { busy, go } = useMutate(pushToast);
   const [c, setC] = useState(campaign);
@@ -463,7 +470,7 @@ function CampaignDetail({ campaign, onBack, onEdit, onChanged }) {
         <div className="k-detail__actions">
           {(c.status === 'draft' || c.status === 'scheduled') && (
             <>
-              <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={send} disabled={busy}>
+              <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={send} disabled={busy || !canWrite} title={denial || undefined}>
                 {busy ? 'Sending…' : 'Send now'}
               </button>
               <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={() => onEdit(c)}>
@@ -556,6 +563,9 @@ const toForm = (c) => {
 };
 
 function CampaignForm({ form, setForm, onSave, onCancel, busy }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   return (
     <div>
@@ -584,7 +594,7 @@ function CampaignForm({ form, setForm, onSave, onCancel, busy }) {
           <textarea className="k-formpanel__input" rows={8} placeholder="Campaign body…" value={form.body_html} onChange={set('body_html')} />
         </label>
         <div className="k-formpanel__actions">
-          <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={onSave} disabled={busy}>
+          <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={onSave} disabled={busy || !canWrite} title={denial || undefined}>
             {busy ? 'Saving…' : (form.id ? 'Save campaign' : 'Create campaign')}
           </button>
           <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={onCancel}>Cancel</button>

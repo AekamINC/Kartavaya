@@ -15,8 +15,11 @@ import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import { Badge, CLAIM_COLORS, CLAIM_CATEGORIES, useList, ErrorNote, Shim, errText } from './_shared';
 import { inr } from '../../lib/inr';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function ExpensesTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const { pushToast } = useToast();
   const [statusFilter, setStatusFilter] = useState('');
   const [showForm, setShowForm] = useState(false);
@@ -52,7 +55,8 @@ export default function ExpensesTab() {
           </select>
         </label>
         <div className="mn-bar__gap" />
-        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}
+          disabled={!canWrite} title={denial || undefined}>
           + Submit claim
         </button>
       </div>
@@ -100,7 +104,7 @@ export default function ExpensesTab() {
                   {c.status === 'pending' && (
                     <div className="mn-rec__act">
                       <button type="button" className="k-btn k-btn--primary k-btn--sm"
-                        disabled={!!acting} onClick={() => action(c.id, 'approve')}>
+                        disabled={!!acting || !canWrite} onClick={() => action(c.id, 'approve')} title={denial || undefined}>
                         {acting === c.id + 'approve' ? 'Approving…' : 'Approve'}
                       </button>
                       <button type="button" className="k-btn k-btn--ghost k-btn--sm k-btn--reject"
@@ -118,6 +122,9 @@ export default function ExpensesTab() {
 }
 
 function ClaimForm({ employees, onClose, onCreated, pushToast }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const [saving, setSaving] = useState(false);
   const [receiptUrl, setReceiptUrl] = useState('');
   const [form, setForm] = useState({
@@ -220,7 +227,7 @@ function ClaimForm({ employees, onClose, onCreated, pushToast }) {
       </div>
       <div className="k-formpanel__actions">
         <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
-        <button type="submit" className="k-btn k-btn--primary" disabled={saving || !!employees.error}>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving || !!employees.error || !canWrite} title={denial || undefined}>
           {saving ? 'Submitting…' : 'Submit'}
         </button>
       </div>

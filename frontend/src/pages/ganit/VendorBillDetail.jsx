@@ -11,8 +11,11 @@ import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import { safeArray, Badge, BILL_STATUS_COLORS } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function VendorBillDetail({ billId, onClose, onChanged }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'record payments' });
   const { pushToast } = useToast();
   const [bill, setBill] = useState(null);
   const [err, setErr] = useState(null);
@@ -160,7 +163,7 @@ export default function VendorBillDetail({ billId, onClose, onChanged }) {
                           <input className="inp gn-payline__in" type="number" step="0.01" min="0"
                             value={payAmount} onChange={e => setPayAmount(e.target.value)} />
                         </label>
-                        <button type="submit" className="btn btn--fill btn--sm" disabled={paying}>
+                        <button type="submit" className="btn btn--fill btn--sm" disabled={paying || !canWrite} title={denial || undefined}>
                           {paying ? 'Recording…' : 'Record payment'}
                         </button>
                       </form>

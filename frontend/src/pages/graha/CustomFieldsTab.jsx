@@ -15,10 +15,13 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const FIELD_TYPES = ['text', 'number', 'date', 'select', 'checkbox', 'url', 'email', 'phone'];
 
 export default function CustomFieldsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change CRM settings' });
   const { pushToast } = useToast();
   const [fields, setFields] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -65,7 +68,7 @@ export default function CustomFieldsTab() {
     <div>
       <div className="gr__shead">
         <h3 className="gr__st">Custom Fields ({fields.length})</h3>
-        <button className="k-btn k-btn--primary" onClick={() => setShowForm(!showForm)}>+ New Field</button>
+        <button className="k-btn k-btn--primary" onClick={() => setShowForm(!showForm)} disabled={!canWrite} title={denial || undefined}>+ New Field</button>
       </div>
 
       {showForm && (
@@ -94,7 +97,7 @@ export default function CustomFieldsTab() {
           </div>
           <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary">Create</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={!canWrite} title={denial || undefined}>Create</button>
           </div>
         </form>
       )}
@@ -104,8 +107,8 @@ export default function CustomFieldsTab() {
           illustration="generic"
           title={{ en: 'No custom fields yet', hi: 'कोई क्षेत्र नहीं' }}
           description="A custom field adds something your business tracks that the standard contact and deal records do not carry."
-          action="New Field"
-          onAction={() => setShowForm(true)}
+          action={canWrite ? 'New Field' : undefined}
+          onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : ['contact', 'deal'].map(entity => {
         const ef = fields.filter(f => f.entity_type === entity);

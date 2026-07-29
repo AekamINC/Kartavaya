@@ -3,6 +3,7 @@ import { api, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Section, DataTable, Td } from '../../components/editorial';
 import Note from '../../components/module/Note';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 /**
  * Push attendance to payroll — `POST /api/v1/pahchan/attendance/publish`.
@@ -58,6 +59,8 @@ function Figure({ label, value, hint, tone }) {
 }
 
 export default function PublishPayroll() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change attendance' });
   const { pushToast } = useToast();
   const [range, setRange] = useState(defaultRange);
   const [busy, setBusy] = useState(null);          // 'preview' | 'publish'
@@ -154,9 +157,8 @@ export default function PublishPayroll() {
           /* Not reachable until a preview of THIS range has been looked at. The
              endpoint would happily write on the first call; making the operator
              see the figures first is the whole reason dry_run exists. */
-          disabled={!!busy || !result || result.dry_run === false || stale}
-          onClick={() => run(false)}
-        >
+          disabled={!!busy || !result || result.dry_run === false || stale || !canWrite}
+          onClick={() => run(false)} title={denial || undefined}>
           {busy === 'publish' ? 'Publishing…' : 'Publish to payroll'}
         </button>
       </div>

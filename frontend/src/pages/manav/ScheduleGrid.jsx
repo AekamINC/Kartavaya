@@ -23,8 +23,11 @@ import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { Empty, DataTable, Td } from '../../components/editorial';
 import { Badge, useList, useResource, ErrorNote, Shim, errText, today } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function ScheduleGrid({ pushToast }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const [dateFrom, setDateFrom] = useState(today());
   const [dateTo, setDateTo] = useState(today());
   const [range, setRange] = useState(null);      // null until Load is pressed
@@ -79,7 +82,8 @@ export default function ScheduleGrid({ pushToast }) {
           Coverage
         </button>
         <div className="mn-bar__gap" />
-        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}
+          disabled={!canWrite} title={denial || undefined}>
           + Assign shift
         </button>
       </div>
@@ -136,7 +140,7 @@ export default function ScheduleGrid({ pushToast }) {
           </div>
           <div className="k-formpanel__actions">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving || blocked}>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving || blocked || !canWrite} title={denial || undefined}>
               {saving ? 'Assigning…' : 'Assign'}
             </button>
           </div>

@@ -9,12 +9,15 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import { Resource, useList, errText, shortStamp } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const SOURCE_LABELS = { text: 'Text', faq: 'FAQ', url: 'URL', file: 'File' };
 const BLANK_DOC = { title: '', content: '', source_type: 'text', source_url: '' };
 const BLANK_FAQ = { question: '', answer: '' };
 
 export default function KnowledgeTab({ clientId }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
   const { pushToast } = useToast();
   const docs = useList(clientId ? `/v1/hub/clients/${clientId}/kb` : null, [clientId]);
 
@@ -91,7 +94,8 @@ export default function KnowledgeTab({ clientId }) {
         </form>
         <div className="hb-kb__add">
           <button type="button" className="k-btn k-btn--primary hb-btn--sm"
-            onClick={() => setPane(pane === 'doc' ? null : 'doc')}>Add document</button>
+            onClick={() => setPane(pane === 'doc' ? null : 'doc')}
+          disabled={!canWrite} title={denial || undefined}>Add document</button>
           <button type="button" className="k-btn k-btn--ghost hb-btn--sm"
             onClick={() => setPane(pane === 'faq' ? null : 'faq')}>Add FAQ</button>
         </div>
@@ -128,7 +132,7 @@ export default function KnowledgeTab({ clientId }) {
           </label>
           <div className="hb-form__foot hb-form__foot--end">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setPane(null)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={busy}>
+            <button type="submit" className="k-btn k-btn--primary" disabled={busy || !canWrite} title={denial || undefined}>
               {busy ? 'Indexing…' : 'Add and index'}
             </button>
           </div>
@@ -150,7 +154,7 @@ export default function KnowledgeTab({ clientId }) {
           </label>
           <div className="hb-form__foot hb-form__foot--end">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setPane(null)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={busy}>
+            <button type="submit" className="k-btn k-btn--primary" disabled={busy || !canWrite} title={denial || undefined}>
               {busy ? 'Saving…' : 'Add FAQ'}
             </button>
           </div>
@@ -205,11 +209,13 @@ export default function KnowledgeTab({ clientId }) {
                 <span className="hb-doc__confirm">
                   <span className="hb-cap">Remove from the index?</span>
                   <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={() => setConfirmDel(null)}>Keep</button>
-                  <button type="button" className="k-btn k-btn--ghost hb-btn--sm hb-btn--danger" onClick={() => removeDoc(d.id)}>Remove</button>
+                  <button type="button" className="k-btn k-btn--ghost hb-btn--sm hb-btn--danger" onClick={() => removeDoc(d.id)}
+          disabled={!canWrite} title={denial || undefined}>Remove</button>
                 </span>
               ) : (
                 <button type="button" className="k-btn k-btn--ghost hb-btn--sm hb-btn--danger"
-                  onClick={() => setConfirmDel(d.id)}>Remove</button>
+                  onClick={() => setConfirmDel(d.id)}
+          disabled={!canWrite} title={denial || undefined}>Remove</button>
               )}
             </div>
           ))}

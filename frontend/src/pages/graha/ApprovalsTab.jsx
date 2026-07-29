@@ -14,11 +14,14 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const ENTITY_TYPES = ['deal', 'vendor_bill', 'expense_claim'];
 const STATUS_COLORS = { pending: 'var(--warn)', approved: 'var(--ok)', rejected: 'var(--danger)' };
 
 export default function ApprovalsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change CRM settings' });
   const { pushToast } = useToast();
   const [rules, setRules] = useState([]);
   const [requests, setRequests] = useState([]);
@@ -99,7 +102,7 @@ export default function ApprovalsTab() {
             {ENTITY_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
           </select>
           <button className="k-btn k-btn--ghost" onClick={load}>Filter</button>
-          <button className="k-btn k-btn--primary" onClick={() => setShowRuleForm(!showRuleForm)}>+ New Rule</button>
+          <button className="k-btn k-btn--primary" onClick={() => setShowRuleForm(!showRuleForm)} disabled={!canWrite} title={denial || undefined}>+ New Rule</button>
         </div>
       </div>
 
@@ -117,7 +120,7 @@ export default function ApprovalsTab() {
           </div>
           <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowRuleForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary">Create Rule</button>
+            <button type="submit" className="k-btn k-btn--primary" disabled={!canWrite} title={denial || undefined}>Create Rule</button>
           </div>
         </form>
       )}
@@ -173,7 +176,7 @@ export default function ApprovalsTab() {
                 <td>
                   {r.status === 'pending' && (
                     <div className="gr__sacts">
-                      <button className="k-btn k-btn--primary" onClick={() => approveRequest(r.id)}>Approve</button>
+                      <button className="k-btn k-btn--primary" onClick={() => approveRequest(r.id)} disabled={!canWrite} title={denial || undefined}>Approve</button>
                       <button className="k-btn k-btn--reject" onClick={() => rejectRequest(r.id)}>Reject</button>
                     </div>
                   )}

@@ -13,8 +13,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Resource, useList, errText } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function ChatTab({ clientId }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
   const { pushToast } = useToast();
   const sessions = useList(clientId ? `/v1/hub/clients/${clientId}/chat/sessions` : null, [clientId]);
   const [active, setActive] = useState(null);
@@ -97,7 +100,8 @@ export default function ChatTab({ clientId }) {
   return (
     <div className="hb-chat">
       <aside className="hb-card hb-chat__side">
-        <button type="button" className="k-btn k-btn--primary hb-btn--block" onClick={createSession}>
+        <button type="button" className="k-btn k-btn--primary hb-btn--block" onClick={createSession}
+          disabled={!canWrite} title={denial || undefined}>
           New chat
         </button>
         <Resource
@@ -126,7 +130,8 @@ export default function ChatTab({ clientId }) {
                     <span className="hb-cap">Delete this conversation permanently?</span>
                     <span className="hb-chat__confirm-act">
                       <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={() => setConfirmDel(null)}>Keep</button>
-                      <button type="button" className="k-btn k-btn--ghost hb-btn--sm hb-btn--danger" onClick={() => removeSession(s.id)}>Delete</button>
+                      <button type="button" className="k-btn k-btn--ghost hb-btn--sm hb-btn--danger" onClick={() => removeSession(s.id)}
+          disabled={!canWrite} title={denial || undefined}>Delete</button>
                     </span>
                   </div>
                 )}
@@ -190,7 +195,7 @@ export default function ChatTab({ clientId }) {
             <form className="hb-chat__compose" onSubmit={send}>
               <input className="k-input hb-chat__in" placeholder="Ask about this client…"
                 value={input} onChange={e => setInput(e.target.value)} disabled={sending} />
-              <button type="submit" className="k-btn k-btn--primary" disabled={sending || !input.trim()}>Send</button>
+              <button type="submit" className="k-btn k-btn--primary" disabled={sending || !input.trim() || !canWrite} title={denial || undefined}>Send</button>
             </form>
           </>
         )}

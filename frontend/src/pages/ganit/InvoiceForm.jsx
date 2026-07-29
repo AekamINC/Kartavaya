@@ -9,6 +9,7 @@ import { useToast } from '../../components/ui/toast';
 import { inr } from '../../lib/inr';
 import { stateFromGSTIN } from '../../lib/validators';
 import { INV_TYPE_LABELS } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
 const BLANK = {
@@ -89,6 +90,8 @@ function lineTaxable(li) {
  * invoice → Edit".
  */
 export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'create invoices' });
   const { pushToast } = useToast();
   const [form, setForm] = useState(() => (editing ? fromInvoice(editing) : { ...BLANK }));
   const [contacts, setContacts] = useState([]);
@@ -512,7 +515,7 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
 
       <div className="gn-form__acts">
         <button type="button" className="btn btn--ghost btn--sm" onClick={onCancel}>Cancel</button>
-        <button type="submit" className="btn btn--fill btn--sm" disabled={saving}>
+        <button type="submit" className="btn btn--fill btn--sm" disabled={saving || !canWrite} title={denial || undefined}>
           {saving ? (editing ? 'Saving…' : 'Creating…') : (editing ? 'Save changes' : 'Create invoice')}
         </button>
       </div>

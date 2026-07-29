@@ -19,8 +19,11 @@ import { api } from '../../lib/api';
 import { Empty } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useList, ErrorNote, Shim, errText, monthRange, thisMonth } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function SwapRequests({ pushToast }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const swaps = useList('/v1/manav/swaps?status=pending');
   const [showForm, setShowForm] = useState(false);
   const [acting, setActing] = useState('');
@@ -43,7 +46,8 @@ export default function SwapRequests({ pushToast }) {
         <h3 className="k-section__title">
           Swap requests<span className="k-section__title-hi" lang="hi">अदला-बदली</span>
         </h3>
-        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}
+          disabled={!canWrite} title={denial || undefined}>
           + Request swap
         </button>
       </div>
@@ -80,15 +84,14 @@ export default function SwapRequests({ pushToast }) {
                     <button
                       type="button"
                       className="k-btn k-btn--primary k-btn--sm"
-                      disabled={!!acting}
+                      disabled={!!acting || !canWrite}
                       onClick={() => setConfirm({
                         title: 'Approve this swap?',
                         message: `${s.requester_name} and ${s.target_name} will exchange their rostered shifts on ${s.schedule_date}. Both rosters change.`,
                         confirmLabel: 'Approve',
                         intent: 'neutral',
                         onConfirm: () => handleAction(s.id, 'approved'),
-                      })}
-                    >
+                      })} title={denial || undefined}>
                       {acting === s.id + 'approved' ? 'Approving…' : 'Approve'}
                     </button>
                     <button
@@ -111,6 +114,9 @@ export default function SwapRequests({ pushToast }) {
 }
 
 function SwapForm({ onClose, onCreated, pushToast }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ requester_schedule_id: '', target_employee_id: '', reason: '' });
 
@@ -191,7 +197,7 @@ function SwapForm({ onClose, onCreated, pushToast }) {
       <div className="k-formpanel__actions">
         <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
         <button type="submit" className="k-btn k-btn--primary"
-          disabled={saving || !!employees.error || !!schedules.error || noRoster}>
+          disabled={saving || !!employees.error || !!schedules.error || noRoster || !canWrite} title={denial || undefined}>
           {saving ? 'Submitting…' : 'Submit'}
         </button>
       </div>

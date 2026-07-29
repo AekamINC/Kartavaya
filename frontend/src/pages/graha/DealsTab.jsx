@@ -243,8 +243,8 @@ export default function DealsTab({ newNonce = 0 }) {
           illustration="generic"
           title={{ en: 'No deals yet', hi: 'कोई सौदा नहीं' }}
           description="Track your sales pipeline here. Add your first opportunity to see it move through the stages."
-          action="New Deal"
-          onAction={() => { setShowForm(true); loadFormData(); }}
+          action={canWrite ? 'New Deal' : undefined}
+          onAction={canWrite ? () => { setShowForm(true); loadFormData(); } : undefined}
         />
       ) : (
         <div className="gr__cards">

@@ -23,6 +23,7 @@
 import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { Empty } from '../../components/editorial';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   useList, ErrorNote, Shim, errText, DEFAULT_SHIFT_COLOR, isHexColor,
 } from './_shared';
@@ -33,6 +34,8 @@ const BLANK = {
 };
 
 export default function ShiftDefinitions({ pushToast }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const list = useList('/v1/manav/shifts');
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -88,7 +91,8 @@ export default function ShiftDefinitions({ pushToast }) {
         <h3 className="k-section__title">
           Shift definitions<span className="k-section__title-hi" lang="hi">पारी</span>
         </h3>
-        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}
+          disabled={!canWrite} title={denial || undefined}>
           + Add shift
         </button>
       </div>
@@ -125,7 +129,7 @@ export default function ShiftDefinitions({ pushToast }) {
           </div>
           <div className="k-formpanel__actions">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>
               {saving ? 'Creating…' : 'Create shift'}
             </button>
           </div>
@@ -176,7 +180,7 @@ export default function ShiftDefinitions({ pushToast }) {
                       <div className="mn-card__act">
                         <button type="button" className="k-btn k-btn--ghost k-btn--sm"
                           onClick={() => setEditingId(null)}>Cancel</button>
-                        <button type="submit" className="k-btn k-btn--primary k-btn--sm" disabled={editSaving}>
+                        <button type="submit" className="k-btn k-btn--primary k-btn--sm" disabled={editSaving || !canWrite} title={denial || undefined}>
                           {editSaving ? 'Saving…' : 'Save'}
                         </button>
                       </div>

@@ -10,10 +10,13 @@ import { inr } from '../../lib/inr';
 import { useDocumentDownload } from '../../lib/documents';
 import DocumentError from '../../components/ui/DocumentError';
 import { Badge, CONTRACT_COLORS } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const STATUSES = ['draft', 'active', 'expired', 'cancelled', 'renewed'];
 
 export default function ContractDetail({ contractId, onClose, onChanged }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change contracts' });
   const { pushToast } = useToast();
   const [detail, setDetail] = useState(null);
   const [err, setErr] = useState(null);
@@ -280,7 +283,7 @@ export default function ContractDetail({ contractId, onClose, onChanged }) {
                     </div>
                     <div className="gn-form__acts">
                       <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditing(false)}>Discard</button>
-                      <button type="submit" className="btn btn--fill btn--sm" disabled={saving}>
+                      <button type="submit" className="btn btn--fill btn--sm" disabled={saving || !canWrite} title={denial || undefined}>
                         {saving ? 'Saving…' : 'Save changes'}
                       </button>
                     </div>

@@ -28,6 +28,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty, DataTable, Td } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   Badge, ASSET_CATEGORIES, ASSET_CONDITIONS, CATEGORY_COLORS, CONDITION_COLORS,
   useList, ErrorNote, Shim, errText,
@@ -39,6 +40,8 @@ const BLANK = {
 };
 
 export default function AssetsTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const { pushToast } = useToast();
   const list = useList('/v1/manav/assets');
   const employees = useList('/v1/manav/employees');
@@ -144,7 +147,8 @@ export default function AssetsTab() {
           </select>
         </label>
         <div className="mn-bar__gap" />
-        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}>
+        <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}
+          disabled={!canWrite} title={denial || undefined}>
           + New asset
         </button>
       </div>
@@ -201,7 +205,7 @@ export default function AssetsTab() {
           </div>
           <div className="k-formpanel__actions">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+            <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>
               {saving ? 'Creating…' : 'Create asset'}
             </button>
           </div>
@@ -266,8 +270,8 @@ export default function AssetsTab() {
                               ))}
                             </select>
                             <button type="button" className="k-btn k-btn--primary k-btn--sm"
-                              disabled={!assignEmployee || busy === a.id}
-                              onClick={() => assign(a.id)}>
+                              disabled={!assignEmployee || busy === a.id || !canWrite}
+                              onClick={() => assign(a.id)} title={denial || undefined}>
                               {busy === a.id ? 'Assigning…' : 'Assign'}
                             </button>
                             <button type="button" className="k-btn k-btn--ghost k-btn--sm"
@@ -349,7 +353,7 @@ export default function AssetsTab() {
                           <div className="k-formpanel__actions">
                             <button type="button" className="k-btn k-btn--ghost"
                               onClick={() => setEditingId(null)}>Cancel</button>
-                            <button type="submit" className="k-btn k-btn--primary" disabled={editSaving}>
+                            <button type="submit" className="k-btn k-btn--primary" disabled={editSaving || !canWrite} title={denial || undefined}>
                               {editSaving ? 'Saving…' : 'Save'}
                             </button>
                           </div>

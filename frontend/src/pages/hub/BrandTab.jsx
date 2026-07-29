@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Resource, errText } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const TONES = ['professional', 'casual', 'friendly', 'bold', 'inspirational', 'witty'];
 
@@ -14,6 +15,8 @@ const TONES = ['professional', 'casual', 'friendly', 'bold', 'inspirational', 'w
 const READ_ONLY = ['id', 'client_id', 'org_id', 'created_at', 'updated_at'];
 
 export default function BrandTab({ clientId, state, brand, onSaved }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
   const { pushToast } = useToast();
   const [form, setForm] = useState(brand || {});
   const [busy, setBusy] = useState(false);
@@ -121,7 +124,7 @@ export default function BrandTab({ clientId, state, brand, onSaved }) {
           <span className="hb-cap">
             {dirty ? 'Unsaved changes.' : brand ? 'Saved.' : 'Not saved yet.'}
           </span>
-          <button type="submit" className="k-btn k-btn--primary" disabled={busy || !dirty}>
+          <button type="submit" className="k-btn k-btn--primary" disabled={busy || !dirty || !canWrite} title={denial || undefined}>
             {busy ? 'Saving…' : 'Save brand profile'}
           </button>
         </div>

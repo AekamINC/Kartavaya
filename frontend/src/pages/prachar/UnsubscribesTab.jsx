@@ -17,12 +17,15 @@ import React, { useState, useMemo } from 'react';
 import { DataTable, Td } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
 import { api, rows, Panel, Bar, useResource, useMutate, humanise, plural, fmtDate } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 // Deliberately permissive — it rejects the typo classes that matter (no @, no
 // dot in the domain, spaces) without inventing rules the server does not have.
 const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function UnsubscribesTab({ onChanged }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
   const { busy, go } = useMutate(pushToast);
   const [email, setEmail] = useState('');
@@ -102,7 +105,7 @@ export default function UnsubscribesTab({ onChanged }) {
           <option value="bounced">Address bounces</option>
           <option value="complaint">Marked as spam</option>
         </select>
-        <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={add} disabled={busy}>
+        <button type="button" className="k-btn k-btn--primary k-btn--sm" onClick={add} disabled={busy || !canWrite} title={denial || undefined}>
           {busy ? 'Adding…' : 'Add'}
         </button>
       </div>

@@ -19,8 +19,11 @@ import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge, CANDIDATE_STAGES, STAGE_COLORS_REC, useList, ErrorNote, Shim, errText } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function RecruitmentTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const { pushToast } = useToast();
   const openings = useList('/v1/manav/job-openings');
   const [activeOpening, setActiveOpening] = useState('');
@@ -88,7 +91,8 @@ export default function RecruitmentTab() {
         </button>
         {current && (
           <button type="button" className="k-btn k-btn--primary"
-            onClick={() => setPanel(panel === 'candidate' ? null : 'candidate')}>
+            onClick={() => setPanel(panel === 'candidate' ? null : 'candidate')}
+          disabled={!canWrite} title={denial || undefined}>
             + Candidate
           </button>
         )}
@@ -198,6 +202,9 @@ export default function RecruitmentTab() {
 
 /** Create or edit — the same five fields either way. */
 function OpeningForm({ existing, onClose, onCreated, pushToast }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(existing
     ? { title: existing.title || '', description: existing.description || '', status: existing.status || 'open' }
@@ -249,7 +256,7 @@ function OpeningForm({ existing, onClose, onCreated, pushToast }) {
       </div>
       <div className="k-formpanel__actions">
         <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
-        <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>
           {saving ? 'Saving…' : existing ? 'Save' : 'Create'}
         </button>
       </div>
@@ -258,6 +265,9 @@ function OpeningForm({ existing, onClose, onCreated, pushToast }) {
 }
 
 function CandidateForm({ openingId, onClose, onCreated, pushToast }) {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ full_name: '', email: '', phone: '', resume_url: '' });
 
@@ -300,7 +310,7 @@ function CandidateForm({ openingId, onClose, onCreated, pushToast }) {
       </div>
       <div className="k-formpanel__actions">
         <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
-        <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>
           {saving ? 'Adding…' : 'Add'}
         </button>
       </div>

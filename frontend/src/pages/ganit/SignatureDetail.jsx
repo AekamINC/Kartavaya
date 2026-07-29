@@ -14,10 +14,13 @@ import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import { Badge, CONTRACT_COLORS, SIGN_STATUS_COLORS } from './_shared';
 import { loadSignatureState } from './ESignTab';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const BLANK_SIGNER = { name: '', email: '', role: 'signer' };
 
 export default function SignatureDetail({ contract, onClose, onChanged }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'send for signature' });
   const { pushToast } = useToast();
   const [state, setState] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -153,14 +156,13 @@ export default function SignatureDetail({ contract, onClose, onChanged }) {
                         <h3 className="dr__lbl">Signers<span className="dr__lbl-hi" lang="hi">हस्ताक्षरकर्ता</span></h3>
                         {canCancel && (
                           <button
-                            type="button" className="btn btn--danger btn--sm" disabled={cancelling}
+                            type="button" className="btn btn--danger btn--sm" disabled={cancelling || !canWrite}
                             onClick={() => setConfirm({
                               title: 'Cancel the signature request?',
                               message: 'Outstanding signing links stop working. Signatures already collected are kept.',
                               confirmLabel: 'Cancel request',
                               onConfirm: cancelSignature,
-                            })}
-                          >
+                            })} title={denial || undefined}>
                             {cancelling ? 'Cancelling…' : 'Cancel request'}
                           </button>
                         )}
@@ -207,7 +209,7 @@ export default function SignatureDetail({ contract, onClose, onChanged }) {
                         + Add signer
                       </button>
                       <div className="gn-form__acts">
-                        <button type="submit" className="btn btn--fill btn--sm" disabled={sending}>
+                        <button type="submit" className="btn btn--fill btn--sm" disabled={sending || !canWrite} title={denial || undefined}>
                           {sending ? 'Sending…' : 'Send for signature'}
                         </button>
                       </div>

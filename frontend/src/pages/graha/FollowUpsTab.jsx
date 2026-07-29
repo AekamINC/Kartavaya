@@ -156,8 +156,8 @@ export default function FollowUpsTab() {
           description={statusFilter
             ? `Nothing matches the "${statusFilter}" filter. Clear it to see everything.`
             : 'A follow-up is the next step on a contact or a deal. Deals without one are flagged on the pipeline board.'}
-          action="New Follow-up"
-          onAction={() => { setShowForm(true); loadOptions(); }}
+          action={canWrite ? 'New Follow-up' : undefined}
+          onAction={canWrite ? () => { setShowForm(true); loadOptions(); } : undefined}
         />
       ) : (
         <div className="gr__cards">

@@ -21,6 +21,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { Badge, TYPE_COLORS, SOURCE_COLORS } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
 
 const FIELDS = [
   { key: 'name', label: 'Name' },
@@ -33,6 +34,8 @@ const FIELDS = [
 ];
 
 export default function DedupeTab() {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'merge contacts' });
   const { pushToast } = useToast();
   const [groups, setGroups] = useState([]);
   const [merges, setMerges] = useState([]);
@@ -197,7 +200,7 @@ export default function DedupeTab() {
                     </div>
                     <div className="gr__acts">
                       <button className="k-btn k-btn--ghost" onClick={() => setExpandedIdx(null)}>Cancel</button>
-                      <button className="k-btn k-btn--primary" disabled={!survivorId || merging} onClick={() => doMerge(gi)}>
+                      <button className="k-btn k-btn--primary" disabled={!survivorId || merging || !canWrite} onClick={() => doMerge(gi)} title={denial || undefined}>
                         {merging ? 'Merging…' : `Merge ${g.count - 1} into survivor`}
                       </button>
                     </div>

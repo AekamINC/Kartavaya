@@ -155,8 +155,8 @@ export default function ActivitiesTab() {
           description={typeFilter
             ? `Nothing of type "${typeFilter}" has been logged. Clear the filter to see everything.`
             : 'A call, an email, a meeting or a note against a contact or a deal. Log the first one and it appears here.'}
-          action="Log Activity"
-          onAction={() => setShowForm(true)}
+          action={canWrite ? 'Log Activity' : undefined}
+          onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : (
         <div className="gr__tblwrap gr__tblwrap--bare">

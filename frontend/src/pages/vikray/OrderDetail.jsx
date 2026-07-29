@@ -21,12 +21,15 @@ import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import LineItemEditor from '../../components/LineItemEditor';
 import { inr } from '../../lib/inr';
 import { orderColor, ORDER_LABELS } from '../../lib/statusColors';
+import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   FLOW_STAGES, nextStatus, ADVANCE_LABEL, asItems, lineAmount,
   previewTotals, useGanitAccess, probeGanit,
 } from './_shared';
 
 export default function OrderDetail({ orderId, onClose, onChanged }) {
+  // F32 — the module is read from the route, never named here.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change orders' });
   const { pushToast } = useToast();
   const [order, setOrder] = useState(null);
   const [err, setErr] = useState(null);
@@ -195,8 +198,8 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
 
                 <div className="vkd__acts">
                   {next && !cancelled && (
-                    <button type="button" className="btn btn--fill btn--sm" disabled={!!busy}
-                      onClick={() => advance(next)}>
+                    <button type="button" className="btn btn--fill btn--sm" disabled={!!busy || !canWrite}
+                      onClick={() => advance(next)} title={denial || undefined}>
                       {busy === 'advance the order' ? 'Working…' : ADVANCE_LABEL[o.status]}
                     </button>
                   )}
@@ -217,7 +220,7 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
                   )}
                   {canCancel && (
                     <button
-                      type="button" className="btn btn--danger btn--sm" disabled={!!busy}
+                      type="button" className="btn btn--danger btn--sm" disabled={!!busy || !canWrite}
                       onClick={() => setConfirm({
                         title: `Cancel ${o.order_number}?`,
                         message: o.status === 'confirmed'
@@ -225,8 +228,7 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
                           : 'The order is withdrawn. This cannot be undone.',
                         confirmLabel: 'Cancel order',
                         onConfirm: cancel,
-                      })}
-                    >
+                      })} title={denial || undefined}>
                       Cancel order
                     </button>
                   )}
@@ -362,7 +364,7 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
                       </label>
 
                       <div className="vkd__acts">
-                        <button type="submit" className="btn btn--fill btn--sm" disabled={saving}>
+                        <button type="submit" className="btn btn--fill btn--sm" disabled={saving || !canWrite} title={denial || undefined}>
                           {saving ? 'Saving…' : 'Save changes'}
                         </button>
                         <button type="button" className="btn btn--ghost btn--sm" onClick={() => setEditing(false)}>
