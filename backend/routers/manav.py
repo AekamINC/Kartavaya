@@ -450,8 +450,25 @@ async def create_employee(
         "RETURNING id, name, employee_code",
         org_id, body.user_id, body.employee_code, body.name, body.email, body.phone,
         body.department, body.designation, body.date_of_joining, body.date_of_birth,
-        body.gender or None, body.blood_group, body.emergency_contact, json.dumps(body.address),
-        json.dumps(body.bank_details), body.pan, encrypt(body.aadhaar), body.uan, body.esi_number,
+        # `body.address` and `body.bank_details` are passed as DICTS, exactly
+        # like `body.emergency_contact` beside them — NOT through `json.dumps`.
+        #
+        # `db.py` registers a jsonb codec whose encoder IS `json.dumps`, so
+        # dumping first encodes twice and the column ends up holding a JSON
+        # *string* rather than an object. This one INSERT is the cleanest proof
+        # of it in the codebase: three jsonb columns, written side by side, and
+        # the only one that stored correctly was the one passed as a dict —
+        # measured live, `emergency_contact` came back `object` while `address`
+        # and `bank_details` both came back `string`.
+        #
+        # The consequence was not cosmetic. `_mask_employee_pii` calls
+        # `_mask_bank(row["bank_details"])`, which expects a mapping, so
+        # **`GET /v1/manav/employees/{id}` returned 500 for every employee in
+        # the org** — the whole employee detail view was dead, and the failure
+        # reached the browser as a CORS error because the exception escaped
+        # before `CORSMiddleware` attached its headers.
+        body.gender or None, body.blood_group, body.emergency_contact, body.address,
+        body.bank_details, body.pan, encrypt(body.aadhaar), body.uan, body.esi_number,
         body.employment_type, body.reporting_to, body.shift, user["user_id"],
     )
     return {"status": "created", **dict(row)}
@@ -576,7 +593,10 @@ async def update_employee(
     jsonb_fields = {"address", "bank_details"}
     for k, v in updates.items():
         if k in jsonb_fields:
-            sets.append(f"{k}=${idx}::jsonb")
+            # `::text::jsonb`, not `::jsonb` — see the INSERT above. Binding an
+            # already-dumped string to a jsonb parameter runs it through the
+            # codec's `json.dumps` a second time and stores a JSON string.
+            sets.append(f"{k}=${idx}::text::jsonb")
             params.append(json.dumps(v))
         else:
             sets.append(f"{k}=${idx}")

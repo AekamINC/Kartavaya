@@ -17,6 +17,7 @@ Rules, unchanged from the Manav fix:
     branch are public routing information, and the holder's name is already on
     the row beside it.
 """
+import json
 from typing import Optional
 
 
@@ -37,10 +38,26 @@ def mask_tail(value: Optional[str], keep: int = 4, group: Optional[int] = None) 
     return masked
 
 
-def mask_bank(details: Optional[dict]) -> Optional[dict]:
-    """Mask the account number only. Returns a copy — never mutates the input."""
+def mask_bank(details) -> Optional[dict]:
+    """Mask the account number only. Returns a copy — never mutates the input.
+
+    Accepts a STRING as well as a mapping, and that is not defensive
+    programming for its own sake. `manav_employees.bank_details` is jsonb, and a
+    write path that dumped before binding stored a JSON *string* instead of an
+    object; `dict("{}")` raises, so **`GET /v1/manav/employees/{id}` returned
+    500 for every employee in the org**. The write path is fixed and the rows
+    repaired, but a masker that dies on a malformed value takes the whole record
+    with it — one bad field should cost that field, not the endpoint.
+    """
     if not details:
         return details
+    if isinstance(details, str):
+        try:
+            details = json.loads(details)
+        except (ValueError, TypeError):
+            return {}
+    if not isinstance(details, dict):
+        return {}
     out = dict(details)
     if out.get("account_number"):
         out["account_number"] = mask_tail(out["account_number"], 4)
