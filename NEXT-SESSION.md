@@ -51,12 +51,19 @@ grant/revoke cycles.
    being declared in a tab and spent in a sibling component — valid JSX that
    builds clean and white-screens the drawer at runtime.
 
-   **What is left is looking at it.** Sign in as `ganit: viewer` and as a
-   grantless member and walk the modules. The rule applied was
-   `require_module`'s own — gated exactly when the click issues a non-GET —
-   so the two things to watch for are a *read* that got greyed out (GST filing
-   and the leave conflict-check are GETs and were deliberately left alone) and
-   a write that was missed.
+   **Seen in a browser, but not on staging.** `e2e/f32-write-gating.spec.ts`
+   drives real Chromium over all ten module pages as a viewer AND as an
+   administrator — 22 checks, all passing. It runs the frontend locally with
+   the API stubbed, which is legitimate for F32 only because the decision is
+   entirely client-side and no request takes part in it. `npm run
+   test:e2e:gating` from `frontend/`, with vite up and
+   `VITE_BACKEND_URL` set to anything (the app refuses to boot without it).
+
+   **What that still does not cover** is staging's own data and the API's
+   refusals. The rule applied was `require_module`'s own — gated exactly when
+   the click issues a non-GET — so on a real sweep watch for a *read* that got
+   greyed out (GST filing and the leave conflict-check are GETs and were
+   deliberately left alone) as much as a write that was missed.
 
    **Sanvaad still has its own `useSanvaadAccess`**, deliberately: two access
    models beside each other are free to disagree. Its bespoke
@@ -159,10 +166,29 @@ Takes effect on the next request — verified across 22 cycles, no cache lag.
 - **A remote/web session may not be able to reach staging at all.** In this
   environment `staging.kartavaya.com` answered `403 CONNECT` at the agent proxy
   (`curl "$HTTPS_PROXY/__agentproxy/status"` confirms the denial), as did
-  `supabase.com`. Chromium and the repo's Playwright config are present and
-  fine — there is simply nothing reachable to point them at. If that is your
-  session, do the code work and say plainly that nothing was verified as a
-  user; do not report a gating fix as done because its unit tests pass.
+  `supabase.com` and the Vercel preview URL. Chromium and Playwright are present
+  and fine — there is simply nothing deployed to point them at. **You can still
+  test in a real browser**: serve the frontend locally and stub the API, which
+  is what `e2e/f32-write-gating.spec.ts` does. Say plainly which half that
+  covers.
+- **A blanket API stub erases your fixture.** `Protected.jsx:91` overwrites
+  `localStorage.Kartavaya_user` with whatever `/auth/me` returns before anything
+  renders, so answering every `/api/**` with one empty envelope wipes
+  `module_levels` and un-gates the whole product. That produced twelve
+  convincing, entirely false F32 failures. Serve the seeded user from
+  `/auth/me`.
+- **Two gating mechanisms, both correct.** Where we own the control it takes
+  `disabled`; `ModuleHeader` cannot (its `actions` is arbitrary JSX) so it wraps
+  the subtree in `inert`. A check that knows only one reports the other as a
+  miss.
+- **A static sweep for `attr={…}` misses `attr: …`.** Five Prachar empty states
+  pass their CTA inside an object literal, so the attribute-based pass walked
+  past them and only the browser caught it.
+- **`local Postgres` is not a route to a working backend.** The repo's 80
+  migrations are incremental on top of a base schema that lives only in
+  Supabase: applying them gives 111 tables, and **40 of the 146 the backend
+  queries are absent**, `staging.users` among them. Reconstructing those means
+  inventing schemas, after which every failure looks like a product bug.
 
 ---
 
