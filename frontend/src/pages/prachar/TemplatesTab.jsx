@@ -137,8 +137,10 @@ export default function TemplatesTab({ onChanged }) {
           icon: '✉️',
           title: 'No templates yet',
           sub: 'A template is a subject and a body you can reuse across campaigns, with {{merge}} fields filled per contact.',
-          cta: '+ New template',
-          onCta: () => setForm(blank()),
+          // F32. A CTA in an object literal rather than a JSX attribute, which
+          // is why the static sweep walked past it and only the browser found it.
+          cta: canWrite ? '+ New template' : undefined,
+          onCta: canWrite ? () => setForm(blank()) : undefined,
         }}
         count={3}
       >

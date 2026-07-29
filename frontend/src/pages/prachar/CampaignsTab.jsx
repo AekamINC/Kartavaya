@@ -225,8 +225,10 @@ export default function CampaignsTab({ scheduleNonce = 0, onChanged }) {
           icon: '📣',
           title: 'No campaigns yet',
           sub: 'A campaign is one message to one audience on one date. Schedule the first and it appears on this calendar.',
-          cta: '+ Schedule',
-          onCta: () => setForm(blank()),
+          // F32. A CTA in an object literal rather than a JSX attribute, which
+          // is why the static sweep walked past it and only the browser found it.
+          cta: canWrite ? '+ Schedule' : undefined,
+          onCta: canWrite ? () => setForm(blank()) : undefined,
         }}
         count={6}
       >

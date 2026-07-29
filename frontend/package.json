@@ -27,9 +27,11 @@
     "check:contrast": "node scripts/check-contrast.mjs",
     "check:tokens": "node scripts/check-tokens.mjs",
     "check:classes": "node scripts/check-classes.mjs",
-    "check:gates": "node scripts/check-write-gates.mjs"
+    "check:gates": "node scripts/check-write-gates.mjs",
+    "test:e2e:gating": "playwright test --config ../playwright.config.ts f32-write-gating"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",

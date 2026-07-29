@@ -164,8 +164,10 @@ export default function AutomationsTab({ onChanged }) {
           icon: '⚡',
           title: 'No automations yet',
           sub: 'An automation watches for something happening in CRM and responds without anyone pressing anything.',
-          cta: '+ New automation',
-          onCta: () => setForm({ name: '', trigger_type: 'contact_created', action_type: 'send_email', is_active: true }),
+          // F32. A CTA in an object literal rather than a JSX attribute, which
+          // is why the static sweep walked past it and only the browser found it.
+          cta: canWrite ? '+ New automation' : undefined,
+          onCta: canWrite ? () => setForm({ name: '', trigger_type: 'contact_created', action_type: 'send_email', is_active: true }) : undefined,
         }}
         count={3}
       >

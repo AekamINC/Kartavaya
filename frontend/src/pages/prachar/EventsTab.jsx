@@ -121,8 +121,10 @@ export default function EventsTab({ onChanged }) {
           icon: '📅',
           title: 'No events yet',
           sub: 'An event collects registrations against a date — a webinar, a meetup, a workshop.',
-          cta: '+ New event',
-          onCta: () => setForm(blankEvent()),
+          // F32. A CTA in an object literal rather than a JSX attribute, which
+          // is why the static sweep walked past it and only the browser found it.
+          cta: canWrite ? '+ New event' : undefined,
+          onCta: canWrite ? () => setForm(blankEvent()) : undefined,
         }}
         count={4}
       >

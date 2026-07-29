@@ -133,8 +133,10 @@ export default function SequencesTab({ onChanged }) {
           icon: '🔄',
           title: 'No sequences yet',
           sub: 'A sequence sends a ladder of messages spaced days apart, and stops when the contact replies.',
-          cta: '+ New sequence',
-          onCta: () => setForm({ name: '', description: '', exit_on_reply: true }),
+          // F32. A CTA in an object literal rather than a JSX attribute, which
+          // is why the static sweep walked past it and only the browser found it.
+          cta: canWrite ? '+ New sequence' : undefined,
+          onCta: canWrite ? () => setForm({ name: '', description: '', exit_on_reply: true }) : undefined,
         }}
         count={4}
       >
