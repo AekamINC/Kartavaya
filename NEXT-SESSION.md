@@ -33,21 +33,41 @@ Tally purchase path (ITC ties exactly) · payroll 863ms · RBAC 9/9 + 22
 grant/revoke cycles.
 
 ### Open, in priority order
-1. **F32** — write buttons render from the page shell, not the caller's level.
-   A `ganit:viewer` is handed the full Create Invoice form; a member with no
-   grants is offered `Run payroll`. The API refuses every one, so nothing is at
-   risk but trust. **The level is already resolved per request and simply is not
-   consulted at render time — this is one central fix, not per-screen.**
-2. **The UI sweep** — 5 surfaces done of 9 modules, ~85 leaves, CRUD on most.
-3. **F33** — nav hides a module the user holds (`/v1/org/modules` returns `[]`
-   for a member who demonstrably has a grant).
-4. **F4 step (b)** — 16 of 26 `LIMIT` sites carry `total`/`truncated`. Remaining:
-   graha 3, manav 4, hub/prachar/scrapers 1 each. Pattern is
-   `COUNT(*) OVER() AS _total` + `return _listed(rows, limit=N)`; `_listed` is in
-   `routers/graha.py`, tested, and shared.
-5. **F4 step (a)** — raise the caps. Needs the frontend reading `total` first.
-6. **Exports** — GST/Tally verified by file content; the *scheduled* report path
+
+> **This list was written at the end of session A and went stale the same
+> day.** F33 was already fixed and verified live in session B before it was
+> ever read as open, and F4 (b) and most of F32 have since been done. Corrected
+> below; check `git log` before trusting any priority list, including this one.
+
+1. **The UI sweep** — 5 surfaces done of 9 modules, ~85 leaves, CRUD on most.
+   **Still the job**, and now the only way to close F32 properly: it is defined
+   by what a viewer SEES, and none of the work below was verified in a browser.
+2. **F32 — application, not design.** The machinery is done and tested:
+   `/auth/me` carries `module_levels`, `ModuleAccess` publishes the module code
+   from `AppShell` for every route in `ROUTE_META`, and `useModuleWrite` /
+   `WriteGate` answer for any component under it. Gated so far: **Ganit**
+   (thoroughly — toolbars, forms, empty states, row Edit/Delete, and the
+   invoice record's Edit / Record payment / Accept estimate / Convert /
+   doc_status advance), **Vetana** (payroll run, loans, structures),
+   **Graha** (5 tabs' create control), **Vikray** (2), **Sanvaad** (the empty
+   panel's text).
+   **Remaining: Manav, Prachar, Pahchan, Dristi, Esign, Srijan have no in-tab
+   gating at all**, and row-level Edit/Delete is done only on Ganit's
+   catalogue. Add `useModuleWrite({ label: '…' })` and set `disabled` + `title`;
+   use `WriteGate` only where the JSX cannot take a prop.
+3. **F4 step (a)** — raise the caps. Needs the frontend reading `total` first.
+   Step (b) is **done**: all 26 `LIMIT` sites now carry `total`/`truncated`.
+4. **Exports** — GST/Tally verified by file content; the *scheduled* report path
    (F11) still mails raw JSON.
+
+### Closed since this file was written
+- **F33** — fixed and verified live in session B. `/v1/org/modules` was never
+  the mechanism; the nav reads `user.module_grants` from `/auth/me`, and
+  `auth_router` was subtracting `SENSITIVE_MODULES` from a member's grants. Its
+  docstring still argued for the subtraction long after the code stopped doing
+  it, which is corrected too.
+- **F4 (b)** — the remaining ten capped lists report `total`/`truncated`.
+- **F42, F49, F50** — see `git log` on `staging` for 2026-07-29.
 
 ### Owner decisions — SETTLED 2026-07-28, do not re-raise
 
@@ -119,6 +139,24 @@ Takes effect on the next request — verified across 22 cycles, no cache lag.
   tested as platform staff proves nothing about a real org user. F27 was
   published and retracted for exactly this.
 
+### Traps added 2026-07-29
+
+- **The backend needs Python 3.12**, which is what CI pins. On 3.11 the suite
+  cannot even collect: `email_service.py` uses a PEP 701 f-string and raises
+  `SyntaxError: f-string expression part cannot include a backslash`. That
+  reads like a broken file and is not one. `pywebpush` also fails to build a
+  wheel here; nothing in the suite needs it.
+- **`vitest` is not the strict check — `vite build` is.** A duplicate import in
+  `AppShell.jsx` passed all 790 tests and failed the build outright. Run the
+  build before believing a frontend change.
+- **A remote/web session may not be able to reach staging at all.** In this
+  environment `staging.kartavaya.com` answered `403 CONNECT` at the agent proxy
+  (`curl "$HTTPS_PROXY/__agentproxy/status"` confirms the denial), as did
+  `supabase.com`. Chromium and the repo's Playwright config are present and
+  fine — there is simply nothing reachable to point them at. If that is your
+  session, do the code work and say plainly that nothing was verified as a
+  user; do not report a gating fix as done because its unit tests pass.
+
 ---
 
 ## Paste this
@@ -141,25 +179,34 @@ Push to `staging` only; `main` is production.
 
 START HERE, in order:
 
-1. F32 — write buttons render from the page shell, not the caller's
-   level. A ganit:viewer is handed the full Create Invoice form; a member
-   with no grants is offered "Run payroll". Check EVERY module for more
-   instances, then fix it centrally: the level is already resolved per
-   request and simply is not consulted at render time.
+1. The sweep itself, module by module, role by role. 5 of 9 modules have
+   had any UI testing at all. This is the job.
 
-2. F33 — the nav hides a module the user actually holds.
-   GET /v1/org/modules returns [] for a member with a live grant.
+2. F32 verification. The machinery is built and unit-tested, and Ganit,
+   Vetana, Graha, Vikray and Sanvaad are gated — but NONE of it has been
+   seen in a browser, and F32 is defined by what a viewer sees. Sign in
+   as ganit:viewer and as a grantless member and look.
 
-3. Then the full sweep, module by module, role by role. 5 of 9 modules
-   have had any UI testing at all.
+3. F32 application, where the sweep finds it missing. Manav, Prachar,
+   Pahchan, Dristi, Esign and Srijan have no in-tab gating yet.
+   `useModuleWrite({ label: '…' })` then disabled + title; WriteGate only
+   where the JSX cannot take a prop.
+
+F33 is DONE — fixed and verified live in session B. Do not re-open it,
+and do not trust a priority list over `git log`.
 
 QA accounts (QA Test Corp, org fae87907-2f99-4b35-a241-c94d9e1e4a17):
   qaadmin  user_76cd525348e1  org_admin
   qamember user_fc914df642c3  org_member, no grants
   qaviewer user_31197c478761  grantable per test
 
-Tokens are in NEXT-SESSION.md and expire 2026-08-04. If expired, ask the
-owner for fresh ones — never type a password into a login form.
+There are NO tokens in this file and there never were — an earlier
+version of this very paste block said there were, and a session nearly
+reported itself blocked on it. The Playwright browser profile is already
+signed in as qaadmin, which is a full org_admin sweep with no owner
+involvement. qamember and qaviewer need the owner to sign in as each and
+read localStorage.getItem('auth_token') from the console. Never type a
+password into a login form.
 
 Change grants as the org_admin token:
   PUT /api/v1/org/members/{user_id}/modules
