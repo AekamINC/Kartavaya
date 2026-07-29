@@ -630,6 +630,353 @@ async def deactivate_employee(
     return {"status": "deactivated"}
 
 
+
+# ── Offboarding and exit interviews ──────────────────────────────────────────
+#
+# Before this, offboarding was `DELETE /employees/{id}` setting
+# `is_active=FALSE, status='terminated'` and nothing else. No record of why
+# someone left, when, what they had to return, or what they were owed — and
+# because `process_payroll` joins on `e.is_active=TRUE`, an offboarded employee
+# dropped out of payroll the same day, so an outstanding salary advance was
+# never recovered.
+
+
+class OffboardingCreate(BaseModel):
+    employee_id: str
+    exit_type: str = "resignation"
+    reason: str = ""
+    resignation_date: str = ""
+    last_working_day: str = ""
+    notice_period_days: int = 0
+    notice_waived: bool = False
+    clearance: list = []
+    rehire_eligible: bool | None = None
+    notes: str = ""
+
+
+class OffboardingUpdate(BaseModel):
+    exit_type: str | None = None
+    reason: str | None = None
+    resignation_date: str | None = None
+    last_working_day: str | None = None
+    notice_period_days: int | None = None
+    notice_waived: bool | None = None
+    clearance: list | None = None
+    rehire_eligible: bool | None = None
+    status: str | None = None
+    notes: str | None = None
+
+
+class ExitInterviewCreate(BaseModel):
+    employee_id: str
+    primary_reason: str = ""
+    overall_rating: int | None = None
+    would_recommend: bool | None = None
+    would_return: bool | None = None
+    responses: list = []
+    notes: str = ""
+
+
+#: The default clearance checklist. A firm can replace it wholesale — the
+#: column is jsonb precisely so nobody needs a migration to add "return the
+#: office key" — but an empty list on day one is a checklist nobody uses.
+_DEFAULT_CLEARANCE = [
+    {"item": "Laptop and accessories returned", "owner": "IT", "done": False},
+    {"item": "ID card and access cards returned", "owner": "Admin", "done": False},
+    {"item": "Client files and handover completed", "owner": "Reporting manager", "done": False},
+    {"item": "Email and system access revoked", "owner": "IT", "done": False},
+    {"item": "Company assets and advances cleared", "owner": "Finance", "done": False},
+    {"item": "Knowledge transfer documented", "owner": "Reporting manager", "done": False},
+]
+
+_EXIT_TYPES = ("resignation", "termination", "retirement", "end_of_contract",
+               "abandonment", "redundancy", "death")
+_OFFBOARDING_STATUSES = ("initiated", "in_clearance", "interview_done", "settled",
+                         "completed", "cancelled")
+
+
+def _exit_date(value):
+    """A date string, or None. Empty means 'not known yet', not today."""
+    return date.fromisoformat(value) if value else None
+
+
+@router.get("/offboarding")
+async def list_offboarding(
+    status: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Every exit, newest first. Viewer-gated like the rest of the register."""
+    pool = await get_pool()
+    q = ("SELECT o.*, e.name AS employee_name, e.employee_code, e.department, e.designation, "
+         "       (SELECT count(*) FROM staging.manav_exit_interviews i "
+         "         WHERE i.employee_id = o.employee_id AND i.org_id = o.org_id) AS has_interview "
+         "FROM staging.manav_offboarding o "
+         "JOIN staging.manav_employees e ON e.id = o.employee_id "
+         "WHERE o.org_id=$1::uuid")
+    params = [org_id]
+    if status:
+        params.append(status)
+        q += f" AND o.status=${len(params)}"
+    q += " ORDER BY o.created_at DESC"
+    rows = await pool.fetch(q, *params)
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/offboarding")
+async def start_offboarding(
+    body: OffboardingCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Begin an exit. Does NOT deactivate the employee.
+
+    Deactivation happens at completion, not initiation, and the distinction is
+    the point: someone serving notice is still on the payroll, still accrues
+    leave, and still has a salary advance being recovered. Marking them inactive
+    the moment they resign is what made the advance unrecoverable before.
+    """
+    _require(levels, ADMIN)
+    if body.exit_type not in _EXIT_TYPES:
+        raise HTTPException(400, f"exit_type must be one of: {', '.join(_EXIT_TYPES)}")
+
+    pool = await get_pool()
+    emp = await pool.fetchrow(
+        "SELECT id, name, is_active FROM staging.manav_employees "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        body.employee_id, org_id,
+    )
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+
+    existing = await pool.fetchval(
+        "SELECT status FROM staging.manav_offboarding "
+        "WHERE org_id=$1::uuid AND employee_id=$2::uuid AND status <> 'cancelled'",
+        org_id, body.employee_id,
+    )
+    if existing:
+        raise HTTPException(
+            409,
+            f"{emp['name']} already has an exit in progress ({existing}). "
+            "Cancel it before starting another.",
+        )
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_offboarding "
+        "(org_id, employee_id, exit_type, reason, resignation_date, last_working_day, "
+        " notice_period_days, notice_waived, clearance, rehire_eligible, notes, initiated_by) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5::date, $6::date, $7, $8, $9, $10, $11, $12) "
+        "RETURNING *",
+        org_id, body.employee_id, body.exit_type, body.reason,
+        _exit_date(body.resignation_date), _exit_date(body.last_working_day),
+        body.notice_period_days, body.notice_waived,
+        body.clearance or _DEFAULT_CLEARANCE,
+        body.rehire_eligible, body.notes, user["user_id"],
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.patch("/offboarding/{offboarding_id}")
+async def update_offboarding(
+    offboarding_id: UUID,
+    body: OffboardingUpdate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Amend an exit — dates, notice, the clearance checklist, or its status."""
+    _require(levels, ADMIN)
+    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    if "exit_type" in updates and updates["exit_type"] not in _EXIT_TYPES:
+        raise HTTPException(400, f"exit_type must be one of: {', '.join(_EXIT_TYPES)}")
+    if "status" in updates and updates["status"] not in _OFFBOARDING_STATUSES:
+        raise HTTPException(400, f"status must be one of: {', '.join(_OFFBOARDING_STATUSES)}")
+
+    pool = await get_pool()
+    sets, params, idx = [], [str(offboarding_id), org_id], 3
+    for k, v in updates.items():
+        if k in ("resignation_date", "last_working_day"):
+            sets.append(f"{k}=${idx}::date")
+            params.append(_exit_date(v) if isinstance(v, str) else v)
+        else:
+            # `clearance` is bound as a LIST, never json.dumps'd. db.py's codec
+            # encodes it once; dumping first is what produced JSON strings
+            # across 38 columns.
+            sets.append(f"{k}=${idx}")
+            params.append(v)
+        idx += 1
+    sets.append("updated_at=NOW()")
+
+    row = await pool.fetchrow(
+        f"UPDATE staging.manav_offboarding SET {', '.join(sets)} "
+        "WHERE id=$1::uuid AND org_id=$2::uuid RETURNING *",
+        *params,
+    )
+    if not row:
+        raise HTTPException(404, "Offboarding record not found")
+    return {"status": "updated", **dict(row)}
+
+
+@router.post("/offboarding/{offboarding_id}/complete")
+async def complete_offboarding(
+    offboarding_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Close the exit and deactivate the employee — the LAST step, not the first.
+
+    Refuses while clearance is outstanding. A firm that wants to close anyway
+    can tick the remaining items or amend the checklist; what it cannot do is
+    close silently and discover next quarter that a laptop was never returned.
+    """
+    _require(levels, ADMIN)
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT o.*, e.name AS employee_name FROM staging.manav_offboarding o "
+        "JOIN staging.manav_employees e ON e.id = o.employee_id "
+        "WHERE o.id=$1::uuid AND o.org_id=$2::uuid",
+        str(offboarding_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Offboarding record not found")
+    if row["status"] == "completed":
+        raise HTTPException(409, "This exit is already completed")
+
+    clearance = row["clearance"] or []
+    if isinstance(clearance, str):
+        try:
+            clearance = json.loads(clearance)
+        except (ValueError, TypeError):
+            clearance = []
+    pending = [c.get("item") for c in clearance if isinstance(c, dict) and not c.get("done")]
+    if pending:
+        shown = ", ".join(str(p) for p in pending[:4])
+        more = " and more" if len(pending) > 4 else ""
+        raise HTTPException(
+            409,
+            f"{len(pending)} clearance item(s) still outstanding: {shown}{more}. "
+            "Tick them off, or amend the checklist.",
+        )
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "UPDATE staging.manav_offboarding SET status='completed', updated_at=NOW() "
+                "WHERE id=$1::uuid AND org_id=$2::uuid",
+                str(offboarding_id), org_id,
+            )
+            await conn.execute(
+                "UPDATE staging.manav_employees SET is_active=FALSE, status=$3, updated_at=NOW() "
+                "WHERE id=$1::uuid AND org_id=$2::uuid",
+                str(row["employee_id"]), org_id,
+                "resigned" if row["exit_type"] == "resignation" else "terminated",
+            )
+    return {"status": "completed", "employee": row["employee_name"]}
+
+
+@router.get("/exit-interviews")
+async def list_exit_interviews(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Exit interviews, newest first, with the leaver's name attached."""
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT i.*, e.name AS employee_name, e.employee_code, e.department, e.designation "
+        "FROM staging.manav_exit_interviews i "
+        "JOIN staging.manav_employees e ON e.id = i.employee_id "
+        "WHERE i.org_id=$1::uuid ORDER BY i.created_at DESC",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.get("/exit-interviews/reasons")
+async def exit_reason_summary(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Why people leave, counted. The reason the structured fields exist.
+
+    A pile of free-text interviews cannot be counted, and 'why is everyone
+    leaving' is the one question an exit interview is meant to answer.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT primary_reason, count(*) AS leavers, "
+        "       round(avg(overall_rating)::numeric, 2) AS avg_rating, "
+        "       count(*) FILTER (WHERE would_recommend) AS would_recommend "
+        "FROM staging.manav_exit_interviews "
+        "WHERE org_id=$1::uuid AND primary_reason IS NOT NULL "
+        "GROUP BY primary_reason ORDER BY leavers DESC",
+        org_id,
+    )
+    return {"data": [dict(r) for r in rows]}
+
+
+@router.post("/exit-interviews")
+async def record_exit_interview(
+    body: ExitInterviewCreate,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Record the interview, and move the exit on to `interview_done`.
+
+    Upserts on (org_id, employee_id): a second interview is a correction, and a
+    correction belongs in the row rather than beside it.
+    """
+    _require(levels, ADMIN)
+    if body.overall_rating is not None and not 1 <= body.overall_rating <= 5:
+        raise HTTPException(400, "overall_rating must be between 1 and 5")
+
+    pool = await get_pool()
+    emp = await pool.fetchrow(
+        "SELECT id, name FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+        body.employee_id, org_id,
+    )
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+
+    off_id = await pool.fetchval(
+        "SELECT id FROM staging.manav_offboarding "
+        "WHERE org_id=$1::uuid AND employee_id=$2::uuid AND status <> 'cancelled'",
+        org_id, body.employee_id,
+    )
+
+    row = await pool.fetchrow(
+        "INSERT INTO staging.manav_exit_interviews "
+        "(org_id, employee_id, offboarding_id, conducted_by, conducted_at, primary_reason, "
+        " overall_rating, would_recommend, would_return, responses, notes) "
+        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4, NOW(), NULLIF($5,''), $6, $7, $8, $9, $10) "
+        "ON CONFLICT (org_id, employee_id) DO UPDATE SET "
+        "  conducted_by=EXCLUDED.conducted_by, conducted_at=EXCLUDED.conducted_at, "
+        "  primary_reason=EXCLUDED.primary_reason, overall_rating=EXCLUDED.overall_rating, "
+        "  would_recommend=EXCLUDED.would_recommend, would_return=EXCLUDED.would_return, "
+        "  responses=EXCLUDED.responses, notes=EXCLUDED.notes, updated_at=NOW() "
+        "RETURNING *",
+        org_id, body.employee_id, str(off_id) if off_id else "", user["user_id"],
+        body.primary_reason, body.overall_rating, body.would_recommend,
+        body.would_return, body.responses, body.notes,
+    )
+
+    # Only advance a live exit, and never backwards from settled/completed.
+    if off_id:
+        await pool.execute(
+            "UPDATE staging.manav_offboarding SET status='interview_done', updated_at=NOW() "
+            "WHERE id=$1::uuid AND status IN ('initiated','in_clearance')",
+            str(off_id),
+        )
+    return {"status": "recorded", **dict(row)}
+
+
 # ── Departments ──────────────────────────────────────────────
 
 @router.get("/departments")
