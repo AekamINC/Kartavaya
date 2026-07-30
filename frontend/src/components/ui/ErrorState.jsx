@@ -70,8 +70,26 @@ const ICONS = {
  * access to invoice INV-1043" confirms INV-1043 exists to someone who should
  * not know that — pass `grant` ("viewer access to Ganit"), not a record id.
  */
-export function ErrorState({ kind = 'server', grant, detail, onRetry, backTo, backLabel = 'Go back' }) {
+/**
+ * `title` overrides the headline for the case the `detail` override created.
+ *
+ * A caller passing the SERVER'S sentence can end up contradicting the generic
+ * headline above it. Measured live on `/sanvaad`, 2026-07-30:
+ *
+ *     You don’t have access to this
+ *     Module 'sanvaad' is not active. Contact your administrator to activate it.
+ *
+ * — two different causes stacked, under a padlock reinforcing the wrong one. A
+ * reader who takes the heading goes off to ask for a grant that would not have
+ * helped, which is the exact failure the `detail` override was added to stop;
+ * it was only half stopped, because the headline was never part of it.
+ *
+ * `COPY.denied.title` stays as it is — for a real grant denial it is correct.
+ * The override is for the callers that know the server named a different cause.
+ */
+export function ErrorState({ kind = 'server', grant, detail, title, onRetry, backTo, backLabel = 'Go back' }) {
   const copy = COPY[kind] || COPY.server;
+  const head = title || copy.title;
   const body = detail
     || (kind === 'denied' && grant ? `You need ${grant}.` : null)
     || copy.detail;
@@ -84,7 +102,7 @@ export function ErrorState({ kind = 'server', grant, detail, onRetry, backTo, ba
           {ICONS[kind] || ICONS.server}
         </svg>
       </div>
-      <p className="k-err__t">{copy.title}</p>
+      <p className="k-err__t">{head}</p>
       {body && <p className="k-err__d">{body}</p>}
 
       {kind === 'server' && onRetry && <Button variant="out" onClick={onRetry}>Try again</Button>}

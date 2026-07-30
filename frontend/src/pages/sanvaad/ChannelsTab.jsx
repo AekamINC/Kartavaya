@@ -255,19 +255,26 @@ export default function ChannelsTab() {
         />
       ) : (
         <div className="sv__blank">
-          <EmptyState
-            icon={ChatArt}
-            title={{ en: 'Select a channel', hi: 'संवाद शुरू करने के लिए एक चैनल चुनें' }}
-            /* F32, found in the sweep on a module not previously examined. This
-               read "…or create one to start a conversation" for everyone, while
-               the `+` that creates one is gated on `canPost` and every endpoint
-               on the page had just refused. Inviting an action the product does
-               not offer is the same defect as offering a button that fails —
-               the sentence has to agree with the control beside it. */
-            description={access.canPost
-              ? 'Pick a channel or a direct message on the left, or create one to start a conversation.'
-              : 'Pick a channel or a direct message on the left to read the conversation.'}
-          />
+          {/* Nothing to pick from, so nothing to say. When the list failed the
+              rail beside this already carries the reason, and this pane went on
+              printing "Pick a channel or a direct message on the left" next to a
+              rail that had just said the module is not active. Measured live on
+              2026-07-30: two panes of one screen contradicting each other. */}
+          {!listError && (
+            <EmptyState
+              icon={ChatArt}
+              title={{ en: 'Select a channel', hi: 'संवाद शुरू करने के लिए एक चैनल चुनें' }}
+              /* F32, found in the sweep on a module not previously examined. This
+                 read "…or create one to start a conversation" for everyone, while
+                 the `+` that creates one is gated on `canPost` and every endpoint
+                 on the page had just refused. Inviting an action the product does
+                 not offer is the same defect as offering a button that fails —
+                 the sentence has to agree with the control beside it. */
+              description={access.canPost
+                ? 'Pick a channel or a direct message on the left, or create one to start a conversation.'
+                : 'Pick a channel or a direct message on the left to read the conversation.'}
+            />
+          )}
         </div>
       )}
 

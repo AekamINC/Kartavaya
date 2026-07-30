@@ -210,6 +210,13 @@ export default function ChannelList({
         {!loading && error && (
           <ErrorState
             kind={errorKind(error)}
+            /* The headline, too — not only the sentence under it. With the
+               server's own detail in place this read "You don't have access to
+               this" above "Module 'sanvaad' is not active", naming a cause the
+               server had just contradicted. Neutral here because a 403 on this
+               module is EITHER an inactive module or a missing grant, and the
+               line below is the half that knows which. */
+            title={errorKind(error) === 'denied' ? 'Messages can’t be opened' : undefined}
             /* The SERVER'S sentence wins when it has one.
                Measured live as an org_admin: Sanvaad is not an active module for
                the org, and the API says exactly that — "Module 'sanvaad' is not
