@@ -24,7 +24,7 @@ from middleware.role_tiers import (
 from middleware.subscription import require_module
 from services.ai_router import (
     generate, generate_image, generate_rich_content, deduct_credits,
-    deduct_org_credits, _maybe_reset_monthly_credits, CREDIT_COSTS,
+    deduct_org_credits, refund_org_credits, _maybe_reset_monthly_credits, CREDIT_COSTS,
 )
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
@@ -1441,6 +1441,10 @@ async def run_org_skill(
                 total_credits += CREDIT_COSTS.get("image", 3)
             except Exception as e:
                 log.warning("Image generation failed for step %s: %s", step.get("order"), e)
+                # The deduction above is already committed. Without this the
+                # step charged for an image it did not produce.
+                await refund_org_credits(org_id, user["user_id"], "image",
+                                         "Refund — skill step image failed")
 
         title = f"{os_row['template_name']} — Step {step.get('order', 0)}"
         credits_cost = CREDIT_COSTS.get(agent_type, 2)
@@ -1760,6 +1764,8 @@ async def generate_org_content(
             image_url = img_result["image_url"]
         except Exception as e:
             log.warning("Image generation failed: %s", e)
+            await refund_org_credits(org_id, user["user_id"], "image",
+                                     "Refund — image generation failed")
 
     title = body.brief[:100] if body.brief else f"{body.agent_type} content"
     import re
@@ -2096,10 +2102,41 @@ async def quick_generate(
                 "blog_post": "Blog featured image for: {t}. Professional, editorial-quality, topic-relevant photograph or illustration.",
             }
             img_prompt = img_prompts.get(body.skill, "Professional marketing visual for: {t}. Clean, modern, corporate Indian business aesthetic.").format(t=body.topic[:200])
+            # Charged, as it already is on the two OTHER routes that make an
+            # image — `/org/generate` and the org skill runner both deduct
+            # `"image"` before calling `generate_image`. This one did not, and it
+            # is the route the Generate tab uses, so the image was free on the
+            # only path anybody clicks.
+            #
+            # Measured over 54 runs, 2026-07-30: the image is $0.0352 a call and
+            # 85% of the entire AI bill, against $0.0027 for the text beside it.
+            # Five paired runs — same brief, image on and off — were charged
+            # identically, so a social post cost 14× more to serve and exactly
+            # the same to buy. `CREDIT_COSTS["image"]` was already 3. Nothing
+            # here is a new price, only the missing half of an existing one.
+            #
+            # Before the call, and refunded below if it does not produce one.
+            await deduct_org_credits(org_id, user["user_id"], "image",
+                                     f"Quick generate image: {body.skill}")
+            charged += CREDIT_COSTS.get("image", 3)
             img_result = await generate_image(prompt=img_prompt, org_id=org_id)
             result["images"] = [{"url": img_result["image_url"], "mime": "image/png"}]
         except Exception as e:
             log.warning("Image generation failed for %s: %s", body.skill, e)
+            # Charging first is what stops concurrent runs raiding a wallet, so
+            # the order stays and the refund is the missing half. Image
+            # generation genuinely fails here — HuggingFace has answered
+            # `410 Gone` on every call since its serverless route for FLUX.1-dev
+            # was retired, and the chain survives only because OpenRouter is
+            # behind it.
+            #
+            # `charged` is walked back too, so the reply and
+            # `hub_content_items.credits_used` report what the run actually cost
+            # rather than what it attempted.
+            if charged > CREDIT_COSTS.get(skill_cfg["agent_type"], 2):
+                await refund_org_credits(org_id, user["user_id"], "image",
+                                         f"Refund — image failed: {body.skill}")
+                charged -= CREDIT_COSTS.get("image", 3)
 
     # Save to content items
     content_row = await pool.fetchrow(

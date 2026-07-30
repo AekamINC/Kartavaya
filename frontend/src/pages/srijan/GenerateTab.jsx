@@ -1,11 +1,12 @@
 // Srijan → Generate. Pick a shape, describe the thing, get copy and an image.
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { errText } from '../hub/_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import {
   QUICK_SKILLS, PLATFORMS, TONES, LANGUAGES, PLATFORM_HINTS, Markdown, creditLabel,
+  copyRich, copyImage, toPlain, toWhatsApp,
 } from './_shared';
 
 const BLANK = { topic: '', platform: 'Instagram', tone: 'Professional', language: 'en', extra: '', with_image: true };
@@ -203,6 +204,32 @@ export default function GenerateTab({ credits, costs, onSpent }) {
 
 function Result({ result }) {
   const { pushToast } = useToast();
+  // The RENDERED node, not the source. What the reader is looking at is what
+  // they mean to paste, and lifting its innerHTML is the only way to hand over
+  // exactly that.
+  const bodyRef = useRef(null);
+
+  async function copyFormatted() {
+    const html = bodyRef.current?.innerHTML || '';
+    const shape = await copyRich(html, toPlain(result.text));
+    if (shape === 'failed') {
+      pushToast({ title: 'Could not reach the clipboard', message: 'Select the text and copy it by hand.', type: 'error' });
+      return;
+    }
+    // Named for what landed. Saying "with formatting" after falling back to
+    // plain would send someone to paste into a document expecting bold.
+    pushToast({
+      title: shape === 'rich' ? 'Copied with formatting' : 'Copied as plain text',
+      message: shape === 'rich' ? 'Paste into email, Docs or LinkedIn.' : 'This browser would not take the formatted copy.',
+      type: 'success',
+    });
+  }
+
+  async function copyForWhatsApp() {
+    const shape = await copyRich(null, toWhatsApp(result.text));
+    if (shape === 'failed') { pushToast({ title: 'Could not reach the clipboard', type: 'error' }); return; }
+    pushToast({ title: 'Copied for WhatsApp', message: 'Bold and bullets in WhatsApp’s own markup.', type: 'success' });
+  }
 
   async function download(url) {
     try {
@@ -225,9 +252,24 @@ function Result({ result }) {
         <h3 className="hb-card__t hb-card__t--flush">Generated content</h3>
         <span className="sr-res__tools">
           <span className="hb-cap hb-mono">{result.model || 'model not reported'}</span>
+          {/* This was one button copying `result.text` — the RAW MARKDOWN.
+              Pasted into any of the places this content is written for
+              (WhatsApp, Instagram, LinkedIn, Gmail) that is literal
+              `**asterisks**`, `###` and `- `, which the reader then strips by
+              hand on every run. The post is the deliverable; handing it over in
+              source form left the last step manual.
+
+              Three destinations, three shapes — and WhatsApp gets its own,
+              because its bold is `*one asterisk*` and markdown's is two. */}
+          <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={copyFormatted}>
+            Copy
+          </button>
+          <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={copyForWhatsApp}>
+            Copy for WhatsApp
+          </button>
           <button type="button" className="k-btn k-btn--ghost hb-btn--sm"
-            onClick={() => { navigator.clipboard?.writeText(result.text || ''); pushToast({ title: 'Copied', type: 'success' }); }}>
-            Copy text
+            onClick={() => { navigator.clipboard?.writeText(result.text || ''); pushToast({ title: 'Copied as Markdown', type: 'success' }); }}>
+            Markdown
           </button>
         </span>
       </div>
@@ -239,8 +281,20 @@ function Result({ result }) {
               <img className="sr-res__img" src={img.url} alt="Generated visual" />
               <figcaption className="sr-res__cap">
                 <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={() => download(img.url)}>Download</button>
+                {/* The image itself, not a reference to it. "Copy link" was the
+                    only option and the link is a SIGNED R2 url — pasted into a
+                    document it is a dead reference by the next day. */}
                 <button type="button" className="k-btn k-btn--ghost hb-btn--sm"
-                  onClick={() => { navigator.clipboard?.writeText(img.url); pushToast({ title: 'Link copied', type: 'success' }); }}>
+                  onClick={async () => {
+                    const ok = await copyImage(img.url);
+                    pushToast(ok
+                      ? { title: 'Image copied', message: 'Paste it straight into the post.', type: 'success' }
+                      : { title: 'Could not copy the image', message: 'Download it instead — the link may have expired.', type: 'error' });
+                  }}>
+                  Copy image
+                </button>
+                <button type="button" className="k-btn k-btn--ghost hb-btn--sm"
+                  onClick={() => { navigator.clipboard?.writeText(img.url); pushToast({ title: 'Link copied', message: 'The link is signed and expires.', type: 'success' }); }}>
                   Copy link
                 </button>
               </figcaption>
@@ -249,7 +303,7 @@ function Result({ result }) {
         </div>
       )}
 
-      <div className="sr-res__body"><Markdown text={result.text} /></div>
+      <div className="sr-res__body" ref={bodyRef}><Markdown text={result.text} /></div>
 
       <div className="sr-res__foot">
         <span className="hb-cap hb-mono">{creditLabel(result.credits_used)} used</span>

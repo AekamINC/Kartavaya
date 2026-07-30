@@ -183,6 +183,97 @@ export function Markdown({ text }) {
   );
 }
 
+/* ── Copying the result out ────────────────────────────────────────────────
+ *
+ * The one control on the result pane put `result.text` — the RAW MARKDOWN —
+ * on the clipboard. Pasted anywhere it was going (WhatsApp, Instagram, a
+ * LinkedIn box, Gmail, Word) that is literal `**asterisks**`, `###` and `- `,
+ * which the reader then strips by hand. The generated post is the deliverable;
+ * handing it over in source form makes the last step manual on every run.
+ *
+ * Three destinations, three shapes:
+ *   · rich      — `text/html` beside `text/plain`, so an editor that accepts
+ *                 HTML keeps the bold, headings and lists
+ *   · plain     — markdown syntax removed, not pasted
+ *   · WhatsApp  — its OWN markup, which is `*bold*` and not `**bold**`
+ */
+
+/** Markdown stripped to clean prose — for a plain-text destination. */
+export const toPlain = md => String(md ?? '')
+  .replace(/^#{1,6}\s+/gm, '')
+  .replace(/\*\*(.+?)\*\*/g, '$1')
+  .replace(/`([^`]+)`/g, '$1')
+  .replace(/^\s*---+\s*$/gm, '')
+  .replace(/^[-*]\s+/gm, '• ')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+
+/**
+ * WhatsApp's markup, which is not markdown: bold is `*one asterisk*`, so
+ * `**bold**` pasted into WhatsApp renders as a literal asterisk around bold
+ * text. Headings have no equivalent and become bold lines.
+ */
+export const toWhatsApp = md => String(md ?? '')
+  .replace(/^#{1,6}\s+(.*)$/gm, '*$1*')
+  .replace(/\*\*(.+?)\*\*/g, '*$1*')
+  .replace(/`([^`]+)`/g, '$1')
+  .replace(/^\s*---+\s*$/gm, '')
+  .replace(/^[-*]\s+/gm, '• ')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim();
+
+/**
+ * Put both flavours on the clipboard at once.
+ *
+ * `ClipboardItem` carries `text/html` AND `text/plain` together, and the paste
+ * target picks: Gmail takes the HTML, a terminal takes the text. Returns which
+ * shape it managed, because not every browser allows the two-flavour write and
+ * saying "Copied with formatting" when it fell back to plain would be a lie.
+ */
+export async function copyRich(html, plain) {
+  try {
+    // `html` may be null on purpose — the WhatsApp copy has no rich flavour,
+    // because WhatsApp reads its own markup out of PLAIN text and would show
+    // the tags if handed HTML.
+    if (html && typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([plain], { type: 'text/plain' }),
+      })]);
+      return 'rich';
+    }
+  } catch {
+    // Firefox refused `text/html` for years, and a permissions policy can
+    // block `write` outright. Neither is worth an error — there is a shape
+    // that always works.
+  }
+  try {
+    await navigator.clipboard.writeText(plain);
+    return 'plain';
+  } catch {
+    return 'failed';
+  }
+}
+
+/**
+ * The image itself on the clipboard, not its URL.
+ *
+ * "Copy link" was the only option, and a signed R2 link expires — pasted into a
+ * document it is a dead reference by the next day. Browsers accept `image/png`
+ * on the clipboard and the generator returns PNG.
+ */
+export async function copyImage(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(String(res.status));
+    const blob = await res.blob();
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** `**bold**`, `*italic*` and `` `code` `` as elements, never as HTML. */
 function inline(text) {
   const out = [];

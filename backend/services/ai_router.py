@@ -697,6 +697,74 @@ async def _maybe_reset_monthly_credits(conn, org_id: str):
     )
 
 
+async def refund_org_credits(org_id: str, user_id: str, agent_type: str, description: str = "") -> int:
+    """Put back what was charged for work that did not happen.
+
+    The counterpart `deduct_org_credits` never had. Every caller that spends
+    before it generates — which is all three image sites — was charging for a
+    failure: the deduction is committed, `generate_image` raises, and the
+    `except` only writes a log line. The credits are gone and there is no image.
+
+    That is not hypothetical. HuggingFace sits first in the image chain and has
+    answered `410 Gone` on every call since its serverless route for FLUX.1-dev
+    was retired; the chain survives only because OpenRouter is behind it. The day
+    OpenRouter also fails, every attempt bills.
+
+    Charging first is still the right order — it is what stops a wallet being
+    raided by concurrent runs — so the missing half is this, not a reordering.
+
+    Mirrors the deduction exactly: org wallet up, the user's `used` down where a
+    row exists, and a row in the ledger so the pair is legible. Written as its
+    own `tx_type` rather than a negative debit, because a refund and a top-up
+    are different events and the ledger is what anyone reads to work out where a
+    month went.
+
+    Never raises. It runs inside an `except` that is already handling a failure,
+    and a refund that throws would replace a lost 3 credits with a 500.
+    """
+    amount = CREDIT_COSTS.get(agent_type, 2)
+    try:
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                org_wallet = await conn.fetchrow(
+                    "SELECT balance FROM staging.hub_org_credits "
+                    "WHERE org_id=$1::uuid FOR UPDATE",
+                    org_id,
+                )
+                if not org_wallet:
+                    return 0
+
+                # `GREATEST(used - $1, 0)` — a refund must not drive the counter
+                # negative if the matching debit went to the org wallet alone,
+                # which is what happens when no allocation row existed at the
+                # time of the charge.
+                await conn.execute(
+                    "UPDATE staging.hub_user_credits "
+                    "SET used = GREATEST(used - $1, 0), updated_at=NOW() "
+                    "WHERE org_id=$2::uuid AND user_id=$3",
+                    amount, org_id, user_id,
+                )
+
+                new_balance = org_wallet["balance"] + amount
+                await conn.execute(
+                    "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() "
+                    "WHERE org_id=$2::uuid",
+                    new_balance, org_id,
+                )
+                await conn.execute(
+                    "INSERT INTO staging.hub_org_credit_transactions "
+                    "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
+                    "VALUES ($1::uuid, $2, $3, $4, 'refund', $5, $2)",
+                    org_id, user_id, amount, new_balance,
+                    description or f"Refund — {agent_type} did not complete",
+                )
+        return new_balance
+    except Exception as exc:
+        log.warning("Credit refund failed for org %s (%s): %s", org_id, agent_type, exc)
+        return 0
+
+
 async def deduct_org_credits(org_id: str, user_id: str, agent_type: str, description: str = "") -> int:
     """Deduct credits from org wallet + user allocation. Returns new org balance.
     Checks user allocation first, then deducts from org wallet.
