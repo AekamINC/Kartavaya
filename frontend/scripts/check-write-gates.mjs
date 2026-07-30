@@ -41,9 +41,16 @@
  * Usage: node scripts/check-write-gates.mjs
  */
 import { readFileSync, readdirSync, statSync } from 'fs';
-import { join, extname } from 'path';
+import { join, extname, relative } from 'path';
+import { fileURLToPath } from 'url';
 
-const ROOT = new URL('../src', import.meta.url).pathname;
+// `fileURLToPath`, NOT `.pathname`. On Windows a file URL's pathname keeps a
+// leading slash — `/D:/Projects/…/src` — which `join` then resolves against the
+// working directory, so the very first `readdirSync` asked for
+// `D:\D:\Projects\…\src` and the whole check died ENOENT. `npm run check` was
+// therefore red on the owner's own platform from the moment this script joined
+// it. POSIX never saw it because there the two forms are identical.
+const ROOT = fileURLToPath(new URL('../src', import.meta.url));
 
 /** Opens a new top-level scope. */
 const FN = /^(?:export default )?function (\w+)/;
@@ -93,7 +100,10 @@ for (const file of walk(ROOT)) {
   for (const [where, sample] of used) {
     if (declared.has(where)) continue;
     errors.push({
-      file: file.replace(`${ROOT}/`, ''),
+      // `relative`, not a string replace on `${ROOT}/` — the separator is a
+      // backslash on Windows, so the replace matched nothing and every finding
+      // printed its full absolute path.
+      file: relative(ROOT, file).split('\\').join('/'),
       scope: where ?? '(module scope)',
       sample,
     });
