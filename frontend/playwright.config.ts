@@ -47,7 +47,14 @@ export default defineConfig({
   // Skipped when PLAYWRIGHT_BASE_URL names something already running.
   ...(process.env.PLAYWRIGHT_BASE_URL ? {} : {
     webServer: {
-      command: 'npx vite --port 3000 --strictPort',
+      // `--host 127.0.0.1` is load-bearing on Windows. Without it vite binds the
+      // hostname `localhost`, which resolves to IPv6 `::1` there, while
+      // Playwright polls the IPv4 `url` below — so the server never appeared to
+      // come up and the run died with "Timed out waiting 120000ms from
+      // config.webServer" having never started a test. Measured 2026-07-31:
+      // vite was ready in 507ms, `localhost:3000` answered 200, and
+      // `127.0.0.1:3000` answered nothing at all.
+      command: 'npx vite --port 3000 --strictPort --host 127.0.0.1',
       url: `http://127.0.0.1:${PORT}`,
       reuseExistingServer: true,
       timeout: 120_000,
