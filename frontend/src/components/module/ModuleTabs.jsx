@@ -54,16 +54,70 @@ import { TAB_HI, tabEn } from './tabLabels';
 export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', max = 8 }) {
   const [openMore, setOpenMore] = useState(false);
   const wrapRef = useRef(null);
+  const listRef = useRef(null);
 
   const norm = tabs.map(t => (typeof t === 'string'
     ? { id: t, label: tabEn(t) }
     : { ...t, label: t.label ?? tabEn(t.id) }));
 
-  let head = norm.slice(0, max);
-  let tail = norm.slice(max);
+  /**
+   * How many tabs actually FIT, measured — not a constant.
+   *
+   * `max` was 8 regardless of width, so the strip rendered eight whether there
+   * was room or not. Measured on staging at 1340px on Graha: eight rendered,
+   * SIX fully visible, two clipped mid-word, with "More +9" sitting beside
+   * them. The strip scrolls so nothing was unreachable — it just looked broken.
+   *
+   * Width alone would not have caught it either: this row also carries module
+   * alerts ("2 deals have no next step · Fix", 203px), so the space available to
+   * the strip is not the space available to the row. Measuring the strip's own
+   * client width is the only figure that accounts for whatever shares it.
+   *
+   * `max` survives as the ceiling — beyond eight the strip stops being a strip
+   * and becomes a wall of similar words, which is what the overflow menu is
+   * for. This only ever reduces.
+   *
+   * Re-measures on resize, which is also what makes it correct through a device
+   * ROTATION: the same tablet turning landscape to portrait loses ~360px of
+   * strip, and the count has to follow without a reload.
+   */
+  const [fits, setFits] = useState(max);
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = () => {
+      const kids = [...el.children].filter(c => c.getAttribute('role') === 'tab');
+      if (!kids.length) return;
+      // Leave room for the More trigger; it is a sibling of the list, so its
+      // width is not inside `clientWidth`. 96px is its rendered width plus the
+      // row gap, and erring generous costs one tab rather than a clipped one.
+      const room = el.clientWidth - 96;
+
+      // Estimated from the AVERAGE rendered tab, not by summing the ones on
+      // screen. Summing only ever sees the tabs currently in `head`, so the
+      // count could shrink and never grow back — a tablet rotated to portrait
+      // and back would keep the narrower count for ever. An average survives
+      // that, because it stays roughly constant however many are rendered.
+      //
+      // Labels differ in length, so this is off by at most a tab. That is the
+      // right way to be wrong here: one tab too few is tidy, one too many is
+      // the clipped word this replaces.
+      const avg = kids.reduce((s, k) => s + k.getBoundingClientRect().width, 0) / kids.length;
+      if (!avg) return;
+      setFits(Math.max(1, Math.min(max, Math.floor(room / avg))));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [max, norm.length]);
+
+  const shown = Math.min(max, fits);
+  let head = norm.slice(0, shown);
+  let tail = norm.slice(shown);
   if (tail.some(t => t.id === value)) {
     const active = norm.find(t => t.id === value);
-    head = [...norm.slice(0, max - 1), active];
+    head = [...norm.slice(0, shown - 1), active];
     tail = norm.filter(t => !head.some(h => h.id === t.id));
   }
 
@@ -116,7 +170,7 @@ export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', 
 
   return (
     <div className="mt__wrap" ref={wrapRef}>
-      <div className="mt" role="tablist" aria-label={label} onKeyDown={onKeyDown}>
+      <div className="mt" role="tablist" aria-label={label} onKeyDown={onKeyDown} ref={listRef}>
         {head.map(t => <Tab key={t.id} t={t} />)}
       </div>
 

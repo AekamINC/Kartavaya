@@ -65,6 +65,21 @@
          its own API and the two can never drift apart again. -->
     <link rel="preconnect" href="%VITE_BACKEND_URL%" crossorigin />
     <link rel="dns-prefetch" href="%VITE_BACKEND_URL%" />
+
+    <!-- `public/manifest.json` and `public/sw.js` have both existed for a long
+         time, and the service worker registers itself from AppShell — but the
+         manifest was never LINKED from anywhere, so the browser never read it.
+         The web app could not be installed: no install prompt, no home-screen
+         icon, no standalone window. A manifest nothing points at is a file, not
+         a manifest.
+
+         `apple-touch-icon` is the iOS home-screen icon; Safari looks for the
+         link, not the file. -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Kartavaya" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Spectral:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Instrument+Serif:ital@0;1&family=Tiro+Devanagari+Hindi:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:wght@400;500;600;700&family=Poppins:wght@300;400;500;600;700&family=Source+Sans+3:wght@300;400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&display=swap" rel="stylesheet" />

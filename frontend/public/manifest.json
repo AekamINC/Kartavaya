@@ -1,19 +1,21 @@
 {
   "short_name": "Kartavaya",
   "name": "Kartavaya by Aekam Inc",
-  "description": "Team task management — invite-only, project boards, client portal",
+  "description": "Practice management for Indian accounting firms — CRM, invoicing, payroll, attendance and approvals.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
-  "background_color": "#050e1a",
-  "theme_color": "#0082c6",
+  "orientation": "any",
+  "background_color": "#F3EFE6",
+  "theme_color": "#04837A",
   "icons": [
-    { "src": "/favicon.png",         "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/apple-touch-icon.png","sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "/favicon.png",          "sizes": "1024x1024", "type": "image/png", "purpose": "any" },
+    { "src": "/apple-touch-icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "maskable" }
   ],
-  "categories": ["productivity", "business"],
+  "categories": ["productivity", "business", "finance"],
   "shortcuts": [
-    { "name": "Dashboard", "url": "/dashboard", "description": "Go to Dashboard" },
-    { "name": "Projects",  "url": "/projects",  "description": "Open Projects" }
+    { "name": "Today",      "url": "/dashboard", "description": "What needs you today" },
+    { "name": "Tasks",      "url": "/tasks",     "description": "Your task list" },
+    { "name": "Approvals",  "url": "/approvals", "description": "Waiting on your decision" }
   ]
 }
