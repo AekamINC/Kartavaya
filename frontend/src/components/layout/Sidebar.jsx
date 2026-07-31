@@ -15,6 +15,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { currentUser } from '../../lib/auth';
 import { ICONS } from './navIcons';
 import { navContext, navGroupsFor } from './navConfig';
+import useMediaQuery, { TABLET_BAND } from '../../hooks/useMediaQuery';
 import { useCustomize } from '../CustomizePanel';
 import SideBrand from './SideBrand';
 
@@ -84,7 +85,14 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
   // preference itself changes. One boolean drives the rail, which is what
   // `Chrome.jsx:124` does with `setRail(!rail)` — there is no second, parallel
   // notion of collapsed in the reference implementation either.
-  const isRail = prefs.sidebar === 'rail';
+  // On a tablet the rail is not a preference, it is the layout. Between 768
+  // and 1023px there is room for a 72px icon rail but not the full 252px
+  // sidebar, and the alternative — what shipped — was hiding navigation behind
+  // a hamburger on a screen with width to spare, costing a tap on every move.
+  // Rotating a device crosses this boundary, so it is a live media query rather
+  // than a value read once.
+  const isTablet = useMediaQuery(TABLET_BAND);
+  const isRail = isTablet || prefs.sidebar === 'rail';
   const rail = !forceWide && (collapsed === null ? isRail : collapsed);
 
   const toggleCollapsed = () => {
