@@ -1,5 +1,5 @@
 import React, { useEffect, useState, createContext, useContext, useCallback } from 'react';
-import { deriveAccentColors } from '../lib/accent';
+import { deriveAccentColors, deriveContainer } from '../lib/accent';
 
 const STORAGE_KEY = 'k_prefs';
 
@@ -222,6 +222,19 @@ export function applyPrefs(prefs) {
   // deriveOnAccent picks the label, with the incumbent in its own candidate
   // set so it can never return something worse than what shipped.
   root.style.setProperty('--on-primary', dark ? acc.onDark : acc.onLight);
+
+  // --primary-container and its label were the last two accent tokens still
+  // hardcoded. The stylesheet declares them once per theme as teal (#B4F1E8 /
+  // #00514B) and nothing here overwrote them, so picking any of the other
+  // eleven accents left THIRTY-EIGHT rules on the default hue — `.btn--tonal`,
+  // the active module chip, onboarding selections, board columns, the client
+  // portal header and `.note--info` among them.
+  //
+  // Measured live 2026-07-31: Crimson selected, --primary #be123c,
+  // --primary-container still #B4F1E8. A crimson app with teal tonal buttons.
+  const con = deriveContainer(acc.color);
+  root.style.setProperty('--primary-container', dark ? con.dark : con.light);
+  root.style.setProperty('--on-primary-container', dark ? con.onDark : con.onLight);
 
   // ── Type ─────────────────────────────────────────────────────────────────
   // --font-display and --font-ui are independent. The old SANS_IDS check set

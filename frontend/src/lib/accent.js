@@ -135,6 +135,77 @@ export function deriveOnAccent(primary, hover, incumbent) {
   return best;
 }
 
+/**
+ * `--primary-container` and its label, per theme.
+ *
+ * These were the last two accent tokens left behind. `applyPrefs` writes
+ * `--primary`, `--primary-hover`, `--primary-vivid`, `--primary-text` and
+ * `--on-primary` from the chosen accent, and never touched the container pair —
+ * so it stayed at the stylesheet's hardcoded teal, `#B4F1E8` light and
+ * `#00514B` dark, whichever of the twelve accents was selected.
+ *
+ * Measured live on 2026-07-31: with Crimson picked, `--primary` was `#be123c`
+ * and `--primary-container` was still `#B4F1E8`. THIRTY-EIGHT rules read that
+ * token — `.btn--tonal`, the active module chip, onboarding selections, board
+ * columns, the client portal header and `.note--info` among them — so a crimson
+ * app rendered teal tonal buttons and teal info notes.
+ *
+ * The lightness targets are taken from the shipped teal so the treatment is
+ * unchanged at the default: 83% for the light container against 16% for dark,
+ * and the label sits far enough away to clear AA. Saturation is capped because
+ * a container is a TINT — at full chroma the twelve accents produce surfaces
+ * that fight the text on them.
+ *
+ * The label is chosen by measurement rather than by formula, the same way
+ * `deriveOnAccent` picks the label for the fill: the incumbent teal values are
+ * in the candidate set, so at the default accent this can only return what
+ * already shipped.
+ */
+export function deriveContainer(hex) {
+  const [h, s] = hexToHsl(hex);
+
+  const light = hslToHex(h, Math.min(s, 60), 83);
+  const dark = hslToHex(h, Math.min(s, 100), 16);
+
+  /**
+   * The label: the accent's own hue where one clears AA, black or white only
+   * where none does.
+   *
+   * Maximising contrast alone always returns `#000000` or `#FFFFFF` — they beat
+   * every tint on ratio — and that throws away the treatment the design uses.
+   * The shipped teal pair is `#00201D` on the light container and `#74F5E8` on
+   * the dark one: both tinted, both comfortably past 4.5:1. So this takes the
+   * tint CLOSEST to the incumbent's lightness among those that clear AA, which
+   * reproduces the shipped values at the default accent and carries the same
+   * treatment across the other eleven.
+   *
+   * The fallback matters for the mid-tone accents, where no tint of the hue can
+   * clear 4.5:1 against its own container. There, legibility wins over family
+   * resemblance.
+   */
+  const label = (bg, incumbent) => {
+    const [, , incL] = hexToHsl(incumbent);
+    const tints = [];
+    for (let L = 0; L <= 100; L += 2) {
+      const c = hslToHex(h, Math.min(s, 90), L);
+      if (contrast(c, bg) >= 4.5) tints.push({ c, L });
+    }
+    if (tints.length) {
+      tints.sort((a, b) => Math.abs(a.L - incL) - Math.abs(b.L - incL));
+      return tints[0].c;
+    }
+    return [incumbent, '#FFFFFF', '#000000']
+      .sort((a, b) => contrast(b, bg) - contrast(a, bg))[0];
+  };
+
+  return {
+    light,
+    onLight: label(light, '#00201D'),
+    dark,
+    onDark: label(dark, '#74F5E8'),
+  };
+}
+
 export function deriveAccentColors(hex) {
   const [h, s, l] = hexToHsl(hex);
   const color = hex;
