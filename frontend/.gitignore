@@ -39,3 +39,7 @@ yarn-error.log*
 # committed PNG fails on every glyph every time. Same class of platform bug
 # as the yarn.lock/esbuild rule above. Generate them where you compare them.
 visual-baselines/
+
+# Committed deliberately — see the file. It holds one public hostname and
+# is what stops `npm run apk` from building against production.
+!.env.staging

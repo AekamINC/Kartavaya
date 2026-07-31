@@ -20,6 +20,8 @@
   "scripts": {
     "start": "vite",
     "build": "vite build",
+    "build:staging": "vite build --mode staging",
+    "apk": "npm run build:staging && npx cap sync android && cd android && gradlew.bat assembleDebug",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
