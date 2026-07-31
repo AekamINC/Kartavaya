@@ -49,7 +49,8 @@ async def get_apify_account_usage(months: int = 1) -> dict:
             # Get monthly usage stats
             resp = await client.get(
                 "https://api.apify.com/v2/users/me/usage",
-                params={"token": token, "months": months},
+                headers={"Authorization": f"Bearer {token}"},
+                params={"months": months},
             )
             resp.raise_for_status()
             usage = resp.json()["data"]
@@ -57,7 +58,8 @@ async def get_apify_account_usage(months: int = 1) -> dict:
             # Also get recent runs count for context
             runs_resp = await client.get(
                 "https://api.apify.com/v2/actor-runs",
-                params={"token": token, "limit": 1, "desc": "true"},
+                headers={"Authorization": f"Bearer {token}"},
+                params={"limit": 1, "desc": "true"},
             )
             runs_resp.raise_for_status()
             runs_data = runs_resp.json()["data"]

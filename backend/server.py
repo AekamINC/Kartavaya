@@ -125,6 +125,18 @@ _team_ids_request_cache: dict = {}
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+# httpx logs every outbound request LINE at INFO — method, full URL, query string
+# and all. That is how the Apify API key reached the deploy log: the token rode
+# in `?token=`, and the status poll fires one request every six seconds for the
+# length of a scrape.
+#
+# The keys have been moved into headers (services/apify.py, ai_router.py,
+# rag.py, provider_costs.py), so this is the second lock rather than the fix —
+# a future call that puts something sensitive in a URL should not publish it by
+# default. WARNING still carries genuine transport failures.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 
 def _bg(coro, *, label: str = "background") -> asyncio.Task:
     """Schedule *coro* as a fire-and-forget background task.

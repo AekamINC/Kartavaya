@@ -60,10 +60,14 @@ async def generate_embedding(text: str) -> list[float] | None:
 
 
 async def _embed_gemini(text: str, api_key: str) -> list[float] | None:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key={api_key}"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
+    # `x-goog-api-key`, not `?key=` — httpx logs the request URL at INFO, so a
+    # key in the query string is written to the deploy log on every call.
+    # See services/apify.py for the same fix and the log line that proved it.
+    headers = {"x-goog-api-key": api_key}
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(url, json={
+            resp = await client.post(url, headers=headers, json={
                 "model": "models/text-embedding-004",
                 "content": {"parts": [{"text": text[:8000]}]},
             })

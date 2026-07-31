@@ -94,7 +94,11 @@ def _select_providers(language: str = "en", agent_type: str = "social_media", ta
 
 
 async def _call_gemini(api_key: str, base_url: str, model: str, prompt: str, system: str = "", max_tokens: int = 2048, grounded: bool = False) -> dict:
-    url = f"{base_url}/models/{model}:generateContent?key={api_key}"
+    url = f"{base_url}/models/{model}:generateContent"
+    # `x-goog-api-key`, not `?key=` — httpx logs the request URL at INFO, so a
+    # key in the query string is written to the deploy log on every call.
+    # See services/apify.py for the same fix and the log line that proved it.
+    headers = {"x-goog-api-key": api_key}
     contents = []
     if system:
         contents.append({"role": "user", "parts": [{"text": system}]})
@@ -110,7 +114,7 @@ async def _call_gemini(api_key: str, base_url: str, model: str, prompt: str, sys
         payload["tools"] = [{"google_search": {}}]
 
     async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(url, json=payload)
+        resp = await client.post(url, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()
 
@@ -442,10 +446,14 @@ async def _generate_openrouter_image(api_key: str, prompt: str, aspect_ratio: st
 
 async def _generate_gemini_imagen(api_key: str, prompt: str, aspect_ratio: str = "1:1") -> dict:
     """Generate image via Gemini native image generation (last resort)."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={api_key}"
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent"
+    # `x-goog-api-key`, not `?key=` — httpx logs the request URL at INFO, so a
+    # key in the query string is written to the deploy log on every call.
+    # See services/apify.py for the same fix and the log line that proved it.
+    headers = {"x-goog-api-key": api_key}
 
     async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(url, json={
+        resp = await client.post(url, headers=headers, json={
             "contents": [{"parts": [{"text": f"Generate an image: {prompt}"}]}],
             "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
         })
