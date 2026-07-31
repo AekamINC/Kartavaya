@@ -152,9 +152,27 @@ async def list_scrapers(
     # exact marketplace actor behind each entry, which is the other half of
     # reproducing the offering without us. Columns are now enumerated, so a new
     # commercial column added to this table is not published by default.
+    # `credit_cost` is the one price the caller MUST have: it is what this
+    # handler's sibling `POST /run` deducts (`scraper.get("credit_cost") or 2`),
+    # and the catalog card, the confirmation line and the Run button all print
+    # it. Enumerating the columns to stop `cost_per_run` and `margin_pct`
+    # leaking took this with them, and the client's `s.credit_cost ?? 2` then
+    # quoted 2 for everything.
+    #
+    # Measured live 2026-07-31: all 22 cards read "2 credits". Only three are
+    # actually 2. Google Maps, the LinkedIn pair, Business Email Finder, Google
+    # Search, both Instagram scrapers and YouTube Channels are 5 — so the button
+    # said "Run · 2 credits" and the wallet lost 5. Two entries are 1 and were
+    # overcharged in the telling.
+    #
+    # `price_inr` goes the other way: it is OUR rupee price, no client screen
+    # reads it, and the owner's standing rule keeps pricing figures off tenant
+    # surfaces — the Srijan credits endpoint dropped `price_per_credit_inr` for
+    # exactly this reason. Beside a credit figure it also gives the rupee value
+    # of a credit by division.
     q = (
         "SELECT id, name, description, icon, category, input_schema, "
-        "price_inr, max_results, result_columns, is_active "
+        "credit_cost, max_results, result_columns, is_active "
         "FROM staging.hub_scraper_catalog WHERE is_active=TRUE "
     )
     params = []
