@@ -292,6 +292,17 @@ DEFAULT_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:8080",
+    # The Android app. Capacitor serves the bundled web assets from a WebView
+    # whose origin is `https://localhost` under `androidScheme: "https"` — a real
+    # cross-origin request to this API, indistinguishable from a browser's except
+    # that no browser will ever send it. `capacitor://localhost` is the iOS
+    # equivalent and the Android default before the https scheme; both are listed
+    # so the same build serves either.
+    #
+    # This is narrower than it looks: `localhost` here is the DEVICE's own
+    # WebView, not a machine on any network, so no third party can present it.
+    "https://localhost",
+    "capacitor://localhost",
 ]
 _extra = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
 ALLOWED_ORIGINS = list(dict.fromkeys(DEFAULT_ORIGINS + _extra))
