@@ -38,6 +38,41 @@ _gate = require_module("srijan")
 SCRAPER_MARGIN = 0.45
 
 
+async def _org_markup(org_id: str) -> float:
+    """The markup THIS org was given, set by a platform admin.
+
+    `organisations.markup_pct` already existed and the platform console already
+    writes it (`admin_orgs.py` — `OrgCreate.markup_pct`, default 0.30) and reads
+    it back for the revenue view. Only the scraper true-up ignored it, applying
+    its own hardcoded `SCRAPER_MARGIN` instead — so a per-org commercial term set
+    by Aekam had no effect on the one place a run's price is actually decided,
+    and two different markups described the same org.
+
+    Owner's decision, 2026-07-31: a large run marks up at the rate assigned to
+    the org, not at a constant in the source.
+
+    `SCRAPER_MARGIN` remains the fallback for an org with no value — never a
+    silent 0, which would sell at cost.
+    """
+    try:
+        pool = await get_pool()
+        v = await pool.fetchval(
+            "SELECT markup_pct FROM staging.organisations WHERE id=$1::uuid", org_id
+        )
+        if v is None:
+            return SCRAPER_MARGIN
+        v = float(v)
+        # A negative markup would sell below cost and a runaway one would bill a
+        # customer absurdly. Both are data errors rather than intentions.
+        if v < 0 or v > 10:
+            log.warning("org %s has markup_pct=%s — out of range, using default", org_id, v)
+            return SCRAPER_MARGIN
+        return v
+    except Exception as exc:
+        log.warning("could not read markup_pct for org %s: %s", org_id, exc)
+        return SCRAPER_MARGIN
+
+
 async def _calc_actual_credits(cost_usd: float, org_id: str, min_credits: int) -> int:
     """Convert a run's real Apify cost into credits, never below `min_credits`.
 
@@ -64,7 +99,8 @@ async def _calc_actual_credits(cost_usd: float, org_id: str, min_credits: int) -
     from services.forex import get_usd_inr
     from services.ai_router import CREDIT_PRICE_INR
     rate = await get_usd_inr()
-    charged_inr = cost_usd * rate * (1 + SCRAPER_MARGIN)
+    markup = await _org_markup(org_id)
+    charged_inr = cost_usd * rate * (1 + markup)
     actual = max(min_credits, math.ceil(charged_inr / CREDIT_PRICE_INR))
     return actual
 
