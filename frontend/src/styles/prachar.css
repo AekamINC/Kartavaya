@@ -194,11 +194,22 @@
 /* The body preview. `--s-container` rather than a literal grey so it inverts
    with the theme, and `overflow-wrap: anywhere` because a template body is user
    data that may be one 200-character URL. */
+/* Bordered, for the reason `.note` is (module.css). This is a standalone
+   preview slab sitting on a card, and a fill with no edge reads as no fill at
+   all — the complaint that started the surface audit was a payroll notice in
+   exactly this shape. Measured live 2026-07-31: `--s-container` #EEE9DC on
+   `--surface-1` #FAF7F0, `border: 0px`.
+
+   The three other container-filled blocks the scan turned up — `.tb__grp td`,
+   `.dr__att-doc`, `.pr__exp` — are deliberately left alone. They use `--s-low`
+   as a BAND inside a table or drawer, where an edge would draw a box around
+   something that is not one. */
 .pr__tpl-body {
   margin-top: 11px;
   padding: 10px 12px;
   border-radius: var(--r-sm);
   background: var(--s-container);
+  border: 1px solid var(--outline-variant);
   color: var(--on-surface-2);
   font-size: 12px;
   line-height: 1.55;
