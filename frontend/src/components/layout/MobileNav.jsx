@@ -16,19 +16,28 @@
  */
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { MOBILE_NAV } from './navConfig';
+import { mobileNavFor } from './navConfig';
+import { useCustomize } from '../CustomizePanel';
 import { ICONS } from './navIcons';
 
 export default function MobileNav({ unread = 0, onNewTask, onOpenMore }) {
   const navigate = useNavigate();
   const location = useLocation();
+  // The three link slots are the reader's own arrangement. The right three
+  // differ per person rather than per product — sales reach for CRM and Sales
+  // hourly, a site supervisor wants Attendance, an accountant wants Finance —
+  // so any fixed set is wrong for most of the firm. `mobileNavFor` falls back
+  // to the shipped default when nothing has been chosen, and drops any path it
+  // no longer recognises rather than rendering a slot that goes nowhere.
+  const { prefs } = useCustomize();
+  const items = mobileNavFor(prefs?.mobileNav);
 
   const isActive = (to) =>
     location.pathname === to || location.pathname.startsWith(to + '/');
 
   return (
     <nav className="mnav" aria-label="Primary">
-      {MOBILE_NAV.map((it) => {
+      {items.map((it) => {
         if (it.kind === 'fab') {
           return (
             <button

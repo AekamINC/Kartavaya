@@ -431,3 +431,66 @@
   color: var(--on-surface-3);
 }
 .seg__b.on .seg__n { color: var(--primary-text); }
+
+/* ── The bottom-bar arrangement picker (Customize → Layout) ────────────────
+   Three slots the reader fills themselves. The right three differ per PERSON
+   rather than per product — sales reach for CRM and Sales hourly, a site
+   supervisor wants Attendance, an accountant wants Finance — so the shipped
+   Today/Tasks/Messages is only ever right for some of the firm.
+
+   Wraps rather than scrolls: this row sits inside a settings panel that is
+   itself narrow on a phone, which is exactly the device being configured. */
+.mnavpick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.mnavpick__slot {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  flex: 1 1 150px;
+}
+.mnavpick__n {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+
+/* The bar as it will actually render, so an arrangement can be judged without
+   reaching for a phone. Five cells, because the ＋ and More are structural. */
+.mnavpick__preview {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 6px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  background: var(--s-container);
+  margin-bottom: var(--sp-3);
+  overflow-x: auto;
+}
+.mnavpick__cell {
+  flex: 1 1 0;
+  min-width: 54px;
+  text-align: center;
+  padding: 7px 4px;
+  font-size: 11px;
+  color: var(--on-surface-2);
+  background: var(--surface-1);
+  border-radius: var(--r-xs);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mnavpick__cell.is-fab {
+  flex: 0 0 auto;
+  min-width: 38px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+}

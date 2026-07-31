@@ -1,9 +1,32 @@
 import React from 'react';
 import { useCustomize } from '../../components/CustomizePanel';
 import Seg from '../../components/customize/Seg';
+import { mobileNavChoicesFor, mobileNavFor, MOBILE_NAV_DEFAULT } from '../../components/layout/navConfig';
+import { currentUser } from '../../lib/auth';
 
 export default function TabLayout() {
   const { prefs, setPrefs } = useCustomize();
+
+  /* ── The bottom bar's three slots ────────────────────────────────────────
+     Arrangeable because the right three differ per PERSON, not per product.
+     Sales reach for CRM and Sales hourly; a site supervisor wants Attendance;
+     an accountant wants Finance. Any fixed set is wrong for most of the firm.
+
+     Choices are grant-filtered through the same `navGroupsFor` the sidebar
+     uses, so this can never offer a destination the chooser cannot open.
+
+     ＋ and More are not offered: More is the only way back to the other thirty
+     destinations, and the bar cannot give that away. */
+  const choices = mobileNavChoicesFor(currentUser());
+  const chosen = Array.isArray(prefs.mobileNav) ? prefs.mobileNav : MOBILE_NAV_DEFAULT;
+  const setSlot = (i, to) => {
+    const next = [...chosen];
+    if (to === '') next.splice(i, 1); else next[i] = to;
+    // De-duplicate: the same destination twice would waste a slot on a bar
+    // that only has three.
+    setPrefs({ mobileNav: [...new Set(next)].filter(Boolean).slice(0, 3) });
+  };
+  const preview = mobileNavFor(chosen);
 
   return (
     <div className="st__group">
@@ -88,6 +111,54 @@ export default function TabLayout() {
               { label: 'None',    value: 'none' },
             ]}
           />
+        </div>
+      </div>
+
+      <div className="sr sr--col">
+        <div className="sr__l">
+          <div className="sr__t">Bottom bar on phones</div>
+          <div className="sr__d">
+            Three destinations of your choosing. ＋ and More are fixed — More is how you
+            reach everything else. Only what you already have access to is offered.
+          </div>
+        </div>
+        <div className="sr__c">
+          <div className="mnavpick">
+            {[0, 1, 2].map(i => (
+              <label className="mnavpick__slot" key={i}>
+                <span className="mnavpick__n">Slot {i + 1}</span>
+                <select
+                  className="k-input"
+                  value={chosen[i] || ''}
+                  onChange={e => setSlot(i, e.target.value)}
+                  aria-label={`Bottom bar slot ${i + 1}`}
+                >
+                  <option value="">— empty —</option>
+                  {choices.map(c => (
+                    <option key={c.to} value={c.to}>{c.en}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+
+          {/* The bar as it will render, so the arrangement is visible without
+              reaching for a phone. Same order the component builds. */}
+          <div className="mnavpick__preview" aria-label="Preview of the bottom bar">
+            {preview.map((it, i) => (
+              <span key={i} className={'mnavpick__cell' + (it.kind === 'fab' ? ' is-fab' : '')}>
+                {it.kind === 'fab' ? '＋' : it.en}
+              </span>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            className="k-btn k-btn--ghost hb-btn--sm"
+            onClick={() => setPrefs({ mobileNav: null })}
+          >
+            Reset to default
+          </button>
         </div>
       </div>
     </div>

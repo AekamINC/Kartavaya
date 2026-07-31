@@ -310,6 +310,70 @@ export const MOBILE_NAV = [
   { kind: 'more',                   icon: 'more',      en: 'More',     hi: 'अधिक',    gu: 'વધુ' },
 ];
 
+/** The three default link paths, in bar order — the shipped arrangement. */
+export const MOBILE_NAV_DEFAULT = MOBILE_NAV
+  .filter(i => i.kind === 'link')
+  .map(i => i.to);
+
+/**
+ * Every destination a person may put in the bottom bar, flattened out of
+ * `NAV_FULL` so the picker and the sidebar can never disagree about what
+ * exists.
+ *
+ * `ownerOnly` entries are excluded: offering a slot that resolves to a page the
+ * chooser cannot open would be a nav that lies. Module entries keep their
+ * `module` code so the caller can drop the ones this org has not switched on —
+ * the same grant check the sidebar already applies.
+ */
+export const MOBILE_NAV_CHOICES = NAV_FULL
+  .flatMap(s => s.items || [])
+  .filter(i => i.to && !i.ownerOnly)
+  .map(i => ({ to: i.to, icon: i.icon, en: i.en, hi: i.hi, gu: i.gu, module: i.module, badge: i.badge }));
+
+/**
+ * The destinations THIS person may choose, grant-filtered.
+ *
+ * Reuses `navGroupsFor`, which is what the sidebar itself filters with, so the
+ * picker can never offer a slot the chooser could not open — and can never
+ * disagree with the sidebar about what exists. Offering a module the org has
+ * not switched on would put a button on the bar that lands on a refusal.
+ */
+export function mobileNavChoicesFor(user) {
+  return navGroupsFor(user)
+    .flatMap(g => g.items || [])
+    .filter(i => i.to && !i.ownerOnly)
+    .map(i => ({ to: i.to, icon: i.icon, en: i.en, hi: i.hi, gu: i.gu, module: i.module, badge: i.badge }));
+}
+
+/**
+ * The bar's five slots for a given arrangement.
+ *
+ * `chosen` is a list of paths from preferences, or null/undefined for the
+ * shipped default. Anything unrecognised is dropped rather than rendered as a
+ * dead slot — a stale preference naming a route that has since been removed
+ * must not put a button on screen that goes nowhere.
+ *
+ * The ＋ sits in the middle and More sits last, always. Those two are structural:
+ * without More the bar hides thirty destinations, and the middle slot is where
+ * the thumb rests.
+ */
+export function mobileNavFor(chosen) {
+  const paths = Array.isArray(chosen) ? chosen : MOBILE_NAV_DEFAULT;
+  const links = paths
+    .map(p => MOBILE_NAV_CHOICES.find(c => c.to === p))
+    .filter(Boolean)
+    .slice(0, 3)
+    .map(c => ({ kind: 'link', ...c }));
+
+  const fab = { kind: 'fab', icon: 'plus', en: 'New', hi: 'नया', gu: 'નવું' };
+  const more = { kind: 'more', icon: 'more', en: 'More', hi: 'अधिक', gu: 'વધુ' };
+
+  // The ＋ keeps the centre whatever the count, so the bar does not reflow as
+  // slots are added or removed.
+  const mid = Math.ceil(links.length / 2);
+  return [...links.slice(0, mid), fab, ...links.slice(mid), more];
+}
+
 /**
  * The client portal's three destinations — and nothing else.
  *

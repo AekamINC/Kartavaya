@@ -93,6 +93,20 @@ export const DEFAULTS = {
   language:     'en+sa',
   sideBg:       'dark',       // dark | light | accent
   toastPos:     'tr',         // tl | tr | bl | br
+  // The three link slots in the bottom bar, as `to` paths. The bar has five
+  // slots: three chosen here, plus the ＋ and More, which are structural — More
+  // is the only route back to the other thirty destinations and the bar cannot
+  // give it away.
+  //
+  // `null` means "not chosen yet", which is NOT the same as an empty bar: an
+  // empty array is a deliberate choice and must survive a reload. Absent falls
+  // back to the shipped default below.
+  //
+  // Why this is a preference at all: the right three differ per person, not per
+  // product. Sales reach for CRM and Sales hourly; a site supervisor wants
+  // Attendance; an accountant wants Finance. Any fixed set is wrong for most of
+  // the firm, and the owner asked for arrangement rather than a guess.
+  mobileNav:    null,         // e.g. ['/dashboard', '/graha', '/vikray']
   // No `dnd` / `dndFrom` / `dndTo` here, against 09 §5. Quiet hours are not a
   // local preference: the backend already stores `quiet_start` / `quiet_end` on
   // notification_prefs and services/push_service.py refuses delivery inside the
