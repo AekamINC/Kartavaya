@@ -63,12 +63,20 @@ window.addEventListener('unhandledrejection', (e) => {
   }
 });
 
-// Warm the Railway connection before React boots — establishes TCP+TLS so the
-// first real API call (login / teams fetch) doesn't pay the handshake cost.
-const _backendUrl = import.meta.env.VITE_BACKEND_URL;
-if (_backendUrl) {
-  fetch(`${_backendUrl}/api/health`, { method: 'GET', cache: 'no-store' }).catch(() => {});
-}
+// The connection warm-up is `<link rel="preconnect">` in index.html, not a
+// request from here.
+//
+// This used to fetch `/api/health` to establish TCP+TLS before the first real
+// call. It raced the thing it was warming: measured on staging 2026-07-31, the
+// health fetch started at 873ms and `auth/me` at 927ms — 54ms later, while
+// health itself took 534ms. The handshake it was meant to prepay had not
+// finished, so `auth/me` opened its own connection anyway and the warm-up
+// bought nothing but an extra request on the critical path.
+//
+// `preconnect` is the purpose-built mechanism: the browser opens the socket
+// during HTML parse, before any script runs, and it costs no request at all.
+// It now carries `%VITE_BACKEND_URL%`, so it points at the API this build
+// actually talks to.
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(

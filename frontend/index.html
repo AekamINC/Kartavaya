@@ -57,9 +57,14 @@
          at `Kartavaya-production...`, which does not resolve — so they cost a
          DNS lookup and bought nothing. `vercel.json`'s connect-src does not
          admit that host either, which is the second signal it was never real.
-         Must match VITE_BACKEND_URL in .env.production. -->
-    <link rel="preconnect" href="https://kartavya-production.up.railway.app" crossorigin />
-    <link rel="dns-prefetch" href="https://kartavya-production.up.railway.app" />
+         It is now SUBSTITUTED rather than written out. Hardcoding the
+         production host meant every staging build opened a connection to
+         production's backend — a host that build never calls — while the one it
+         does call, `kartavya-staging`, got no hint at all. Vite replaces
+         `%VITE_BACKEND_URL%` at build time, so each environment preconnects to
+         its own API and the two can never drift apart again. -->
+    <link rel="preconnect" href="%VITE_BACKEND_URL%" crossorigin />
+    <link rel="dns-prefetch" href="%VITE_BACKEND_URL%" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Spectral:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Instrument+Serif:ital@0;1&family=Tiro+Devanagari+Hindi:ital@0;1&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=DM+Sans:wght@400;500;600;700&family=Poppins:wght@300;400;500;600;700&family=Source+Sans+3:wght@300;400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&display=swap" rel="stylesheet" />
