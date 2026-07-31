@@ -100,6 +100,9 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   // ── Time tracking ─────────────────────────────────────────────────────────
   const [entries,    setEntries]    = useState([]);
   const [timer,      setTimer]      = useState(null);
+  // `null` when the log loaded, an error when it did not — the two are
+  // different facts and the panel says so.
+  const [timeErr,    setTimeErr]    = useState(null);
   const [manualMin,  setManualMin]  = useState('');
   const [manualDesc, setManualDesc] = useState('');
 
@@ -162,7 +165,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
     setClosing(false);
     if (bodyRef.current) bodyRef.current.scrollTop = 0;
     setTask(null); setFields([]); setFValues({});
-    setComments([]); setActivity([]); setEntries([]); setTimer(null); setAttachments([]);
+    setComments([]); setActivity([]); setEntries([]); setTimer(null); setTimeErr(null); setAttachments([]);
     setMembers([]); setActLoad(false);
 
     api.get('/categories').then(r => setCategories(Array.isArray(r.data) ? r.data : [])).catch(() => {});
@@ -171,9 +174,15 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
       api.get(`/tasks/${taskId}`),
       api.get(`/tasks/${taskId}/comments`),
       api.get(`/activity/task/${taskId}`).catch(() => ({ data: [] })),
-      api.get(`/time/task/${taskId}`).catch(() => ({ data: { entries: [], active_entry: null } })),
+      // A rejection is NOT an empty log. Swallowing it into `{ entries: [] }`
+      // rendered "No time logged yet." over a 403 — measured live on a task
+      // belonging to another org, where the API refused every read and the
+      // drawer reported the task simply had no time against it. The same
+      // mistake `errorKind`/ErrorState exists to stop everywhere else.
+      api.get(`/time/task/${taskId}`).catch(e => ({ data: null, __err: e })),
     ]).then(([tRes, cRes, actRes, timeRes]) => {
       setActivity(Array.isArray(actRes.data) ? actRes.data : []);
+      setTimeErr(timeRes.__err || null);
       setEntries(timeRes.data?.entries || []);
       setTimer(timeRes.data?.active_entry || null);
       const t = tRes.data;
@@ -466,8 +475,27 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
   };
 
   // ── Time actions ──────────────────────────────────────────────────────────
-  const startTimer = async () => { const res = await api.post(`/time/start?task_id=${taskId}`); setTimer(res.data); };
-  const stopTimer  = async () => { const res = await api.post('/time/stop'); setTimer(null); setEntries(prev => [res.data, ...prev]); };
+  //
+  // All four report failure. None of them did: every one awaited a request and
+  // ignored the rejection, so a refusal left the panel exactly as it was and the
+  // person was told nothing at all. Measured live on a task belonging to another
+  // org — `POST /time/manual` answered 403, the Log button had been enabled, and
+  // pressing it changed nothing on screen. Work that looks logged and is not is
+  // worse than work that visibly failed to log.
+  //
+  // The server's own sentence wins where it has one; `_assert_task_access`
+  // explains the refusal better than any generic string here could.
+  const timeFailed = (e, fallback) =>
+    pushToast({ type: 'error', title: e?.response?.data?.detail || fallback });
+
+  const startTimer = async () => {
+    try { const res = await api.post(`/time/start?task_id=${taskId}`); setTimer(res.data); }
+    catch (e) { timeFailed(e, 'Could not start the timer'); }
+  };
+  const stopTimer  = async () => {
+    try { const res = await api.post('/time/stop'); setTimer(null); setEntries(prev => [res.data, ...prev]); }
+    catch (e) { timeFailed(e, 'Could not stop the timer — it is still running'); }
+  };
   const addManual  = async () => {
     const mins = parseInt(manualMin);
     if (!mins || mins < 1) return;
@@ -476,16 +504,23 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
     // once. Sent as "now" rather than back-dated by `mins`: the entry is only
     // ever ordered and reported on by this column, and back-dating a long entry
     // logged just after midnight would file it against the previous day.
-    const res = await api.post('/time/manual', {
-      task_id: taskId,
-      started_at: new Date().toISOString(),
-      minutes: mins,
-      description: manualDesc,
-    });
-    setEntries(prev => [res.data, ...prev]);
-    setManualMin(''); setManualDesc('');
+    try {
+      const res = await api.post('/time/manual', {
+        task_id: taskId,
+        started_at: new Date().toISOString(),
+        minutes: mins,
+        description: manualDesc,
+      });
+      setEntries(prev => [res.data, ...prev]);
+      // Cleared only on success. Wiping the fields after a failed save throws
+      // away what the person typed and leaves them nothing to retry with.
+      setManualMin(''); setManualDesc('');
+    } catch (e) { timeFailed(e, 'Could not log that time'); }
   };
-  const deleteEntry = async id => { await api.delete(`/time/${id}`); setEntries(prev => prev.filter(e => e.entry_id !== id)); };
+  const deleteEntry = async id => {
+    try { await api.delete(`/time/${id}`); setEntries(prev => prev.filter(e => e.entry_id !== id)); }
+    catch (e) { timeFailed(e, 'Could not delete that entry'); }
+  };
 
   // ── Approval actions ──────────────────────────────────────────────────────
   const requestApproval = async () => {
@@ -750,6 +785,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
                       timer={timer} entries={entries}
                       manualMin={manualMin} setManualMin={setManualMin}
                       manualDesc={manualDesc} setManualDesc={setManualDesc}
+                      timeErr={timeErr}
                       startTimer={startTimer} stopTimer={stopTimer}
                       addManual={addManual} deleteEntry={deleteEntry}
                     />

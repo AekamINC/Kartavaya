@@ -50,7 +50,7 @@ function ElapsedTimer({ startedAt }) {
  * comment explaining the fix — so what actually changed is filled → outlined.
  */
 export default function DrawerTimeEntries({
-  timer, entries,
+  timer, entries, timeErr,
   manualMin, setManualMin, manualDesc, setManualDesc,
   startTimer, stopTimer, addManual, deleteEntry,
 }) {
@@ -95,7 +95,18 @@ export default function DrawerTimeEntries({
         </button>
       </div>
 
-      {entries.length === 0 ? (
+      {timeErr ? (
+        /* A refused read is not an empty log. This said "No time logged yet."
+           over a 403 — measured live on a task in another org, where the API
+           refused every read and the panel reported the task simply had no time
+           against it. An empty state is a CLAIM about the record, and a request
+           that did not answer cannot support one. */
+        <p className="dr__empty">
+          {timeErr?.response?.status === 403
+            ? 'You do not have access to this task’s time log.'
+            : 'The time log did not load. Nothing has been lost — this is a read failure.'}
+        </p>
+      ) : entries.length === 0 ? (
         <p className="dr__empty">No time logged yet.</p>
       ) : (
         <div>
