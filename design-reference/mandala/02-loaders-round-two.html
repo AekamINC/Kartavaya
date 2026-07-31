@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — loader directions, round two</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700&family=Inter:wght@300;400;500;600;700&family=Tiro+Devanagari+Hindi&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F3EFE6; --surface:#FAF7F0; --container:#EEE9DC;
+    --ink:#1E1C16; --ink-2:#4A463C; --ink-3:#7C7768; --rule:#D8D1BE;
+    --primary:#04837A; --primary-vivid:#0AA396;
+    --side-ink:#161A18; --icon-a:#1B8FD0; --icon-b:#0FAFA8;
+    --display:'Newsreader',Georgia,serif;
+    --ui:'Inter',system-ui,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+    --hindi:'Tiro Devanagari Hindi','Nirmala UI','Noto Serif Devanagari',serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0E1211;color:#E8E4DA;font-family:var(--ui);padding:34px 28px 70px}
+  .head{max-width:1200px;margin:0 auto 30px}
+  .head h1{font-family:var(--display);font-weight:400;font-size:31px;margin:0 0 6px;letter-spacing:-.02em}
+  .head p{margin:0;color:#9A958A;font-size:13.5px;max-width:64ch;line-height:1.6}
+  h2.sec{max-width:1200px;margin:42px auto 16px;font-size:11px;font-weight:600;letter-spacing:.18em;
+    text-transform:uppercase;color:#6F6A5F;border-top:1px solid #23231F;padding-top:14px}
+  .grid{max-width:1200px;margin:0 auto;display:flex;flex-wrap:wrap;gap:24px}
+  .tag{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+    color:#0E1211;background:#0AA396;border-radius:3px;padding:2px 6px;margin-bottom:7px}
+  .cap{margin:10px 2px 0;width:196px}
+  .cap b{display:block;font-size:12.5px;font-weight:600;color:#EFEBE1}
+  .cap span{display:block;font-size:11.5px;color:#8B867B;line-height:1.5;margin-top:3px}
+  .lo{width:196px}
+  .stage{height:196px;border-radius:16px;background:var(--bg);border:1px solid #2A2A25;
+    display:grid;place-items:center;position:relative;overflow:hidden}
+
+  /* ── E · pen nib ─────────────────────────────────────────────────────── */
+  .E .mk{position:relative;width:100px;height:86px}
+  .E .ka{position:absolute;inset:0;font-family:var(--hindi);font-size:74px;line-height:1.05;
+    color:var(--primary);clip-path:inset(0 100% 0 0);animation:E-rev 2.4s cubic-bezier(.4,.02,.24,1) infinite}
+  .E .nib{position:absolute;top:8px;left:0;width:7px;height:7px;border-radius:50%;
+    background:var(--primary-vivid);box-shadow:0 0 0 3px rgba(10,163,150,.22);
+    animation:E-nib 2.4s cubic-bezier(.4,.02,.24,1) infinite}
+  @keyframes E-rev{0%{clip-path:inset(0 100% 0 0)}44%{clip-path:inset(0 0 0 0)}
+    74%{clip-path:inset(0 0 0 0);opacity:1}100%{clip-path:inset(0 0 0 0);opacity:0}}
+  @keyframes E-nib{0%{transform:translateX(0);opacity:0}6%{opacity:1}
+    44%{transform:translateX(96px);opacity:1}54%{transform:translateX(96px);opacity:0}
+    100%{transform:translateX(96px);opacity:0}}
+
+  /* ── F · stamp ───────────────────────────────────────────────────────── */
+  .F .mk{position:relative;display:grid;place-items:center;width:110px;height:110px}
+  .F .ka{font-family:var(--hindi);font-size:70px;line-height:1;color:var(--primary);
+    animation:F-hit 2.2s cubic-bezier(.2,1.4,.3,1) infinite}
+  .F .ring{position:absolute;inset:0;border-radius:50%;border:2px solid var(--primary-vivid);
+    opacity:0;animation:F-ring 2.2s cubic-bezier(.15,.7,.25,1) infinite}
+  @keyframes F-hit{0%{transform:scale(1.6);opacity:0;filter:blur(5px)}
+    26%{transform:scale(1);opacity:1;filter:blur(0)}
+    76%{transform:scale(1);opacity:1}100%{transform:scale(1);opacity:0}}
+  @keyframes F-ring{0%,20%{transform:scale(.5);opacity:0}
+    30%{opacity:.55}70%{transform:scale(1.25);opacity:0}100%{opacity:0}}
+
+  /* ── K · type-set (strokes assemble) ─────────────────────────────────── */
+  .K .mk{position:relative;width:96px;height:88px}
+  .K .p{position:absolute;inset:0;font-family:var(--hindi);font-size:76px;line-height:1.02;color:var(--primary)}
+  .K .bar{clip-path:inset(0 0 78% 0);transform:translateY(-22px);opacity:0;animation:K-bar 2.5s cubic-bezier(.3,0,.2,1) infinite}
+  .K .bowl{clip-path:inset(22% 42% 0 0);transform:translateX(-20px);opacity:0;animation:K-bowl 2.5s cubic-bezier(.3,0,.2,1) infinite}
+  .K .stem{clip-path:inset(22% 0 0 58%);transform:translateX(20px);opacity:0;animation:K-stem 2.5s cubic-bezier(.3,0,.2,1) infinite}
+  @keyframes K-bar{0%{transform:translateY(-22px);opacity:0}
+    20%,74%{transform:translateY(0);opacity:1}100%{transform:translateY(0);opacity:0}}
+  @keyframes K-bowl{0%,12%{transform:translateX(-20px);opacity:0}
+    36%,74%{transform:translateX(0);opacity:1}100%{transform:translateX(0);opacity:0}}
+  @keyframes K-stem{0%,24%{transform:translateX(20px);opacity:0}
+    50%,74%{transform:translateX(0);opacity:1}100%{transform:translateX(0);opacity:0}}
+
+  /* ── M · ledger lines ────────────────────────────────────────────────── */
+  .M .mk{position:relative;width:104px;height:92px;overflow:hidden}
+  .M .ka{position:absolute;inset:0;font-family:var(--hindi);font-size:76px;line-height:1.05;
+    color:var(--rule)}
+  .M .ink{position:absolute;inset:0;font-family:var(--hindi);font-size:76px;line-height:1.05;
+    color:var(--primary);clip-path:inset(0 0 100% 0);animation:M-fill 2.4s steps(6,end) infinite}
+  .M .rules{position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(to bottom,transparent 0 14px,rgba(10,163,150,.28) 14px 15px);
+    animation:M-scan 2.4s linear infinite}
+  @keyframes M-fill{0%{clip-path:inset(0 0 100% 0)}72%{clip-path:inset(0 0 0 0)}
+    100%{clip-path:inset(0 0 0 0)}}
+  @keyframes M-scan{0%{opacity:.9;transform:translateY(-15px)}
+    72%{opacity:.9;transform:translateY(0)}100%{opacity:0;transform:translateY(0)}}
+
+  /* ── I · seal ────────────────────────────────────────────────────────── */
+  .I .mk{position:relative;width:104px;height:104px;display:grid;place-items:center}
+  .I .disc{position:absolute;inset:0;border-radius:50%;
+    background:conic-gradient(from 0deg,var(--icon-a),var(--icon-b),var(--icon-a));
+    -webkit-mask:radial-gradient(circle,transparent 40px,#000 41px);
+            mask:radial-gradient(circle,transparent 40px,#000 41px);
+    animation:I-spin 3.4s linear infinite}
+  .I .notch{position:absolute;inset:0;border-radius:50%;
+    background:conic-gradient(from 0deg,transparent 0 84%,var(--bg) 84% 100%);
+    -webkit-mask:radial-gradient(circle,transparent 40px,#000 41px);
+            mask:radial-gradient(circle,transparent 40px,#000 41px);
+    animation:I-spin 3.4s linear infinite}
+  .I .ka{position:relative;font-family:var(--hindi);font-size:52px;line-height:1;color:var(--primary);
+    animation:I-breathe 3.4s ease-in-out infinite}
+  @keyframes I-spin{to{transform:rotate(360deg)}}
+  @keyframes I-breathe{0%,100%{opacity:.86;transform:scale(.97)}50%{opacity:1;transform:scale(1)}}
+
+  /* ── L · rangoli ─────────────────────────────────────────────────────── */
+  .L .mk{position:relative;width:120px;height:120px;display:grid;place-items:center}
+  .L .d{position:absolute;width:46px;height:46px;border:1.5px solid var(--primary-vivid);
+    transform:rotate(45deg) scale(.4);opacity:0;animation:L-out 2.8s cubic-bezier(.2,.6,.3,1) infinite}
+  .L .d:nth-child(2){animation-delay:.45s}
+  .L .d:nth-child(3){animation-delay:.9s}
+  .L .ka{position:relative;font-family:var(--hindi);font-size:54px;line-height:1;color:var(--primary)}
+  @keyframes L-out{0%{transform:rotate(45deg) scale(.45);opacity:0}
+    18%{opacity:.75}100%{transform:rotate(45deg) scale(2.1);opacity:0}}
+
+  /* ── N · fold ────────────────────────────────────────────────────────── */
+  .N .mk{position:relative;width:104px;height:88px;overflow:hidden}
+  .N .ka{position:absolute;inset:0;font-family:var(--hindi);font-size:76px;line-height:1.05;color:var(--primary);
+    clip-path:polygon(0 0,0 0,0 100%,0 100%);animation:N-fold 2.5s cubic-bezier(.4,0,.2,1) infinite}
+  .N .edge{position:absolute;top:0;bottom:0;width:26px;
+    background:linear-gradient(90deg,rgba(10,163,150,.34),transparent);
+    animation:N-edge 2.5s cubic-bezier(.4,0,.2,1) infinite}
+  @keyframes N-fold{0%{clip-path:polygon(0 0,0 0,0 100%,0 100%)}
+    46%{clip-path:polygon(0 0,100% 0,100% 100%,0 100%)}
+    76%{clip-path:polygon(0 0,100% 0,100% 100%,0 100%);opacity:1}
+    100%{clip-path:polygon(0 0,100% 0,100% 100%,0 100%);opacity:0}}
+  @keyframes N-edge{0%{transform:translateX(-26px);opacity:0}8%{opacity:1}
+    46%{transform:translateX(104px);opacity:1}56%{opacity:0}100%{opacity:0}}
+
+  /* ── O · balance ─────────────────────────────────────────────────────── */
+  .O .mk{position:relative;width:110px;height:96px;display:flex;flex-direction:column;
+    align-items:center;justify-content:flex-end;gap:9px}
+  .O .ka{font-family:var(--hindi);font-size:64px;line-height:1;color:var(--primary);
+    animation:O-drop 2.3s cubic-bezier(.3,1.5,.4,1) infinite}
+  .O .beam{width:96px;height:2.5px;border-radius:2px;background:var(--primary-vivid);
+    animation:O-tilt 2.3s cubic-bezier(.3,1.2,.4,1) infinite}
+  .O .pivot{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;
+    border-bottom:9px solid var(--rule);margin-top:-1px}
+  @keyframes O-drop{0%{transform:translateY(-28px);opacity:0}
+    26%{transform:translateY(0);opacity:1}80%{transform:translateY(0);opacity:1}
+    100%{transform:translateY(0);opacity:0}}
+  @keyframes O-tilt{0%,14%{transform:rotate(-7deg)}34%{transform:rotate(4deg)}
+    52%,80%{transform:rotate(0)}100%{transform:rotate(0);opacity:0}}
+
+  /* ── P · tally ───────────────────────────────────────────────────────── */
+  .P .mk{position:relative;display:flex;flex-direction:column;align-items:center;gap:11px}
+  .P .ka{font-family:var(--hindi);font-size:58px;line-height:1;color:var(--primary);
+    animation:P-fade 2.6s ease-in-out infinite}
+  .P .bars{display:flex;gap:5px;align-items:flex-end;height:22px}
+  .P .bars i{display:block;width:5px;background:var(--primary-vivid);border-radius:2px;height:6px;
+    animation:P-bar 1.25s cubic-bezier(.4,0,.4,1) infinite}
+  .P .bars i:nth-child(2){animation-delay:.1s}
+  .P .bars i:nth-child(3){animation-delay:.2s}
+  .P .bars i:nth-child(4){animation-delay:.3s}
+  .P .bars i:nth-child(5){animation-delay:.4s}
+  @keyframes P-bar{0%,100%{height:6px;opacity:.45}50%{height:22px;opacity:1}}
+  @keyframes P-fade{0%,100%{opacity:.9}50%{opacity:1}}
+
+  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+
+<div class="head">
+  <h1>Loaders — round two</h1>
+  <p>Eight more, all on क. The ones drawn from accounting work rather than from generic UI motion are marked. Watch them cycle and tell me the letter.</p>
+</div>
+
+<h2 class="sec">From the craft — a CA firm's own vocabulary</h2>
+<div class="grid">
+  <div class="lo"><div class="stage E"><div class="mk"><span class="nib"></span><span class="ka">क</span></div></div>
+    <div class="cap"><span class="tag">E</span><b>Pen nib</b><span>A nib runs the शिरोरेखा left to right and leaves the letter behind it. Writing, with the hand visible.</span></div></div>
+
+  <div class="lo"><div class="stage F"><div class="mk"><span class="ring"></span><span class="ka">क</span></div></div>
+    <div class="cap"><span class="tag">F</span><b>Stamp</b><span>Lands from above, blur to sharp, one ring of ink spreading out. Every Indian office runs on the rubber stamp.</span></div></div>
+
+  <div class="lo"><div class="stage M"><div class="mk"><span class="ka">क</span><span class="ink">क</span><span class="rules"></span></div></div>
+    <div class="cap"><span class="tag">M</span><b>Ledger lines</b><span>Ruled lines sweep down the page and the letter inks in where they pass. Reads as a ledger being filled.</span></div></div>
+
+  <div class="lo"><div class="stage O"><div class="mk"><span class="ka">क</span><span class="beam"></span><span class="pivot"></span></div></div>
+    <div class="cap"><span class="tag">O</span><b>Balance</b><span>The letter drops onto a beam that tips, swings back and settles level. Books that balance.</span></div></div>
+</div>
+
+<h2 class="sec">From the script and the mark</h2>
+<div class="grid">
+  <div class="lo"><div class="stage K"><div class="mk"><span class="p bar">क</span><span class="p bowl">क</span><span class="p stem">क</span></div></div>
+    <div class="cap"><span class="tag">K</span><b>Type-set</b><span>Bar, then bowl, then stem — the letter assembling from its strokes like metal type being set.</span></div></div>
+
+  <div class="lo"><div class="stage I"><div class="mk"><span class="disc"></span><span class="notch"></span><span class="ka">क</span></div></div>
+    <div class="cap"><span class="tag">I</span><b>Seal</b><span>A notched gradient ring turning around a still letter. The icon's colours, moving; quiet enough to sit under content.</span></div></div>
+
+  <div class="lo"><div class="stage L"><div class="mk"><span class="d"></span><span class="d"></span><span class="d"></span><span class="ka">क</span></div></div>
+    <div class="cap"><span class="tag">L</span><b>Rangoli</b><span>Diamonds opening outward from the letter — the product's existing diamond mark, used as rhythm.</span></div></div>
+
+  <div class="lo"><div class="stage N"><div class="mk"><span class="ka">क</span><span class="edge"></span></div></div>
+    <div class="cap"><span class="tag">N</span><b>Fold</b><span>A lit edge passes across and the letter appears behind it, like a sheet being turned.</span></div></div>
+</div>
+
+<h2 class="sec">Quietest — for inline waits, not full screens</h2>
+<div class="grid">
+  <div class="lo"><div class="stage P"><div class="mk"><span class="ka">क</span><span class="bars"><i></i><i></i><i></i><i></i><i></i></span></div></div>
+    <div class="cap"><span class="tag">P</span><b>Tally</b><span>Still letter, five bars counting under it. The only one calm enough to repeat inside a table or a drawer.</span></div></div>
+</div>
+
+</body>
+</html>

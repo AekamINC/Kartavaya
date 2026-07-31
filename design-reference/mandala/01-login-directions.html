@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — app login & loader directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Inter:wght@300;400;500;600;700&family=Tiro+Devanagari+Hindi:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  /* Tokens lifted from the product, so these are the real colours and faces —
+     not an approximation made for a mockup. */
+  :root{
+    --bg:#F3EFE6; --surface:#FAF7F0; --container:#EEE9DC;
+    --ink:#1E1C16; --ink-2:#4A463C; --ink-3:#7C7768;
+    --rule:#D8D1BE;
+    --primary:#04837A; --primary-vivid:#0AA396; --on-primary:#fff;
+    --side-ink:#161A18;
+    --icon-a:#1B8FD0; --icon-b:#0FAFA8;   /* the launcher icon's own gradient */
+    --display:'Newsreader',Georgia,serif;
+    --ui:'Inter',system-ui,sans-serif;
+    --hindi:'Tiro Devanagari Hindi','Nirmala UI','Noto Serif Devanagari',serif;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:#0E1211;color:#E8E4DA;
+    font-family:var(--ui);-webkit-font-smoothing:antialiased;
+    padding:34px 28px 70px;
+  }
+  .head{max-width:1180px;margin:0 auto 34px}
+  .head h1{font-family:var(--display);font-weight:400;font-size:31px;margin:0 0 6px;letter-spacing:-.02em}
+  .head p{margin:0;color:#9A958A;font-size:13.5px;max-width:60ch;line-height:1.6}
+  h2.sec{
+    max-width:1180px;margin:44px auto 16px;font-size:11px;font-weight:600;
+    letter-spacing:.18em;text-transform:uppercase;color:#6F6A5F;
+    border-top:1px solid #23231F;padding-top:14px;
+  }
+  .grid{max-width:1180px;margin:0 auto;display:flex;flex-wrap:wrap;gap:26px}
+
+  /* ── phone frame ─────────────────────────────────────────────────────── */
+  .opt{width:270px}
+  .opt .cap{margin:11px 2px 0}
+  .opt .cap b{display:block;font-size:12.5px;font-weight:600;color:#EFEBE1;letter-spacing:.01em}
+  .opt .cap span{display:block;font-size:11.5px;color:#8B867B;line-height:1.5;margin-top:3px}
+  .tag{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.12em;
+       text-transform:uppercase;color:#0E1211;background:#0AA396;border-radius:3px;
+       padding:2px 6px;margin-bottom:7px}
+  .ph{
+    width:270px;height:544px;border-radius:22px;overflow:hidden;position:relative;
+    background:var(--bg);border:1px solid #2A2A25;box-shadow:0 18px 40px -20px #000;
+  }
+  .ph .status{height:20px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 12px;font-size:9px;color:var(--ink-2);position:relative;z-index:6}
+  .ph .status.on-dark{color:rgba(255,255,255,.8)}
+
+  /* form pieces, shared */
+  .fm{padding:0 20px;position:relative;z-index:5}
+  .eyebrow{font-size:8.5px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--primary)}
+  .h1{font-family:var(--display);font-size:22px;font-weight:400;color:var(--ink);margin:5px 0 3px;letter-spacing:-.015em}
+  .h1 em{font-style:italic;color:var(--primary)}
+  .h1 .hi{font-family:var(--hindi);font-size:.62em;color:var(--ink-3);font-style:normal}
+  .sub{font-size:10.5px;color:var(--ink-3);margin:0 0 14px}
+  .fld{background:var(--container);border-radius:7px 7px 0 0;border-bottom:1.5px solid var(--rule);
+       padding:7px 10px 6px;margin-bottom:9px}
+  .fld i{display:block;font-style:normal;font-size:8px;color:var(--ink-3);margin-bottom:3px}
+  .fld b{display:block;font-weight:400;font-size:11px;color:var(--ink-2)}
+  .fld.act{border-bottom-color:var(--primary)}
+  .fld.act i{color:var(--primary)}
+  .row{display:flex;justify-content:space-between;align-items:center;font-size:9px;color:var(--ink-2);margin:9px 0 13px}
+  .row a{color:var(--primary);font-weight:600;text-decoration:none}
+  .btn{background:var(--primary);color:#fff;text-align:center;border-radius:7px;
+       padding:10px;font-size:11.5px;font-weight:600}
+  .foot{font-size:8.5px;color:var(--ink-3);text-align:center;margin-top:11px;line-height:1.5}
+
+  /* the icon tile, as it appears on the home screen */
+  .tile{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;
+        background:linear-gradient(150deg,var(--icon-a),var(--icon-b));flex:none}
+  .tile span{font-family:var(--hindi);color:#fff;font-size:25px;line-height:1;margin-top:-2px}
+
+  /* ── 1 · WATERMARK ───────────────────────────────────────────────────── */
+  .v1 .wm{position:absolute;right:-.14em;bottom:-.20em;font-family:var(--hindi);
+    font-size:290px;line-height:.78;color:var(--primary);opacity:.07;pointer-events:none;z-index:1}
+  .v1 .top{display:flex;align-items:center;gap:10px;padding:14px 20px 22px;position:relative;z-index:5}
+  .v1 .top .nm{font-family:var(--display);font-size:14px;color:var(--ink)}
+  .v1 .top .nm small{display:block;font-family:var(--ui);font-size:7.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-3);margin-top:1px}
+
+  /* ── 2 · INK MASTHEAD ────────────────────────────────────────────────── */
+  .v2 .mast{height:168px;background:var(--side-ink);position:relative;overflow:hidden;
+    display:flex;align-items:flex-end;padding:0 20px 34px}
+  .v2 .mast::after{content:'';position:absolute;inset:0;
+    background:radial-gradient(60% 60% at 20% 20%,rgba(10,163,150,.34),transparent 70%),
+               radial-gradient(50% 50% at 88% 84%,rgba(27,143,208,.22),transparent 72%)}
+  .v2 .mast .wm{position:absolute;right:-.10em;top:-.30em;font-family:var(--hindi);
+    font-size:215px;line-height:.8;color:#fff;opacity:.10;z-index:1}
+  .v2 .card{margin:-26px 16px 0;background:var(--surface);border:1px solid var(--rule);
+    border-radius:13px;padding:16px 0 14px;position:relative;z-index:5;box-shadow:0 14px 30px -16px rgba(20,18,14,.4)}
+  .v2 .card .fm{padding:0 16px}
+
+  /* ── 3 · GRADIENT CROWN ──────────────────────────────────────────────── */
+  .v3 .crown{height:186px;position:relative;overflow:hidden;
+    background:linear-gradient(158deg,var(--icon-a),var(--icon-b));
+    border-radius:0 0 40% 40% / 0 0 34px 34px;
+    display:grid;place-items:center}
+  .v3 .crown .ka{font-family:var(--hindi);font-size:104px;line-height:1;color:#fff;
+    margin-top:-12px;text-shadow:0 6px 20px rgba(0,0,0,.16)}
+  .v3 .crown .rays{position:absolute;inset:0;
+    background:radial-gradient(52% 60% at 50% 8%,rgba(255,255,255,.28),transparent 62%)}
+  .v3 .fm{padding-top:20px}
+
+  /* ── 4 · KNOCKOUT ────────────────────────────────────────────────────── */
+  .v4 .knock{height:150px;background:var(--primary);position:relative;overflow:hidden}
+  .v4 .knock .ka{position:absolute;left:50%;transform:translateX(-50%);
+    top:26px;font-family:var(--hindi);font-size:210px;line-height:.78;color:var(--bg)}
+  .v4 .seam{height:3px;background:var(--bg);position:relative;z-index:4;margin-top:-1px}
+  .v4 .fm{padding-top:20px}
+  .v4 .lbl{position:absolute;left:20px;bottom:12px;z-index:5;font-family:var(--hindi);
+    font-size:12px;color:rgba(255,255,255,.9)}
+
+  /* ── 5 · SEAL / CERTIFICATE ──────────────────────────────────────────── */
+  .v5{background:var(--bg)}
+  .v5 .ka{position:absolute;left:-.13em;top:.02em;font-family:var(--hindi);font-size:250px;
+    line-height:.8;color:var(--primary);opacity:.075;z-index:1}
+  .v5 .frame{margin:16px;border:1px solid var(--rule);border-radius:4px;padding:18px 0 16px;
+    position:relative;z-index:5;background:rgba(250,247,240,.72);backdrop-filter:blur(2px)}
+  .v5 .frame::before{content:'';position:absolute;inset:4px;border:1px solid var(--rule);
+    border-radius:2px;opacity:.55;pointer-events:none}
+  .v5 .frame .fm{padding:0 18px}
+  .v5 .pv{font-family:var(--hindi);font-size:15px;color:var(--primary);text-align:center;
+    display:block;margin-bottom:2px}
+
+  /* ══ LOADERS ══════════════════════════════════════════════════════════ */
+  .lo{width:206px}
+  .lo .stage{height:206px;border-radius:16px;background:var(--bg);border:1px solid #2A2A25;
+    display:grid;place-items:center;position:relative;overflow:hidden}
+
+  /* A · written */
+  .lA .mk{display:inline-flex;flex-direction:column;gap:8px}
+  .lA .ka{font-family:var(--hindi);font-size:62px;line-height:1;color:var(--primary);
+    clip-path:inset(0 100% 0 0);animation:wri 2.1s cubic-bezier(.32,.06,.28,1) infinite}
+  .lA .ru{height:2px;border-radius:2px;background:var(--primary-vivid);
+    clip-path:inset(0 100% 0 0);animation:wri 2.1s cubic-bezier(.32,.06,.28,1) infinite}
+  @keyframes wri{0%{clip-path:inset(0 100% 0 0)}40%{clip-path:inset(0 0 0 0)}
+    66%{clip-path:inset(0 0 0 0)}100%{clip-path:inset(0 0 0 100%)}}
+
+  /* B · the icon assembling — conic sweep, then the letter */
+  .lB .disc{width:96px;height:96px;border-radius:50%;position:relative;display:grid;place-items:center}
+  .lB .disc::before{content:'';position:absolute;inset:0;border-radius:50%;
+    background:conic-gradient(from -90deg,var(--icon-a),var(--icon-b) 55%,transparent 55%);
+    animation:sweep 2.4s cubic-bezier(.4,0,.2,1) infinite}
+  .lB .ka{position:relative;font-family:var(--hindi);font-size:52px;color:#fff;line-height:1;
+    margin-top:-3px;opacity:0;animation:pop 2.4s cubic-bezier(.4,0,.2,1) infinite}
+  @keyframes sweep{0%{transform:rotate(-100deg);opacity:0}
+    18%{opacity:1}
+    58%{transform:rotate(260deg);opacity:1}
+    82%{transform:rotate(260deg);opacity:1}
+    100%{transform:rotate(360deg);opacity:0}}
+  @keyframes pop{0%,30%{opacity:0;transform:scale(.7)}
+    52%{opacity:1;transform:scale(1)}82%{opacity:1;transform:scale(1)}
+    100%{opacity:0;transform:scale(1.06)}}
+
+  /* C · शिरोरेखा — the headline bar draws, the letter hangs off it */
+  .lC .mk{position:relative;width:104px;height:92px}
+  .lC .bar{position:absolute;top:14px;left:0;height:5px;border-radius:3px;
+    background:var(--primary);width:100%;transform-origin:left;
+    transform:scaleX(0);animation:bar 2.3s cubic-bezier(.36,0,.2,1) infinite}
+  .lC .ka{position:absolute;top:14px;left:0;width:100%;font-family:var(--hindi);
+    font-size:74px;line-height:.86;color:var(--primary);text-align:left;
+    clip-path:inset(0 0 100% 0);animation:hang 2.3s cubic-bezier(.36,0,.2,1) infinite}
+  @keyframes bar{0%{transform:scaleX(0)}26%{transform:scaleX(1)}
+    88%{transform:scaleX(1);opacity:1}100%{transform:scaleX(1);opacity:0}}
+  @keyframes hang{0%,22%{clip-path:inset(0 0 100% 0)}
+    56%{clip-path:inset(0 0 0 0)}88%{clip-path:inset(0 0 0 0);opacity:1}
+    100%{clip-path:inset(0 0 0 0);opacity:0}}
+
+  /* D · ledger — the letter fills like ink rising */
+  .lD .mk{position:relative;font-family:var(--hindi);font-size:78px;line-height:1;color:transparent;
+    -webkit-text-stroke:1.4px var(--rule)}
+  .lD .fill{position:absolute;inset:0;color:var(--primary);-webkit-text-stroke:0;
+    clip-path:inset(100% 0 0 0);animation:rise 2.2s cubic-bezier(.5,0,.3,1) infinite}
+  @keyframes rise{0%{clip-path:inset(100% 0 0 0)}
+    55%{clip-path:inset(0 0 0 0)}78%{clip-path:inset(0 0 0 0)}
+    100%{clip-path:inset(0 0 0 0);opacity:0}}
+  .lo .cap{margin:10px 2px 0}
+  .lo .cap b{display:block;font-size:12.5px;font-weight:600;color:#EFEBE1}
+  .lo .cap span{display:block;font-size:11.5px;color:#8B867B;line-height:1.5;margin-top:3px}
+
+  @media (prefers-reduced-motion:reduce){
+    .lA .ka,.lA .ru,.lB .disc::before,.lB .ka,.lC .bar,.lC .ka,.lD .fill{animation:none}
+    .lA .ka,.lA .ru,.lC .ka,.lD .fill{clip-path:none}
+    .lB .ka{opacity:1}.lC .bar{transform:scaleX(1)}
+  }
+</style>
+</head>
+<body>
+
+<div class="head">
+  <h1>App login &amp; loader — directions</h1>
+  <p>Five login treatments and four loaders, all built on क, the first letter of कर्तव्य and the letter already on the launcher icon. Real product tokens and typefaces throughout. Loaders are live — watch them cycle. Tell me the numbers you want and I'll build them properly.</p>
+</div>
+
+<h2 class="sec">Login — pick one</h2>
+<div class="grid">
+
+  <!-- 1 -->
+  <div class="opt">
+    <div class="ph v1">
+      <div class="status"><span>11:02</span><span>▮▮▮</span></div>
+      <span class="wm">क</span>
+      <div class="top"><div class="tile"><span>क</span></div>
+        <div class="nm">Kartavaya<small>by Aekam Inc</small></div></div>
+      <div class="fm">
+        <div class="eyebrow">Welcome back</div>
+        <div class="h1">Sign in <span class="hi">प्रवेश</span></div>
+        <p class="sub">Pick up where your team left off.</p>
+        <div class="fld act"><i>Email address</i><b>rhea@nirmalexports.in</b></div>
+        <div class="fld"><i>Password</i><b>••••••••••</b></div>
+        <div class="row"><span>Remember my email</span><a href="#">Forgot password?</a></div>
+        <div class="btn">Sign in</div>
+        <p class="foot">Invite-only — your firm's admin adds you.</p>
+      </div>
+    </div>
+    <div class="cap"><span class="tag">1</span><b>Watermark</b>
+      <span>क bleeding off the corner as a ghost on paper. Quietest — the form is the screen, the letter is the paper it's printed on.</span></div>
+  </div>
+
+  <!-- 2 -->
+  <div class="opt">
+    <div class="ph v2">
+      <div class="mast">
+        <span class="wm">क</span>
+        <div class="status on-dark" style="position:absolute;top:0;left:0;right:0"><span>11:02</span><span>▮▮▮</span></div>
+        <div class="tile" style="position:relative;z-index:3"><span>क</span></div>
+      </div>
+      <div class="card">
+        <div class="fm">
+          <div class="eyebrow">Welcome back</div>
+          <div class="h1">Sign in <span class="hi">प्रवेश</span></div>
+          <p class="sub">Pick up where your team left off.</p>
+          <div class="fld act"><i>Email address</i><b>rhea@nirmalexports.in</b></div>
+          <div class="fld"><i>Password</i><b>••••••••••</b></div>
+          <div class="row"><span>Remember my email</span><a href="#">Forgot password?</a></div>
+          <div class="btn">Sign in</div>
+        </div>
+      </div>
+    </div>
+    <div class="cap"><span class="tag">2</span><b>Ink masthead</b>
+      <span>Brand-ink band with क knocked out large, card overlapping the seam. Most like the signed-in app, which uses the same dark rail.</span></div>
+  </div>
+
+  <!-- 3 -->
+  <div class="opt">
+    <div class="ph v3">
+      <div class="crown">
+        <div class="rays"></div>
+        <div class="status on-dark" style="position:absolute;top:0;left:0;right:0"><span>11:02</span><span>▮▮▮</span></div>
+        <span class="ka">क</span>
+      </div>
+      <div class="fm">
+        <div class="eyebrow">Welcome back</div>
+        <div class="h1">Sign in to <em>Kartavaya</em></div>
+        <p class="sub">Pick up where your team left off.</p>
+        <div class="fld act"><i>Email address</i><b>rhea@nirmalexports.in</b></div>
+        <div class="fld"><i>Password</i><b>••••••••••</b></div>
+        <div class="row"><span>Remember my email</span><a href="#">Forgot password?</a></div>
+        <div class="btn">Sign in</div>
+      </div>
+    </div>
+    <div class="cap"><span class="tag">3</span><b>Gradient crown</b>
+      <span>The launcher icon's own gradient, curved along the bottom, क centred in white. You tap the icon and the app opens on the icon — strongest continuity.</span></div>
+  </div>
+
+  <!-- 4 -->
+  <div class="opt">
+    <div class="ph v4">
+      <div class="knock">
+        <div class="status on-dark" style="position:absolute;top:0;left:0;right:0;z-index:6"><span>11:02</span><span>▮▮▮</span></div>
+        <span class="ka">क</span>
+        <span class="lbl">कर्तव्य</span>
+      </div>
+      <div class="seam"></div>
+      <div class="fm">
+        <div class="eyebrow">Welcome back</div>
+        <div class="h1">Sign in <span class="hi">प्रवेश</span></div>
+        <div class="fld act"><i>Email address</i><b>rhea@nirmalexports.in</b></div>
+        <div class="fld"><i>Password</i><b>••••••••••</b></div>
+        <div class="row"><span>Remember my email</span><a href="#">Forgot password?</a></div>
+        <div class="btn">Sign in</div>
+        <p class="foot">Invite-only — your firm's admin adds you.</p>
+      </div>
+    </div>
+    <div class="cap"><span class="tag">4</span><b>Knockout</b>
+      <span>क cut out of a solid teal field and cropped, so its शिरोरेखा becomes the rule under the header. Boldest, most graphic.</span></div>
+  </div>
+
+  <!-- 5 -->
+  <div class="opt">
+    <div class="ph v5">
+      <div class="status"><span>11:02</span><span>▮▮▮</span></div>
+      <span class="ka">क</span>
+      <div class="frame">
+        <div class="fm">
+          <span class="pv">प्रवेश</span>
+          <div class="h1" style="text-align:center;font-size:19px">Sign in to <em>Kartavaya</em></div>
+          <p class="sub" style="text-align:center">Pick up where your team left off.</p>
+          <div class="fld act"><i>Email address</i><b>rhea@nirmalexports.in</b></div>
+          <div class="fld"><i>Password</i><b>••••••••••</b></div>
+          <div class="row"><span>Remember my email</span><a href="#">Forgot password?</a></div>
+          <div class="btn">Sign in</div>
+          <p class="foot">Invite-only — your firm's admin adds you.</p>
+        </div>
+      </div>
+    </div>
+    <div class="cap"><span class="tag">5</span><b>Seal</b>
+      <span>Ruled double frame like a stamped certificate, क tinted behind it. Reads as a document — closest to what a CA firm actually handles.</span></div>
+  </div>
+</div>
+
+<h2 class="sec">Loader — pick one</h2>
+<div class="grid">
+  <div class="lo">
+    <div class="stage lA"><div class="mk"><span class="ka">क</span><span class="ru"></span></div></div>
+    <div class="cap"><span class="tag">A</span><b>Written</b><span>Reveals left to right, then wipes away the same way. What's in the build now.</span></div>
+  </div>
+  <div class="lo">
+    <div class="stage lB"><div class="disc"><span class="ka">क</span></div></div>
+    <div class="cap"><span class="tag">B</span><b>Icon assembling</b><span>The launcher icon draws itself — gradient sweeps round, then क lands. The thing you tapped, building.</span></div>
+  </div>
+  <div class="lo">
+    <div class="stage lC"><div class="mk"><span class="bar"></span><span class="ka">क</span></div></div>
+    <div class="cap"><span class="tag">C</span><b>शिरोरेखा</b><span>The headline bar draws first and the letter hangs down off it — how Devanagari is actually written.</span></div>
+  </div>
+  <div class="lo">
+    <div class="stage lD"><div class="mk">क<span class="fill">क</span></div></div>
+    <div class="cap"><span class="tag">D</span><b>Ink rising</b><span>Outlined letter filling with ink from the baseline up. Reads as a level, so it doubles as progress.</span></div>
+  </div>
+</div>
+
+</body>
+</html>

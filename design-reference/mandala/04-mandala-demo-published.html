@@ -1,0 +1,307 @@
+<title>Kartavaya — mandala loaders & the crown sign-in</title>
+<style>
+  /* ── tokens ───────────────────────────────────────────────────────────────
+     Product values, so this is the real palette rather than an approximation.
+     Both themes are defined at token level; components never reference a colour
+     inside a media query. */
+  :root{
+    --paper:#F3EFE6; --surface:#FAF7F0; --container:#EEE9DC;
+    --ink:#1E1C16; --ink-2:#4A463C; --ink-3:#7C7768; --rule:#D8D1BE;
+    --primary:#04837A; --primary-vivid:#0AA396;
+    --icon-a:#1B8FD0; --icon-b:#0FAFA8;
+    --page:#12100D; --page-2:#1B1813; --page-fg:#EDE8DC; --page-fg-2:#9C9686;
+    --hair:#2A2621;
+    --display:Georgia,'Times New Roman',serif;
+    --ui:'Segoe UI',system-ui,-apple-system,sans-serif;
+    --hindi:'Nirmala UI','Noto Serif Devanagari','Noto Sans Devanagari','Mangal',serif;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --page:#EFEAE0; --page-2:#F7F4EC; --page-fg:#231F19; --page-fg-2:#6B6558; --hair:#DCD5C6; }
+  }
+  :root[data-theme="dark"]{ --page:#12100D; --page-2:#1B1813; --page-fg:#EDE8DC; --page-fg-2:#9C9686; --hair:#2A2621; }
+  :root[data-theme="light"]{ --page:#EFEAE0; --page-2:#F7F4EC; --page-fg:#231F19; --page-fg-2:#6B6558; --hair:#DCD5C6; }
+
+  *{box-sizing:border-box}
+  .pg{background:var(--page);color:var(--page-fg);font-family:var(--ui);
+      padding:40px 24px 80px;min-height:100vh;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto}
+  h1{font-family:var(--display);font-weight:400;font-size:clamp(26px,4.4vw,36px);
+     margin:0 0 10px;letter-spacing:-.02em;text-wrap:balance}
+  h1 .hi{font-family:var(--hindi);font-size:.72em;color:var(--primary)}
+  .lede{margin:0;color:var(--page-fg-2);font-size:14.5px;max-width:64ch;line-height:1.68}
+  h2{font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;
+     color:var(--page-fg-2);border-top:1px solid var(--hair);padding-top:15px;margin:52px 0 6px}
+  .note{color:var(--page-fg-2);font-size:13px;margin:0 0 22px;max-width:64ch;line-height:1.6}
+  .grid{display:flex;flex-wrap:wrap;gap:26px}
+  .tag{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.13em;
+       text-transform:uppercase;color:var(--page);background:var(--primary-vivid);
+       border-radius:3px;padding:2px 7px;margin-bottom:8px}
+  .cap b{display:block;font-size:13px;font-weight:600;margin-top:2px}
+  .cap p{margin:4px 0 0;font-size:12px;color:var(--page-fg-2);line-height:1.55}
+
+  /* ── loaders ─────────────────────────────────────────────────────────── */
+  .lo{width:218px}
+  .lo .cap{margin-top:12px}
+  .stage{height:218px;border-radius:18px;background:var(--paper);border:1px solid var(--hair);
+         display:grid;place-items:center;position:relative;overflow:hidden}
+  .stage .ka{position:absolute;font-family:var(--hindi);font-size:44px;line-height:1;
+             color:var(--primary);user-select:none}
+  .mn *{transform-box:fill-box;transform-origin:center}
+
+  /* A · lotus — rings open outward in turn, staggered so it is never empty */
+  .A .r0>*{opacity:0;animation:bloom 3.4s cubic-bezier(.22,.8,.3,1) infinite}
+  .A .r1>*{opacity:0;animation:bloom 3.4s cubic-bezier(.22,.8,.3,1) .38s infinite}
+  .A .r2>*{opacity:0;animation:bloom 3.4s cubic-bezier(.22,.8,.3,1) .76s infinite}
+  @keyframes bloom{0%{opacity:0;transform:scale(.34)}
+    24%{opacity:1;transform:scale(1)}70%{opacity:1;transform:scale(1)}
+    100%{opacity:0;transform:scale(1.15)}}
+
+  /* B · kolam — lamps lighting round the ring */
+  .B circle.dot{animation:lamp 2.6s ease-in-out infinite}
+  @keyframes lamp{0%,74%,100%{opacity:.18}16%{opacity:1}}
+
+  /* C · chakra — counter-rotating rings, still letter */
+  .C .sa{animation:sA 10s linear infinite}
+  .C .sb{animation:sB 15s linear infinite}
+  .C .pu{animation:pu 2.8s ease-out infinite}
+  @keyframes sA{to{transform:rotate(360deg)}}
+  @keyframes sB{to{transform:rotate(-360deg)}}
+  @keyframes pu{0%{opacity:.5;transform:scale(.7)}72%{opacity:0;transform:scale(1.16)}100%{opacity:0}}
+
+  /* D · jali — the lattice draws itself */
+  .D .dr{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);
+         animation:dr 3.6s cubic-bezier(.4,0,.25,1) infinite}
+  @keyframes dr{0%{stroke-dashoffset:var(--len)}42%{stroke-dashoffset:0}
+    76%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}
+
+  /* ── phone / tablet ──────────────────────────────────────────────────── */
+  .dev{display:flex;flex-wrap:wrap;gap:30px;align-items:flex-start}
+  .ph{width:288px;height:590px;border-radius:26px;overflow:hidden;position:relative;
+      background:var(--paper);border:1px solid var(--hair);box-shadow:0 24px 50px -26px rgba(0,0,0,.55)}
+  .tb{width:430px;height:590px;border-radius:20px;overflow:hidden;position:relative;
+      background:var(--paper);border:1px solid var(--hair);box-shadow:0 24px 50px -26px rgba(0,0,0,.55)}
+  .sbar{position:absolute;top:0;left:0;right:0;height:22px;display:flex;
+        align-items:center;justify-content:space-between;padding:0 13px;font-size:9.5px;
+        color:#fff;opacity:.9;z-index:6}
+  .crown{position:relative;overflow:hidden;display:grid;place-items:center;
+    background:linear-gradient(158deg,var(--icon-a),var(--icon-b));
+    border-radius:0 0 46% 46% / 0 0 38px 38px}
+  .ph .crown{height:196px}
+  .tb .crown{height:186px}
+  .crown .glow{position:absolute;inset:0;
+    background:radial-gradient(54% 62% at 50% 6%,rgba(255,255,255,.24),transparent 62%)}
+  .crown .orn{position:absolute;inset:0;display:grid;place-items:center;color:#fff}
+  .crown .ka{position:relative;font-family:var(--hindi);line-height:1;color:#fff;
+             margin-top:-4px;user-select:none}
+  .ph .crown .ka{font-size:96px}
+  .tb .crown .ka{font-size:88px}
+
+  .wm{position:absolute;right:-.14em;bottom:-.2em;font-family:var(--hindi);
+      line-height:.78;color:var(--primary);opacity:.07;user-select:none;pointer-events:none;z-index:0}
+  .ph .wm{font-size:250px}
+  .tb .wm{font-size:250px}
+
+  /* the form, vertically centred in what is left below the crown */
+  .fmwrap{position:absolute;left:0;right:0;bottom:0;top:0;display:flex;z-index:2;pointer-events:none}
+  .fm{margin:auto;width:min(310px,86%);padding:0 4px;pointer-events:auto}
+  .ph .fmwrap{top:196px}
+  .tb .fmwrap{top:186px}
+  .eyebrow{font-size:8.5px;font-weight:700;letter-spacing:.17em;text-transform:uppercase;color:var(--primary)}
+  .h1{font-family:var(--display);font-size:21px;color:var(--ink);margin:6px 0 4px;letter-spacing:-.015em}
+  .h1 em{font-style:italic;color:var(--primary)}
+  .h1 .dev-hi{font-family:var(--hindi);font-size:.58em;color:var(--ink-3);font-style:normal}
+  .sub{font-size:10.5px;color:var(--ink-3);margin:0 0 15px}
+  .fld{background:var(--container);border-radius:7px 7px 0 0;border-bottom:1.5px solid var(--rule);
+       padding:8px 11px 7px;margin-bottom:10px}
+  .fld i{display:block;font-style:normal;font-size:8px;color:var(--ink-3);margin-bottom:3px}
+  .fld b{display:block;font-weight:400;font-size:11px;color:var(--ink-2)}
+  .fld.act{border-bottom-color:var(--primary)}
+  .fld.act i{color:var(--primary)}
+  .frow{display:flex;justify-content:space-between;align-items:center;font-size:9px;
+        color:var(--ink-2);margin:10px 0 14px}
+  .frow a{color:var(--primary);font-weight:600;text-decoration:none}
+  .cta{background:var(--primary);color:#fff;text-align:center;border-radius:7px;
+       padding:11px;font-size:11.5px;font-weight:600}
+  .fine{font-size:8.5px;color:var(--ink-3);text-align:center;margin-top:12px;line-height:1.5}
+
+  @media (prefers-reduced-motion:reduce){ .mn *,.stage *{animation:none!important} }
+  @media (max-width:560px){ .tb{width:100%;height:520px} .ph{width:100%;max-width:320px} }
+</style>
+
+<div class="pg"><div class="wrap">
+
+  <h1>Mandala <span class="hi">मंडल</span> — four loaders and the sign-in</h1>
+  <p class="lede">Every loader keeps क at the centre and builds the ornament around it, so the mark stays the subject. The sign-in below is the gradient crown you picked, now with mandala line work inside the band, and the ghosted क on the paper underneath. All of it is live — nothing here is a picture of a design.</p>
+
+  <h2>Loaders</h2>
+  <p class="note">Geometry is generated from petal counts and radii, not hand-drawn paths, so a ring can be retuned without redrawing anything.</p>
+  <div class="grid" id="loaders"></div>
+
+  <h2>Sign-in — phone and tablet</h2>
+  <p class="note">The form is centred in the space left under the crown by auto margins, so it stays centred on a tall tablet and never gets clipped on a short landscape phone.</p>
+  <div class="dev">
+    <div>
+      <div class="ph">
+        <div class="crown">
+          <div class="glow"></div>
+          <div class="orn" id="ornPh"></div>
+          <div class="sbar"><span>11:19</span><span>▮▮▮</span></div>
+          <span class="ka">क</span>
+        </div>
+        <span class="wm">क</span>
+        <div class="fmwrap"><div class="fm">
+          <div class="eyebrow">Welcome back</div>
+          <div class="h1">Sign in to <em>Kartavaya</em> <span class="dev-hi">प्रवेश</span></div>
+          <p class="sub">Pick up where your team left off.</p>
+          <div class="fld act"><i>Email address</i><b>rhea@nirmalexports.in</b></div>
+          <div class="fld"><i>Password</i><b>••••••••••</b></div>
+          <div class="frow"><span>Remember my email</span><a href="#">Forgot password?</a></div>
+          <div class="cta">Sign in</div>
+          <p class="fine">Invite-only — your firm's admin adds you.</p>
+        </div></div>
+      </div>
+      <div class="cap"><span class="tag">Phone · 360dp</span><b>Portrait</b>
+        <p>Crown at 196px, watermark bleeding off the lower right.</p></div>
+    </div>
+
+    <div>
+      <div class="tb">
+        <div class="crown">
+          <div class="glow"></div>
+          <div class="orn" id="ornTb"></div>
+          <div class="sbar"><span>11:19</span><span>▮▮▮</span></div>
+          <span class="ka">क</span>
+        </div>
+        <span class="wm">क</span>
+        <div class="fmwrap"><div class="fm">
+          <div class="eyebrow">Welcome back</div>
+          <div class="h1">Sign in to <em>Kartavaya</em> <span class="dev-hi">प्रवेश</span></div>
+          <p class="sub">Pick up where your team left off.</p>
+          <div class="fld act"><i>Email address</i><b>rhea@nirmalexports.in</b></div>
+          <div class="fld"><i>Password</i><b>••••••••••</b></div>
+          <div class="frow"><span>Remember my email</span><a href="#">Forgot password?</a></div>
+          <div class="cta">Sign in</div>
+          <p class="fine">Invite-only — your firm's admin adds you.</p>
+        </div></div>
+      </div>
+      <div class="cap"><span class="tag">Tab A11+ · 800dp</span><b>Tablet portrait</b>
+        <p>Same crown, form held to a readable width and centred rather than stretched.</p></div>
+    </div>
+  </div>
+
+</div></div>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg';
+  function el(t, a) { var e = document.createElementNS(NS, t); for (var k in (a || {})) e.setAttribute(k, a[k]); return e; }
+
+  // A petal is a vesica — two symmetrical curves meeting at a point. It is the
+  // form under most lotus mandala work, and the reason a ring of these reads as
+  // Indic where a ring of rounded lobes reads as a sunburst.
+  function petal(r0, r1, w) {
+    var s = r1 - r0;
+    return 'M0,' + (-r0) +
+      ' C' + w + ',' + (-r0 - s * .34) + ' ' + w + ',' + (-r1 + s * .3) + ' 0,' + (-r1) +
+      ' C' + (-w) + ',' + (-r1 + s * .3) + ' ' + (-w) + ',' + (-r0 - s * .34) + ' 0,' + (-r0) + ' Z';
+  }
+  function ring(g, o) {
+    for (var i = 0; i < o.n; i++) {
+      g.appendChild(el('path', {
+        d: petal(o.r0, o.r1, o.w),
+        transform: 'rotate(' + ((o.rot || 0) + (360 / o.n) * i) + ')',
+        fill: o.fill ? 'currentColor' : 'none',
+        stroke: o.fill ? 'none' : 'currentColor',
+        'stroke-width': o.sw || 1, 'stroke-linejoin': 'round',
+        opacity: o.op == null ? 1 : o.op
+      }));
+    }
+  }
+  function base(size, cls) {
+    var s = el('svg', { class: 'mn ' + (cls || ''), width: size, height: size, viewBox: '0 0 ' + size + ' ' + size });
+    var g = el('g', { transform: 'translate(' + size / 2 + ',' + size / 2 + ')' });
+    s.appendChild(g); return { s: s, g: g };
+  }
+
+  function lotus(size) {
+    var b = base(size), k = size / 220;
+    var gs = [el('g', { class: 'r0' }), el('g', { class: 'r1' }), el('g', { class: 'r2' })];
+    ring(gs[0], { n: 8,  r0: 30 * k, r1: 52 * k, w: 11 * k, fill: 1, op: .34 });
+    ring(gs[1], { n: 16, r0: 52 * k, r1: 76 * k, w: 8 * k,  sw: 1, op: .5, rot: 11.25 });
+    ring(gs[2], { n: 8,  r0: 76 * k, r1: 100 * k, w: 13 * k, sw: 1.1, op: .55 });
+    gs.forEach(function (g) { b.g.appendChild(g); });
+    return b.s;
+  }
+  function kolam(size) {
+    var b = base(size), k = size / 220;
+    [[44, 12], [68, 18], [92, 24]].forEach(function (r) {
+      b.g.appendChild(el('circle', { r: r[0] * k, fill: 'none', stroke: 'currentColor', 'stroke-width': .6, opacity: .18 }));
+      for (var i = 0; i < r[1]; i++) {
+        var a = (Math.PI * 2 / r[1]) * i - Math.PI / 2;
+        var c = el('circle', { class: 'dot', cx: (Math.cos(a) * r[0] * k).toFixed(2),
+          cy: (Math.sin(a) * r[0] * k).toFixed(2), r: 2.8 * k, fill: 'currentColor', opacity: .18 });
+        // Delay by angle, so the light travels round instead of blinking at random.
+        c.style.animationDelay = ((i / r[1]) * 2.6).toFixed(3) + 's';
+        b.g.appendChild(c);
+      }
+    });
+    return b.s;
+  }
+  function chakra(size) {
+    var b = base(size), k = size / 220;
+    var a = el('g', { class: 'sa' }), c = el('g', { class: 'sb' });
+    ring(a, { n: 12, r0: 40 * k, r1: 66 * k, w: 9 * k, fill: 1, op: .3 });
+    ring(c, { n: 24, r0: 72 * k, r1: 92 * k, w: 5 * k, fill: 1, op: .36 });
+    for (var i = 0; i < 12; i++) {
+      a.appendChild(el('line', { x1: 0, y1: -34 * k, x2: 0, y2: -40 * k,
+        transform: 'rotate(' + (30 * i) + ')', stroke: 'currentColor', 'stroke-width': 1.4, opacity: .5 }));
+    }
+    b.g.appendChild(el('circle', { class: 'pu', r: 96 * k, fill: 'none', stroke: 'currentColor', 'stroke-width': 1 }));
+    b.g.appendChild(c); b.g.appendChild(a);
+    b.g.appendChild(el('circle', { r: 34 * k, fill: 'none', stroke: 'currentColor', 'stroke-width': 1.2, opacity: .45 }));
+    return b.s;
+  }
+  function jali(size) {
+    var b = base(size), k = size / 220, r = 84 * k;
+    [0, 45].forEach(function (rot, i) {
+      var p = el('path', { class: 'dr', d: 'M' + [[-r,-r],[r,-r],[r,r],[-r,r]].map(function (q) { return q[0] + ',' + q[1]; }).join(' L') + ' Z',
+        transform: 'rotate(' + rot + ')', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.3,
+        opacity: .6, 'stroke-linejoin': 'round' });
+      p.style.setProperty('--len', r * 8); p.style.animationDelay = (i * .14) + 's';
+      b.g.appendChild(p);
+    });
+    [58, 96].forEach(function (rad, i) {
+      var c = el('circle', { class: 'dr', r: rad * k, fill: 'none', stroke: 'currentColor', 'stroke-width': 1, opacity: .5 });
+      c.style.setProperty('--len', 2 * Math.PI * rad * k); c.style.animationDelay = (.2 + i * .16) + 's';
+      b.g.appendChild(c);
+    });
+    return b.s;
+  }
+
+  var LO = [
+    ['A', 'Lotus bloom', lotus, 'Three rings opening outward in turn. Staggered so one ring is always up — it never goes empty between cycles.'],
+    ['B', 'Kolam lamps', kolam, 'Dots on a chalk grid lighting one after another around the circle. The only one that reads as counting.'],
+    ['C', 'Chakra', chakra, 'Two petal rings turning against each other around a still letter. Calmest — it can run thirty seconds without grating.'],
+    ['D', 'Jali star', jali, 'The eight-point ashtakona drawing itself in line, like a lattice being cut. Architectural rather than floral.'],
+  ];
+  var host = document.getElementById('loaders');
+  LO.forEach(function (row, i) {
+    var d = document.createElement('div'); d.className = 'lo';
+    var st = document.createElement('div'); st.className = 'stage ' + row[0];
+    var mk = row[2](200); mk.style.color = 'var(--primary)'; st.appendChild(mk);
+    var ka = document.createElement('span'); ka.className = 'ka'; ka.lang = 'hi'; ka.textContent = 'क';
+    st.appendChild(ka); d.appendChild(st);
+    d.insertAdjacentHTML('beforeend',
+      '<div class="cap"><span class="tag">' + row[0] + '</span><b>' + row[1] + '</b><p>' + row[3] + '</p></div>');
+    host.appendChild(d);
+  });
+
+  // Static ornament inside the sign-in crown.
+  [['ornPh', 300], ['ornTb', 330]].forEach(function (o) {
+    var m = lotus(o[1]);
+    m.querySelectorAll('g').forEach(function (g) { g.className.baseVal = ''; });  // no animation here
+    m.style.opacity = '.3';
+    document.getElementById(o[0]).appendChild(m);
+  });
+})();
+</script>

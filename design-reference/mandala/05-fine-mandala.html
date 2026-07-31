@@ -1,0 +1,362 @@
+<title>Kartavaya — fine mandala, four traditions</title>
+<style>
+  :root{
+    --paper:#F3EFE6; --surface:#FAF7F0; --container:#EEE9DC;
+    --ink:#1E1C16; --ink-2:#4A463C; --ink-3:#7C7768; --rule:#D8D1BE;
+    --primary:#04837A; --primary-vivid:#0AA396; --gold:#A8842C;
+    --icon-a:#1B8FD0; --icon-b:#0FAFA8;
+    --page:#100E0B; --panel:#17140F; --fg:#EDE8DC; --fg-2:#98917F; --hair:#272219;
+    --display:Georgia,'Times New Roman',serif;
+    --ui:'Segoe UI',system-ui,-apple-system,sans-serif;
+    --hindi:'Nirmala UI','Noto Serif Devanagari','Noto Sans Devanagari','Mangal',serif;
+  }
+  @media (prefers-color-scheme: light){
+    :root{--page:#EDE7DA;--panel:#F7F4EC;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}
+  }
+  :root[data-theme="dark"]{--page:#100E0B;--panel:#17140F;--fg:#EDE8DC;--fg-2:#98917F;--hair:#272219}
+  :root[data-theme="light"]{--page:#EDE7DA;--panel:#F7F4EC;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}
+
+  *{box-sizing:border-box}
+  .pg{background:var(--page);color:var(--fg);font-family:var(--ui);padding:44px 24px 90px;
+      min-height:100vh;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-family:var(--display);font-weight:400;font-size:clamp(27px,4.6vw,38px);margin:0 0 12px;
+     letter-spacing:-.022em;text-wrap:balance}
+  h1 .hi{font-family:var(--hindi);color:var(--primary);font-size:.68em}
+  .lede{margin:0;color:var(--fg-2);font-size:14.5px;max-width:66ch;line-height:1.7}
+  h2{font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--fg-2);
+     border-top:1px solid var(--hair);padding-top:15px;margin:54px 0 8px}
+  .note{color:var(--fg-2);font-size:13px;margin:0 0 24px;max-width:70ch;line-height:1.65}
+  .grid{display:flex;flex-wrap:wrap;gap:30px}
+
+  .pc{width:262px}
+  .plate{height:262px;border-radius:4px;background:var(--paper);border:1px solid var(--hair);
+         display:grid;place-items:center;position:relative;overflow:hidden}
+  /* A hairline inner frame — the way a printed plate is mounted. */
+  .plate::after{content:'';position:absolute;inset:9px;border:1px solid var(--rule);
+                opacity:.55;pointer-events:none}
+  .plate .ka{position:absolute;font-family:var(--hindi);font-size:38px;line-height:1;
+             color:var(--primary);user-select:none;text-shadow:0 0 14px var(--paper)}
+  .mn{display:block;color:var(--primary)}
+  .mn *{transform-box:fill-box;transform-origin:center}
+  .cap{margin-top:13px}
+  .cap .nm{font-family:var(--display);font-size:16px;letter-spacing:-.01em}
+  .cap .nm .dv{font-family:var(--hindi);color:var(--primary);margin-right:7px}
+  .cap .cnt{font-size:10.5px;color:var(--fg-2);letter-spacing:.1em;text-transform:uppercase;
+            margin-top:4px;font-variant-numeric:tabular-nums}
+  .cap p{margin:7px 0 0;font-size:12.5px;color:var(--fg-2);line-height:1.6}
+
+  /* ── १ padma — rings bloom outward, staggered ─────────────────────────── */
+  .P .g0>*{opacity:0;animation:bl 4.4s cubic-bezier(.24,.78,.3,1) infinite}
+  .P .g1>*{opacity:0;animation:bl 4.4s cubic-bezier(.24,.78,.3,1) .28s infinite}
+  .P .g2>*{opacity:0;animation:bl 4.4s cubic-bezier(.24,.78,.3,1) .56s infinite}
+  .P .g3>*{opacity:0;animation:bl 4.4s cubic-bezier(.24,.78,.3,1) .84s infinite}
+  .P .g4>*{opacity:0;animation:bl 4.4s cubic-bezier(.24,.78,.3,1) 1.12s infinite}
+  .P .g5>*{opacity:0;animation:bl 4.4s cubic-bezier(.24,.78,.3,1) 1.4s infinite}
+  @keyframes bl{0%{opacity:0;transform:scale(.42)}
+    18%{opacity:1;transform:scale(1)}78%{opacity:1;transform:scale(1)}
+    100%{opacity:0;transform:scale(1.1)}}
+
+  /* ── २ yantra — drawn in, innermost first ────────────────────────────── */
+  .Y .dr{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);
+         animation:dw 5s cubic-bezier(.36,0,.22,1) infinite}
+  @keyframes dw{0%{stroke-dashoffset:var(--len)}46%{stroke-dashoffset:0}
+    84%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}
+
+  /* ── ३ kolam — ONE unbroken line, drawn without lifting the hand ─────── */
+  .K .line{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);
+           animation:kl 6.5s cubic-bezier(.42,0,.3,1) infinite}
+  @keyframes kl{0%{stroke-dashoffset:var(--len)}62%{stroke-dashoffset:0}
+    88%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}
+  .K .pulli{opacity:0;animation:pl 6.5s ease-out infinite}
+  @keyframes pl{0%{opacity:0}6%{opacity:.5}70%{opacity:.5}100%{opacity:0}}
+
+  /* ── ४ jali — the screen resolves ring by ring ───────────────────────── */
+  .J .lay{opacity:0;animation:jf 5.2s ease-in-out infinite}
+  .J .lay:nth-child(1){animation-delay:0s}
+  .J .lay:nth-child(2){animation-delay:.34s}
+  .J .lay:nth-child(3){animation-delay:.68s}
+  .J .lay:nth-child(4){animation-delay:1.02s}
+  @keyframes jf{0%{opacity:0;transform:rotate(-9deg) scale(.9)}
+    22%{opacity:1;transform:rotate(0) scale(1)}80%{opacity:1;transform:rotate(0) scale(1)}
+    100%{opacity:0;transform:rotate(5deg) scale(1.04)}}
+
+  @media (prefers-reduced-motion:reduce){ .plate *{animation:none!important;opacity:1!important} }
+</style>
+
+<div class="pg"><div class="wrap">
+
+<h1>Fine mandala <span class="hi">सूक्ष्म</span> — four traditions, drawn properly</h1>
+<p class="lede">The first set was a ring of petals. These are built the way the work is actually made: petals nesting in the gaps of the ring beneath them, an echo line inside every petal, bindu at the tips, scalloped bands between the courses, and a toothed rim. Counts are the traditional ones — 8, 16, 32, 64. Each plate says how many elements it draws.</p>
+
+<h2>The plates</h2>
+<p class="note">All four still centre on क, and all four are generated from numbers rather than drawn by hand — petal counts, radii, ring offsets. Watch them build.</p>
+<div class="grid" id="plates"></div>
+
+<h2>What changed from the first set</h2>
+<p class="note" style="max-width:74ch">
+  <b style="color:var(--fg)">Offset nesting.</b> Every ring is rotated half a step against the one below it, so petals sit in the gaps rather than stacking on top. This single rule is most of the difference between a flower icon and a lotus.<br><br>
+  <b style="color:var(--fg)">Echo lines.</b> Each petal carries a second outline inset within it. It doubles the line count at no extra structure and is what gives hand-drawn work its depth.<br><br>
+  <b style="color:var(--fg)">Weight hierarchy.</b> Structural circles at 1.1, ornament at 0.55, bindu dots smaller still. A drawing where every line is the same weight reads as clip art.<br><br>
+  <b style="color:var(--fg)">Rims that finish.</b> Scalloped bands and fine teeth close each composition. Ornament that just stops at its outermost ring always looks unfinished.
+</p>
+
+</div></div>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg', TAU = Math.PI * 2;
+  function el(t, a) { var e = document.createElementNS(NS, t); for (var k in (a || {})) e.setAttribute(k, a[k]); return e; }
+  function svg(size, cls) {
+    var s = el('svg', { class: 'mn ' + (cls || ''), width: size, height: size, viewBox: '0 0 ' + size + ' ' + size });
+    var g = el('g', { transform: 'translate(' + size / 2 + ',' + size / 2 + ')' });
+    s.appendChild(g); return { s: s, g: g, R: size / 2 };
+  }
+
+  /* ── primitives ──────────────────────────────────────────────────────────
+     A petal is a vesica: two symmetrical curves meeting at a point at each
+     end. It is the form under nearly all lotus work, and the reason a ring of
+     these reads as a padma where a ring of rounded lobes reads as a sunburst. */
+  function petal(r0, r1, w) {
+    var s = r1 - r0;
+    return 'M0,' + (-r0) +
+      'C' + w + ',' + (-r0 - s * .34) + ' ' + w + ',' + (-r1 + s * .32) + ' 0,' + (-r1) +
+      'C' + (-w) + ',' + (-r1 + s * .32) + ' ' + (-w) + ',' + (-r0 - s * .34) + ' 0,' + (-r0) + 'Z';
+  }
+
+  /* A ring of petals. `echo` adds the inner outline that gives hand-drawn work
+     its depth; `tip` puts a bindu at each apex. */
+  function petalRing(g, o) {
+    for (var i = 0; i < o.n; i++) {
+      var a = (o.rot || 0) + (360 / o.n) * i;
+      g.appendChild(el('path', {
+        d: petal(o.r0, o.r1, o.w), transform: 'rotate(' + a + ')',
+        fill: o.fill ? 'currentColor' : 'none',
+        stroke: o.fill ? 'none' : 'currentColor',
+        'stroke-width': o.sw || .55, 'stroke-linejoin': 'round',
+        opacity: o.op == null ? .8 : o.op
+      }));
+      if (o.echo) {
+        var pad = (o.r1 - o.r0) * .22;
+        g.appendChild(el('path', {
+          d: petal(o.r0 + pad, o.r1 - pad, o.w * .52), transform: 'rotate(' + a + ')',
+          fill: 'none', stroke: 'currentColor', 'stroke-width': (o.sw || .55) * .8,
+          'stroke-linejoin': 'round', opacity: (o.op == null ? .8 : o.op) * .7
+        }));
+      }
+      if (o.tip) {
+        g.appendChild(el('circle', {
+          cx: 0, cy: -o.r1 - o.tip * 1.9, r: o.tip, fill: 'currentColor',
+          transform: 'rotate(' + a + ')', opacity: .55
+        }));
+      }
+    }
+  }
+
+  /* A scalloped band — a lace edge of small arcs, the course that separates
+     one ring of petals from the next. */
+  function scallop(g, r, n, depth, sw, op) {
+    var d = '', step = TAU / n;
+    for (var i = 0; i < n; i++) {
+      var a0 = step * i - Math.PI / 2, a1 = a0 + step;
+      var x0 = Math.cos(a0) * r, y0 = Math.sin(a0) * r;
+      var x1 = Math.cos(a1) * r, y1 = Math.sin(a1) * r;
+      d += 'M' + x0.toFixed(2) + ',' + y0.toFixed(2) +
+           'A' + (r * depth).toFixed(2) + ',' + (r * depth).toFixed(2) + ' 0 0 1 ' + x1.toFixed(2) + ',' + y1.toFixed(2);
+    }
+    g.appendChild(el('path', { d: d, fill: 'none', stroke: 'currentColor',
+      'stroke-width': sw || .5, opacity: op == null ? .5 : op }));
+  }
+
+  /* A toothed rim. Ornament that simply stops at its outermost ring always
+     looks unfinished; a rim closes it. */
+  function teeth(g, r, n, h, sw, op) {
+    var d = '', step = TAU / n;
+    for (var i = 0; i < n; i++) {
+      var a = step * i - Math.PI / 2, b = a + step / 2, c = a + step;
+      d += 'M' + (Math.cos(a) * r).toFixed(2) + ',' + (Math.sin(a) * r).toFixed(2) +
+           'L' + (Math.cos(b) * (r + h)).toFixed(2) + ',' + (Math.sin(b) * (r + h)).toFixed(2) +
+           'L' + (Math.cos(c) * r).toFixed(2) + ',' + (Math.sin(c) * r).toFixed(2);
+    }
+    g.appendChild(el('path', { d: d, fill: 'none', stroke: 'currentColor',
+      'stroke-width': sw || .5, 'stroke-linejoin': 'round', opacity: op == null ? .55 : op }));
+  }
+
+  function dotRing(g, r, n, rad, op) {
+    for (var i = 0; i < n; i++) {
+      var a = (TAU / n) * i - Math.PI / 2;
+      g.appendChild(el('circle', { cx: (Math.cos(a) * r).toFixed(2), cy: (Math.sin(a) * r).toFixed(2),
+        r: rad, fill: 'currentColor', opacity: op == null ? .45 : op }));
+    }
+  }
+  function circle(g, r, sw, op) {
+    g.appendChild(el('circle', { r: r, fill: 'none', stroke: 'currentColor',
+      'stroke-width': sw, opacity: op })); }
+
+  /* ── १ · पद्म — the layered lotus ──────────────────────────────────────
+     Six courses, 8 -> 8 -> 16 -> 16 -> 32 -> 64, each rotated half a step
+     against the one below so petals nest in the gaps. */
+  function padma(size) {
+    var v = svg(size, 'P'), R = v.R, k = R / 131;
+    var gs = [];
+    for (var i = 0; i < 6; i++) { gs[i] = el('g', { class: 'g' + i }); v.g.appendChild(gs[i]); }
+
+    gs[0].appendChild(el('circle', { r: 4.5 * k, fill: 'currentColor', opacity: .9 }));   // bindu
+    circle(gs[0], 11 * k, 1.1 * k, .6);
+
+    petalRing(gs[1], { n: 8,  r0: 13 * k, r1: 34 * k, w: 8.5 * k, fill: 1, op: .30 });
+    petalRing(gs[1], { n: 8,  r0: 13 * k, r1: 34 * k, w: 8.5 * k, sw: .75 * k, op: .75, echo: 1 });
+
+    scallop(gs[2], 40 * k, 24, .16, .5 * k, .45);
+    petalRing(gs[2], { n: 16, r0: 42 * k, r1: 68 * k, w: 6.4 * k, sw: .62 * k, op: .68, echo: 1, rot: 11.25 });
+
+    circle(gs[3], 72 * k, .95 * k, .5);
+    dotRing(gs[3], 76 * k, 32, 1.15 * k, .5);
+    petalRing(gs[3], { n: 16, r0: 80 * k, r1: 100 * k, w: 5.6 * k, sw: .58 * k, op: .6, echo: 1 });
+
+    scallop(gs[4], 104 * k, 32, .13, .48 * k, .42);
+    petalRing(gs[4], { n: 32, r0: 106 * k, r1: 118 * k, w: 2.9 * k, sw: .45 * k, op: .55, rot: 5.6 });
+
+    circle(gs[5], 121 * k, .85 * k, .45);
+    teeth(gs[5], 121 * k, 64, 4.5 * k, .42 * k, .5);
+    circle(gs[5], 128 * k, .55 * k, .3);
+    return v;
+  }
+
+  /* ── २ · यंत्र — shatkona, nested, inside a bhupura ────────────────────
+     Two interlocking equilateral triangles, then three nested pairs, a bindu,
+     an 8- and a 16-petal lotus, and the square enclosure with four gates.
+     The shatkona is drawn exactly rather than approximated — an inaccurate
+     Sri Yantra is worse than an accurate simpler figure. */
+  function yantra(size) {
+    var v = svg(size, 'Y'), R = v.R, k = R / 131, add = [];
+    function tri(r, up, sw, op) {
+      var pts = [], i;
+      for (i = 0; i < 3; i++) {
+        var a = (TAU / 3) * i + (up ? -Math.PI / 2 : Math.PI / 2);
+        pts.push((Math.cos(a) * r).toFixed(2) + ',' + (Math.sin(a) * r).toFixed(2));
+      }
+      var p = el('path', { class: 'dr', d: 'M' + pts.join('L') + 'Z', fill: 'none',
+        stroke: 'currentColor', 'stroke-width': sw, 'stroke-linejoin': 'round', opacity: op });
+      p.style.setProperty('--len', r * 6.2);
+      v.g.appendChild(p); add.push(p); return p;
+    }
+    function circ(r, sw, op) {
+      var c = el('circle', { class: 'dr', r: r, fill: 'none', stroke: 'currentColor',
+        'stroke-width': sw, opacity: op });
+      c.style.setProperty('--len', TAU * r);
+      v.g.appendChild(c); add.push(c); return c;
+    }
+
+    v.g.appendChild(el('circle', { r: 3.6 * k, fill: 'currentColor', opacity: .9 }));
+    [26, 40, 54].forEach(function (r, i) {
+      tri(r * k, true,  .8 * k, .72 - i * .08);
+      tri(r * k, false, .8 * k, .72 - i * .08);
+    });
+    circ(60 * k, 1 * k, .55);
+    // Eight- and sixteen-petal courses.
+    var lot = el('g'); v.g.appendChild(lot);
+    petalRing(lot, { n: 8,  r0: 62 * k, r1: 82 * k, w: 7.4 * k, sw: .6 * k, op: .6, echo: 1 });
+    petalRing(lot, { n: 16, r0: 86 * k, r1: 104 * k, w: 4.6 * k, sw: .5 * k, op: .5, echo: 1, rot: 11.25 });
+    circ(107 * k, .9 * k, .5);
+    // Bhupura — the square enclosure, with a gate on each side.
+    var s = 118 * k, gate = 20 * k;
+    var d = 'M' + (-s) + ',' + (-s + gate) + 'L' + (-s) + ',' + (-s) + 'L' + (-s + gate) + ',' + (-s) +
+        'M' + (s - gate) + ',' + (-s) + 'L' + s + ',' + (-s) + 'L' + s + ',' + (-s + gate) +
+        'M' + s + ',' + (s - gate) + 'L' + s + ',' + s + 'L' + (s - gate) + ',' + s +
+        'M' + (-s + gate) + ',' + s + 'L' + (-s) + ',' + s + 'L' + (-s) + ',' + (s - gate);
+    var bp = el('path', { class: 'dr', d: d, fill: 'none', stroke: 'currentColor',
+      'stroke-width': 1.1 * k, 'stroke-linejoin': 'round', opacity: .55 });
+    bp.style.setProperty('--len', s * 10);
+    v.g.appendChild(bp); add.push(bp);
+    // Stagger the draw so it builds from the bindu outward.
+    add.forEach(function (n, i) { n.style.animationDelay = (i * .10).toFixed(2) + 's'; });
+    return v;
+  }
+
+  /* ── ३ · कोलम — one unbroken line ─────────────────────────────────────
+     A kolam is drawn without lifting the hand, so this is a single path and a
+     single stroke-dashoffset. The curve is a Maurer rose: sample r = sin(nθ)
+     at a fixed angular step and join the points. One continuous line that
+     crosses itself into lace — which is exactly what a sikku kolam is. */
+  function kolam(size) {
+    var v = svg(size, 'K'), R = v.R, k = R / 131;
+    // Pulli — the dot grid the line is laid around.
+    [34, 62, 90].forEach(function (r, ri) {
+      var n = [8, 16, 24][ri];
+      for (var i = 0; i < n; i++) {
+        var a = (TAU / n) * i - Math.PI / 2;
+        v.g.appendChild(el('circle', { class: 'pulli', cx: (Math.cos(a) * r * k).toFixed(2),
+          cy: (Math.sin(a) * r * k).toFixed(2), r: 1.5 * k, fill: 'currentColor', opacity: .5 }));
+      }
+    });
+    var n = 6, deg = 71, pts = [], rad = 112 * k, len = 0, px = null, py = null;
+    for (var i = 0; i <= 360; i++) {
+      var th = i * deg * Math.PI / 180;
+      var rr = Math.sin(n * th) * rad;
+      var x = rr * Math.cos(th), y = rr * Math.sin(th);
+      if (px !== null) len += Math.hypot(x - px, y - py);
+      pts.push(x.toFixed(2) + ',' + y.toFixed(2)); px = x; py = y;
+    }
+    var p = el('path', { class: 'line', d: 'M' + pts.join('L'), fill: 'none',
+      stroke: 'currentColor', 'stroke-width': .62 * k, 'stroke-linejoin': 'round',
+      'stroke-linecap': 'round', opacity: .8 });
+    p.style.setProperty('--len', Math.ceil(len));
+    v.g.appendChild(p);
+    circle(v.g, 118 * k, .5 * k, .3);
+    return v;
+  }
+
+  /* ── ४ · जाली — the pierced screen ────────────────────────────────────
+     Overlapping circles on a ring: where they cross they cut vesica petals out
+     of each other, which is how a stone jali and most Indo-Islamic geometry is
+     actually set out. Four courses, 6/12/24/12, resolving in turn. */
+  function jali(size) {
+    var v = svg(size, 'J'), R = v.R, k = R / 131;
+    var courses = [
+      { n: 6,  ring: 40, rad: 40, sw: .8,  op: .55 },
+      { n: 12, ring: 66, rad: 42, sw: .58, op: .45 },
+      { n: 24, ring: 92, rad: 34, sw: .45, op: .38 },
+      { n: 12, ring: 112, rad: 20, sw: .5, op: .45 },
+    ];
+    courses.forEach(function (c) {
+      var g = el('g', { class: 'lay' });
+      for (var i = 0; i < c.n; i++) {
+        var a = (TAU / c.n) * i - Math.PI / 2;
+        g.appendChild(el('circle', { cx: (Math.cos(a) * c.ring * k).toFixed(2),
+          cy: (Math.sin(a) * c.ring * k).toFixed(2), r: c.rad * k,
+          fill: 'none', stroke: 'currentColor', 'stroke-width': c.sw * k, opacity: c.op }));
+      }
+      v.g.appendChild(g);
+    });
+    var frame = el('g', { class: 'lay' });
+    circle(frame, 124 * k, 1 * k, .5);
+    teeth(frame, 124 * k, 48, 4 * k, .42 * k, .45);
+    v.g.appendChild(frame);
+    return v;
+  }
+
+  var PLATES = [
+    ['पद्म', 'Padma', padma, 'Six courses — 8, 8, 16, 16, 32, 64 — each rotated half a step against the one beneath so petals nest in the gaps. Every petal carries an echo line; the rim is 64 teeth. The one to use where warmth matters.'],
+    ['यंत्र', 'Yantra', yantra, 'Three nested shatkona pairs around a bindu, an 8- and 16-petal lotus, and the bhupura square with a gate on each side. Drawn exactly rather than approximated. Most formal — right for a seal or an approval stamp.'],
+    ['कोलम', 'Kolam', kolam, 'ONE unbroken line, drawn the way a kolam is: without lifting the hand. A Maurer rose sampled at 71° crossing itself into lace, laid over a pulli dot grid. The most hypnotic to watch build.'],
+    ['जाली', 'Jali', jali, 'Overlapping circles cutting vesicas out of each other — how a stone screen is actually set out. Four courses resolving in turn. Coolest and most architectural; sits quietly behind content.'],
+  ];
+
+  var host = document.getElementById('plates');
+  PLATES.forEach(function (row) {
+    var d = document.createElement('div'); d.className = 'pc';
+    var pl = document.createElement('div'); pl.className = 'plate';
+    var v = row[2](240);
+    pl.appendChild(v.s);
+    var ka = document.createElement('span'); ka.className = 'ka'; ka.lang = 'hi'; ka.textContent = 'क';
+    pl.appendChild(ka);
+    d.appendChild(pl);
+    var n = v.s.querySelectorAll('path,circle,line').length;
+    d.insertAdjacentHTML('beforeend',
+      '<div class="cap"><div class="nm"><span class="dv" lang="hi">' + row[0] + '</span>' + row[1] + '</div>' +
+      '<div class="cnt">' + n + ' elements</div><p>' + row[3] + '</p></div>');
+    host.appendChild(d);
+  });
+})();
+</script>

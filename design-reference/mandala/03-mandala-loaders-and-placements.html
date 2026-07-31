@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — mandala: loaders, and where it belongs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..700&family=Inter:wght@300;400;500;600;700&family=Tiro+Devanagari+Hindi&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F3EFE6; --surface:#FAF7F0; --container:#EEE9DC;
+    --ink:#1E1C16; --ink-2:#4A463C; --ink-3:#7C7768; --rule:#D8D1BE;
+    --primary:#04837A; --primary-vivid:#0AA396;
+    --side-ink:#161A18; --icon-a:#1B8FD0; --icon-b:#0FAFA8;
+    --warn:#8A6A16; --warn-c:#FBE7C2;
+    --display:'Newsreader',Georgia,serif;
+    --ui:'Inter',system-ui,sans-serif;
+    --hindi:'Tiro Devanagari Hindi','Nirmala UI','Noto Serif Devanagari',serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#0E1211;color:#E8E4DA;font-family:var(--ui);padding:34px 28px 80px}
+  .wrap{max-width:1220px;margin:0 auto}
+  h1{font-family:var(--display);font-weight:400;font-size:32px;margin:0 0 7px;letter-spacing:-.02em}
+  .lede{margin:0 0 8px;color:#9A958A;font-size:13.5px;max-width:66ch;line-height:1.65}
+  h2.sec{font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:#6F6A5F;
+    border-top:1px solid #23231F;padding-top:14px;margin:46px 0 6px}
+  .note{color:#8B867B;font-size:12.5px;margin:0 0 18px;max-width:66ch;line-height:1.6}
+  .grid{display:flex;flex-wrap:wrap;gap:24px}
+  .tag{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+    color:#0E1211;background:#0AA396;border-radius:3px;padding:2px 6px;margin-bottom:7px}
+  .tag.alt{background:#C9A227}
+  .cap b{display:block;font-size:12.5px;font-weight:600;color:#EFEBE1;margin-top:1px}
+  .cap span{display:block;font-size:11.5px;color:#8B867B;line-height:1.55;margin-top:3px}
+
+  /* ── loader stages ───────────────────────────────────────────────────── */
+  .lo{width:214px}
+  .lo .cap{margin-top:11px}
+  .stage{height:214px;border-radius:16px;background:var(--bg);border:1px solid #2A2A25;
+    display:grid;place-items:center;position:relative;overflow:hidden}
+  .stage .ka{position:absolute;font-family:var(--hindi);line-height:1;color:var(--primary);
+    font-size:46px;margin-top:-2px}
+  svg.mn{display:block}
+  svg.mn *{transform-box:fill-box;transform-origin:center}
+
+  /* M1 lotus — rings open outward in sequence */
+  .M1 .r1 > *{opacity:0;animation:bloom 3.2s cubic-bezier(.22,.8,.3,1) infinite}
+  .M1 .r2 > *{opacity:0;animation:bloom 3.2s cubic-bezier(.22,.8,.3,1) infinite .34s}
+  .M1 .r3 > *{opacity:0;animation:bloom 3.2s cubic-bezier(.22,.8,.3,1) infinite .68s}
+  @keyframes bloom{
+    0%{opacity:0;transform:scale(.34)}
+    26%{opacity:1;transform:scale(1)}
+    72%{opacity:1;transform:scale(1)}
+    100%{opacity:0;transform:scale(1.16)}}
+
+  /* M2 kolam — dots light around the ring */
+  .M2 circle.dot{opacity:.16;animation:lamp 2.4s ease-in-out infinite}
+  @keyframes lamp{0%,72%,100%{opacity:.16;r:2.4}18%{opacity:1;r:3.6}}
+
+  /* M3 chakra — counter-rotating rings, still letter */
+  .M3 .spin-a{animation:spinA 9s linear infinite;transform-origin:110px 110px}
+  .M3 .spin-b{animation:spinB 13s linear infinite;transform-origin:110px 110px}
+  .M3 .pulse{animation:pulse 2.6s ease-out infinite;transform-origin:110px 110px}
+  @keyframes spinA{to{transform:rotate(360deg)}}
+  @keyframes spinB{to{transform:rotate(-360deg)}}
+  @keyframes pulse{0%{opacity:.55;transform:scale(.72)}70%{opacity:0;transform:scale(1.18)}100%{opacity:0}}
+
+  /* M4 jali — the star draws itself */
+  .M4 path.draw,.M4 circle.draw{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);
+    animation:draw 3.4s cubic-bezier(.4,0,.25,1) infinite}
+  @keyframes draw{0%{stroke-dashoffset:var(--len)}44%{stroke-dashoffset:0}
+    78%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}
+
+  /* ── placement mockups ───────────────────────────────────────────────── */
+  .pl{width:288px}
+  .pl .cap{margin-top:11px}
+  .frame{background:var(--bg);border:1px solid #2A2A25;border-radius:14px;overflow:hidden;
+    position:relative;height:224px}
+  .bar{height:26px;background:var(--surface);border-bottom:1px solid var(--rule);
+    display:flex;align-items:center;padding:0 11px;gap:7px}
+  .bar b{font-family:var(--display);font-size:11.5px;color:var(--ink);font-weight:500}
+  .bar .hi{font-family:var(--hindi);font-size:10px;color:var(--ink-3)}
+  .body{padding:13px 13px 0;position:relative;height:calc(100% - 26px)}
+  .mut{font-size:10px;color:var(--ink-3);line-height:1.55}
+  .h{font-family:var(--display);font-size:14px;color:var(--ink);margin:0 0 4px}
+  .btn{display:inline-block;background:var(--primary);color:#fff;border-radius:6px;
+    padding:6px 12px;font-size:10px;font-weight:600;margin-top:9px}
+  .btn.ghost{background:transparent;color:var(--primary);border:1px solid var(--rule)}
+  .row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;
+    border-bottom:1px solid var(--rule);font-size:10px;color:var(--ink-2)}
+  .amt{font-variant-numeric:tabular-nums;font-weight:600;color:var(--ink)}
+  .pill{font-size:8px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+    padding:2px 6px;border-radius:99px;background:var(--container);color:var(--ink-2)}
+  .pill.ok{background:#D9EDE6;color:#0A6A4E}
+  .seal{position:absolute;right:12px;bottom:14px;width:88px;height:88px;opacity:.9}
+  .seal .txt{font-family:var(--hindi);font-size:15px;fill:var(--primary)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Mandala — the loader, and the eight places it earns its keep</h1>
+  <p class="lede">All four loaders keep क at the centre and build the mandala around it, so the mark stays the subject and the ornament stays ornament. Below that: where mandala work belongs elsewhere in the product, and — just as important — where it does not.</p>
+
+  <h2 class="sec">Loader — क at the centre</h2>
+  <p class="note">Geometry is generated, not hand-drawn: petal counts, radii and angles come from a few numbers, so a ring can be retuned without redrawing anything.</p>
+  <div class="grid" id="loaders"></div>
+
+  <h2 class="sec">Where mandala belongs</h2>
+  <p class="note">Ranked by how much the ornament actually does. The test each one has to pass: does it make the screen easier to read, or is it decoration competing with the work? Green tags are worth building; amber are worth trying but need care.</p>
+  <div class="grid" id="places"></div>
+
+  <h2 class="sec">Where it does not</h2>
+  <p class="note" style="max-width:70ch">
+    <b style="color:#D8D2C6">Behind data.</b> Tables, ledgers, task lists, the Kanban board. Anything with rows and figures needs an even, quiet ground — a pattern under a column of rupee amounts makes them harder to scan, and scanning is the entire job of those screens.<br><br>
+    <b style="color:#D8D2C6">Behind form fields.</b> Same reason, plus contrast: input borders and focus rings have to stay the most legible edges on screen.<br><br>
+    <b style="color:#D8D2C6">On every module tile.</b> Fifteen modules each with their own mandala is a pattern library, not an identity. One shared motif used sparingly reads as considered; fifteen read as a theme.<br><br>
+    <b style="color:#D8D2C6">In dark mode at the same opacity.</b> A line that sits at 7% on cream disappears at 7% on near-black. Every placement below needs its own dark value, not an inherited one.
+  </p>
+</div>
+
+<script>
+/* ── mandala generator ──────────────────────────────────────────────────────
+   n-fold radial symmetry from a handful of numbers. Petals are a vesica (two
+   arcs meeting at a point), which is the shape at the base of most lotus
+   mandala work, and the one that reads as Indic rather than as a flower icon. */
+const NS = 'http://www.w3.org/2000/svg';
+const el = (t, a = {}) => { const e = document.createElementNS(NS, t);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+function petal(r0, r1, w) {
+  // From radius r0 out to r1, widest at w. Drawn pointing up; the ring rotates it.
+  return `M0,${-r0} C${w},${-r0 - (r1 - r0) * .34} ${w},${-r1 + (r1 - r0) * .3} 0,${-r1}`
+       + ` C${-w},${-r1 + (r1 - r0) * .3} ${-w},${-r0 - (r1 - r0) * .34} 0,${-r0} Z`;
+}
+
+function ring(g, { n, r0, r1, w, cls, fill, stroke, sw = 1, rot = 0, op = 1 }) {
+  for (let i = 0; i < n; i++) {
+    const a = rot + (360 / n) * i;
+    const p = el('path', {
+      d: petal(r0, r1, w),
+      transform: `rotate(${a})`,
+      fill: fill || 'none',
+      stroke: stroke || 'none',
+      'stroke-width': sw,
+      'stroke-linejoin': 'round',
+      opacity: op,
+    });
+    if (cls) p.setAttribute('class', cls);
+    g.appendChild(p);
+  }
+}
+
+function svgBase(size = 220) {
+  const s = el('svg', { class: 'mn', width: size, height: size, viewBox: `0 0 ${size} ${size}` });
+  const g = el('g', { transform: `translate(${size / 2},${size / 2})` });
+  s.appendChild(g); return { s, g };
+}
+
+/* M1 — lotus, three rings opening outward */
+function lotus() {
+  const { s, g } = svgBase();
+  const r1 = el('g', { class: 'r1' }), r2 = el('g', { class: 'r2' }), r3 = el('g', { class: 'r3' });
+  ring(r1, { n: 8,  r0: 30, r1: 52, w: 11, fill: 'var(--primary)',       op: .30 });
+  ring(r2, { n: 16, r0: 52, r1: 76, w: 8,  fill: 'var(--primary-vivid)', op: .22, rot: 11.25 });
+  ring(r3, { n: 8,  r0: 76, r1: 100, w: 13, stroke: 'var(--primary)', sw: 1.1, op: .5 });
+  g.append(r1, r2, r3);
+  return s;
+}
+
+/* M2 — kolam, rings of lamps lighting round the circle */
+function kolam() {
+  const { s, g } = svgBase();
+  const rings = [[12, 44], [18, 68], [24, 92]];
+  let idx = 0, total = rings.reduce((a, [n]) => a + n, 0);
+  rings.forEach(([n, rad]) => {
+    for (let i = 0; i < n; i++) {
+      const a = (Math.PI * 2 / n) * i - Math.PI / 2;
+      const c = el('circle', {
+        class: 'dot', cx: (Math.cos(a) * rad).toFixed(2), cy: (Math.sin(a) * rad).toFixed(2),
+        r: 2.4, fill: 'var(--primary)',
+      });
+      // Delay by angle so the light travels round rather than blinking at random.
+      c.style.animationDelay = ((i / n) * 2.4).toFixed(3) + 's';
+      g.appendChild(c); idx++;
+    }
+  });
+  // Hairline guides, the chalk grid a kolam is laid on.
+  [44, 68, 92].forEach(r => g.appendChild(el('circle',
+    { r, fill: 'none', stroke: 'var(--primary)', 'stroke-width': .6, opacity: .16 })));
+  return s;
+}
+
+/* M3 — chakra, counter-rotating rings around a still letter */
+function chakra() {
+  const { s, g } = svgBase();
+  const a = el('g', { class: 'spin-a' }), b = el('g', { class: 'spin-b' });
+  ring(a, { n: 12, r0: 40, r1: 66, w: 9, fill: 'var(--primary)', op: .26 });
+  ring(b, { n: 24, r0: 72, r1: 92, w: 5, fill: 'var(--primary-vivid)', op: .34 });
+  // Spokes — the wheel under the petals.
+  for (let i = 0; i < 12; i++) {
+    const ang = (360 / 12) * i;
+    a.appendChild(el('line', { x1: 0, y1: -34, x2: 0, y2: -40,
+      transform: `rotate(${ang})`, stroke: 'var(--primary)', 'stroke-width': 1.4, opacity: .5 }));
+  }
+  g.append(
+    el('circle', { class: 'pulse', r: 96, fill: 'none', stroke: 'var(--primary-vivid)', 'stroke-width': 1 }),
+    b, a,
+    el('circle', { r: 34, fill: 'none', stroke: 'var(--primary)', 'stroke-width': 1.2, opacity: .45 }));
+  return s;
+}
+
+/* M4 — jali, an eight-point star lattice drawing itself */
+function jali() {
+  const s = el('svg', { class: 'mn', width: 220, height: 220, viewBox: '0 0 220 220' });
+  const g = el('g');
+  const add = (node, len) => { node.style.setProperty('--len', len); g.appendChild(node); };
+  // Two squares at 45° — the ashtakona, the eight-pointed star.
+  for (const rot of [0, 45]) {
+    const r = 84, c = 110;
+    const pts = [[-r, -r], [r, -r], [r, r], [-r, r]]
+      .map(([x, y]) => `${c + x},${c + y}`).join(' L');
+    const p = el('path', { class: 'draw', d: `M${pts} Z`, transform: `rotate(${rot} 110 110)`,
+      fill: 'none', stroke: 'var(--primary)', 'stroke-width': 1.3, opacity: .55,
+      'stroke-linejoin': 'round' });
+    add(p, r * 8);
+  }
+  [58, 96].forEach((r, i) => {
+    const c = el('circle', { class: 'draw', cx: 110, cy: 110, r,
+      fill: 'none', stroke: 'var(--primary-vivid)', 'stroke-width': 1, opacity: .45 });
+    c.style.animationDelay = (i * .18) + 's';
+    add(c, 2 * Math.PI * r);
+  });
+  s.appendChild(g);
+  return s;
+}
+
+const LOADERS = [
+  ['A', 'Lotus bloom', lotus, 'Three rings of petals opening outward in turn, then releasing. The warmest of the four — most obviously festive.'],
+  ['B', 'Kolam lamps', kolam, 'Dots on a chalk grid, lit one after another around the circle. A rangoli being laid, and the only one that reads as counting.'],
+  ['C', 'Chakra', chakra, 'Two petal rings turning against each other around a still letter. Calmest — it can run for thirty seconds without becoming annoying.'],
+  ['D', 'Jali star', jali, 'The ashtakona drawing itself in line, like a lattice being cut. Most architectural, least floral.'],
+];
+
+document.getElementById('loaders').innerHTML = '';
+LOADERS.forEach(([id, name, fn, desc]) => {
+  const wrap = document.createElement('div'); wrap.className = 'lo';
+  const st = document.createElement('div'); st.className = 'stage M' + (LOADERS.findIndex(l => l[0] === id) + 1);
+  st.appendChild(fn());
+  const ka = document.createElement('span'); ka.className = 'ka'; ka.lang = 'hi'; ka.textContent = 'क';
+  st.appendChild(ka);
+  wrap.appendChild(st);
+  wrap.insertAdjacentHTML('beforeend',
+    `<div class="cap"><span class="tag">${id}</span><b>${name}</b><span>${desc}</span></div>`);
+  document.getElementById('loaders').appendChild(wrap);
+});
+
+/* ── placements ─────────────────────────────────────────────────────────── */
+function ornament(size, opacity, stroke) {
+  const { s, g } = svgBase(size);
+  ring(g, { n: 8,  r0: size * .11, r1: size * .22, w: size * .05, fill: stroke, op: 1 });
+  ring(g, { n: 16, r0: size * .23, r1: size * .34, w: size * .034, stroke, sw: .8, rot: 11.25 });
+  ring(g, { n: 8,  r0: size * .35, r1: size * .46, w: size * .06, stroke, sw: .9 });
+  s.style.opacity = opacity;
+  return s.outerHTML;
+}
+
+const PLACES = [
+  ['1', 'Empty states', 'green',
+   'The strongest case by a distance. "Nothing needs you today" is a good outcome and currently reads as a failure — grey text in an empty box. A mandala turns the blank into a deliberate page.',
+   `<div class="bar"><b>Approvals</b><span class="hi">अनुमोदन</span></div>
+    <div class="body" style="display:grid;place-items:center;text-align:center">
+      <div style="position:absolute;inset:0;display:grid;place-items:center;pointer-events:none">
+        ${ornament(150, .13, 'var(--primary)')}</div>
+      <div style="position:relative">
+        <p class="h" style="margin-bottom:3px">All clear</p>
+        <p class="mut">Nothing is waiting on your decision.<br>Rhea cleared the last three this morning.</p>
+      </div>
+    </div>`],
+
+  ['2', 'Invoice & PDF seal', 'green',
+   'A GST invoice is the document a firm actually hands a client. A quiet mandala seal beside the total is normal on Indian stationery and makes an unbranded PDF look like it came from somewhere.',
+   `<div class="bar"><b>INV-2043</b><span class="hi">बीजक</span></div>
+    <div class="body">
+      <div class="row"><span>Audit — FY 24-25</span><span class="amt">₹98,000</span></div>
+      <div class="row"><span>GST 18%</span><span class="amt">₹17,640</span></div>
+      <div class="row" style="border-bottom:0"><span style="font-weight:600;color:var(--ink)">Total</span><span class="amt" style="font-size:12px">₹1,15,640</span></div>
+      <div style="position:absolute;right:10px;bottom:10px;opacity:.9">${ornament(96, .5, 'var(--primary)')}</div>
+      <div style="position:absolute;right:34px;bottom:44px;font-family:var(--hindi);font-size:13px;color:var(--primary)">क</div>
+    </div>`],
+
+  ['3', 'Approved stamp', 'green',
+   'When an approver signs off, the mandala lands as a seal with the timestamp inside it. It is the one place motion and ornament are both earned — a decision was made and the screen should feel like it.',
+   `<div class="bar"><b>Payroll — July</b><span class="hi">वेतन</span></div>
+    <div class="body">
+      <div class="row"><span>18 employees</span><span class="amt">₹8,42,000</span></div>
+      <div class="row"><span>Approver</span><span>Keval S.</span></div>
+      <div style="display:grid;place-items:center;margin-top:12px;position:relative">
+        ${ornament(104, .42, 'var(--primary)')}
+        <div style="position:absolute;text-align:center">
+          <div style="font-size:8.5px;font-weight:700;letter-spacing:.12em;color:var(--primary)">APPROVED</div>
+          <div class="mut" style="font-size:8px">31 Jul · 11:04</div>
+        </div>
+      </div>
+    </div>`],
+
+  ['4', 'Sign-in crown', 'green',
+   'Already built, and the ornament fits: fine mandala line work inside the gradient band, behind the क. It gives the largest flat area on the screen something to be without adding a single element the eye has to process.',
+   `<div style="height:96px;background:linear-gradient(158deg,var(--icon-a),var(--icon-b));
+        border-radius:0 0 46% 46% / 0 0 22px 22px;position:relative;overflow:hidden;display:grid;place-items:center">
+      <div style="position:absolute;inset:0;display:grid;place-items:center">${ornament(190, .3, '#fff')}</div>
+      <span style="position:relative;font-family:var(--hindi);font-size:46px;color:#fff;line-height:1">क</span>
+    </div>
+    <div class="body" style="height:auto;padding-top:12px">
+      <p class="h" style="font-size:13px">Sign in to <em style="font-style:italic;color:var(--primary)">Kartavaya</em></p>
+      <div style="background:var(--container);border-radius:5px;height:26px;margin-top:7px"></div>
+      <div style="background:var(--container);border-radius:5px;height:26px;margin-top:6px"></div>
+      <div class="btn" style="width:100%;text-align:center">Sign in</div>
+    </div>`],
+
+  ['5', 'Splash', 'green',
+   'A ring of mandala around the icon while the app boots. Two seconds of screen nobody is reading, which makes it the safest place in the product to be decorative.',
+   `<div class="body" style="height:100%;display:grid;place-items:center;padding:0">
+      <div style="position:absolute;inset:0;display:grid;place-items:center">${ornament(200, .16, 'var(--primary)')}</div>
+      <div style="position:relative;width:66px;height:66px;border-radius:50%;
+           background:linear-gradient(150deg,var(--icon-a),var(--icon-b));display:grid;place-items:center">
+        <span style="font-family:var(--hindi);font-size:40px;color:#fff;line-height:1;margin-top:-2px">क</span>
+      </div>
+    </div>`],
+
+  ['6', 'Onboarding & milestones', 'amber',
+   'First sign-in, first invoice sent, onboarding complete. Worth doing, worth rationing — a celebration that fires on every small action stops reading as one.',
+   `<div class="bar"><b>Welcome</b><span class="hi">स्वागत</span></div>
+    <div class="body" style="display:grid;place-items:center;text-align:center">
+      <div style="position:absolute;inset:0;display:grid;place-items:center;pointer-events:none">
+        ${ornament(160, .15, 'var(--primary)')}</div>
+      <div style="position:relative">
+        <p class="h">Your first invoice is out</p>
+        <p class="mut">INV-2043 went to Nirmal Exports.<br>You'll see it here when they open it.</p>
+        <div class="btn ghost">See invoice</div>
+      </div>
+    </div>`],
+
+  ['7', 'Dashboard "day clear"', 'amber',
+   'Only when the day is genuinely empty — no overdue tasks, no approvals waiting. It has to be rare, or the reward stops meaning anything.',
+   `<div class="bar"><b>Today</b><span class="hi">आज</span></div>
+    <div class="body">
+      <div style="display:flex;gap:7px;margin-bottom:9px">
+        <span class="pill ok">0 overdue</span><span class="pill ok">0 waiting</span>
+      </div>
+      <div style="display:grid;place-items:center;text-align:center;margin-top:6px;position:relative">
+        <div style="position:absolute;inset:-16px;display:grid;place-items:center">${ornament(130, .14, 'var(--primary)')}</div>
+        <div style="position:relative"><p class="h" style="font-size:13px">Nothing overdue</p>
+        <p class="mut">Next deadline is GSTR-3B, in 3 days.</p></div>
+      </div>
+    </div>`],
+
+  ['8', 'Print letterhead', 'amber',
+   'A narrow band of mandala along the top or foot of printed output. Ink cost is real for a firm printing hundreds of pages, so line work only — never a fill.',
+   `<div class="body" style="height:100%;padding:0;background:var(--surface)">
+      <div style="height:26px;overflow:hidden;position:relative;border-bottom:1px solid var(--rule)">
+        <div style="position:absolute;top:-58px;left:0;right:0;display:grid;place-items:center">
+          ${ornament(150, .3, 'var(--primary)')}</div>
+      </div>
+      <div style="padding:11px 13px">
+        <p class="h" style="font-size:12px">Statement of Account</p>
+        <p class="mut">Nirmal Exports Pvt Ltd · FY 2024-25</p>
+        <div class="row" style="margin-top:8px"><span>Opening</span><span class="amt">₹0</span></div>
+        <div class="row"><span>Invoiced</span><span class="amt">₹4,62,560</span></div>
+      </div>
+    </div>`],
+];
+
+document.getElementById('places').innerHTML = PLACES.map(([n, name, level, desc, html]) => `
+  <div class="pl">
+    <div class="frame">${html}</div>
+    <div class="cap"><span class="tag${level === 'amber' ? ' alt' : ''}">${n} · ${level === 'amber' ? 'with care' : 'build it'}</span>
+      <b>${name}</b><span>${desc}</span></div>
+  </div>`).join('');
+</script>
+</body>
+</html>
