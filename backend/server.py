@@ -346,6 +346,43 @@ app.add_middleware(
 )
 
 
+#: A request slower than this is logged with its timing. 1s is well clear of
+#: normal — the whole dashboard's other eight calls land in 350-700ms — so this
+#: stays quiet until something is actually wrong.
+_SLOW_REQUEST_MS = 1000
+
+
+@app.middleware("http")
+async def request_timing(request: Request, call_next):
+    """How long the SERVER spent, separate from how long the client waited.
+
+    Added 2026-07-31 after a day of diagnosing latency from outside the process
+    and being wrong five times — cold starts, region, memory, serialisation, a
+    missing index — because every measurement available from a browser mixes
+    server time with the client's own link, and this one had ~400ms of it.
+
+    What finally could not be explained away: on one dashboard load `/tasks`
+    took 14,108ms while seven sibling requests in the same wave finished in
+    357-702ms. Same pool, same network, same instant. Its SQL measures 0.283ms.
+    So the time is inside the request and nothing outside could see where.
+
+    `Server-Timing` is a standard header — browser devtools render it natively —
+    so the server's own figure now appears beside the client's in the network
+    panel. The gap between the two IS the network, which is the number that was
+    missing all day.
+    """
+    import time as _t
+    start = _t.perf_counter()
+    response = await call_next(request)
+    dur_ms = (_t.perf_counter() - start) * 1000
+    response.headers["Server-Timing"] = f'app;dur={dur_ms:.1f}'
+    if dur_ms >= _SLOW_REQUEST_MS:
+        logger.warning(
+            "SLOW %s %s took %.0fms", request.method, request.url.path, dur_ms
+        )
+    return response
+
+
 @app.middleware("http")
 async def clear_request_cache(request, call_next):
     """Evict per-request team_id cache entries after each HTTP request completes."""
