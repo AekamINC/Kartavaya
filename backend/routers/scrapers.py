@@ -39,13 +39,33 @@ SCRAPER_MARGIN = 0.45
 
 
 async def _calc_actual_credits(cost_usd: float, org_id: str, min_credits: int) -> int:
-    """Convert a run's real Apify cost into credits, never below `min_credits`."""
+    """Convert a run's real Apify cost into credits, never below `min_credits`.
+
+    `charged_inr` is RUPEES. It used to be handed straight to `math.ceil` and
+    returned as CREDITS, with no division by what a credit costs — so the markup
+    actually applied was `SCRAPER_MARGIN` multiplied by the credit price, about
+    5.8x rather than the intended 1.45x.
+
+    It went unnoticed because a second fault hid it. `usage_usd` was reading only
+    Apify's PLATFORM usage and missing the actor's per-event charges, so the
+    figure arriving here was around $0.0002 — `ceil` of which is 1, always below
+    `min_credits`, so the true-up never fired and the mistake never showed.
+    Fixing either one alone gives a wrong answer: correcting the cost while
+    leaving the units multiplies real charges by roughly six, and correcting the
+    units alone changes nothing. Both, together, reproduce the intended markup —
+
+        100 places   cost $0.40 = Rs 38.60   ->  14 credits = Rs 56.00 = 1.45x
+
+    — which is also the run that was previously charged the 5-credit minimum,
+    Rs 20.00, against a Rs 38.60 cost.
+    """
     if cost_usd <= 0:
         return min_credits
     from services.forex import get_usd_inr
+    from services.ai_router import CREDIT_PRICE_INR
     rate = await get_usd_inr()
     charged_inr = cost_usd * rate * (1 + SCRAPER_MARGIN)
-    actual = max(min_credits, math.ceil(charged_inr))
+    actual = max(min_credits, math.ceil(charged_inr / CREDIT_PRICE_INR))
     return actual
 
 

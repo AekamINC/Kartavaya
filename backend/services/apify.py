@@ -54,8 +54,46 @@ async def start_actor(actor_id: str, run_input: dict, max_items: int = 100) -> d
     return {"run_id": data["id"], "status": data["status"]}
 
 
+def _event_charges_usd(data: dict) -> float:
+    """What a PAY_PER_EVENT actor charged, which `usageTotalUsd` does not cover.
+
+    `usageTotalUsd` is the PLATFORM's figure — compute units, proxy, storage.
+    An actor priced per event bills separately, and those charges appear only as
+    `chargedEventCounts` against the prices in
+    `pricingInfo.pricingPerEvent.actorChargeEvents`.
+
+    The gap is not marginal. Measured 2026-07-31: a `compass/crawler-google-places`
+    run returning 28 places reported `usageTotalUsd` of $0.0002, while the actor
+    charges $0.004 per scraped place — a true cost of about $0.112, understated
+    roughly 560-fold. Every scraper in the catalog is a third-party actor, so
+    this is the normal case rather than an edge one.
+    """
+    counts = data.get("chargedEventCounts") or {}
+    if not counts:
+        return 0.0
+
+    prices = (
+        ((data.get("pricingInfo") or {}).get("pricingPerEvent") or {})
+        .get("actorChargeEvents") or {}
+    )
+    total = 0.0
+    for event, n in counts.items():
+        spec = prices.get(event) or {}
+        # Apify names it `eventPriceUsd`; the others are defensive, since a
+        # silently-zero price is exactly the failure being fixed here.
+        price = spec.get("eventPriceUsd", spec.get("priceUsd", spec.get("price")))
+        if price is None:
+            log.warning(
+                "apify: charged event %r x%s has no price in pricingInfo — "
+                "run cost will be understated", event, n,
+            )
+            continue
+        total += float(price) * float(n)
+    return total
+
+
 async def get_run_status(run_id: str) -> dict:
-    """Poll run status. Returns {status, stats}."""
+    """Poll run status. Returns {status, dataset_id, usage_usd}."""
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(
             f"{APIFY_BASE}/actor-runs/{run_id}",
@@ -63,15 +101,22 @@ async def get_run_status(run_id: str) -> dict:
         )
         resp.raise_for_status()
         data = resp.json()["data"]
+
+    platform_usd = float(data.get("usageTotalUsd") or 0)
+    events_usd = _event_charges_usd(data)
     return {
         "status": data["status"],
         "dataset_id": data.get("defaultDatasetId"),
-        # `usageTotalUsd` is the platform's own figure for the run. On a RENTED
-        # actor it covers compute and proxy, and the actor author's per-result
-        # rental is billed separately — so this can read far below what the run
-        # actually costs. Measured 2026-07-31: a Google Maps run returning 28
-        # places reported $0.0002 here.
-        "usage_usd": data.get("usageTotalUsd", 0),
+        # Platform usage PLUS the actor's own event charges. This is the number
+        # written to `hub_scraper_runs.cost_usd` and the one the credit true-up
+        # is computed from, so it has to be the whole bill.
+        "usage_usd": platform_usd + events_usd,
+        # Kept apart so the admin spend view can show where a run's cost came
+        # from, and so a zero here beside a non-zero total is legible rather
+        # than mysterious.
+        "platform_usd": platform_usd,
+        "events_usd": events_usd,
+        "pricing_model": (data.get("pricingInfo") or {}).get("pricingModel"),
     }
 
 
