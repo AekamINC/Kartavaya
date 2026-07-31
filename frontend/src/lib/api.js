@@ -114,9 +114,28 @@ api.interceptors.response.use(undefined, async (error) => {
 
   if (!config || config.noRetry) return Promise.reject(error);
   config._retryCount = config._retryCount ?? 0;
+  /**
+   * Only methods that can be repeated safely.
+   *
+   * A 502 does not mean "nothing happened" — it means the reply did not arrive.
+   * On a POST the work may have run in full, so a retry runs it AGAIN, and the
+   * three retries here turn one click into four.
+   *
+   * Measured on staging, 2026-07-31: `POST /v1/scrapers/run` debits credits
+   * BEFORE calling Apify. One click on a scraper whose actor no longer exists
+   * produced four 502s, four debits and zero runs — the wallet went 173 → 169
+   * with nothing to show for it and no run row to refund against.
+   *
+   * The Railway restart window this was written for is real, and GET keeps its
+   * retries — repeating a read costs nothing. A write has to be idempotent
+   * before it can be repeated, and none of these are.
+   */
+  const method = String(config.method || 'get').toLowerCase();
+  const isReplayable = ['get', 'head', 'options'].includes(method);
   const isRetryable =
-    !error.response ||                          // network error
-    [502, 503, 504].includes(status);
+    isReplayable && (
+      !error.response ||                        // network error
+      [502, 503, 504].includes(status));
   if (isRetryable && config._retryCount < 3) {
     config._retryCount += 1;
     await new Promise(r => setTimeout(r, config._retryCount * 800));

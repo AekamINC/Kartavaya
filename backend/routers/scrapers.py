@@ -76,7 +76,7 @@ async def _deduct_extra_credits(pool, org_id: str, user_id: str, extra: int, run
         log.warning("Credit true-up failed for run %s: %s", run_id, e)
 
 
-async def _refund_credits(pool, org_id: str, user_id: str, amount: int, run_id: str, why: str):
+async def _refund_credits(pool, org_id: str, user_id: str, amount: int, run_id: Optional[str], why: str):
     """Return the upfront charge when a run produced nothing (F29).
 
     Credits are debited BEFORE Apify is called, and the response tells the user
@@ -120,12 +120,17 @@ async def _refund_credits(pool, org_id: str, user_id: str, amount: int, run_id: 
                     "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
                     "VALUES ($1::uuid, $2, $3, $4, 'credit', $5, $2)",
                     org_id, user_id or "", amount, new_bal,
-                    f"scraper refund run:{run_id[:8]} — {why}",
+                    # `run_id` is None when the run never started — the crash
+                    # path in `run_scraper` fires before any row is written, so
+                    # there is nothing to name and nothing to zero.
+                    f"scraper refund run:{run_id[:8]} — {why}" if run_id
+                    else f"scraper refund — {why}",
                 )
-                await conn.execute(
-                    "UPDATE staging.hub_scraper_runs SET billed_inr=0 WHERE id=$1::uuid",
-                    run_id,
-                )
+                if run_id:
+                    await conn.execute(
+                        "UPDATE staging.hub_scraper_runs SET billed_inr=0 WHERE id=$1::uuid",
+                        run_id,
+                    )
         log.info("Refunded %s credits for failed scraper run %s (%s)", amount, run_id, why)
     except Exception as e:
         log.error("Credit refund FAILED for run %s: %s — customer is owed %s credits",
@@ -196,8 +201,12 @@ async def run_scraper(
     from services.apify import start_actor
     import traceback
 
+    # Outside the try, so the handler can tell a crash BEFORE the debit from one
+    # after it. `charged` is what this request actually took and still owes back.
+    pool = await get_pool()
+    charged = 0
+
     try:
-        pool = await get_pool()
         log.info("scraper/run: scraper_id=%s org=%s", body.scraper_id, org_id)
 
         scraper = await pool.fetchrow(
@@ -232,6 +241,9 @@ async def run_scraper(
                     org_id, user["user_id"], -min_credits, new_bal,
                     f"scraper:{body.scraper_id} (minimum upfront)",
                 )
+        # Set only once the transaction above has committed, so the handler
+        # never refunds a debit that did not happen.
+        charged = min_credits
 
         # Build Apify input from schema + user inputs
         actor_input = {}
@@ -285,6 +297,19 @@ async def run_scraper(
         raise
     except Exception as e:
         log.error("scraper/run CRASH: %s\n%s", e, traceback.format_exc())
+        # Give the credits back. They are debited before Apify is called, and
+        # every refund path in this file lives in `_poll_run` — which needs a
+        # `hub_scraper_runs` row to poll. That row is written AFTER
+        # `start_actor` returns, so a crash here leaves a charge nothing can
+        # ever reverse: no run to refund against, and no record that a run was
+        # even attempted.
+        #
+        # Measured on staging, 2026-07-31: `mca_company_lookup` points at an
+        # Apify actor that 404s. One click took FOUR credits — the client
+        # retried the 502 three times — created zero run rows, and left the
+        # balance down with four "minimum upfront" debit lines to show for it.
+        await _refund_credits(pool, org_id, user["user_id"], charged, None,
+                              "run never started")
         msg = str(e)
         if "token=" in msg:
             msg = msg.split("token=")[0] + "token=***"
