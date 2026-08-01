@@ -843,13 +843,20 @@
   height: 32px;
   flex-shrink: 0;
   border-radius: var(--r-sm);
-  /* SOLID brand green with a white glyph, not a 14% wash of it — `app.css:510`
-     prints #1FA855 on #fff, which is what --wa-green already resolves to. The
-     tint was the readable-token instinct applied to the one colour in the
-     system that is not ours to soften: it encodes an external brand, and a
-     washed-out WhatsApp green stops reading as WhatsApp. */
-  background: var(--wa-green);
-  color: #fff;
+  /* REVERTED to the tint. `app.css:510` prints a solid #1FA855 block with a
+     white glyph, and I ported it on the argument that an external brand is not
+     ours to soften. `check-contrast` then failed it: white on #1FA855 measures
+     3.09:1 against the 4.5:1 this project gates on, in both themes, because
+     --wa-green is a fixed literal that does not flip.
+
+     A dark-theme-only override does not clear it either — the gate evaluates
+     the base rule against both themes, which is the correct thing for it to do.
+
+     So the tint stands. The contrast gate is a better authority than my reading
+     of the design, and 00 §9's original treatment was right for a reason I had
+     to be shown. */
+  background: color-mix(in srgb, var(--wa-green) 14%, transparent);
+  color: var(--wa-green);
 }
 .wahdr__t { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; min-width: 0; }
 .wahdr__n { font-size: var(--t-title); font-weight: 700; color: var(--on-surface); }

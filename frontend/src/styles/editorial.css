@@ -3472,7 +3472,12 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-modtable {
   width: 100%; border-collapse: collapse; font-size: 13px;
 }
+/* 38px, the same head height `.tbl th` carries. The body cells went onto
+   --row-h and the head did NOT, so a module table had a 35px header sitting on
+   66px rows — the header read as crushed against whatever was above it. Head
+   and body are one table; they move together. */
 .k-modtable thead th {
+  height: 38px;
   text-align: left; padding: 10px 12px;
   font-size: 11px; font-weight: 700; letter-spacing: .08em;
   text-transform: uppercase; color: var(--ink-3);

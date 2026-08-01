@@ -879,7 +879,10 @@
 /* The achievement column carries a bar, a percentage and a deal count, so its
    rows are taller than `--row-h`. `.tbl` sets a fixed height; this releases it
    rather than cropping the second line. */
-.vk-tg td { height: auto; padding-top: 9px; padding-bottom: 9px; }
+/* `height: auto` here explicitly UNDID the row token this table inherits from
+   `.tbl`, so the targets table stayed short while every other table grew. The
+   padding is what it actually wanted. */
+.vk-tg td { padding-top: 9px; padding-bottom: 9px; }
 .vk-tg__period  { font-size: 12px; color: var(--on-surface-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .vk-tg__unknown { font-family: var(--font-mono); font-size: 11px; color: var(--on-surface-3); }
 .vk-tg__in      { width: 110px; text-align: right; }
