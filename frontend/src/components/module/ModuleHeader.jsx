@@ -57,11 +57,32 @@ export default function ModuleHeader({ module, en, hi, sub, icon, actions, kick 
             on the page that says where you are in the nav once the sidebar is
             collapsed, and the build had no equivalent. */}
         {kick && <div className="mh__kick">{kick}</div>}
+        {/*
+            DEVANAGARI LEADS, and it carries the heading weight.
+
+            This is the same inversion `PageHeader` had, in the second of the
+            two header components — so between them every page in the product
+            read the wrong way round.
+
+            The design source is unambiguous. `Data.jsx:32` puts `ph__hi`
+            before `ph__en`, and `app.css:144-145` sizes them 1em and .56em:
+            the Devanagari IS the title, the English is a small uppercase label
+            beside it. ग्रह CRM, गणित Ganit, दृष्टि Dristi.
+
+            The build had `mh__en` as a 25px display h1 with `mh__hi` at 15px
+            behind it — English leading, Devanagari as decoration.
+
+            The h1 stays on the ENGLISH span rather than moving to the
+            Devanagari: `hi` is `aria-hidden` (the same label in a second
+            script, and announcing both would read the page title twice), so
+            putting the heading role on a hidden element would leave the page
+            with no accessible h1 at all. Visual order and heading semantics
+            are set independently — CSS `order` handles the first, the markup
+            the second.
+        */}
         <div className="mh__t">
-          <h1 className="mh__en">{en}</h1>
-          {/* Same label, second script — tagged for the right voice, hidden from
-              the accessibility tree so the heading is not announced twice. */}
           {hi && <span className="mh__hi" lang="hi" aria-hidden="true">{hi}</span>}
+          <h1 className="mh__en">{en}</h1>
         </div>
         {sub && <div className="mh__sub">{sub}</div>}
       </div>
