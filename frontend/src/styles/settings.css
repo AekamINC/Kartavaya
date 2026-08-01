@@ -315,10 +315,16 @@
    The sign-in flow was the last screen on the old cold-blue system, with
    #f4fafd / #d0e8f5 / #0a1628 baked in as literals — so the first screen a
    user ever saw could not follow their theme. */
+/* 44/56, from `auth.css:7`: the branding panel is the narrower half and the
+   form is the wider one. The rest of that rule — `flex: 1`, a --r-xl radius,
+   a border, --shadow-2 and a 620px floor — is NOT ported: the reference nests
+   .au inside .auwrap > .auhost, which pads 22px around it and makes it a
+   floating card, and this build's .au IS the page. That is two wrapper
+   elements in the auth JSX, not a declaration here. */
 .au {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(0, 1.06fr) minmax(0, .94fr);
+  grid-template-columns: minmax(0, 44%) minmax(0, 56%);
 }
 .au__brand {
   position: relative; overflow: hidden; padding: 44px;

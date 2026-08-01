@@ -471,8 +471,17 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    Onboarding wizard — 12 §1 and §2
    ═══════════════════════════════════════════════════════════════════════════ */
+/* The two blooms from `onboarding.css:4`. What is deliberately NOT taken from
+   that rule is `align-items: center` on a flex column: it centres the wizard in
+   a fixed-width box, and every page in this build is fluid and left-aligned.
+   The padding stays a clamp for the same reason — the reference's flat
+   26px/22px is a desktop number with a 720px breakpoint under it. */
 .ob {
-  position: relative; min-height: 100vh; background: var(--bg);
+  position: relative; min-height: 100vh;
+  background:
+    radial-gradient(44% 34% at 16% 4%, color-mix(in srgb, var(--primary-vivid) 13%, transparent), transparent 70%),
+    radial-gradient(38% 30% at 84% 8%, color-mix(in srgb, var(--tertiary) 11%, transparent), transparent 72%),
+    var(--bg);
   padding: clamp(24px, 5vw, 56px) clamp(20px, 5vw, 44px);
   overflow: hidden;
 }

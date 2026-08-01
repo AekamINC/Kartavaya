@@ -147,11 +147,21 @@
 .rv-det__gap  { width: 1px; flex-shrink: 0; }
 .rv-det__note { margin-top: var(--sp-4); }
 
-.rv-meta__k { flex: 1; font-size: var(--t-label); color: var(--on-surface-3); }
+/* A fixed 96px label column, not `flex: 1` — `pahchan.css:220`. The key was
+   taking the free space and the value was sized by its content, so every
+   accuracy figure and timestamp started at a different x. Mono and uppercase
+   for the same reason the values are mono: they are read down a column. */
+.rv-meta__k {
+  width: 96px; flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-label); letter-spacing: .05em; text-transform: uppercase;
+  color: var(--on-surface-3);
+}
 /* Mono because these are coordinates, metres and timestamps read against each
    other down a column. `--c` is the tone: an unbounded accuracy figure and a
    detected mock location are the two that must not read as ordinary metadata. */
 .rv-meta__v {
+  flex: 1; min-width: 0;
   font-family: var(--font-mono);
   font-size: var(--t-label);
   color: var(--c, var(--on-surface));

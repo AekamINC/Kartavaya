@@ -423,14 +423,14 @@
    Sizes are left to the shared table so the row height does not move. */
 .rv__n   { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--on-surface-3); width: 26px; }
 .rv__who { min-width: 0; }
-.rv__t   { font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rv__loc { font-size: max(11.5px, calc(var(--font-size-base) * .86)); color: var(--on-surface-2); }
-.rv__v   { white-space: nowrap; }
+.rv__t   { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.rv__loc { display: flex; align-items: center; gap: 5px; font-size: max(11.5px, calc(var(--font-size-base) * .86)); color: var(--on-surface-2); }
+.rv__v   { display: flex; gap: 4px; justify-content: flex-end; white-space: nowrap; }
 
 /* The comparison. `.rv__trip` is one of the four things 07 §"Reuse before you
    create" lists as genuinely new, because no primitive covers it. */
 .rv__trip-cell { width: 176px; }
-.rv__trip { display: flex; gap: 6px; align-items: center; }
+.rv__trip { display: flex; gap: 5px; align-items: center; }
 .rv__slot {
   width: 50px; height: 62px; flex-shrink: 0;
   border: 1px solid var(--outline-variant);
@@ -447,18 +447,31 @@
 .rv-det__row > td { padding: 0; }
 .rv-det {
   display: grid;
-  gap: 24px;
-  padding: 16px 4px 22px;
-  grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+  gap: 18px;
+  padding: 16px 14px;
+  /* A fixed 300px rail, not auto-fit — `pahchan.css:206`. auto-fit let the two
+     halves swap widths as the panel resized, so the metadata column the
+     reviewer reads down was a different width on every row it opened on. The
+     900px breakpoint below still collapses it to one column. */
+  grid-template-columns: minmax(0, 1fr) 300px;
+  background: var(--s-low);
+  border-bottom: 1px solid var(--outline-variant);
+  animation: rvOpen var(--dur-base) var(--ease-enter);
 }
-.rv-meta { margin-top: 4px; }
+@keyframes rvOpen { from { opacity: 0 } to { opacity: 1 } }
+.rv-meta { margin-top: 10px; display: flex; flex-direction: column; gap: 0; }
+/* A dashed rule BELOW each row, not a solid one above — `pahchan.css:218`. The
+   border-top put a line above the first pair, which read as a divider between
+   the photo and the metadata rather than as the metadata's own ruling. */
 .rv-meta__r {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: baseline;
-  padding: 6px 0;
-  border-top: 1px solid var(--outline-variant);
+  padding: 5px 0;
+  font-size: 11px;
+  border-bottom: 1px dashed color-mix(in srgb, var(--outline-variant) 70%, transparent);
 }
+.rv-meta__r:last-child { border-bottom: 0; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    The month calendar — 17-mobile-app.md:129, "month calendar, states, legend".
