@@ -1612,7 +1612,12 @@ input, textarea, select { font-family: inherit; color: inherit; }
    collapses the conjuncts. Reported as a defect in the reference too. */
 .k-pageh__sans {
   font-family: var(--font-hindi);
-  font-size: 0.7em;
+  /* 1em, not 0.7em. In the design source the Devanagari IS the page title —
+     `app.css:144` gives `.ph__hi` font-size 1em and `.ph__en` .56em — so
+     कर्तव्य carries the heading and TASKS sits beside it as a label. We had it
+     at 0.7em behind a 44px English headline, which inverts the whole bilingual
+     idea the product is built on. */
+  font-size: 1em;
   letter-spacing: normal;
   color: var(--primary-text);
   font-weight: 400;
@@ -1624,6 +1629,19 @@ input, textarea, select { font-family: inherit; color: inherit; }
      continuous shirorekha and any tracking opens gaps in it. Same leak, same
      reset, as `.bd__cn-hi` in boards.css and `.k-stat__hi` above. */
   letter-spacing: normal;
+}
+/* The English companion beside the Devanagari title. Mirrors `.ph__en` in the
+   design source (app.css:145): .56em, uppercase, tracked open, in the UI face
+   and the muted ink — a label, not a headline. `--font-ui` deliberately: the
+   display serif belongs to the Devanagari here. */
+.k-pageh__en {
+  font-family: var(--font-ui);
+  font-size: 0.56em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  white-space: nowrap;
 }
 .k-pageh__lede {
   font-size: 14px;

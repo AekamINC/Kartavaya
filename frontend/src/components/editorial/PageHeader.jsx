@@ -40,8 +40,23 @@ export default function PageHeader({ kicker, title, sanskrit, lede, right, ...re
     <header className="k-pageh">
       <div className="k-pageh__txt">
         {kicker && <div className="k-pageh__kicker">{kicker}</div>}
+        {/*
+            DEVANAGARI FIRST, and at full size.
+
+            This rendered `{title}` then `{sa}` — English as the headline in the
+            44px display serif, Devanagari beside it at 0.7em. The design source
+            is the other way round and it is not a detail: `Data.jsx:32` is
+            `<span ph__hi>{hi}</span><span ph__en>{en}</span>`, and `app.css:144`
+            sets `.ph__hi` to 1em while `.ph__en` is .56em, uppercase, muted and
+            in the UI face.
+
+            So the Hindi word IS the page title — कर्तव्य TASKS, ग्रह CRM — and
+            the English is a small companion label. We had it inverted, in one
+            shared component, on all twenty pages that use it. That single
+            inversion is most of why the live pages did not read like the
+            design files.
+        */}
         <h1 className="k-pageh__h1">
-          {title}
           {/* lang marks the script change for screen readers and font matching;
               without it a reader pronounces Devanagari with English rules.
 
@@ -59,6 +74,7 @@ export default function PageHeader({ kicker, title, sanskrit, lede, right, ...re
               leading and tracking rules. This only fixes the voice a screen
               reader uses. */}
           {sa && <span className="k-pageh__sans" lang="hi">{sa}</span>}
+          <span className="k-pageh__en">{title}</span>
         </h1>
         {text && <p className="k-pageh__lede">{text}</p>}
       </div>
