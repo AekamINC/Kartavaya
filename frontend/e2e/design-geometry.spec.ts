@@ -67,9 +67,16 @@ const TASKS = Array.from({ length: 6 }, (_, i) => ({
 
 const TEAMS = [{ team_id: 'team1', name: 'Fixture Project', color: '#5BD9CC' }];
 
+/* A BARE ARRAY, not `{data: […]}`. `rows()` accepts both, but the pages read
+   `r.data` directly in several places, and the enveloped form left every list
+   empty — which is why the first version of this file measured three blank
+   pages. The in-process harness returns bare arrays for the same reason. */
 function listBody(rows: unknown[]) {
-  return JSON.stringify({ data: rows, total: rows.length, limit: 200, truncated: false });
+  return JSON.stringify(rows);
 }
+
+/** `useSkeletonGate` holds a table for DELAY(120) + MIN_VISIBLE(220). */
+const SKELETON_MS = 450;
 
 async function stubApi(page: Page) {
   await page.route('**/api/**', route => {
@@ -86,10 +93,12 @@ async function stubApi(page: Page) {
     if (/\/projects\/[^/]+\/columns/.test(url)) return json(listBody(COLUMNS));
     if (/\/teams\/[^/]+\/members/.test(url)) return json(listBody([]));
     if (/\/teams\/[^/]+$/.test(url)) return json(JSON.stringify(TEAMS[0]));
+    if (url.includes('/categories')) return json(listBody([]));
+    if (url.includes('/users')) return json(listBody([{ user_id: 'user_e2e', name: 'E2E User' }]));
     if (url.includes('/teams')) return json(listBody(TEAMS));
     if (url.includes('/tasks')) return json(listBody(TASKS));
 
-    return json(JSON.stringify({ data: [], total: 0, limit: 0, truncated: false }));
+    return json(listBody([]));
   });
 }
 
@@ -142,8 +151,9 @@ test.beforeEach(async ({ page }) => {
  * shipped for a page it cannot reach, which is exactly what happened before
  * this file existed.
  */
-test.fixme('task list rows carry the measured row rhythm', async ({ page }) => {
+test('task list rows carry the measured row rhythm', async ({ page }) => {
   await page.goto('/tasks');
+  await page.waitForTimeout(SKELETON_MS);
   await assertRendered(page, '/tasks');
 
   const row = page.locator('.k-trow').first();
@@ -159,12 +169,12 @@ test.fixme('task list rows carry the measured row rhythm', async ({ page }) => {
     };
   });
 
-  // 54px, NOT the reference's 44. A deliberate departure, recorded in
-  // kartavaya-design.css: 44 is right against the design and still reads as
-  // crowded at this product's row counts, so the tier scale moved up one step
-  // and the default is now the design's own `comfy` row.
-  expect(m.minHeight, 'row min-height').toBe('54px');
-  expect(m.height, 'rendered row height').toBeGreaterThanOrEqual(54);
+  // 66px, NOT the reference's 44. A deliberate departure, recorded in
+  // kartavaya-design.css. 54 was the first attempt and was verified live on
+  // staging before being called still-crowded, so this is the top of the
+  // range asked for: +50% exactly.
+  expect(m.minHeight, 'row min-height').toBe('66px');
+  expect(m.height, 'rendered row height').toBeGreaterThanOrEqual(66);
   expect(m.padLeft, 'outer gutter').toBe('16px');
   expect(m.gap, 'gap between columns').toBe('14px');
 });

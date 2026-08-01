@@ -102,10 +102,11 @@
      it still reads as crowded at real row counts — the design's own screens
      carry six or eight rows and this product's carry ninety.
 
-     54px is not invented: it is the design system's own `comfy` row, so the
-     tier scale below shifts up by one step rather than growing a new number.
-     +23% on the default, inside the 20–50% asked for. */
-  --row-h: 54px;  --pad-page: 28px;  --pad-card: 18px;
+     54px was the first attempt — the design's own `comfy` row, +23%. Verified
+     live on staging at 54px and still called crowded, so this goes to the top
+     of the range asked for rather than another step down the middle: 66px is
+     exactly +50% on the reference's 44. The tier scale moves with it. */
+  --row-h: 66px;  --pad-page: 28px;  --pad-card: 18px;
   --gap-section: 22px;  --gap-tight: 10px;
   --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px;  --sp-4: 16px;
   --sp-5: 20px; --sp-6: 24px; --sp-7: 32px;  --sp-8: 44px;
@@ -142,13 +143,13 @@
 /* Each tier moves up one step with the default above, so the three stay
    distinct and "compact" is still meaningfully tighter than "cozy". */
 [data-density="compact"] {
-  --row-h:40px; --pad-page:18px; --pad-card:12px; --gap-section:14px; --gap-tight:7px;
+  --row-h:48px; --pad-page:18px; --pad-card:12px; --gap-section:14px; --gap-tight:7px;
   --t-body: calc(var(--font-size-base) * .93);      /* 13px @14 */
   --t-body-sm: calc(var(--font-size-base) * .86);   /* 12px @14 */
 }
-[data-density="cozy"]    { --row-h:54px; --pad-page:28px; --pad-card:18px; --gap-section:22px; --gap-tight:10px }
+[data-density="cozy"]    { --row-h:66px; --pad-page:28px; --pad-card:18px; --gap-section:22px; --gap-tight:10px }
 [data-density="comfy"]   {
-  --row-h:64px; --pad-page:38px; --pad-card:24px; --gap-section:30px; --gap-tight:14px;
+  --row-h:76px; --pad-page:38px; --pad-card:24px; --gap-section:30px; --gap-tight:14px;
   --t-body: calc(var(--font-size-base) * 1.07);     /* 15px @14 */
 }
 
