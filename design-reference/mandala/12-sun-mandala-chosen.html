@@ -1,4 +1,4 @@
-<title>Kartavaya — the sun mandala, drawn on</title>
+<title>Kartavaya — the lotus, drawn on</title>
 <style>
   :root{
     --paper:#FFFFFF; --rule:#E8E2D4;
@@ -72,8 +72,8 @@
 
 <div class="pg"><div class="wrap">
 
-<h1>Sun mandala <span class="hi">क</span> — bigger petals, bigger letter</h1>
-<p class="lede">Built from Meditation Mandala <b>8972474</b>, then opened up. The petals were the smallest thing in a drawing that is meant to be a flower — the rays dominated it completely — so the rosette has <b>doubled</b>, a full course of twenty petals now spans the outer band with the rays weaving between them, and क has gone from 26px to <b>46px</b> with an eye wide enough to hold it.<br><br>Everything else is the reference: one colour, one hairline, long <b>curved</b> rays that sweep rather than spoke, and the whole figure <b>drawing itself on</b> stroke by stroke before undrawing. That draw-on is a Lottie trim path; in CSS it is <code>stroke-dashoffset</code> — the same mechanism, so this is the motion itself rather than an impression of it.</p>
+<h1>Lotus <span class="hi">क</span> — petals only</h1>
+<p class="lede">The rays are gone. They were the signature of the source animation and they were still wrong here — even moved into the gaps, a ray sweeping 18 degrees crosses its neighbouring petal's edge on the way out, so the two courses fought however they were phased. <b>The petals are the flower.</b><br><br>What is left: a rosette of ten large lobes with ten smaller between them, a ring, and twenty full petals spanning the outer band, each with a bead in its throat. क at 46px in an eye sized to hold it. One colour, one hairline weight, and the whole figure <b>drawing itself on</b> stroke by stroke before undrawing — a Lottie trim path, which in CSS is <code>stroke-dashoffset</code>, the same mechanism.</p>
 
 <h2>Three timings, one figure</h2>
 <p class="note">Same drawing throughout. Only the pace and the direction of the underlying turn change.</p>
@@ -81,11 +81,9 @@
 
 <h2>How it is built</h2>
 <p class="note" style="max-width:76ch">
-  <b style="color:var(--fg)">Petals inside and out.</b> Ten large lobes with ten smaller between them at the centre, and twenty <b>full</b> petals spanning the outer band — each with a bead in its throat. A first attempt put a small 24-unit fringe at the rim, which read as an edging rather than as structure: the outside still belonged to the rays. These are the outside.<br><br>
-  <b style="color:var(--fg)">The rays weave between them.</b> Offset half a step, so a ray rises out of every gap. Laid over the petals they merely crossed them; in the gaps the two courses interlock and the outer band reads as one piece of drawing. Verified at dead centre — 9 degrees into an 18-degree step.<br><br>
-  <b style="color:var(--fg)">The eye opens to fit the letter.</b> Its radius went from 11 to 32 — क is sized first and the ornament makes room, rather than the letter being shrunk to fit what was already there. At the plate size that is 65px of clear diameter for a 46px letter.<br><br>
-  <b style="color:var(--fg)">The rays curve.</b> Each is sampled along a spiral — radius and angle advance together — so it sweeps as it extends, with the bend easing tighter toward the tip. Straight spokes read as a gear; swept ones read as a sun.<br><br>
-  <b style="color:var(--fg)">Every stroke carries its own length.</b> A ray and a rosette petal differ by nearly six times. One shared dasharray would draw them at wildly different rates and the figure would assemble raggedly, so each element measures itself.
+  <b style="color:var(--fg)">The petals close the edge themselves.</b> Nothing was added at the rim to replace the rays and nothing is needed: twenty petals at 76&ndash;120 sit 7.8 units apart on a 30.8-unit spacing, so they are 25% open and their tips read as a scalloped boundary. An ornament that stops on a hard circle looks cut off; one that stops on petal tips looks finished.<br><br>
+  <b style="color:var(--fg)">The eye opens to fit the letter.</b> Its radius went from 11 to 32 &mdash; क is sized first and the drawing makes room, rather than the letter being shrunk to fit what was already there. At plate size that is 65px of clear diameter for a 46px letter.<br><br>
+  <b style="color:var(--fg)">Every stroke carries its own length.</b> A large petal and a throat bead differ by three times. One shared dasharray would draw them at different rates and the figure would assemble raggedly, so each element measures itself and they all draw in step.
 </p>
 
 </div></div>
@@ -96,27 +94,6 @@
   function el(t, a) { var e = document.createElementNS(NS, t); for (var k in (a||{})) e.setAttribute(k, a[k]); return e; }
   var f = function (n) { return (+n).toFixed(2); };
   var SW = 1.6;   // one pen, everywhere
-
-  /* A curved ray. Radius and angle advance together, so the stroke sweeps as it
-     extends — the detail that makes the reference read as a sun rather than as
-     a gear. Sampled and joined; at this scale the polyline is indistinguishable
-     from a curve and its length is exact, which the draw-on needs. */
-  function ray(a0, r0, r1, sweepDeg, steps) {
-    var d = '', len = 0, px = null, py = null;
-    steps = steps || 14;
-    for (var i = 0; i <= steps; i++) {
-      var t = i / steps;
-      // Ease the sweep so the bend tightens toward the tip, as it does in the
-      // reference — a constant rate gives a lazy arc.
-      var a = a0 + (sweepDeg * Math.pow(t, 1.35)) * Math.PI / 180;
-      var r = r0 + (r1 - r0) * t;
-      var x = Math.cos(a) * r, y = Math.sin(a) * r;
-      if (px !== null) len += Math.hypot(x - px, y - py);
-      d += (i ? 'L' : 'M') + f(x) + ',' + f(y);
-      px = x; py = y;
-    }
-    return { d: d, len: len };
-  }
 
   /* A rounded lobe — the small petals of the centre rosette. */
   function lobe(r0, r1, w) {
@@ -202,16 +179,18 @@
       bd.setAttribute('transform', 'rotate(' + f(m * (360 / OUT)) + ')');
     }
 
-    // ── the rays, weaving BETWEEN the petals ──
-    // Offset half a step so a ray rises out of every gap. Laid over the petals
-    // they merely crossed them; in the gaps the two courses interlock, which is
-    // what makes the outer band read as one piece of drawing.
-    var N = 20;
-    for (var k = 0; k < N; k++) {
-      var a = (TAU / N) * k - Math.PI / 2 + (Math.PI / N);
-      var lng = ray(a, 74, 126, 18);
-      stroke(slow, lng.d, lng.len, D(), dur);
-    }
+    // The rays are GONE.
+    //
+    // They were the signature of the source animation, and they were still
+    // wrong here. Even moved into the gaps they crowded the outer petals —
+    // a ray sweeping 18 degrees crosses the neighbouring petal's edge on its
+    // way out, so the two courses fought however they were phased. The petals
+    // are the flower; the rays were competing with it.
+    //
+    // The figure closes on the petal tips instead. Nothing is needed out
+    // there: twenty petals at 76-120 sit 7.8 units apart on a 30.8-unit
+    // spacing, so they very nearly touch and their tips read as a scalloped
+    // edge on their own.
     return s;
   }
 
