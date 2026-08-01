@@ -93,6 +93,13 @@ export default function TasksListPage() {
   const [colsOpen,     setColsOpen]     = useState(false);
   const [visible,      setVisible]      = useState(DEFAULT_VISIBLE);
   const [showArchived, setShowArchived] = useState(false);
+  const [page,         setPage]         = useState(1);
+  /* Persisted, because it is a workspace preference rather than a per-visit
+     choice — the same reasoning as the stored column widths. */
+  const [pageSize,     setPageSize]     = useState(() => {
+    const n = Number(localStorage.getItem('kv.taskslist.pagesize'));
+    return [25, 50, 100].includes(n) ? n : 25;
+  });
   // A FAILED LOAD IS NOT AN EMPTY LIST. `/tasks` rejecting used to land in a
   // `catch` that pushed one toast and left `tasks` at `[]` — so the table drew
   // its own zero state, "No tasks match this filter", under four filter tabs
@@ -188,6 +195,12 @@ export default function TasksListPage() {
 
   // Reload when switching archived view
   useEffect(() => { load(showArchived); }, [showArchived]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Back to page 1 whenever the LIST ITSELF changes. Without this, narrowing a
+     45-row list to 3 while sitting on page 2 shows an empty table over a pager
+     that says there is nothing to page to — the classic "my search returned
+     nothing" bug that is really "you are on page 2 of 1". */
+  useEffect(() => { setPage(1); }, [search, filter, group, showArchived]);
 
   /**
    * Archive and restore both REMOVE the row from the view they were pressed in,
@@ -308,6 +321,31 @@ export default function TasksListPage() {
       if (items.length) groups.push({ key: s, title: STATUS_LABELS[s], sans: STATUS_LABELS_HI[s], color: STATUS_COLORS[s], items });
     });
   }
+
+  /* ── Pagination ───────────────────────────────────────────────────────────
+     Ninety rows on one screen is the crowding, not the row height — 54px rows
+     make a long list taller, not calmer. Scrolling a page is fine; scrolling
+     the whole table is what stops anyone finding anything.
+
+     Paginated over the FLAT order and then regrouped, NOT per group. Slicing
+     each group independently would show "MEDIUM 47" above three rows on page 1
+     and the same header again on pages 2 and 3 — three headers claiming the
+     same 47. Flattening first means a page is a contiguous run of the list you
+     are already looking at, and a group header appears on a page only if that
+     page actually contains some of its rows.
+
+     The header count stays the group's TOTAL. It answers "how many are
+     MEDIUM", which does not change because you turned a page. */
+  const flat = groups.flatMap(g => g.items.map(item => ({ gkey: g.key, item })));
+  const totalRows = flat.length;
+  const pageCount = Math.max(1, Math.ceil(totalRows / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pageStart = (safePage - 1) * pageSize;
+  const pageSlice = flat.slice(pageStart, pageStart + pageSize);
+
+  const pagedGroups = groups
+    .map(g => ({ ...g, total: g.items.length, items: pageSlice.filter(r => r.gkey === g.key).map(r => r.item) }))
+    .filter(g => g.items.length > 0);
 
   const filterCounts = {
     mine:    tasks.filter(t => (t.user_id === myId || t.assignee_user_ids?.includes(myId)) && t.status !== 'done').length,
@@ -478,7 +516,7 @@ export default function TasksListPage() {
             </div>
           )}
 
-          {groups.map(g => (
+          {pagedGroups.map(g => (
             <div key={g.key} className="k-group">
               <div className="k-group__head" style={{ '--group-color': g.color }}>
                 <span className="k-group__bar" />
@@ -490,7 +528,7 @@ export default function TasksListPage() {
                     but the guard is keyed on the attribute and this span did
                     not carry it. */}
                 {g.sans && <span className="k-group__sans" lang="hi">{g.sans}</span>}
-                <span className="k-group__count">{g.items.length}</span>
+                <span className="k-group__count">{g.total}</span>
               </div>
               {g.items.map(t => {
                 const team      = teams.find(tm => tm.team_id === t.team_id);
@@ -689,6 +727,59 @@ export default function TasksListPage() {
               })}
             </div>
           ))}
+
+          {/* The pager. Rendered only when there is more than one page — a
+              control that can never do anything is noise, and on a 12-task
+              workspace this table should look exactly as it did before. */}
+          {totalRows > 0 && pageCount > 1 && (
+            <div className="k-pager">
+              <span className="k-pager__count">
+                {pageStart + 1}–{Math.min(pageStart + pageSize, totalRows)}
+                <span className="k-pager__of"> of </span>
+                {totalRows}
+              </span>
+              <div className="k-pager__nav">
+                <button
+                  type="button" className="k-pager__b"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  aria-label="Previous page"
+                >
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10 12L6 8l4-4"/></svg>
+                </button>
+                {/* aria-live so a screen reader hears the page change; the
+                    buttons themselves give no feedback once pressed. */}
+                <span className="k-pager__pos" aria-live="polite">
+                  {safePage} / {pageCount}
+                </span>
+                <button
+                  type="button" className="k-pager__b"
+                  onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                  disabled={safePage >= pageCount}
+                  aria-label="Next page"
+                >
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 4l4 4-4 4"/></svg>
+                </button>
+              </div>
+              <label className="k-pager__size">
+                <span className="k-pager__size-l">Rows</span>
+                <select
+                  className="k-pager__sel"
+                  value={pageSize}
+                  onChange={e => {
+                    const n = Number(e.target.value);
+                    setPageSize(n);
+                    try { localStorage.setItem('kv.taskslist.pagesize', String(n)); } catch (_) {}
+                    setPage(1);
+                  }}
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </label>
+            </div>
+          )}
         </div>
       )}
 

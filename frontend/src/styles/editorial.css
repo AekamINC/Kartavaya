@@ -4502,3 +4502,56 @@ select.k-formpanel__input { appearance: none;
 .k-c-due      { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .k-c-updated  { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--ink-3); font-size: 12px; }
 .k-c-status   { justify-content: flex-start; flex-shrink: 0; }
+
+/* ── Table pager ────────────────────────────────────────────────────────────
+   The list is paginated rather than scrolled to ninety rows — 54px rows make a
+   long table taller, not calmer, and the crowding was always the row COUNT.
+
+   Sticky to the bottom of the scroll container so the control does not walk off
+   screen on the last page, which is the one place it is most needed. It sits
+   OUTSIDE `.k-table__body`'s rows, so it takes the page ground rather than the
+   row ground and never reads as a row itself. */
+.k-pager {
+  position: sticky; bottom: 0; z-index: 3;
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--rule);
+  background: var(--bg);
+  font-size: var(--t-label);
+  color: var(--ink-3);
+}
+.k-pager__count { font-variant-numeric: tabular-nums; }
+.k-pager__of { color: var(--ink-3); opacity: .7; }
+.k-pager__nav { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.k-pager__b {
+  display: grid; place-items: center;
+  /* 28px, not the icon's 13 — WCAG 2.5.8 wants 24 minimum and these two sit
+     4px apart, so undersized targets here would overlap each other's slop. */
+  width: 28px; height: 28px;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--ink-2); cursor: pointer;
+  transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
+}
+.k-pager__b:hover:not(:disabled) { background: var(--s-container); color: var(--ink); }
+.k-pager__b:disabled { opacity: .38; cursor: default; }
+.k-pager__b:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.k-pager__pos {
+  min-width: 54px; text-align: center;
+  font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink-2);
+}
+.k-pager__size { display: flex; align-items: center; gap: 7px; }
+.k-pager__size-l { font-size: var(--t-label); color: var(--ink-3); }
+.k-pager__sel {
+  padding: 4px 8px; border-radius: var(--r-sm);
+  border: 1px solid var(--outline-variant); background: var(--surface);
+  font: inherit; font-size: var(--t-label); color: var(--ink-2); cursor: pointer;
+}
+.k-pager__sel:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* Below 560px the row count and the size picker both drop: the page position
+   and the two arrows are what you cannot operate the table without. */
+@media (max-width: 560px) {
+  .k-pager { gap: 10px; padding: 9px 12px; }
+  .k-pager__count, .k-pager__size { display: none; }
+  .k-pager__nav { margin-left: 0; width: 100%; justify-content: space-between; }
+}
