@@ -210,15 +210,29 @@ textarea.inp { resize: vertical; min-height: 76px; }
 .tabs__bar { position: relative; border-bottom: 1px solid var(--outline-variant); }
 .tabs__list { display: flex; gap: 0; overflow-x: auto; scrollbar-width: none; }
 .tabs__list::-webkit-scrollbar { display: none; }
+/* `app.css:132`, minus its `border-bottom: 2px solid transparent`. The
+   reference marks the active tab with a per-button bottom border; this build
+   marks it with `.tabs__ind`, one absolutely-positioned bar that slides between
+   tabs — the behaviour the reference's own IxDrawer notes describe as what
+   staging already has. Porting the border would draw a second, static underline
+   underneath the sliding one. Everything else is the reference's: the tighter
+   13px gutters, 600 on the label, the 40px row, and `flex-shrink: 0` so a full
+   tab bar scrolls instead of squeezing. */
 .tabs__b {
-  position: relative; padding: 10px 16px; white-space: nowrap;
-  font-family: inherit; font-size: var(--t-body-sm); font-weight: 500;
+  position: relative;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 13px; min-height: 40px; flex-shrink: 0; white-space: nowrap;
+  font-family: inherit; font-size: var(--t-body-sm); font-weight: 600;
   background: none; border: none; cursor: pointer; outline: none;
   color: var(--on-surface-3);
-  transition: color var(--dur-fast) var(--ease-standard);
+  transition: color var(--dur-fast), border-color var(--dur-fast), background var(--dur-fast);
 }
-.tabs__b:hover { color: var(--on-surface); }
-.tabs__b.on    { color: var(--primary-text); }
+.tabs__b:hover { color: var(--on-surface); background: color-mix(in srgb, var(--s-container) 60%, transparent); }
+/* The ACTIVE tab is page ink, not primary — the indicator carries the colour.
+   A coloured label plus a coloured bar states the same thing twice, and it left
+   the selected tab as the only label in the bar that could not be read against
+   a hover tint. */
+.tabs__b.on    { color: var(--on-surface); }
 .tabs__b:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; border-radius: var(--r-xs); }
 .tabs__label { display: flex; align-items: center; gap: 6px; }
 
@@ -228,8 +242,11 @@ textarea.inp { resize: vertical; min-height: 76px; }
    inbox independently.
 
    Muted and a step down in weight, because it is the same word rather than a
-   second one; and it follows the tab's own colour when active, since a fixed
-   `--on-surface-3` sitting beside `--primary-text` reads as a disabled twin.
+   second one. Active, it goes to `--primary-text` (`app.css:137`) — that used
+   to be `inherit` at .8 to avoid a coloured sub-label sitting beside a coloured
+   label, which stopped being a problem when the active tab's own label moved to
+   `--on-surface` above. It is now the one coloured thing in the tab, and it
+   agrees with the indicator underneath.
    `--font-hindi`, not `--font-indic`: these are fixed Devanagari labels from
    the designer's own TAB_HI map, not strings that follow the language setting
    (24 §watermark exception). */
@@ -239,7 +256,7 @@ textarea.inp { resize: vertical; min-height: 76px; }
   font-weight: 400;
   color: var(--on-surface-3);
 }
-.tabs__b.on .tabs__hi { color: inherit; opacity: .8; }
+.tabs__b.on .tabs__hi { color: var(--primary-text); }
 
 .tabs__n {
   display: inline-flex; align-items: center; justify-content: center;

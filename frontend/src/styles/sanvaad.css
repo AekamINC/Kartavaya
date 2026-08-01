@@ -262,7 +262,11 @@
    rules from the label — not the English word from its Devanagari partner. */
 .sv__sep-t { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
 
-.msg { display: flex; gap: 10px; padding: 3px 18px; position: relative; }
+/* Grid, not flex — `app.css:330`. The two are interchangeable for an ordinary
+   message, but `.msg--gone` below has wanted `grid-template-columns: 1fr` since
+   it was written, and a flex parent gave it nothing to override: the tombstone
+   kept the avatar column it is supposed to collapse. */
+.msg { display: grid; grid-template-columns: auto 1fr; gap: 11px; padding: 3px 18px; position: relative; }
 .msg:hover { background: var(--s-lowest); }
 /* Consecutive-message grouping, which the old page did not have: a burst of
    five messages from one person cost five avatars and five names.
@@ -322,7 +326,7 @@
 .msg__av { flex-shrink: 0; font-weight: 700; }
 .msg__c { min-width: 0; flex: 1; }
 .msg__hd { display: flex; align-items: baseline; gap: 8px; }
-.msg__who { font-size: var(--t-body-sm); font-weight: 700; color: var(--on-surface); }
+.msg__who { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); }
 /* `--on-surface-3`, not `--on-surface-faint`: 00 §12 marks faint "non-text
    only" and 00 §"--on-surface-faint is not a text colour" aliases it to
    `--on-surface-3` anyway, so this is the same paint under the name that is
@@ -345,7 +349,7 @@
    timestamp, because none of them belong to a message that is gone. The build
    rendered "Message deleted" inside the ordinary body, so a tombstone still
    cost the whole two-column grid. */
-.msg--gone { padding-top: 5px; padding-bottom: 5px; }
+.msg--gone { grid-template-columns: 1fr; padding-top: 5px; padding-bottom: 5px; }
 .msg__tomb {
   display: inline-flex;
   align-items: center;
@@ -406,10 +410,11 @@
    `ScreensSanvaad.jsx` renders it: `m.cont ? <span className="msg__gut">{m.t}</span>
    : <Av s={30} />`. It occupies the hidden avatar's slot, so nothing shifts. */
 .msg__gut {
-  width: 32px;
+  width: 30px;
   flex-shrink: 0;
   text-align: right;
-  padding-top: 2px;
+  padding-top: 3px;
+  font-family: var(--font-mono);
   font-size: var(--t-label-sm);
   font-variant-numeric: tabular-nums;
   color: transparent;
@@ -820,13 +825,16 @@
    actually named after never said its own name. This is `ScreensVarta.jsx`'s
    `wahdr`, and it is the declared call site for `--wa-green` (00 §9), which
    until now was a token with no user anywhere in the tree. */
+/* A card, not an underline — `app.css:506`. */
 .wahdr {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  padding: 0 0 var(--sp-3);
+  gap: 11px;
+  padding: 11px 14px;
   margin-bottom: var(--sp-3);
-  border-bottom: 1px solid var(--outline-variant);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  background: var(--s-low);
 }
 .wahdr__ic {
   display: grid;
@@ -835,10 +843,13 @@
   height: 32px;
   flex-shrink: 0;
   border-radius: var(--r-sm);
-  /* The brand mark, on its own tint rather than on the page — 00 §9 keeps
-     `--wa-green` fixed because it "encodes something external to our palette". */
-  background: color-mix(in srgb, var(--wa-green) 14%, transparent);
-  color: var(--wa-green);
+  /* SOLID brand green with a white glyph, not a 14% wash of it — `app.css:510`
+     prints #1FA855 on #fff, which is what --wa-green already resolves to. The
+     tint was the readable-token instinct applied to the one colour in the
+     system that is not ours to soften: it encodes an external brand, and a
+     washed-out WhatsApp green stops reading as WhatsApp. */
+  background: var(--wa-green);
+  color: #fff;
 }
 .wahdr__t { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; min-width: 0; }
 .wahdr__n { font-size: var(--t-title); font-weight: 700; color: var(--on-surface); }
@@ -1120,9 +1131,13 @@
 /* `MESSAGING-ATTENDANCE-SPEC.md:20` — "no avatar, a module glyph, and a muted
    tonal background". The glyph square stands in the avatar's column so the row
    still aligns with every human message around it. */
+/* 30px, not 32: `app.css:437`. The colour is NOT the reference's — it prints a
+   flat --s-container / --on-surface-3, and the per-module `--glyph` tint is the
+   only thing that says WHICH module posted a system message. Geometry from the
+   reference, identity kept. */
 .msg--sys .msg__glyph {
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
@@ -1138,14 +1153,19 @@
   letter-spacing: .04em;
   color: var(--on-surface-3);
 }
+/* A left rule, not a box — `app.css:438`. The boxed version put a second
+   bordered rectangle inside a message row that is already a bordered card on
+   some surfaces; the 2px rule reads as "the system said this" without adding a
+   frame, and the radius follows it by squaring the two left corners. */
 .msg__sysb {
   margin-top: 3px;
-  padding: 8px 11px;
-  border-radius: var(--r-md);
+  padding: 9px 12px;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
   background: var(--s-low);
-  border: 1px solid var(--outline-variant);
+  border-left: 2px solid var(--outline);
   font-size: var(--t-body-sm);
-  line-height: 1.55;
+  line-height: 1.5;
+  text-wrap: pretty;
   color: var(--on-surface-2);
 }
 .msg__sysa {
