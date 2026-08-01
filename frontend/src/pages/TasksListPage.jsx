@@ -609,21 +609,37 @@ export default function TasksListPage() {
                               {team ? <ProjectTag name={team.name} dense /> : <span className="k-trow__empty">—</span>}
                             </div>
                           );
-                        case 'assignees':
+                        /* ONE assignee gets a named pill; TWO OR MORE collapse
+                           to initials only.
+
+                           Named pills do not fit side by side in this column,
+                           so three of them wrapped onto three lines and took
+                           the row to roughly four times the height of every
+                           other row in the table — which is most of why a
+                           uniform 44px list reads as ragged. Initials keep the
+                           row at 44px and still name everyone on hover. */
+                        case 'assignees': {
+                          const solo = assignees.length === 1;
                           return (
                             <div key="assignees" className="k-trow__cell k-c-assignees">
                               {assignees.length === 0
                                 ? <span className="k-trow__empty">—</span>
                                 : assignees.slice(0, 3).map((a, j) => (
-                                    <span key={j} className="k-assignee-pill" style={{ '--av-c': a.color }}>
+                                    <span
+                                      key={j}
+                                      className={solo ? 'k-assignee-pill' : 'k-assignee-pill k-assignee-pill--initial'}
+                                      style={{ '--av-c': a.color }}
+                                      title={solo ? undefined : a.name}
+                                    >
                                       <span className="k-assignee-pill__avatar">{userInitials(a.name)}</span>
-                                      <span className="k-assignee-pill__name">{a.name}</span>
+                                      {solo && <span className="k-assignee-pill__name">{a.name}</span>}
                                     </span>
                                   ))
                               }
                               {assignees.length > 3 && <span className="k-assignee-pill__more">+{assignees.length - 3}</span>}
                             </div>
                           );
+                        }
                         case 'category':
                           return (
                             <div key="category" className="k-trow__cell k-c-category">

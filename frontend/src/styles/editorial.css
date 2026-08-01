@@ -2036,7 +2036,12 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-trow__attach { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--ink-3); flex-shrink: 0; margin-left: 4px; }
 .k-trow__due { font-size: 12px; color: var(--ink-3); }
 
-.k-c-assignees { flex-direction: column; align-items: flex-start; gap: 5px; overflow: visible; }
+/* A ROW, not a column. Stacking named pills vertically is what let one task
+   with three assignees stand four rows tall in a table whose every other row is
+   44px — the single biggest reason a uniform list reads as ragged. Two or more
+   assignees now render as initials (`--initial` below), which fit side by side,
+   so the row keeps its height and the column keeps its width. */
+.k-c-assignees { flex-direction: row; align-items: center; gap: 5px; overflow: visible; min-width: 0; }
 
 .k-assignee-pill {
   display: inline-flex; align-items: center; gap: 6px;
@@ -2059,8 +2064,16 @@ input, textarea, select { font-family: inherit; color: inherit; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   min-width: 0;
 }
+/* The multi-assignee form: the avatar only, and the pill shrinks to it. The
+   name still reaches a mouse via `title` and a screen reader via the initials'
+   own label, so nothing is lost but the width. */
+.k-assignee-pill--initial {
+  padding: 2px;
+  gap: 0;
+  flex-shrink: 0;
+}
 .k-assignee-pill__more {
-  font-size: 11px; color: var(--ink-3); padding-left: 2px;
+  font-size: 11px; color: var(--ink-3); padding-left: 2px; flex-shrink: 0;
 }
 
 /* Resize handle */

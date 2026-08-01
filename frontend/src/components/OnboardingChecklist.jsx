@@ -42,6 +42,30 @@ export default function OnboardingChecklist({ onNewTask }) {
   const [loaded, setLoaded] = useState(false);
   const [steps, setSteps] = useState({ project: false, invite: false, task: false, org: false });
 
+  /* ── An unbounded fetch loop lived here ───────────────────────────────────
+     `currentUser()` is `JSON.parse(localStorage…)` (`lib/auth.js:145`), so `me`
+     is a BRAND NEW OBJECT on every render. `refresh` listed it in its
+     `useCallback` deps, so `refresh` was a new function on every render; the
+     effect below listed `refresh` in ITS deps, so the effect re-ran on every
+     render; `refresh` ends in `setSteps` + `setLoaded`, which renders again.
+     Nothing broke the cycle.
+
+     `AppShell:501` mounts this on EVERY authenticated page, so the cycle ran
+     for every signed-in user on every screen, three requests a turn:
+     `/teams`, `/users`, `/tasks`.
+
+     MEASURED, with 80ms of latency on every response so a fast stub could not
+     be the explanation: 209 requests in 8.0s on /boards, 251 on /tasks, 212 on
+     /dashboard — roughly 24 requests per second, per open tab, indefinitely.
+     Against the Supabase project staging and production share.
+
+     The fix is to depend on a STRING instead of an object. `org_name` is the
+     only thing `me` contributes, and `useCallback` compares deps with Object.is
+     — a string that has not changed keeps `refresh` stable, so the effect runs
+     once per `dismissed` change, which is what it always meant to do. */
+  const orgRole = me?.org_roles?.find(r => r.role_code === 'org_admin' || r.role_code === 'org_owner') || me?.org_roles?.[0];
+  const orgName = (orgRole?.org_name || '').trim();
+
   const refresh = useCallback(async () => {
     const [projectsRes, usersRes, tasksRes] = await Promise.all([
       api.get('/teams').catch(() => null),
@@ -51,16 +75,15 @@ export default function OnboardingChecklist({ onNewTask }) {
     const projects = Array.isArray(projectsRes?.data) ? projectsRes.data : [];
     const users = Array.isArray(usersRes?.data) ? usersRes.data : [];
     const tasks = Array.isArray(tasksRes?.data) ? tasksRes.data : [];
-    const orgRole = me?.org_roles?.find(r => r.role_code === 'org_admin' || r.role_code === 'org_owner') || me?.org_roles?.[0];
 
     setSteps({
       project: projects.length > 0,
       invite: users.length > 1,
       task: tasks.length > 0,
-      org: !!(orgRole?.org_name && orgRole.org_name.trim()),
+      org: !!orgName,
     });
     setLoaded(true);
-  }, [me]);
+  }, [orgName]);
 
   useEffect(() => { if (!dismissed) refresh(); }, [dismissed, refresh]);
 
