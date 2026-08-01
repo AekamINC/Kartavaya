@@ -355,11 +355,20 @@
    `--r-sm` is kept rather than raised to the cards' `--r-md`: a note is a
    smaller block than a card and the scale is deliberate. The border is what it
    was missing, not the radius. */
-.note          { padding: 11px 13px; border-radius: var(--r-sm); font-size: 12px; line-height: 1.55; background: var(--s-container); color: var(--on-surface-2); border: 1px solid var(--outline-variant); }
+/* `display: flex` is the one thing `app.css:597` sets that is NOT ported. The
+   reference note is two children — an icon span and a body span — and every
+   note in this build is a bare `<b>lede</b> rest of sentence`, where a flex
+   container makes the bold run and the text after it two side-by-side columns
+   with a 9px gutter. The padding and the tone mixes below are the reference's;
+   the layout is not, because the markup underneath it is not. */
+.note          { padding: 10px 12px; border-radius: var(--r-sm); font-size: 12px; line-height: 1.55; background: var(--s-container); color: var(--on-surface-2); border: 1px solid var(--outline-variant); text-wrap: pretty; }
 .note--info    { background: var(--primary-container); color: var(--on-primary-container); border-color: color-mix(in srgb, var(--primary) 26%, var(--outline-variant)); }
 .note--ok      { background: var(--ok-container); color: var(--on-ok-container); border-color: color-mix(in srgb, var(--ok) 26%, var(--outline-variant)); }
-.note--warn    { background: var(--warn-container); color: var(--warn); border-color: color-mix(in srgb, var(--warn) 26%, var(--outline-variant)); }
-.note--danger  { background: var(--danger-container); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 26%, var(--outline-variant)); }
+/* The tone at full strength on its own container is the weakest text in the
+   system; `app.css:601-602` mixes it 82% toward the page ink instead, which is
+   what makes a warning note read as text rather than as a coloured smear. */
+.note--warn    { background: var(--warn-container); color: color-mix(in srgb, var(--warn) 82%, var(--on-surface)); border-color: color-mix(in srgb, var(--warn) 26%, var(--outline-variant)); }
+.note--danger  { background: var(--danger-container); color: color-mix(in srgb, var(--danger) 82%, var(--on-surface)); border-color: color-mix(in srgb, var(--danger) 26%, var(--outline-variant)); }
 .note b        { font-weight: 600; }
 
 /* ══════════════════════════════════════════════════════════════════════════

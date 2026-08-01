@@ -502,7 +502,7 @@
 
 /* ── Reaction chips ──────────────────────────────────────────────────────── */
 
-.rx { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.rx { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
 .rx__c {
   display: inline-flex;
   align-items: center;
