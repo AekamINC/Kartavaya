@@ -1,0 +1,291 @@
+<title>Kartavaya — ten fine-line mandalas</title>
+<style>
+  :root{
+    --paper:#FFFFFF; --rule:#E8E2D4;
+    --primary:#04837A; --primary-vivid:#0AA396;
+    --page:#0D0C09; --fg:#EDE8DC; --fg-2:#98917F; --hair:#26221B;
+    --display:Georgia,'Times New Roman',serif;
+    --ui:'Segoe UI',system-ui,-apple-system,sans-serif;
+    --hindi:'Nirmala UI','Noto Serif Devanagari','Noto Sans Devanagari','Mangal',serif;
+  }
+  @media (prefers-color-scheme: light){:root{--page:#EDE7DA;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}}
+  :root[data-theme="dark"]{--page:#0D0C09;--fg:#EDE8DC;--fg-2:#98917F;--hair:#26221B}
+  :root[data-theme="light"]{--page:#EDE7DA;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}
+
+  *{box-sizing:border-box}
+  .pg{background:var(--page);color:var(--fg);font-family:var(--ui);padding:44px 24px 90px;
+      min-height:100vh;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1240px;margin:0 auto}
+  h1{font-family:var(--display);font-weight:400;font-size:clamp(27px,4.6vw,38px);margin:0 0 12px;
+     letter-spacing:-.022em;text-wrap:balance}
+  h1 .hi{font-family:var(--hindi);color:var(--primary-vivid);font-size:.68em}
+  .lede{margin:0;color:var(--fg-2);font-size:14.5px;max-width:72ch;line-height:1.7}
+  .lede b{color:var(--fg);font-weight:600}
+  h2{font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--fg-2);
+     border-top:1px solid var(--hair);padding-top:15px;margin:50px 0 8px}
+  .note{color:var(--fg-2);font-size:13px;margin:0 0 26px;max-width:74ch;line-height:1.65}
+  .grid{display:flex;flex-wrap:wrap;gap:26px}
+  .pc{width:228px}
+  .plate{height:228px;border-radius:6px;background:var(--paper);border:1px solid var(--hair);
+         display:grid;place-items:center;position:relative;overflow:hidden}
+  .plate .ka{position:absolute;font-family:var(--hindi);font-size:23px;line-height:1;color:var(--primary);
+             user-select:none;z-index:4;
+             text-shadow:0 0 12px #fff,0 0 7px #fff,0 0 4px #fff,0 0 2px #fff}
+  svg.ln{display:block;position:absolute}
+  svg.ln *{transform-box:fill-box;transform-origin:center}
+  .cap{margin-top:11px}
+  .cap .nm{font-family:var(--display);font-size:15.5px}
+  .cap .src{font-size:10px;color:var(--fg-2);letter-spacing:.08em;text-transform:uppercase;margin-top:3px;
+            font-variant-numeric:tabular-nums}
+  .cap p{margin:6px 0 0;font-size:12px;color:var(--fg-2);line-height:1.55}
+
+  /* Alternate courses turn opposite ways. Nothing fades, nothing vanishes —
+     the figure is whole at every instant, which is what the reference set does
+     and what a loader needs. */
+  .cw {animation:spin var(--t,44s) linear infinite}
+  .ccw{animation:spinR var(--t,44s) linear infinite}
+  @keyframes spin {to{transform:rotate(360deg)}}
+  @keyframes spinR{to{transform:rotate(-360deg)}}
+  /* A slow breath, so a static-looking figure still reads as alive. */
+  .br{animation:breathe 5.2s ease-in-out infinite}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}
+
+  @media (prefers-reduced-motion:reduce){ .plate *{animation:none!important} }
+</style>
+
+<div class="pg"><div class="wrap">
+
+<h1>Ten fine-line mandalas <span class="hi">क</span></h1>
+<p class="lede">The reference set is the <b>opposite</b> of what I had been building. Every one of those is a <b>single hairline weight in a single solid colour</b> — no weight hierarchy, no tonal layers, no opacity fading. I had been treating weight hierarchy as a virtue, and it is exactly what made mine read as designed graphics rather than as drawn line art. The other difference is count: those outer rings carry <b>forty to eighty</b> tiny elements, not sixteen.<br><br>So: one weight, one colour, high counts, circular rim. क in the middle of each.</p>
+
+<h2>The ten</h2>
+<p class="note">Alternate courses turn opposite ways and nothing fades out, so the figure is complete at every instant — which is what makes these work as loaders rather than as decorations that occasionally disappear.</p>
+<div class="grid" id="plates"></div>
+
+<h2>The three rules I got wrong before</h2>
+<p class="note" style="max-width:76ch">
+  <b style="color:var(--fg)">One stroke weight.</b> Every line in the reference is the same hairline. I had structural circles at 1.4 and lace at 0.42, which is textbook advice and wrong here — uniform weight is what makes a mandala read as drawn with one pen.<br><br>
+  <b style="color:var(--fg)">One colour, full strength.</b> No opacity ramp. I had been fading outer courses to 0.32, which greys the drawing and kills the crispness.<br><br>
+  <b style="color:var(--fg)">Counts of 40–80.</b> Fine repetition IS the texture. At sixteen you get a flower; at sixty you get lace.
+</p>
+
+</div></div>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg', TAU = Math.PI * 2;
+  function el(t, a) { var e = document.createElementNS(NS, t); for (var k in (a||{})) e.setAttribute(k, a[k]); return e; }
+  var f = function (n) { return (+n).toFixed(2); };
+
+  /* ── one pen ─────────────────────────────────────────────────────────────
+     Every primitive below draws at the SAME width and the SAME opacity. That
+     is the rule the reference set follows and the one I broke: uniform weight
+     is what makes a mandala look drawn rather than designed. */
+  var SW = 1.15;
+
+  function path(g, d, fill) {
+    g.appendChild(el('path', { d: d, fill: fill ? 'currentColor' : 'none', stroke: 'currentColor',
+      'stroke-width': SW, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+  }
+  function circ(g, cx, cy, r, fill) {
+    g.appendChild(el('circle', { cx: f(cx), cy: f(cy), r: f(r),
+      fill: fill ? 'currentColor' : 'none', stroke: fill ? 'none' : 'currentColor',
+      'stroke-width': SW }));
+  }
+  // Radiating spokes, optionally with a bead at the outer end.
+  function spokes(g, n, r0, r1, bead) {
+    for (var i = 0; i < n; i++) {
+      var a = (TAU/n)*i - Math.PI/2;
+      g.appendChild(el('line', { x1: f(Math.cos(a)*r0), y1: f(Math.sin(a)*r0),
+        x2: f(Math.cos(a)*r1), y2: f(Math.sin(a)*r1),
+        stroke: 'currentColor', 'stroke-width': SW, 'stroke-linecap': 'round' }));
+      if (bead) circ(g, Math.cos(a)*(r1 + bead*1.6), Math.sin(a)*(r1 + bead*1.6), bead, 1);
+    }
+  }
+  // A rim of arcs — the lace edge that appears on nearly every reference plate.
+  function lace(g, n, r, depth) {
+    var d = '', step = TAU/n;
+    for (var i = 0; i < n; i++) {
+      var a0 = step*i - Math.PI/2, a1 = a0 + step;
+      d += 'M' + f(Math.cos(a0)*r) + ',' + f(Math.sin(a0)*r) +
+           'A' + f(r*depth) + ',' + f(r*depth) + ' 0 0 1 ' + f(Math.cos(a1)*r) + ',' + f(Math.sin(a1)*r);
+    }
+    path(g, d);
+  }
+  // A serrated rim — fine teeth, the other common edge.
+  function teeth(g, n, r, h) {
+    var d = '', step = TAU/n;
+    for (var i = 0; i < n; i++) {
+      var a = step*i - Math.PI/2, b = a + step/2, c = a + step;
+      d += 'M' + f(Math.cos(a)*r) + ',' + f(Math.sin(a)*r) +
+           'L' + f(Math.cos(b)*(r+h)) + ',' + f(Math.sin(b)*(r+h)) +
+           'L' + f(Math.cos(c)*r) + ',' + f(Math.sin(c)*r);
+    }
+    path(g, d);
+  }
+  // Small repeated petals. Width derived from the ring so they sit right at
+  // any count — at 60 they are threads, at 12 they are leaves.
+  function petals(g, n, r0, r1, fullness, rot) {
+    var rm = (r0+r1)/2, w = (TAU*rm/n) * (fullness == null ? .40 : fullness), s = r1-r0;
+    for (var i = 0; i < n; i++) {
+      var a = (rot||0) + (360/n)*i;
+      var d = 'M0,' + f(-r0)
+        + 'C' + f(w) + ',' + f(-r0-s*.32) + ' ' + f(w) + ',' + f(-r1+s*.30) + ' 0,' + f(-r1)
+        + 'C' + f(-w) + ',' + f(-r1+s*.30) + ' ' + f(-w) + ',' + f(-r0-s*.32) + ' 0,' + f(-r0) + 'Z';
+      g.appendChild(el('path', { d: d, transform: 'rotate(' + f(a) + ')', fill: 'none',
+        stroke: 'currentColor', 'stroke-width': SW, 'stroke-linejoin': 'round' }));
+    }
+  }
+  function beads(g, n, r, rad, rot) {
+    for (var i = 0; i < n; i++) {
+      var a = (TAU/n)*i - Math.PI/2 + ((rot||0)*Math.PI/180);
+      circ(g, Math.cos(a)*r, Math.sin(a)*r, rad, 1);
+    }
+  }
+
+  function plate(size, colour) {
+    var s = el('svg', { class: 'ln', width: size, height: size, viewBox: '0 0 240 240' });
+    s.style.color = colour;
+    var root = el('g', { transform: 'translate(120,120)' });
+    s.appendChild(root);
+    var n = 0;
+    return {
+      s: s,
+      // Alternate direction, and a distinct period per course so the figure
+      // never repeats a frame.
+      c: function (dir) {
+        var g = el('g', { class: dir || (n % 2 ? 'ccw' : 'cw') });
+        g.style.setProperty('--t', (30 + n * 6) + 's');
+        n++; root.appendChild(g); return g;
+      },
+      still: function () { var g = el('g'); root.appendChild(g); return g; },
+    };
+  }
+
+  var TEAL = 'var(--primary)', VIV = 'var(--primary-vivid)';
+
+  var DESIGNS = [
+    ['Sunburst', '72 spokes · beaded rim', TEAL, function (p) {
+      circ(p.still(), 0, 0, 15); circ(p.still(), 0, 0, 21);
+      spokes(p.c(), 24, 22, 40);
+      circ(p.still(), 0, 0, 44);
+      spokes(p.c(), 72, 46, 78, 1.5);
+      circ(p.still(), 0, 0, 88);
+      lace(p.c(), 60, 92, .10);
+      beads(p.c(), 72, 104, 1.4);
+      circ(p.still(), 0, 0, 112);
+    }],
+    ['Lace rim', '80 arcs · three bands', TEAL, function (p) {
+      circ(p.still(), 0, 0, 13);
+      petals(p.c(), 16, 14, 34, .40);
+      circ(p.still(), 0, 0, 38);
+      lace(p.c(), 40, 44, .13);
+      petals(p.c(), 40, 48, 72, .38, 4.5);
+      circ(p.still(), 0, 0, 78);
+      lace(p.c(), 60, 84, .10);
+      lace(p.c(), 80, 100, .08);
+      circ(p.still(), 0, 0, 110);
+    }],
+    ['Wheel', '60 spokes · double rim', VIV, function (p) {
+      circ(p.still(), 0, 0, 12); beads(p.still(), 8, 19, 1.6);
+      circ(p.still(), 0, 0, 26);
+      spokes(p.c(), 60, 28, 62);
+      circ(p.still(), 0, 0, 66); circ(p.still(), 0, 0, 71);
+      teeth(p.c(), 60, 71, 7);
+      circ(p.still(), 0, 0, 86);
+      spokes(p.c(), 30, 88, 102, 1.6);
+      circ(p.still(), 0, 0, 112);
+    }],
+    ['Bloom', 'four petal courses', TEAL, function (p) {
+      circ(p.still(), 0, 0, 10);
+      petals(p.c(), 8,  11, 32, .44);
+      petals(p.c(), 16, 30, 56, .42, 11.25);
+      petals(p.c(), 32, 54, 82, .40, 5.6);
+      petals(p.c(), 48, 80, 104, .38, 3.75);
+      beads(p.c(), 48, 110, 1.3);
+      circ(p.still(), 0, 0, 114);
+    }],
+    ['Star rim', '48 teeth · fine core', VIV, function (p) {
+      circ(p.still(), 0, 0, 11);
+      spokes(p.c(), 16, 12, 26);
+      circ(p.still(), 0, 0, 30);
+      petals(p.c(), 24, 32, 58, .40);
+      circ(p.still(), 0, 0, 62);
+      lace(p.c(), 48, 68, .11);
+      circ(p.still(), 0, 0, 88);
+      teeth(p.c(), 48, 88, 14);
+    }],
+    ['Chakra', 'beads along every spoke', TEAL, function (p) {
+      circ(p.still(), 0, 0, 9);
+      var g = p.c();
+      for (var i = 0; i < 24; i++) {
+        var a = (TAU/24)*i - Math.PI/2;
+        [24, 40, 56, 72].forEach(function (r) { circ(g, Math.cos(a)*r, Math.sin(a)*r, 2.2); });
+      }
+      spokes(p.c(), 24, 10, 20);
+      circ(p.still(), 0, 0, 82);
+      lace(p.c(), 48, 88, .11);
+      beads(p.c(), 60, 102, 1.4);
+      circ(p.still(), 0, 0, 110);
+    }],
+    ['Filigree', 'interleaved arc bands', TEAL, function (p) {
+      circ(p.still(), 0, 0, 12);
+      lace(p.c(), 16, 20, .22);
+      lace(p.c(), 24, 34, .18);
+      lace(p.c(), 32, 50, .15);
+      lace(p.c(), 44, 68, .12);
+      lace(p.c(), 56, 86, .10);
+      lace(p.c(), 72, 104, .08);
+      circ(p.still(), 0, 0, 112);
+    }],
+    ['Dot field', 'seven rings of beads', VIV, function (p) {
+      circ(p.still(), 0, 0, 8);
+      [[12, 20, 2.4], [18, 34, 2.2], [24, 48, 2.0], [32, 62, 1.9],
+       [40, 76, 1.7], [52, 90, 1.5], [64, 104, 1.3]].forEach(function (r, k) {
+        beads(p.c(), r[0], r[1], r[2], k * 5);
+      });
+      circ(p.still(), 0, 0, 112);
+    }],
+    ['Spoke & ring', 'alternating courses', TEAL, function (p) {
+      circ(p.still(), 0, 0, 10);
+      spokes(p.c(), 12, 11, 24);
+      circ(p.still(), 0, 0, 28);
+      spokes(p.c(), 24, 29, 46);
+      circ(p.still(), 0, 0, 50);
+      spokes(p.c(), 48, 51, 72);
+      circ(p.still(), 0, 0, 76);
+      spokes(p.c(), 72, 77, 98, 1.3);
+      circ(p.still(), 0, 0, 108);
+      lace(p.c(), 72, 112, .07);
+    }],
+    ['Breath', 'still figure, slow breath', TEAL, function (p) {
+      var g = el('g', { class: 'br' }); p.s.querySelector('g').appendChild(g);
+      circ(g, 0, 0, 12);
+      petals(g, 12, 13, 38, .42);
+      circ(g, 0, 0, 42);
+      petals(g, 24, 44, 70, .40, 7.5);
+      circ(g, 0, 0, 74);
+      lace(g, 48, 80, .11);
+      spokes(g, 48, 84, 98, 1.3);
+      circ(g, 0, 0, 108);
+      teeth(g, 72, 108, 6);
+    }],
+  ];
+
+  var host = document.getElementById('plates');
+  DESIGNS.forEach(function (d) {
+    var box = document.createElement('div'); box.className = 'pc';
+    var pl = document.createElement('div'); pl.className = 'plate';
+    var p = plate(216, d[2]);
+    d[3](p);
+    pl.appendChild(p.s);
+    var ka = document.createElement('span'); ka.className = 'ka'; ka.lang = 'hi'; ka.textContent = 'क';
+    pl.appendChild(ka); box.appendChild(pl);
+    var n = p.s.querySelectorAll('path,circle,line').length;
+    box.insertAdjacentHTML('beforeend',
+      '<div class="cap"><div class="nm">' + d[0] + '</div>' +
+      '<div class="src">' + d[1] + ' · ' + n + ' elements</div></div>');
+    host.appendChild(box);
+  });
+})();
+</script>
