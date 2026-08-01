@@ -4,7 +4,7 @@
     "slug": "kartavya",
     "scheme": "Kartavaya",
     "version": "2.0.1",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "splash": {
