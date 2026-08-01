@@ -456,9 +456,11 @@
   grid-template-columns: minmax(0, 1fr) 300px;
   background: var(--s-low);
   border-bottom: 1px solid var(--outline-variant);
-  animation: rvOpen var(--dur-base) var(--ease-enter);
+  /* `dmFade`, not the reference's `rvOpen`. They are the same two keyframes —
+     opacity 0 to 1 — and `overlay-motion.test.jsx` fails a second name for an
+     animation that already exists, which is how this was caught. */
+  animation: dmFade var(--dur-base) var(--ease-enter);
 }
-@keyframes rvOpen { from { opacity: 0 } to { opacity: 1 } }
 .rv-meta { margin-top: 10px; display: flex; flex-direction: column; gap: 0; }
 /* A dashed rule BELOW each row, not a solid one above — `pahchan.css:218`. The
    border-top put a line above the first pair, which read as a divider between

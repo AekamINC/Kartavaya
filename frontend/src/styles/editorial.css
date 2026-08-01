@@ -1300,6 +1300,13 @@ input, textarea, select { font-family: inherit; color: inherit; }
   gap: var(--gap-tight);
   margin-top: 0;
 }
+/* `app.css:163`. A TONAL TILE, and the tone is carried by the number.
+   What was here was a white card with a 1px outline and a 2px coloured hairline
+   across the top — four bordered rectangles in a row, each shouting its state
+   in a 2px line most people never look at, with the figure itself in plain ink.
+   The reference puts the tile on `--s-container` with no border at all and
+   spends the colour where the eye already is: `.stat--ok .stat__v` and its
+   three siblings. Same information, read at a glance instead of decoded. */
 .k-stat {
   --c: var(--on-surface-3);
   --c-text: var(--c);
@@ -1310,15 +1317,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
   gap: 3px;
   padding: var(--pad-card);
   border-radius: var(--r-lg);
-  background: var(--surface);
-  border: 1px solid var(--outline-variant);
+  background: var(--s-container);
+  transition: background var(--dur-fast);
 }
-.k-stat::before {
-  content: '';
-  position: absolute; inset: 0 0 auto;
-  height: 2px;
-  background: var(--c);
-}
+.k-stat:hover { background: var(--s-high); }
 .k-stat--neutral { --c: var(--on-surface-3); }
 .k-stat--info    { --c: var(--primary); --c-text: var(--primary-text); }
 .k-stat--ok      { --c: var(--ok); }
@@ -1343,10 +1345,13 @@ input, textarea, select { font-family: inherit; color: inherit; }
    splits its conjuncts, so neither the parent's 700 nor its .15em may reach it.
    `--font-indic` rather than `--font-hindi` — this label follows the user's
    language, per 24 §129. */
+/* --on-surface-faint (`app.css:166`), not --c-text. The tone moved to the
+   figure below, and a coloured Devanagari label above a coloured number was the
+   same state said twice in one tile. */
 .k-stat__hi {
   font-family: var(--font-indic);
   font-size: 12px; text-transform: none; letter-spacing: 0;
-  color: var(--c-text); font-weight: 400;
+  color: var(--on-surface-faint); font-weight: 400;
 }
 .k-stat__val {
   font-family: var(--font-display);
@@ -1361,6 +1366,19 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-size: 36px; font-weight: 400; line-height: 1;
   color: var(--on-surface);
 }
+/* Where the tone lives now — `app.css:170-174`. NEUTRAL IS DELIBERATELY ABSENT:
+   the reference colours four states and leaves the rest in page ink, so an
+   ordinary count reads as an ordinary count. `--on-surface-3` on the figure
+   would have greyed every uncoloured tile into looking disabled. */
+.k-stat--info .k-stat__val,   .k-stat--info .k-stat__num   { color: var(--primary-text); }
+.k-stat--ok .k-stat__val,     .k-stat--ok .k-stat__num     { color: var(--ok); }
+.k-stat--warn .k-stat__val,   .k-stat--warn .k-stat__num   { color: var(--warn); }
+.k-stat--danger .k-stat__val, .k-stat--danger .k-stat__num { color: var(--danger); }
+.k-stat--teal .k-stat__val,   .k-stat--teal .k-stat__num,
+.k-stat--green .k-stat__val,  .k-stat--green .k-stat__num  { color: var(--ok); }
+.k-stat--amber .k-stat__val,  .k-stat--amber .k-stat__num,
+.k-stat--orange .k-stat__val, .k-stat--orange .k-stat__num { color: var(--warn); }
+.k-stat--red .k-stat__val,    .k-stat--red .k-stat__num    { color: var(--danger); }
 /* `.k-stat` is a flex column with a 3px gap now, so `.k-stat__sub` gets its
    spacing from the parent — the 3px margin was stacking on top of it. The value
    above keeps its own 6px, which is what the reference measures: 9px from the

@@ -1303,10 +1303,34 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    not to a separate control. */
 .tbl__wrap { width: 100%; overflow-x: auto; }
 .tbl { width: 100%; border-collapse: collapse; font-size: var(--t-body-sm); }
-.tbl th, .tbl td { padding: 0 12px; height: var(--row-h); text-align: left; border-bottom: 1px solid var(--outline-variant); }
+/* MEASURED off the reference RUNNING, not read off its CSS: `.tbl__row` renders
+   at 44px with `padding: 0 16px` and a 14px column gap, and its rule is
+   --outline-variant at 55%, not at full strength.
+
+   The gutters were 12px and the rule was solid. Both errors compound in the
+   same direction: cells sat 8px closer than the design intends and every row
+   was fenced off by a line drawn at nearly twice the intended weight, which is
+   what makes a long list read as cramped rather than as dense. `--row-h` was
+   already right; it was never the height that was wrong.
+
+   The reference row is a GRID: 16px of outer padding and a 14px gap BETWEEN
+   columns. A table cell has no gap — its padding is the gutter — so 7px each
+   side sums to the 14px between neighbours, and the first and last cells take
+   the outer 16px. Writing `padding: 0 16px` on every cell, which is the obvious
+   transcription, would have put 32px between every pair of columns. */
+.tbl th, .tbl td {
+  padding: 0 7px; height: var(--row-h); text-align: left;
+  border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 55%, transparent);
+}
+.tbl th:first-child, .tbl td:first-child { padding-left: 16px; }
+.tbl th:last-child,  .tbl td:last-child  { padding-right: 16px; }
+/* The head keeps a full-strength rule under it — it is a boundary, not a row
+   separator — and the reference's 38px/10px/.14em (`app.css:182`). */
 .tbl th {
   position: sticky; top: 0; z-index: 1; background: var(--s-low);
-  font-size: var(--t-label); font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  height: 38px;
+  border-bottom: 1px solid var(--outline-variant);
+  font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
   color: var(--on-surface-3); white-space: nowrap;
 }
 .tbl__sort { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; padding: 0; }

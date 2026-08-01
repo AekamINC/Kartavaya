@@ -125,10 +125,24 @@
   padding: 13px 26px; border-radius: var(--r-sm);
   font-size: 14.5px; font-weight: 600; font-family: inherit;
   text-decoration: none; cursor: pointer; border: 1px solid transparent;
-  transition: background var(--dur-fast), border-color var(--dur-fast);
+  transition: background var(--dur-fast), border-color var(--dur-fast),
+              transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur-fast);
 }
-.lcta--fill { background: var(--primary); color: var(--on-primary); }
-.lcta--fill:hover { background: var(--primary-hover); }
+/* `auth.css:105-107`. The primary action is a GRADIENT that lifts off the page
+   on hover, not a flat fill that changes colour — --primary into
+   --primary-vivid at 72%, and a shadow tinted with the button's own hue rather
+   than with black. The flat version was the one control on the page that gave
+   no physical feedback for the most important click on it. */
+.lcta--fill {
+  background: linear-gradient(135deg, var(--primary), color-mix(in srgb, var(--primary-vivid) 72%, var(--primary)));
+  color: var(--on-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .1);
+}
+.lcta--fill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--primary) 72%, transparent);
+}
+.lcta--fill:active { transform: translateY(0) scale(.99); }
 /* The same CTA inside the nav bar, where the hero's 13px/26px would set a
    44px-tall button in a 14px-padded bar and push the whole nav taller. */
 .lcta--nav { padding: 9px 18px; font-size: 13px; }

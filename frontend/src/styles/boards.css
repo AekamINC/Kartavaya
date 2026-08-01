@@ -47,16 +47,28 @@
    column read as a card rather than as the ground a card sits on. min-height
    keeps a column that has been emptied the same object it was a moment ago;
    `.bd__list`'s own 34px only guarantees a drop target, not a shape. */
+/* The ground is TINTED WITH THE COLUMN'S OWN STATUS COLOUR, which the reference
+   does not do — its `.bcol` is a flat `--s-low` for every column. Flat is what
+   was here, and on this palette `--s-low` (#F5F1E7) sits two points off `--bg`
+   (#F3EFE6): the columns had a ground in the CSS and no visible ground on the
+   screen, so five states read as one undifferentiated field. 7% of `--c` is
+   enough to separate them and light enough to leave the cards on top as the
+   figure. The 4px mark in the head keeps the same `--c` by inheritance. */
 .bd__col {
+  --c: var(--primary);
   width: 288px; flex-shrink: 0;
   display: flex; flex-direction: column; gap: 9px;
   min-height: 180px;
   padding: 11px; border-radius: var(--r-lg);
-  background: var(--s-low); border: 1px dashed transparent;
+  background: color-mix(in srgb, var(--c) 7%, var(--s-low));
+  border: 1px dashed transparent;
   transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard);
 }
+/* The drop target still answers in --primary, not in the column's own hue: it
+   has to read as "this one, now", which a stronger dose of the colour the
+   column is already wearing cannot do. */
 .bd__col.over {
-  background: color-mix(in srgb, var(--primary) 9%, var(--s-low));
+  background: color-mix(in srgb, var(--primary) 14%, var(--s-low));
   border-color: color-mix(in srgb, var(--primary) 48%, transparent);
 }
 

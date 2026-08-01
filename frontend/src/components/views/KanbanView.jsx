@@ -445,9 +445,16 @@ export default function KanbanView({
               // the note below.
               <Droppable key={col.column_id} droppableId={col.column_id} isDropDisabled={!droppable}>
                 {(provided, snapshot) => (
-                  <div className={['bd__col', snapshot.isDraggingOver && droppable && 'over'].filter(Boolean).join(' ')}>
+                  // `--c` sits on the COLUMN, not on the mark inside it: the
+                  // column's ground is tinted with its own status colour so the
+                  // five states read apart at a glance, and the 4px mark takes
+                  // the same variable by inheritance.
+                  <div
+                    className={['bd__col', snapshot.isDraggingOver && droppable && 'over'].filter(Boolean).join(' ')}
+                    style={{ '--c': col.color || 'var(--primary)' }}
+                  >
                     <div className="bd__ch">
-                      <span className="bd__cdot" style={{ '--c': col.color || 'var(--primary)' }} />
+                      <span className="bd__cdot" />
                       {renamingColId === col.column_id ? (
                         <input
                           ref={renameRef}
