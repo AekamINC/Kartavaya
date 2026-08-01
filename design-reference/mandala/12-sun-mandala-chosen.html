@@ -73,7 +73,7 @@
 <div class="pg"><div class="wrap">
 
 <h1>Sun mandala <span class="hi">क</span> — bigger petals, bigger letter</h1>
-<p class="lede">Built from Meditation Mandala <b>8972474</b>, then opened up. The petals were the smallest thing in a drawing that is meant to be a flower — the rays dominated it completely — so the rosette has <b>doubled</b>, a second petal course now answers it at the rim, and क has gone from 26px to <b>46px</b> with an eye wide enough to hold it.<br><br>Everything else is the reference: one colour, one hairline, long <b>curved</b> rays that sweep rather than spoke, and the whole figure <b>drawing itself on</b> stroke by stroke before undrawing. That draw-on is a Lottie trim path; in CSS it is <code>stroke-dashoffset</code> — the same mechanism, so this is the motion itself rather than an impression of it.</p>
+<p class="lede">Built from Meditation Mandala <b>8972474</b>, then opened up. The petals were the smallest thing in a drawing that is meant to be a flower — the rays dominated it completely — so the rosette has <b>doubled</b>, a full course of twenty petals now spans the outer band with the rays weaving between them, and क has gone from 26px to <b>46px</b> with an eye wide enough to hold it.<br><br>Everything else is the reference: one colour, one hairline, long <b>curved</b> rays that sweep rather than spoke, and the whole figure <b>drawing itself on</b> stroke by stroke before undrawing. That draw-on is a Lottie trim path; in CSS it is <code>stroke-dashoffset</code> — the same mechanism, so this is the motion itself rather than an impression of it.</p>
 
 <h2>Three timings, one figure</h2>
 <p class="note">Same drawing throughout. Only the pace and the direction of the underlying turn change.</p>
@@ -81,7 +81,8 @@
 
 <h2>How it is built</h2>
 <p class="note" style="max-width:76ch">
-  <b style="color:var(--fg)">Petals at both ends.</b> Ten large lobes and ten smaller between them at the centre, and twenty more out at the rim. Petals only in the middle left the outer half reading as pure radial line work; the rim course answers the rosette so the flower reads across the whole figure.<br><br>
+  <b style="color:var(--fg)">Petals inside and out.</b> Ten large lobes with ten smaller between them at the centre, and twenty <b>full</b> petals spanning the outer band — each with a bead in its throat. A first attempt put a small 24-unit fringe at the rim, which read as an edging rather than as structure: the outside still belonged to the rays. These are the outside.<br><br>
+  <b style="color:var(--fg)">The rays weave between them.</b> Offset half a step, so a ray rises out of every gap. Laid over the petals they merely crossed them; in the gaps the two courses interlock and the outer band reads as one piece of drawing. Verified at dead centre — 9 degrees into an 18-degree step.<br><br>
   <b style="color:var(--fg)">The eye opens to fit the letter.</b> Its radius went from 11 to 32 — क is sized first and the ornament makes room, rather than the letter being shrunk to fit what was already there. At the plate size that is 65px of clear diameter for a 46px letter.<br><br>
   <b style="color:var(--fg)">The rays curve.</b> Each is sampled along a spiral — radius and angle advance together — so it sweeps as it extends, with the bend easing tighter toward the tip. Straight spokes read as a gear; swept ones read as a sun.<br><br>
   <b style="color:var(--fg)">Every stroke carries its own length.</b> A ray and a rosette petal differ by nearly six times. One shared dasharray would draw them at wildly different rates and the figure would assemble raggedly, so each element measures itself.
@@ -187,23 +188,29 @@
     step += 2;
 
     // ── the rays: twenty long, twenty short between ──
-    var N = 20;
-    for (var k = 0; k < N; k++) {
-      var a = (TAU / N) * k - Math.PI / 2;
-      var lng = ray(a, 76, 122, 22);
-      stroke(slow, lng.d, lng.len, D(), dur);
-      var b = a + (TAU / N) / 2;
-      var shrt = ray(b, 76, 102, 16);
-      stroke(slow, shrt.d, shrt.len, D(), dur);
+    // ── the outer petal course ──
+    // Twenty FULL petals, near the scale of the rosette's, spanning most of the
+    // outer band. The first attempt put a small 24-unit fringe at the rim,
+    // which read as an edging rather than as flower structure — the outside
+    // still belonged to the rays. These are the outside.
+    var OUT = 20;
+    for (var m = 0; m < OUT; m++) {
+      var op = stroke(slow, lobe(76, 120, 11.5), 122, D(), dur);
+      op.setAttribute('transform', 'rotate(' + f(m * (360 / OUT)) + ')');
+      // A bead in the throat of each, echoing the rosette.
+      var bd = stroke(slow, lobe(82, 96, 4.2), 42, D(), dur);
+      bd.setAttribute('transform', 'rotate(' + f(m * (360 / OUT)) + ')');
     }
 
-    // ── petals at the rim ──
-    // Petals only at the centre made the outer half read as pure radial line
-    // work. A course out here answers the rosette, so the flower reads across
-    // the whole figure rather than only in its middle.
-    for (var m = 0; m < 20; m++) {
-      var r = stroke(slow, lobe(100, 124, 9), 74, D(), dur);
-      r.setAttribute('transform', 'rotate(' + f(m * 18 + 9) + ')');
+    // ── the rays, weaving BETWEEN the petals ──
+    // Offset half a step so a ray rises out of every gap. Laid over the petals
+    // they merely crossed them; in the gaps the two courses interlock, which is
+    // what makes the outer band read as one piece of drawing.
+    var N = 20;
+    for (var k = 0; k < N; k++) {
+      var a = (TAU / N) * k - Math.PI / 2 + (Math.PI / N);
+      var lng = ray(a, 74, 126, 18);
+      stroke(slow, lng.d, lng.len, D(), dur);
     }
     return s;
   }
