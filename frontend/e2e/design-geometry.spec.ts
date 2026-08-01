@@ -159,10 +159,12 @@ test.fixme('task list rows carry the measured row rhythm', async ({ page }) => {
     };
   });
 
-  // --row-h, the design's cozy row. The fallback used to be 48px (comfy), so a
-  // surface that lost the token silently got the loosest tier.
-  expect(m.minHeight, 'row min-height').toBe('44px');
-  expect(m.height, 'rendered row height').toBeGreaterThanOrEqual(44);
+  // 54px, NOT the reference's 44. A deliberate departure, recorded in
+  // kartavaya-design.css: 44 is right against the design and still reads as
+  // crowded at this product's row counts, so the tier scale moved up one step
+  // and the default is now the design's own `comfy` row.
+  expect(m.minHeight, 'row min-height').toBe('54px');
+  expect(m.height, 'rendered row height').toBeGreaterThanOrEqual(54);
   expect(m.padLeft, 'outer gutter').toBe('16px');
   expect(m.gap, 'gap between columns').toBe('14px');
 });

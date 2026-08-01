@@ -563,44 +563,6 @@ export default function TasksListPage() {
                                   {t.attachments.length}
                                 </span>
                               )}
-                              {/* IxViews 9.4 — the quick-complete tick. Hidden
-                                  until row hover on a pointer device and always
-                                  visible on touch, where there is no hover to
-                                  reveal it (MOTION-SPEC §7.7). Not offered in
-                                  the archived view: completing something you
-                                  have filed away is not a state worth adding. */}
-                              {!showArchived && (
-                                <button
-                                  type="button"
-                                  className={'k-trow__tick' + (t.status === 'done' ? ' on' : '')}
-                                  aria-pressed={t.status === 'done'}
-                                  aria-label={t.status === 'done' ? `Mark “${t.title}” not done` : `Mark “${t.title}” done`}
-                                  title={t.status === 'done' ? 'Mark not done' : 'Mark done'}
-                                  onClick={e => toggleComplete(t, e)}
-                                >
-                                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                    <path d="M3.5 8.4l3 3 6-6.6" />
-                                  </svg>
-                                </button>
-                              )}
-                              {showArchived ? (
-                                <button
-                                  className="k-row-action k-row-action--unarchive"
-                                  onClick={e => unarchiveTask(t.task_id, e)}
-                                  title="Restore task"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M8 12V6M5 9l3-3 3 3"/><rect x="1" y="4" width="14" height="3" rx="1"/></svg>
-                                  Restore
-                                </button>
-                              ) : (
-                                <button
-                                  className="k-row-action k-row-action--archive"
-                                  onClick={e => archiveTask(t.task_id, e)}
-                                  title="Archive task"
-                                >
-                                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="1" y="4" width="14" height="3" rx="1"/><path d="M2 7v6a1 1 0 001 1h10a1 1 0 001-1V7"/><path d="M6 10h4"/></svg>
-                                </button>
-                              )}
                             </div>
                           );
                         case 'project':
@@ -673,6 +635,55 @@ export default function TasksListPage() {
                         default: return null;
                       }
                     })}
+
+                    {/* ── Row actions, at the END of the row ────────────────
+                        These sat inside the task cell, immediately after the
+                        title — so the tick was directly in the path of anyone
+                        reaching for the task name, and a miss marks the task
+                        done. That is a destructive action sitting on top of the
+                        most-clicked text on the page.
+
+                        Now a tray pinned to the row's trailing edge, revealed on
+                        hover, the way `.msg__acts` works in the reference. It is
+                        absolutely positioned rather than given a grid track
+                        because the column widths are user-resizable and stored
+                        (`useColumnResize`) — adding a track would invalidate
+                        every saved layout and the header row's template with
+                        it. */}
+                    <div className="k-trow__actions">
+                      {!showArchived && (
+                        <button
+                          type="button"
+                          className={'k-trow__tick' + (t.status === 'done' ? ' on' : '')}
+                          aria-pressed={t.status === 'done'}
+                          aria-label={t.status === 'done' ? `Mark “${t.title}” not done` : `Mark “${t.title}” done`}
+                          title={t.status === 'done' ? 'Mark not done' : 'Mark done'}
+                          onClick={e => toggleComplete(t, e)}
+                        >
+                          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M3.5 8.4l3 3 6-6.6" />
+                          </svg>
+                        </button>
+                      )}
+                      {showArchived ? (
+                        <button
+                          className="k-row-action k-row-action--unarchive"
+                          onClick={e => unarchiveTask(t.task_id, e)}
+                          title="Restore task"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M8 12V6M5 9l3-3 3 3"/><rect x="1" y="4" width="14" height="3" rx="1"/></svg>
+                          Restore
+                        </button>
+                      ) : (
+                        <button
+                          className="k-row-action k-row-action--archive"
+                          onClick={e => archiveTask(t.task_id, e)}
+                          title="Archive task"
+                        >
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="1" y="4" width="14" height="3" rx="1"/><path d="M2 7v6a1 1 0 001 1h10a1 1 0 001-1V7"/><path d="M6 10h4"/></svg>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}

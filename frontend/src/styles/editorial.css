@@ -1882,6 +1882,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-trow {
   display: grid;
   align-items: center;
+  /* The containing block for `.k-trow__actions`, which is pinned to the row's
+     trailing edge rather than given a grid track — see the note in
+     TasksListPage.jsx. */
+  position: relative;
   padding: 0 16px;
   background: var(--surface); border: 0;
   border-bottom: 1px solid var(--rule-soft);
@@ -1938,9 +1942,45 @@ input, textarea, select { font-family: inherit; color: inherit; }
    `margin-left: auto` sits HERE and not on `.k-row-action` beside it: two auto
    margins in one flex row split the free space and leave both controls floating
    mid-row instead of pinned right. */
+/* ── The row's trailing action tray ─────────────────────────────────────────
+   The tick and the archive chip used to live inside the task cell, right after
+   the title, where a click aimed at the task name could land on "mark done" —
+   a destructive write sitting on the most-clicked text in the table.
+
+   Pinned to the trailing edge instead, hidden until the row is hovered or
+   focused. `pointer-events: none` while hidden is load-bearing: the tray
+   overlays the last column, and an invisible-but-hit-testable tray would eat
+   clicks meant for the status chip underneath it — the same defect
+   `.msg__act` carried in sanvaad.css and for the same reason.
+
+   It carries the row's own hover background so it reads as part of the row
+   rather than as a floating object, with a short fade on its leading edge so
+   content it covers does not end abruptly under it. */
+.k-trow__actions {
+  position: absolute;
+  right: 10px; top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex; align-items: center; gap: 6px;
+  padding-left: 24px;
+  opacity: 0; pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--surface) 22px);
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+.k-trow:hover .k-trow__actions,
+.k-trow:focus-within .k-trow__actions { opacity: 1; pointer-events: auto; }
+.k-trow:hover .k-trow__actions {
+  background: linear-gradient(to right, transparent,
+              color-mix(in srgb, var(--k-primary) 4%, var(--surface)) 22px);
+}
+/* No hover on touch, so the tray is permanently available there —
+   MOTION-SPEC §7.7, "every hover affordance has a touch equivalent". */
+@media (hover: none) {
+  .k-trow__actions { opacity: 1; pointer-events: auto; }
+}
+
 .k-trow__tick {
   width: 17px; height: 17px; flex-shrink: 0;
-  margin-left: auto;
   display: grid; place-items: center;
   border: 1.5px solid var(--outline); border-radius: 50%;
   background: none; color: transparent; opacity: 0; cursor: pointer;
@@ -1966,10 +2006,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
 
    So the areas grow to 24 wide (the AA bar exactly) and 32 tall. Width is the
    constrained axis; height is free, because nothing is stacked above or below
-   inside a 44px row, and 32 leaves 6px of clearance to the rows either side so
-   no tap is ambiguous about WHICH row it hit. Measured after: tick 24×32 at
-   570.5–594.5, chip 28×32 at 609–637 — 14.5px of clearance between them, and
-   neither overflows the row.
+   inside the row.
+
+   The absolute x-positions this note used to quote (tick at 570.5–594.5, chip
+   at 609–637) are stale: both controls moved out of the task cell and into
+   `.k-trow__actions` at the row's trailing edge. What still holds is the part
+   that matters — the 6px flex gap plus the 24px minimum widths keep the two
+   overlays from intersecting, so neither can take a tap meant for the other.
+   Re-measure the absolute figures if that gap is ever tightened.
 
    The overlay is a pseudo-element so the visual geometry is untouched: the
    circle is still 17px and the chip is still 28×18. */
@@ -3437,7 +3481,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
   z-index: 1;
 }
 .k-modtable thead th[data-align="right"] { text-align: right; }
+/* On --row-h like every other table. `height` on a <td> is a MINIMUM, so a
+   cell whose content is taller still grows; what it fixes is the floor, which
+   was whatever 10px of padding around 13px of text happened to add up to. */
 .k-modtable tbody td {
+  height: var(--row-h);
   padding: 10px 12px; border-bottom: 1px solid var(--rule-soft);
 }
 .k-modtable tbody td[data-align="right"] { text-align: right; }

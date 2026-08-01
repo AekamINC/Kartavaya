@@ -110,7 +110,7 @@
   color: var(--ink-3); font-size: 11px; text-transform: uppercase;
   letter-spacing: .04em; white-space: nowrap;
 }
-.gr__tbl td { padding: 10px; vertical-align: middle; }
+.gr__tbl td { height: var(--row-h); padding: 10px; vertical-align: middle; }
 .gr__tbl thead tr { border-bottom: 1px solid var(--rule-soft); }
 .gr__tbl tbody tr { border-bottom: 1px solid var(--rule-soft); }
 /* A raised header strip, used where the table sits inside a bordered card. */
