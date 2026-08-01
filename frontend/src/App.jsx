@@ -13,7 +13,7 @@
  *   2. Add a <Route> in the correct position below
  *   3. If the page needs teamId/teams from context, add it to CONTEXT_ROUTES
  */
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useOutletContext } from 'react-router-dom';
 import './App.css';
 import './styles/index.css';
@@ -33,6 +33,7 @@ import { navContext }                  from './components/layout/navConfig';
 import PageLoader                      from './components/layout/PageLoader';
 import { CustomizeProvider } from './components/CustomizePanel';
 import ErrorBoundary from './components/ErrorBoundary';
+import { isInstalledApp } from './lib/platform';
 
 // ── Auth pages (lazy — no reason to block the bundle for these) ────────────────
 const LoginPage           = lazy(() => import('./pages/LoginPage').then(m => ({ default: m.LoginPage })));
@@ -117,7 +118,12 @@ const ReportsWithContext      = withContext(ReportsPage,      ctx => ({ teams: c
  */
 function RootGate() {
   const user = currentUser();
-  if (!user) return <LandingPage />;
+  // The INSTALLED app never shows marketing. Someone who downloaded an APK was
+  // given an account by their firm's admin before they were given the app —
+  // there is no public sign-up — so the landing page's whole job, explaining
+  // the product to a stranger, is already done. It opens on the sign-in form,
+  // which is the only thing they came here to use.
+  if (!user) return isInstalledApp() ? <Navigate to="/login" replace /> : <LandingPage />;
   // A client's product is the portal. Sending them to /dashboard first only for
   // `Protected` to bounce them back costs a render of a shell they may not see.
   return <Navigate to={navContext(user).isClient ? '/client' : '/dashboard'} replace />;
@@ -284,7 +290,24 @@ function AppRouter() {
 }
 
 function StagingBanner() {
-  if (import.meta.env.VITE_ENVIRONMENT !== 'staging') return null;
+  const on = import.meta.env.VITE_ENVIRONMENT === 'staging';
+  /*
+   * The banner is `position: fixed`, so it reserves NO space — it sits on top
+   * of whatever is beneath it. On the web and on a tablet there was enough
+   * slack that nobody noticed. On a 427dp phone it clipped the top off the क
+   * in the sign-in crown, caught on a booted Pixel.
+   *
+   * Rather than padding the crown by a magic number, the banner declares its
+   * own height on the root and any layout that needs to clear it reads
+   * `--staging-h`. A fixed element that overlays content should be the thing
+   * that says how much room it takes.
+   */
+  useEffect(() => {
+    if (!on) return undefined;
+    document.documentElement.classList.add('kv-staging');
+    return () => document.documentElement.classList.remove('kv-staging');
+  }, [on]);
+  if (!on) return null;
   // Was `#f59e0b` on `#000` at `zIndex: 9999`. Both colours are now the warning
   // pair, so it follows the theme, and 620 is the top rung of 26 §4's ladder —
   // an environment warning a mobile sheet can cover is not doing its job.

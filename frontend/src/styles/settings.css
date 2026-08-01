@@ -418,6 +418,119 @@
   .au__form { padding: 28px 20px; }
 }
 
+/* The installed app, at every width. The 900px rule above hides the brand panel
+   because it does not FIT; this hides it because it does not BELONG — an APK is
+   opened by someone whose account already exists, so half a screen of product
+   tour is spent on a decision they made before they downloaded it. On an
+   11-inch tablet in landscape that panel was 640px wide, which is how the rule
+   above came to be width-shaped rather than platform-shaped.
+
+   AuthShell drops the element entirely on this path, so this only has to
+   collapse the column it left behind. */
+.au--app {
+  /* Rows, not columns: the crown is a band across the top and the form sits
+     under it. `auto 1fr` lets the crown take its own height and gives the rest
+     to the form, so a short landscape phone shrinks the FORM's breathing room
+     rather than crushing the brand block. */
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr;
+  background: var(--bg);
+}
+
+/* ── The app sign-in header ────────────────────────────────────────────────
+   The launcher icon's gradient, curved along its lower edge, with क centred in
+   white — so the screen answers the tile that opened it. See AppCrown in
+   AuthShell.jsx.
+
+   Height is clamped, not proportional. At 26vh an 11-inch tablet in portrait
+   would give this 500px, which is a poster, and a phone in landscape 90px,
+   which is a stripe. Between 168 and 232 it reads as the same element on every
+   device the product supports. */
+.au__crown {
+  position: relative;
+  overflow: hidden;
+  /* The floor is 104, not 168. A phone in LANDSCAPE is 427dp tall, and a
+     168px floor took 39% of it — the Sign in button sat below the fold on a
+     screen with nothing else on it. Measured on a booted Pixel.
+     27vh keeps the proportion on every device; the floor only has to stop the
+     band collapsing entirely. */
+  min-height: clamp(104px, 27vh, 232px);
+  display: grid; place-items: center;
+  padding: calc(14px + env(safe-area-inset-top, 0px) + var(--staging-h, 0px)) 20px 26px;
+  background: linear-gradient(158deg, var(--brand-icon-a), var(--brand-icon-b));
+  /* The curve. An elliptical radius rather than a fixed one, so the sweep stays
+     the same SHAPE from a 360px phone to a 1280px tablet instead of flattening
+     out as the band gets wider. */
+  border-radius: 0 0 46% 46% / 0 0 38px 38px;
+}
+/* Short viewports — a phone held sideways, or any window under 500px tall.
+   Proportional sizing alone is not enough here: the crown has to give up its
+   padding as well, or the form starts below the fold on a screen that has room
+   for it. */
+@media (max-height: 500px) {
+  .au__crown { min-height: 0; padding-bottom: 12px; }
+  .au__crown-ka { font-size: clamp(42px, 13vh, 64px); }
+  .au--app .au__form { padding-top: 14px; }
+}
+
+.au__crown-glow {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(54% 62% at 50% 6%, rgba(255, 255, 255, .26), transparent 62%);
+}
+.au__crown-ka {
+  position: relative;
+  font-family: var(--font-hindi);
+  /* Sized against HEIGHT, not width. 15vw meant a landscape phone — wide and
+     short — asked for the largest letter on the smallest band, which is
+     exactly backwards. vh ties the letter to the same axis the crown is
+     sized on, so the two can never disagree. */
+  font-size: clamp(56px, 14vh, 118px);
+  line-height: 1;
+  color: var(--on-primary);
+  margin-top: -6px;
+  letter-spacing: 0;
+  user-select: none;
+}
+
+/* The same letter again, ghosted on the paper below and bleeding off the
+   corner — so the lower two-thirds is a page rather than an empty field. */
+.au__appwm {
+  position: absolute;
+  right: -.14em; bottom: -.20em;
+  z-index: 0;
+  font-family: var(--font-hindi);
+  font-size: clamp(220px, 62vw, 340px);
+  line-height: .78;
+  letter-spacing: 0;
+  color: var(--primary);
+  opacity: .07;
+  user-select: none; pointer-events: none;
+}
+
+.au--app .au__form {
+  /* Centred in the space the crown leaves, not pinned under it.
+     `flex-start` hugged the crown and left the whole lower half of a tablet
+     empty below the button — measured on an 11-inch portrait, roughly 700px of
+     nothing under the form.
+     `margin-block: auto` on the box rather than `align-items: center` on
+     purpose: when the form is TALLER than the row — a short landscape phone
+     with the keyboard up — centring with `align-items` clips the top and makes
+     it unreachable, while auto margins collapse to zero and the form scrolls
+     from its top. Centres when there is room, scrolls when there is not. */
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow-y: auto;
+  padding: 26px 22px calc(24px + env(safe-area-inset-bottom, 0px));
+  background: transparent;
+  position: relative; z-index: 1;
+}
+/* `margin: auto`, both axes. The first pass set only `margin-block`, which
+   centred the form vertically and left it pinned to the left edge — obvious on
+   an 800dp tablet, where a 392px box sat against the margin with 400px of
+   empty paper beside it. Caught on a booted tablet, not in review. */
+.au--app .au__box { margin: auto; }
+
 /* ── Segmented control count ────────────────────────────────────────────────
    Optional trailing count on a Seg option. 07-pahchan.md asks for it as a
    distinct node rather than folded into the label string, because "All 12" baked

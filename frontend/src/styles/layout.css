@@ -207,13 +207,26 @@
    the warning pair, so the banner follows the theme like everything else.
    620 is the top rung — an environment warning that a mobile sheet can cover
    is a warning that is not doing its job. */
+/* Nothing reserves space for a fixed element, so the banner publishes its own
+   height and layouts that must clear it read `--staging-h`. Zero when the
+   banner is absent, which is every environment except staging. */
+:root { --staging-h: 0px; }
+:root.kv-staging { --staging-h: 26px; }
+
 .kv__staging {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   z-index: 620;
-  padding: 4px 0;
+  /* The top inset, or the banner hides under the status bar.
+     index.html sets `viewport-fit=cover`, so in the APK the webview extends
+     behind the system bars — and a strip pinned to `top: 0` then shares its
+     space with the clock and the battery icon. Measured on an 11-inch tablet:
+     the banner rendered under the status bar and pushed the page header up
+     into itself, clipping the top off the KARTAVAYA wordmark.
+     Falls back to 0px in a browser, where there is no inset to add. */
+  padding: calc(4px + env(safe-area-inset-top, 0px)) 0 4px;
   text-align: center;
   font-size: var(--t-label-sm);
   font-weight: 600;

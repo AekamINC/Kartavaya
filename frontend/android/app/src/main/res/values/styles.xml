@@ -15,8 +15,28 @@
         <item name="android:background">@null</item>
     </style>
 
+    <!--
+      The launch screen.
 
+      This was `android:background="@drawable/splash"` — a full-bleed bitmap,
+      which is the pre-Android-12 way of doing this and the reason the app
+      opened on Capacitor's stock blue X placeholder over #EBEDF5. Confirmed on
+      a booted emulator: that image is the first thing anyone sees after tapping
+      the icon.
+
+      `androidx.core:core-splashscreen` was already a dependency (app/build.gradle
+      line 37), so the real API had been available all along. It takes a
+      background colour and an ICON rather than one image redrawn per density
+      and orientation — which is also why eleven splash.png files could go.
+
+      `postSplashScreenTheme` hands over to the app theme when the splash
+      dismisses. Without it the activity keeps the launch theme after start-up
+      and its background sits behind the webview, so any transparent gap in the
+      web layer shows the splash through it.
+    -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">@color/brandSplashBackground</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

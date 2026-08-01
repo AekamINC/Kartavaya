@@ -342,6 +342,18 @@
   --shadow-3:   0 18px 44px -18px rgba(30, 28, 22, .3);
   --shadow-4:   0 32px 72px -28px rgba(30, 28, 22, .38);
 
+  /* The launcher icon's own two colours, sampled from public/favicon.png — the
+     blue-to-teal ground the क is set on. They are declared here rather than
+     written into a rule because the app's sign-in header paints the same
+     gradient, and an icon and a header that are meant to be the same object
+     must not drift apart in two files.
+
+     These are NOT the accent. --primary follows whatever the user picks in
+     Customize; this pair is fixed, because it is the app's identity on the home
+     screen and that cannot change per person. */
+  --brand-icon-a:  #1B8FD0;
+  --brand-icon-b:  #0FAFA8;
+
   --side-ink:      22, 26, 24;
   --side-fg:       rgba(255, 255, 255, .8);
   --side-fg-mute:  rgba(255, 255, 255, .5);

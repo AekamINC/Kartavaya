@@ -1304,3 +1304,66 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   font-size: var(--t-body); line-height: 1; cursor: pointer;
   padding: 0 var(--sp-1);
 }
+
+
+/* ── BrandLoader ───────────────────────────────────────────────────
+   क in the eye of a lotus that draws itself on. See components/brand/Lotus.jsx
+   for the drawing and components/layout/BrandLoader.jsx for the pace. */
+.bl {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 60vh; width: 100%;
+}
+.bl__mark { position: relative; display: grid; place-items: center; }
+.bl__ka {
+  position: absolute;
+  font-family: var(--font-hindi);
+  /* Sized against the lotus eye, which is r32 of a 260 box — at a 168px mark
+     that is 41px of clear diameter, so 30px of letter sits inside it with air.
+     The letter is the mark; the drawing was opened up to hold it rather than
+     the letter shrunk to fit. */
+  font-size: 30px;
+  line-height: 1;
+  color: var(--primary);
+  /* The lotus draws THROUGH the middle. Without a ground the eye ring and the
+     letter tangle at exactly the moment the figure is most legible. */
+  text-shadow: 0 0 10px var(--bg), 0 0 6px var(--bg), 0 0 3px var(--bg);
+}
+
+.lotus { display: block; color: var(--primary); overflow: visible; }
+/* One pen: every stroke the same width, at full strength. Weight hierarchy is
+   standard ornament advice and it is what made earlier attempts read as
+   designed rather than drawn. */
+.lotus__s {
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: var(--len);
+  stroke-dashoffset: var(--len);
+  animation: lotus-trim 3.2s cubic-bezier(.42, 0, .32, 1) infinite;
+  animation-delay: var(--d, 0s);
+}
+/* Draws on, holds, then UNDRAWS from the same end. A fade would leave a grey
+   ghost frame; this keeps every visible frame crisp. */
+@keyframes lotus-trim {
+  0%   { stroke-dashoffset: var(--len); }
+  42%  { stroke-dashoffset: 0; }
+  72%  { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: calc(var(--len) * -1); }
+}
+/* A slow counter-turn, so the figure is never wholly still even while it holds
+   at full. Anticlockwise: it runs against the draw, which reads as a figure
+   settling rather than as one being flung outward. */
+.lotus__turn {
+  animation: lotus-turn 68s linear infinite;
+  transform-origin: 0 0;
+}
+@keyframes lotus-turn { to { transform: translate(130px, 130px) rotate(-360deg); } }
+
+/* Reduced motion gets the finished lotus, held still and fully drawn — not a
+   different indicator. The point of the setting is that the person still sees
+   what everyone else sees, without the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .lotus__s { animation: none; stroke-dashoffset: 0; }
+  .lotus__turn { animation: none; }
+}

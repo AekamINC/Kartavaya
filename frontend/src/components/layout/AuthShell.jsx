@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import '../../styles/auth.css';
+import { isInstalledApp } from '../../lib/platform';
 
 /**
  * AuthShell — the split sign-in shell (12-auth-onboarding.md §1, §2).
@@ -193,10 +194,63 @@ function BrandPanel() {
   );
 }
 
-export default function AuthShell({ children, shake = false }) {
+/**
+ * AppCrown — the app's sign-in header.
+ *
+ * Two ideas, kept because they do different jobs and do not compete.
+ *
+ * The CROWN is the launcher icon's own gradient, curved along its lower edge,
+ * with क centred in white. You tap a blue-to-teal tile with a क on it and the
+ * app opens on a blue-to-teal field with a क on it — the screen answers the
+ * icon. That continuity is the whole point; a login that opens on a different
+ * palette from the icon that launched it reads as a different application.
+ *
+ * The WATERMARK is the same letter again, ghosted enormous on the paper below
+ * and bleeding off the corner. It gives the lower two-thirds something to be
+ * — without it the form sits on an empty field, which is what made the first
+ * version anonymous. A display glyph running past the margin is the editorial
+ * move the rest of this product is built on.
+ *
+ * Neither repeats the wordmark. The h1 under this already reads "Sign in to
+ * Kartavaya"; setting the name again under the mark is what made the earlier
+ * attempt feel padded, with the brand stated three times on one screen.
+ *
+ * क is fixed decorative Devanagari in var(font-hindi) — the 24 § watermark
+ * exception. It is not a translated string and does not follow the language
+ * setting; it is the product's own initial, used as texture.
+ */
+function AppCrown() {
   return (
-    <div className="au">
-      <BrandPanel />
+    <div className="au__crown" aria-hidden="true">
+      <span className="au__crown-glow" />
+      <span className="au__crown-ka" lang="hi">क</span>
+    </div>
+  );
+}
+
+export default function AuthShell({ children, shake = false }) {
+  /*
+   * The brand panel is for the WEB. In the installed app it is dropped
+   * entirely, and the form takes the full width.
+   *
+   * That panel is a sales pitch: "Your business, one platform", a rotating tour
+   * of Ganit and Dristi, and a note explaining that access is invite-only. Every
+   * word of it is aimed at someone deciding whether to use Kartavaya. Nobody
+   * reaching this screen from an app icon is deciding that — their admin created
+   * their account, they installed the app, and they are here to type a password.
+   * Measured on an 11-inch tablet in landscape it occupied 640px, more than half
+   * the screen, to tell an existing user about a product they already use.
+   *
+   * The CSS already hides it below 900px, which is why this was invisible on a
+   * phone and obvious on a tablet. Hiding it by PLATFORM as well is the rule
+   * that actually matches the reason.
+   */
+  const app = isInstalledApp();
+  return (
+    <div className={'au' + (app ? ' au--app' : '')}>
+      {app && <span className="au__appwm" lang="hi" aria-hidden="true">क</span>}
+      {!app && <BrandPanel />}
+      {app && <AppCrown />}
       <main className="au__form">
         <div className={'au__box' + (shake ? ' is-shake' : '')}>
           {children}
