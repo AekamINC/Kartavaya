@@ -1,0 +1,266 @@
+<title>Kartavaya — star mandala, क at the centre</title>
+<style>
+  :root{
+    --paper:#F3EFE6; --rule:#D8D1BE;
+    --primary:#04837A; --primary-vivid:#0AA396;
+    --page:#0D0C09; --fg:#EDE8DC; --fg-2:#98917F; --hair:#26221B;
+    --display:Georgia,'Times New Roman',serif;
+    --ui:'Segoe UI',system-ui,-apple-system,sans-serif;
+    --hindi:'Nirmala UI','Noto Serif Devanagari','Noto Sans Devanagari','Mangal',serif;
+  }
+  @media (prefers-color-scheme: light){:root{--page:#EDE7DA;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}}
+  :root[data-theme="dark"]{--page:#0D0C09;--fg:#EDE8DC;--fg-2:#98917F;--hair:#26221B}
+  :root[data-theme="light"]{--page:#EDE7DA;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}
+
+  *{box-sizing:border-box}
+  .pg{background:var(--page);color:var(--fg);font-family:var(--ui);padding:44px 24px 90px;
+      min-height:100vh;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1240px;margin:0 auto}
+  h1{font-family:var(--display);font-weight:400;font-size:clamp(27px,4.6vw,38px);margin:0 0 12px;
+     letter-spacing:-.022em;text-wrap:balance}
+  h1 .hi{font-family:var(--hindi);color:var(--primary);font-size:.68em}
+  .lede{margin:0;color:var(--fg-2);font-size:14.5px;max-width:72ch;line-height:1.7}
+  .lede b{color:var(--fg);font-weight:600}
+  h2{font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--fg-2);
+     border-top:1px solid var(--hair);padding-top:15px;margin:52px 0 8px}
+  .note{color:var(--fg-2);font-size:13px;margin:0 0 26px;max-width:74ch;line-height:1.65}
+  .grid{display:flex;flex-wrap:wrap;gap:34px}
+  .pc{width:300px}
+  .plate{height:300px;border-radius:4px;background:var(--paper);border:1px solid var(--hair);
+         display:grid;place-items:center;position:relative;overflow:hidden}
+  .plate .ka{position:absolute;font-family:var(--hindi);font-size:30px;line-height:1;color:var(--primary);
+             user-select:none;z-index:4}
+  svg.md{display:block;color:var(--primary);position:absolute}
+  svg.md *{transform-box:fill-box;transform-origin:center}
+  .cap{margin-top:14px}
+  .cap .nm{font-family:var(--display);font-size:17px}
+  .cap .src{font-size:10.5px;color:var(--fg-2);letter-spacing:.08em;text-transform:uppercase;margin-top:4px;
+            font-variant-numeric:tabular-nums}
+  .cap p{margin:8px 0 0;font-size:12.5px;color:var(--fg-2);line-height:1.6}
+
+  /* Courses open outward from the eye and release together. */
+  .B .r{opacity:0;animation:bloom 6.6s cubic-bezier(.22,.8,.3,1) infinite}
+  @keyframes bloom{0%{opacity:0;transform:scale(.32)}
+    17%{opacity:1;transform:scale(1)}78%{opacity:1;transform:scale(1)}
+    100%{opacity:0;transform:scale(1.07)}}
+  /* A wave of weight travels out; the figure is never partial. */
+  .P .r{opacity:.32;animation:pulse 3.6s ease-in-out infinite}
+  @keyframes pulse{0%,64%,100%{opacity:.32}18%{opacity:1}}
+  /* Drawn line by line, the way the tutorials do it. */
+  .D .r *{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);
+          animation:draw 7.4s cubic-bezier(.36,0,.24,1) infinite}
+  @keyframes draw{0%{stroke-dashoffset:var(--len)}54%{stroke-dashoffset:0}
+    88%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}
+  /* Alternate courses turn opposite ways. */
+  .R .r.cw {animation:spin var(--t,40s) linear infinite}
+  .R .r.ccw{animation:spinR var(--t,40s) linear infinite}
+  @keyframes spin {to{transform:rotate(360deg)}}
+  @keyframes spinR{to{transform:rotate(-360deg)}}
+
+  @media (prefers-reduced-motion:reduce){ .plate *{animation:none!important;opacity:1!important;
+    stroke-dashoffset:0!important} }
+</style>
+
+<div class="pg"><div class="wrap">
+
+<h1>Star mandala <span class="hi">क</span> — the shape I was getting wrong</h1>
+<p class="lede">Everything I drew before ended in a <b>circle</b>. Look at the three you just sent: not one of them does. The outer petals' tips <b>are</b> the edge — the silhouette is a many-pointed star, and the whole figure reads as a flower rather than as a disc because of it. Two other things I had wrong: the petals are <b>pointed flames</b>, not lens-shaped vesicas, and each one <b>contains a smaller petal and a dot</b>. Fewer, larger, bolder courses; no bounding ring.</p>
+
+<h2>Four star mandalas</h2>
+<p class="note">क in the eye of each. Same construction, different course counts and motions.</p>
+<div class="grid" id="plates"></div>
+
+<h2>The three corrections</h2>
+<p class="note" style="max-width:76ch">
+  <b style="color:var(--fg)">The silhouette is a star.</b> No outer circle at all — the last course of petals defines the boundary, and alternating long and short points give the edge its rhythm. This is the single biggest difference and I had it wrong in every version until now.<br><br>
+  <b style="color:var(--fg)">Petals are flames, not lenses.</b> Round at the base, widest at about 40% out, drawn to a <b>point</b> at the tip. A vesica is symmetrical and reads as a leaf; a flame reads as a lotus petal.<br><br>
+  <b style="color:var(--fg)">Petals contain petals.</b> Each carries a smaller flame inset within it and a dot at its base — the nested interior is what makes a line drawing look drawn rather than plotted.
+</p>
+
+</div></div>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg', TAU = Math.PI * 2;
+  function el(t, a) { var e = document.createElementNS(NS, t); for (var k in (a||{})) e.setAttribute(k, a[k]); return e; }
+  var f2 = function (n) { return (+n).toFixed(2); };
+
+  /* ── the flame petal ─────────────────────────────────────────────────────
+     Round at the base, widest at `pinch` of the way out, drawn to a POINT at
+     the tip. Both tip control points converge on the apex, which is what makes
+     it come to a point instead of a dome.
+
+     A vesica — what I used before — is symmetrical end to end and reads as a
+     leaf. The reference drawings are lotus petals, and a lotus petal is a
+     flame. */
+  function flame(r0, r1, w, pinch) {
+    var s = r1 - r0, p = pinch == null ? 0.42 : pinch, my = -(r0 + s * p);
+    return 'M0,' + f2(-r0)
+      + 'C' + f2(w) + ',' + f2(-r0 - s*.10) + ' ' + f2(w) + ',' + f2(my + s*.12) + ' ' + f2(w*.94) + ',' + f2(my)
+      + 'C' + f2(w*.62) + ',' + f2(-r1 + s*.30) + ' ' + f2(w*.24) + ',' + f2(-r1 + s*.09) + ' 0,' + f2(-r1)
+      + 'C' + f2(-w*.24) + ',' + f2(-r1 + s*.09) + ' ' + f2(-w*.62) + ',' + f2(-r1 + s*.30) + ' ' + f2(-w*.94) + ',' + f2(my)
+      + 'C' + f2(-w) + ',' + f2(my + s*.12) + ' ' + f2(-w) + ',' + f2(-r0 - s*.10) + ' 0,' + f2(-r0) + 'Z';
+  }
+  /* A rounded petal — the softer form used in the inner courses, where the
+     drawings switch from points to lobes. */
+  function lobe(r0, r1, w) {
+    var s = r1 - r0;
+    return 'M0,' + f2(-r0)
+      + 'C' + f2(w) + ',' + f2(-r0 - s*.16) + ' ' + f2(w) + ',' + f2(-r1 + s*.12) + ' 0,' + f2(-r1)
+      + 'C' + f2(-w) + ',' + f2(-r1 + s*.12) + ' ' + f2(-w) + ',' + f2(-r0 - s*.16) + ' 0,' + f2(-r0) + 'Z';
+  }
+
+  /**
+   * A course of petals.
+   *
+   * Width is DERIVED, not chosen: neighbours on a ring of n petals at mean
+   * radius r sit 2*PI*r/n apart, so drawing at `fullness` of that gap makes
+   * every course as full as it should be whatever its count. My earlier
+   * versions picked widths by hand and the outer courses came out a third the
+   * width they needed — they read as spokes because they were spokes.
+   */
+  function petals(g, o) {
+    var rm = (o.r0 + o.r1) / 2;
+    var w = (TAU * rm / o.n) * (o.fullness == null ? 0.44 : o.fullness);
+    var shape = o.lobe ? lobe : flame;
+    for (var i = 0; i < o.n; i++) {
+      var t = 'rotate(' + f2((o.rot || 0) + (360 / o.n) * i) + ')';
+      g.appendChild(el('path', { d: shape(o.r0, o.r1, w, o.pinch), transform: t,
+        fill: o.fill ? 'currentColor' : 'none', stroke: 'currentColor',
+        'stroke-width': o.sw, 'stroke-linejoin': 'round', opacity: o.op }));
+      // Petals contain petals. The nested interior is what makes a line
+      // drawing look drawn rather than plotted.
+      if (o.inner) {
+        var s = o.r1 - o.r0;
+        g.appendChild(el('path', {
+          d: shape(o.r0 + s*.16, o.r1 - s*.14, w * (o.innerW || .52), o.pinch),
+          transform: t, fill: 'none', stroke: 'currentColor',
+          'stroke-width': o.sw * .8, 'stroke-linejoin': 'round', opacity: o.op * .85 }));
+      }
+      if (o.seed) {
+        g.appendChild(el('circle', { cx: 0, cy: f2(-o.r0 - (o.r1 - o.r0) * .30), r: o.seed,
+          transform: t, fill: 'none', stroke: 'currentColor', 'stroke-width': o.sw * .8,
+          opacity: o.op * .8 }));
+      }
+    }
+  }
+  function dots(g, o) {
+    for (var i = 0; i < o.n; i++) {
+      var a = (TAU / o.n) * i - Math.PI/2 + ((o.rot||0) * Math.PI/180);
+      g.appendChild(el('circle', { cx: f2(Math.cos(a)*o.r), cy: f2(Math.sin(a)*o.r),
+        r: (o.r2 != null && i % 2) ? o.r2 : o.rad, fill: 'currentColor', opacity: o.op }));
+    }
+  }
+  function ring(g, o) {
+    g.appendChild(el('circle', { r: o.r, fill: 'none', stroke: 'currentColor',
+      'stroke-width': o.sw, opacity: o.op }));
+  }
+
+  function frame(size, cls) {
+    var s = el('svg', { class: 'md ' + cls, width: size, height: size, viewBox: '0 0 260 260' });
+    var root = el('g', { transform: 'translate(130,130)' });
+    s.appendChild(root); return { s: s, root: root, i: 0, cls: cls };
+  }
+  function course(f, extra) {
+    var g = el('g', { class: 'r' + (extra ? ' ' + extra : '') });
+    var d = { B: .15, P: .12, D: .19 }[f.cls];
+    if (d) g.style.animationDelay = (f.i * d).toFixed(2) + 's';
+    if (f.cls === 'R') g.style.setProperty('--t', (22 + f.i * 7) + 's');
+    f.i++; f.root.appendChild(g); return g;
+  }
+  function lengths(svg) {
+    svg.querySelectorAll('path, circle').forEach(function (n) {
+      var len = n.tagName === 'circle'
+        ? TAU * (+n.getAttribute('r') || 0)
+        : ((n.getAttribute('d') || '').match(/[MLCA]/g) || []).length * 34;
+      n.style.setProperty('--len', Math.max(24, Math.round(len)));
+    });
+  }
+
+  /* ── १ · STAR LOTUS ───────────────────────────────────────────────────
+     The line drawing, built. Eight long points and eight short ones between
+     them, so the silhouette has a rhythm rather than a uniform sawtooth. */
+  function starLotus(size) {
+    var f = frame(size, 'B');
+    ring(course(f), { r: 8, sw: 1.5, op: .6 });
+    petals(course(f), { n: 8,  r0: 9,  r1: 30, sw: 1.3, op: .6, lobe: 1, inner: 1 });
+    petals(course(f), { n: 8,  r0: 26, r1: 58, sw: 1.4, op: .58, inner: 1, seed: 2.4, rot: 22.5 });
+    petals(course(f), { n: 16, r0: 52, r1: 88, sw: 1.2, op: .5, inner: 1, rot: 11.25 });
+    // The edge. Short points first so the long ones sit over them.
+    petals(course(f), { n: 8,  r0: 80, r1: 108, sw: 1.2, op: .45, inner: 1, rot: 22.5 });
+    petals(course(f), { n: 8,  r0: 80, r1: 128, sw: 1.5, op: .55, inner: 1, seed: 3, innerW: .5 });
+    return f.s;
+  }
+
+  /* ── २ · POSTER ───────────────────────────────────────────────────────
+     Denser: more courses, dotted outlines picking out each rim, sixteen points
+     at the edge. */
+  function poster(size) {
+    var f = frame(size, 'P');
+    dots(course(f), { n: 1, r: 0, rad: 4, op: .85 });
+    petals(course(f), { n: 8,  r0: 8,  r1: 26, sw: 1.2, op: .6, lobe: 1, inner: 1 });
+    petals(course(f), { n: 16, r0: 24, r1: 48, sw: 1.1, op: .55, inner: 1, rot: 11.25 });
+    dots(course(f),   { n: 32, r: 53, rad: 1.6, r2: .9, op: .45 });
+    petals(course(f), { n: 16, r0: 56, r1: 84, sw: 1.1, op: .5, inner: 1, seed: 2 });
+    dots(course(f),   { n: 48, r: 89, rad: 1.4, r2: .8, op: .4 });
+    petals(course(f), { n: 16, r0: 92, r1: 112, sw: 1, op: .42, inner: 1, rot: 11.25 });
+    petals(course(f), { n: 16, r0: 100, r1: 128, sw: 1.3, op: .5, inner: 1, innerW: .48 });
+    dots(course(f),   { n: 16, r: 122, rad: 1.8, op: .4, rot: 11.25 });
+    return f.s;
+  }
+
+  /* ── ३ · COLOURING BOOK ───────────────────────────────────────────────
+     Bold, few courses, big petals with generous interiors — the drawing being
+     inked in the video. Twelve points. */
+  function bold(size) {
+    var f = frame(size, 'D');
+    ring(course(f), { r: 10, sw: 1.8, op: .6 });
+    petals(course(f), { n: 6,  r0: 11, r1: 36, sw: 1.7, op: .62, lobe: 1, inner: 1 });
+    petals(course(f), { n: 12, r0: 33, r1: 70, sw: 1.6, op: .56, inner: 1, seed: 3, rot: 15 });
+    petals(course(f), { n: 12, r0: 66, r1: 100, sw: 1.5, op: .5, inner: 1, seed: 2.6 });
+    petals(course(f), { n: 12, r0: 92, r1: 126, sw: 1.7, op: .55, inner: 1, innerW: .46, rot: 15 });
+    lengths(f.s);
+    return f.s;
+  }
+
+  /* ── ४ · TURNING ──────────────────────────────────────────────────────
+     The same star with alternate courses turning opposite ways — nothing
+     appears or vanishes, so it can run for a minute without irritating. */
+  function turning(size) {
+    var f = frame(size, 'R');
+    ring(course(f, 'cw'), { r: 9, sw: 1.5, op: .6 });
+    petals(course(f, 'cw'),  { n: 8,  r0: 10, r1: 32, sw: 1.3, op: .6, lobe: 1, inner: 1 });
+    petals(course(f, 'ccw'), { n: 12, r0: 29, r1: 62, sw: 1.4, op: .55, inner: 1, seed: 2.6, rot: 15 });
+    petals(course(f, 'cw'),  { n: 18, r0: 58, r1: 92, sw: 1.1, op: .48, inner: 1, rot: 10 });
+    dots(course(f, 'ccw'),   { n: 36, r: 97, rad: 1.6, r2: .9, op: .42 });
+    petals(course(f, 'cw'),  { n: 12, r0: 98, r1: 127, sw: 1.4, op: .5, inner: 1, innerW: .48 });
+    return f.s;
+  }
+
+  var PLATES = [
+    ['Star lotus', 'Eight long points, eight short · bloom', starLotus,
+     'The line drawing you sent, built. Long and short points alternate at the edge so the silhouette has a rhythm instead of a uniform sawtooth. Courses open outward from the eye.'],
+    ['Poster', 'Sixteen points, dotted rims · pulse', poster,
+     'Denser — more courses with rings of dots picking out each rim, the way the printed one is worked. A wave of weight travels outward; the figure is never partial.'],
+    ['Colouring book', 'Twelve points, bold line · draws itself', bold,
+     'Few courses, big petals, generous interiors — the drawing being inked in the video. Everything stroked so the whole figure draws line by line.'],
+    ['Turning', 'Twelve points · counter-rotation', turning,
+     'The same star with alternate courses turning opposite ways. Nothing appears or vanishes, so it can run for a minute without becoming irritating — the safest for a wait of unknown length.'],
+  ];
+
+  var host = document.getElementById('plates');
+  PLATES.forEach(function (p) {
+    var d = document.createElement('div'); d.className = 'pc';
+    var pl = document.createElement('div'); pl.className = 'plate';
+    var svg = p[2](288);
+    pl.appendChild(svg);
+    var ka = document.createElement('span'); ka.className = 'ka'; ka.lang = 'hi'; ka.textContent = 'क';
+    pl.appendChild(ka); d.appendChild(pl);
+    var n = svg.querySelectorAll('path,circle').length;
+    d.insertAdjacentHTML('beforeend',
+      '<div class="cap"><div class="nm">' + p[0] + '</div>' +
+      '<div class="src">' + p[1] + ' · ' + n + ' elements</div><p>' + p[3] + '</p></div>');
+    host.appendChild(d);
+  });
+})();
+</script>
