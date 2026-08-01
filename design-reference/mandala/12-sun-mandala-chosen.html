@@ -1,0 +1,217 @@
+<title>Kartavaya — the sun mandala, drawn on</title>
+<style>
+  :root{
+    --paper:#FFFFFF; --rule:#E8E2D4;
+    --primary:#04837A; --primary-vivid:#0AA396;
+    --page:#0D0C09; --fg:#EDE8DC; --fg-2:#98917F; --hair:#26221B;
+    --display:Georgia,'Times New Roman',serif;
+    --ui:'Segoe UI',system-ui,-apple-system,sans-serif;
+    --hindi:'Nirmala UI','Noto Serif Devanagari','Noto Sans Devanagari','Mangal',serif;
+  }
+  @media (prefers-color-scheme: light){:root{--page:#EDE7DA;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}}
+  :root[data-theme="dark"]{--page:#0D0C09;--fg:#EDE8DC;--fg-2:#98917F;--hair:#26221B}
+  :root[data-theme="light"]{--page:#EDE7DA;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}
+
+  *{box-sizing:border-box}
+  .pg{background:var(--page);color:var(--fg);font-family:var(--ui);padding:44px 24px 90px;
+      min-height:100vh;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-family:var(--display);font-weight:400;font-size:clamp(27px,4.6vw,38px);margin:0 0 12px;
+     letter-spacing:-.022em;text-wrap:balance}
+  h1 .hi{font-family:var(--hindi);color:var(--primary-vivid);font-size:.68em}
+  .lede{margin:0;color:var(--fg-2);font-size:14.5px;max-width:72ch;line-height:1.7}
+  .lede b{color:var(--fg);font-weight:600}
+  h2{font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--fg-2);
+     border-top:1px solid var(--hair);padding-top:15px;margin:50px 0 8px}
+  .note{color:var(--fg-2);font-size:13px;margin:0 0 26px;max-width:74ch;line-height:1.65}
+  .grid{display:flex;flex-wrap:wrap;gap:30px;align-items:flex-start}
+  .pc{width:280px}
+  .plate{height:280px;border-radius:6px;background:var(--paper);border:1px solid var(--hair);
+         display:grid;place-items:center;position:relative;overflow:hidden}
+  .plate .ka{position:absolute;font-family:var(--hindi);font-size:26px;line-height:1;color:var(--primary);
+             user-select:none;z-index:4;
+             text-shadow:0 0 13px #fff,0 0 8px #fff,0 0 4px #fff,0 0 2px #fff}
+  svg.sun{display:block;position:absolute;color:var(--primary)}
+  .cap{margin-top:12px}
+  .cap .nm{font-family:var(--display);font-size:16px}
+  .cap .src{font-size:10px;color:var(--fg-2);letter-spacing:.08em;text-transform:uppercase;margin-top:3px;
+            font-variant-numeric:tabular-nums}
+  .cap p{margin:7px 0 0;font-size:12.5px;color:var(--fg-2);line-height:1.6}
+
+  /* ── the draw-on ─────────────────────────────────────────────────────────
+     This is the motion in the reference: every stroke has its own length and
+     draws itself, staggered outward. Lottie calls it a trim path; in CSS it is
+     stroke-dashoffset, and it is the same thing.
+
+     It holds at full, then UNDRAWS from the same end rather than fading. A
+     fade would put a grey ghost frame on screen; undrawing keeps the line
+     crisp for every frame it is visible. */
+  .draw{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);
+        animation:trim var(--dur,4.6s) cubic-bezier(.42,0,.32,1) infinite;
+        animation-delay:var(--d,0s)}
+  @keyframes trim{
+    0%   {stroke-dashoffset:var(--len)}
+    42%  {stroke-dashoffset:0}
+    72%  {stroke-dashoffset:0}
+    100% {stroke-dashoffset:calc(var(--len) * -1)}
+  }
+  /* Slow turn under the draw, so the figure is never completely still. */
+  .turn{animation:spin 54s linear infinite;transform-origin:center;transform-box:fill-box}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .turnR{animation:spinR 68s linear infinite;transform-origin:center;transform-box:fill-box}
+  @keyframes spinR{to{transform:rotate(-360deg)}}
+
+  @media (prefers-reduced-motion:reduce){
+    .plate *{animation:none!important}
+    .draw{stroke-dashoffset:0!important}
+  }
+</style>
+
+<div class="pg"><div class="wrap">
+
+<h1>The one you picked <span class="hi">क</span> — sun mandala, drawn on</h1>
+<p class="lede">Meditation Mandala <b>8972474</b>. What it actually is: a lobed rosette at the centre, a ring, then long <b>curved</b> rays sweeping outward — not straight spokes, they bend as they go. One colour, one hairline weight, and the whole thing <b>draws itself on</b> stroke by stroke and then undraws.<br><br>That draw-on is a Lottie trim path. In CSS it is <code>stroke-dashoffset</code>, which is the same mechanism — so this is the real motion, not an impression of it.</p>
+
+<h2>Three timings, one figure</h2>
+<p class="note">Same drawing throughout. Only the pace and the direction of the underlying turn change.</p>
+<div class="grid" id="plates"></div>
+
+<h2>How it is built</h2>
+<p class="note" style="max-width:76ch">
+  <b style="color:var(--fg)">The rays curve.</b> Each is sampled along a spiral — radius and angle advance together — so it sweeps as it extends. Straight spokes read as a gear; swept ones read as a sun. This is the detail that makes the reference what it is.<br><br>
+  <b style="color:var(--fg)">Long and short alternate.</b> Twenty long rays with a shorter one between each pair, which is what gives the outer edge its rhythm.<br><br>
+  <b style="color:var(--fg)">Every stroke carries its own length.</b> A ray and a rosette petal are wildly different lengths, and one shared dasharray would draw them at wildly different speeds. Each element measures itself, so they all draw at the same rate.
+</p>
+
+</div></div>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg', TAU = Math.PI * 2;
+  function el(t, a) { var e = document.createElementNS(NS, t); for (var k in (a||{})) e.setAttribute(k, a[k]); return e; }
+  var f = function (n) { return (+n).toFixed(2); };
+  var SW = 1.6;   // one pen, everywhere
+
+  /* A curved ray. Radius and angle advance together, so the stroke sweeps as it
+     extends — the detail that makes the reference read as a sun rather than as
+     a gear. Sampled and joined; at this scale the polyline is indistinguishable
+     from a curve and its length is exact, which the draw-on needs. */
+  function ray(a0, r0, r1, sweepDeg, steps) {
+    var d = '', len = 0, px = null, py = null;
+    steps = steps || 14;
+    for (var i = 0; i <= steps; i++) {
+      var t = i / steps;
+      // Ease the sweep so the bend tightens toward the tip, as it does in the
+      // reference — a constant rate gives a lazy arc.
+      var a = a0 + (sweepDeg * Math.pow(t, 1.35)) * Math.PI / 180;
+      var r = r0 + (r1 - r0) * t;
+      var x = Math.cos(a) * r, y = Math.sin(a) * r;
+      if (px !== null) len += Math.hypot(x - px, y - py);
+      d += (i ? 'L' : 'M') + f(x) + ',' + f(y);
+      px = x; py = y;
+    }
+    return { d: d, len: len };
+  }
+
+  /* A rounded lobe — the small petals of the centre rosette. */
+  function lobe(r0, r1, w) {
+    var s = r1 - r0;
+    return 'M0,' + f(-r0)
+      + 'C' + f(w) + ',' + f(-r0 - s*.30) + ' ' + f(w) + ',' + f(-r1 + s*.26) + ' 0,' + f(-r1)
+      + 'C' + f(-w) + ',' + f(-r1 + s*.26) + ' ' + f(-w) + ',' + f(-r0 - s*.30) + ' 0,' + f(-r0) + 'Z';
+  }
+
+  /**
+   * Every stroke measures ITSELF.
+   *
+   * A ray is ~90 units long and a rosette petal ~40. One shared dasharray would
+   * draw them at wildly different rates and the figure would assemble raggedly.
+   * Passing each element its own length is what makes them draw in step.
+   */
+  function stroke(g, d, len, delay, dur) {
+    var p = el('path', { class: 'draw', d: d, fill: 'none', stroke: 'currentColor',
+      'stroke-width': SW, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+    p.style.setProperty('--len', Math.max(8, Math.round(len)));
+    p.style.setProperty('--d', delay.toFixed(2) + 's');
+    if (dur) p.style.setProperty('--dur', dur);
+    g.appendChild(p);
+    return p;
+  }
+  function circleLen(r) { return TAU * r; }
+
+  function build(size, dur, dir) {
+    var s = el('svg', { class: 'sun', width: size, height: size, viewBox: '0 0 260 260' });
+    var root = el('g', { transform: 'translate(130,130)' });
+    s.appendChild(root);
+
+    var slow = el('g', { class: dir === 'ccw' ? 'turnR' : 'turn' });
+    root.appendChild(slow);
+
+    var step = 0;
+    var D = function () { return (step++) * 0.035; };
+
+    // ── the eye ──
+    var c1 = el('circle', { class: 'draw', r: 11, fill: 'none', stroke: 'currentColor',
+      'stroke-width': SW });
+    c1.style.setProperty('--len', Math.round(circleLen(11)));
+    c1.style.setProperty('--d', '0s');
+    if (dur) c1.style.setProperty('--dur', dur);
+    slow.appendChild(c1);
+
+    // ── the rosette: ten lobes, then ten smaller between them ──
+    for (var i = 0; i < 10; i++) {
+      var p = stroke(slow, lobe(12, 34, 7.5), 82, D(), dur);
+      p.setAttribute('transform', 'rotate(' + f(i * 36) + ')');
+    }
+    for (var j = 0; j < 10; j++) {
+      var q = stroke(slow, lobe(13, 26, 4.6), 56, D(), dur);
+      q.setAttribute('transform', 'rotate(' + f(j * 36 + 18) + ')');
+    }
+
+    // ── the ring the rays spring from ──
+    var c2 = el('circle', { class: 'draw', r: 45, fill: 'none', stroke: 'currentColor',
+      'stroke-width': SW });
+    c2.style.setProperty('--len', Math.round(circleLen(45)));
+    c2.style.setProperty('--d', (step * 0.035).toFixed(2) + 's');
+    if (dur) c2.style.setProperty('--dur', dur);
+    slow.appendChild(c2);
+    step += 2;
+
+    // ── the rays: twenty long, twenty short between ──
+    var N = 20;
+    for (var k = 0; k < N; k++) {
+      var a = (TAU / N) * k - Math.PI / 2;
+      var lng = ray(a, 47, 118, 26);
+      stroke(slow, lng.d, lng.len, D(), dur);
+      var b = a + (TAU / N) / 2;
+      var shrt = ray(b, 47, 88, 20);
+      stroke(slow, shrt.d, shrt.len, D(), dur);
+    }
+    return s;
+  }
+
+  var VARIANTS = [
+    ['Standard', 'draws in 1.9s · 54s turn', null, 'turn',
+     'The pace of the reference. Every stroke draws, the figure holds complete for a third of the cycle, then undraws from the same end.'],
+    ['Patient', 'draws in 3.0s · slower', '7.2s', 'turn',
+     'Half again as long. Better for a splash where you have the time and want the assembly to be watched rather than glimpsed.'],
+    ['Brisk', 'draws in 1.3s · reverse turn', '3.2s', 'ccw',
+     'Quick enough for a route change or a table refresh, where a long cycle would still be mid-draw when the content arrives.'],
+  ];
+
+  var host = document.getElementById('plates');
+  VARIANTS.forEach(function (v) {
+    var box = document.createElement('div'); box.className = 'pc';
+    var pl = document.createElement('div'); pl.className = 'plate';
+    var svg = build(264, v[2], v[3]);
+    pl.appendChild(svg);
+    var ka = document.createElement('span'); ka.className = 'ka'; ka.lang = 'hi'; ka.textContent = 'क';
+    pl.appendChild(ka); box.appendChild(pl);
+    var n = svg.querySelectorAll('path,circle').length;
+    box.insertAdjacentHTML('beforeend',
+      '<div class="cap"><div class="nm">' + v[0] + '</div>' +
+      '<div class="src">' + v[1] + ' · ' + n + ' strokes</div><p>' + v[4] + '</p></div>');
+    host.appendChild(box);
+  });
+})();
+</script>
