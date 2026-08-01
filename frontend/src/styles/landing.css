@@ -14,7 +14,7 @@
   overflow-x: hidden;
 }
 .lwrap { width: min(1240px, 100% - 44px); margin: 0 auto; }
-.lsec  { padding: 82px 0; }
+.lsec  { position: relative; padding: 82px 0; overflow: hidden; }
 
 /* ── Scroll reveal ────────────────────────────────────────────────────────
    Default state is VISIBLE. The observer removes the offset; it never adds
@@ -47,9 +47,14 @@
   transition: background var(--dur-fast), border-color var(--dur-fast);
   border-bottom: 1px solid transparent;
 }
+/* `landing.css:12`. The scrolled bar is glass at a heavier blur than the app
+   chrome uses — 18px against --glass-blur's 14 — because it sits over a hero
+   mesh rather than over a page of text. --glass-tint is the same paint
+   --surface resolves to, so only the blur and the saturation actually move. */
 .lnav.solid {
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  background: rgba(var(--glass-tint), .82);
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
   border-bottom-color: var(--outline-variant);
 }
 .lnav__in {
@@ -61,14 +66,25 @@
   position: relative;
 }
 /* The logo and wordmark as one target back to the top. */
-.lnav__brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
-.lnav__links { display: flex; align-items: center; gap: 26px; }
+.lnav__brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; flex-shrink: 0; }
+/* The links are spaced by their own padding, not by a 26px gap — `landing.css
+   :18-20`. Each one is a 8/12 hit target with a hover surface, which is both a
+   bigger target than the bare text was and the same shape as every other
+   secondary control in the product. */
+.lnav__links { display: flex; align-items: center; gap: 4px; margin-left: 8px; }
 .lnav__a {
-  font-size: 13.5px; color: var(--on-surface-2); text-decoration: none;
+  padding: 8px 12px; border-radius: var(--r-sm);
+  font-size: 13.5px; font-weight: 500; color: var(--on-surface-2); text-decoration: none;
   background: none; border: 0; cursor: pointer; font-family: inherit;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
-.lnav__a:hover { color: var(--on-surface); }
-.lnav__burger { display: none; }
+.lnav__a:hover { background: var(--s-container); color: var(--on-surface); }
+/* Sized here, revealed by the breakpoint below. */
+.lnav__burger {
+  display: none; margin-left: auto;
+  width: 40px; height: 40px; border-radius: var(--r-sm);
+  place-items: center; color: var(--on-surface);
+}
 
 /* ── Hero ─────────────────────────────────────────────────────────────── */
 .lhero { padding: 68px 0 82px; position: relative; }
@@ -184,23 +200,34 @@
    The track is sized so fifteen modules land as 5 × 3 at full width rather
    than 6 + 6 + 3; a ragged last row reads as an incomplete list, which is the
    opposite of what a grid of everything the product does is for. */
-.lmods { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 12px; }
+.lmods { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 11px; }
 .lmod {
-  padding: 18px; border-radius: var(--r-md);
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 15px; border-radius: var(--r-md); text-align: left;
   border: 1px solid var(--outline-variant); background: var(--surface);
-  transition: border-color var(--dur-fast), transform var(--dur-fast);
+  transition: transform var(--dur-base) var(--ease-spring), box-shadow var(--dur-base), border-color var(--dur-fast);
 }
-.lmod:hover { border-color: var(--primary); }
+/* `landing.css:113` lifts the card and shadows it; its border-color is
+   `color-mix(in srgb, var(--c) 40%, var(--outline-variant))`, and --c is NOT
+   ported because these cards do not carry one — the reference's Landing.jsx
+   gives every module an inline hue and `Modules.jsx` here does not. A
+   color-mix() against an undefined variable voids the whole declaration, so
+   that value would have removed the hover border rather than tinted it. */
+.lmod:hover { transform: translateY(-3px); box-shadow: var(--shadow-2); border-color: var(--primary); }
 /* --font-hindi, not --font-indic (24 §Which token, where). These fifteen names
    are FIXED glyphs, not labels that follow the language setting: the array in
    Modules.jsx is Devanagari in every language. --font-indic becomes Noto Sans
    Gujarati under EN+GU, which has no Devanagari coverage, and the browser then
    falls back glyph by glyph — one word, several weights. */
 .lmod__hi {
-  font-family: var(--font-hindi); font-size: 21px;
-  color: var(--on-surface); line-height: 1.35; margin-bottom: 2px;
+  font-family: var(--font-hindi); font-size: 18px;
+  color: var(--on-surface); line-height: 1.35;
 }
-.lmod__en { font-size: 12.5px; color: var(--on-surface-3); }
+/* A tracked uppercase label under the Devanagari name, not a second sentence
+   at reading size — `landing.css:116`. The Devanagari leads here (see above);
+   an English line at 12.5px in body case was competing with it. */
+.lmod__en { font-size: 10px; letter-spacing: .13em; text-transform: uppercase; font-weight: 700; color: var(--on-surface-3); }
 
 /* Devanagari inside a product fragment — same reasoning, smaller. */
 .lfrag__hi { font-family: var(--font-hindi); }
@@ -264,30 +291,41 @@
 .lfrag__grant--on { color: var(--primary-text); }
 
 /* ── Feature rows ─────────────────────────────────────────────────────── */
+/* .82/1.18, not 50/50 — `landing.css:106`. The text column is the shorter of
+   the two and an even split left it with a ragged right edge beside a
+   full-bleed product fragment. */
 .lfeat {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 48px; align-items: center; padding: 46px 0;
+  display: grid; grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr);
+  gap: 46px; align-items: center; padding: 46px 0;
 }
 .lfeat:nth-child(even) .lfeat__txt { order: 2; }
 .lfeat__h {
   font-family: var(--font-display); font-size: 27px; font-weight: 400;
   letter-spacing: -.024em; margin: 0 0 12px; color: var(--on-surface);
 }
-.lfeat__p { font-size: 15px; line-height: 1.65; color: var(--on-surface-2); text-wrap: pretty; }
+.lfeat__p { font-size: 14.5px; line-height: 1.72; color: var(--on-surface-3); margin: 14px 0 0; text-wrap: pretty; }
 
 /* ── Pricing ──────────────────────────────────────────────────────────── */
-.lplans { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+/* auto-fit, not a hard four — `landing.css:132`. The breakpoints below still
+   pin 2 and 1; what changes is that a tier added or removed no longer needs
+   the count edited here to keep the row from going ragged. */
+.lplans { display: grid; grid-template-columns: repeat(auto-fit, minmax(238px, 1fr)); gap: 14px; align-items: start; }
 .lplan {
+  position: relative;
   display: flex; flex-direction: column;
-  padding: 24px; border-radius: var(--r-md);
+  padding: 24px; border-radius: var(--r-lg);
   border: 1px solid var(--outline-variant); background: var(--surface);
 }
 .lplan--hi { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 .lplan__n {
   font-size: 15px; font-weight: 600; text-transform: capitalize;
-  color: var(--on-surface); margin-bottom: 4px;
+  color: var(--on-surface);
 }
-.lplan__d { font-size: 12.5px; color: var(--on-surface-3); line-height: 1.5; }
+/* `min-height: 2.55em` is what keeps the four cards the same height when one
+   tier's description runs to two lines and another's to one — `landing.css
+   :145`. The separation moved off `.lplan__n`'s margin-bottom and onto this
+   margin-top, which is where the reference puts it. */
+.lplan__d { font-size: 12.5px; color: var(--on-surface-3); margin: 11px 0 0; line-height: 1.55; min-height: 2.55em; text-wrap: pretty; }
 /* `.lplan__n2` (the big tabular-nums figure) and `.lplan__cr` / `.lplan__u`
    (the pinned credit chip and its unit label) are deleted rather than left
    unused. They were the styling for the price and the per-tier credit
@@ -316,7 +354,7 @@
 /* ── Footer ───────────────────────────────────────────────────────────── */
 .lfoot {
   border-top: 1px solid var(--outline-variant);
-  padding: 44px 0 34px; background: var(--s-lowest);
+  padding: 56px 0 26px; background: var(--surface);
 }
 .lfoot__grid { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: 32px; }
 .lfoot__brand { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
@@ -354,7 +392,8 @@
 
 @media (max-width: 860px) {
   .lnav__links { display: none; }
-  .lnav__burger { display: inline-flex; }
+  /* grid, so the `place-items: center` on the base rule centres the icon. */
+  .lnav__burger { display: grid; }
   .lnav__links.open {
     display: flex; flex-direction: column; align-items: flex-start;
     position: absolute; left: 0; right: 0; top: 100%;
