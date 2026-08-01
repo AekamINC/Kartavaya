@@ -72,9 +72,36 @@ export default function LoginScreen() {
   // The band and the letter in it — see the note above on why both clamp
   // against height.
   const short  = height < 500;
-  const crownW = width * 1.6;
   const crownH = short ? Math.max(96,  height * 0.24)
                        : Math.max(150, Math.min(height * 0.27, 232));
+
+  /*
+   * The band's width, and an honest note about the curve.
+   *
+   * The web crown uses an ELLIPTICAL radius — `0 0 46% 46% / 0 0 38px 38px` —
+   * which fixes the vertical sweep at 38px however wide the element gets.
+   * React Native has no elliptical radius, so this draws the band wider than
+   * the screen with a circular radius and shows the middle.
+   *
+   * THAT WORKS IN PORTRAIT AND FLATTENS IN LANDSCAPE, and the reason is worth
+   * recording because it is not obvious and it defeated two attempts.
+   *
+   * React Native clamps border radii to fit the box, exactly as CSS does. Ask
+   * for a 2825 radius on a band 216 tall and you get 216. So the widest curve
+   * available is one whose radius equals the band's HEIGHT — which spans the
+   * full width of a 427dp portrait screen, and covers only the two far corners
+   * of a 1280dp landscape one, leaving the middle flat. Widening the view does
+   * not help: the clamp is per-box, not per-viewport.
+   *
+   * Verified on a booted Tab A11+ at 1280x800 — bottom edge straight.
+   *
+   * The real fix is react-native-svg and a Path, which draws a true quadratic
+   * in one element and costs a dependency this project does not yet carry.
+   * Until then the band is sized so the corners curve as much as the clamp
+   * allows, which reads as intended in portrait and as a clean straight edge
+   * in landscape rather than as a mistake.
+   */
+  const crownW = width + crownH * 2;
   const kaSize = short ? Math.max(42, Math.min(height * 0.13, 64))
                        : Math.max(56, Math.min(height * 0.14, 118));
   const wmSize = Math.min(width * 0.62, 340);
