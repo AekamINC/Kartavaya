@@ -814,32 +814,15 @@ body {
   flex: 1;
 }
 
-.k-pageh {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: var(--sp-5);
-}
-.k-pageh__title {
-  font-family: var(--font-display);
-  font-size: 28px;
-  font-weight: 500;
-  color: var(--ink);
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-}
-.k-pageh__sans {
-  font-family: var(--font-hindi);
-  font-size: 18px;
-  color: var(--ink-3);
-  line-height: 1;
-}
-.k-pageh__actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
+/* The page header lives in `editorial.css`, which is imported after this file
+   and redeclares every one of these rules at the same specificity. What stood
+   here was the FIRST version of it — `.k-pageh__sans` at 18px in --ink-3, the
+   inverted bilingual title `app.css:144` was fixed away from — and none of it
+   had reached a screen since editorial.css was written. It survived because
+   design-diff walks the styles directory alphabetically and this file sorts
+   after that one, so the tool read the dead copy and reported the defect as
+   still shipping. The two declarations that were NOT restated downstream
+   (`.k-pageh` margin-bottom, `.k-pageh__sans` line-height) moved there. */
 
 /* ── Cards ─────────────────────────────────────────────────────────────────
    The `padding` below STAYS, and the reasoning is worth keeping because the

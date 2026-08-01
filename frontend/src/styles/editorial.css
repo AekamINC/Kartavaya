@@ -434,7 +434,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   text-align: left;
   position: relative;
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 .side__item:hover { background: var(--side-hover); color: #fff; }
 .side__item.on { background: color-mix(in srgb, var(--primary-vivid) 20%, transparent); color: #fff; }
@@ -548,7 +548,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   font-family: var(--font-ui);
   font-size: var(--t-label); font-weight: 600;
   flex-shrink: 0; cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 .side__toggle:hover { background: var(--side-hover); color: #fff; }
 .side--rail .side__toggle { width: 32px; margin: 0 auto 8px; }
@@ -1566,8 +1566,13 @@ input, textarea, select { font-family: inherit; color: inherit; }
   flex-wrap: wrap;
   padding-bottom: var(--sp-4);
   border-bottom: 1px solid var(--rule);
+  margin-bottom: var(--sp-5);
 }
-.k-pageh__txt { min-width: 0; }
+/* `flex: 1 1 320px` from `app.css:141`: the text block grows into the space the
+   actions do not take, and wraps to its own line below 320px instead of
+   crushing. Without a basis it was sized by its content, so a short title left
+   the actions floating in the middle of the header. */
+.k-pageh__txt { min-width: 0; flex: 1 1 320px; }
 /* The kicker is TRACKED (.22em) and UPPERCASED, so no Devanagari may pass
    through it — 24-bilingual-devanagari.md forbids both on Devanagari, and the
    measured render put फ़लक here at 2.42px of tracking. The fallback family was
@@ -1576,25 +1581,38 @@ input, textarea, select { font-family: inherit; color: inherit; }
    where the reference renders it (`.ph__hi`, beside the title). If a caller
    still passes mixed script, the :lang guard below catches it. */
 .k-pageh__kicker {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   font-family: var(--font-ui);
-  font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+  font-size: 10.5px; letter-spacing: .2em; text-transform: uppercase;
   color: var(--primary-text); font-weight: 700;
-  margin-bottom: 6px;
+  margin-bottom: 7px;
 }
 .k-pageh__kicker:lang(hi), .k-pageh__kicker :lang(hi),
 .k-pageh__kicker:lang(sa), .k-pageh__kicker :lang(sa) {
   font-family: var(--font-hindi); letter-spacing: 0; text-transform: none;
 }
+/* `app.css:143`. Three departures from what was here, all one decision:
+   the reference page title is a BLOCK of text at --t-headline, and this was a
+   44px flex row.
+
+   · `var(--t-headline)`, not `clamp(32px, 4vw, 44px)`. 28px at the default
+     base, and it tracks the Text size slider, which a vw clamp cannot — at
+     1440px the clamp pinned the title to 44px no matter what the user set.
+   · `line-height: 1.3`, not 1. The Devanagari IS this title (`.k-pageh__sans`
+     below is 1em) and Tiro's conjuncts descend well past the Latin baseline;
+     at line-height 1 they collided with the lede underneath.
+   · `display: block`, not flex. The English companion is an inline-block that
+     sits beside the Devanagari with its own left margin — a flex row with a
+     16px gap put a gutter there that no longer belongs to either word. */
 .k-pageh__h1 {
   font-family: var(--font-display);
-  font-size: clamp(32px, 4vw, 44px);
-  font-weight: 400;
-  line-height: 1;
+  font-size: var(--t-headline);
+  font-weight: var(--t-headline-w);
+  line-height: 1.3;
   margin: 0;
   letter-spacing: -0.02em;
   color: var(--ink);
-  display: flex; align-items: baseline; gap: 16px;
-  flex-wrap: wrap;
+  display: block;
 }
 .k-pageh__title {
   font-family: var(--font-display);
@@ -1618,6 +1636,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
      at 0.7em behind a 44px English headline, which inverts the whole bilingual
      idea the product is built on. */
   font-size: 1em;
+  line-height: 1;
   letter-spacing: normal;
   color: var(--primary-text);
   font-weight: 400;
@@ -1635,6 +1654,8 @@ input, textarea, select { font-family: inherit; color: inherit; }
    and the muted ink — a label, not a headline. `--font-ui` deliberately: the
    display serif belongs to the Devanagari here. */
 .k-pageh__en {
+  display: inline-block;
+  margin-left: 12px;
   font-family: var(--font-ui);
   font-size: 0.56em;
   font-weight: 600;
@@ -1643,11 +1664,15 @@ input, textarea, select { font-family: inherit; color: inherit; }
   color: var(--ink-3);
   white-space: nowrap;
 }
+/* 62ch rather than 560px, from `app.css:146`: the measure is set in characters
+   so it holds when the Text size slider moves, where a pixel width gets wider
+   in words as the type gets smaller. */
 .k-pageh__lede {
-  font-size: 14px;
+  font-size: var(--t-body);
   color: var(--ink-3);
-  margin: 10px 0 0;
-  max-width: 560px;
+  margin: 9px 0 0;
+  max-width: 62ch;
+  text-wrap: pretty;
 }
 .k-pageh__right { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
 .k-pageh__actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
