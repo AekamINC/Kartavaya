@@ -136,3 +136,4 @@ frontend/public/__runbuild.js
 /playwright-report/
 frontend/test-results/
 frontend/playwright-report/
+module-facts.json
