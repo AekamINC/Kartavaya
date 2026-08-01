@@ -489,12 +489,12 @@
    `clamp(160px, 24vw, 300px)` at `opacity: .03`. This read 22vw / 320px / .035,
    which at 1280 is 281.60px against the source's 300px — 18.4px smaller AND
    17% more present, two errors pulling opposite ways so neither showed up as
-   "wrong" on its own. The inset (-3%/-8% here, -4%/-10% there) is placement
-   rather than type and is left for whoever owns the composition. */
+   "wrong" on its own. The inset was left open for whoever owns the composition
+   — that is the reference, so it is now its -4%/-10%. */
 .ob__wm {
-  position: absolute; right: -3%; bottom: -8%;
+  position: absolute; right: -4%; bottom: -10%; z-index: 0;
   font-family: var(--font-hindi); font-size: clamp(160px, 24vw, 300px);
-  line-height: .8; color: var(--on-surface);
+  line-height: .8; color: var(--on-surface); white-space: nowrap;
   opacity: .03; pointer-events: none; user-select: none;
 }
 .ob__inner { position: relative; z-index: 1; width: 100%; max-width: 880px; }
@@ -769,7 +769,7 @@
 /* 11px, per `.ob__save` in onboarding.css — the one rule in that file this
    build shares a class name with, and it still had a different size. */
 .ob__save { flex: 1 1 220px; font-size: 11px; color: var(--on-surface-3); display: inline-flex; align-items: center; gap: 6px; }
-.ob__save svg { flex-shrink: 0; color: var(--ok); }
+.ob__save svg { width: 12px; height: 12px; flex-shrink: 0; color: var(--ok); }
 /* The wizard's primary action is a button in a row, not a full-width block. */
 .ob__next { width: auto; min-width: 156px; }
 

@@ -87,7 +87,11 @@
 }
 
 /* ── Hero ─────────────────────────────────────────────────────────────── */
-.lhero { padding: 68px 0 82px; position: relative; }
+/* `overflow: hidden` clips `.lhero__mesh`, which is inset -30%/-10% and was
+   spilling past the section it belongs to. The 128/74 padding that goes with
+   it in the reference is NOT taken — that number is measured against a fixed
+   66px nav, and this build's nav is sticky and takes flow space. */
+.lhero { padding: 68px 0 82px; position: relative; overflow: hidden; }
 .lhero__grid {
   display: grid; grid-template-columns: minmax(0, 1.02fr) minmax(0, .98fr);
   gap: 54px; align-items: center;

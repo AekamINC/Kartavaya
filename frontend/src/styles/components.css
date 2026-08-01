@@ -155,12 +155,13 @@ textarea.inp { resize: vertical; min-height: 76px; }
 .tag { --c: var(--on-surface-3);
   display: inline-flex; align-items: center; gap: 6px;
   padding: 2px 9px; border-radius: var(--r-pill);
-  /* `app.css:197` prints 11.5px/600. --t-label IS 11.5px at the default base,
-     and unlike a literal it still tracks the Text size slider, so the token is
-     the reference value plus the density behaviour the reference has no
-     concept of. Same reasoning wherever a reference literal is swapped for the
-     token that baselines to it. */
-  font-size: var(--t-label); font-weight: 600; letter-spacing: .04em;
+  /* `app.css:197` prints 11.5px. No token lands there — `--t-label` computes
+     to 12.04px at the default base, not the 11.5px its max() floor suggests —
+     so this is the token idiom applied to the reference's own number: 11.5px
+     at base 14, still moving with the Text size slider, still floored. A bare
+     `11.5px` would hit the value and freeze the slider out. */
+  font-size: max(11px, calc(var(--font-size-base) * .82));
+  font-weight: 600; letter-spacing: .04em;
   white-space: nowrap;
   /* Not `color: var(--c)`. The reference mixes the tone 72% toward the page
      ink, which is what keeps a --warn tag legible on its own 15% tint; the
@@ -1134,8 +1135,13 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    The subtask picker at a hardcoded 300 over a drawer at 200 works today only
    because nobody has opened a menu on top of a modal. */
 .pop {
-  position: fixed; z-index: 340; min-width: 200px; max-width: 340px; padding: var(--sp-3);
-  border: 1px solid var(--outline-variant); border-radius: var(--r-md);
+  /* `position: fixed`, not the reference's `absolute`: Popover.jsx portals to
+     <body> and positions from a measured rect, so there is no shell for an
+     absolute box to resolve against. Everything else is `app.css:250` — the
+     240px floor and --r-lg. */
+  position: fixed; z-index: 340; min-width: 240px; max-width: 340px; padding: var(--sp-3);
+  border: 1px solid var(--outline-variant); border-radius: var(--r-lg);
+  overflow: hidden;
   /* Glass at `+.12`, blur ×1.5 — `app.css:250`. Overlays sit one step more
      opaque and one step less blurred than the drawer, because a popover is
      small and its text has to stay legible over whatever it covers. */
