@@ -1,0 +1,269 @@
+<title>Kartavaya — rich mandala, क at the centre</title>
+<style>
+  :root{
+    --paper:#F3EFE6; --rule:#D8D1BE;
+    --primary:#04837A; --primary-vivid:#0AA396;
+    --page:#0E0D0A; --fg:#EDE8DC; --fg-2:#98917F; --hair:#26221B;
+    --display:Georgia,'Times New Roman',serif;
+    --ui:'Segoe UI',system-ui,-apple-system,sans-serif;
+    --hindi:'Nirmala UI','Noto Serif Devanagari','Noto Sans Devanagari','Mangal',serif;
+  }
+  @media (prefers-color-scheme: light){:root{--page:#EDE7DA;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}}
+  :root[data-theme="dark"]{--page:#0E0D0A;--fg:#EDE8DC;--fg-2:#98917F;--hair:#26221B}
+  :root[data-theme="light"]{--page:#EDE7DA;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}
+
+  *{box-sizing:border-box}
+  .pg{background:var(--page);color:var(--fg);font-family:var(--ui);padding:44px 24px 90px;
+      min-height:100vh;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-family:var(--display);font-weight:400;font-size:clamp(27px,4.6vw,38px);margin:0 0 12px;
+     letter-spacing:-.022em;text-wrap:balance}
+  h1 .hi{font-family:var(--hindi);color:var(--primary);font-size:.68em}
+  .lede{margin:0;color:var(--fg-2);font-size:14.5px;max-width:70ch;line-height:1.7}
+  .lede b{color:var(--fg);font-weight:600}
+  h2{font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--fg-2);
+     border-top:1px solid var(--hair);padding-top:15px;margin:52px 0 8px}
+  .note{color:var(--fg-2);font-size:13px;margin:0 0 26px;max-width:72ch;line-height:1.65}
+  .grid{display:flex;flex-wrap:wrap;gap:32px}
+  .pc{width:288px}
+  .plate{height:288px;border-radius:4px;background:var(--paper);border:1px solid var(--hair);
+         display:grid;place-items:center;position:relative;overflow:hidden}
+  .plate .ka{position:absolute;font-family:var(--hindi);font-size:40px;line-height:1;color:var(--primary);
+             user-select:none;z-index:3;
+             text-shadow:0 0 20px var(--paper),0 0 12px var(--paper),0 0 6px var(--paper),0 0 3px var(--paper)}
+  svg.md{display:block;color:var(--primary);position:absolute}
+  svg.md *{transform-box:fill-box;transform-origin:center}
+  .cap{margin-top:13px}
+  .cap .nm{font-family:var(--display);font-size:17px}
+  .cap .src{font-size:10.5px;color:var(--fg-2);letter-spacing:.08em;text-transform:uppercase;margin-top:4px;
+            font-variant-numeric:tabular-nums}
+  .cap p{margin:8px 0 0;font-size:12.5px;color:var(--fg-2);line-height:1.6}
+  .tag{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+       color:var(--page);background:var(--primary-vivid);border-radius:3px;padding:2px 7px;margin-bottom:6px}
+
+  /* ── A · counter-rotation ────────────────────────────────────────────────
+     Alternate courses turn opposite ways at speeds that share no common
+     multiple, so the figure never repeats a frame. Nothing appears or
+     disappears, which is what lets it run for a minute without irritating. */
+  .A .r{transform-origin:center}
+  .A .r.cw {animation:spin var(--t,40s) linear infinite}
+  .A .r.ccw{animation:spinR var(--t,40s) linear infinite}
+  @keyframes spin {to{transform:rotate(360deg)}}
+  @keyframes spinR{to{transform:rotate(-360deg)}}
+
+  /* ── B · bloom ───────────────────────────────────────────────────────────
+     Courses open outward from the centre and release together. */
+  .B .r{opacity:0;animation:bloom 6.4s cubic-bezier(.22,.8,.3,1) infinite}
+  @keyframes bloom{0%{opacity:0;transform:scale(.3) rotate(-14deg)}
+    18%{opacity:1;transform:scale(1) rotate(0)}
+    76%{opacity:1;transform:scale(1) rotate(0)}
+    100%{opacity:0;transform:scale(1.1) rotate(6deg)}}
+
+  /* ── C · pulse ───────────────────────────────────────────────────────────
+     A wave of brightness travels outward through the stack. Everything stays
+     drawn; only its weight changes, so the figure is complete at all times. */
+  .C .r{opacity:.28;animation:pulse 3.4s ease-in-out infinite}
+  @keyframes pulse{0%,66%,100%{opacity:.28}18%{opacity:1}}
+
+  /* ── D · draw ────────────────────────────────────────────────────────────
+     Line by line, the way the tutorials do it. Every element is stroked and
+     carries its own path length. */
+  .D .r *{stroke-dasharray:var(--len);stroke-dashoffset:var(--len);
+          animation:draw 7s cubic-bezier(.36,0,.24,1) infinite}
+  @keyframes draw{0%{stroke-dashoffset:var(--len)}52%{stroke-dashoffset:0}
+    86%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}
+
+  @media (prefers-reduced-motion:reduce){ .plate *{animation:none!important;opacity:1!important;
+    stroke-dashoffset:0!important} }
+</style>
+
+<div class="pg"><div class="wrap">
+
+<h1>Rich mandala <span class="hi">क</span> — sixteen courses, four motions</h1>
+<p class="lede">The earlier mandalas had three rings and it showed. This has <b>sixteen courses</b> built from a vocabulary — vesica petals, graduated dot rings, scalloped lace, teardrops, spikes, hairline circles — alternating type as they go out, the way the drawings do. क sits in the eye of it and never moves; everything else does. Same figure in all four, only the motion changes.</p>
+
+<h2>Four motions, one mandala</h2>
+<p class="note">All 260-odd elements are generated from ring definitions, so a course changes by editing a number rather than by redrawing a path.</p>
+<div class="grid" id="plates"></div>
+
+<h2>The ring vocabulary</h2>
+<p class="note" style="max-width:74ch">
+  Sixteen courses, outward: hairline eye · 8 filled petals · 8 petal outlines with echo · 16 graduated dots · 16 petals with echo · 24 scallops · 24 teardrops · 32 graduated dots · 32 fine petals · double hairline · 16 large petals with echo · 48 scallops · 48 spikes · 48 dot lace · closing hairline.<br><br>
+  <b style="color:var(--fg)">Offset nesting</b> throughout — every course is rotated half a step against the one beneath, so petals sit in the gaps. It is most of the difference between a flower icon and a mandala.<br><br>
+  <b style="color:var(--fg)">Weight hierarchy</b> — structural circles heaviest, petal outlines mid, dot lace lightest. A drawing where every line has the same weight reads as clip art no matter how many rings it has.
+</p>
+
+</div></div>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg', TAU = Math.PI * 2, R = 130;
+  function el(t, a) { var e = document.createElementNS(NS, t); for (var k in (a||{})) e.setAttribute(k, a[k]); return e; }
+
+  /* ── the vocabulary ──────────────────────────────────────────────────────
+     Every ring is a count, a radius or two, and a weight. Nothing is a
+     hand-authored path, so a course retunes by changing a number. */
+
+  // A vesica: two curves meeting at a point at each end. The form under almost
+  // all lotus work, and the reason a ring of these reads as a mandala where a
+  // ring of rounded lobes reads as a sunburst.
+  function vesica(r0, r1, w) {
+    var s = r1 - r0;
+    return 'M0,' + (-r0) +
+      'C' + w + ',' + (-r0 - s*.34) + ' ' + w + ',' + (-r1 + s*.32) + ' 0,' + (-r1) +
+      'C' + (-w) + ',' + (-r1 + s*.32) + ' ' + (-w) + ',' + (-r0 - s*.34) + ' 0,' + (-r0) + 'Z';
+  }
+  // A teardrop: round at the outer end, drawn to a point at the inner. Reads
+  // differently enough from a vesica to break up a stack of petal rings.
+  function teardrop(r0, r1, w) {
+    var s = r1 - r0;
+    return 'M0,' + (-r0) +
+      'C' + w + ',' + (-r0 - s*.5) + ' ' + w + ',' + (-r1) + ' 0,' + (-r1) +
+      'C' + (-w) + ',' + (-r1) + ' ' + (-w) + ',' + (-r0 - s*.5) + ' 0,' + (-r0) + 'Z';
+  }
+
+  function petalRing(g, o) {
+    for (var i = 0; i < o.n; i++) {
+      var a = (o.rot || 0) + (360 / o.n) * i;
+      var d = (o.drop ? teardrop : vesica)(o.r0, o.r1, o.w);
+      g.appendChild(el('path', { d: d, transform: 'rotate(' + a + ')',
+        fill: o.fill ? 'currentColor' : 'none', stroke: o.fill ? 'none' : 'currentColor',
+        'stroke-width': o.sw || .6, 'stroke-linejoin': 'round', opacity: o.op }));
+      if (o.echo) {
+        var pad = (o.r1 - o.r0) * .24;
+        g.appendChild(el('path', { d: (o.drop ? teardrop : vesica)(o.r0 + pad, o.r1 - pad, o.w * .5),
+          transform: 'rotate(' + a + ')', fill: 'none', stroke: 'currentColor',
+          'stroke-width': (o.sw || .6) * .8, 'stroke-linejoin': 'round', opacity: o.op * .72 }));
+      }
+    }
+  }
+  // Graduated dots — the dot-mandala move. Sizes alternate so the ring has a
+  // beat rather than a uniform texture.
+  function dotRing(g, o) {
+    for (var i = 0; i < o.n; i++) {
+      var a = (TAU / o.n) * i - Math.PI/2 + ((o.rot||0) * Math.PI/180);
+      var rad = o.r2 && i % 2 ? o.r2 : o.rad;
+      g.appendChild(el('circle', { cx: (Math.cos(a)*o.r).toFixed(2), cy: (Math.sin(a)*o.r).toFixed(2),
+        r: rad, fill: 'currentColor', opacity: o.op }));
+    }
+  }
+  function scallopRing(g, o) {
+    var d = '', step = TAU / o.n;
+    for (var i = 0; i < o.n; i++) {
+      var a0 = step*i - Math.PI/2, a1 = a0 + step;
+      d += 'M' + (Math.cos(a0)*o.r).toFixed(2) + ',' + (Math.sin(a0)*o.r).toFixed(2) +
+           'A' + (o.r*o.depth).toFixed(2) + ',' + (o.r*o.depth).toFixed(2) + ' 0 0 1 ' +
+           (Math.cos(a1)*o.r).toFixed(2) + ',' + (Math.sin(a1)*o.r).toFixed(2);
+    }
+    g.appendChild(el('path', { d: d, fill: 'none', stroke: 'currentColor',
+      'stroke-width': o.sw, opacity: o.op }));
+  }
+  function spikeRing(g, o) {
+    var d = '', step = TAU / o.n;
+    for (var i = 0; i < o.n; i++) {
+      var a = step*i - Math.PI/2, b = a + step/2, c = a + step;
+      d += 'M' + (Math.cos(a)*o.r).toFixed(2) + ',' + (Math.sin(a)*o.r).toFixed(2) +
+           'L' + (Math.cos(b)*(o.r+o.h)).toFixed(2) + ',' + (Math.sin(b)*(o.r+o.h)).toFixed(2) +
+           'L' + (Math.cos(c)*o.r).toFixed(2) + ',' + (Math.sin(c)*o.r).toFixed(2);
+    }
+    g.appendChild(el('path', { d: d, fill: 'none', stroke: 'currentColor',
+      'stroke-width': o.sw, 'stroke-linejoin': 'round', opacity: o.op }));
+  }
+  function circleRing(g, o) {
+    g.appendChild(el('circle', { r: o.r, fill: 'none', stroke: 'currentColor',
+      'stroke-width': o.sw, opacity: o.op }));
+  }
+
+  /* ── the stack ───────────────────────────────────────────────────────────
+     Thirteen courses. Radii are fractions of R so the whole figure scales, and
+     each course is rotated half a step against the one beneath it — the offset
+     nesting that separates a mandala from a ring of petals. */
+  var STACK = [
+    { t: 'circle', r: .105, sw: 1.1, op: .55 },
+    { t: 'petal',  n: 8,  r0: .125, r1: .225, w: .042, fill: 1, op: .34 },
+    { t: 'petal',  n: 8,  r0: .125, r1: .225, w: .042, sw: .75, op: .7, echo: 1 },
+    { t: 'dot',    n: 16, r: .245, rad: 1.6, r2: 1.0, op: .5, rot: 11.25 },
+    { t: 'petal',  n: 16, r0: .265, r1: .375, w: .030, sw: .62, op: .62, echo: 1, rot: 11.25 },
+    { t: 'scallop',n: 24, r: .395, depth: .13, sw: .5, op: .42 },
+    { t: 'petal',  n: 24, r0: .41, r1: .50, w: .024, sw: .55, op: .5, drop: 1, rot: 7.5 },
+    { t: 'dot',    n: 32, r: .525, rad: 1.5, r2: .85, op: .45 },
+    { t: 'petal',  n: 32, r0: .545, r1: .625, w: .016, sw: .45, op: .45, rot: 5.6 },
+    { t: 'circle', r: .645, sw: .9, op: .45 },
+    { t: 'circle', r: .662, sw: .45, op: .3 },
+    { t: 'petal',  n: 16, r0: .675, r1: .795, w: .034, sw: .6, op: .55, echo: 1, rot: 11.25 },
+    { t: 'scallop',n: 48, r: .815, depth: .08, sw: .45, op: .4 },
+    { t: 'spike',  n: 48, r: .83, h: .045, sw: .42, op: .45 },
+    { t: 'dot',    n: 48, r: .905, rad: 1.2, r2: .7, op: .4 },
+    { t: 'circle', r: .945, sw: .55, op: .32 },
+  ];
+
+  function build(size, mode) {
+    var s = el('svg', { class: 'md ' + mode, width: size, height: size, viewBox: '0 0 260 260' });
+    var root = el('g', { transform: 'translate(130,130)' });
+    s.appendChild(root);
+    STACK.forEach(function (c, i) {
+      var g = el('g', { class: 'r' + (mode === 'A' ? (i % 2 ? ' ccw' : ' cw') : '') });
+      // Speeds share no common multiple, so the figure never repeats a frame.
+      // 20s to 95s. The first pass ran 26s to 131s, and at 131s a course turns
+      // 2.7 degrees a second — the outer rings read as stopped, which defeats
+      // the point of a motion chosen for never coming to rest.
+      if (mode === 'A') g.style.setProperty('--t', (20 + i * 5) + 's');
+      if (mode === 'B') g.style.animationDelay = (i * 0.13).toFixed(2) + 's';
+      if (mode === 'C') g.style.animationDelay = (i * 0.11).toFixed(2) + 's';
+      if (mode === 'D') g.style.animationDelay = (i * 0.16).toFixed(2) + 's';
+
+      var o = Object.assign({}, c);
+      ['r', 'r0', 'r1', 'w', 'h'].forEach(function (k) { if (o[k] != null) o[k] = o[k] * R; });
+      // The draw motion needs every element stroked; a filled petal cannot be
+      // drawn line by line.
+      if (mode === 'D' && o.fill) { o.fill = 0; o.sw = .7; o.op = .5; }
+
+      if (o.t === 'petal')   petalRing(g, o);
+      if (o.t === 'dot')     dotRing(g, o);
+      if (o.t === 'scallop') scallopRing(g, o);
+      if (o.t === 'spike')   spikeRing(g, o);
+      if (o.t === 'circle')  circleRing(g, o);
+      root.appendChild(g);
+    });
+
+    if (mode === 'D') {
+      // Each element carries its own length, or a long path and a short one
+      // would draw at wildly different speeds under one dasharray.
+      s.querySelectorAll('path, circle').forEach(function (n) {
+        var len;
+        if (n.tagName === 'circle') len = TAU * (+n.getAttribute('r') || 0);
+        else len = ((n.getAttribute('d') || '').match(/[MLCA]/g) || []).length * 26;
+        n.style.setProperty('--len', Math.max(20, Math.round(len)));
+      });
+    }
+    return s;
+  }
+
+  var MODES = [
+    ['A', 'Counter-rotation', 'never repeats',
+     'Alternate courses turn opposite ways at speeds that share no common multiple, so no frame comes back. Nothing appears or vanishes — the safest for a wait of unknown length.'],
+    ['B', 'Bloom', 'opens outward',
+     'Courses open from the centre and release together. The warmest, and the one that reads as progress rather than as ambience.'],
+    ['C', 'Pulse', 'always complete',
+     'A wave of brightness travels outward through the stack. Everything stays drawn and only its weight changes, so the figure is whole at every instant.'],
+    ['D', 'Draw', 'line by line',
+     'Every course drawn in stroke, the way the tutorials do it. The most hypnotic and the longest cycle — right for a splash, too slow for a table.'],
+  ];
+
+  var host = document.getElementById('plates');
+  MODES.forEach(function (m) {
+    var d = document.createElement('div'); d.className = 'pc';
+    var pl = document.createElement('div'); pl.className = 'plate';
+    var svg = build(268, m[0]);
+    pl.appendChild(svg);
+    var ka = document.createElement('span'); ka.className = 'ka'; ka.lang = 'hi'; ka.textContent = 'क';
+    pl.appendChild(ka); d.appendChild(pl);
+    var n = svg.querySelectorAll('path,circle').length;
+    d.insertAdjacentHTML('beforeend',
+      '<div class="cap"><span class="tag">' + m[0] + ' · ' + m[2] + '</span>' +
+      '<div class="nm">' + m[1] + '</div>' +
+      '<div class="src">16 courses · ' + n + ' elements</div><p>' + m[3] + '</p></div>');
+    host.appendChild(d);
+  });
+})();
+</script>
