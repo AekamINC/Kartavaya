@@ -261,8 +261,12 @@
 }
 .omod__c.off { opacity: .68; }
 .omod__h { display: flex; align-items: flex-start; gap: 10px; }
+/* 30px from `settings.css:183`. The colour is not the reference's — it prints a
+   flat --s-container and switches to --primary-container when the module is on;
+   `--c` is this build's per-module hue, and it is what tells the eye which
+   module a card belongs to before the label is read. */
 .omod__ic {
-  width: 32px; height: 32px; border-radius: var(--r-sm); flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: var(--r-sm); flex-shrink: 0;
   display: grid; place-items: center;
   background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c);
 }

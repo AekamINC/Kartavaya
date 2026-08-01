@@ -774,7 +774,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
   --primary-vivid: var(--pf-keyline);
   --primary-text: var(--pf-primary);
   display: grid;
-  grid-template-columns: auto 1fr;
+  /* `minmax(0, 1fr)`, not `1fr` — `settings.css:199`. A bare `1fr` floors at
+     min-content, so one wide table in the console pushed the whole grid past
+     the viewport instead of scrolling inside its own column. */
+  grid-template-columns: 236px minmax(0, 1fr);
   height: 100vh; width: 100vw;
   background: var(--bg);
   overflow: hidden;
@@ -783,33 +786,45 @@ input, textarea, select { font-family: inherit; color: inherit; }
   --primary: var(--pf-primary-dark);
   --primary-text: var(--pf-primary-dark);
 }
+/* The purple keyline moved OFF this element. `settings.css:200-225` puts it on
+   two edges that mean something — `inset 3px 0 0` down the identity badge and
+   `inset 0 2px 0` across the top bar — and gives the rail an ordinary
+   `--side-rule` border like the app's own sidebar. A 3px stripe down the whole
+   rail restated "you are in the platform console" in the one place the operator
+   is not looking, and left the badge itself unmarked. */
 .adm__side {
   width: 236px; flex-shrink: 0;
   display: flex; flex-direction: column;
   height: 100%; overflow: hidden;
+  position: relative;
   color: var(--side-fg);
   background: rgb(var(--side-ink));
-  box-shadow: inset 3px 0 0 var(--pf-keyline);
+  border-right: 1px solid var(--side-rule);
 }
 .adm__back {
-  display: flex; align-items: center; gap: 7px;
+  display: flex; align-items: center; gap: 6px;
   background: transparent; border: 0;
   font-family: var(--font-ui);
-  font-size: var(--t-label); color: var(--side-fg-mute);
-  padding: 13px 15px 9px;
-  cursor: pointer;
+  font-size: var(--t-label); font-weight: 600; color: var(--side-fg-mute);
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--side-rule);
+  text-align: left; cursor: pointer;
+  transition: color var(--dur-fast), background var(--dur-fast);
 }
-.adm__back:hover { color: #fff; }
+.adm__back:hover { color: #fff; background: var(--side-hover); }
+/* A full-width row with a left keyline, not a rounded tinted pill inset in the
+   rail — `settings.css:206`. */
 .adm__badge {
-  display: flex; align-items: center; gap: 8px;
-  margin: 0 12px 10px; padding: 9px 11px;
-  border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--pf-keyline) 22%, transparent);
+  display: flex; align-items: center; gap: 10px;
+  padding: 15px 16px;
+  border-bottom: 1px solid var(--side-rule);
+  box-shadow: inset 3px 0 0 var(--pf-keyline);
   font-size: var(--t-label); font-weight: 600; color: #fff;
 }
 .adm__badge-d {
-  width: 7px; height: 7px; border-radius: 50%;
+  width: 9px; height: 9px; border-radius: 50%;
   background: var(--pf-primary-dark); flex-shrink: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pf-keyline) 34%, transparent);
   animation: adm-pulse 2s var(--ease-standard) infinite;
 }
 /* 2s var(--ease-standard) is the specced "timer dot" loop (MOTION-SPEC.md §4)
@@ -829,7 +844,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   .adm__badge-d { animation: none; opacity: 1; }
 }
 .adm__badge-n { margin-left: auto; color: var(--side-fg-mute); font-weight: 500; }
-.adm__nav { flex: 1; overflow-y: auto; padding: 4px 0 12px; scrollbar-width: none; }
+.adm__nav { flex: 1; overflow-y: auto; padding: 10px 0; scrollbar-width: none; }
 .adm__nav::-webkit-scrollbar { width: 0; height: 0; }
 .adm__item {
   display: flex; align-items: center; gap: 11px;
@@ -846,7 +861,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   color: #fff;
   box-shadow: inset 3px 0 0 var(--pf-primary-dark);
 }
-.adm__ic { display: inline-flex; flex-shrink: 0; opacity: .82; }
+.adm__ic { display: inline-flex; flex-shrink: 0; opacity: .78; }
 .adm__l { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
 .adm__l-hi { font-family: var(--font-indic); font-size: var(--t-label-sm); color: var(--side-fg-mute); }
 /* The active row lightens its own background (`.adm__item.on` above), so the
@@ -866,26 +881,41 @@ input, textarea, select { font-family: inherit; color: inherit; }
   padding: 1px 7px; border-radius: var(--r-pill);
 }
 .adm__foot {
-  padding: 11px 15px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
   border-top: 1px solid var(--side-rule);
   font-size: var(--t-label-sm); color: var(--side-fg-mute);
 }
 .adm__main { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .adm__bar {
   display: flex; align-items: center; gap: 12px;
-  height: 54px; padding: 0 var(--pad-page);
+  height: 52px; padding: 0 var(--pad-page);
   flex-shrink: 0;
   border-bottom: 1px solid var(--outline-variant);
   background: var(--surface);
+  box-shadow: inset 0 2px 0 var(--pf-keyline);
 }
-.adm__crumb { display: flex; align-items: baseline; gap: 8px; font-size: var(--t-body-sm); color: var(--on-surface-2); min-width: 0; }
+/* --on-surface-3, a step back from the app's crumb: the bold current page
+   (`.adm__crumb-b`) is what should be read, and at --on-surface-2 the trail
+   behind it competed with it. */
+.adm__crumb { display: flex; align-items: baseline; gap: 8px; font-size: var(--t-body-sm); color: var(--on-surface-3); min-width: 0; }
 .adm__crumb-b { font-weight: 700; color: var(--primary-text); }
+/* A pill, not loose muted text — `settings.css:230`. This is the "you are
+   acting as another org" warning; it was styled quieter than the breadcrumb
+   beside it. */
 .adm__warn {
+  display: inline-flex; align-items: center; gap: 7px;
   margin-left: auto; flex-shrink: 0;
-  font-size: var(--t-label); color: var(--on-surface-3);
+  padding: 4px 11px; border-radius: var(--r-pill);
+  background: var(--primary-container); color: var(--on-primary-container);
+  font-size: var(--t-label); font-weight: 600; white-space: nowrap;
 }
 .adm__burger { display: none; }
-.adm__body { flex: 1; overflow-y: auto; overflow-x: hidden; padding: var(--pad-page); }
+.adm__body {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  padding: var(--pad-page);
+  display: flex; flex-direction: column; gap: var(--gap-section);
+}
 
 /* Same rule as the app shell: the sidebar only leaves the flow where a
    replacement ships with it. */
