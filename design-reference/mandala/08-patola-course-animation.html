@@ -1,0 +1,268 @@
+<title>Kartavaya — Patola, course animation</title>
+<style>
+  :root{
+    --paper:#F3EFE6; --rule:#D8D1BE;
+    --primary:#04837A; --primary-vivid:#0AA396;
+    --page:#100E0B; --fg:#EDE8DC; --fg-2:#98917F; --hair:#272219;
+    --display:Georgia,'Times New Roman',serif;
+    --ui:'Segoe UI',system-ui,-apple-system,sans-serif;
+    --hindi:'Nirmala UI','Noto Serif Devanagari','Noto Sans Devanagari','Mangal',serif;
+  }
+  @media (prefers-color-scheme: light){:root{--page:#EDE7DA;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}}
+  :root[data-theme="dark"]{--page:#100E0B;--fg:#EDE8DC;--fg-2:#98917F;--hair:#272219}
+  :root[data-theme="light"]{--page:#EDE7DA;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}
+
+  *{box-sizing:border-box}
+  .pg{background:var(--page);color:var(--fg);font-family:var(--ui);padding:44px 24px 90px;
+      min-height:100vh;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-family:var(--display);font-weight:400;font-size:clamp(27px,4.6vw,38px);margin:0 0 12px;
+     letter-spacing:-.022em;text-wrap:balance}
+  h1 .hi{font-family:var(--hindi);color:var(--primary);font-size:.68em}
+  .lede{margin:0;color:var(--fg-2);font-size:14.5px;max-width:70ch;line-height:1.7}
+  .lede b{color:var(--fg);font-weight:600}
+  h2{font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--fg-2);
+     border-top:1px solid var(--hair);padding-top:15px;margin:52px 0 8px}
+  .note{color:var(--fg-2);font-size:13px;margin:0 0 24px;max-width:72ch;line-height:1.65}
+  .grid{display:flex;flex-wrap:wrap;gap:30px}
+  .pc{width:246px}
+  .plate{height:246px;border-radius:3px;background:var(--paper);border:1px solid var(--hair);
+         display:grid;place-items:center;position:relative;overflow:hidden}
+  .plate::after{content:'';position:absolute;inset:8px;border:1px solid var(--rule);
+                opacity:.45;pointer-events:none}
+  .plate .ka{position:absolute;font-family:var(--hindi);font-size:34px;line-height:1;color:var(--primary);
+             user-select:none;text-shadow:0 0 18px var(--paper),0 0 9px var(--paper),0 0 4px var(--paper)}
+  svg.pt{display:block;color:var(--primary);shape-rendering:crispEdges}
+  svg.vec{display:block;color:var(--primary)}
+  .cap{margin-top:12px}
+  .cap .nm{font-family:var(--display);font-size:16px}
+  .cap .nm .dv{font-family:var(--hindi);color:var(--primary);margin-right:7px}
+  .cap .src{font-size:10.5px;color:var(--fg-2);letter-spacing:.07em;text-transform:uppercase;margin-top:4px;
+            font-variant-numeric:tabular-nums}
+  .cap p{margin:7px 0 0;font-size:12.5px;color:var(--fg-2);line-height:1.6}
+  .tag{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+       color:var(--page);background:var(--primary-vivid);border-radius:3px;padding:2px 7px;margin-bottom:6px}
+
+  /* ── the course animation ────────────────────────────────────────────────
+     Bands resolve outward from the centre and release together. This is the
+     motion from the six-geometries set, which is the one that was wanted —
+     not the row-by-row shuttle that replaced it.
+
+     `transform-box: fill-box` matters: without it an SVG group's 50% 50%
+     resolves against the VIEW-BOX, so every band would scale about the corner
+     of the plate rather than its own centre. */
+  .lay{opacity:0;animation:res 5s ease-in-out infinite;
+       transform-box:fill-box;transform-origin:center}
+  /* Delay comes from the band INDEX, set on the element, not from nth-child.
+     Ratanchowk's outermost band is empty — its motif stops before the selvedge
+     — so that group is never appended, and a positional selector would hand
+     every later course the delay belonging to the one before it. Here an empty
+     band costs nothing and shifts nothing. */
+  @keyframes res{
+    0%{opacity:0;transform:scale(.93)}
+    20%{opacity:1;transform:scale(1)}
+    80%{opacity:1;transform:scale(1)}
+    100%{opacity:0;transform:scale(1.05)}}
+  @media (prefers-reduced-motion:reduce){ .lay{animation:none;opacity:1;transform:none} }
+</style>
+
+<div class="pg"><div class="wrap">
+
+<h1>पटोला <span class="hi">भात</span> — the course animation</h1>
+<p class="lede">Same motion as the six-geometries set: <b>bands resolve outward from the centre</b>, hold, and release together. The row-by-row shuttle is gone. It suits these motifs better than it suited the others, because Ratanchowk and Navratna are built concentrically — the animation now follows the drawing's own structure instead of cutting across it.</p>
+
+<h2>Six bhat</h2>
+<p class="note">Cells are grouped into six radial bands. Runs are split at band boundaries so a rect never straddles two, which is what would make the courses tear as they scale.</p>
+<div class="grid" id="bhats"></div>
+
+<h2>Same animation, two drawings</h2>
+<p class="note">The only variable here is the artwork. Left is the vector patola from the six-geometries set; right is the thread-grid version. Same bhat, same motion — pick the drawing.</p>
+<div class="grid" id="compare"></div>
+
+</div></div>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg';
+  function el(t, a) { var e = document.createElementNS(NS, t); for (var k in (a||{})) e.setAttribute(k, a[k]); return e; }
+
+  var BANDS = 6;
+  /* Chebyshev distance — max(|x|,|y|) — gives SQUARE rings, which is the right
+     ring shape on a warp/weft grid. Manhattan would give diamond bands that
+     cut across the motifs at 45 degrees. */
+  function bandOf(x, y, n) {
+    var cheb = Math.max(Math.abs(x), Math.abs(y));
+    return Math.min(BANDS - 1, Math.floor((cheb / (n / 2)) * BANDS));
+  }
+
+  function weave(size, n, bhat) {
+    var s = el('svg', { class: 'pt', width: size, height: size, viewBox: '0 0 ' + n + ' ' + n });
+    var TONE = [0, 0.22, 0.46, 0.78], groups = [], drawn = 0;
+    for (var b = 0; b < BANDS; b++) {
+      groups[b] = el('g', { class: 'lay' });
+      groups[b].style.animationDelay = (b * 0.26).toFixed(2) + 's';
+    }
+    for (var y = 0; y < n; y++) {
+      var x = 0;
+      while (x < n) {
+        var cx = x - n / 2, cy = y - n / 2;
+        var v = bhat(cx, cy, n);
+        if (!v) { x++; continue; }
+        var b = bandOf(cx, cy, n), run = 1;
+        // A run must not straddle a band, or the rect would belong to two
+        // courses at once and tear when they scale apart.
+        while (x + run < n
+               && bhat(x + run - n / 2, cy, n) === v
+               && bandOf(x + run - n / 2, cy, n) === b) run++;
+        groups[b].appendChild(el('rect', {
+          x: x, y: y, width: run, height: 1, fill: 'currentColor', opacity: TONE[v] }));
+        drawn++; x += run;
+      }
+    }
+    groups.forEach(function (g) { if (g.childNodes.length) s.appendChild(g); });
+    return { s: s, drawn: drawn };
+  }
+
+  var man = function (x, y) { return Math.abs(x) + Math.abs(y); };
+  var band = function (d, w) { return Math.floor(d / w); };
+
+  function ratanchowk(x, y, n) {
+    var d = man(x, y), R = n / 2;
+    if (d > R * 0.94) return 0;
+    var b = band(d, R * 0.157) % 3;
+    if (d < R * 0.16) return 3;
+    return b === 0 ? 2 : b === 1 ? 1 : 0;
+  }
+  function vohra(x, y, n) {
+    var p = Math.round(n / 4.8);
+    var mx = ((x % p) + p) % p - p / 2, my = ((y % p) + p) % p - p / 2;
+    var d = man(mx, my);
+    if (d < p * 0.15) return 3;
+    if (d < p * 0.24) return 1;
+    if (Math.abs(d - p * 0.38) < p * 0.065) return 2;
+    return 0;
+  }
+  function navratna(x, y, n) {
+    var cell = n / 3.4;
+    var gx = Math.round(x / cell), gy = Math.round(y / cell);
+    if (Math.abs(gx) > 1 || Math.abs(gy) > 1) {
+      var q = 5;
+      return (((x % q) + q) % q === 0 && ((y % q) + q) % q === 0) ? 1 : 0;
+    }
+    var d = man(x - gx * cell, y - gy * cell);
+    var big = (!gx && !gy), r = big ? cell * 0.46 : cell * 0.30;
+    if (d < r * 0.42) return 3;
+    if (d < r * 0.72) return 1;
+    if (d < r) return 2;
+    return 0;
+  }
+  function pan(x, y, n) {
+    var p = Math.round(n / 3.6);
+    var mx = ((x % p) + p) % p - p / 2, my = ((y % p) + p) % p - p / 2;
+    var t = ((p / 2) - my) / p; t = Math.min(1, Math.max(0, t));
+    var A = p * 0.32, w;
+    if (t > 0.86) w = A * (1 - t) / 0.14;
+    else if (t > 0.18) w = A * Math.pow((t - 0.18) / 0.68, 0.5);
+    else w = 0;
+    if (t < 0.22) w = Math.max(w, 0.8);
+    if (t > 0.94) return Math.abs(mx) < 0.6 ? 3 : 0;
+    if (Math.abs(mx) < 0.6) return 3;
+    if (Math.abs(mx) < w) return (Math.abs(mx) > w - 1.2) ? 2 : 1;
+    return 0;
+  }
+  function chhabdi(x, y, n) {
+    var p = Math.max(3, Math.round(n / 11));
+    var bx = Math.floor((x + n) / p), by = Math.floor((y + n) / p);
+    var over = (bx + by) % 2 === 0;
+    var ix = ((x + n) % p), iy = ((y + n) % p);
+    if (over) return iy === 0 || iy === p - 1 ? 0 : (iy < p / 2 ? 2 : 1);
+    return ix === 0 || ix === p - 1 ? 0 : (ix < p / 2 ? 2 : 1);
+  }
+  function phulwadi(x, y, n) {
+    var p = Math.round(n / 4);
+    var rowOdd = Math.floor((y + n * 2) / p) % 2, ox = rowOdd ? p / 2 : 0;
+    var mx = (((x + ox) % p) + p) % p - p / 2, my = ((y % p) + p) % p - p / 2;
+    var d = man(mx, my), ch = Math.max(Math.abs(mx), Math.abs(my));
+    if (d < 1.2) return 3;
+    if (d < p * 0.20 && ch > p * 0.10) return 2;
+    if (Math.abs(d - p * 0.34) < 0.9) return 1;
+    return 0;
+  }
+
+  /* The vector patola from the six-geometries set, unchanged, so the two can
+     be compared with only the drawing different. */
+  function vectorPatola(size) {
+    var s = el('svg', { class: 'vec', width: size, height: size, viewBox: '0 0 262 262' });
+    var g = el('g', { transform: 'translate(131,131)' }); s.appendChild(g);
+    function feather(cx, cy, r, teeth) {
+      var d = '', pts = [[0,-r],[r,0],[0,r],[-r,0]];
+      for (var si = 0; si < 4; si++) {
+        var a = pts[si], b = pts[(si+1)%4];
+        for (var i = 0; i <= teeth; i++) {
+          var t = i/teeth;
+          var x = a[0] + (b[0]-a[0])*t, y = a[1] + (b[1]-a[1])*t;
+          var j = (i % 2 ? r*0.09 : 0);
+          d += (d === '' ? 'M' : 'L') + (cx + x + (x>=0?j:-j)*0.55).toFixed(2) + ',' +
+               (cy + y + (y>=0?j:-j)*0.55).toFixed(2);
+        }
+      }
+      return d + 'Z';
+    }
+    var cells = [[0,0,46,10,.9,.6]], step = 62;
+    [-1,0,1].forEach(function (gx) { [-1,0,1].forEach(function (gy) {
+      if (gx || gy) cells.push([gx*step, gy*step, 26, 8, .6, .45]); }); });
+    [-1,1].forEach(function (gx) { [-1,1].forEach(function (gy) {
+      cells.push([gx*step*1.55, gy*step*0.5, 15, 6, .5, .35]);
+      cells.push([gx*step*0.5, gy*step*1.55, 15, 6, .5, .35]); }); });
+    [[0,1],[1,10],[10,99]].forEach(function (rg, li) {
+      var lay = el('g', { class: 'lay' }); g.appendChild(lay);
+      lay.style.animationDelay = (li * 0.26).toFixed(2) + 's';
+      cells.slice(rg[0], rg[1]).forEach(function (c) {
+        lay.appendChild(el('path', { d: feather(c[0], c[1], c[2], c[3]), fill: 'none',
+          stroke: 'currentColor', 'stroke-width': c[4], opacity: c[5], 'stroke-linejoin': 'round' }));
+      });
+    });
+    var b = el('g', { class: 'lay' }); g.appendChild(b);
+    b.style.animationDelay = '0.78s';
+    b.appendChild(el('path', { d: 'M-126,-126H126V126H-126Z', fill: 'none',
+      stroke: 'currentColor', 'stroke-width': .8, opacity: .45 }));
+    return s;
+  }
+
+  function plate(host, svgNode, title, sub, body, tag) {
+    var d = document.createElement('div'); d.className = 'pc';
+    var pl = document.createElement('div'); pl.className = 'plate';
+    pl.appendChild(svgNode);
+    var ka = document.createElement('span'); ka.className = 'ka'; ka.lang = 'hi'; ka.textContent = 'क';
+    pl.appendChild(ka); d.appendChild(pl);
+    d.insertAdjacentHTML('beforeend', '<div class="cap">' +
+      (tag ? '<span class="tag">' + tag + '</span>' : '') +
+      '<div class="nm">' + title + '</div><div class="src">' + sub + '</div><p>' + body + '</p></div>');
+    host.appendChild(d);
+  }
+
+  var BHAT = [
+    ['रतनचौक', 'Ratanchowk', ratanchowk, 'Concentric jewel-squares. The bhat whose own structure the band animation follows exactly — courses resolve along the rings that are already drawn.'],
+    ['वोहरा गाजी', 'Vohra Gaji', vohra, 'Allover lattice, no centre. The bands read as the cloth arriving rather than as a motif building, which is the right feel for a ground.'],
+    ['नवरत्न', 'Navratna', navratna, 'Eight jewels around a larger ninth. The centre lands first and the corners last, so the eye is led inward before anything else appears.'],
+    ['पान भात', 'Pan Bhat', pan, 'Peepal leaves in rows, broad at the base with the drip-tip drawn down. Bands cut across the rows here, which gives it a diagonal spread.'],
+    ['छाबड़ी', 'Chhabdi', chhabdi, 'Basket weave, over and under. Densest of the six — the band motion is the only thing that keeps it from reading as a solid block.'],
+    ['फूलवाड़ी', 'Phulwadi', phulwadi, 'Four-petal flowers on a half-drop lattice, each ringed. Lightest ground, and the calmest under this animation.'],
+  ];
+
+  var host = document.getElementById('bhats');
+  BHAT.forEach(function (b) {
+    var w = weave(228, 44, b[2]);
+    plate(host, w.s,
+      '<span class="dv" lang="hi">' + b[0] + '</span>' + b[1],
+      '44 threads · 6 courses · ' + w.drawn + ' runs', b[3]);
+  });
+
+  var cmp = document.getElementById('compare');
+  plate(cmp, vectorPatola(228), 'Vector', 'Feathered outlines · 21 paths',
+    'The earlier drawing. Lighter on the page, and the feathering is applied to a clean diamond rather than falling out of a grid.', 'earlier');
+  var w2 = weave(228, 44, ratanchowk);
+  plate(cmp, w2.s, 'Thread grid', '44 threads · ' + w2.drawn + ' runs',
+    'The stepping is the construction, not an effect — every boundary lands on a warp and a weft, which is what double-ikat actually is.', 'finer');
+})();
+</script>

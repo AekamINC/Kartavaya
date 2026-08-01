@@ -1,0 +1,306 @@
+<title>Kartavaya — Jantar Mantar, six instruments</title>
+<style>
+  :root{
+    --paper:#F3EFE6; --rule:#D8D1BE;
+    --primary:#04837A; --primary-vivid:#0AA396;
+    --page:#0F0E0C; --fg:#EDE8DC; --fg-2:#98917F; --hair:#26231C;
+    --display:Georgia,'Times New Roman',serif;
+    --ui:'Segoe UI',system-ui,-apple-system,sans-serif;
+    --hindi:'Nirmala UI','Noto Serif Devanagari','Noto Sans Devanagari','Mangal',serif;
+  }
+  @media (prefers-color-scheme: light){:root{--page:#EDE7DA;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}}
+  :root[data-theme="dark"]{--page:#0F0E0C;--fg:#EDE8DC;--fg-2:#98917F;--hair:#26231C}
+  :root[data-theme="light"]{--page:#EDE7DA;--fg:#221E17;--fg-2:#6A6355;--hair:#DAD2C1}
+
+  *{box-sizing:border-box}
+  .pg{background:var(--page);color:var(--fg);font-family:var(--ui);padding:44px 24px 90px;
+      min-height:100vh;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto}
+  h1{font-family:var(--display);font-weight:400;font-size:clamp(27px,4.6vw,38px);margin:0 0 12px;
+     letter-spacing:-.022em;text-wrap:balance}
+  h1 .hi{font-family:var(--hindi);color:var(--primary);font-size:.66em}
+  .lede{margin:0;color:var(--fg-2);font-size:14.5px;max-width:70ch;line-height:1.7}
+  .lede b{color:var(--fg);font-weight:600}
+  h2{font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--fg-2);
+     border-top:1px solid var(--hair);padding-top:15px;margin:52px 0 8px}
+  .note{color:var(--fg-2);font-size:13px;margin:0 0 24px;max-width:72ch;line-height:1.65}
+  .grid{display:flex;flex-wrap:wrap;gap:30px}
+  .pc{width:246px}
+  .plate{height:246px;border-radius:3px;background:var(--paper);border:1px solid var(--hair);
+         display:grid;place-items:center;position:relative;overflow:hidden}
+  .plate::after{content:'';position:absolute;inset:8px;border:1px solid var(--rule);
+                opacity:.45;pointer-events:none}
+  .plate .ka{position:absolute;font-family:var(--hindi);font-size:32px;line-height:1;color:var(--primary);
+             user-select:none;text-shadow:0 0 18px var(--paper),0 0 9px var(--paper),0 0 4px var(--paper)}
+  svg.jm{display:block;color:var(--primary)}
+  .cap{margin-top:12px}
+  .cap .nm{font-family:var(--display);font-size:16px}
+  .cap .nm .dv{font-family:var(--hindi);color:var(--primary);margin-right:7px}
+  .cap .src{font-size:10.5px;color:var(--fg-2);letter-spacing:.07em;text-transform:uppercase;
+            margin-top:4px;font-variant-numeric:tabular-nums}
+  .cap p{margin:7px 0 0;font-size:12.5px;color:var(--fg-2);line-height:1.6}
+
+  /* Graduations are the instrument; they hold still and stay visible.
+     Only the MEASURING part moves — which is the whole point of the family. */
+  .fix{opacity:.55}
+  /* transform-origin MUST be 0 0 here, and the reason is easy to get wrong.
+     These groups sit inside `translate(130,130)`, so their local origin is
+     already the centre of the instrument. CSS defaults transform-origin to
+     50% 50%, which for an SVG element resolves against the VIEW-BOX — that is
+     local (130,130), a point 130 units down and right of the pivot. Every
+     shadow, pointer and ring would have swung around a spot outside the plate. */
+  .sweep, .sweepSlow, .spin { transform-origin: 0 0; }
+  .sweep    {animation:sw 6s cubic-bezier(.45,0,.55,1) infinite}
+  .sweepSlow{animation:sw 9s cubic-bezier(.45,0,.55,1) infinite}
+  .spin     {animation:sp 11s linear infinite}
+  .lit      {animation:li 5.4s ease-in-out infinite}
+  @keyframes sw{0%{transform:rotate(-54deg)}50%{transform:rotate(54deg)}100%{transform:rotate(-54deg)}}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @keyframes li{0%,100%{opacity:0}12%,72%{opacity:.16}}
+  @media (prefers-reduced-motion:reduce){ .plate *{animation:none!important;opacity:1!important} }
+</style>
+
+<div class="pg"><div class="wrap">
+
+<h1>जंतर मंतर <span class="hi">यंत्र</span> — six instruments</h1>
+<p class="lede">Jai Singh's observatories are masonry that measures. Every one of these is a real instrument at Jaipur or Delhi, and each measures something different — time, altitude, azimuth, declination — so the six are a genuine family rather than six versions of a dial. They are the most <b>secular</b> Indian geometry there is: no iconography, no symbolism, just graduated stone built to read the sky. In all six the <b>graduations hold still and only the measuring part moves</b>, which is what an instrument does and what makes them legible as loaders.</p>
+
+<h2>The instruments</h2>
+<p class="note">Every scale here is real: tick spacing, gnomon angle and arc extent follow the instrument, not the layout.</p>
+<div class="grid" id="plates"></div>
+
+<h2>Which to use</h2>
+<p class="note" style="max-width:74ch">
+  <b style="color:var(--fg)">Samrat</b> is the one people recognise — the giant sundial is the photograph everyone has seen of Jaipur. Its shadow sweeps, which reads as time passing more plainly than anything else here.<br><br>
+  <b style="color:var(--fg)">Ram Yantra</b> is the best behaved as an ambient loader: sectors light in sequence around a ring, so there is always something on and never anything racing.<br><br>
+  <b style="color:var(--fg)">Digamsa</b> is the quietest — one hairline pointer on a fine degree scale. It is the one that can sit in a table cell without shouting.<br><br>
+  <b style="color:var(--fg)">Jai Prakash</b> is the most beautiful and the most fragile: its coordinate net needs room, and below about 90px the crosswires collapse into mush.
+</p>
+
+</div></div>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg', RAD = Math.PI / 180;
+  function el(t, a) { var e = document.createElementNS(NS, t); for (var k in (a||{})) e.setAttribute(k, a[k]); return e; }
+  function svg(size) {
+    var s = el('svg', { class: 'jm', width: size, height: size, viewBox: '0 0 260 260' });
+    var g = el('g', { transform: 'translate(130,130)' });
+    s.appendChild(g); return { s: s, g: g };
+  }
+  function P(g, d, sw, op, cls) {
+    var p = el('path', { d: d, fill: 'none', stroke: 'currentColor', 'stroke-width': sw,
+      'stroke-linejoin': 'round', 'stroke-linecap': 'round', opacity: op });
+    if (cls) p.setAttribute('class', cls);
+    g.appendChild(p); return p;
+  }
+  function C(g, x, y, r, sw, op, fill) {
+    g.appendChild(el('circle', { cx: x, cy: y, r: r, fill: fill || 'none',
+      stroke: fill ? 'none' : 'currentColor', 'stroke-width': sw, opacity: op }));
+  }
+  function LN(g, x1, y1, x2, y2, sw, op) {
+    g.appendChild(el('line', { x1: x1.toFixed(2), y1: y1.toFixed(2), x2: x2.toFixed(2), y2: y2.toFixed(2),
+      stroke: 'currentColor', 'stroke-width': sw, opacity: op }));
+  }
+  function arc(r, a0, a1) {
+    var x0 = Math.cos(a0*RAD)*r, y0 = Math.sin(a0*RAD)*r;
+    var x1 = Math.cos(a1*RAD)*r, y1 = Math.sin(a1*RAD)*r;
+    return 'M' + x0.toFixed(2) + ',' + y0.toFixed(2) + 'A' + r + ',' + r + ' 0 ' +
+      (Math.abs(a1-a0) > 180 ? 1 : 0) + ' 1 ' + x1.toFixed(2) + ',' + y1.toFixed(2);
+  }
+  /* A graduated scale: ticks every `step` degrees, every `major`th one long.
+     This is the thing that makes all six read as INSTRUMENTS — an arc without
+     graduations is a swoosh. */
+  function graduate(g, r, a0, a1, step, major, len) {
+    var n = Math.round((a1 - a0) / step);
+    for (var i = 0; i <= n; i++) {
+      var a = (a0 + i*step) * RAD, big = i % major === 0;
+      var l = big ? len : len * 0.5;
+      LN(g, Math.cos(a)*r, Math.sin(a)*r, Math.cos(a)*(r-l), Math.sin(a)*(r-l),
+         big ? 1 : 0.55, big ? .65 : .42);
+    }
+  }
+
+  /* ── सम्राट Samrat Yantra — the great sundial ─────────────────────────
+     A right-triangle gnomon whose hypotenuse is set to the latitude of Jaipur,
+     26.92 degrees, so it points at the celestial pole. Quadrant scales stand
+     either side and the shadow moves across them through the day. */
+  function samrat() {
+    var v = svg(246), g = v.g, fix = el('g', { class: 'fix' }); g.appendChild(fix);
+    P(fix, arc(112, -160, -20), 1.2, .6);
+    graduate(fix, 112, -160, -20, 5, 3, 9);
+    P(fix, arc(96, -160, -20), .6, .4);
+    // The gnomon. tan(26.92 deg) = 0.5077 — the rise over the run, not a guess.
+    var run = 96, rise = run * Math.tan(26.92 * RAD);
+    var gn = el('g'); g.appendChild(gn);
+    P(gn, 'M' + (-run) + ',44L' + run + ',44L' + (-run) + ',' + (44 - rise*2.1) + 'Z', 1.1, .5);
+    P(gn, 'M' + (-run) + ',44L' + (-run) + ',' + (44 - rise*2.1), 1.6, .75);
+    var sh = el('g', { class: 'sweep' }); g.appendChild(sh);
+    LN(sh, 0, 0, 0, -110, 1.8, .8);
+    C(sh, 0, -110, 3.4, 0, .85, 1);
+    LN(fix, -116, 44, 116, 44, 1.2, .55);
+    LN(fix, -104, 52, 104, 52, .5, .35);
+    return v;
+  }
+
+  /* ── जयप्रकाश Jai Prakash — the hemispherical bowl ────────────────────
+     A bowl cut with the coordinate net of the sky: altitude circles and
+     azimuth meridians. A crosswire is strung over it and the sun's image
+     falls on the marked surface. Drawn in plan, which is how it is read. */
+  function jaiprakash() {
+    var v = svg(246), g = v.g, fix = el('g', { class: 'fix' }); g.appendChild(fix);
+    [116, 92, 66, 38].forEach(function (r, i) { C(fix, 0, 0, r, i ? .55 : 1.1, i ? .4 : .6); });
+    for (var i = 0; i < 24; i++) {
+      var a = i * 15 * RAD, big = i % 6 === 0;
+      LN(fix, Math.cos(a)*(big?14:38), Math.sin(a)*(big?14:38),
+             Math.cos(a)*116, Math.sin(a)*116, big ? .9 : .45, big ? .55 : .32);
+    }
+    graduate(fix, 116, 0, 355, 5, 6, 7);
+    // The crosswires, and the bead of light that runs along one.
+    var cw = el('g'); g.appendChild(cw);
+    LN(cw, -116, 0, 116, 0, 1.1, .6); LN(cw, 0, -116, 0, 116, 1.1, .6);
+    var bead = el('g', { class: 'sweepSlow' }); g.appendChild(bead);
+    C(bead, 0, -80, 4.2, 0, .9, 1);
+    C(bead, 0, -80, 9, .8, .45);
+    return v;
+  }
+
+  /* ── राम Ram Yantra — altitude and azimuth ────────────────────────────
+     A cylinder with a pillar at its centre; the shadow of the pillar tip falls
+     on a graduated floor divided into sectors. Built in two complementary
+     halves so one always reads what the other's wall hides. */
+  function ram() {
+    var v = svg(246), g = v.g, fix = el('g', { class: 'fix' }); g.appendChild(fix);
+    C(fix, 0, 0, 116, 1.1, .6); C(fix, 0, 0, 100, .5, .35); C(fix, 0, 0, 30, .9, .5);
+    // Twelve sectors — the floor's radial divisions.
+    var lit = el('g'); g.appendChild(lit);
+    for (var i = 0; i < 12; i++) {
+      var a0 = i * 30 - 90, a1 = a0 + 30;
+      LN(fix, Math.cos(a0*RAD)*30, Math.sin(a0*RAD)*30, Math.cos(a0*RAD)*116, Math.sin(a0*RAD)*116, .7, .45);
+      // Each sector is a wedge that lights in turn.
+      var w = el('path', { class: 'lit', fill: 'currentColor',
+        d: 'M' + (Math.cos(a0*RAD)*32).toFixed(2) + ',' + (Math.sin(a0*RAD)*32).toFixed(2) +
+           'L' + (Math.cos(a0*RAD)*98).toFixed(2) + ',' + (Math.sin(a0*RAD)*98).toFixed(2) +
+           'A98,98 0 0 1 ' + (Math.cos(a1*RAD)*98).toFixed(2) + ',' + (Math.sin(a1*RAD)*98).toFixed(2) +
+           'L' + (Math.cos(a1*RAD)*32).toFixed(2) + ',' + (Math.sin(a1*RAD)*32).toFixed(2) +
+           'A32,32 0 0 0 ' + (Math.cos(a0*RAD)*32).toFixed(2) + ',' + (Math.sin(a0*RAD)*32).toFixed(2) + 'Z' });
+      // Opacity is owned by the keyframes alone. Setting it here as well left
+      // a presentation attribute and a CSS animation arguing over the same
+      // property, and CSS always wins — so the attribute was decoration.
+      w.style.animationDelay = (i * 0.38).toFixed(2) + 's';
+      lit.appendChild(w);
+    }
+    graduate(fix, 116, 0, 355, 5, 6, 7);
+    // The pillar at the centre, and its shadow.
+    var sh = el('g', { class: 'spin' }); g.appendChild(sh);
+    LN(sh, 0, 0, 0, -104, 1.5, .7);
+    C(fix, 0, 0, 5, 0, .75, 1);
+    return v;
+  }
+
+  /* ── दिगंश Digamsa — the azimuth circle ───────────────────────────────
+     Two concentric circular walls with a pillar between them; a sight is
+     carried round the rim to read a bearing. The plainest instrument on the
+     site and the quietest of the six. */
+  function digamsa() {
+    var v = svg(246), g = v.g, fix = el('g', { class: 'fix' }); g.appendChild(fix);
+    C(fix, 0, 0, 118, 1.1, .6); C(fix, 0, 0, 108, .5, .35);
+    C(fix, 0, 0, 72, .9, .5);   C(fix, 0, 0, 64, .45, .3);
+    // A full 360 scale at one-degree spacing, every tenth long. This is the
+    // fine graduation that gives the plate its texture.
+    for (var i = 0; i < 360; i += 2) {
+      var a = i * RAD, big = i % 30 === 0, mid = i % 10 === 0;
+      LN(fix, Math.cos(a)*108, Math.sin(a)*108,
+             Math.cos(a)*(108 - (big ? 11 : mid ? 7 : 3.5)), Math.sin(a)*(108 - (big ? 11 : mid ? 7 : 3.5)),
+             big ? 1 : .4, big ? .6 : mid ? .42 : .26);
+    }
+    var arm = el('g', { class: 'spin' }); g.appendChild(arm);
+    LN(arm, 0, 0, 0, -118, 1.2, .7);
+    C(arm, 0, -118, 3.6, 0, .8, 1);
+    C(arm, 0, -72, 2.2, 0, .5, 1);
+    C(fix, 0, 0, 4, 0, .7, 1);
+    return v;
+  }
+
+  /* ── नाड़ीवलय Nadivalaya — the equatorial dial ─────────────────────────
+     Two discs set in the plane of the equator, one facing north and one south,
+     each with a rod through its centre. For half the year the sun lights one
+     face; at the equinox it crosses to the other. */
+  function nadivalaya() {
+    var v = svg(246), g = v.g, fix = el('g', { class: 'fix' }); g.appendChild(fix);
+    C(fix, 0, 0, 104, 1.2, .6); C(fix, 0, 0, 94, .5, .35); C(fix, 0, 0, 26, .8, .45);
+    // Hour lines: 15 degrees to the hour, because the earth turns 15 an hour.
+    for (var h = 0; h < 24; h++) {
+      var a = h * 15 * RAD - Math.PI/2, big = h % 6 === 0;
+      LN(fix, Math.cos(a)*26, Math.sin(a)*26, Math.cos(a)*94, Math.sin(a)*94, big ? 1 : .5, big ? .6 : .35);
+    }
+    graduate(fix, 104, 0, 355, 5, 6, 6);
+    // The rod, seen end-on, and the shadow it throws.
+    var sh = el('g', { class: 'spin' }); g.appendChild(sh);
+    P(sh, 'M0,0L0,-94', 2, .75);
+    P(sh, 'M0,-94L-7,-80L7,-80Z', 1, .55);
+    C(fix, 0, 0, 6, 1, .6);
+    C(fix, 0, 0, 2.4, 0, .8, 1);
+    return v;
+  }
+
+  /* ── चक्र Chakra Yantra — declination ─────────────────────────────────
+     A graduated ring hung on an axis pointing at the pole, turned until a
+     sight aligns with a star, reading its declination. The only instrument
+     here whose whole body moves. */
+  function chakra() {
+    var v = svg(246), g = v.g, fix = el('g', { class: 'fix' }); g.appendChild(fix);
+    // The polar axis, at Jaipur's latitude.
+    var ax = 26.92;
+    P(fix, 'M' + (-Math.cos(ax*RAD)*120).toFixed(2) + ',' + (Math.sin(ax*RAD)*120).toFixed(2) +
+           'L' + (Math.cos(ax*RAD)*120).toFixed(2) + ',' + (-Math.sin(ax*RAD)*120).toFixed(2), 1.3, .5);
+    LN(fix, -120, 62, 120, 62, 1.1, .55);
+    LN(fix, -106, 70, 106, 70, .5, .32);
+    var ring = el('g', { class: 'spin' }); g.appendChild(ring);
+    C(ring, 0, 0, 88, 1.4, .65); C(ring, 0, 0, 78, .55, .4);
+    for (var i = 0; i < 72; i++) {
+      var a = i * 5 * RAD, big = i % 6 === 0;
+      LN(ring, Math.cos(a)*88, Math.sin(a)*88,
+              Math.cos(a)*(88 - (big ? 10 : 5)), Math.sin(a)*(88 - (big ? 10 : 5)),
+              big ? .95 : .45, big ? .6 : .35);
+    }
+    // The sight, carried on the ring.
+    LN(ring, 0, -88, 0, 88, .8, .45);
+    C(ring, 0, -88, 4, 0, .85, 1);
+    C(ring, 0, 88, 4, 0, .85, 1);
+    C(fix, 0, 0, 5.5, 1, .6);
+    return v;
+  }
+
+  var PLATES = [
+    ['सम्राट', 'Samrat Yantra', 'Sundial · time', samrat,
+     'A gnomon set to 26.92 degrees — Jaipur’s latitude, so its edge points at the pole — with graduated quadrants either side. The shadow sweeps. The instrument everyone has seen a photograph of.'],
+    ['जयप्रकाश', 'Jai Prakash', 'Hemisphere · coordinates', jaiprakash,
+     'A bowl cut with the sky’s own coordinate net: altitude circles, twenty-four azimuth meridians, crosswires strung across. Most beautiful, and the first to collapse when made small.'],
+    ['राम', 'Ram Yantra', 'Cylinder · altitude & azimuth', ram,
+     'A pillar at the centre of a graduated floor divided into twelve sectors, which light in turn as the shadow passes. Best behaved as an ambient loader — always something on, nothing racing.'],
+    ['दिगंश', 'Digamsa', 'Azimuth circle · bearing', digamsa,
+     'Two concentric walls and one sight carried round a 360-degree scale graduated every two degrees. The quietest here — it can sit in a table cell without shouting.'],
+    ['नाड़ीवलय', 'Nadivalaya', 'Equatorial dial · hour', nadivalaya,
+     'Hour lines at fifteen degrees, because the earth turns fifteen degrees an hour. A rod through the centre throws the shadow. The most obviously a CLOCK.'],
+    ['चक्र', 'Chakra Yantra', 'Ring · declination', chakra,
+     'A graduated ring on a polar axis, turned until its sight meets a star. The only one whose whole body rotates, which makes it the most continuous of the six.'],
+  ];
+
+  var host = document.getElementById('plates');
+  PLATES.forEach(function (row) {
+    var d = document.createElement('div'); d.className = 'pc';
+    var pl = document.createElement('div'); pl.className = 'plate';
+    var v = row[3]();
+    pl.appendChild(v.s);
+    var ka = document.createElement('span'); ka.className = 'ka'; ka.lang = 'hi'; ka.textContent = 'क';
+    pl.appendChild(ka);
+    d.appendChild(pl);
+    var n = v.s.querySelectorAll('path,circle,line').length;
+    d.insertAdjacentHTML('beforeend',
+      '<div class="cap"><div class="nm"><span class="dv" lang="hi">' + row[0] + '</span>' + row[1] + '</div>' +
+      '<div class="src">' + row[2] + ' · ' + n + ' elements</div><p>' + row[4] + '</p></div>');
+    host.appendChild(d);
+  });
+})();
+</script>
