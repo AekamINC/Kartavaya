@@ -116,14 +116,48 @@ async def test_a_named_but_unimplemented_function_is_refused(
 
 # ── the write gate ──────────────────────────────────────────────────────────
 
+#: Handlers that cannot be scoped to one organisation, so they are refused
+#: before the write gate is ever reached. Four of them also write, which is why
+#: the parametrised test below cannot assert one message for all ten.
+UNSCOPABLE = {
+    "escalate", "execute_sequence_step", "get_team_workload", "notify_multi",
+    "scan_upcoming_deadlines", "score_candidate", "send_campaign",
+}
+
+
 @pytest.mark.parametrize("fn", sorted(WRITE_SKILL_FUNCTIONS))
 async def test_every_write_function_is_refused_without_confirmation(
     fn, api_client, mock_pool, as_admin, org_a,
 ):
+    """
+    Every writing handler is refused unless the step confirms it — and the four
+    that ALSO cannot be tenant-scoped are refused for that reason first, because
+    an unscopable handler can never run at all. Both are refusals; asserting the
+    wrong one would pass a template that must not exist.
+    """
     r = await _post(api_client, mock_pool, [{"skill_function": fn}])
 
     assert r.status_code == 400, f"{fn} was accepted without allow_writes"
-    assert "allow_writes" in r.text
+    if fn in UNSCOPABLE:
+        assert "cannot be scoped" in r.text
+    else:
+        assert "allow_writes" in r.text
+
+
+@pytest.mark.parametrize("fn", sorted(UNSCOPABLE))
+async def test_an_unscopable_function_is_refused_even_when_confirmed(
+    fn, api_client, mock_pool, as_admin, org_a,
+):
+    """
+    `allow_writes` is consent to write inside YOUR organisation. It is not
+    consent to run a handler that selects by an entity id with no org filter —
+    that reads another tenant's row, and no author can consent to that on the
+    other tenant's behalf.
+    """
+    r = await _post(api_client, mock_pool, [{"skill_function": fn, "allow_writes": True}])
+
+    assert r.status_code == 400
+    assert "cannot be scoped" in r.text
 
 
 async def test_a_write_function_is_accepted_once_confirmed(api_client, mock_pool, as_admin, org_a):
@@ -208,7 +242,19 @@ async def test_capabilities_lists_what_the_editor_needs(api_client, mock_pool, a
 
     names = {f["name"] for f in body["skill_functions"]}
     assert names == set(SKILL_REGISTRY)
-    assert all(f["available"] for f in body["skill_functions"]), "a registry entry does not resolve"
+
+    # Every entry still RESOLVES to real code — that is what the registry rebuild
+    # fixed. `available` now carries a second meaning on top: whether the handler
+    # can be scoped to one organisation. The seven that cannot are reported
+    # unavailable with a reason, so the editor does not offer a step that saves
+    # cleanly and can never run.
+    unavailable = {f["name"] for f in body["skill_functions"] if not f["available"]}
+    assert unavailable == UNSCOPABLE, (
+        "the editor's unavailable set drifted from the run guard's"
+    )
+    for f in body["skill_functions"]:
+        if not f["available"]:
+            assert "org_id" in f.get("unavailable_reason", ""), f"{f['name']} gives no reason"
 
     writes = {f["name"] for f in body["skill_functions"] if f["writes"]}
     assert writes == WRITE_SKILL_FUNCTIONS

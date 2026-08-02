@@ -37,6 +37,14 @@ router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
 
 _hub_gate = require_module("srijan")
 
+#: skill_function -> can its handler be scoped to one organisation. Built once
+#: from the same introspection the capabilities endpoint serves, so the editor's
+#: picker, the create validator and the run guard cannot disagree about which
+#: functions are usable.
+_SCOPABLE: dict[str, bool] = {
+    f["name"]: f["available"] for f in describe_skill_functions()
+}
+
 
 # ── Pydantic Models ──────────────────────────────────────────
 
@@ -761,6 +769,18 @@ async def create_skill_template(
                     400,
                     f"Step {i+1}: unknown skill function '{fn}'. "
                     f"Must be one of: {', '.join(sorted(SKILL_REGISTRY))}",
+                )
+            # Refused at authoring time as well as at run time. A handler that
+            # cannot be scoped to one organisation is refused by
+            # `_run_function_step`, so accepting it here would store a template
+            # that saves cleanly and can never run — and the failure would
+            # surface in front of whoever pressed Run rather than whoever chose
+            # the step.
+            if not _SCOPABLE.get(fn, True):
+                raise HTTPException(
+                    400,
+                    f"Step {i+1}: '{fn}' cannot be scoped to one organisation — "
+                    f"its handler does not take org_id — so it is unavailable.",
                 )
             # Opting a template into writes is a decision, not a default. The
             # step has to say so here as well as at run time, so the refusal

@@ -159,6 +159,107 @@ async def test_org_id_cannot_be_overridden_by_template_data(spy):
 
 
 @pytest.mark.asyncio
+async def test_run_variables_cannot_redirect_a_data_step(spy):
+    """
+    The cross-MODULE hole.
+
+    `variables` is whatever the person pressing Run typed, and it used to be
+    merged over both the registry defaults and the step's own params. So a step
+    authored to read tasks was redirected into the receivables ledger by a run
+    variable of {"module": "invoices"} — a Srijan-only user reading the books
+    through a skill whose description says it reads tasks.
+
+    Handler arguments come from the registry and the TEMPLATE. Never from the
+    runner.
+    """
+    got = {}
+
+    async def handler(pool, org_id, module, days_overdue=0):
+        got.update(module=module, days_overdue=days_overdue)
+        return {}
+
+    spy("fake_redirect", handler, {"module": "tasks"})
+
+    await _run_function_step(
+        _Pool(),
+        {"skill_function": "fake_redirect", "params": {"module": "tasks"}},
+        {"module": "invoices", "days_overdue": 9999},     # the attack
+        ORG,
+        USER,
+    )
+
+    assert got["module"] == "tasks", "a run variable redirected the data step"
+    assert got["days_overdue"] == 0, "a run variable reached a handler argument"
+
+
+@pytest.mark.asyncio
+async def test_a_handler_that_cannot_be_org_scoped_is_refused(spy):
+    """
+    The cross-TENANT hole, and the worse of the two.
+
+    org_id was forced into the argument dict under a comment reading "never
+    overridable", then filtered back out for every handler whose signature does
+    not name it. Seven registered handlers are in that position and each selects
+    by a team or entity id with no org filter of its own, so a template naming
+    another tenant's id read another tenant's row.
+
+    There is no way to scope such a handler from outside — the filter belongs in
+    its query — so it is refused until the handler itself takes org_id.
+    """
+    called = False
+
+    async def handler(pool, entity_type, entity_id, level=1):
+        nonlocal called
+        called = True
+        return {}
+
+    spy("fake_unscoped", handler)
+
+    with pytest.raises(PermissionError, match="org_id"):
+        await _run_function_step(
+            _Pool(),
+            {"skill_function": "fake_unscoped",
+             "params": {"entity_type": "invoice", "entity_id": "someone-elses-uuid"}},
+            {}, ORG, USER,
+        )
+
+    assert not called
+
+
+def test_every_registered_handler_can_be_scoped_to_a_tenant():
+    """
+    The standing check, so a handler cannot be added to the registry without an
+    org filter and only be caught at run time by the guard above.
+
+    Seven entries fail this today — escalate, execute_sequence_step,
+    get_team_workload, notify_multi, scan_upcoming_deadlines, score_candidate,
+    send_campaign. They are listed rather than skipped: this test is the record
+    of exactly which handlers are unavailable and why, and it turns green one
+    name at a time as each learns to take org_id.
+    """
+    KNOWN_UNSCOPED = {
+        "escalate", "execute_sequence_step", "get_team_workload", "notify_multi",
+        "scan_upcoming_deadlines", "score_candidate", "send_campaign",
+    }
+
+    unscoped = set()
+    for name, (module_path, fn_name, _) in SKILL_REGISTRY.items():
+        handler = getattr(importlib.import_module(module_path), fn_name)
+        params = inspect.signature(handler).parameters
+        if not any(p.kind is p.VAR_KEYWORD for p in params.values()) and "org_id" not in params:
+            unscoped.add(name)
+
+    new = unscoped - KNOWN_UNSCOPED
+    assert not new, f"new handler(s) registered with no org scope: {sorted(new)}"
+
+    fixed = KNOWN_UNSCOPED - unscoped
+    assert not fixed, (
+        f"{sorted(fixed)} now take org_id — remove them from KNOWN_UNSCOPED so "
+        f"the list stays an accurate record of what is still unavailable."
+    )
+
+
+@pytest.mark.asyncio
 async def test_a_missing_required_param_raises_before_the_handler_runs(spy):
     """
     Fails closed. `find_overdue` without `module` would scan whichever table a

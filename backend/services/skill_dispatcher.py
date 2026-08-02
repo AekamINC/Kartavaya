@@ -196,13 +196,28 @@ def describe_skill_functions() -> list[dict]:
         ]
         kind = ("act" if name in WRITE_SKILL_FUNCTIONS
                 else "detect" if ".detect" in module_path else "read")
+
+        # A handler that cannot be scoped to one tenant is reported UNAVAILABLE
+        # rather than merely flagged. `_run_function_step` refuses it, so
+        # offering it in the step editor would let someone author a template
+        # that saves cleanly and can never run — the failure arriving at run
+        # time, in front of whoever pressed the button rather than whoever made
+        # the mistake.
+        scopable = (
+            any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+            or "org_id" in params
+        )
         out.append({
             "name": name,
-            "available": True,
+            "available": scopable,
             "kind": kind,
             "writes": name in WRITE_SKILL_FUNCTIONS,
             "needs": needs,
             "defaults": defaults,
+            **({} if scopable else {
+                "unavailable_reason": "cannot be scoped to one organisation — "
+                                      "its handler does not take org_id",
+            }),
         })
     return out
 
@@ -257,13 +272,12 @@ async def _run_function_step(
     ModuleNotFoundError from the registry. Neither was ever observed because
     nothing has ever run a function-backed step.
 
-    So the arguments are matched to the signature rather than assumed. Three
+    So the arguments are matched to the signature rather than assumed. Four
     rules, in order:
 
-      · `org_id` is forced LAST and cannot be overridden by step params or run
-        variables. It is the tenant boundary — a template that could set its own
-        `org_id` would read another customer's invoices, and templates are org
-        data that customers can author.
+      · a handler that does not ACCEPT `org_id` is refused outright. See below —
+        this is a tenant boundary, not a convenience.
+      · run variables never reach a handler. See below.
       · a handler is given only what its signature names, so adding a param to
         one handler cannot break the others.
       · a required param with nothing to fill it raises here, before the call.
@@ -286,14 +300,54 @@ async def _run_function_step(
     handler = await _resolve_handler(skill_function)
     _, _, defaults = SKILL_REGISTRY[skill_function]
 
-    supplied: dict[str, Any] = {**defaults, **(step.get("params") or {}), **(variables or {})}
-    supplied["org_id"] = org_id          # tenant boundary — never overridable
-    if user_id is not None:
-        supplied.setdefault("user_id", user_id)
-
     sig = inspect.signature(handler)
     params = sig.parameters
     takes_var_kw = any(p.kind is p.VAR_KEYWORD for p in params.values())
+
+    # ── Tenant boundary, enforced rather than asserted ──────────────────────
+    #
+    # The previous version set `supplied["org_id"] = org_id` under a comment
+    # reading "never overridable", and then filtered the arguments down to the
+    # handler's signature — which silently DROPPED org_id again for the seven
+    # handlers that do not name it: escalate, execute_sequence_step,
+    # get_team_workload, notify_multi, scan_upcoming_deadlines, score_candidate,
+    # send_campaign. Every one of those selects by a team or entity id with no
+    # org filter of its own (`escalation_chain.py:31` reads
+    # `WHERE id = $1::uuid`, and even SELECTs org_id without filtering on it), so
+    # a template naming another tenant's entity id read another tenant's row.
+    # That is cross-TENANT, strictly worse than the cross-module gap it was
+    # written to prevent.
+    #
+    # Refusing is the only safe answer available here. Passing org_id to a
+    # handler that does not accept it is a TypeError; scoping it from the
+    # outside is impossible because the filter belongs inside the handler's own
+    # query. So these seven stay unavailable until each one takes org_id and
+    # filters on it, and the refusal names the reason.
+    if not takes_var_kw and "org_id" not in params:
+        raise PermissionError(
+            f"'{skill_function}' does not accept org_id, so it cannot be scoped "
+            f"to one tenant. Refusing to run it until its handler takes org_id "
+            f"and filters on it."
+        )
+
+    # ── Run variables never reach a handler ─────────────────────────────────
+    #
+    # They used to be merged LAST, over both the registry defaults and the
+    # step's own params. `variables` is whatever the person pressing Run typed,
+    # so a step authored as {"skill_function": "find_overdue_tasks",
+    # "params": {"module": "tasks"}} was redirected by a run variable of
+    # {"module": "invoices"} into the receivables ledger — a Srijan-only user
+    # reading the books through a skill that says it reads tasks.
+    #
+    # Handler arguments now come from the registry and the TEMPLATE only.
+    # Variables keep their real job, which is prompt substitution
+    # (services/skills/prompt.py). A handler that needs `metric` or `dept` gets
+    # it from the step's params, chosen by whoever authored the template — which
+    # is the person the write gate and the module gate are already checking.
+    supplied: dict[str, Any] = {**defaults, **(step.get("params") or {})}
+    supplied["org_id"] = org_id
+    if user_id is not None:
+        supplied.setdefault("user_id", user_id)
 
     if takes_var_kw:
         kwargs = {k: v for k, v in supplied.items() if k != "pool"}
@@ -310,7 +364,8 @@ async def _run_function_step(
     if missing:
         raise ValueError(
             f"'{skill_function}' needs {', '.join(sorted(missing))}, which the "
-            f"step's params and the run's variables did not supply."
+            f"step's params did not supply. Run variables cannot fill a handler "
+            f"argument — the template author chooses what a data step reads."
         )
 
     result = await handler(pool=pool, **kwargs)
