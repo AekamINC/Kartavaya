@@ -5,6 +5,7 @@ Routes skill steps to Python functions or LLM generation.
 Supports self-learning via hub_skill_feedback corrections.
 """
 import hashlib
+import importlib
 import inspect
 import json
 import logging
@@ -159,6 +160,51 @@ async def _get_feedback_corrections(
         uuid.UUID(skill_template_id), uuid.UUID(org_id), input_hash,
     )
     return json.loads(row["corrected"]) if row and row["corrected"] else None
+
+
+def describe_skill_functions() -> list[dict]:
+    """The registry, as the step editor needs to see it.
+
+    Built by introspection rather than written out a second time. A hand-kept
+    list in the UI is a list that drifts, and the drift is silent until someone
+    authors a template naming a function that moved — which is the failure this
+    whole area already had once, in the other direction.
+
+    `needs` is what the author must supply: a parameter with no default that the
+    registry's own defaults do not already fill. `org_id` and `user_id` are
+    excluded because the run path supplies both, and `org_id` deliberately
+    cannot be set from a template at all.
+    """
+    out: list[dict] = []
+    for name, (module_path, fn_name, defaults) in sorted(SKILL_REGISTRY.items()):
+        try:
+            handler = getattr(importlib.import_module(module_path), fn_name)
+            params = inspect.signature(handler).parameters
+        except Exception:                                 # noqa: BLE001
+            # A broken entry is reported as such rather than omitted. Hiding it
+            # is how the previous registry looked healthy while every one of its
+            # entries pointed at a module nobody had written.
+            out.append({"name": name, "available": False, "needs": [],
+                        "writes": name in WRITE_SKILL_FUNCTIONS, "kind": "unknown"})
+            continue
+
+        needs = [
+            p for p, spec in params.items()
+            if p not in ("pool", "org_id", "user_id")
+            and spec.default is inspect.Parameter.empty
+            and p not in defaults
+        ]
+        kind = ("act" if name in WRITE_SKILL_FUNCTIONS
+                else "detect" if ".detect" in module_path else "read")
+        out.append({
+            "name": name,
+            "available": True,
+            "kind": kind,
+            "writes": name in WRITE_SKILL_FUNCTIONS,
+            "needs": needs,
+            "defaults": defaults,
+        })
+    return out
 
 
 async def _resolve_handler(skill_function: str):

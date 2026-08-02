@@ -721,6 +721,17 @@
   letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
   color: var(--on-surface-3);
 }
+/* AI step / Data step. Sits between the step number and Remove, so it takes the
+   free space rather than letting `justify-content: space-between` strand it. */
+.sk-step__kind { margin-inline-end: auto; }
+
+/* Grounding sources. A fieldset defaults to `min-inline-size: min-content`,
+   which stops the chip row inside it from wrapping and pushes the whole step
+   card wider than its container on narrow screens. */
+.sk-ctx {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  min-inline-size: 0; border: 0; padding: 0; margin: 0;
+}
 
 .sk-icons { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 .sk-icon {

@@ -27,8 +27,11 @@ from services.ai_router import (
     deduct_org_credits, refund_org_credits, _maybe_reset_monthly_credits, CREDIT_COSTS,
 )
 from services.skills.prompt import fill_prompt
-from services.skills.context import context_for_step
-from services.skill_dispatcher import _run_function_step
+from services.skills.context import context_for_step, SOURCES as CONTEXT_SOURCES
+from services.skill_dispatcher import (
+    _run_function_step, SKILL_REGISTRY, WRITE_SKILL_FUNCTIONS,
+    UNIMPLEMENTED_SKILL_FUNCTIONS, describe_skill_functions,
+)
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
 
@@ -681,6 +684,35 @@ async def list_skill_templates(
     return {"data": [dict(r) for r in rows]}
 
 
+@router.get("/skills/capabilities")
+async def list_skill_capabilities(
+    user=Depends(require_user),
+    _=Depends(_hub_gate),
+):
+    """What a skill step can be built out of: data functions and context sources.
+
+    Served rather than hard-coded in the editor. The step editor previously
+    offered `agent_type` alone from a list written out in the frontend, and the
+    one price list that WAS duplicated there had already gone stale and was
+    quoting people the wrong cost — see `AGENT_TYPES` in
+    `pages/hub/skills/_shared.jsx`. A second copy of the registry would go the
+    same way, except the failure would be a template naming a function that does
+    not exist.
+
+    Readable by any Srijan user, not gated to the roles that may CREATE
+    templates: the same list drives the read-only step display on the Catalog
+    and Assigned tabs, which everyone sees.
+    """
+    return {
+        "skill_functions": describe_skill_functions(),
+        "context_sources": [
+            {"key": key, "label": src.label, "kind": src.kind}
+            for key, src in sorted(CONTEXT_SOURCES.items())
+        ],
+        "unimplemented": sorted(UNIMPLEMENTED_SKILL_FUNCTIONS),
+    }
+
+
 @router.get("/skills/templates/{template_id}")
 async def get_skill_template(
     template_id: UUID,
@@ -709,18 +741,62 @@ async def create_skill_template(
         raise HTTPException(400, f"Category must be one of: {', '.join(valid_categories)}")
     if not body.steps:
         raise HTTPException(400, "At least one step is required")
+
+    # Two kinds of step, and the validator used to know only one. It required a
+    # valid `agent_type` AND a non-empty `prompt_template` on every step, so a
+    # data step — which has neither — was refused outright. That is why the
+    # dispatcher's function path could not be authored even after it worked.
     valid_agents = set(AGENT_PROMPTS.keys())
     for i, step in enumerate(body.steps):
-        if "agent_type" not in step or step["agent_type"] not in valid_agents:
-            raise HTTPException(400, f"Step {i+1}: invalid agent_type. Must be one of: {', '.join(valid_agents)}")
-        if "prompt_template" not in step or not step["prompt_template"].strip():
-            raise HTTPException(400, f"Step {i+1}: prompt_template is required")
+        fn = step.get("skill_function")
+        if fn:
+            if fn in UNIMPLEMENTED_SKILL_FUNCTIONS:
+                raise HTTPException(
+                    400,
+                    f"Step {i+1}: '{fn}' is named in the registry but has no "
+                    f"implementation. It cannot be run.",
+                )
+            if fn not in SKILL_REGISTRY:
+                raise HTTPException(
+                    400,
+                    f"Step {i+1}: unknown skill function '{fn}'. "
+                    f"Must be one of: {', '.join(sorted(SKILL_REGISTRY))}",
+                )
+            # Opting a template into writes is a decision, not a default. The
+            # step has to say so here as well as at run time, so the refusal
+            # lands while someone is authoring rather than mid-run against a
+            # customer's invoices.
+            if fn in WRITE_SKILL_FUNCTIONS and not step.get("allow_writes"):
+                raise HTTPException(
+                    400,
+                    f"Step {i+1}: '{fn}' writes data. Set allow_writes on the "
+                    f"step to confirm that is intended.",
+                )
+        else:
+            if step.get("agent_type") not in valid_agents:
+                raise HTTPException(400, f"Step {i+1}: invalid agent_type. Must be one of: {', '.join(valid_agents)}")
+            if not (step.get("prompt_template") or "").strip():
+                raise HTTPException(400, f"Step {i+1}: prompt_template is required")
+
+        # Context is available to either kind. A name that does not exist would
+        # otherwise surface only as an "unavailable" line at run time, long
+        # after whoever typed it has gone.
+        for source in (step.get("context") or []):
+            if source not in CONTEXT_SOURCES:
+                raise HTTPException(
+                    400,
+                    f"Step {i+1}: unknown context source '{source}'. "
+                    f"Must be one of: {', '.join(sorted(CONTEXT_SOURCES))}",
+                )
 
     steps_with_order = [
         {**s, "order": s.get("order", i + 1)} for i, s in enumerate(body.steps)
     ]
+    # Data steps call no model, so they cost nothing. Counting them at the
+    # `.get(..., 2)` fallback would have quoted a price for work that is free.
     estimated = body.estimated_credits or sum(
-        CREDIT_COSTS.get(s["agent_type"], 2) for s in steps_with_order
+        0 if s.get("skill_function") else CREDIT_COSTS.get(s.get("agent_type"), 2)
+        for s in steps_with_order
     )
 
     row = await pool.fetchrow(

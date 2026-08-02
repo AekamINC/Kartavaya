@@ -2,9 +2,9 @@
 import React, { useState } from 'react';
 import { api } from '../../../lib/api';
 import { useToast } from '../../../components/ui/toast';
-import { errText, creditLabel } from '../_shared';
+import { errText, creditLabel, useResource } from '../_shared';
 import {
-  StepEditor, SkillGlyph, ICON_OPTIONS, CATEGORY_LABELS, estimateCredits,
+  StepEditor, SkillGlyph, ICON_OPTIONS, CATEGORY_LABELS, estimateCredits, stepKind,
 } from './_shared';
 
 const BLANK = {
@@ -12,14 +12,40 @@ const BLANK = {
   steps: [{ agent_type: 'social_media', prompt_template: '', platform: '' }],
 };
 
+/**
+ * A step counts once it can actually run.
+ *
+ * This was `s.prompt_template.trim()`, which does two wrong things the moment a
+ * data step exists: it throws on `undefined` — a data step has no prompt at all,
+ * so opening the editor and switching one step to Data crashed the tab — and it
+ * would then have filtered every data step out of the payload, silently
+ * submitting a template missing exactly the steps that make it worth having.
+ */
+function isRunnable(step) {
+  return stepKind(step) === 'data'
+    ? !!step.skill_function
+    : !!(step.prompt_template || '').trim();
+}
+
 export default function CreateTab({ costs, canManage, onCreated }) {
   const { pushToast } = useToast();
   const [form, setForm] = useState(BLANK);
   const [busy, setBusy] = useState(false);
 
+  // What a step can be built out of, from the server. See `StepEditor`.
+  const caps = useResource('/v1/hub/skills/capabilities', []);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const valid = form.steps.filter(s => s.prompt_template.trim());
+  const valid = form.steps.filter(isRunnable);
   const est = estimateCredits(valid, costs);
+
+  // A write step that has not been confirmed is refused by the server, so say
+  // so here rather than letting someone press Create and read a 400.
+  const unconfirmed = valid.filter(
+    s => s.skill_function
+      && (caps.data?.skill_functions || []).some(f => f.name === s.skill_function && f.writes)
+      && !s.allow_writes,
+  );
 
   if (!canManage) {
     return (
@@ -34,7 +60,17 @@ export default function CreateTab({ costs, canManage, onCreated }) {
   async function submit(e) {
     e.preventDefault();
     if (!form.name.trim()) { pushToast({ title: 'Give the template a name.', type: 'error' }); return; }
-    if (valid.length === 0) { pushToast({ title: 'At least one step needs a prompt.', type: 'error' }); return; }
+    if (valid.length === 0) {
+      pushToast({ title: 'At least one step needs a prompt or something to read.', type: 'error' });
+      return;
+    }
+    if (unconfirmed.length) {
+      pushToast({
+        title: 'Confirm the steps that change data before creating this template.',
+        type: 'error',
+      });
+      return;
+    }
     setBusy(true);
     try {
       await api.post('/v1/hub/skills/templates', { ...form, steps: valid });
@@ -54,7 +90,10 @@ export default function CreateTab({ costs, canManage, onCreated }) {
           <span className="hb-card__hi" lang="hi">नया</span>
         </h3>
         <span className="hb-cap">
-          Each step runs one AI agent in order. The client&rsquo;s brand profile is injected into every one.
+          Steps run in order. An <b>AI step</b> writes something and costs credits; a{' '}
+          <b>data step</b> reads your own records — invoices, KPIs, stock, attendance — and costs
+          nothing. What a data step finds is handed to the steps after it, so the writing is done
+          against real figures rather than in the abstract.
         </span>
       </div>
 
@@ -96,13 +135,20 @@ export default function CreateTab({ costs, canManage, onCreated }) {
 
       <fieldset className="hb-fs">
         <legend className="hb-field__l">Steps</legend>
-        <StepEditor steps={form.steps} costs={costs} onChange={s => set('steps', s)} />
+        {caps.error && (
+          <div className="note note--warn hb-note" role="status">
+            <b>The list of things a data step can read did not load.</b> {caps.error} AI steps
+            still work; data steps and grounding are unavailable until this loads.
+          </div>
+        )}
+        <StepEditor steps={form.steps} costs={costs} capabilities={caps.data}
+          onChange={s => set('steps', s)} />
       </fieldset>
 
       <div className="hb-form__foot">
         <span className="hb-cap">
           {valid.length === 0
-            ? 'No step has a prompt yet.'
+            ? 'No step has a prompt or a data source yet.'
             : est != null
               ? <>{valid.length} {valid.length === 1 ? 'step' : 'steps'} · about {creditLabel(est)} per run</>
               : <>{valid.length} {valid.length === 1 ? 'step' : 'steps'} · cost table unavailable</>}
