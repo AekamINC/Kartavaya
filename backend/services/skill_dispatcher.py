@@ -68,6 +68,9 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     "get_account_brief":          ("services.skills.data", "get_account_brief", {"activity_limit": 50}),
     # Ganit · statutory. Phase 3.  needs: period
     "check_gstr1_readiness":      ("services.skills.data", "check_gstr1_readiness", {"limit": 200}),
+    #                              needs: period. Computes nothing of its own —
+    #                              same path as the filing screen and the PDF.
+    "brief_gstr3b_liability":     ("services.skills.data", "brief_gstr3b_liability", {}),
     # Manav + Vetana · payroll. Reads SALARY — see modules.py.
     "check_payroll_readiness":    ("services.skills.data", "check_payroll_readiness", {"limit": 200}),
     # Vetana · month-on-month pay movement. Defaults to the latest month that
