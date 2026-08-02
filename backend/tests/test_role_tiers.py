@@ -199,19 +199,51 @@ def test_platform_staff_reaches_only_the_operating_set():
 
 
 @pytest.mark.parametrize("role", sorted(COMMERCIAL_ONLY_ROLES) + ["platform_support"])
-def test_commercial_specialist_and_support_roles_reach_no_customer_module(role):
-    """account_finance sees billing and srijan_admin sees AI config — both live
-    behind console guards, not behind a customer's operational records.
+def test_commercial_and_support_roles_reach_no_customer_module(role):
+    """account_finance and account_manager see billing, which lives behind
+    console guards rather than behind a customer's operational records.
     platform_support is gated on an approval flow that does not exist yet, so it
     grants nothing rather than everything."""
     assert modules_for(role) == frozenset()
+
+
+def test_the_skill_author_reaches_srijan_and_only_srijan():
+    """
+    `srijan_admin` used to reach NOTHING, because it sat in
+    COMMERCIAL_ONLY_ROLES. That made the role named after the module unable to
+    enter the module: it passed
+    `require_platform_role(*OPERATIONS_CONSOLE_ROLES)` on create_skill_template
+    and was refused on the same request by `_hub_gate`, with "The srijan_admin
+    role cannot access the srijan module." Dead since it was written, and
+    unnoticed because it has zero holders.
+
+    Only srijan, deliberately. An author writes templates; the templates are run
+    by somebody else, and it is THAT person's grants which decide what data a
+    template may read — see services/skills/modules.py. Giving the author
+    STAFF_MODULES would let whoever writes the skills also read every customer's
+    CRM.
+    """
+    assert modules_for("srijan_admin") == frozenset({"srijan"})
+    for withheld in ("ganit", "graha", "manav", "vetana", "vikray", "dristi"):
+        assert not can_reach_module("srijan_admin", withheld), withheld
+
+
+def test_the_skill_author_cannot_move_credits():
+    """Authoring a skill and topping up the balance that funds its runs are two
+    authorities. An author holding both could fund the runs of the templates
+    they wrote."""
+    assert "srijan_admin" not in SRIJAN_COMMERCIAL_ROLES
+    assert "srijan_admin" in OPERATIONS_CONSOLE_ROLES
 
 
 def test_every_platform_role_is_accounted_for_in_the_module_map():
     """No Tier-1 role may be silently absent. Each one either reaches a defined
     set or is deliberately empty — nothing falls through unconsidered."""
     reaching = {r for r in ALL_PLATFORM_ROLES if modules_for(r)}
-    assert reaching == {"platform_owner", "platform_admin", "platform_manager", "platform_staff"}
+    assert reaching == {
+        "platform_owner", "platform_admin", "platform_manager", "platform_staff",
+        "srijan_admin",
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════

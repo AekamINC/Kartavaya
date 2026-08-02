@@ -208,13 +208,17 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
                     <div className="sk-card__act">
                       <button type="button" className="k-btn k-btn--primary hb-btn--sm sk-card__go"
                         disabled={busyId === t.id || !canAssign || !canWrite} onClick={() => assign(t.id)} title={denial || undefined}>
-                        {busyId === t.id ? 'Adding…' : canAssign ? 'Add to organisation' : 'Needs an admin'}
+                        {busyId === t.id ? 'Adding…' : canAssign ? 'Add to organisation' : 'Aekam adds this'}
                       </button>
                     </div>
+                    {/* `assign_skill_to_org` is guarded by OPERATIONS_CONSOLE_ROLES,
+                        which holds no org-tier role — so the old "needs an owner,
+                        an org admin or a Srijan admin" named two roles that would
+                        have been refused on submit. */}
                     {!canAssign && (
                       <p className="hb-cap">
-                        Adding a skill changes what the whole organisation can run, so it needs an
-                        owner, an org admin or a Srijan admin.
+                        Adding a skill changes what everyone in the organisation can run and what it
+                        costs, so Aekam turns it on for you. Ask your account contact.
                       </p>
                     )}
                   </article>

@@ -47,13 +47,43 @@ STAFF_ROLES: tuple[str, ...] = ("platform_staff",)
 #: role currently gets nothing. Listed so the enum and the code agree.
 SUPPORT_ROLES: tuple[str, ...] = ("platform_support",)
 
-#: Commercial and specialist roles that reach billing or AI config, never a
-#: customer's operational records.
-COMMERCIAL_ONLY_ROLES: tuple[str, ...] = ("account_manager", "account_finance", "srijan_admin")
+#: Commercial roles that reach billing, never a customer's operational records.
+#:
+#: `srijan_admin` was here and should not have been. It is not a commercial role
+#: — it authors skills — and being listed here is exactly why it could not do
+#: that: `modules_for` returns nothing for this tuple, so the role NAMED AFTER
+#: the module was refused the module. It passed
+#: `require_platform_role(*OPERATIONS_CONSOLE_ROLES)` on `create_skill_template`
+#: and was then refused by `_hub_gate` on the same request, with
+#: "The srijan_admin role cannot access the srijan module."
+#:
+#: Nobody hit it because the role has zero holders — verified against the live
+#: catalog 2026-08-02. It has been dead since it was written.
+COMMERCIAL_ONLY_ROLES: tuple[str, ...] = ("account_manager", "account_finance")
+
+#: Authors Srijan skills, and nothing else.
+#:
+#: Owner's decision, 2026-08-02: keep `srijan_admin` and repair it rather than
+#: mint a new code. It already exists in the live CHECK constraint, in
+#: `PLATFORM_ROLE_PRECEDENCE`, in the console's assignable list and in
+#: `adminNav.js`, which already documents its surface as "the Srijan hub at
+#: /hub". Zero holders means repairing it breaks no account and no session, and
+#: a new code would need a DDL against the shared production database to buy
+#: what this one already has.
+SKILL_AUTHOR_ROLES: tuple[str, ...] = ("srijan_admin",)
+
+#: What an author may reach: Srijan, and only Srijan.
+#:
+#: Deliberately NOT `STAFF_MODULES`. An author writes the templates; they have no
+#: business in a customer's CRM, sales pipeline or analytics. The templates they
+#: write are then run BY somebody else, whose own grants decide what data those
+#: templates may read — see `services/skills/modules.py`.
+SKILL_AUTHOR_MODULES: frozenset[str] = frozenset({"srijan"})
 
 #: Every Tier-1 code. Used for "is this user platform staff at all".
 ALL_PLATFORM_ROLES: tuple[str, ...] = (
-    GOD_MODE_ROLES + MANAGER_ROLES + STAFF_ROLES + SUPPORT_ROLES + COMMERCIAL_ONLY_ROLES
+    GOD_MODE_ROLES + MANAGER_ROLES + STAFF_ROLES + SUPPORT_ROLES
+    + COMMERCIAL_ONLY_ROLES + SKILL_AUTHOR_ROLES
 )
 
 # ── Tier 2: organisation ──────────────────────────────────────────────────────
@@ -128,10 +158,11 @@ def modules_for(platform_role: str | None) -> frozenset[str]:
         return MANAGER_MODULES
     if platform_role in STAFF_ROLES:
         return STAFF_MODULES
-    # Commercial, specialist and support roles reach no operational module.
-    # account_finance sees billing; srijan_admin sees AI config; both are
-    # elsewhere. platform_support is gated on an approval flow that does not
-    # exist yet, so it grants nothing rather than everything.
+    if platform_role in SKILL_AUTHOR_ROLES:
+        return SKILL_AUTHOR_MODULES
+    # Commercial and support roles reach no operational module. account_finance
+    # sees billing, which is elsewhere. platform_support is gated on an approval
+    # flow that does not exist yet, so it grants nothing rather than everything.
     return frozenset()
 
 
@@ -196,8 +227,13 @@ OPERATIONS_CONSOLE_ROLES: tuple[str, ...] = (
 #: client's credit balance are both "Srijan", but only one of them spends. The
 #: operating set exists to let staff do the work, not to let them bill for it —
 #: the same separation Vetana and Ganit make between admin and approver.
+#: `srijan_admin` is deliberately NOT here any more. Authoring a skill and
+#: topping up a client's credit balance are both "Srijan", and only one of them
+#: spends — the same separation this tuple's own comment already draws. An
+#: author who could also move credits would be able to fund the runs of the
+#: templates they wrote.
 SRIJAN_COMMERCIAL_ROLES: tuple[str, ...] = (
-    GOD_MODE_ROLES + MANAGER_ROLES + ("account_manager", "account_finance", "srijan_admin")
+    GOD_MODE_ROLES + MANAGER_ROLES + ("account_manager", "account_finance")
 )
 
 #: Modules whose grants are withheld by default when a member is added without an

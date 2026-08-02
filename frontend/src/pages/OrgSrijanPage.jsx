@@ -25,6 +25,8 @@ import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import { errText } from './hub/_shared';
 
+import { canManageSkills } from './admin/platformRoles';
+
 import SkillsTab from './srijan/SkillsTab';
 import ContentTab from './srijan/ContentTab';
 import GenerateTab from './srijan/GenerateTab';
@@ -74,10 +76,7 @@ export default function OrgSrijanPage() {
   // without it the panel's entrance animation never restarts.
   const { key: panelKey, ...motion } = useTabPanelMotion(TABS, tab);
 
-  const canAssign =
-    (Array.isArray(me?.platform_roles) &&
-      me.platform_roles.some(r => ['platform_admin', 'account_manager', 'srijan_admin'].includes(r))) ||
-    me?.org_role === 'owner' || me?.org_role === 'admin';
+  const canAssign = canManageSkills(me);
 
   const loadCredits = useCallback(async () => {
     setLoading(true);

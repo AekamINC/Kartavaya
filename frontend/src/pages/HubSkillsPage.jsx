@@ -22,6 +22,8 @@ import { currentUser } from '../lib/auth';
 import { useList, useResource, errText } from './hub/_shared';
 import { parseSteps } from './hub/skills/_shared';
 
+import { canManageSkills } from './admin/platformRoles';
+
 import AssignedTab from './hub/skills/AssignedTab';
 import CatalogTab from './hub/skills/CatalogTab';
 import CreateTab from './hub/skills/CreateTab';
@@ -60,10 +62,7 @@ export default function HubSkillsPage() {
 
   useEffect(() => { loadClient(); }, [loadClient]);
 
-  const canManage =
-    (Array.isArray(me?.platform_roles) &&
-      me.platform_roles.some(r => ['platform_admin', 'account_manager', 'srijan_admin'].includes(r))) ||
-    me?.org_role === 'owner' || me?.org_role === 'admin';
+  const canManage = canManageSkills(me);
 
   const assignedIds = new Set((assigned.items || []).map(s => s.template_id));
   const available = (catalog.items || []).filter(t => !assignedIds.has(t.id));

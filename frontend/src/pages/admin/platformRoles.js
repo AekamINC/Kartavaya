@@ -171,3 +171,40 @@ export const canManageBilling = roles => has(roles, BILLING);
 
 /** The org LIST is `CONSOLE_ROLES_WITH_FINANCE`; only that endpoint is wider. */
 export const canListOrgs = roles => canOpenConsole(roles) || has(roles, ['account_finance']);
+
+/**
+ * Who may CREATE a skill template and ASSIGN skills to an org or a client.
+ *
+ * Mirrors `OPERATIONS_CONSOLE_ROLES` in `middleware/role_tiers.py`, which is
+ * the guard on `create_skill_template`, `assign_skill`, `assign_skill_to_org`
+ * and both remove routes.
+ *
+ * The check this replaces was wrong in both directions at once:
+ *
+ *     me.platform_roles.some(r => ['platform_admin','account_manager','srijan_admin'].includes(r))
+ *       || me?.org_role === 'owner' || me?.org_role === 'admin'
+ *
+ *   · TOO NARROW. It omitted `platform_owner`, `platform_manager` and
+ *     `platform_staff` — six of the ten live platform accounts, all of which
+ *     the API accepts. `platform_staff` exists SPECIFICALLY for "Srijan,
+ *     including authoring skills and publishing" (`role_tiers.py:20-22`) and
+ *     was refused the button. It also repeated the exact trap
+ *     `role_tiers.py:153` warns about: naming `platform_admin` without
+ *     `platform_owner` locks out every god-mode account the day those legacy
+ *     rows are renamed.
+ *   · TOO WIDE, and simultaneously dead. `/auth/me` emits `org_roles` — PLURAL,
+ *     a list of {org_id, role_code, org_name} — and never `org_role`, so that
+ *     branch could never be true for anybody. Had it worked it would have been
+ *     wrong anyway: the server accepts no org-tier role here, so an org admin
+ *     would have been shown a button that 403s on submit. The copy beside it
+ *     told them they needed "an org owner, an org admin or a Srijan admin",
+ *     naming two roles the server refuses.
+ *
+ * `account_manager` is kept because the server still lists it, legacy and
+ * inert though it is. Removing it here would make this narrower than the guard
+ * again, which is the whole failure being fixed.
+ */
+const SKILLS = [
+  ...GOD_MODE, 'platform_manager', 'platform_staff', 'account_manager', 'srijan_admin',
+];
+export const canManageSkills = user => has(user?.platform_roles, SKILLS);

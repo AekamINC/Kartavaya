@@ -50,9 +50,16 @@ export default function CreateTab({ costs, canManage, onCreated }) {
   if (!canManage) {
     return (
       <div className="note note--info hb-note" role="status">
-        <b>Creating templates needs an admin grant.</b> Templates are shared across the whole
-        organisation, so only an org owner, an org admin or a Srijan admin can add one. You can
-        still assign an existing template to a client from the Catalog tab.
+        {/* Named the roles the server refuses. `create_skill_template` is
+            guarded by OPERATIONS_CONSOLE_ROLES, which contains no org-tier role
+            at all — an org owner or org admin following this sentence would
+            have been refused on submit. A template is also global rather than
+            per-organisation: the catalog has no org filter, so a new template
+            appears for every customer. */}
+        <b>Creating templates is an Aekam function.</b> A template is shared across every
+        organisation on the platform, so it is created by Aekam staff rather than inside a
+        customer&rsquo;s workspace. You can still run any skill already assigned to you, and ask
+        your account contact to add a template you need.
       </div>
     );
   }
