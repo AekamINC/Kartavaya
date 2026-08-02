@@ -70,6 +70,12 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     "check_gstr1_readiness":      ("services.skills.data", "check_gstr1_readiness", {"limit": 200}),
     # Manav + Vetana · payroll. Reads SALARY — see modules.py.
     "check_payroll_readiness":    ("services.skills.data", "check_payroll_readiness", {"limit": 200}),
+    # Vetana · month-on-month pay movement. Defaults to the latest month that
+    # HAS payslips, never the wall clock — see the handler docstring.
+    "compare_payroll_months":     ("services.skills.data", "compare_payroll_months",
+                                   {"threshold_pct": 10.0, "threshold_amount": 1000.0, "limit": 200}),
+    # Ganit · a payment PROPOSAL. Cannot record a payment.
+    "propose_payment_run":        ("services.skills.data", "propose_payment_run", {"horizon_days": 7, "limit": 200}),
     # Vikray · stock
     "find_low_stock":            ("services.skills.data", "find_low_stock", {}),
     # Manav · rota and leave        needs: team_id

@@ -93,6 +93,14 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     # pay and the size of every outstanding salary advance — a personal debt
     # disclosure. Without manav, the roster and its bank details.
     "check_payroll_readiness":    frozenset({"manav", "vetana"}),
+    # vetana alone: every figure is from vetana_payslips. manav_employees is
+    # joined for the NAME only, and a payroll register already implies the
+    # roster — demanding manav too would take it from payroll staff who are
+    # exactly the people it is for.
+    "compare_payroll_months":     frozenset({"vetana"}),
+    # ganit alone. The vendor is ganit_vendors, not a CRM contact — adding
+    # graha here would be a grant demanded for a join that does not exist.
+    "propose_payment_run":        frozenset({"ganit"}),
     "find_low_stock":             frozenset({"vikray", "ganit"}),
     "get_team_workload":          FREE,
     "scan_upcoming_deadlines":    FREE,
