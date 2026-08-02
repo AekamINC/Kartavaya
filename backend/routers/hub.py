@@ -162,6 +162,35 @@ AGENT_PROMPTS = {
 }
 
 
+def _fill_prompt(template: str, variables: dict) -> str:
+    """Substitute a skill step's placeholders, in either brace dialect.
+
+    The two run paths were written against two different conventions and never
+    reconciled: `run_skill` (per-client) replaced `{var}`, `run_org_skill`
+    replaced `{{var}}`, and the seeded catalog uses a MIX — five of the six
+    templates single, `Weekly Social Media Pack` double. So each path filled
+    only the templates written in its own dialect and handed the rest to the
+    model with the placeholders intact. Measured on staging 2026-08-02: running
+    Campaign Launch from Srijan → Skills sent the model a literal
+    `{campaign_brief}`, after asking the user to type one and charging 19
+    credits for the answer to a question nobody asked.
+
+    Accepting both dialects rather than rewriting the six templates: the
+    templates are org data, customers can author their own through Create
+    Template, and a fix that only migrates today's six rows leaves the next
+    hand-written `{{topic}}` broken exactly the same way.
+
+    Doubles BEFORE singles. The other order sees the inner `{var}` of `{{var}}`
+    first and leaves the outer braces stranded as `{Acme}` — which is precisely
+    what the client path already did to the one double-brace template.
+    """
+    for k, v in variables.items():
+        val = str(v)
+        template = template.replace(f"{{{{{k}}}}}", val)
+        template = template.replace(f"{{{k}}}", val)
+    return template
+
+
 async def _verify_client_access(pool, client_id: str, org_id: str) -> dict:
     """Verify the client belongs to this org. Returns the client row."""
     client = await pool.fetchrow(
@@ -864,10 +893,7 @@ async def run_skill(
         agent_type = step["agent_type"]
         prompt_template = step["prompt_template"]
 
-        # Substitute variables into prompt
-        prompt = prompt_template
-        for k, v in variables.items():
-            prompt = prompt.replace(f"{{{k}}}", str(v))
+        prompt = _fill_prompt(prompt_template, variables)
 
         try:
             new_balance = await deduct_credits(cid, agent_type, user["user_id"])
@@ -1395,9 +1421,7 @@ async def run_org_skill(
         agent_type = step["agent_type"]
         prompt_template = step["prompt_template"]
 
-        prompt = prompt_template
-        for k, v in variables.items():
-            prompt = prompt.replace(f"{{{{{k}}}}}", str(v))
+        prompt = _fill_prompt(prompt_template, variables)
 
         try:
             await deduct_org_credits(org_id, user["user_id"], agent_type)
@@ -1427,9 +1451,7 @@ async def run_org_skill(
 
         image_url = None
         if step.get("generate_image") or body.generate_images:
-            img_prompt = step.get("image_prompt", prompt)
-            for k, v in variables.items():
-                img_prompt = img_prompt.replace(f"{{{{{k}}}}}", str(v))
+            img_prompt = _fill_prompt(step.get("image_prompt", prompt), variables)
             try:
                 await deduct_org_credits(org_id, user["user_id"], "image")
                 img_result = await generate_image(
