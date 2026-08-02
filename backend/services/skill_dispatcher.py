@@ -58,6 +58,14 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     "find_stalled_agreements":   ("services.skills.data", "find_overdue",  {"module": "esign", "days_overdue": 14}),
     # Dristi · the numbers
     "aggregate_kpis":            ("services.skills.data", "aggregate_kpis", {"period": "30d"}),
+    # Core PM · Phase 2. Every one verified read-only against the live catalog.
+    "weekly_project_brief":       ("services.skills.data", "weekly_project_brief", {"days": 7}),
+    #                              needs: user_id
+    "get_my_desk":                ("services.skills.data", "get_my_desk", {"horizon_days": 7}),
+    # Graha · Phase 2
+    "triage_new_leads":           ("services.skills.data", "triage_new_leads", {"days": 30}),
+    #                              needs: contact_id — and graha + ganit + vikray
+    "get_account_brief":          ("services.skills.data", "get_account_brief", {"activity_limit": 50}),
     # Vikray · stock
     "find_low_stock":            ("services.skills.data", "find_low_stock", {}),
     # Manav · rota and leave        needs: team_id

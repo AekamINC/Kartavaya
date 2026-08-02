@@ -77,6 +77,17 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     "find_overdue_followups":     frozenset({"graha"}),
     "find_overdue_tasks":         FREE,
     "aggregate_kpis":             frozenset({"ganit", "graha", "manav"}),
+    # Core PM is not a gated module, so these two are open to anyone with Srijan.
+    "weekly_project_brief":       FREE,
+    # Deliberately FREE and tasks-only: fusing the CRM follow-ups leg in would
+    # force {"graha"} and refuse a core-PM user their own desk. The follow-ups
+    # are `find_overdue_followups`, composed alongside in the template.
+    "get_my_desk":                FREE,
+    "triage_new_leads":           frozenset({"graha"}),
+    # Contact + deals (graha), invoices (ganit), orders (vikray). All three, so
+    # in practice org_owner/org_admin — the value is that one page carries the
+    # relationship AND the money.
+    "get_account_brief":          frozenset({"graha", "ganit", "vikray"}),
     "find_low_stock":             frozenset({"vikray", "ganit"}),
     "get_team_workload":          FREE,
     "scan_upcoming_deadlines":    FREE,
