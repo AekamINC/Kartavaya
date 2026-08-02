@@ -26,6 +26,9 @@ from services.ai_router import (
     generate, generate_image, generate_rich_content, deduct_credits,
     deduct_org_credits, refund_org_credits, _maybe_reset_monthly_credits, CREDIT_COSTS,
 )
+from services.skills.prompt import fill_prompt
+from services.skills.context import context_for_step
+from services.skill_dispatcher import _run_function_step
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
 
@@ -162,33 +165,10 @@ AGENT_PROMPTS = {
 }
 
 
-def _fill_prompt(template: str, variables: dict) -> str:
-    """Substitute a skill step's placeholders, in either brace dialect.
-
-    The two run paths were written against two different conventions and never
-    reconciled: `run_skill` (per-client) replaced `{var}`, `run_org_skill`
-    replaced `{{var}}`, and the seeded catalog uses a MIX — five of the six
-    templates single, `Weekly Social Media Pack` double. So each path filled
-    only the templates written in its own dialect and handed the rest to the
-    model with the placeholders intact. Measured on staging 2026-08-02: running
-    Campaign Launch from Srijan → Skills sent the model a literal
-    `{campaign_brief}`, after asking the user to type one and charging 19
-    credits for the answer to a question nobody asked.
-
-    Accepting both dialects rather than rewriting the six templates: the
-    templates are org data, customers can author their own through Create
-    Template, and a fix that only migrates today's six rows leaves the next
-    hand-written `{{topic}}` broken exactly the same way.
-
-    Doubles BEFORE singles. The other order sees the inner `{var}` of `{{var}}`
-    first and leaves the outer braces stranded as `{Acme}` — which is precisely
-    what the client path already did to the one double-brace template.
-    """
-    for k, v in variables.items():
-        val = str(v)
-        template = template.replace(f"{{{{{k}}}}}", val)
-        template = template.replace(f"{{{k}}}", val)
-    return template
+#: Kept as a module-level alias so the two run paths below read the same as they
+#: did when the helper lived here. The implementation moved to `services/` so the
+#: dispatcher — which must not import from `routers/` — can share it.
+_fill_prompt = fill_prompt
 
 
 async def _verify_client_access(pool, client_id: str, org_id: str) -> dict:
@@ -889,11 +869,63 @@ async def run_skill(
     content_ids = []
     total_credits = 0
 
+    # See the org path for why earlier steps' findings are carried forward.
+    prior_facts: list[str] = []
+
     for step in sorted(steps, key=lambda s: s.get("order", 0)):
+        # Data-first step: reads records, calls no model, costs no AI credits.
+        if step.get("skill_function"):
+            try:
+                data = await _run_function_step(
+                    pool, step, variables, org_id, user["user_id"]
+                )
+            except Exception as exc:
+                log.warning("Skill function step %s failed: %s", step.get("order"), exc)
+                outputs.append({
+                    "step": step.get("order"),
+                    "skill_function": step["skill_function"],
+                    "status": "failed",
+                    "error": f"{type(exc).__name__}: {exc}",
+                })
+                prior_facts.append(
+                    f"## {step.get('label') or step['skill_function']}\n"
+                    f"Unavailable ({type(exc).__name__}). Treat as unknown, not as empty."
+                )
+                continue
+
+            outputs.append({
+                "step": step.get("order"),
+                "skill_function": step["skill_function"],
+                "status": "ok",
+                "credits_used": 0,
+            })
+            prior_facts.append(
+                f"## {step.get('label') or step['skill_function']}\n"
+                + json.dumps(data, default=str, ensure_ascii=False)[:4000]
+            )
+            await pool.execute(
+                "UPDATE staging.hub_skill_runs SET steps_completed=$1 WHERE id=$2",
+                len(outputs), run_id,
+            )
+            continue
+
         agent_type = step["agent_type"]
         prompt_template = step["prompt_template"]
 
         prompt = _fill_prompt(prompt_template, variables)
+
+        # This client's knowledge base, not the org's — `cid` scopes retrieval
+        # to the brand being worked on, which is the isolation the Skill Packs
+        # screen promises ("every step reads that client's brand profile and
+        # nobody else's").
+        grounding = await context_for_step(pool, step, org_id, variables, client_id=cid)
+        if prior_facts:
+            grounding = (grounding + "\n" if grounding else "") + "\n".join(prior_facts)
+        if grounding:
+            prompt = (
+                f"{grounding}\n\n---\n\nUsing only the data above where it is "
+                f"relevant, do the following.\n\n{prompt}"
+            )
 
         try:
             new_balance = await deduct_credits(cid, agent_type, user["user_id"])
@@ -1417,11 +1449,74 @@ async def run_org_skill(
     content_ids = []
     total_credits = 0
 
+    # Facts read by earlier steps, offered to later ones. This is what makes a
+    # multi-step skill worth more than its steps: step 1 reads the overdue
+    # invoices, step 2 writes the chasing email about THOSE invoices instead of
+    # about receivables in the abstract.
+    prior_facts: list[str] = []
+
     for step in sorted(steps, key=lambda s: s.get("order", 0)):
+        # ── Data-first steps ────────────────────────────────────────────────
+        # A step naming a `skill_function` reads the org's own records and never
+        # calls a model, so it costs no AI credits. It was unreachable until the
+        # registry and the calling convention were repaired — see
+        # services/skill_dispatcher.py.
+        if step.get("skill_function"):
+            try:
+                data = await _run_function_step(
+                    pool, step, variables, org_id, user["user_id"]
+                )
+            except Exception as exc:
+                # One unreadable source must not void a run the user has already
+                # been charged for. The step is recorded as failed and the run
+                # continues; the model is told the source was unavailable rather
+                # than being left to assume it was empty.
+                log.warning("Skill function step %s failed: %s", step.get("order"), exc)
+                outputs.append({
+                    "step": step.get("order"),
+                    "skill_function": step["skill_function"],
+                    "status": "failed",
+                    "error": f"{type(exc).__name__}: {exc}",
+                })
+                prior_facts.append(
+                    f"## {step.get('label') or step['skill_function']}\n"
+                    f"Unavailable ({type(exc).__name__}). Treat as unknown, not as empty."
+                )
+                continue
+
+            outputs.append({
+                "step": step.get("order"),
+                "skill_function": step["skill_function"],
+                "status": "ok",
+                "credits_used": 0,
+            })
+            prior_facts.append(
+                f"## {step.get('label') or step['skill_function']}\n"
+                + json.dumps(data, default=str, ensure_ascii=False)[:4000]
+            )
+            await pool.execute(
+                "UPDATE staging.hub_org_skill_runs SET steps_completed=$1 WHERE id=$2",
+                len(outputs), run_id,
+            )
+            continue
+
         agent_type = step["agent_type"]
         prompt_template = step["prompt_template"]
 
         prompt = _fill_prompt(prompt_template, variables)
+
+        # Grounding: this step's own requested sources, plus whatever earlier
+        # function steps read. Both are omitted entirely when nothing asked for
+        # them, so the six content templates already in the catalog behave
+        # exactly as they did before.
+        grounding = await context_for_step(pool, step, org_id, variables)
+        if prior_facts:
+            grounding = (grounding + "\n" if grounding else "") + "\n".join(prior_facts)
+        if grounding:
+            prompt = (
+                f"{grounding}\n\n---\n\nUsing only the data above where it is "
+                f"relevant, do the following.\n\n{prompt}"
+            )
 
         try:
             await deduct_org_credits(org_id, user["user_id"], agent_type)

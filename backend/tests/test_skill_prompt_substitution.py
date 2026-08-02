@@ -20,7 +20,7 @@ wrong and it is now the one place both paths go through.
 """
 import pytest
 
-from routers.hub import _fill_prompt
+from services.skills.prompt import fill_prompt as _fill_prompt
 
 
 # The two dialects, as they actually appear in staging.hub_skill_templates.

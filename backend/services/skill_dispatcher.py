@@ -5,6 +5,7 @@ Routes skill steps to Python functions or LLM generation.
 Supports self-learning via hub_skill_feedback corrections.
 """
 import hashlib
+import inspect
 import json
 import logging
 import time
@@ -12,40 +13,130 @@ import uuid
 from typing import Any, Optional
 
 from db import get_pool
+from services.skills.prompt import fill_prompt
 
 log = logging.getLogger(__name__)
 
 
 # ── Skill Registry ──────────────────────────────────────────
-# Maps skill_function name → (module_path, function_name, default_params)
-# Actual handler functions are stubs that will be implemented per module.
+#
+# Maps skill_function name → (module_path, function_name, default_params).
+#
+# Every entry in the previous version pointed at a module that does not exist —
+# `services.skills.ganit`, `.manav`, `.vetana`, `.vikray`, `.graha`, `.pm`,
+# `.dristi`, `.prachar`, none of them ever written — so `_resolve_handler` raised
+# ModuleNotFoundError on any function-backed step. Meanwhile 23 real handlers sat
+# in `data/`, `action/` and `detect/` referenced by nothing. The registry was
+# written against a layout that was planned and the handlers against the one that
+# shipped, and nothing failed loudly because no template has ever carried a
+# `skill_function` step.
+#
+# Three kinds, and the distinction is the whole safety story:
+#
+#   READ    org-scoped queries. Idempotent, no writes. Safe to run on a schedule
+#           and safe to hand to the model as grounding.
+#   DETECT  scoring and anomaly work. Also read-only, but the output is a
+#           JUDGEMENT — "this deal is unhealthy", "this expense breaks policy" —
+#           so it belongs in front of a human, not wired straight to an action.
+#   ACT     writes rows, sends messages, moves money. Gated in the run paths.
+#
+# `needs` names the params a handler cannot default. They arrive from the step's
+# `params` block or from the run's `variables`; a step that omits them fails
+# closed in `_run_function_step` rather than running against a silent default.
+
 SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
-    # Ganit
-    "ganit_overdue_invoices":    ("services.skills.ganit",   "detect_overdue_invoices",   {"days_overdue": 7}),
-    "ganit_recurring_invoices":  ("services.skills.ganit",   "generate_recurring_invoices", {}),
-    "ganit_categorize_expenses": ("services.skills.ganit",   "categorize_expenses",       {}),
-    # Manav
-    "manav_auto_mark_attendance":("services.skills.manav",   "auto_mark_attendance",      {}),
-    "manav_sync_leave_balances": ("services.skills.manav",   "sync_leave_balances",       {}),
-    "manav_schedule_shifts":     ("services.skills.manav",   "schedule_shifts",           {}),
-    "manav_onboarding_checklist":("services.skills.manav",   "create_onboarding_checklist", {}),
-    # Vetana
-    "vetana_trigger_payroll":    ("services.skills.vetana",   "trigger_payroll",           {}),
-    "vetana_deliver_payslips":   ("services.skills.vetana",   "deliver_payslips",          {}),
-    # Vikray
-    "vikray_low_stock_alert":    ("services.skills.vikray",   "low_stock_alert",           {}),
-    # Graha
-    "graha_stale_deals":         ("services.skills.graha",    "detect_stale_deals",        {"stale_days": 14}),
-    "graha_followup_reminders":  ("services.skills.graha",    "create_followup_reminders", {"inactive_days": 30}),
-    "graha_contact_dedup":       ("services.skills.graha",    "scan_duplicate_contacts",   {}),
-    # PM
-    "pm_deadline_escalation":    ("services.skills.pm",       "escalate_deadlines",        {}),
-    "pm_auto_archive":           ("services.skills.pm",       "auto_archive_completed",    {"days_completed": 90}),
-    # Dristi
-    "dristi_scheduled_reports":  ("services.skills.dristi",   "run_scheduled_reports",     {}),
-    # Prachar
-    "prachar_campaign_scheduler":("services.skills.prachar",  "schedule_campaigns",        {}),
+    # ── READ ────────────────────────────────────────────────
+    # Ganit · receivables and payables
+    "find_overdue_invoices":     ("services.skills.data", "find_overdue",  {"module": "invoices", "days_overdue": 7}),
+    "find_overdue_vendor_bills": ("services.skills.data", "find_overdue",  {"module": "vendor_bills", "days_overdue": 0}),
+    # Graha · CRM follow-ups
+    "find_overdue_followups":    ("services.skills.data", "find_overdue",  {"module": "follow_ups", "days_overdue": 0}),
+    # Core PM · tasks
+    "find_overdue_tasks":        ("services.skills.data", "find_overdue",  {"module": "tasks", "days_overdue": 0}),
+    # eSign · unsigned drafts
+    "find_stalled_agreements":   ("services.skills.data", "find_overdue",  {"module": "esign", "days_overdue": 14}),
+    # Dristi · the numbers
+    "aggregate_kpis":            ("services.skills.data", "aggregate_kpis", {"period": "30d"}),
+    # Vikray · stock
+    "find_low_stock":            ("services.skills.data", "find_low_stock", {}),
+    # Manav · rota and leave        needs: team_id
+    "scan_upcoming_deadlines":   ("services.skills.data", "scan_upcoming_deadlines", {"horizon_hours": 48}),
+    "get_team_workload":         ("services.skills.data", "get_team_workload", {}),
+    #                              needs: week_start
+    "find_coverage_gaps":        ("services.skills.data", "find_coverage_gaps", {}),
+    #                              needs: dept, start_date, end_date
+    "check_dept_coverage":       ("services.skills.data", "check_dept_coverage", {}),
+
+    # ── DETECT ──────────────────────────────────────────────
+    "score_deals":               ("services.skills.detect", "score_deals", {}),
+    "detect_attendance_patterns":("services.skills.detect", "detect_patterns", {"lookback_days": 30}),
+    #                              needs: metric
+    "detect_anomalies":          ("services.skills.detect", "detect_anomalies", {"lookback_days": 90}),
+    #                              needs: expense
+    "check_expense_policy":      ("services.skills.detect", "check_policy", {}),
+    #                              needs: bank_txns
+    "match_bank_transactions":   ("services.skills.detect", "fuzzy_match_transactions", {}),
+    #                              needs: candidate
+    "score_candidate":           ("services.skills.detect", "score_candidate", {}),
+
+    # ── ACT ─────────────────────────────────────────────────
+    # Writes. `_run_function_step` refuses these unless the step opts in.
+    "generate_due_invoices":     ("services.skills.action", "generate_due_invoices", {}),
+    "mark_holidays_weekends":    ("services.skills.action", "mark_holidays_weekends", {}),
+    "process_document_expiry":   ("services.skills.action", "process_expiry", {"module": "esign"}),
+    #                              needs: year
+    "allocate_leave_yearly":     ("services.skills.action", "allocate_yearly", {}),
+    #                              needs: week_start
+    "auto_schedule_week":        ("services.skills.action", "auto_schedule_week", {}),
+    #                              needs: employee_id
+    "execute_onboarding":        ("services.skills.action", "execute_onboarding", {}),
+    #                              needs: campaign_id
+    "send_campaign":             ("services.skills.action", "send_campaign", {}),
+    #                              needs: enrollment_id
+    "execute_sequence_step":     ("services.skills.action", "execute_step", {}),
+    #                              needs: entity_type, entity_id
+    "escalate":                  ("services.skills.action", "escalate", {"level": 1}),
+    #                              needs: user_ids, title, body
+    "notify_multi":              ("services.skills.action", "notify_multi", {}),
 }
+
+#: Registry entries from the previous version that have NO implementation
+#: anywhere in the tree. Recorded rather than deleted so the gap stays visible:
+#: each was a promise the catalog could reference and nothing could honour.
+#:
+#:   ganit_categorize_expenses   no categoriser exists. `check_policy` judges one
+#:                               expense against policy; it does not classify.
+#:   vetana_trigger_payroll      no handler. Payroll is run from its own module.
+#:   vetana_deliver_payslips     no handler.
+#:   graha_contact_dedup         `contact_dedupe.find_duplicates` needs an email,
+#:                               phone or name to match against — it is a
+#:                               per-contact check, not an org-wide sweep.
+#:   pm_auto_archive             no handler.
+#:   dristi_scheduled_reports    `report_generator` renders a PDF from data it is
+#:                               handed; it does not select or schedule reports.
+UNIMPLEMENTED_SKILL_FUNCTIONS: frozenset[str] = frozenset({
+    "ganit_categorize_expenses",
+    "vetana_trigger_payroll",
+    "vetana_deliver_payslips",
+    "graha_contact_dedup",
+    "pm_auto_archive",
+    "dristi_scheduled_reports",
+})
+
+#: Handlers that WRITE. A step naming one of these must set
+#: `"allow_writes": true` to run — see `_run_function_step`.
+WRITE_SKILL_FUNCTIONS: frozenset[str] = frozenset({
+    "generate_due_invoices",
+    "mark_holidays_weekends",
+    "process_document_expiry",
+    "allocate_leave_yearly",
+    "auto_schedule_week",
+    "execute_onboarding",
+    "send_campaign",
+    "execute_sequence_step",
+    "escalate",
+    "notify_multi",
+})
 
 
 def _hash_input(variables: dict) -> str:
@@ -85,8 +176,13 @@ async def _run_llm_step(step: dict, variables: dict, org_id: str) -> dict:
     """Run a step that uses LLM generation (content-type skills)."""
     from services.ai_router import generate
 
-    prompt_template = step.get("prompt_template", "")
-    prompt = prompt_template.format(**variables) if prompt_template else ""
+    # `.format(**variables)` was the third substitution dialect in this codebase
+    # and the most brittle of them: it raises KeyError on any placeholder the
+    # caller did not supply — one optional variable takes the whole run down —
+    # and it reads `{{` as an escaped literal, so `{{brand_name}}` collapsed to
+    # the string `{brand_name}` no matter what was passed. Both dialects now go
+    # through one helper. See services/skills/prompt.py.
+    prompt = fill_prompt(step.get("prompt_template", ""), variables)
     agent_type = step.get("agent_type", "social_media")
 
     result = await generate(
@@ -106,15 +202,72 @@ async def _run_llm_step(step: dict, variables: dict, org_id: str) -> dict:
 async def _run_function_step(
     pool, step: dict, variables: dict, org_id: str, user_id: Optional[str]
 ) -> dict:
-    """Run a step backed by a Python function."""
+    """Run a step backed by a Python function.
+
+    The previous version called `handler(pool=, org_id=, user_id=, **params)`
+    unconditionally. Not one of the 23 handlers accepts `user_id`, and several
+    take `team_id` or an entity id rather than `org_id`, so every function-backed
+    step would have raised TypeError before it reached a query — on top of the
+    ModuleNotFoundError from the registry. Neither was ever observed because
+    nothing has ever run a function-backed step.
+
+    So the arguments are matched to the signature rather than assumed. Three
+    rules, in order:
+
+      · `org_id` is forced LAST and cannot be overridden by step params or run
+        variables. It is the tenant boundary — a template that could set its own
+        `org_id` would read another customer's invoices, and templates are org
+        data that customers can author.
+      · a handler is given only what its signature names, so adding a param to
+        one handler cannot break the others.
+      · a required param with nothing to fill it raises here, before the call.
+        The alternative is a handler running against a silent default, which for
+        `find_overdue` means scanning the wrong table and for anything in
+        WRITE_SKILL_FUNCTIONS means writing the wrong rows.
+    """
     skill_function = step["skill_function"]
+
+    # Writes are opt-in per step. A read-only skill that acquires a write step
+    # through a template edit is the failure this prevents: `send_campaign` and
+    # `generate_due_invoices` reach customers and money, and a skill template is
+    # editable by any org admin.
+    if skill_function in WRITE_SKILL_FUNCTIONS and not step.get("allow_writes"):
+        raise PermissionError(
+            f"'{skill_function}' writes data and the step did not set "
+            f"allow_writes. Refusing to run it."
+        )
+
     handler = await _resolve_handler(skill_function)
-
-    # Merge default params with step-level params and runtime variables
     _, _, defaults = SKILL_REGISTRY[skill_function]
-    params = {**defaults, **(step.get("params") or {}), **variables}
 
-    result = await handler(pool=pool, org_id=org_id, user_id=user_id, **params)
+    supplied: dict[str, Any] = {**defaults, **(step.get("params") or {}), **(variables or {})}
+    supplied["org_id"] = org_id          # tenant boundary — never overridable
+    if user_id is not None:
+        supplied.setdefault("user_id", user_id)
+
+    sig = inspect.signature(handler)
+    params = sig.parameters
+    takes_var_kw = any(p.kind is p.VAR_KEYWORD for p in params.values())
+
+    if takes_var_kw:
+        kwargs = {k: v for k, v in supplied.items() if k != "pool"}
+    else:
+        kwargs = {k: v for k, v in supplied.items() if k in params and k != "pool"}
+
+    missing = [
+        name for name, p in params.items()
+        if name != "pool"
+        and p.default is inspect.Parameter.empty
+        and p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+        and name not in kwargs
+    ]
+    if missing:
+        raise ValueError(
+            f"'{skill_function}' needs {', '.join(sorted(missing))}, which the "
+            f"step's params and the run's variables did not supply."
+        )
+
+    result = await handler(pool=pool, **kwargs)
     return result if isinstance(result, dict) else {"result": result}
 
 
