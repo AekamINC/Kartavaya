@@ -27,7 +27,10 @@ from services.ai_router import (
     deduct_org_credits, refund_org_credits, _maybe_reset_monthly_credits, CREDIT_COSTS,
 )
 from services.skills.prompt import fill_prompt
-from services.skills.context import context_for_step, SOURCES as CONTEXT_SOURCES
+from services.skills.context import (
+    context_for_step, assert_step_access, SkillAccessDenied,
+    SOURCES as CONTEXT_SOURCES,
+)
 from services.skill_dispatcher import (
     _run_function_step, SKILL_REGISTRY, WRITE_SKILL_FUNCTIONS,
     UNIMPLEMENTED_SKILL_FUNCTIONS, describe_skill_functions,
@@ -953,6 +956,16 @@ async def run_skill(
     # Merge variables: body.variables + custom_config
     variables = {**custom_config, **body.variables}
 
+    # Every module this skill's data touches, checked BEFORE the run row is
+    # written and long before any credit is deducted. The whole skill path is
+    # gated on `require_module("srijan")`, and the handlers behind it read
+    # ganit, manav and vetana tables — so without this, Srijan is a way around
+    # SENSITIVE_MODULES.
+    try:
+        await assert_step_access(steps, user["user_id"], org_id)
+    except SkillAccessDenied as denied:
+        raise HTTPException(403, str(denied))
+
     run = await pool.fetchrow(
         "INSERT INTO staging.hub_skill_runs "
         "(client_skill_id, client_id, steps_total, triggered_by) "
@@ -1532,6 +1545,12 @@ async def run_org_skill(
     system_prompt = _build_system_prompt(dict(brand)) if brand else ""
 
     variables = {**custom_config, **body.variables}
+
+    # See `run_skill` — refused before the run row and before any deduction.
+    try:
+        await assert_step_access(steps, user["user_id"], org_id)
+    except SkillAccessDenied as denied:
+        raise HTTPException(403, str(denied))
 
     run = await pool.fetchrow(
         "INSERT INTO staging.hub_org_skill_runs "

@@ -264,6 +264,71 @@ def render_context(ctx: dict, *, max_chars: int = MAX_CONTEXT_CHARS) -> str:
     return "\n".join(out)
 
 
+#: Human names for the refusal message. A module code means nothing to whoever
+#: pressed Run.
+MODULE_LABELS: dict[str, str] = {
+    "ganit": "Finance", "graha": "CRM", "vikray": "Sales", "manav": "HR",
+    "vetana": "Payroll", "pahchan": "Attendance", "prachar": "Marketing",
+    "srijan": "Srijan", "dristi": "Analytics", "sanvaad": "Messages",
+    "varta": "WhatsApp", "esign": "E-Sign",
+}
+
+
+class SkillAccessDenied(Exception):
+    """The caller lacks a module grant a step needs. Raised BEFORE any credit.
+
+    Refuse rather than omit — the owner's decision, 2026-08-02, and the reason
+    is worth keeping next to the code that enforces it.
+
+    `render_context` already has an "unavailable" bucket, written for an outage:
+    a knowledge base whose embedding provider is down. It tells the model to
+    treat that source as unknown. If a permission denial arrived through the same
+    door the two would be indistinguishable, and a model handed "unknown" does
+    the socially natural thing — it hedges, estimates, reasons around the hole.
+    A model reasoning around the absence of payroll is precisely what this
+    prevents.
+
+    A skill is also a deliverable, not a query. "Chase this month's overdue
+    invoices" with the invoices withheld returns a plausible, complete-looking
+    dunning letter that somebody will send. A partial answer is worse than a
+    refusal because it looks finished.
+
+    And only a refusal is actionable: it names the module, so the person can go
+    and ask for the grant. An omission teaches nobody anything.
+    """
+
+    def __init__(self, withheld: frozenset[str]):
+        self.withheld = frozenset(withheld)
+        names = ", ".join(MODULE_LABELS.get(m, m) for m in sorted(self.withheld))
+        super().__init__(
+            f"This skill reads data from {names}, which you do not have access "
+            f"to. Ask an admin for access to {names}, or run a skill that does "
+            f"not use it."
+        )
+
+
+async def assert_step_access(steps, user_id: str, org_id: str) -> None:
+    """Pre-flight EVERY step before the run begins.
+
+    Checked up front rather than per step, because the alternative is charging
+    for steps one to three and refusing at step four — the customer has paid for
+    a run they cannot have, and the content items from the completed steps are
+    already in their library.
+
+    Steps that name no function and no context need nothing, so the six existing
+    content templates pass through untouched.
+    """
+    from services.skills.modules import modules_for_step, withheld_modules
+
+    needed: set[str] = set()
+    for step in (steps or []):
+        needed |= set(modules_for_step(step))
+
+    withheld = await withheld_modules(user_id, org_id, frozenset(needed))
+    if withheld:
+        raise SkillAccessDenied(withheld)
+
+
 async def context_for_step(
     pool, step: dict, org_id: str, variables: dict, client_id: Optional[str] = None
 ) -> str:
