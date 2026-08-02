@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
+from services.skills.timeutil import utc_now, hours_between
 
 log = logging.getLogger(__name__)
 
@@ -9,7 +10,7 @@ async def scan_upcoming_deadlines(pool, team_id: str, horizon_hours: int = 48) -
 
     Each item: {task, assignee, hours_left}.
     """
-    now = datetime.utcnow()
+    now = utc_now()
     cutoff = now + timedelta(hours=horizon_hours)
 
     rows = await pool.fetch(
@@ -31,7 +32,7 @@ async def scan_upcoming_deadlines(pool, team_id: str, horizon_hours: int = 48) -
 
     results = []
     for r in rows:
-        hours_left = max(0, (r["due_date"] - now).total_seconds() / 3600)
+        hours_left = max(0, hours_between(r["due_date"], now))
         results.append({
             "task": {"id": str(r["id"]), "title": r["title"]},
             "assignee": str(r["assigned_to"]) if r["assigned_to"] else None,

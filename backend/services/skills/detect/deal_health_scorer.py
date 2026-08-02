@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from services.skills.timeutil import utc_now, days_between
 
 log = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ async def score_deals(pool, org_id: str) -> list:
     Returns list of {deal_id, title, value, health, days_in_stage, risk_factors}.
     health: 'good' | 'at_risk' | 'critical'
     """
-    now = datetime.utcnow()
+    now = utc_now()
 
     rows = await pool.fetch(
         """
@@ -38,18 +38,18 @@ async def score_deals(pool, org_id: str) -> list:
         score = 100
 
         # Days in current stage (since last update)
-        days_in_stage = (now - r["updated_at"]).days
+        days_in_stage = days_between(now, r["updated_at"])
 
         # Stale deal
         last_touch = r["last_activity"] or r["updated_at"]
-        days_since_activity = (now - last_touch).days
+        days_since_activity = days_between(now, last_touch)
         if days_since_activity > STALE_DAYS:
             score -= 30
             risk_factors.append(f"no_activity_{days_since_activity}d")
 
         # Past expected close
         if r["expected_close_date"] and r["expected_close_date"] < now.date():
-            days_past = (now.date() - r["expected_close_date"]).days
+            days_past = days_between(now, r["expected_close_date"])
             score -= min(PAST_CLOSE_PENALTY, days_past)
             risk_factors.append(f"past_close_by_{days_past}d")
 

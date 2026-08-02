@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
+from services.skills.timeutil import utc_now
 
 log = logging.getLogger(__name__)
 
@@ -11,7 +12,7 @@ async def get_team_workload(pool, team_id: str) -> dict:
 
     Returns dict keyed by user_id with {open, due_soon, overdue, capacity_pct}.
     """
-    now = datetime.utcnow()
+    now = utc_now()
     due_soon_cutoff = now + timedelta(hours=48)
 
     rows = await pool.fetch(

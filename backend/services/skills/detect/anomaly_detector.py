@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
+from services.skills.timeutil import utc_now
 
 log = logging.getLogger(__name__)
 
@@ -26,7 +27,7 @@ async def detect_anomalies(
         return []
 
     table, val_col, date_col, extra = spec
-    since = datetime.utcnow() - timedelta(days=lookback_days)
+    since = utc_now() - timedelta(days=lookback_days)
 
     # Aggregate by day
     agg = "SUM" if val_col != "1" else "COUNT"

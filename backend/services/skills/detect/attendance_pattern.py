@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
+from services.skills.timeutil import utc_now
 
 log = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ async def detect_patterns(pool, org_id: str, lookback_days: int = 30) -> dict:
 
     Returns {chronic_late: [...], excessive_ot: [...], absenteeism: [...]}.
     """
-    since = datetime.utcnow() - timedelta(days=lookback_days)
+    since = utc_now() - timedelta(days=lookback_days)
 
     chronic_late = await pool.fetch(
         """

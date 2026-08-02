@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
+from services.skills.timeutil import utc_now
 from email_service import send_email
 
 log = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ async def execute_step(pool, enrollment_id: str) -> dict:
         enrollment["sequence_id"], step["step_number"] + 1,
     )
     if next_step:
-        next_step_at = (datetime.utcnow() + timedelta(hours=next_step["delay_hours"] or 24)).isoformat()
+        next_step_at = (utc_now() + timedelta(hours=next_step["delay_hours"] or 24)).isoformat()
 
     await pool.execute(
         "UPDATE staging.prachar_sequence_enrollments SET current_step = $2, updated_at = NOW() WHERE id = $1::uuid",

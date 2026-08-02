@@ -1,6 +1,7 @@
 import html
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
+from services.skills.timeutil import utc_now
 from email_service import send_email
 
 log = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ async def process_expiry(pool, org_id: str, module: str = "esign") -> dict:
 
     Returns {reminded: int, expired: int}.
     """
-    now = datetime.utcnow()
+    now = utc_now()
     remind_cutoff = (now + timedelta(days=REMIND_DAYS_BEFORE)).date()
     expire_cutoff = (now - timedelta(days=EXPIRE_GRACE_DAYS)).date()
 

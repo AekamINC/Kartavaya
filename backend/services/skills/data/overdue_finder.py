@@ -26,15 +26,22 @@ not a missing row, which is why it is spelled out per module rather than
 assumed.
 """
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import timedelta
+
+from services.skills.timeutil import days_between, utc_now
 
 log = logging.getLogger(__name__)
 
-
-def _utc_now() -> datetime:
-    """Aware, always. `utcnow()` returns a NAIVE datetime that claims to be UTC,
-    and subtracting it from an aware column raises."""
-    return datetime.now(timezone.utc)
+#: The clock moved to `services/skills/timeutil.py` after `score_deals` was
+#: found carrying the identical naive-minus-aware bug on the first real skill
+#: run — the same defect in two files, because each handler reached for
+#: `datetime.utcnow()` on its own.
+#:
+#: NOTE the argument order. The local helper this replaced took `(due, now)` and
+#: returned `now - due`; the shared one takes `(later, earlier)`. Aliasing one to
+#: the other silently negated every age — caught by the tests, which is the only
+#: reason it is not shipping as "-3 days overdue".
+_utc_now = utc_now
 
 
 #: One spec per module. Explicit rather than clever: every field here was a wrong
@@ -109,22 +116,6 @@ _MODULE_MAP = {
 }
 
 
-def _days_past(due, now: datetime) -> int:
-    """Whole days between a due value and now, whatever type the column is.
-
-    Three shapes arrive here — `date`, aware `datetime`, and (defensively) naive
-    `datetime` — and mixing any two of them in a subtraction raises. Everything
-    is reduced to a calendar date first, which is also the honest unit: "3 days
-    overdue" is a statement about days, and carrying hours into it only invites
-    an off-by-one at midnight.
-    """
-    if isinstance(due, datetime):
-        due_date = due.astimezone(timezone.utc).date() if due.tzinfo else due.date()
-    elif isinstance(due, date):
-        due_date = due
-    else:
-        return 0
-    return (now.date() - due_date).days
 
 
 async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) -> list:
@@ -166,7 +157,7 @@ async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) ->
         {
             "entity": {"id": str(r["id"]), "label": r["label"], "module": module},
             "owner": str(r["owner_id"]) if r["owner_id"] else None,
-            "days_past": _days_past(r["due"], now),
+            "days_past": days_between(now, r["due"]),
         }
         for r in rows
     ]

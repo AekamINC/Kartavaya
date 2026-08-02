@@ -25,7 +25,8 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from services.skills.data.overdue_finder import _MODULE_MAP, _days_past, find_overdue
+from services.skills.data.overdue_finder import _MODULE_MAP, find_overdue
+from services.skills.timeutil import days_between
 
 NOW = datetime(2026, 8, 2, 12, 0, tzinfo=timezone.utc)
 
@@ -39,38 +40,38 @@ def test_a_plain_date_does_not_raise():
     `datetime - date` is a TypeError — so the receivables skill, the one with
     the clearest business case, failed on its first row every time.
     """
-    assert _days_past(date(2026, 7, 30), NOW) == 3
+    assert days_between(NOW, date(2026, 7, 30)) == 3
 
 
 def test_an_aware_datetime_does_not_raise():
     """`graha_follow_ups.due_at` and `ganit_contracts.updated_at` are timestamptz,
     so asyncpg returns an AWARE datetime and `utcnow()` is naive. Subtracting one
     from the other raises 'can't subtract offset-naive and offset-aware'."""
-    assert _days_past(datetime(2026, 7, 28, 9, 0, tzinfo=timezone.utc), NOW) == 5
+    assert days_between(NOW, datetime(2026, 7, 28, 9, 0, tzinfo=timezone.utc)) == 5
 
 
 def test_a_naive_datetime_is_tolerated():
     """Defensive: no live column returns one, but a column type changing under
     this handler must not resurrect the original crash."""
-    assert _days_past(datetime(2026, 7, 31, 9, 0), NOW) == 2
+    assert days_between(NOW, datetime(2026, 7, 31, 9, 0)) == 2
 
 
 def test_a_null_due_is_zero_not_an_exception():
-    assert _days_past(None, NOW) == 0
+    assert days_between(NOW, None) == 0
 
 
 def test_days_are_calendar_days_not_elapsed_hours():
     """"3 days overdue" is a statement about days. Carrying hours into it makes
     the answer flip at midnight for a row that has not changed."""
     just_before_midnight = datetime(2026, 8, 1, 23, 59, tzinfo=timezone.utc)
-    assert _days_past(just_before_midnight, NOW) == 1
+    assert days_between(NOW, just_before_midnight) == 1
 
 
 def test_a_timezone_far_from_utc_still_lands_on_the_right_day():
     """IST is +5:30 and the product is Indian. A due time late in the Indian day
     is still the same UTC calendar day here, and must not read as a day early."""
     ist = timezone(timedelta(hours=5, minutes=30))
-    assert _days_past(datetime(2026, 8, 1, 23, 0, tzinfo=ist), NOW) == 1
+    assert days_between(NOW, datetime(2026, 8, 1, 23, 0, tzinfo=ist)) == 1
 
 
 # ── The specs themselves ────────────────────────────────────────────────────
