@@ -23,7 +23,7 @@ import pytest
 
 from services.skill_dispatcher import (
     SKILL_REGISTRY, WRITE_SKILL_FUNCTIONS, UNIMPLEMENTED_SKILL_FUNCTIONS,
-    _run_function_step,
+    RUNTIME_FORBIDDEN_PARAMS, _run_function_step, describe_skill_functions,
 )
 from services.skills import context as ctxmod
 
@@ -190,6 +190,145 @@ async def test_run_variables_cannot_redirect_a_data_step(spy):
 
     assert got["module"] == "tasks", "a run variable redirected the data step"
     assert got["days_overdue"] == 0, "a run variable reached a handler argument"
+
+
+@pytest.mark.asyncio
+async def test_a_runtime_param_reaches_the_handler_when_the_author_allows_it(spy):
+    """
+    The mechanism that unblocks "which one?" skills.
+
+    Cutting run variables off from handler arguments closed a real hole and
+    broke something real: `get_account_brief` needs to know WHICH contact, and
+    only the person running it knows. The author opts one named parameter in.
+    """
+    got = {}
+
+    async def handler(pool, org_id, contact_id, activity_limit=50):
+        got.update(contact_id=contact_id, activity_limit=activity_limit)
+        return {}
+
+    spy("fake_brief", handler, {"activity_limit": 50})
+
+    await _run_function_step(
+        _Pool(),
+        {"skill_function": "fake_brief", "runtime_params": ["contact_id"]},
+        {"contact_id": "c-123", "activity_limit": 9999},
+        ORG, USER,
+    )
+
+    assert got["contact_id"] == "c-123"
+    # Not named in runtime_params, so the step's own default stands.
+    assert got["activity_limit"] == 50
+
+
+@pytest.mark.asyncio
+async def test_a_variable_not_named_in_runtime_params_is_ignored(spy):
+    """An allowlist, not a filter. Anything unnamed cannot reach the handler
+    however it is spelled."""
+    got = {}
+
+    async def handler(pool, org_id, days=30):
+        got["days"] = days
+        return {}
+
+    spy("fake_unopened", handler, {"days": 30})
+
+    await _run_function_step(
+        _Pool(), {"skill_function": "fake_unopened"}, {"days": 1}, ORG, USER
+    )
+
+    assert got["days"] == 30
+
+
+@pytest.mark.asyncio
+async def test_module_can_never_be_opened_at_run_time(spy):
+    """
+    The hole this mechanism must not reopen.
+
+    `module` selects which TABLE `find_overdue` reads, so a run value of
+    "invoices" turns a tasks skill into a read of the receivables ledger. A
+    runtime value may select which ROW — safe, because the handler still filters
+    on org_id — never which SOURCE. Stripped even when a template asks for it.
+    """
+    got = {}
+
+    async def handler(pool, org_id, module, days_overdue=0):
+        got["module"] = module
+        return {}
+
+    spy("fake_redirectable", handler, {"module": "tasks"})
+
+    await _run_function_step(
+        _Pool(),
+        {"skill_function": "fake_redirectable",
+         "runtime_params": ["module"],                 # the template asks
+         "params": {"module": "tasks"}},
+        {"module": "invoices"},                        # the runner supplies
+        ORG, USER,
+    )
+
+    assert got["module"] == "tasks", "module was opened to the runner"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("forbidden", sorted(RUNTIME_FORBIDDEN_PARAMS))
+async def test_no_forbidden_param_can_be_opened(forbidden, spy):
+    """Each one for its own reason: org_id is the tenant boundary, user_id would
+    let a "my desk" skill report a colleague's, module selects the source, and
+    allow_writes is consent the runner must not grant themselves."""
+    got = {}
+
+    async def handler(pool, org_id, user_id=None, module="tasks", allow_writes=False):
+        got.update(org_id=org_id, user_id=user_id, module=module, allow_writes=allow_writes)
+        return {}
+
+    spy("fake_all", handler, {})
+
+    await _run_function_step(
+        _Pool(),
+        {"skill_function": "fake_all", "runtime_params": [forbidden]},
+        {forbidden: "ATTACKER-SUPPLIED"},
+        ORG, USER,
+    )
+
+    assert got[forbidden] != "ATTACKER-SUPPLIED", f"{forbidden} was overridable"
+    if forbidden == "org_id":
+        assert got["org_id"] == ORG
+
+
+@pytest.mark.asyncio
+async def test_a_runtime_param_can_satisfy_a_required_argument(spy):
+    """
+    Without this the mechanism is pointless: `contact_id` has no default, so a
+    handler needing it is unrunnable unless the runner can supply it.
+    """
+    async def handler(pool, org_id, contact_id):
+        return {"for": contact_id}
+
+    spy("fake_required", handler, {})
+
+    out = await _run_function_step(
+        _Pool(),
+        {"skill_function": "fake_required", "runtime_params": ["contact_id"]},
+        {"contact_id": "c-9"}, ORG, USER,
+    )
+    assert out == {"for": "c-9"}
+
+    # And still fails closed when the runner supplies nothing.
+    with pytest.raises(ValueError, match="contact_id"):
+        await _run_function_step(
+            _Pool(),
+            {"skill_function": "fake_required", "runtime_params": ["contact_id"]},
+            {}, ORG, USER,
+        )
+
+
+def test_runtime_eligibility_never_offers_a_forbidden_param():
+    """The editor is fed `runtime_eligible`. If it could offer a name the run
+    guard strips, an author would build a step that silently does nothing."""
+    for f in describe_skill_functions():
+        leaked = set(f.get("runtime_eligible", [])) & RUNTIME_FORBIDDEN_PARAMS
+        assert not leaked, f"{f['name']} offers {sorted(leaked)} as runtime-settable"
 
 
 @pytest.mark.asyncio

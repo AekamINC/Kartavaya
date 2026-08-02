@@ -33,7 +33,7 @@ from services.skills.context import (
 )
 from services.skill_dispatcher import (
     _run_function_step, SKILL_REGISTRY, WRITE_SKILL_FUNCTIONS,
-    UNIMPLEMENTED_SKILL_FUNCTIONS, describe_skill_functions,
+    UNIMPLEMENTED_SKILL_FUNCTIONS, RUNTIME_FORBIDDEN_PARAMS, describe_skill_functions,
 )
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
@@ -44,8 +44,13 @@ _hub_gate = require_module("srijan")
 #: from the same introspection the capabilities endpoint serves, so the editor's
 #: picker, the create validator and the run guard cannot disagree about which
 #: functions are usable.
-_SCOPABLE: dict[str, bool] = {
-    f["name"]: f["available"] for f in describe_skill_functions()
+#: Built once from the same introspection the capabilities endpoint serves, so
+#: the editor's picker, the create validator and the run guard cannot disagree
+#: about which functions are usable or which parameters may be asked for.
+_CAPABILITIES = describe_skill_functions()
+_SCOPABLE: dict[str, bool] = {f["name"]: f["available"] for f in _CAPABILITIES}
+_RUNTIME_ELIGIBLE: dict[str, list] = {
+    f["name"]: f.get("runtime_eligible", []) for f in _CAPABILITIES
 }
 
 
@@ -795,6 +800,25 @@ async def create_skill_template(
                     f"Step {i+1}: '{fn}' writes data. Set allow_writes on the "
                     f"step to confirm that is intended.",
                 )
+            # Runtime parameters are an allowlist the AUTHOR opens. Checked here
+            # as well as at run time, because a name the dispatcher would strip
+            # should be refused while somebody is looking at it rather than
+            # silently ignored on a run months later.
+            eligible = _RUNTIME_ELIGIBLE.get(fn, [])
+            for param in (step.get("runtime_params") or []):
+                if param in RUNTIME_FORBIDDEN_PARAMS:
+                    raise HTTPException(
+                        400,
+                        f"Step {i+1}: '{param}' can never be set by the person "
+                        f"running a skill. It selects which data is read, not "
+                        f"which record — that is the template author's decision.",
+                    )
+                if param not in eligible:
+                    raise HTTPException(
+                        400,
+                        f"Step {i+1}: '{fn}' has no parameter '{param}'. "
+                        f"It accepts: {', '.join(eligible) or 'none'}.",
+                    )
         else:
             if step.get("agent_type") not in valid_agents:
                 raise HTTPException(400, f"Step {i+1}: invalid agent_type. Must be one of: {', '.join(valid_agents)}")

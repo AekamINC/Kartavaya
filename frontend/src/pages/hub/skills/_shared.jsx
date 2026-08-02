@@ -89,7 +89,19 @@ export function parseSteps(steps) {
   return [];
 }
 
-/** `{topic}` placeholders a run has to be asked for. */
+/**
+ * Everything a run has to be asked for.
+ *
+ * Two sources, and they are different things that happen to share one form:
+ *
+ *   · `{topic}` placeholders in a prompt — text substituted into what the model
+ *     is told.
+ *   · `runtime_params` on a data step — an argument the template AUTHOR opened
+ *     to whoever runs the skill, because only they know which contact or which
+ *     employee. Everything else about a data step is fixed by the template; the
+ *     dispatcher strips any variable not named here, and can never be made to
+ *     accept `module`, `org_id` or `user_id` however a template asks.
+ */
 export function extractVariables(steps) {
   const out = new Set();
   for (const s of steps || []) {
@@ -97,6 +109,7 @@ export function extractVariables(steps) {
       const name = m.slice(1, -1);
       if (!['platform', 'brief', 'extra'].includes(name)) out.add(name);
     }
+    for (const p of s.runtime_params || []) out.add(p);
   }
   return [...out];
 }
@@ -226,6 +239,39 @@ export function StepEditor({ steps, costs, capabilities, onChange }) {
                   </select>
                 </label>
 
+                {/* Which of this handler's arguments the person running the
+                    skill may fill. Everything else is fixed by the template.
+                    The list comes from the server so the editor can never offer
+                    a name the run guard strips — `module` is absent from
+                    `runtime_eligible` because it selects which TABLE is read,
+                    and that is the author's decision, never the runner's. */}
+                {(meta?.runtime_eligible || []).length > 0 && step.skill_function && (
+                  <fieldset className="hb-field sk-ctx">
+                    <legend className="hb-field__l">
+                      Ask at run time
+                      <span className="hb-field__hint">
+                        Optional. Anything ticked is asked for each run instead of being fixed here.
+                      </span>
+                    </legend>
+                    <div className="hb-filters">
+                      {meta.runtime_eligible.map(p => {
+                        const on = (step.runtime_params || []).includes(p);
+                        return (
+                          <button type="button" key={p} className={`hb-chip${on ? ' on' : ''}`}
+                            aria-pressed={on}
+                            onClick={() => {
+                              const cur = step.runtime_params || [];
+                              update(i, 'runtime_params',
+                                on ? cur.filter(x => x !== p) : [...cur, p]);
+                            }}>
+                            {words(p)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </fieldset>
+                )}
+
                 {meta?.writes && (
                   <label className="sk-check">
                     <input type="checkbox" checked={!!step.allow_writes}
@@ -239,8 +285,12 @@ export function StepEditor({ steps, costs, capabilities, onChange }) {
 
                 {/* A handler whose required params nothing supplies fails at run
                     time with a message nobody sees until the run. Asked for here
-                    instead, where the person choosing it is still looking. */}
-                {(meta?.needs || []).map(need => (
+                    instead, where the person choosing it is still looking —
+                    unless it has been opened to the runner above, in which case
+                    demanding it here too would fix the value it exists to vary. */}
+                {(meta?.needs || [])
+                  .filter(n => !(step.runtime_params || []).includes(n))
+                  .map(need => (
                   <label className="hb-field" key={need}>
                     <span className="hb-field__l">{words(need)}</span>
                     <input className="k-input" value={step.params?.[need] ?? ''}

@@ -132,6 +132,31 @@ UNIMPLEMENTED_SKILL_FUNCTIONS: frozenset[str] = frozenset({
     "dristi_scheduled_reports",
 })
 
+#: Parameters a template may NEVER open to the person pressing Run, whatever
+#: its `runtime_params` says.
+#:
+#: The rule that makes runtime parameters safe at all: a runtime value may
+#: select WHICH ROW, never WHICH SOURCE.
+#:
+#: Selecting a row is safe because the handler still filters on org_id inside
+#: its own query — asking for another tenant's `contact_id` returns nothing.
+#: Selecting a source is not, and `module` is the proof: it chooses which TABLE
+#: `find_overdue` reads, so a run variable of {"module": "invoices"} turned a
+#: tasks skill into a read of the receivables ledger. That hole is why run
+#: variables were cut off from handler arguments in the first place; this list
+#: is what stops the mechanism that reopens the door from reopening that one.
+#:
+#:   org_id       the tenant boundary. Forced by the dispatcher, never supplied.
+#:   user_id      the dispatcher injects the CALLER's own. Opening it would let
+#:                a "my desk" skill report a colleague's desk.
+#:   module       selects the table. See above.
+#:   allow_writes a step flag, not a handler argument. Listed defensively: it is
+#:                the author's consent to write, and consent that the runner can
+#:                grant themselves is not consent.
+RUNTIME_FORBIDDEN_PARAMS: frozenset[str] = frozenset({
+    "org_id", "user_id", "module", "allow_writes",
+})
+
 #: Handlers that WRITE. A step naming one of these must set
 #: `"allow_writes": true` to run — see `_run_function_step`.
 WRITE_SKILL_FUNCTIONS: frozenset[str] = frozenset({
@@ -215,12 +240,23 @@ def describe_skill_functions() -> list[dict]:
             any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
             or "org_id" in params
         )
+        # Which parameters an author may open to the person running the skill.
+        # Derived from the signature rather than listed by hand, so a handler
+        # gaining a parameter cannot silently become un-askable — and filtered
+        # through the same forbidden set the dispatcher enforces, so the editor
+        # can never offer something the run guard would strip.
+        runtime_eligible = [
+            p for p in params
+            if p not in ("pool",) and p not in RUNTIME_FORBIDDEN_PARAMS
+        ]
+
         out.append({
             "name": name,
             "available": scopable,
             "kind": kind,
             "writes": name in WRITE_SKILL_FUNCTIONS,
             "needs": needs,
+            "runtime_eligible": runtime_eligible,
             "defaults": defaults,
             **({} if scopable else {
                 "unavailable_reason": "cannot be scoped to one organisation — "
@@ -338,22 +374,36 @@ async def _run_function_step(
             f"and filters on it."
         )
 
-    # ── Run variables never reach a handler ─────────────────────────────────
+    # ── Run variables reach a handler ONLY where the author allowed it ──────
     #
-    # They used to be merged LAST, over both the registry defaults and the
-    # step's own params. `variables` is whatever the person pressing Run typed,
-    # so a step authored as {"skill_function": "find_overdue_tasks",
-    # "params": {"module": "tasks"}} was redirected by a run variable of
-    # {"module": "invoices"} into the receivables ledger — a Srijan-only user
-    # reading the books through a skill that says it reads tasks.
+    # Variables used to be merged LAST, over both the registry defaults and the
+    # step's own params, so a step authored as {"skill_function":
+    # "find_overdue_tasks", "params": {"module": "tasks"}} was redirected by a
+    # run variable of {"module": "invoices"} into the receivables ledger.
     #
-    # Handler arguments now come from the registry and the TEMPLATE only.
-    # Variables keep their real job, which is prompt substitution
-    # (services/skills/prompt.py). A handler that needs `metric` or `dept` gets
-    # it from the step's params, chosen by whoever authored the template — which
-    # is the person the write gate and the module gate are already checking.
+    # Cutting them off entirely fixed that and broke something real: a handler
+    # like `get_account_brief` needs to know WHICH contact, and only the person
+    # running it knows. So the author opts a named parameter in:
+    #
+    #     {"skill_function": "get_account_brief",
+    #      "runtime_params": ["contact_id"],
+    #      "params": {"activity_limit": 50}}
+    #
+    # An allowlist, not a filter: a variable not named here cannot reach the
+    # handler however it is spelled. RUNTIME_FORBIDDEN_PARAMS then removes the
+    # names that must never be opened even deliberately — the difference being
+    # that a runtime value may select which ROW, never which SOURCE.
     supplied: dict[str, Any] = {**defaults, **(step.get("params") or {})}
-    supplied["org_id"] = org_id
+
+    allowed = [
+        p for p in (step.get("runtime_params") or [])
+        if p not in RUNTIME_FORBIDDEN_PARAMS
+    ]
+    for name in allowed:
+        if variables and name in variables:
+            supplied[name] = variables[name]
+
+    supplied["org_id"] = org_id          # forced last; never overridable
     if user_id is not None:
         supplied.setdefault("user_id", user_id)
 
@@ -371,9 +421,10 @@ async def _run_function_step(
     ]
     if missing:
         raise ValueError(
-            f"'{skill_function}' needs {', '.join(sorted(missing))}, which the "
-            f"step's params did not supply. Run variables cannot fill a handler "
-            f"argument — the template author chooses what a data step reads."
+            f"'{skill_function}' needs {', '.join(sorted(missing))}, which "
+            f"neither the step's params nor its runtime_params supplied. Add it "
+            f"to params to fix the value, or to runtime_params to ask the person "
+            f"running the skill for it."
         )
 
     result = await handler(pool=pool, **kwargs)
