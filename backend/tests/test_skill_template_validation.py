@@ -120,8 +120,8 @@ async def test_a_named_but_unimplemented_function_is_refused(
 #: before the write gate is ever reached. Four of them also write, which is why
 #: the parametrised test below cannot assert one message for all ten.
 UNSCOPABLE = {
-    "escalate", "execute_sequence_step", "get_team_workload", "notify_multi",
-    "scan_upcoming_deadlines", "score_candidate", "send_campaign",
+    "escalate", "execute_sequence_step", "notify_multi",
+    "score_candidate", "send_campaign",
 }
 
 

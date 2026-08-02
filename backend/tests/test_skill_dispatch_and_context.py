@@ -231,15 +231,15 @@ def test_every_registered_handler_can_be_scoped_to_a_tenant():
     The standing check, so a handler cannot be added to the registry without an
     org filter and only be caught at run time by the guard above.
 
-    Seven entries fail this today — escalate, execute_sequence_step,
-    get_team_workload, notify_multi, scan_upcoming_deadlines, score_candidate,
-    send_campaign. They are listed rather than skipped: this test is the record
-    of exactly which handlers are unavailable and why, and it turns green one
-    name at a time as each learns to take org_id.
+    Seven entries failed this when the guard landed. Two have since been fixed —
+    `scan_upcoming_deadlines` and `get_team_workload` now take org_id and scope
+    their tasks through the teams subquery — so the list is five. It turns green
+    one name at a time, and the assertion at the bottom REFUSES to let a fixed
+    handler stay listed, which is what forced this edit.
     """
     KNOWN_UNSCOPED = {
-        "escalate", "execute_sequence_step", "get_team_workload", "notify_multi",
-        "scan_upcoming_deadlines", "score_candidate", "send_campaign",
+        "escalate", "execute_sequence_step", "notify_multi",
+        "score_candidate", "send_campaign",
     }
 
     unscoped = set()

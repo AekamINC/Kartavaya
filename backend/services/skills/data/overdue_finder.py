@@ -103,7 +103,13 @@ _MODULE_MAP = {
         "table": "public.tasks",
         "date_col": "due_at",
         "date_is_date": False,
-        "owner_col": "user_id",
+        # NOT `user_id`. That column exists and is NULL on all 201 live task
+        # rows — assignment is `assignee_user_ids`, a text[] populated on 181 of
+        # them. Reading `user_id` returned a null owner for every overdue task
+        # and looked like it had worked, which is the worst kind of wrong.
+        # Arrays are 1-indexed; a task can have several assignees and this takes
+        # the first, which `scan_upcoming_deadlines` reports in full.
+        "owner_col": "assignee_user_ids[1]",
         "label_col": "title",
         # Tasks are team-scoped; teams are org-scoped. See the module docstring.
         "org_clause": (
