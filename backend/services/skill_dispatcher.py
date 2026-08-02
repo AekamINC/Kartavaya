@@ -66,6 +66,10 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     "triage_new_leads":           ("services.skills.data", "triage_new_leads", {"days": 30}),
     #                              needs: contact_id — and graha + ganit + vikray
     "get_account_brief":          ("services.skills.data", "get_account_brief", {"activity_limit": 50}),
+    # Ganit · statutory. Phase 3.  needs: period
+    "check_gstr1_readiness":      ("services.skills.data", "check_gstr1_readiness", {"limit": 200}),
+    # Manav + Vetana · payroll. Reads SALARY — see modules.py.
+    "check_payroll_readiness":    ("services.skills.data", "check_payroll_readiness", {"limit": 200}),
     # Vikray · stock
     "find_low_stock":            ("services.skills.data", "find_low_stock", {}),
     # Manav · rota and leave        needs: team_id

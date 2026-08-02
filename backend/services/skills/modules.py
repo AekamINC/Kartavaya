@@ -88,6 +88,11 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     # in practice org_owner/org_admin — the value is that one page carries the
     # relationship AND the money.
     "get_account_brief":          frozenset({"graha", "ganit", "vikray"}),
+    "check_gstr1_readiness":      frozenset({"ganit"}),
+    # BOTH, exactly. Without vetana a reader learns each named person's basic
+    # pay and the size of every outstanding salary advance — a personal debt
+    # disclosure. Without manav, the roster and its bank details.
+    "check_payroll_readiness":    frozenset({"manav", "vetana"}),
     "find_low_stock":             frozenset({"vikray", "ganit"}),
     "get_team_workload":          FREE,
     "scan_upcoming_deadlines":    FREE,
