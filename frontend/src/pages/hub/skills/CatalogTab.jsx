@@ -59,7 +59,7 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
         <div className="hb-cards">
           {available.map(t => {
             const steps = parseSteps(t.steps);
-            const est = t.estimated_credits ?? estimateCredits(steps, costs);
+            const est = t.estimated_credits || estimateCredits(steps, costs);
             return (
               <article className="hb-card sk-card" key={t.id}>
                 <div className="sk-card__head">

@@ -64,7 +64,7 @@ export default function AssignedTab({ clientId, state, costs, onBrowse, onRan })
       <div className="hb-list">
         {state.items?.map(skill => {
           const steps = parseSteps(skill.steps);
-          const est = skill.estimated_credits ?? estimateCredits(steps, costs);
+          const est = skill.estimated_credits || estimateCredits(steps, costs);
           return (
             <article className="hb-card sk-card" key={skill.id}>
               <div className="sk-card__head">

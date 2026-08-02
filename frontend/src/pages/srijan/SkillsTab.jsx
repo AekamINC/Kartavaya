@@ -81,7 +81,7 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
             {mine.items?.map(skill => {
               const steps = parseSteps(skill.steps).sort((a, b) => (a.order || 0) - (b.order || 0));
               const open = openId === skill.id;
-              const est = skill.estimated_credits ?? estimateCredits(steps, costs);
+              const est = skill.estimated_credits || estimateCredits(steps, costs);
               const needed = extractVariables(steps);
               return (
                 <article className="hb-card sk-card" key={skill.id}>
@@ -108,12 +108,20 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
                     </span>
                   </div>
 
+                  {/* A data step has no `agent_type`, so it used to render as a
+                      bare number with no label at all — observed on the first
+                      real run: "Receivables chase pack" showed "1" then
+                      "2 Email". It says what it reads, and that it is free. */}
                   <div className="sk-flow">
                     {steps.map((s, i) => (
                       <span className="sk-flow__s" key={i}>
                         <span className="sk-flow__n">{s.order || i + 1}</span>
-                        {AGENT_LABELS[s.agent_type] || words(s.agent_type)}
-                        {s.platform && <span className="hb-cap"> · {s.platform}</span>}
+                        {s.skill_function
+                          ? <>{s.label || words(s.skill_function)}<span className="hb-cap"> · reads your data</span></>
+                          : <>
+                              {AGENT_LABELS[s.agent_type] || words(s.agent_type)}
+                              {s.platform && <span className="hb-cap"> · {s.platform}</span>}
+                            </>}
                       </span>
                     ))}
                   </div>
@@ -163,7 +171,9 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
                       {result?.id === skill.id && (
                         <div className="note note--info sr-done" role="status">
                           <b>Finished — {result.steps_completed} steps, {creditLabel(result.credits_used)}.</b>{' '}
-                          {result.content_ids?.length || 0} items are waiting in the Content tab.
+                          {(result.content_ids?.length || 0) === 1
+                            ? '1 item is'
+                            : `${result.content_ids?.length || 0} items are`} waiting in the Content tab.
                         </div>
                       )}
                     </form>
@@ -188,7 +198,7 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
             <div className="hb-cards">
               {available.map(t => {
                 const steps = parseSteps(t.steps);
-                const est = t.estimated_credits ?? estimateCredits(steps, costs);
+                const est = t.estimated_credits || estimateCredits(steps, costs);
                 return (
                   <article className="hb-card sk-card" key={t.id}>
                     <div className="sk-card__head">
