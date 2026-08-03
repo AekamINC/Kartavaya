@@ -6,6 +6,17 @@ where it actually stands.
 
 ---
 
+## ⚠ STOP — staging is not serving this branch (2026-08-03 20:47 UTC)
+
+The Railway staging service stopped tracking the `staging` branch and now serves
+`main` @ `1aa49855`, **1,069 commits behind**. Verified absent from the live API:
+e-sign `rebuild`, `/org/memberships`, bank-statement import, sales-target create.
+
+**Do not run these suites until it is repointed.** Every failure would be a false
+finding against an eleven-day-old backend. `main` is a strict ancestor of
+`staging`, so repointing loses nothing. Full evidence in the
+`staging-branch-switch` memory.
+
 ## Running it
 
 From `frontend/`:
