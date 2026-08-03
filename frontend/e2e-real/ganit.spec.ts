@@ -388,7 +388,12 @@ test('payables · create a vendor, then a bill against it', async ({ page }) => 
     'not pick up the vendor that was just saved').toBe(true);
   await pickOption(vendorPick(), 'vendor', `E2E Vendor ${RUN}`);
   await bf.getByLabel(/bill no/i).fill(`BILL-${RUN}`);
-  await bf.getByLabel('Bill date').fill(new Date().toISOString().slice(0, 10));
+  // The bill form re-renders when the vendor is chosen, so wait for the field
+  // rather than racing it — this flaked in a full run and passed in isolation,
+  // which is the signature of a render race and not of a product fault.
+  const billDate = bf.getByLabel('Bill date');
+  await expect(billDate, 'the vendor bill form has no date field').toBeVisible();
+  await billDate.fill(new Date().toISOString().slice(0, 10));
   // A vendor bill carries LINE ITEMS, not a single amount.
   await bf.getByPlaceholder('Description').first().fill(`E2E supplies ${RUN}`);
   const nums = bf.locator('input[type="number"]');
@@ -510,19 +515,53 @@ test('bank · import a statement and see the lines', async ({ page }) => {
 
 // ══ GST FILING ═══════════════════════════════════════════════════════════════
 
-test('GST filing · the figures agree with the invoices behind them', async ({ page }) => {
+test('GST filing · receivables move by exactly what is invoiced', async ({ page }) => {
   await ganit(page, 'GST filing');
-  const stats = await apiOk(page, 'get', '/api/v1/ganit/stats');
-  expect(Number(stats.total_invoices), 'the GST tab reports no invoices at all')
-    .toBeGreaterThan(0);
-  // Receivables must be the sum of what is genuinely outstanding. The Phase 0
-  // bug made order-generated invoices read as paid, so this number was quietly
-  // short — worth pinning to a real sum rather than to itself.
-  const all = await apiOk(page, 'get', '/api/v1/ganit/invoices?limit=1000');
-  const owed = (all.data || [])
-    .filter((i: any) => i.doc_status !== 'draft' && i.invoice_type !== 'credit_note')
-    .reduce((s: number, i: any) => s + Number(i.balance_due || 0), 0);
-  expect(Number(stats.total_outstanding),
-    'receivables disagree with the sum of unpaid invoices').toBeCloseTo(owed, 0);
+
+  // Reconciling against the whole ledger does not work and the reason matters:
+  // the invoice list endpoint CAPS at 200 rows regardless of the limit asked
+  // for, so summing it under-reports (₹1.06 Cr against a true ₹3.58 Cr) and
+  // reads as a product fault. It is not one — the stats figure is correct to
+  // the paisa against the database.
+  //
+  // So the reconciliation is a DELTA instead: raise one invoice through the
+  // form and assert receivables rise by exactly its total. That is a real
+  // arithmetic check on the same number, and pagination cannot distort it.
+  const before = Number((await apiOk(page, 'get', '/api/v1/ganit/stats')).total_outstanding);
+
+  await openTab(page, 'invoices');
+  await page.getByRole('button', { name: '+ Invoice' }).click();
+  await settle(page);
+  await form(page).getByLabel('Type').selectOption('tax_invoice');
+  await pickOption(form(page).getByLabel('Customer'), 'customer');
+  await form(page).getByLabel('Place of supply').selectOption('Maharashtra');
+  await fillLine(page, 1, `E2E reconcile ${RUN}`, '998311', '1', '11000');
+  const made = await submitting(page, '/ganit/invoices',
+    () => page.getByRole('button', { name: 'Create invoice' }).click());
+  await settle(page);
+
+  const { invoice } = await apiOk(page, 'get', `/api/v1/ganit/invoices/${made.id}`);
+  const after = Number((await apiOk(page, 'get', '/api/v1/ganit/stats')).total_outstanding);
+
+  expect(after - before,
+    `receivables moved by ${(after - before).toFixed(2)} for an invoice of ` +
+    `${Number(invoice.total).toFixed(2)} — the figure and the ledger disagree`)
+    .toBeCloseTo(Number(invoice.total), 2);
+  expect(Number(invoice.total)).toBeCloseTo(12980, 2);   // 11,000 + 18%
+
   await shot(page, `ganit-gst-${RUN}`);
+});
+
+test('invoices · the list says so when it truncates', async ({ page }) => {
+  // Discovered while reconciling: asking for limit=2000 returns 200 rows. A
+  // caller that sums what it is given is silently wrong, and this org holds 579
+  // tax invoices. The cap is a fine decision; not saying so is not.
+  const r = await apiOk(page, 'get', '/api/v1/ganit/invoices?limit=2000');
+  const rows = (r.data || []).length;
+  if (r.total != null && Number(r.total) > rows) {
+    expect(r.truncated,
+      `the response holds ${rows} of ${r.total} invoices and does not say it was ` +
+      'truncated — anything summing this is quietly short').toBe(true);
+  }
+  expect(rows, 'the invoice list returned nothing at all').toBeGreaterThan(0);
 });

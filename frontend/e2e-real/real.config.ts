@@ -36,13 +36,21 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   workers: 1, // one real user at a time; journeys share server state
   retries: 0,
-  reporter: [['list'], ['json', { outputFile: path.join(DL_DIR, 'report.json') }]],
+  // An HTML report and a video per test, because the runs are headless — this
+  // environment cannot spawn a visible browser ("spawn UNKNOWN"). The report is
+  // the thing to open: every step, every screenshot, and the footage of the
+  // browser actually doing it. `npx playwright show-report <dir>` opens it.
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: path.join(DL_DIR, 'report'), open: 'never' }],
+    ['json', { outputFile: path.join(DL_DIR, 'report.json') }],
+  ],
   outputDir: path.join(DL_DIR, 'artifacts'),
   use: {
     baseURL: process.env.E2E_BASE_URL || 'https://staging.kartavaya.com',
-    trace: 'retain-on-failure',
-    screenshot: 'only-on-failure',
-    video: 'off',
+    trace: 'on',
+    screenshot: 'on',
+    video: 'on',
     actionTimeout: 20_000,
     navigationTimeout: 45_000,
   },
@@ -50,7 +58,7 @@ export default defineConfig({
     { name: 'setup', testMatch: /auth\.setup\.ts/, use: { ...devices['Desktop Chrome'] } },
     {
       name: 'real-user',
-      testMatch: /(real-user|full-journey|phase0|ganit)\.spec\.ts/,
+      testMatch: /(real-user|full-journey|phase0|ganit|graha)\.spec\.ts/,
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },
