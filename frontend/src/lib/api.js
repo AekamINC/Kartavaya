@@ -1,4 +1,5 @@
 import axios from "axios";
+import { getActiveOrg } from "./orgContext";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 if (!BACKEND_URL) {
@@ -24,6 +25,19 @@ api.interceptors.request.use((config) => {
   const token = localStorage.getItem("auth_token");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+
+  // Which of the user's own organisations this session is acting as.
+  //
+  // Without it the server resolves to the user's OLDEST membership and nothing
+  // else is reachable — see `lib/orgContext.js` and `routers/org_switch.py`.
+  // A caller that has already set the header explicitly (the admin console's
+  // `scoped()`, which reaches into other people's orgs one call at a time)
+  // keeps its own value: that is a narrower, deliberate scope and this must not
+  // overwrite it.
+  const activeOrg = getActiveOrg();
+  if (activeOrg && !config.headers['X-Org-Id']) {
+    config.headers['X-Org-Id'] = activeOrg;
   }
   return config;
 });

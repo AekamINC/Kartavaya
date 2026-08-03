@@ -15,6 +15,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { currentUser } from '../../lib/auth';
 import { ICONS } from './navIcons';
 import { navContext, navGroupsFor } from './navConfig';
+import OrgSwitcher from './OrgSwitcher';
 import useMediaQuery, { TABLET_BAND } from '../../hooks/useMediaQuery';
 import { useCustomize } from '../CustomizePanel';
 import SideBrand from './SideBrand';
@@ -269,6 +270,8 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
           {!rail && <span>Collapse</span>}
         </button>
       )}
+
+      <OrgSwitcher rail={rail} />
 
       <div className="side__foot">
         <div className="k-avatar k-avatar--me">{initials}</div>
