@@ -275,12 +275,63 @@ test.describe('approver — separated duty payroll approval', () => {
     expect(runs.ok(), `runs API ${runs.status()}`).toBeTruthy();
     const rb = await runs.json();
     const list: any[] = Array.isArray(rb) ? rb : rb.data ?? rb.runs ?? [];
-    const processed = list.find((r) => r.status === 'processed');
-    expect(processed, 'a processed run exists').toBeTruthy();
     const token = await page.evaluate(() => localStorage.getItem('auth_token'));
-    const appr = await page.request.patch(`${API}/api/v1/vetana/payroll/runs/${processed.id}/approve`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    const auth = token ? { Authorization: `Bearer ${token}` } : {};
+
+    // Approving consumes the fixture, so a second run would find nothing to
+    // approve. Restore one through the product's own actions rather than
+    // reaching into the database — which keeps the test repeatable AND covers
+    // revert + reprocess, which nothing else exercised.
+    //
+    // Separated duty decides WHO does each half: processing is the admin's
+    // (the owner), approving is the approver's. So the restore runs on an
+    // owner-authenticated request context, not this one.
+    let processed = list.find((r) => r.status === 'processed');
+    if (!processed) {
+      const approved = list.find((r) => r.status === 'approved');
+      expect(approved, 'an approved run exists to revert').toBeTruthy();
+
+      const ownerLogin = await page.request.post(`${API}/api/auth/login`, {
+        data: { email: process.env.E2E_ADMIN_EMAIL, password: process.env.E2E_ADMIN_PASSWORD },
+      });
+      expect(ownerLogin.ok(), 'owner login for the restore step').toBeTruthy();
+      const ownerAuth = { Authorization: `Bearer ${(await ownerLogin.json()).token}` };
+
+      // Revert releases the run back for reprocessing, so it belongs to the
+      // approver too — "whoever defines what people are paid does not release
+      // the money", and undoing a release is the same authority.
+      const rev = await page.request.patch(`${API}/api/v1/vetana/payroll/runs/${approved.id}/revert`, { headers: auth });
+      expect(rev.ok(), `revert returned ${rev.status()}: ${rev.ok() ? '' : await rev.text()}`).toBeTruthy();
+
+      // Separated duty, measured rather than assumed. Recorded, NOT asserted:
+      // the intended contract is genuinely unsettled — RBAC-SPEC says sensitive
+      // modules (Vetana/Ganit/Manav) are role-derived and a grant row naming
+      // them is invalid input, while this fixture's approver holds both an
+      // org_admin role (⇒ admin on Vetana) and an explicit approver grant.
+      // `separated-duty.test.jsx` warns in its header not to close that gap
+      // until the owner resolves the contradiction, so this run states what the
+      // build does instead of failing on a rule that may not be the rule.
+      const byApprover = await page.request.post(`${API}/api/v1/vetana/payroll/process`, {
+        headers: auth, data: { month: approved.month },
+      });
+      test.info().annotations.push({
+        type: 'separated-duty',
+        description: byApprover.ok()
+          ? 'GAP: the approver (org_admin + approver grant) processed the same run they can approve — one human performed both halves'
+          : `approver refused the processing half (${byApprover.status()}) — separated duty holds`,
+      });
+
+      // If the probe above was allowed through, it already did the processing;
+      // asking the owner to process again would only earn "already processed".
+      if (!byApprover.ok()) {
+        const proc = await page.request.post(`${API}/api/v1/vetana/payroll/process`, {
+          headers: ownerAuth, data: { month: approved.month },
+        });
+        expect(proc.ok(), `process returned ${proc.status()}: ${proc.ok() ? '' : await proc.text()}`).toBeTruthy();
+      }
+      processed = approved;
+    }
+    const appr = await page.request.patch(`${API}/api/v1/vetana/payroll/runs/${processed.id}/approve`, { headers: auth });
     expect(appr.ok(), `approve returned ${appr.status()}: ${await appr.text().catch(() => '')}`).toBeTruthy();
     await page.reload();
     await page.waitForLoadState('networkidle');
