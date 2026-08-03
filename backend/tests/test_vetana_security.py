@@ -207,6 +207,76 @@ async def test_approver_alone_cannot_define_what_people_are_paid(
     assert resp.status_code == 403
 
 
+# ── Four eyes: the person who ran the payroll does not release it ──
+#
+# The level checks above ask WHAT someone holds. They cannot ask WHO acted,
+# and both authorities can sit on one account (a sensitive module derives
+# `admin` from the org role, so an org_admin granted approver holds both rungs).
+# Measured live on 2026-08-03: one user processed a run and then approved it
+# with every level check passing. These assert the control that closes it.
+
+
+async def test_the_processor_cannot_approve_their_own_run(
+    api_client, mock_pool, as_member, org_a, levels,
+):
+    """A second approver exists, so the person who ran it is refused."""
+    levels(ADMIN, APPROVER)
+    mock_pool.fetchrow.return_value = {"status": "processed", "created_by": "user_mem001"}
+    mock_pool.fetchval.return_value = 1  # one OTHER approver in the org
+    mock_pool.fetch.return_value = []
+
+    resp = await api_client.patch(
+        "/api/v1/vetana/payroll/runs/r0000000-0000-0000-0000-000000000001/approve"
+    )
+
+    assert resp.status_code == 403
+    detail = resp.json()["detail"].lower()
+    assert "second pair of eyes" in detail
+    # Names what to do, rather than a level the reader already holds.
+    assert "approver" in detail
+
+
+async def test_a_different_approver_may_approve_what_someone_else_ran(
+    api_client, mock_pool, as_member, org_a, levels,
+):
+    """The other half — the control must not refuse the second person too,
+    or "nobody can approve anything" would satisfy the test above."""
+    levels(APPROVER)
+    mock_pool.fetchrow.return_value = {"status": "processed", "created_by": "user_someone_else"}
+    mock_pool.fetchval.return_value = 1
+    mock_pool.fetch.return_value = []
+
+    resp = await api_client.patch(
+        "/api/v1/vetana/payroll/runs/r0000000-0000-0000-0000-000000000001/approve"
+    )
+
+    assert resp.status_code == 200
+
+
+async def test_a_sole_approver_is_not_locked_out_of_their_own_payroll(
+    api_client, mock_pool, as_member, org_a, levels,
+):
+    """Counted against the live catalog before this rule was written: every org
+    has exactly ONE Vetana approver. An unconditional four-eyes rule would not
+    separate the duty, it would stop payroll company-wide — the same failure
+    `_RELEASE_LEVEL`'s note was written to avoid.
+
+    So where there is no second approver the release proceeds, and the audit
+    log carries the self-approval. Granting a second approver turns the control
+    on for that org with no code change.
+    """
+    levels(ADMIN, APPROVER)
+    mock_pool.fetchrow.return_value = {"status": "processed", "created_by": "user_mem001"}
+    mock_pool.fetchval.return_value = 0  # nobody else holds approver here
+    mock_pool.fetch.return_value = []
+
+    resp = await api_client.patch(
+        "/api/v1/vetana/payroll/runs/r0000000-0000-0000-0000-000000000001/approve"
+    )
+
+    assert resp.status_code == 200
+
+
 # ── No grant reaches none of it ───────────────────────────────────
 
 @pytest.mark.parametrize("method,path,body", [

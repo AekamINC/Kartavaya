@@ -157,21 +157,82 @@ async def test_create_invoice_invalid_type(api_client, mock_pool, as_admin, with
 
 
 async def test_create_invoice_success(api_client, mock_pool, as_admin, with_org_id):
+    """A COMPLIANT tax invoice is created.
+
+    The payload carries what Rule 46 requires and this route now checks before
+    spending a serial: a recipient, an HSN/SAC on every line, and — because it
+    is marked inter-State — a place of supply. It used to carry none of those
+    and still return 200, which is exactly how an invoice could be created that
+    its own PDF endpoint then refused to render.
+
+    `fetchrow` is sequenced rather than fixed: the completeness check reads the
+    org and then the contact before the INSERT returns the new row.
+    """
     mock_pool.fetchval.return_value = None
-    mock_pool.fetchrow.return_value = {
-        "id": "inv001",
-        "invoice_number": "INV-2026-0001",
-        "total": 1180,
-    }
+    mock_pool.fetchrow.side_effect = [
+        {"name": "Aekam Inc", "gstin": "27AAACE1234E1Z5", "pan": "AAACE1234E",
+         "billing_address": {"line1": "1 Test Road", "city": "Mumbai"}},
+        {"name": "Sharma Textiles", "company": "Sharma Textiles", "gstin": "24AAACS1234E1Z5"},
+        {"id": "inv001", "invoice_number": "INV-2026-0001", "total": 1180},
+    ]
     resp = await api_client.post("/api/v1/ganit/invoices", json={
         "invoice_type": "tax_invoice",
         "is_igst": True,
+        "contact_id": "c0000000-0000-0000-0000-000000000001",
+        "place_of_supply": "Gujarat",
         "line_items": [
-            {"description": "Service", "quantity": 1, "rate": 1000, "gst_rate": 18},
+            {"description": "Service", "hsn_code": "998231", "quantity": 1, "rate": 1000, "gst_rate": 18},
         ],
     })
     assert resp.status_code == 200
     assert resp.json()["invoice_number"] == "INV-2026-0001"
+
+
+async def test_creating_a_final_tax_invoice_refuses_a_rule_46_gap(
+    api_client, mock_pool, as_admin, with_org_id,
+):
+    """The gap this route used to leave open.
+
+    A tax invoice defaults to doc_status='final', so it is issuable the moment
+    it exists. Creating one with no recipient and no HSN produced a document
+    `GET /invoices/{id}/pdf` then refused under Rule 46(e)/(g) — the user found
+    out at download time. It is refused here instead, in the same
+    `document_incomplete` shape the PDF route answers with, and BEFORE a
+    consecutive serial is consumed.
+    """
+    mock_pool.fetchval.return_value = None
+    mock_pool.fetchrow.side_effect = [
+        {"name": "Aekam Inc", "gstin": "27AAACE1234E1Z5", "pan": "AAACE1234E",
+         "billing_address": {"line1": "1 Test Road", "city": "Mumbai"}},
+    ]
+    resp = await api_client.post("/api/v1/ganit/invoices", json={
+        "invoice_type": "tax_invoice",
+        "line_items": [{"description": "Service", "quantity": 1, "rate": 1000, "gst_rate": 18}],
+    })
+
+    assert resp.status_code == 422
+    detail = resp.json()["detail"]
+    assert detail["error"] == "document_incomplete"
+    fields = {g["field"] for g in detail["blocking"]}
+    assert "contact.name" in fields
+    assert "invoice.line_items.hsn_code" in fields
+
+
+async def test_a_draft_may_still_be_saved_incomplete(
+    api_client, mock_pool, as_admin, with_org_id,
+):
+    """Drafts stay permissive on purpose: an incomplete draft is the workflow —
+    it is what the user is editing towards. Only issuing is gated."""
+    mock_pool.fetchval.return_value = None
+    mock_pool.fetchrow.return_value = {
+        "id": "inv002", "invoice_number": "INV-2026-0002", "total": 1180,
+    }
+    resp = await api_client.post("/api/v1/ganit/invoices", json={
+        "invoice_type": "tax_invoice",
+        "doc_status": "draft",
+        "line_items": [{"description": "Service", "quantity": 1, "rate": 1000, "gst_rate": 18}],
+    })
+    assert resp.status_code == 200
 
 
 async def test_get_invoice_not_found(api_client, mock_pool, as_admin, with_org_id):

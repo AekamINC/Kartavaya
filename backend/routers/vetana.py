@@ -884,6 +884,7 @@ async def get_run(
 @router.patch("/payroll/runs/{run_id}/approve")
 async def approve_run(
     run_id: str,
+    request: Request,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     levels=Depends(_gate),
@@ -896,7 +897,7 @@ async def approve_run(
     # Held at ADMIN until PROPOSED_071 backfills an approver; see _RELEASE_LEVEL.
     _require(levels, _RELEASE_LEVEL)
     run = await pool.fetchrow(
-        "SELECT status FROM staging.vetana_payroll_runs "
+        "SELECT status, created_by FROM staging.vetana_payroll_runs "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
         run_id, org_id,
     )
@@ -904,6 +905,67 @@ async def approve_run(
         raise HTTPException(404, "Payroll run not found")
     if run["status"] != "processed":
         raise HTTPException(400, f"Cannot approve a '{run['status']}' payroll run")
+
+    # ── FOUR EYES ────────────────────────────────────────────────────────────
+    # The level check above asks "does this person hold approver?". It cannot
+    # ask the other half — "is this the same person who ran it?" — because both
+    # authorities can legitimately sit on one account: a sensitive module
+    # derives `admin` from the org role, so an org_admin who is also granted
+    # approver holds both rungs at once. Measured live 2026-08-03 in the E2E
+    # org: one user processed a run and then approved it, and every level check
+    # passed, correctly, the whole way. `docs/modules/vetana.md` promises the
+    # opposite — "The role that runs payroll cannot approve it."
+    #
+    # So the control that actually separates the duty is about PEOPLE, not
+    # levels. It is deliberately independent of the unresolved
+    # RBAC-SPEC-vs-Tier-4 question (`separated-duty.test.jsx` header): it does
+    # not care HOW approver is held, only that a SECOND HUMAN holds it.
+    #
+    # ── Why this is conditional rather than absolute ─────────────────────────
+    # Counted against the live catalog before writing it, the same way
+    # `_RELEASE_LEVEL` was: EVERY org has exactly ONE Vetana approver today
+    # (Aekam Inc 1, QA Test Corp 1). An unconditional rule would therefore not
+    # separate the duty — it would stop payroll company-wide on the next run,
+    # which is the precise failure the note above this function was written to
+    # avoid.
+    #
+    # So it binds where it can bind: when a second approver exists, the person
+    # who ran the payroll cannot release it. Where the org has only one, the
+    # release still goes through and is written to the audit log as a
+    # self-approval — the owner's rule was "one user can have both FYI but
+    # auditable", and this is the "auditable" half made real. Granting a second
+    # approver turns the control on for that org with no code change.
+    processed_by = run["created_by"] if "created_by" in run else None
+    if processed_by and processed_by == user["user_id"]:
+        other_approvers = await pool.fetchval(
+            "SELECT count(DISTINCT user_id) FROM staging.org_member_modules "
+            "WHERE org_id=$1::uuid AND module_code=$2 AND role=$3 AND user_id <> $4",
+            org_id, MODULE, APPROVER, user["user_id"],
+        ) or 0
+        if other_approvers:
+            raise HTTPException(
+                403,
+                "You processed this payroll run, so you cannot also approve it. "
+                "Releasing salaries needs a second pair of eyes: ask another "
+                "Vetana approver to review and approve it.",
+            )
+        audit(
+            "vetana.payroll_self_approved",
+            request,
+            org_id=org_id,
+            user_id=user["user_id"],
+            resource_type="vetana_payroll_run",
+            resource_id=str(run_id),
+            detail={
+                "reason": "sole_approver",
+                "processed_by": processed_by,
+                "note": (
+                    "Processed and approved by the same person because this org "
+                    "has no second Vetana approver. Grant one to enforce four eyes."
+                ),
+            },
+            severity="warn",
+        )
     await pool.execute(
         "UPDATE staging.vetana_payroll_runs SET status='approved', "
         "approved_by=$1, approved_at=NOW() WHERE id=$2::uuid",

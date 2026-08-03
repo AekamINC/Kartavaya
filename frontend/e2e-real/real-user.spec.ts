@@ -303,33 +303,25 @@ test.describe('approver — separated duty payroll approval', () => {
       const rev = await page.request.patch(`${API}/api/v1/vetana/payroll/runs/${approved.id}/revert`, { headers: auth });
       expect(rev.ok(), `revert returned ${rev.status()}: ${rev.ok() ? '' : await rev.text()}`).toBeTruthy();
 
-      // Separated duty, measured rather than assumed. Recorded, NOT asserted:
-      // the intended contract is genuinely unsettled — RBAC-SPEC says sensitive
-      // modules (Vetana/Ganit/Manav) are role-derived and a grant row naming
-      // them is invalid input, while this fixture's approver holds both an
-      // org_admin role (⇒ admin on Vetana) and an explicit approver grant.
-      // `separated-duty.test.jsx` warns in its header not to close that gap
-      // until the owner resolves the contradiction, so this run states what the
-      // build does instead of failing on a rule that may not be the rule.
-      const byApprover = await page.request.post(`${API}/api/v1/vetana/payroll/process`, {
-        headers: auth, data: { month: approved.month },
+      // The OWNER processes — which is the point of the separation, and what
+      // makes the approval below a second pair of eyes rather than the same
+      // person twice.
+      const proc = await page.request.post(`${API}/api/v1/vetana/payroll/process`, {
+        headers: ownerAuth, data: { month: approved.month },
       });
-      test.info().annotations.push({
-        type: 'separated-duty',
-        description: byApprover.ok()
-          ? 'GAP: the approver (org_admin + approver grant) processed the same run they can approve — one human performed both halves'
-          : `approver refused the processing half (${byApprover.status()}) — separated duty holds`,
-      });
-
-      // If the probe above was allowed through, it already did the processing;
-      // asking the owner to process again would only earn "already processed".
-      if (!byApprover.ok()) {
-        const proc = await page.request.post(`${API}/api/v1/vetana/payroll/process`, {
-          headers: ownerAuth, data: { month: approved.month },
-        });
-        expect(proc.ok(), `process returned ${proc.status()}: ${proc.ok() ? '' : await proc.text()}`).toBeTruthy();
-      }
+      expect(proc.ok(), `process returned ${proc.status()}: ${proc.ok() ? '' : await proc.text()}`).toBeTruthy();
       processed = approved;
+
+      // Four eyes, asserted end to end. The owner holds admin (org role) AND an
+      // approver grant, so the level check admits them — which is exactly the
+      // case level checks cannot catch, and the one measured live on
+      // 2026-08-03. They just processed this run, and the test org has a second
+      // approver, so releasing it must be refused on WHO acted, not what they
+      // hold.
+      const selfApprove = await page.request.patch(
+        `${API}/api/v1/vetana/payroll/runs/${processed.id}/approve`, { headers: ownerAuth });
+      expect(selfApprove.status(), 'the processor is refused their own run').toBe(403);
+      expect((await selfApprove.text()).toLowerCase()).toContain('second pair of eyes');
     }
     const appr = await page.request.patch(`${API}/api/v1/vetana/payroll/runs/${processed.id}/approve`, { headers: auth });
     expect(appr.ok(), `approve returned ${appr.status()}: ${await appr.text().catch(() => '')}`).toBeTruthy();
