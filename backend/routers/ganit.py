@@ -1070,8 +1070,28 @@ async def convert_to_invoice(
     if inv["estimate_status"] != "accepted":
         raise HTTPException(400, "Estimate must be accepted before converting to invoice")
 
-    inv_number = await _next_invoice_number(pool, org_id, "INV")
     inv_date = date.today()
+    # Converting mints a FINAL tax invoice, so it is gated exactly like creating
+    # one by hand. An estimate is not a tax document and needs no HSN; the
+    # invoice it becomes does, and without this the conversion produced a
+    # document `GET /invoices/{id}/pdf` then refused.
+    _items = inv["line_items"]
+    if isinstance(_items, str):
+        try:
+            _items = json.loads(_items)
+        except (TypeError, ValueError):
+            _items = []
+    await _refuse_final_if_incomplete(pool, org_id, {
+        "invoice_number": "(assigned on save)",
+        "invoice_type": "tax_invoice",
+        "invoice_date": inv_date.isoformat(),
+        "is_igst": inv["is_igst"],
+        "place_of_supply": inv["place_of_supply"],
+        "line_items": _items if isinstance(_items, list) else [],
+        "cgst": inv["cgst"], "sgst": inv["sgst"], "igst": inv["igst"],
+    }, inv["contact_id"])
+
+    inv_number = await _next_invoice_number(pool, org_id, "INV")
 
     new_row = await pool.fetchrow(
         "INSERT INTO staging.ganit_invoices "
@@ -1684,9 +1704,25 @@ async def generate_recurring_invoice(
         cgst, sgst, igst = half, gst_total - half, 0
 
     total = round(subtotal + gst_total, 2)
-    inv_number = await _next_invoice_number(pool, org_id, "INV")
     inv_date = date.today()
     due_date = date.today()
+    # A recurring profile generates FINAL tax invoices, month after month, and
+    # is the path a firm's retainer billing actually runs through. A profile
+    # saved without an HSN on a line therefore minted an un-issuable invoice
+    # EVERY period, and nothing said so until someone tried to download one.
+    # Gated here, before the serial is spent, so the profile is fixed once
+    # rather than the invoices being cleaned up repeatedly.
+    await _refuse_final_if_incomplete(pool, org_id, {
+        "invoice_number": "(assigned on save)",
+        "invoice_type": "tax_invoice",
+        "invoice_date": inv_date.isoformat(),
+        "is_igst": is_igst,
+        "place_of_supply": rec["place_of_supply"] if "place_of_supply" in rec else "",
+        "line_items": items if isinstance(items, list) else [],
+        "cgst": cgst, "sgst": sgst, "igst": igst,
+    }, str(rec["contact_id"]) if rec["contact_id"] else None)
+
+    inv_number = await _next_invoice_number(pool, org_id, "INV")
 
     for li in items:
         qty = float(li.get("quantity", 1))
