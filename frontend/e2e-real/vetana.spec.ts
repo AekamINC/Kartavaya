@@ -48,6 +48,38 @@ async function vetana(page: Page, tab: string) {
 const panel = (page: Page) => page.getByRole('tabpanel');
 
 
+// ══ RESET FIRST, AS THE APPROVER ═════════════════════════════════════════════
+//
+// The fixture this file needs is a 2026-07 run sitting at `processed`. It can
+// arrive here in any of three states — and only an APPROVER can move it back:
+// `revert` requires the approver grant, which is the same separation the rest
+// of the file tests, seen from the other side. So the reset runs first and runs
+// as the approver, rather than the owner block trying and failing to undo work
+// it is deliberately not allowed to undo.
+
+test.describe('reset', () => {
+  test.use({ storageState: APPROVER_STATE });
+
+  test('the 2026-07 run is put back to a state the owner can process', async ({ page }) => {
+    await page.goto('/vetana');
+    await settle(page);
+    const runs = await apiOk(page, 'get', '/api/v1/vetana/payroll/runs');
+    const jul = (runs.data ?? runs).find((r: any) => r.month === '2026-07');
+    expect(jul, 'the 2026-07 run is missing entirely').toBeTruthy();
+
+    if (jul.status === 'approved') {
+      const r = await api(page, 'patch', `/api/v1/vetana/payroll/runs/${jul.id}/revert`);
+      expect(r.status(), `the approver could not revert an approved run: ${await r.text()}`)
+        .toBe(200);
+    }
+    const after = await apiOk(page, 'get', '/api/v1/vetana/payroll/runs');
+    const now = (after.data ?? after).find((r: any) => r.month === '2026-07');
+    expect(['draft', 'processed'], `the run is ${now.status}, which the owner cannot process`)
+      .toContain(now.status);
+  });
+});
+
+
 // ══ AS THE OWNER ═════════════════════════════════════════════════════════════
 
 test.describe('owner', () => {
@@ -92,7 +124,10 @@ test.describe('owner', () => {
     const jul = (runs.data ?? runs).find((r: any) => r.month === '2026-07');
     expect(jul, 'the 2026-07 run is missing entirely').toBeTruthy();
 
-    if (jul.status === 'draft') {
+    if (jul.status !== 'processed') {
+      // Re-processing deletes and rebuilds the month's payslips and emails each
+      // employee again. Safe here only because every address is @example.com,
+      // which the first test in this file asserts before anything runs.
       const done = await api(page, 'post', '/api/v1/vetana/payroll/process', { month: '2026-07' });
       expect(done.status(), await done.text()).toBe(200);
     }
