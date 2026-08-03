@@ -98,21 +98,6 @@ test('employees · hire one into that department', async ({ page }) => {
   await shot(page, `manav-hire-${RUN}`);
 });
 
-test('employees · the new hire is offered wherever an employee is picked', async ({ page }) => {
-  // The cross-tab contract: an employee created on one tab has to be reachable
-  // from the others, or each tab is its own island.
-  await manav(page, 'assets');
-  await panel(page).getByRole('button', { name: '+ New asset' }).click();
-  await settle(page);
-  const selects = page.locator('label.k-formpanel__label select');
-  if (await selects.count()) {
-    const texts = await selects.first().locator('option').allTextContents();
-    expect(texts.join(' | '), 'the new hire is missing from the asset assignment picker')
-      .toContain(`E2E Hire ${RUN}`);
-  }
-});
-
-
 // ══ ONBOARDING PACK — the gap in the scope ═══════════════════════════════════
 
 test('onboarding · there is no onboarding pack to download', async ({ page }) => {
@@ -211,11 +196,39 @@ test('assets · create one and assign it to the new hire', async ({ page }) => {
   const id = made?.id || made?.asset?.id;
   expect(id, 'the asset was not created').toBeTruthy();
   keep('assetId', id);
+  keep('assetTag', RUN);
 
   const list = await apiOk(page, 'get', '/api/v1/manav/assets?limit=200');
   const a = (list.data ?? list).find((x: any) => String(x.id) === String(id));
   expect(a, 'the asset is not in the register').toBeTruthy();
   expect(a.asset_tag ?? a.tag).toBe(`AST-${RUN}`);
+});
+
+
+test('assets · assign the asset to the new hire', async ({ page }) => {
+  // The cross-tab contract: an employee created on one tab must be reachable
+  // from another. Assignment is a ROW action, not a field on the create form —
+  // the create form's first select is Category (laptop | phone | tablet …),
+  // which is what an unscoped `select.first()` picked up and mistook for an
+  // employee picker.
+  await manav(page, 'assets');
+  const row = page.locator('tr', { hasText: `AST-${RUN}` }).first();
+  await expect(row, 'the asset created earlier is not in the register').toBeVisible();
+  await row.getByRole('button', { name: 'Assign', exact: true }).click();
+
+  // Opening the picker turns the row's "Assign" into a CONFIRM button and adds
+  // a Cancel beside it, so an unscoped `getByRole('button', {name:'Assign'})`
+  // is ambiguous. Everything stays inside the row.
+  const picker = row.getByRole('combobox', { name: /^Assign .* to$/ });
+  await expect(picker, 'the assign control offers no employee picker').toBeVisible();
+  await pickOption(picker, 'employee', `E2E Hire ${RUN}`);
+  await submitting(page, '/manav/assets',
+    () => row.getByRole('button', { name: 'Assign', exact: true }).click());
+  await settle(page);
+
+  const list = await apiOk(page, 'get', '/api/v1/manav/assets?limit=200');
+  const a2 = (list.data ?? list).find((x: any) => String(x.id) === String(recall('assetId')));
+  expect(a2.assigned_to ?? a2.employee_id, 'the asset was not assigned to anyone').toBeTruthy();
 });
 
 

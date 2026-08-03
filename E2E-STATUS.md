@@ -6,15 +6,16 @@ where it actually stands.
 
 ---
 
-## ⚠ STOP — staging is not serving this branch (2026-08-03 20:47 UTC)
+## Branch incident, 2026-08-03 — RESOLVED
 
-The Railway staging service stopped tracking the `staging` branch and now serves
-`main` @ `1aa49855`, **1,069 commits behind**. Verified absent from the live API:
-e-sign `rebuild`, `/org/memberships`, bank-statement import, sales-target create.
+Between 20:47 and 21:05 UTC the staging service tracked `main` instead of
+`staging` and served a commit 1,069 behind, so nothing shipped that day was
+live. Repointed to `staging` on the owner's instruction and verified: e-sign
+`rebuild`, `/org/memberships` and bank-statement import all answer again.
 
-**Do not run these suites until it is repointed.** Every failure would be a false
-finding against an eleven-day-old backend. `main` is a strict ancestor of
-`staging`, so repointing loses nothing. Full evidence in the
+**The lesson worth keeping:** a green suite proves nothing if you have not
+checked WHAT IS DEPLOYED. Two pushes produced no deployment at all and the only
+symptom was 404s that looked like missing features. Full account in the
 `staging-branch-switch` memory.
 
 ## Running it
@@ -44,6 +45,7 @@ One suite per phase, sharing `_helpers.ts`:
 | `graha.spec.ts` | Phase 2 — 17 tabs, 20 journeys | 20/20 |
 | `vikray.spec.ts` | Phase 3a — 6 tabs, order → invoice | 11/11 |
 | `vetana.spec.ts` | Phase 3b — payroll, both halves of four eyes | 12/12 |
+| `manav.spec.ts` | Phase 4 — 12 tabs, hire → asset → leave → exit | **2 open** |
 
 ### The `[token]` lane
 
@@ -73,8 +75,27 @@ and signed through the signing page produced a **4-page executed PDF**.
 | 6 | **No org switcher existed.** The resolver fell back to the user's OLDEST membership, so a member of two firms could only ever see one. | `165b2fd0` |
 | 7 | **Bank statement import had never once worked.** `batch_id` is a uuid column and the code wrote `BSI-<timestamp>`. It 500'd for every org since it was written, and surfaced in the browser as a *CORS error* because FastAPI does not attach CORS headers to an unhandled 500. | `2b864aa8` |
 
-### Open
+### Open — Phase 4 hand-over, two known failures
 
+Both are TEST issues, not product faults, and both are diagnosed:
+
+1. **`ganit.spec.ts` inter-state invoice** — "the form offers no inter-state
+   control". Once Phase 2 created a contact carrying a GSTIN, the invoice form
+   DERIVES the tax split from it and hides the manual IGST toggle. The same
+   thing already forced the place-of-supply select to be made optional. Fix the
+   same way: tolerate the control's absence and assert the split on the stored
+   invoice, or pick a customer whose GSTIN yields inter-state.
+2. **`manav.spec.ts` leaves** — the leave TYPE is not created on some runs, so
+   the request cannot find it (`no leave type option matching E2E Study u9qsi`;
+   the list shows types from earlier runs). The create needs the same
+   wait-for-refetch the Ganit vendor picker needed.
+
+### Open — product
+
+- **No onboarding pack exists.** The scope asked for "pdf download to onboarding
+  pack"; `routers/manav.py` has no PDF route at all and none of the eight
+  document generators is an employee document. `manav.spec.ts` probes five
+  plausible endpoints and asserts all 404, so it fails the day one is built.
 - **An expense cannot carry a receipt.** `staging.ganit_expenses.receipt_urls`
   exists; the form has no file input. Asserted as `count() === 0` in
   `ganit.spec.ts`, so the test fails the day the control is added.

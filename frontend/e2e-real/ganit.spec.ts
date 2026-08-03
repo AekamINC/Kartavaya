@@ -94,7 +94,14 @@ test('invoices · create an intra-state tax invoice (CGST + SGST)', async ({ pag
   // (Rule 46(e)) and the form's own gate refuses without it.
   await pickOption(form(page).getByLabel('Customer'), 'customer');
 
-  await form(page).getByLabel('Place of supply').selectOption('Gujarat');
+  // Place of supply is only a SELECT while the form cannot work it out. Once
+  // Phase 2 created a contact carrying a GSTIN, picking that customer makes the
+  // form derive the state and swap the control for a summary — so setting it
+  // unconditionally times out on a form that is behaving correctly. Set it when
+  // it is there; either way the tax split is asserted on the stored invoice
+  // below, which is the actual contract.
+  const pos = form(page).getByLabel('Place of supply');
+  if (await pos.count()) await pos.selectOption('Maharashtra');
   await fillLine(page, 1, `E2E advisory retainer ${RUN}`, '998311', '2', '25000');
   const created = await submitting(page, '/ganit/invoices',
     () => page.getByRole('button', { name: 'Create invoice' }).click());
@@ -129,8 +136,9 @@ test('invoices · an inter-state invoice charges IGST instead', async ({ page })
   await settle(page);
 
   await pickOption(form(page).getByLabel('Customer'), 'customer');
-  await form(page).getByLabel('Place of supply').selectOption('Maharashtra');
-  // No contact in this org carries a GSTIN, so the form cannot derive the split
+  const pos2 = form(page).getByLabel('Place of supply');
+  if (await pos2.count()) await pos2.selectOption('Gujarat');
+  // A contact without a GSTIN leaves the form unable to derive the split
   // from the customer (`stateFromGSTIN` returns null and it leaves is_igst
   // alone). The user ticks it, which is the path being tested.
   const igst = form(page).getByLabel(/Inter-state|IGST/i).first();
@@ -272,7 +280,8 @@ test('invoices · a credit note can be raised against it', async ({ page }) => {
   await settle(page);
   await form(page).getByLabel('Type').selectOption('credit_note');
   await pickOption(form(page).getByLabel('Customer'), 'customer');
-  await form(page).getByLabel('Place of supply').selectOption('Gujarat');
+  const pos3 = form(page).getByLabel('Place of supply');
+  if (await pos3.count()) await pos3.selectOption('Maharashtra');
   await fillLine(page, 1, `E2E credit note ${RUN}`, '998311', '1', '5000');
   const noted = await submitting(page, '/ganit/invoices',
     () => page.getByRole('button', { name: 'Create invoice' }).click());
@@ -378,8 +387,15 @@ test('payables · create a vendor, then a bill against it', async ({ page }) => 
   await page.getByRole('button', { name: '+ Vendor bill', exact: true }).click();
   await settle(page);
   const bf = page.locator('form.gn-form').filter({ hasText: 'New vendor bill' });
+  await expect(bf, 'the vendor bill form did not open').toBeVisible();
   // `/^Vendor/` also matches "Vendor's bill no." — the select is the combobox.
   const vendorPick = () => bf.getByRole('combobox').first();
+  // The picker is populated by the refetch above; wait for it to hold real
+  // options before reading them. Reading too early reported "the picker did not
+  // pick up the vendor" on a full run and passed in isolation — a race, not a
+  // fault, and the third time this shape has appeared.
+  await expect.poll(async () => await vendorPick().locator('option').count(),
+    { message: 'the vendor picker never loaded', timeout: 20_000 }).toBeGreaterThan(1);
   const beforeReload = (await vendorPick().locator('option').allTextContents())
     .some(t => t.includes(`E2E Vendor ${RUN}`));
 
@@ -534,7 +550,8 @@ test('GST filing · receivables move by exactly what is invoiced', async ({ page
   await settle(page);
   await form(page).getByLabel('Type').selectOption('tax_invoice');
   await pickOption(form(page).getByLabel('Customer'), 'customer');
-  await form(page).getByLabel('Place of supply').selectOption('Maharashtra');
+  const pos4 = form(page).getByLabel('Place of supply');
+  if (await pos4.count()) await pos4.selectOption('Maharashtra');
   await fillLine(page, 1, `E2E reconcile ${RUN}`, '998311', '1', '11000');
   const made = await submitting(page, '/ganit/invoices',
     () => page.getByRole('button', { name: 'Create invoice' }).click());
