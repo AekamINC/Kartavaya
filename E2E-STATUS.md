@@ -91,6 +91,25 @@ The two Phase-4 failures previously listed here are FIXED: the inter-state
 invoice now picks a customer with no GSTIN (so the form cannot derive the split
 and must offer the manual toggle), and the leave type waits for its refetch.
 
+### Open — cross-org access (audited 2026-08-03, nothing changed)
+
+The owner's rule is that Aekam must not see another org's data except by an
+approved support request. Measured against it:
+
+- **Ten accounts can resolve into any org** via the `X-Org-Id` header — 7 of the
+  8 platform roles qualify, all except `platform_support`.
+- **`platform_support`, the only role that requires approval, has zero holders.**
+  The mechanism exists in code and is unused.
+- **It has never been abused.** All 215 `platform.sensitive_module_access`
+  events since 27 July are two people reading Aekam Inc's *own* org, both
+  members of it. Zero cross-tenant reads.
+- **The gap is what is not logged.** Only `ganit`, `manav`, `vetana` audit a
+  platform bypass. Another org's CRM, e-sign, marketing, sales, messaging or
+  biometric attendance can be read with **no trace** — 9 of 12 modules. The
+  header bypass itself is never audited.
+
+Full detail in the `cross-org-access-audit` memory.
+
 ### Open — product
 
 - **No onboarding pack exists.** The scope asked for "pdf download to onboarding
