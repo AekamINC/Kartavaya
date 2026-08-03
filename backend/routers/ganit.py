@@ -639,7 +639,53 @@ async def get_invoice(
         "FROM staging.ganit_payments WHERE invoice_id=$1::uuid ORDER BY payment_date",
         str(invoice_id),
     )
-    return {"invoice": dict(row), "payments": [dict(p) for p in payments]}
+
+    # ── The completeness gaps, for the DRAWER only ───────────────────────────
+    # Owner's ruling 2026-08-03: the document itself stays clean — no red
+    # "NOT SET" markers on something a customer reads — but the firm still has
+    # to know what is missing BEFORE they send it. So the same
+    # `validate_tax_invoice` the PDF route runs is reported here, and the drawer
+    # shows it internally.
+    #
+    # `blocking` is what `GET .../pdf` would refuse with; `advisory` is what it
+    # would render anyway. Both travel; neither reaches the document.
+    inv = dict(row)
+    contact = {
+        "name": inv.get("contact_name"), "company": inv.get("contact_company"),
+        "gstin": inv.get("contact_gstin"),
+    }
+    org = await pool.fetchrow(
+        "SELECT name, gstin, pan, billing_address FROM staging.organisations WHERE id=$1::uuid",
+        org_id,
+    )
+    org_d = dict(org) if org else {}
+    if isinstance(org_d.get("billing_address"), str):
+        try:
+            org_d["billing_address"] = json.loads(org_d["billing_address"])
+        except (TypeError, ValueError):
+            pass
+    items = inv.get("line_items")
+    if isinstance(items, str):
+        try:
+            items = json.loads(items)
+        except (TypeError, ValueError):
+            items = []
+    from services.doc_validation import validate_tax_invoice
+    check = validate_tax_invoice(
+        {**inv, "line_items": items if isinstance(items, list) else [],
+         "invoice_date": str(inv.get("invoice_date") or "")},
+        org_d, contact,
+    )
+
+    return {
+        "invoice": inv,
+        "payments": [dict(p) for p in payments],
+        "document_check": {
+            "ok": check.ok,
+            "blocking": [g.as_dict() for g in check.blocking],
+            "advisory": [g.as_dict() for g in check.advisory],
+        },
+    }
 
 
 @router.get("/invoices/{invoice_id}/pdf")

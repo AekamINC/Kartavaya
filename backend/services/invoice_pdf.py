@@ -172,27 +172,31 @@ def _org_gstin_line(org_gstin: str, org_pan: str, invoice_type: str) -> str:
         pan = f' &middot; PAN <b>{org_pan}</b>' if org_pan else ''
         return f'GSTIN <b>{org_gstin}</b>{pan}'
 
-    if invoice_type in _GSTIN_REQUIRED_TYPES:
-        pan = f' &middot; PAN <b>{org_pan}</b>' if org_pan else ''
-        return f'{_unset("GSTIN")}{pan}'
-
-    # Not a tax document: a missing GSTIN is unremarkable, show PAN if present.
+    # ── No GSTIN: say nothing on the document ────────────────────────────────
+    # Owner's ruling 2026-08-03: "no advisory on invoice pdf ... i want invoice
+    # to be clean." A supplier below the registration threshold has no GSTIN
+    # legitimately, so an absent one is not a defect to shout about on a
+    # document a customer reads — printing "⚠ GSTIN NOT SET" on their invoice
+    # advertises a gap that is frequently not a gap at all.
+    #
+    # It is still REPORTED, just not here: `validate_tax_invoice` returns it as
+    # an advisory and `GET /invoices/{id}` hands that to the drawer, so staff
+    # see it internally before the document ever goes out. The line simply
+    # omits what does not exist rather than inventing or flagging it.
     return f'PAN <b>{org_pan}</b>' if org_pan else ''
 
 
-def _unset(label: str) -> str:
-    """The red, deliberately ugly marker for a field that is absent.
-
-    `18-documents.md`: "an unset field renders a visible red warning, not a
-    placeholder ... the red is deliberately ugly because it must never survive
-    to a customer."
-
-    The CLASS is brand.css's `.unset`, shared with the other seven documents.
-    The WORDING stays this document's louder uppercase: a tax invoice leaves the
-    building addressed to a customer, and the mark has to survive being glanced
-    at. `doc_render.unset` prefixes the same warning glyph.
-    """
-    return f'<span class="unset">&#9888; {R.esc(label)} NOT SET</span>'
+# ── On the red `.unset` marker, removed 2026-08-03 ──────────────────────────
+#
+# `18-documents.md` specified a red "⚠ FIELD NOT SET" marker for absent fields,
+# on the reasoning that "the red is deliberately ugly because it must never
+# survive to a customer". The owner's ruling replaces that: the invoice stays
+# clean, and the gaps are shown INTERNALLY in the invoice drawer instead.
+#
+# The two remaining `R.unset(...)` calls below are for invoice DATE and
+# RECIPIENT, which are BLOCKING gaps — `validate_tax_invoice` refuses to
+# generate at all when either is absent, so neither can reach a document. They
+# stay as a defensive net for a bypassed check, not as a customer-facing mark.
 
 
 def _build_html(invoice: dict, org: dict, contact: dict, check: DocumentCheck | None = None) -> str:
@@ -268,13 +272,15 @@ def _build_html(invoice: dict, org: dict, contact: dict, check: DocumentCheck | 
     rows = []
     for i, li in enumerate(line_items, 1):
         li = li or {}
-        # Rule 46(g) requires an HSN or SAC per line. On a TAX document a
-        # missing code blocks generation outright in `validate_tax_invoice`, so
-        # this marker is what a proforma or quotation shows. An em-dash was
-        # used here once and read as "no code applies" rather than "the
-        # mandatory code is absent".
+        # Rule 46(g) requires an HSN or SAC per line, and on a TAX document a
+        # missing code blocks generation outright in `validate_tax_invoice` —
+        # so this cell is only ever reached by a proforma or quotation, which
+        # is an offer and needs no code. Blank, not a red marker: owner's
+        # ruling 2026-08-03 that the document stays clean, and a quotation was
+        # the one document that could legitimately carry the warning to a
+        # customer.
         raw_code = li.get("hsn_code") or li.get("sac_code")
-        code_cell = R.esc(str(raw_code)) if raw_code else _unset("HSN/SAC")
+        code_cell = R.esc(str(raw_code)) if raw_code else ""
         qty = f'{li.get("quantity", 0)} {R.esc(str(li.get("unit") or ""))}'.strip()
         gst_cell = "" if is_export else f'<td class="num">{R.esc(li.get("gst_rate", 0))}%</td>'
         rows.append(
@@ -361,10 +367,14 @@ def _build_html(invoice: dict, org: dict, contact: dict, check: DocumentCheck | 
     note_items.append(R.esc(org.get("invoice_note") or "") or "Thank you for your business.")
     terms_html = R.block("Terms", R.terms_list(note_items), top="12px" if bank_html else "0")
 
+    # `mark_missing=False` — an unnamed signatory leaves a blank line to sign on,
+    # which is what a paper invoice has always had. The red marker belongs to the
+    # internal documents, not to the one the customer opens.
     sign = R.sign_block(
         f'For {R.esc(org.get("name") or "")}'.strip() if org.get("name") else "Authorised signatory",
         org.get("authorized_signatory_name") or "",
         org.get("authorized_signatory_designation") or "",
+        mark_missing=False,
     )
 
     page = "".join([

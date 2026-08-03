@@ -122,39 +122,36 @@ def test_the_words_agree_with_the_figures():
 # ══════════════════════════════════════════════════════════════════════════════
 
 @pytest.mark.parametrize("invoice_type", sorted(_GSTIN_REQUIRED_TYPES))
-def test_a_tax_document_without_a_supplier_gstin_is_marked_not_omitted(invoice_type):
-    """The defect this guards: the line rendered only `if org_gstin or org_pan`,
-    so an org with neither produced a tax invoice with no supplier GSTIN
-    anywhere on it — a document that looks complete and is not.
+def test_a_tax_document_without_a_supplier_gstin_omits_it_cleanly(invoice_type):
+    """Owner's ruling 2026-08-03: "no advisory on invoice pdf ... i want invoice
+    to be clean."
 
-    Marked rather than filled with a placeholder, because an invented GSTIN is
-    worse than a missing one."""
+    This used to render a red "⚠ GSTIN NOT SET". Registration is not mandatory
+    below the turnover threshold, so an absent GSTIN is frequently not a defect
+    at all — and printing the warning on a document a CUSTOMER reads advertises
+    a gap that may not exist. It is omitted instead: nothing invented, nothing
+    shouted. The gap is still reported internally through
+    `GET /invoices/{id}` → `document_check`.
+    """
     line = _org_gstin_line("", "", invoice_type)
-    assert "GSTIN NOT SET" in line, invoice_type
-    assert line.strip(), "the line must not vanish"
+    assert "NOT SET" not in line, invoice_type
+    assert "GSTIN" not in line, "an absent GSTIN is omitted, not labelled"
 
 
 @pytest.mark.parametrize("invoice_type", sorted(_GSTIN_REQUIRED_TYPES))
-def test_the_mark_survives_into_the_rendered_document(invoice_type):
-    """Asserted on the whole document, not just the helper — a helper that
-    returns the right string is no use if the template drops it."""
+def test_the_rendered_document_carries_no_warning_markers(invoice_type):
+    """Asserted on the whole document, not just the helper — the customer-facing
+    artefact is what has to be clean."""
+    # A date is supplied because a missing one is a BLOCKING gap — the PDF route
+    # refuses such a document outright, so its marker is unreachable in life and
+    # only appears here because this builds the HTML directly. What is being
+    # asserted is the ADVISORY case: no supplier GSTIN, no PAN, renders clean.
     doc = _build_html(
-        _invoice(invoice_type=invoice_type), ORG_NO_IDENTITY_AT_ALL, CONTACT
+        _invoice(invoice_type=invoice_type, invoice_date="2026-08-01"),
+        ORG_NO_IDENTITY_AT_ALL, CONTACT,
     )
-    assert "GSTIN NOT SET" in doc
-
-
-def test_the_mark_is_visually_loud_not_a_quiet_blank():
-    """It has to be unpleasant enough that nobody sends the document without
-    noticing, so it carries its own class rather than sitting in body text.
-
-    The class is brand.css's `.unset`, shared with the other seven documents,
-    rather than this document's former bespoke `.pdf__unset`. Same intent, same
-    two assertions — the mark is classed, and the class is declared — against
-    the one stylesheet the whole set is now painted from."""
-    doc = _build_html(_invoice(), ORG_NO_IDENTITY_AT_ALL, CONTACT)
-    assert 'class="unset"' in doc
-    assert ".unset{" in doc, "the class is used but never declared"
+    assert "NOT SET" not in doc
+    assert 'class="unset"' not in doc
 
 
 @pytest.mark.parametrize("invoice_type", ["quotation", "proforma", "estimate", ""])
@@ -175,10 +172,10 @@ def test_a_present_gstin_renders_normally_with_pan():
 
 
 def test_pan_still_shows_on_a_tax_document_that_has_no_gstin():
-    """Losing the PAN as a side effect of marking the GSTIN would be a
-    regression of its own."""
+    """Dropping the PAN as a side effect of omitting the GSTIN would be a
+    regression of its own — the identity line still carries what DOES exist."""
     line = _org_gstin_line("", "AAACS1234F", "tax_invoice")
-    assert "GSTIN NOT SET" in line
+    assert "NOT SET" not in line
     assert "AAACS1234F" in line
 
 

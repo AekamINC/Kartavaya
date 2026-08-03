@@ -422,12 +422,21 @@ def foot(left_html: str) -> str:
            f'<span class="foot__brand">{deva_span("कर्तव्य", "Kartavya")}</span></div>'
 
 
-def sign_block(label: str, name: str = "", role: str = "", align: str = "right") -> str:
-    """brand.css `.sign` / `.sign__line`."""
+def sign_block(label: str, name: str = "", role: str = "", align: str = "right",
+               mark_missing: bool = True) -> str:
+    """brand.css `.sign` / `.sign__line`.
+
+    `mark_missing=False` leaves the signatory line blank instead of carrying the
+    red `.unset` marker. The tax invoice passes it (owner's ruling 2026-08-03:
+    the document a customer reads stays clean), while the internal documents —
+    payslips, GSTR-3B and TDS working papers — keep the marker, because there
+    the reader IS the person who has to fill the gap in.
+    """
     who = " &middot; ".join(p for p in (esc(name), esc(role)) if p)
     cls = "sign" if align == "right" else "sign sign--left"
+    fallback = unset("Authorised signatory") if mark_missing else ""
     return f"""<div class="{cls}">
-  <div class="sign__line">{esc(label)}<br><span class="sign__who">{who or unset("Authorised signatory")}</span></div>
+  <div class="sign__line">{esc(label)}<br><span class="sign__who">{who or fallback}</span></div>
 </div>"""
 
 

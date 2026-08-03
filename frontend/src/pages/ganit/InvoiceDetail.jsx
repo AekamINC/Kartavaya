@@ -317,6 +317,33 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
 
               <DocumentError error={quote.error} onDismiss={quote.clear} />
 
+              {/* What is missing from this document — INTERNAL ONLY.
+                  Owner's ruling 2026-08-03: the invoice a customer reads stays
+                  clean, with no red "NOT SET" markers, but the firm still has to
+                  know before they send it. So the same check the PDF route runs
+                  is reported here and nowhere else.
+
+                  Blocking gaps stop the PDF outright, so they lead and say so.
+                  Advisory ones render fine and are worth knowing — a missing
+                  supplier GSTIN is normal below the registration threshold, and
+                  wrong only if you ARE registered. */}
+              {(detail?.document_check?.blocking?.length > 0
+                || detail?.document_check?.advisory?.length > 0) && (
+                <div className={`note ${detail.document_check.blocking.length ? 'note--warn' : 'note--info'} gnd__gaps`}>
+                  <p className="gnd__gaps-t">
+                    {detail.document_check.blocking.length > 0
+                      ? `This invoice cannot be issued as a PDF yet — ${detail.document_check.blocking.length} required field${detail.document_check.blocking.length > 1 ? 's are' : ' is'} missing.`
+                      : 'Worth checking before you send this — the PDF will still generate.'}
+                    <span className="gnd__gaps-i"> Shown here only; the document itself stays clean.</span>
+                  </p>
+                  <ul className="gnd__gaps-l">
+                    {[...detail.document_check.blocking, ...detail.document_check.advisory].map(g => (
+                      <li key={g.field}><b>{g.label}</b> — {g.reason}{g.fix ? ` (${g.fix})` : ''}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <div className="dr__body">
                 {/* The editor replaces the record view rather than sitting
                     beside it: the fields it edits are the same ones displayed

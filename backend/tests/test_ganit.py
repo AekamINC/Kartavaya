@@ -301,6 +301,35 @@ async def test_a_paid_invoice_is_refused_even_if_it_was_never_sent(
     assert "payment" in resp.json()["detail"].lower() or "credit note" in resp.json()["detail"].lower()
 
 
+async def test_invoice_detail_reports_gaps_for_the_drawer(
+    api_client, mock_pool, as_admin, with_org_id,
+):
+    """The document stays clean, so the gaps have to surface SOMEWHERE — the
+    firm needs to know what is missing before it sends. `document_check` is
+    that channel, and it carries both what would refuse the PDF (blocking) and
+    what it would render anyway (advisory)."""
+    mock_pool.fetchrow.side_effect = [
+        {"id": "inv001", "invoice_number": "INV-2026-0001", "invoice_type": "tax_invoice",
+         "invoice_date": "2026-08-01", "doc_status": "final", "is_igst": False, "is_export": False,
+         "place_of_supply": "", "line_items": [{"description": "X", "line_total": 1}],
+         "cgst": 0, "sgst": 0, "igst": 0, "total": 1, "balance_due": 1,
+         "contact_name": "Sharma Textiles", "contact_email": None, "contact_phone": None,
+         "contact_company": None, "contact_gstin": None, "contact_billing_address": None},
+        {"name": "Aekam Inc", "gstin": "", "pan": "AAACE1234E", "billing_address": {"city": "Mumbai"}},
+    ]
+    mock_pool.fetch.return_value = []
+
+    resp = await api_client.get("/api/v1/ganit/invoices/00000000-0000-0000-0000-000000000001")
+
+    assert resp.status_code == 200
+    check = resp.json()["document_check"]
+    # No HSN on the only line -> blocks the PDF.
+    assert {g["field"] for g in check["blocking"]} >= {"invoice.line_items.hsn_code"}
+    # No supplier GSTIN -> renders fine, but the firm should know.
+    assert {g["field"] for g in check["advisory"]} >= {"org.gstin"}
+    assert check["ok"] is False
+
+
 async def test_get_invoice_not_found(api_client, mock_pool, as_admin, with_org_id):
     mock_pool.fetchrow.return_value = None
     resp = await api_client.get(

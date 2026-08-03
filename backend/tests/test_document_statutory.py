@@ -111,8 +111,9 @@ class TestTaxInvoice:
         This used to block, on the reading that Rule 46(a) makes it mandatory —
         true of a REGISTERED supplier, but it stopped an unregistered firm from
         invoicing at all, which is a worse failure than an incomplete document.
-        It is still reported, and the document marks the gap with the `.unset`
-        treatment rather than inventing a number.
+        It is still reported — through `GET /invoices/{id}` → `document_check`,
+        which the invoice drawer shows internally. The DOCUMENT itself stays
+        clean: owner's ruling, no red markers on something a customer reads.
         """
         chk = validate_tax_invoice(complete_invoice(), {**complete_org(), "gstin": ""}, complete_contact())
         assert chk.ok, fields(chk)
