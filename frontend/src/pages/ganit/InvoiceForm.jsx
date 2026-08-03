@@ -7,7 +7,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { inr } from '../../lib/inr';
-import { stateFromGSTIN } from '../../lib/validators';
+import { stateFromGSTIN, GST_STATES } from '../../lib/validators';
 import { INV_TYPE_LABELS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 
@@ -403,10 +403,26 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
 
       {(showSupply || !noteVisible) && (
         <div className="gn-form__grid gn-form__grid--2">
+          {/* A SELECT, not a text field.
+              Place of supply decides IGST versus CGST+SGST, and it was a free
+              text box: "Maharastra", "MH" or a trailing space all read as a
+              different state from "Maharashtra", and nothing downstream could
+              tell a typo from a state. The statutory GST state codes are a
+              fixed list (01–38 plus 97/99) already carried in `GST_STATES` and
+              already used to DERIVE this field from the customer's GSTIN, so
+              the options and the derivation now come from one source and the
+              value cannot be spelled wrong. */}
           <label className="fld">
             <span className="fld__l">Place of supply</span>
-            <input className="inp" placeholder="e.g. Maharashtra" value={form.place_of_supply}
-              onChange={e => setForm({ ...form, place_of_supply: e.target.value })} />
+            <select className="inp" value={form.place_of_supply}
+              onChange={e => setForm({ ...form, place_of_supply: e.target.value })}>
+              <option value="">Select…</option>
+              {Object.entries(GST_STATES)
+                .sort((a, b) => a[1].localeCompare(b[1]))
+                .map(([code, name]) => (
+                  <option key={code} value={name}>{name} ({code})</option>
+                ))}
+            </select>
           </label>
           <label className="gn-chk">
             <input type="checkbox" checked={form.is_igst} disabled={form.is_export}

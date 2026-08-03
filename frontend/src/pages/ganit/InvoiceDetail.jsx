@@ -254,18 +254,24 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                   Send on WhatsApp
                 </button>
 
-                {/* Edit — DRAFTS ONLY, and unpaid.
-                    An issued tax invoice is corrected with a credit note, not by
-                    changing it, so the boundary is the one `doc_status` already
-                    draws. The server enforces the same two rules and answers 409
-                    with the credit-note remedy named, so this button is the
-                    convenience and not the control.
+                {/* Edit — ANY UNPAID document, whatever its doc_status.
+                    Owner's ruling 2026-08-03: "any invoice created and unpaid
+                    can be amended and resent, same goes for quote."
 
-                    Its absence was F42: the PDF refuses a line with no HSN under
-                    Rule 46(g) and tells the user to fix it "in Ganit → the
-                    invoice → Edit", which did not exist anywhere. The invoice
-                    could never be issued and never exported. */}
-                {inv.doc_status === 'draft' && Number(inv.total || 0) - Number(inv.balance_due || 0) <= 0 && (
+                    It used to require `doc_status === 'draft'`, which hid this
+                    button from every invoice the product creates by default —
+                    `doc_status` DEFAULTS to 'final', including for one converted
+                    from a Vikray order. That was the dead end: the PDF refuses a
+                    line with no HSN under Rule 46(g) and tells the reader to fix
+                    it "in Ganit → the invoice → Edit", while the status hid that
+                    very control. Measured live: all six of Aekam Inc's invoices
+                    were 'final' and four were incomplete — unissuable and
+                    uncorrectable at the same time.
+
+                    The server enforces the same rule and answers 409 with the
+                    credit-note remedy named, so this button is the convenience
+                    and not the control. */}
+                {Number(inv.total || 0) - Number(inv.balance_due || 0) <= 0 && (
                   <button type="button" className="btn btn--out btn--sm"
                     disabled={!!busy || !canWrite} title={denial || undefined}
                     onClick={() => setEditing(true)}>

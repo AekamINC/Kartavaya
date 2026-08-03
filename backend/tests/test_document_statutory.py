@@ -104,15 +104,21 @@ class TestTaxInvoice:
         chk = validate_tax_invoice(complete_invoice(), complete_org(), complete_contact())
         assert chk.ok, f"unexpected blocking gaps: {fields(chk)}"
 
-    def test_missing_supplier_gstin_blocks(self):
-        """The defect this whole module exists for: an invoice with no supplier
-        GSTIN previously rendered as if complete."""
+    def test_missing_supplier_gstin_is_advisory_not_blocking(self):
+        """Owner's ruling 2026-08-03: GST registration is not mandatory below the
+        turnover threshold, so a real supplier may legitimately have no GSTIN.
+
+        This used to block, on the reading that Rule 46(a) makes it mandatory —
+        true of a REGISTERED supplier, but it stopped an unregistered firm from
+        invoicing at all, which is a worse failure than an incomplete document.
+        It is still reported, and the document marks the gap with the `.unset`
+        treatment rather than inventing a number.
+        """
         chk = validate_tax_invoice(complete_invoice(), {**complete_org(), "gstin": ""}, complete_contact())
-        assert not chk.ok
-        assert "org.gstin" in fields(chk)
-        gap = next(g for g in chk.blocking if g.field == "org.gstin")
+        assert chk.ok, fields(chk)
+        gap = next(g for g in chk.advisory if g.field == "org.gstin")
         assert "input tax credit" in gap.reason
-        assert gap.fix  # the user is told where to fix it
+        assert gap.fix  # the user is still told where to set it
 
     def test_missing_hsn_on_any_line_blocks(self):
         inv = complete_invoice(line_items=[
@@ -140,12 +146,19 @@ class TestTaxInvoice:
         chk = validate_tax_invoice(inv, complete_org(), complete_contact())
         assert "invoice.tax_split" in fields(chk)
 
-    def test_place_of_supply_blocks_only_when_interstate(self):
-        """Rule 46(n) scopes the requirement to inter-State supply. A blanket
-        rule would 422 every historical intra-state invoice, whose column
-        defaults to ''."""
+    def test_place_of_supply_is_advisory_on_either_kind_of_supply(self):
+        """Owner's ruling 2026-08-03: do not block on place of supply.
+
+        Rule 46(n) asks for it on an inter-State supply, and it used to block
+        there. But it is DERIVABLE from the recipient's GSTIN prefix — the form
+        derives it and now offers it as a select off the statutory state list,
+        so it cannot be mistyped — which makes a blank one a document that reads
+        worse rather than one that cannot exist. It is reported either way.
+        """
         inter = complete_invoice(is_igst=True, igst=58500, cgst=0, sgst=0, place_of_supply="")
-        assert "invoice.place_of_supply" in fields(validate_tax_invoice(inter, complete_org(), complete_contact()))
+        chk_inter = validate_tax_invoice(inter, complete_org(), complete_contact())
+        assert chk_inter.ok, fields(chk_inter)
+        assert "invoice.place_of_supply" in {g.field for g in chk_inter.advisory}
 
         intra = complete_invoice(place_of_supply="")
         chk = validate_tax_invoice(intra, complete_org(), complete_contact())
@@ -169,10 +182,12 @@ class TestTaxInvoice:
         chk = validate_tax_invoice(inv, complete_org(), complete_contact())
         assert chk.ok, fields(chk)
 
-    def test_export_invoice_still_needs_supplier_gstin(self):
+    def test_export_invoice_reports_a_missing_supplier_gstin_without_blocking(self):
+        """Same ruling as the domestic case — reported, not refused."""
         inv = complete_invoice(is_export=True, currency="USD")
         chk = validate_tax_invoice(inv, {**complete_org(), "gstin": ""}, complete_contact())
-        assert "org.gstin" in fields(chk)
+        assert chk.ok, fields(chk)
+        assert "org.gstin" in {g.field for g in chk.advisory}
 
     def test_no_line_items_blocks(self):
         chk = validate_tax_invoice(complete_invoice(line_items=[]), complete_org(), complete_contact())
@@ -185,14 +200,15 @@ class TestTaxInvoice:
             validate_tax_invoice(complete_invoice(invoice_date=None), complete_org(), complete_contact()))
 
     def test_payload_names_every_gap_and_invents_nothing(self):
+        # Two gaps that DO still block: a line with no HSN/SAC, and no recipient.
         chk = validate_tax_invoice(complete_invoice(line_items=[{"description": "X", "line_total": 1}]),
-                                   {**complete_org(), "gstin": ""}, complete_contact())
+                                   complete_org(), {})
         with pytest.raises(DocumentIncomplete) as exc:
             chk.raise_if_incomplete()
         payload = exc.value.as_payload()
         assert payload["error"] == "document_incomplete"
         assert payload["document"] == "tax invoice"
-        assert {g["field"] for g in payload["blocking"]} >= {"org.gstin", "invoice.line_items.hsn_code"}
+        assert {g["field"] for g in payload["blocking"]} >= {"contact.name", "invoice.line_items.hsn_code"}
         assert "invented" in payload["message"]
 
     def test_generator_refuses_before_importing_weasyprint(self):
@@ -200,8 +216,13 @@ class TestTaxInvoice:
         runs first, so it works in CI and in a container without the native
         stack."""
         from services.invoice_pdf import generate_invoice_pdf
+        # A gap that still blocks — a line with neither HSN nor SAC. (A missing
+        # supplier GSTIN is advisory now, so it would render rather than refuse.)
         with pytest.raises(DocumentIncomplete):
-            generate_invoice_pdf(complete_invoice(), {**complete_org(), "gstin": ""}, complete_contact())
+            generate_invoice_pdf(
+                complete_invoice(line_items=[{"description": "X", "line_total": 1}]),
+                complete_org(), complete_contact(),
+            )
 
 
 # ── payslip ──────────────────────────────────────────────────────────────────

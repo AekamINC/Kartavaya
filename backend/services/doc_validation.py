@@ -219,10 +219,17 @@ def validate_tax_invoice(invoice: dict, org: dict, contact: dict | None = None) 
     # ── tax-document particulars ────────────────────────────────────────────
     if is_tax_doc:
         if _blank(org.get("gstin")):
-            chk.blocking.append(Gap(
+            # ADVISORY, not blocking. Owner's ruling 2026-08-03: GST registration
+            # is not mandatory below the turnover threshold, so a real supplier
+            # may legitimately have no GSTIN — and blocking would stop that firm
+            # from invoicing at all, which is a worse failure than an incomplete
+            # document. It renders with the `.unset` treatment instead, so the
+            # gap is visible on the document rather than invented or hidden.
+            chk.advisory.append(Gap(
                 "org.gstin", "Supplier GSTIN",
-                "Rule 46(a) — mandatory on a tax invoice. Without it the document "
-                "fails e-invoice validation and blocks the recipient's input tax credit.",
+                "Absent on a supplier below the registration threshold, which is "
+                "normal. If you ARE registered, the document fails e-invoice "
+                "validation and blocks the recipient's input tax credit without it.",
                 _ORG_PROFILE_FIX,
             ))
 
@@ -263,13 +270,18 @@ def validate_tax_invoice(invoice: dict, org: dict, contact: dict | None = None) 
                     "IGST amount. One supply cannot be taxed both ways.",
                     _INVOICE_FIX,
                 ))
-            # Rule 46(n) — place of supply is required for an inter-State supply.
+            # Rule 46(n) wants the place of supply on an inter-State supply, but
+            # ADVISORY by the owner's ruling 2026-08-03: it is derivable from the
+            # recipient's GSTIN prefix and the form already offers that
+            # derivation, so a blank one is a document that reads worse rather
+            # than a document that cannot exist. Blocking it stopped invoices
+            # that were otherwise entirely correct.
             if invoice.get("is_igst") and _blank(invoice.get("place_of_supply")):
-                chk.blocking.append(Gap(
+                chk.advisory.append(Gap(
                     "invoice.place_of_supply", "Place of supply",
-                    "Rule 46(n) — the place of supply with the State name is "
-                    "mandatory on an inter-State supply. It is what makes IGST "
-                    "the correct head rather than CGST+SGST.",
+                    "Rule 46(n) asks for the place of supply with the State name "
+                    "on an inter-State supply — it is what makes IGST the correct "
+                    "head rather than CGST+SGST.",
                     _INVOICE_FIX,
                 ))
             elif _blank(invoice.get("place_of_supply")):

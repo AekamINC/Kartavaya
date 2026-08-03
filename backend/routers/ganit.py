@@ -529,18 +529,34 @@ async def update_invoice(
     never be issued as a PDF, and stayed permanently held back from the Tally
     and GSTR-1 exports. Create worked; correct did not.
 
-    ── Why only a draft ─────────────────────────────────────────────────────
-    A tax invoice that has been issued is not editable under GST — the remedy
-    for a wrong one is a credit note, which this module already supports. So the
-    boundary is the one the product already draws with `doc_status` and its
-    `Mark final` action, rather than a new concept:
+    ── The boundary is PAYMENT, not status ──────────────────────────────────
+    Owner's ruling, 2026-08-03: "any invoice created and unpaid can be amended
+    and resent, same goes for quote." That is the rule this enforces, and it is
+    both simpler and more permissive than what stood here before.
 
-      draft            editable
-      final/sent/…     refused, and the message names the credit-note remedy
-      any payment      refused — the figures a receipt was matched against
-                       must not move underneath it
+    The old boundary was `doc_status == 'draft'`, which read "final" as
+    "issued". That inference is false and it produced a dead end. `doc_status`
+    DEFAULTS to 'final' (migration 019), so every invoice this product creates
+    through any path except an explicit draft — including one converted from a
+    Vikray order — is born "final" without anybody choosing it. Measured live on
+    2026-08-03: all six of Aekam Inc's invoices were 'final', five with no
+    payment against them, four incomplete under Rule 46. The PDF refused them,
+    Edit was not offered on them, and the PDF's own message told the reader to
+    fix it in "Ganit → the invoice → Edit" — the very control the status hid.
+    Unissuable and uncorrectable at once.
 
-    The `is_active` guard keeps a cancelled document out too.
+      no payment recorded    editable, whatever its doc_status, and re-sendable
+      any payment recorded   refused — the figures a receipt was matched
+                             against must not move underneath it, and the
+                             remedy is the credit note this module supports
+
+    Sending a copy does not freeze it: an unpaid invoice a customer has queried
+    is exactly the one a firm needs to correct and re-send. Money changing hands
+    is what makes the document final in the sense that matters.
+
+    The `is_active` guard keeps a cancelled document out too. The invoice NUMBER
+    is never reassigned by an edit, so a serial already spent stays with its
+    document (Rule 46(b)).
 
     Totals, tax split and per-line amounts all come from `_compute_invoice`,
     exactly as on create, so an edited invoice cannot end up with figures a
@@ -553,21 +569,15 @@ async def update_invoice(
         raise HTTPException(400, "At least one line item is required")
 
     existing = await pool.fetchrow(
-        "SELECT invoice_number, doc_status, total, balance_due, is_active "
+        "SELECT invoice_number, doc_status, total, balance_due, is_active, "
+        "       sent_at, viewed_at "
         "FROM staging.ganit_invoices WHERE id=$1::uuid AND org_id=$2::uuid",
         str(invoice_id), org_id,
     )
     if not existing or not existing["is_active"]:
         raise HTTPException(404, "Invoice not found")
 
-    if existing["doc_status"] != "draft":
-        raise HTTPException(
-            409,
-            f"{existing['invoice_number']} has been issued ({existing['doc_status']}) "
-            "and cannot be edited. An issued tax invoice is corrected with a "
-            "credit note, not by changing it — raise one from the Invoices tab.",
-        )
-
+    # Payment is the only thing that freezes a document. See the docstring.
     paid = float(existing["total"] or 0) - float(existing["balance_due"] or 0)
     if paid > 0:
         raise HTTPException(

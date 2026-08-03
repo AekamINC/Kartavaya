@@ -235,6 +235,72 @@ async def test_a_draft_may_still_be_saved_incomplete(
     assert resp.status_code == 200
 
 
+# ── Editing is bounded by ISSUANCE, not by doc_status ────────────────────
+#
+# `doc_status` DEFAULTS to 'final', so reading 'final' as "issued" hid Edit from
+# every invoice the product creates by default. Measured live 2026-08-03: all
+# six of Aekam Inc's invoices were 'final', five never sent/viewed/paid, four
+# incomplete under Rule 46 — unissuable by the PDF and uncorrectable by Edit at
+# the same time, while the PDF's own message pointed at Edit.
+
+EDIT_BODY = {
+    "invoice_type": "tax_invoice",
+    "line_items": [{"description": "Service", "hsn_code": "998231",
+                    "quantity": 1, "rate": 1000, "gst_rate": 18}],
+}
+
+
+async def test_a_final_invoice_never_sent_is_still_editable(
+    api_client, mock_pool, as_admin, with_org_id,
+):
+    """The case that was stuck: born 'final' by the column default, never
+    delivered to anybody, so there is no recipient copy a credit note would
+    reconcile against."""
+    mock_pool.fetchrow.side_effect = [
+        {"invoice_number": "INV-2026-0004", "doc_status": "final", "total": 1180,
+         "balance_due": 1180, "is_active": True, "sent_at": None, "viewed_at": None},
+        {"id": "inv004", "invoice_number": "INV-2026-0004", "total": 1180, "doc_status": "final"},
+    ]
+    resp = await api_client.patch(
+        "/api/v1/ganit/invoices/00000000-0000-0000-0000-000000000004", json=EDIT_BODY,
+    )
+    assert resp.status_code == 200
+
+
+async def test_a_sent_but_unpaid_invoice_can_still_be_amended(
+    api_client, mock_pool, as_admin, with_org_id,
+):
+    """Owner's ruling: "any invoice created and unpaid can be amended and
+    resent". Sending a copy does not freeze it — an unpaid invoice the customer
+    has queried is exactly the one that needs correcting and re-sending."""
+    mock_pool.fetchrow.side_effect = [
+        {"invoice_number": "INV-2026-0009", "doc_status": "sent", "total": 1180,
+         "balance_due": 1180, "is_active": True,
+         "sent_at": "2026-08-01T10:00:00+00:00", "viewed_at": None},
+        {"id": "inv009", "invoice_number": "INV-2026-0009", "total": 1180, "doc_status": "sent"},
+    ]
+    resp = await api_client.patch(
+        "/api/v1/ganit/invoices/00000000-0000-0000-0000-000000000009", json=EDIT_BODY,
+    )
+    assert resp.status_code == 200
+
+
+async def test_a_paid_invoice_is_refused_even_if_it_was_never_sent(
+    api_client, mock_pool, as_admin, with_org_id,
+):
+    """A receipt was matched against these figures, so they must not move
+    underneath it — regardless of how the document was delivered."""
+    mock_pool.fetchrow.return_value = {
+        "invoice_number": "INV-2026-0003", "doc_status": "final", "total": 88500,
+        "balance_due": 0, "is_active": True, "sent_at": None, "viewed_at": None,
+    }
+    resp = await api_client.patch(
+        "/api/v1/ganit/invoices/00000000-0000-0000-0000-000000000003", json=EDIT_BODY,
+    )
+    assert resp.status_code == 409
+    assert "payment" in resp.json()["detail"].lower() or "credit note" in resp.json()["detail"].lower()
+
+
 async def test_get_invoice_not_found(api_client, mock_pool, as_admin, with_org_id):
     mock_pool.fetchrow.return_value = None
     resp = await api_client.get(
