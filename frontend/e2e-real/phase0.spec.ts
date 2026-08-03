@@ -8,6 +8,19 @@
  *   2. Srijan content images load rather than 404 on an expired link
  *   3. an invoice generated from an order is unpaid, editable, and in receivables
  *
+ * TWO TESTS ARE TAGGED `[token]`. The signing link and the OTP exist only in
+ * the signer's email and are exposed by no API — by design, since either is the
+ * whole authority to apply a binding signature. They need E2E_SIGN_TOKEN and
+ * E2E_SIGN_OTP bridged in, exactly as `full-journey` bridges E2E_INVITE_TOKEN.
+ * They are NOT skipped when absent: they fail and say what to supply. The
+ * default run excludes them by tag, which is a documented lane, not a hidden
+ * pass:
+ *
+ *     npx playwright test --config e2e-real/real.config.ts --grep-invert "\[token\]"
+ *
+ * Verified manually on staging 2026-08-03: a 3-page PDF uploaded through the
+ * form and signed through the signing page produced a FOUR-page executed PDF.
+ *
  * NO `test.skip` ON A MISSING AFFORDANCE. The previous suite used
  * `test.skip(!opened, …)` when it could not find a control, which is how the
  * e-sign journey reported green for weeks while the entire module was returning
@@ -20,6 +33,7 @@ import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { OWNER_STATE, DL_DIR } from './real.config';
+import { submitting } from './_helpers';
 
 const API = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
 const ORG = process.env.E2E_ORG_ID || '';
@@ -145,7 +159,13 @@ test('e-sign: a completed document produces a real signed PDF', async ({ page })
     const built = await api(page, 'post', `/api/v1/esign/documents/${doc.id}/rebuild`);
     expect(built.status(), await built.text()).toBe(200);
     const body = await built.json();
-    expect(body.appended_original, 'the original PDF was not bound into the signed copy').toBe(true);
+    // NOT asserted as true here. The SEEDED documents point at
+    // `https://example.com/e2e-sign-N.pdf`, a placeholder that resolves to
+    // nothing, so the honest outcome is the signature page alone. Binding the
+    // original in is proved by the end-to-end test below, which uploads a real
+    // PDF. Asserting it here would only prove the seed data is fake.
+    expect(typeof body.appended_original, 'rebuild did not report whether it bound the original')
+      .toBe('boolean');
     signedUrl = body.signed_file_url;
   }
   expect(signedUrl, 'a completed document still has no signed copy').toBeTruthy();
@@ -191,12 +211,31 @@ test('e-sign: a real PDF uploaded through the form is attached and sent', async 
   await page.locator('input[type="file"]').first().setInputFiles(srcPath);
   await page.getByLabel(/Signer 1 name/i).fill('Asha Rao');
   await page.getByLabel(/Signer 1 email/i).fill(SIGNER_EMAIL);
-  await page.getByRole('button', { name: /^(Create|Save|Send for signing)/i }).first().click();
+  // Read the CREATE RESPONSE, not the list: `/esign/documents` caps at 50 rows
+  // and this org holds more than that, so a genuinely-created document can be
+  // absent from page one — the same trap Ganit's invoice list set in Phase 1.
+  // The form makes TWO requests: create the document, then upload the file to
+  // it. Waiting only for the create and reading the row straight after caught
+  // `file_key = 'pending'` — the upload was still in flight, which reads as
+  // "the PDF was not attached" and is a race.
+  const [createRes, uploadRes] = await Promise.all([
+    page.waitForResponse(r => /\/esign\/documents$/.test(new URL(r.url()).pathname)
+      && r.request().method() === 'POST', { timeout: 45_000 }),
+    page.waitForResponse(r => r.url().includes('/upload')
+      && r.request().method() === 'POST', { timeout: 45_000 }),
+    page.getByRole('button', { name: /^(Create|Save|Send for signing)/i }).first().click(),
+  ]);
+  expect(createRes.status(), await createRes.text()).toBe(200);
+  expect(uploadRes.status(), `the PDF upload failed: ${await uploadRes.text()}`).toBe(200);
   await settle(page);
+  const created = await createRes.json();
+  const docId = created?.id || created?.document?.id;
+  expect(docId, 'the create call returned no document').toBeTruthy();
 
-  const listed = await (await api(page, 'get', '/api/v1/esign/documents')).json();
-  const doc = (listed.data || []).find((d: any) => d.title === title);
-  expect(doc, 'the document created through the form is not in the list').toBeTruthy();
+  const fetched = await api(page, 'get', `/api/v1/esign/documents/${docId}`);
+  expect(fetched.status(), await fetched.text()).toBe(200);
+  const doc = (await fetched.json()).document;
+  expect(doc.title, 'the created document has the wrong title').toBe(title);
   expect(doc.file_key, 'the uploaded PDF was not attached').not.toBe('pending');
 
   const attached = await fetchArtefact(page, doc.file_url);
@@ -213,37 +252,52 @@ test('e-sign: a real PDF uploaded through the form is attached and sent', async 
   fs.writeFileSync(HANDOFF, JSON.stringify({ id: doc.id, title }, null, 2));
 });
 
-test('e-sign: a signed document carries the pages that were signed', async ({ page }) => {
-  // Needs E2E_SIGN_TOKEN — the signing link from the email, bridged in exactly
-  // as `full-journey` bridges E2E_INVITE_TOKEN. This does NOT skip when the
-  // token is absent: a silent skip is how the whole e-sign module reported
-  // green for weeks while returning 403. It fails, and says what to supply.
+test('[token] e-sign: the signer opens the link and is sent a code', async ({ page }) => {
+  // Split from the signing test because the OTP does not EXIST until this
+  // button is pressed — it is generated on request and emailed. A single test
+  // cannot both trigger it and know it. This half needs only the token.
   const token = process.env.E2E_SIGN_TOKEN || '';
-  const otpFromEnv = process.env.E2E_SIGN_OTP || '';
-  expect(token, 'set E2E_SIGN_TOKEN to the signing token issued by the previous test ' +
-    '(it lives only in the signer email — read it out of band, as with E2E_INVITE_TOKEN)')
+  expect(token, 'set E2E_SIGN_TOKEN to the signing token from the previous test ' +
+    '(it lives only in the signer email; read it out of band, as with E2E_INVITE_TOKEN)')
     .toBeTruthy();
+
+  await page.goto(`/sign/${token}`);
+  await settle(page);
+  await expect(page.getByRole('button', { name: /Send verification code/i }),
+    'the signing link does not open a signing page').toBeVisible();
+  await page.getByRole('button', { name: /Send verification code/i }).click();
+  await expect(page.getByPlaceholder('000000'),
+    'requesting a code did not produce a code field').toBeVisible();
+  await page.screenshot({ path: path.join(DL_DIR, 'phase0-signer-otp.png'), fullPage: true });
+});
+
+test('[token] e-sign: a signed document carries the pages that were signed', async ({ page }) => {
+  // Needs E2E_SIGN_TOKEN and E2E_SIGN_OTP. This does NOT skip when they are
+  // absent: a silent skip is how the whole e-sign module reported green for
+  // weeks while returning 403. It fails, and says what to supply.
+  const token = process.env.E2E_SIGN_TOKEN || '';
+  const otp = process.env.E2E_SIGN_OTP || '';
+  expect(token, 'set E2E_SIGN_TOKEN — see the test above').toBeTruthy();
+  expect(otp, 'set E2E_SIGN_OTP to the code the previous test caused to be sent').toBeTruthy();
 
   const handoff = JSON.parse(fs.readFileSync(HANDOFF, 'utf8'));
 
-  const signer = await page.context().newPage();
-  await signer.goto(`/sign/${token}`);
-  await signer.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
-  await signer.getByRole('button', { name: /Send verification code/i }).click();
-  await expect(signer.getByPlaceholder('000000')).toBeVisible();
+  await page.goto(`/sign/${token}`);
+  await settle(page);
+  if (await page.getByRole('button', { name: /Send verification code/i }).count()) {
+    await page.getByRole('button', { name: /Send verification code/i }).click();
+  }
+  await page.getByPlaceholder('000000').fill(otp);
+  await page.getByRole('button', { name: /^Verify$/i }).click();
 
-  expect(otpFromEnv, 'set E2E_SIGN_OTP to the code just emailed to the signer').toBeTruthy();
-  await signer.getByPlaceholder('000000').fill(otpFromEnv);
-  await signer.getByRole('button', { name: /^Verify$/i }).click();
-
-  await expect(signer.getByRole('button', { name: /Sign document/i })).toBeVisible();
-  const typed = signer.getByPlaceholder(/type your name/i)
-    .or(signer.locator('input[type="text"]').last());
+  await expect(page.getByRole('button', { name: /Sign document/i }),
+    'the code was not accepted').toBeVisible();
+  const typed = page.getByPlaceholder(/type your name/i)
+    .or(page.locator('input[type="text"]').last());
   await typed.fill('Asha Rao');
-  await signer.getByRole('button', { name: /Sign document/i }).click();
-  await signer.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-  await signer.screenshot({ path: path.join(DL_DIR, 'phase0-signed-confirmation.png'), fullPage: true });
-  await signer.close();
+  await page.getByRole('button', { name: /Sign document/i }).click();
+  await settle(page);
+  await page.screenshot({ path: path.join(DL_DIR, 'phase0-signed-confirmation.png'), fullPage: true });
 
   // Completion is what triggers the executed copy.
   const after = await (await api(page, 'get', `/api/v1/esign/documents/${handoff.id}`)).json();
@@ -253,7 +307,8 @@ test('e-sign: a signed document carries the pages that were signed', async ({ pa
   expect(after.document.certificate_file_url, 'completion produced no audit certificate').toBeTruthy();
 
   const executed = await fetchArtefact(page, after.document.signed_file_url);
-  expect(executed.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+  expect(executed.subarray(0, 5).toString('latin1'),
+    'the executed copy is not a PDF — this is the original bug').toBe('%PDF-');
   fs.writeFileSync(path.join(DL_DIR, 'phase0-executed.pdf'), executed);
 
   // THE assertion: the pages that were signed are in the copy that says so.

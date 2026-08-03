@@ -110,22 +110,40 @@ test.describe('owner journeys', () => {
     }).toPass({ timeout: 20_000 });
   });
 
-  test('all 30 invoices exist for every month Apr 2025 → Aug 2026 (API through session)', async ({ page }) => {
-    await page.goto('/dashboard');
-    const res = await api(page, '/api/v1/ganit/invoices?limit=1000');
-    expect(res.ok(), `invoices API ${res.status()}`).toBeTruthy();
-    const body = await res.json();
-    const rows: any[] = Array.isArray(body) ? body : body.data ?? body.invoices ?? [];
-    expect(rows.length, 'invoice rows returned').toBeGreaterThanOrEqual(200); // truncation cap tolerated
-    const byMonth = new Map<string, number>();
-    for (const r of rows) {
-      const d = String(r.invoice_date ?? '').slice(0, 7);
-      byMonth.set(d, (byMonth.get(d) ?? 0) + 1);
-    }
-    // With a 200-row cap we cannot see all months in one page; assert months present are dense
-    expect(byMonth.size, `months visible: ${[...byMonth.keys()].sort().join(',')}`).toBeGreaterThanOrEqual(6);
-    fs.writeFileSync(path.join(DL_DIR, 'invoice-months.json'), JSON.stringify([...byMonth.entries()].sort(), null, 2));
-  });
+  test('the seeded 30-per-month ledger is all still there, and the API says it is truncated',
+    async ({ page }) => {
+      // This used to count DISTINCT MONTHS in the first page and require six.
+      // That worked until the Phase 1 and 2 suites started raising invoices
+      // dated today: the list is capped at 200 rows ordered by invoice date, so
+      // the visible window filled up with this month and the month count fell.
+      // The test was measuring the cap, not the ledger.
+      //
+      // What is actually invariant: the org holds the whole seeded ledger
+      // (30/month, Apr 2025 → Aug 2026 ≈ 510) plus whatever the suites have
+      // added since, and the response says outright that it is showing a
+      // fraction. A caller that sums this page is quietly short — see the
+      // matching assertion in ganit.spec.ts.
+      await page.goto('/dashboard');
+      const res = await api(page, '/api/v1/ganit/invoices?limit=1000');
+      expect(res.ok(), `invoices API ${res.status()}`).toBeTruthy();
+      const body = await res.json();
+      const rows: any[] = Array.isArray(body) ? body : body.data ?? body.invoices ?? [];
+
+      expect(Number(body.total), 'the seeded ledger has shrunk').toBeGreaterThanOrEqual(510);
+      expect(rows.length, 'no invoices returned at all').toBeGreaterThan(0);
+      if (Number(body.total) > rows.length) {
+        expect(body.truncated,
+          `${rows.length} of ${body.total} invoices returned without saying so`).toBe(true);
+      }
+
+      const byMonth = new Map<string, number>();
+      for (const r of rows) {
+        const d = String(r.invoice_date ?? '').slice(0, 7);
+        byMonth.set(d, (byMonth.get(d) ?? 0) + 1);
+      }
+      fs.writeFileSync(path.join(DL_DIR, 'invoice-months.json'),
+        JSON.stringify([...byMonth.entries()].sort(), null, 2));
+    });
 
   test('invoice list renders and a detail opens with GST split', async ({ page }) => {
     const errs = pageErrors(page);
