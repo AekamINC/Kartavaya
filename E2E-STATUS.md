@@ -108,6 +108,15 @@ approved support request. Measured against it:
   biometric attendance can be read with **no trace** — 9 of 12 modules. The
   header bypass itself is never audited.
 
+**Settled:** the owner wanted a way to jump between orgs, and the switcher
+(`165b2fd0`) is it — memberships only, never platform-wide. What it does NOT yet
+cover is "Aekam helps a customer", which under the rule must go through an
+approved support request. `platform_support` is already excluded from the
+header bypass and documented as holding nothing until an org admin approves a
+session — but nobody holds the role and no approval flow is wired to it. Next
+feature: let the switcher also offer orgs reachable via an active, approved,
+time-boxed support session, marked as such and audited per request.
+
 Full detail in the `cross-org-access-audit` memory.
 
 ### Open — product
