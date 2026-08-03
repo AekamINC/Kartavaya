@@ -139,8 +139,17 @@ test('leaves · define a type, request it, and approve it', async ({ page }) => 
   await typeForm.locator('label', { hasText: 'Code *' }).locator('input').first()
     .fill(`ST${RUN}`.slice(0, 6).toUpperCase());
   await typeForm.locator('label', { hasText: 'Annual quota' }).locator('input').first().fill('5');
-  await submitting(page, /leave.?type/i,
-    () => typeForm.getByRole('button', { name: 'Create', exact: true }).click());
+  // Wait for the REFETCH, not just the write. The request form's type picker is
+  // filled from a GET that fires after the POST resolves, so opening it the
+  // instant the create returns races the refresh and the type it just made is
+  // missing — which reads as "the leave type was not created" and is not.
+  // Third time this exact shape has appeared; see the Ganit vendor picker.
+  await Promise.all([
+    page.waitForResponse(r => /leave.?type/i.test(r.url())
+      && r.request().method() === 'GET' && r.status() === 200, { timeout: 30_000 }),
+    submitting(page, /leave.?type/i,
+      () => typeForm.getByRole('button', { name: 'Create', exact: true }).click()),
+  ]);
   await settle(page);
 
   // Then the request, for the person hired two tests ago.
@@ -298,13 +307,40 @@ test('recruitment · open a role and add a candidate to it', async ({ page }) =>
   const o = page.locator('form.k-formpanel').filter({ hasText: 'Title *' });
   await o.locator('label', { hasText: 'Title *' }).locator('input').first()
     .fill(`E2E Audit Associate ${RUN}`);
-  await submitting(page, /opening/i,
-    () => o.getByRole('button', { name: /^(Create|Save)$/ }).click());
+  // Same wait-for-refetch as the leave type and the Ganit vendor picker: the
+  // list is refilled by a GET that fires after the POST resolves.
+  await Promise.all([
+    page.waitForResponse(r => /opening|recruit/i.test(r.url())
+      && r.request().method() === 'GET' && r.status() === 200, { timeout: 30_000 }),
+    submitting(page, /opening|recruit/i,
+      () => o.getByRole('button', { name: /^(Create|Save)$/ }).click()),
+  ]);
   await settle(page);
 
-  await expect(page.getByText(`E2E Audit Associate ${RUN}`),
-    'the opening is not listed').toBeVisible();
-  await page.getByText(`E2E Audit Associate ${RUN}`).first().click();
+  // Confirm the WRITE first. The opening is created (verified against the API:
+  // status 'open'), so a missing row on screen is a rendering or filter
+  // question, not a failed create — and saying "the opening is not listed"
+  // without checking would have reported the wrong fault.
+  const openings = await apiOk(page, 'get', '/api/v1/manav/job-openings?limit=100');
+  const mine = (openings.data ?? openings).find(
+    (x: any) => String(x.title) === `E2E Audit Associate ${RUN}`);
+  expect(mine, 'the job opening was not created').toBeTruthy();
+
+  // Then find it on screen. Re-entering the tab forces the refetch rather than
+  // depending on the list having already updated in place.
+  await manav(page, 'recruitment');
+  const opening = panel(page).getByText(`E2E Audit Associate ${RUN}`).first();
+  // UNRESOLVED, and left red deliberately. What is established: the POST
+  // succeeds, `GET /job-openings` returns the row (status 'open', ordered
+  // created_at DESC with no cap), and re-entering the tab forces a refetch.
+  // What is NOT established: whether the tab genuinely fails to render it, or
+  // whether this locator is wrong. Both look identical from here, and calling
+  // it a product bug without separating them is exactly the mistake that
+  // produced the receivables false alarm — so it is reported as ambiguous
+  // rather than as a finding.
+  await expect(opening, 'the opening was created and is returned by the API, but ' +
+    'does not appear on the Recruitment tab within 15s').toBeVisible();
+  await opening.click();
   await settle(page);
 
   await panel(page).getByRole('button', { name: '+ Candidate' }).click();

@@ -75,20 +75,21 @@ and signed through the signing page produced a **4-page executed PDF**.
 | 6 | **No org switcher existed.** The resolver fell back to the user's OLDEST membership, so a member of two firms could only ever see one. | `165b2fd0` |
 | 7 | **Bank statement import had never once worked.** `batch_id` is a uuid column and the code wrote `BSI-<timestamp>`. It 500'd for every org since it was written, and surfaced in the browser as a *CORS error* because FastAPI does not attach CORS headers to an unhandled 500. | `2b864aa8` |
 
-### Open — Phase 4 hand-over, two known failures
+### Open — one unresolved, deliberately red
 
-Both are TEST issues, not product faults, and both are diagnosed:
+**`manav.spec.ts` recruitment** — a job opening is created (POST succeeds,
+`GET /job-openings` returns it, status `open`, ordered created_at DESC with no
+cap) but does not appear on the Recruitment tab within 15s, even after
+re-entering the tab to force a refetch.
 
-1. **`ganit.spec.ts` inter-state invoice** — "the form offers no inter-state
-   control". Once Phase 2 created a contact carrying a GSTIN, the invoice form
-   DERIVES the tax split from it and hides the manual IGST toggle. The same
-   thing already forced the place-of-supply select to be made optional. Fix the
-   same way: tolerate the control's absence and assert the split on the stored
-   invoice, or pick a customer whose GSTIN yields inter-state.
-2. **`manav.spec.ts` leaves** — the leave TYPE is not created on some runs, so
-   the request cannot find it (`no leave type option matching E2E Study u9qsi`;
-   the list shows types from earlier runs). The create needs the same
-   wait-for-refetch the Ganit vendor picker needed.
+**Not called a product bug**, because two explanations look identical from here:
+the tab genuinely fails to render it, or the locator is wrong. Separating them
+is the next job. Asserting either one without evidence is what produced the
+receivables false alarm.
+
+The two Phase-4 failures previously listed here are FIXED: the inter-state
+invoice now picks a customer with no GSTIN (so the form cannot derive the split
+and must offer the manual toggle), and the leave type waits for its refetch.
 
 ### Open — product
 

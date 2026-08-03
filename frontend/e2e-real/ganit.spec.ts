@@ -131,27 +131,42 @@ test('invoices · create an intra-state tax invoice (CGST + SGST)', async ({ pag
 });
 
 test('invoices · an inter-state invoice charges IGST instead', async ({ page }) => {
+  // The customer decides whether the manual toggle even EXISTS. Once a contact
+  // carries a GSTIN the form derives the split from it and hides the control —
+  // correct behaviour, and it broke this test the moment Phase 2 created such a
+  // contact. So the customer is chosen deliberately: one with NO GSTIN, where
+  // the form cannot derive anything and the user must say. Read from the API
+  // rather than guessed by name, so a reseed cannot silently pick the wrong one.
+  const contacts = await apiOk(page, 'get', '/api/v1/graha/contacts');
+  const plain = (contacts.data || []).find((c: any) => !c.gstin && c.name);
+  expect(plain, 'every contact now carries a GSTIN — pick one deliberately for this test')
+    .toBeTruthy();
+
   await ganit(page, 'invoices');
   await page.getByRole('button', { name: '+ Invoice' }).click();
   await settle(page);
 
-  await pickOption(form(page).getByLabel('Customer'), 'customer');
-  const pos2 = form(page).getByLabel('Place of supply');
-  if (await pos2.count()) await pos2.selectOption('Gujarat');
-  // A contact without a GSTIN leaves the form unable to derive the split
-  // from the customer (`stateFromGSTIN` returns null and it leaves is_igst
-  // alone). The user ticks it, which is the path being tested.
+  await pickOption(form(page).getByLabel('Customer'), 'customer', plain.name);
+
   const igst = form(page).getByLabel(/Inter-state|IGST/i).first();
-  await expect(igst, 'the form offers no inter-state control').toBeVisible();
+  await expect(igst,
+    'a customer with no GSTIN leaves the form unable to derive the split, so the ' +
+    'inter-state control must be offered').toBeVisible();
   await igst.check();
+
+  const pos = form(page).getByLabel('Place of supply');
+  if (await pos.count()) await pos.selectOption('Gujarat');
+
   await fillLine(page, 1, `E2E interstate supply ${RUN}`, '998313', '1', '40000');
   const made = await submitting(page, '/ganit/invoices',
     () => page.getByRole('button', { name: 'Create invoice' }).click());
   expect(made?.id, 'the inter-state invoice was not created').toBeTruthy();
+
   const { invoice: inv } = await apiOk(page, 'get', `/api/v1/ganit/invoices/${made.id}`);
   expect(Number(inv.igst), 'inter-state supply must carry IGST').toBeGreaterThan(0);
   expect(Number(inv.cgst), 'inter-state supply must not split into CGST').toBe(0);
   expect(Number(inv.sgst)).toBe(0);
+  expect(Number(inv.igst)).toBeCloseTo(7200, 2);   // 40,000 @ 18%
   keep('igstInvoiceId', inv.id);
 });
 
