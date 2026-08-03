@@ -43,6 +43,15 @@ async function graha(page: Page, tab: string) {
   await openTab(page, tab);
 }
 
+/**
+ * Scope clicks to the tab PANEL.
+ *
+ * `+ New Deal` exists twice — once in the module header and once on the tab —
+ * so an unscoped getByRole is a strict-mode violation. The panel is the surface
+ * under test; the header button is a shortcut to it.
+ */
+const panel = (page: Page) => page.getByRole('tabpanel');
+
 /** Graha fields are `<label class="gr__f"><span class="gr__fl">Label</span>…`. */
 const fld = (page: Page, label: string) =>
   page.locator('label.gr__f', { hasText: label }).locator('input, select, textarea').first();
@@ -52,7 +61,7 @@ const fld = (page: Page, label: string) =>
 
 test('clients · create one with a GSTIN and address', async ({ page }) => {
   await graha(page, 'clients');
-  await page.getByRole('button', { name: /\+ Add Client/ }).click();
+  await panel(page).getByRole('button', { name: /\+ Add Client/ }).click();
   await settle(page);
 
   await page.getByLabel('Company name').fill(`E2E Client ${RUN}`);
@@ -77,7 +86,7 @@ test('clients · create one with a GSTIN and address', async ({ page }) => {
 
 test('contacts · create one and open its timeline', async ({ page }) => {
   await graha(page, 'contacts');
-  await page.getByRole('button', { name: '+ Add Contact' }).click();
+  await panel(page).getByRole('button', { name: '+ Add Contact' }).click();
   await settle(page);
 
   await fld(page, 'Name *').fill(`E2E Contact ${RUN}`);
@@ -101,22 +110,43 @@ test('contacts · create one and open its timeline', async ({ page }) => {
   expect(c.name).toBe(`E2E Contact ${RUN}`);
 });
 
-test('contacts · the new contact is offered to Ganit as a customer', async ({ page }) => {
-  // The cross-module contract that matters: a contact created in the CRM has to
-  // be invoiceable. This is the join Phase 1 could not test, because every
-  // seeded contact lacked a GSTIN.
+test('contacts · a CRM contact with a GSTIN drives the invoice tax split', async ({ page }) => {
+  // The cross-module contract, and the one Phase 1 could not test: every seeded
+  // contact lacks a GSTIN, so `stateFromGSTIN` returned null and the derivation
+  // has never once been exercised. This contact carries 27… (Maharashtra), the
+  // org is 27… — so the supply is INTRA-state and must split CGST/SGST with the
+  // place of supply filled in by the form, not by the person typing.
+  //
+  // Asserted on the INVOICE rather than on the widget: the form swaps the
+  // place-of-supply control for a derived summary once it can work the answer
+  // out, so pinning the <select> pins a layout instead of a tax rule.
   await page.goto('/ganit');
   await settle(page);
   await page.getByRole('button', { name: '+ Invoice' }).click();
   await settle(page);
-  const picker = page.locator('form.gn-form').getByLabel('Customer');
-  await pickOption(picker, 'customer', `E2E Contact ${RUN}`);
 
-  // And with a Maharashtra GSTIN against a Maharashtra org, the form should
-  // derive an INTRA-state supply on its own.
-  const pos = page.locator('form.gn-form').getByLabel('Place of supply');
-  await expect(pos, 'picking a customer with a GSTIN set no place of supply')
-    .toHaveValue(/Maharashtra/);
+  const f = page.locator('form.gn-form');
+  await f.getByLabel('Type').selectOption('tax_invoice');
+  await pickOption(f.getByLabel('Customer'), 'customer', `E2E Contact ${RUN}`);
+
+  await f.getByLabel('Line 1 description').fill(`E2E derived split ${RUN}`);
+  await f.getByLabel('Line 1 HSN or SAC code').fill('998311');
+  await f.getByLabel('Line 1 quantity').fill('1');
+  await f.getByLabel('Line 1 rate').fill('20000');
+
+  const made = await submitting(page, '/ganit/invoices',
+    () => page.getByRole('button', { name: 'Create invoice' }).click());
+  expect(made?.id, 'the invoice was not created for the new CRM contact').toBeTruthy();
+
+  const { invoice } = await apiOk(page, 'get', `/api/v1/ganit/invoices/${made.id}`);
+  expect(invoice.place_of_supply,
+    'the form did not derive the place of supply from the customer GSTIN')
+    .toMatch(/Maharashtra/i);
+  expect(invoice.is_igst, 'a same-state supply was billed as inter-state').toBe(false);
+  expect(Number(invoice.igst), 'IGST charged on a same-state supply').toBe(0);
+  expect(Number(invoice.cgst)).toBeCloseTo(Number(invoice.sgst), 2);
+  expect(Number(invoice.cgst)).toBeCloseTo(1800, 2);   // 20,000 @ 9%
+  await shot(page, `graha-crm-to-ganit-${RUN}`);
 });
 
 
@@ -124,7 +154,7 @@ test('contacts · the new contact is offered to Ganit as a customer', async ({ p
 
 test('deals · create one, then move it a stage', async ({ page }) => {
   await graha(page, 'deals');
-  await page.getByRole('button', { name: '+ New Deal' }).click();
+  await panel(page).getByRole('button', { name: '+ New Deal' }).click();
   await settle(page);
 
   await fld(page, 'Title *').fill(`E2E Deal ${RUN}`);
@@ -154,10 +184,19 @@ test('kanban · the deal appears on the board', async ({ page }) => {
 
 test('pipeline · the deal is counted in the pipeline figures', async ({ page }) => {
   await graha(page, 'pipeline');
-  const stats = await apiOk(page, 'get', '/api/v1/graha/deals/pipeline');
-  const total = (stats.stages || stats.data || []).reduce(
-    (s: number, x: any) => s + Number(x.value || x.total_value || 0), 0);
-  expect(total, 'the pipeline reports no value at all').toBeGreaterThan(0);
+  // `/deals/pipeline` does not exist — it falls through to `/deals/{deal_id}`
+  // and 422s on "pipeline" as a UUID. The real summary is `/pipeline-summary`.
+  const stats = await apiOk(page, 'get', '/api/v1/graha/pipeline-summary');
+  const stages = stats.stages || stats.data || stats.summary || [];
+  const total = (Array.isArray(stages) ? stages : Object.values(stages))
+    .reduce((s: number, x: any) => s + Number(x?.value ?? x?.total_value ?? x?.amount ?? 0), 0);
+  expect(total, 'the pipeline summary reports no value at all').toBeGreaterThan(0);
+
+  // And the deal just created is counted in it.
+  const board = await apiOk(page, 'get', '/api/v1/graha/deals/kanban');
+  const flat = JSON.stringify(board);
+  expect(flat.includes(`E2E Deal ${RUN}`),
+    'the new deal is missing from the kanban feed the pipeline is built on').toBe(true);
 });
 
 
@@ -165,32 +204,36 @@ test('pipeline · the deal is counted in the pipeline figures', async ({ page })
 
 test('activities · log one against the deal', async ({ page }) => {
   await graha(page, 'activities');
-  await page.getByRole('button', { name: '+ Log Activity' }).click();
+  await panel(page).getByRole('button', { name: '+ Log Activity' }).click();
   await settle(page);
 
   await fld(page, 'Title *').fill(`E2E call ${RUN}`);
   await fld(page, 'Description').fill('Discussed scope and fees.');
 
+  // "+ Log Activity" opens the form and "Log Activity" submits it — both match
+  // the same accessible name, so the submit must be found INSIDE the form.
   const made = await submitting(page, '/graha/activities',
-    () => page.getByRole('button', { name: 'Log Activity' }).click());
+    () => panel(page).locator('form').getByRole('button', { name: 'Log Activity' }).click());
   expect(made?.id || made?.activity?.id, 'the activity was not logged').toBeTruthy();
   await expect(page.getByText(`E2E call ${RUN}`), 'the activity is not listed').toBeVisible();
 });
 
 test('follow-ups · create one that falls due', async ({ page }) => {
-  await graha(page, 'follow-ups');
-  await page.getByRole('button', { name: '+ New Follow-up' }).click();
+  await graha(page, 'follow ups');
+  await panel(page).getByRole('button', { name: '+ New Follow-up' }).click();
   await settle(page);
 
-  const f = page.locator('label.gr__f');
-  await f.first().locator('input, select, textarea').first().fill(`E2E follow-up ${RUN}`);
-  const due = page.locator('input[type="date"]').first();
-  if (await due.count()) {
-    await due.fill(new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 10));
-  }
+  // Title and Due Date are both REQUIRED, and Due Date is a datetime-local —
+  // a date-only value is rejected by the browser and the form submits nothing
+  // at all, which reads as a dead button rather than a missing field.
+  await fld(page, 'Title *').fill(`E2E follow-up ${RUN}`);
+  const due = new Date(Date.now() + 3 * 864e5).toISOString().slice(0, 16);
+  await fld(page, 'Due Date *').fill(due);
+
   const made = await submitting(page, /follow.?up/i,
-    () => page.getByRole('button', { name: 'Create', exact: true }).click());
+    () => panel(page).locator('form').getByRole('button', { name: 'Create', exact: true }).click());
   expect(made?.id || made?.follow_up?.id, 'the follow-up was not created').toBeTruthy();
+  await expect(page.getByText(`E2E follow-up ${RUN}`), 'the follow-up is not listed').toBeVisible();
 });
 
 
@@ -198,7 +241,7 @@ test('follow-ups · create one that falls due', async ({ page }) => {
 
 test('labels · create one and assign it to the contact', async ({ page }) => {
   await graha(page, 'labels');
-  await page.getByRole('button', { name: '+ New Label' }).click();
+  await panel(page).getByRole('button', { name: '+ New Label' }).click();
   await settle(page);
 
   await page.locator('label', { hasText: 'Name *' }).locator('input').first()
@@ -212,7 +255,7 @@ test('labels · create one and assign it to the contact', async ({ page }) => {
 
 test('territories · create one', async ({ page }) => {
   await graha(page, 'territories');
-  await page.getByRole('button', { name: '+ New Territory' }).click();
+  await panel(page).getByRole('button', { name: '+ New Territory' }).click();
   await settle(page);
   await page.locator('label', { hasText: 'Name' }).locator('input').first()
     .fill(`E2E Territory ${RUN}`);
@@ -224,7 +267,7 @@ test('territories · create one', async ({ page }) => {
 
 test('custom fields · define one on contacts', async ({ page }) => {
   await graha(page, 'fields');
-  await page.getByRole('button', { name: '+ New Field' }).click();
+  await panel(page).getByRole('button', { name: '+ New Field' }).click();
   await settle(page);
   await page.locator('label', { hasText: 'Field Name' }).locator('input').first()
     .fill(`E2E Field ${RUN}`);
@@ -257,7 +300,7 @@ test('automations · the rules tab loads', async ({ page }) => {
 });
 
 test('web-forms · the tab lists forms and their submissions', async ({ page }) => {
-  await graha(page, 'web-forms');
+  await graha(page, 'web forms');
   const forms = await apiOk(page, 'get', '/api/v1/graha/web-forms');
   expect(Array.isArray(forms.data ?? forms), 'web forms did not answer').toBe(true);
 });
