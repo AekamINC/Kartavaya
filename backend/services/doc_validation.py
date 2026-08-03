@@ -373,26 +373,40 @@ def validate_payslip(payslip: dict, employee: dict, org: dict) -> DocumentCheck:
             "Vetana → re-run payroll for this period",
         ))
 
-    # Statutory identifiers, each conditional on the deduction being taken.
+    # ── Statutory identifiers: ADVISORY, not blocking ────────────────────────
+    #
+    # Owner's ruling 2026-08-03: "make uan advisory too". Applied to all three
+    # identifiers, because they are one rule wearing three names — a payslip
+    # refused for a missing ESI number or PAN fails exactly the way the UAN one
+    # did, and fixing only UAN would leave two identical trapdoors.
+    #
+    # Why the original reasoning does not hold: withholding the PAYSLIP does not
+    # fix the identifier. The wages have already been paid, and the slip is the
+    # employee's evidence of what they were paid and what was withheld. Refusing
+    # to issue it punishes the employee for the employer's incomplete record —
+    # they lose the payslip AND the deduction stays untraceable.
+    #
+    # Each remains conditional on the deduction being taken, so an employee below
+    # the PF or ESI threshold generates no note at all, and each is still
+    # REPORTED so the firm can complete the record before the return is filed.
     if _num(payslip.get("pf_employee")) > 0 and _blank(employee.get("uan")):
-        chk.blocking.append(Gap(
+        chk.advisory.append(Gap(
             "employee.uan", "UAN",
             "Provident fund has been deducted but the employee has no Universal "
             "Account Number on file. The contribution cannot be attributed to a "
-            "member account, and the slip evidences a deduction the employee "
-            "cannot trace.",
+            "member account until it is set.",
             _EMPLOYEE_FIX,
         ))
     if _num(payslip.get("esi_employee")) > 0 and _blank(employee.get("esi_number")):
-        chk.blocking.append(Gap(
+        chk.advisory.append(Gap(
             "employee.esi_number", "ESI insurance number",
             "An ESI contribution has been deducted but the employee has no "
             "insurance number on file, so the contribution cannot be credited "
-            "to their ESIC record.",
+            "to their ESIC record until it is set.",
             _EMPLOYEE_FIX,
         ))
     if _num(payslip.get("tds")) > 0 and _blank(employee.get("pan")):
-        chk.blocking.append(Gap(
+        chk.advisory.append(Gap(
             "employee.pan", "Employee PAN",
             "Tax has been deducted at source but the employee has no PAN on file. "
             "Section 206AA mandates deduction at the higher rate without one, and "

@@ -233,25 +233,40 @@ class TestPayslip:
         chk = validate_payslip(complete_payslip(), complete_employee(), complete_org())
         assert chk.ok, fields(chk)
 
-    def test_pf_deducted_without_uan_blocks(self):
-        chk = validate_payslip(complete_payslip(), complete_employee(uan=""), complete_org())
-        assert "employee.uan" in fields(chk)
+    def test_a_missing_statutory_identifier_is_reported_but_never_withholds_the_slip(self):
+        """Owner's ruling 2026-08-03: "make uan advisory too" — applied to all
+        three identifiers, which are one rule wearing three names.
 
-    def test_no_pf_deduction_means_no_uan_requirement(self):
-        """An employee below the PF threshold has no UAN and must not be blocked."""
+        Withholding the PAYSLIP does not fix the identifier. The wages have
+        already been paid, and the slip is the employee's evidence of what they
+        received and what was withheld — so refusing to issue it punishes the
+        employee for the employer's incomplete record. Reported, not refused.
+        """
+        for kwargs, field in (
+            ({"uan": ""}, "employee.uan"),
+            ({"esi_number": ""}, "employee.esi_number"),
+            ({"pan": ""}, "employee.pan"),
+        ):
+            chk = validate_payslip(complete_payslip(), complete_employee(**kwargs), complete_org())
+            assert chk.ok, f"{field} withheld the payslip: {fields(chk)}"
+            assert field in {g.field for g in chk.advisory}, field
+
+    def test_the_pan_advisory_still_explains_the_higher_rate(self):
+        """Advisory does not mean vague — s.206AA is why it matters."""
+        chk = validate_payslip(complete_payslip(), complete_employee(pan=""), complete_org())
+        assert "206AA" in next(g for g in chk.advisory if g.field == "employee.pan").reason
+
+    def test_no_deduction_means_no_note_at_all(self):
+        """An employee below the PF and ESI thresholds has no UAN or insurance
+        number, and nothing should be said about either."""
         ps = complete_payslip(pf_employee=0, esi_employee=0, tds=0,
                               total_deductions=200.0, net_pay=144800.0)
         chk = validate_payslip(ps, complete_employee(uan="", esi_number="", pan=""), complete_org())
         assert chk.ok, fields(chk)
-
-    def test_esi_deducted_without_esi_number_blocks(self):
-        chk = validate_payslip(complete_payslip(), complete_employee(esi_number=""), complete_org())
-        assert "employee.esi_number" in fields(chk)
-
-    def test_tds_deducted_without_pan_blocks(self):
-        chk = validate_payslip(complete_payslip(), complete_employee(pan=""), complete_org())
-        assert "employee.pan" in fields(chk)
-        assert "206AA" in next(g for g in chk.blocking if g.field == "employee.pan").reason
+        noted = {g.field for g in chk.advisory}
+        assert "employee.uan" not in noted
+        assert "employee.esi_number" not in noted
+        assert "employee.pan" not in noted
 
     def test_figures_that_do_not_reconcile_block(self):
         chk = validate_payslip(complete_payslip(net_pay=999.0), complete_employee(), complete_org())
@@ -276,9 +291,16 @@ class TestPayslip:
         assert "employee.pf_number" in {g.field for g in chk.advisory}
 
     def test_generator_refuses(self):
+        """A payslip whose figures do not reconcile is still refused.
+
+        The gap used here is deliberately NOT a missing identifier any more —
+        those are advisory, so the slip issues. Net pay that contradicts gross
+        less deductions is different in kind: the employee cannot verify what
+        they were paid, which is the whole purpose of the document.
+        """
         from services.payslip_pdf import generate_payslip_pdf
         with pytest.raises(DocumentIncomplete):
-            generate_payslip_pdf(complete_payslip(), complete_employee(uan=""), complete_org())
+            generate_payslip_pdf(complete_payslip(net_pay=999.0), complete_employee(), complete_org())
 
 
 # ── Indian digit grouping ────────────────────────────────────────────────────
