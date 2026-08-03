@@ -148,9 +148,17 @@ def _dispute_clause(agreement: dict) -> list[str]:
         return [
             "The parties will attempt good-faith resolution between the named "
             "approvers within 15 days of a dispute arising.",
+            # No seat on file: the clause stops at what IS agreed. It does not
+            # name a forum, which is the thing that must never be guessed — a
+            # guessed seat sends a dispute to the wrong court.
+            #
+            # It also carries no marker. Owner's ruling 2026-08-03 that every
+            # generated document reads clean, and unlike a meta cell this is
+            # running prose, where an em-dash or a red flag would land mid
+            # sentence. The gap is reported by `validate_service_agreement`
+            # instead, which is where the firm can act on it.
             "Failing that, disputes are referred to arbitration by a sole arbitrator "
-            "under the Arbitration and Conciliation Act 1996. "
-            + R.unset("Seat, venue and jurisdiction"),
+            "under the Arbitration and Conciliation Act 1996.",
         ]
     return [
         "The parties will attempt good-faith resolution between the named approvers "

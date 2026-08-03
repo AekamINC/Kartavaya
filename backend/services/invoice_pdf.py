@@ -367,14 +367,10 @@ def _build_html(invoice: dict, org: dict, contact: dict, check: DocumentCheck | 
     note_items.append(R.esc(org.get("invoice_note") or "") or "Thank you for your business.")
     terms_html = R.block("Terms", R.terms_list(note_items), top="12px" if bank_html else "0")
 
-    # `mark_missing=False` — an unnamed signatory leaves a blank line to sign on,
-    # which is what a paper invoice has always had. The red marker belongs to the
-    # internal documents, not to the one the customer opens.
     sign = R.sign_block(
         f'For {R.esc(org.get("name") or "")}'.strip() if org.get("name") else "Authorised signatory",
         org.get("authorized_signatory_name") or "",
         org.get("authorized_signatory_designation") or "",
-        mark_missing=False,
     )
 
     page = "".join([

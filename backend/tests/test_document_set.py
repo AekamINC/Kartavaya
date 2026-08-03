@@ -972,11 +972,22 @@ class TestServiceAgreementRefusal:
         assert "contact.name" in {g.field for g in chk.blocking}
 
     def test_the_arbitration_seat_is_never_guessed(self):
-        """A clause with a guessed seat sends a dispute to the wrong forum."""
+        """A clause with a guessed seat sends a dispute to the wrong forum.
+
+        The protection is that no forum is NAMED when none is on file — that is
+        what this asserts. It used to also require a red "not set" marker inside
+        the clause; owner's ruling 2026-08-03 is that generated documents read
+        clean, and unlike a meta cell this is running prose where a marker lands
+        mid sentence. The clause simply stops at what is agreed.
+        """
         from services.agreement_pdf import _build_html
         doc = _build_html(agreement(governing_seat=""), ORG, CLIENT)
-        assert "Seat, venue and jurisdiction not set" in doc
-        assert 'class="unset"' in doc
+        assert "Arbitration and Conciliation Act 1996" in doc, "the clause still stands"
+        assert 'class="unset"' not in doc, "no warning marker on a document a client signs"
+        # Nothing invented: no seat, venue or jurisdiction is asserted anywhere.
+        assert "Seat, venue" not in doc
+        for guess in ("Mumbai", "Delhi", "Bengaluru", "Ahmedabad"):
+            assert f"seat of arbitration is {guess}" not in doc
 
     def test_the_agreement_is_two_pages(self):
         """`doc-page.js`: a pre-paginated document is a fixed set of pages and

@@ -196,13 +196,29 @@ def accent(org: dict | None = None) -> tuple[str, str, str]:
 
 
 def unset(label: str) -> str:
-    """brand.css `.unset` — "visible, never silent".
+    """A quiet em-dash for a field with no value — on EVERY document.
 
-    The `⚠ ` prefix is brand.css's `.unset::before`; WeasyPrint supports
-    generated content, but the marker is inlined here so the warning cannot be
-    lost to a `content` property that does not apply.
+    This used to be brand.css's red `.unset` marker: `⚠ LABEL not set`,
+    "visible, never silent". Owner's ruling 2026-08-03, first for the invoice
+    and then for the rest: "check quote pdf and all other pdf are also clean."
+
+    The reasoning that put the red there — that a gap must never survive to a
+    customer — mistook WHERE to say it. These eight documents are the artefacts
+    that go OUT: to a client, an employee, a bank. Shouting an internal
+    bookkeeping gap at them advertises a problem to the one person who cannot
+    fix it, and often is not a problem at all (a supplier below the GST
+    threshold has no GSTIN to print).
+
+    So the document renders an em-dash — the ordinary typographic "no value",
+    which invents nothing — and the gap is reported where it can be acted on:
+    `validate_*` still returns it, and `GET /invoices/{id}` → `document_check`
+    hands it to the drawer. Blocking gaps are unaffected: those refuse
+    generation outright, so they never reach a reader at all.
+
+    `label` is kept in the signature: every call site documents WHICH field is
+    absent, and losing that would make the call sites unreadable.
     """
-    return f'<span class="unset">&#9888; {esc(label)} not set</span>'
+    return "&mdash;"
 
 
 def money(value, symbol: str = "₹") -> str:
@@ -398,20 +414,22 @@ def gap_note(check: DocumentCheck | None) -> str:
     same one the GSTR-3B working paper applies when it names the invoices it
     held back instead of quietly excluding them.
     """
-    if not check or not check.advisory:
-        return ""
-    items = "".join(
-        f"<li><b>{esc(g.label)}</b> &mdash; {esc(g.reason)}"
-        f"<br><i>Set it in: {esc(g.fix)}</i></li>"
-        for g in check.advisory
-    )
-    n = len(check.advisory)
-    return f"""
-<div class="gap-note">
-  <span class="gap-note__icon">&#9888;</span>
-  <span><b>This document is missing details.</b>{n} field{'' if n == 1 else 's'} unset.
-  Nothing here is invented to fill the gap.<ul>{items}</ul></span>
-</div>"""
+    # Owner's ruling 2026-08-03 — no advisory banner on ANY generated document.
+    #
+    # This printed "This document is missing details. N fields unset." above the
+    # content, listing each gap and where to set it. Every word of that is for
+    # the FIRM, and every reader of these documents is not the firm: a client
+    # opening a quotation, an employee opening a payslip, a bank reading a
+    # statement. It told the wrong person, on the wrong surface.
+    #
+    # The information is not lost — it moved. `validate_*` still returns every
+    # advisory gap, and `GET /invoices/{id}` → `document_check` carries them to
+    # the invoice drawer, where the person who can fix them is looking.
+    #
+    # Kept as a no-op rather than deleted, because the call is threaded through
+    # all eight generators and its ARGUMENT is what keeps each one running its
+    # own validator. Removing the calls would quietly remove the checks too.
+    return ""
 
 
 def foot(left_html: str) -> str:
@@ -422,21 +440,18 @@ def foot(left_html: str) -> str:
            f'<span class="foot__brand">{deva_span("कर्तव्य", "Kartavya")}</span></div>'
 
 
-def sign_block(label: str, name: str = "", role: str = "", align: str = "right",
-               mark_missing: bool = True) -> str:
+def sign_block(label: str, name: str = "", role: str = "", align: str = "right") -> str:
     """brand.css `.sign` / `.sign__line`.
 
-    `mark_missing=False` leaves the signatory line blank instead of carrying the
-    red `.unset` marker. The tax invoice passes it (owner's ruling 2026-08-03:
-    the document a customer reads stays clean), while the internal documents —
-    payslips, GSTR-3B and TDS working papers — keep the marker, because there
-    the reader IS the person who has to fill the gap in.
+    An unnamed signatory leaves the line BLANK — a space to sign on, which is
+    what a paper document has always had — rather than a red "Authorised
+    signatory not set". Owner's ruling 2026-08-03, applied to every document
+    rather than the invoice alone.
     """
     who = " &middot; ".join(p for p in (esc(name), esc(role)) if p)
     cls = "sign" if align == "right" else "sign sign--left"
-    fallback = unset("Authorised signatory") if mark_missing else ""
     return f"""<div class="{cls}">
-  <div class="sign__line">{esc(label)}<br><span class="sign__who">{who or fallback}</span></div>
+  <div class="sign__line">{esc(label)}<br><span class="sign__who">{who}</span></div>
 </div>"""
 
 
