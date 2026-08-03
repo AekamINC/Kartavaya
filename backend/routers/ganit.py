@@ -2359,6 +2359,14 @@ class TimesheetInvoiceCreate(BaseModel):
     date_to: str = ""
     contact_id: str = ""
     is_igst: bool = False
+    #: SAC for the billed time. Rule 46(g) requires a code on every line of a
+    #: tax invoice, and billed hours are a SERVICE, so it is a SAC rather than an
+    #: HSN. Optional and never guessed — 9983 ("other professional, technical and
+    #: business services") fits most firms and is wrong for some, and a wrong
+    #: code on a filed invoice is the firm's problem, not ours. Supplied → the
+    #: draft is complete and one click from final. Omitted → the draft carries
+    #: the gap and says so.
+    sac_code: str = ""
 
 
 @router.post("/invoices/from-time-entries")
@@ -2422,6 +2430,8 @@ async def create_invoice_from_time_entries(
         desc = f"{e['employee_name']}: {e['description'] or 'Time entry'} ({hours}h)"
         line_items.append(LineItem(
             description=desc,
+            hsn_code=body.sac_code,
+            sac_code=body.sac_code,
             quantity=hours,
             rate=rate,
             gst_rate=18.0,
@@ -2432,15 +2442,31 @@ async def create_invoice_from_time_entries(
     inv_number = await _next_invoice_number(pool, org_id, "INV")
     inv_date = date.today()
 
+    # This one is written as a DRAFT rather than gated, and the distinction is
+    # the point. The other tax-invoice routes are gated because they are handed
+    # a complete document and can refuse an incomplete one. This route ASSEMBLES
+    # a document out of hours worked, and two Rule 46 fields simply are not in
+    # the timesheet: the SAC for the service (unless the caller supplied one
+    # above) and, often, the customer to bill. Gating would refuse every call
+    # and the feature would be dead; defaulting the SAC would put a guessed tax
+    # code on a filed return.
+    #
+    # A draft is the honest third option: nothing is invented, no serial is
+    # burned on a lie, and the existing draft-to-final gate on PATCH /status
+    # catches the gaps at the moment the firm actually issues the document —
+    # with the invoice open in front of them, which is where the fields get
+    # filled anyway. Same choice `from-deal` already makes.
+
     async with pool.acquire() as conn:
         async with conn.transaction():
             inv = await conn.fetchrow(
                 "INSERT INTO staging.ganit_invoices "
                 "(org_id, contact_id, invoice_number, invoice_type, invoice_date, "
                 "is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
-                "balance_due, notes, created_by) "
+                "balance_due, doc_status, notes, created_by) "
                 "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, 'tax_invoice', $4::date, "
-                "$5, $6::jsonb, $7, $8, $9, $10, 0, $11, $11, 'Generated from time entries', $12) "
+                "$5, $6::jsonb, $7, $8, $9, $10, 0, $11, $11, 'draft', "
+                "'Generated from time entries', $12) "
                 "RETURNING id, invoice_number, total",
                 org_id, body.contact_id, inv_number, inv_date, body.is_igst,
                 json.dumps(computed["line_items"]),

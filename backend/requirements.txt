@@ -13,6 +13,12 @@ resend==2.10.0
 PyJWT==2.12.0
 httpx==0.27.0
 weasyprint==68.0
+# pypdf binds the signature page onto the document that was actually signed.
+# Pure Python, no native stack — unlike WeasyPrint it cannot fail to dlopen on a
+# slim image. It COPIES page objects rather than re-rendering, which is the
+# requirement: re-rendering would change the bytes the signers agreed to and
+# break the SHA-256 that makes alteration detectable (IT Act §10A).
+pypdf==6.14.2
 openpyxl==3.1.5
 pywebpush==2.0.0
 cryptography==44.0.3

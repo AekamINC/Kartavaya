@@ -190,6 +190,33 @@ AGENT_PROMPTS = {
 _fill_prompt = fill_prompt
 
 
+async def sign_content_images(org_id: str, items: list[dict]) -> list[dict]:
+    """Re-sign every generated image on its way out. Mutates and returns `items`.
+
+    `hub_content_items.image_url` holds a PRESIGNED R2 link with a nine-hour
+    expiry (`storage.upload_file`, ExpiresIn=32400), so it is dead by the next
+    morning and the card renders a broken image. Only the org-level list ever
+    re-signed; `/clients/{id}/content` and the single-item read returned the
+    stored string untouched, which is the difference between a content library
+    and a wall of expired links.
+
+    One helper for all three, because the bug was not that re-signing is hard —
+    it was that it lived at one call site and the others were written without
+    it. Signing from `image_key` where it exists and falling back to parsing the
+    key out of the old URL keeps the six pre-existing images working.
+    """
+    from services.storage import refresh_signed_url, sign_key
+
+    for item in items:
+        url = item.get("image_url")
+        if not url or str(url).startswith("data:"):
+            continue
+        key = item.get("image_key")
+        item["image_url"] = (await sign_key(org_id, key) if key else None) \
+            or await refresh_signed_url(org_id, url)
+    return items
+
+
 async def _verify_client_access(pool, client_id: str, org_id: str) -> dict:
     """Verify the client belongs to this org. Returns the client row."""
     client = await pool.fetchrow(
@@ -512,7 +539,7 @@ async def list_content(
 
     query += " ORDER BY created_at DESC"
     rows = await pool.fetch(query, *params)
-    return {"data": [dict(r) for r in rows]}
+    return {"data": await sign_content_images(org_id, [dict(r) for r in rows])}
 
 
 @router.get("/clients/{client_id}/content/{content_id}")
@@ -532,7 +559,7 @@ async def get_content(
     )
     if not row:
         raise HTTPException(404, "Content item not found")
-    return dict(row)
+    return (await sign_content_images(org_id, [dict(row)]))[0]
 
 
 @router.patch("/clients/{client_id}/content/{content_id}/review")
@@ -1683,7 +1710,7 @@ async def run_org_skill(
             agent_type=agent_type,
         )
 
-        image_url = None
+        image_url, image_key = None, ""
         if step.get("generate_image") or body.generate_images:
             img_prompt = _fill_prompt(step.get("image_prompt", prompt), variables)
             try:
@@ -1694,6 +1721,7 @@ async def run_org_skill(
                     org_id=org_id,
                 )
                 image_url = img_result["image_url"]
+                image_key = img_result.get("image_key") or ""
                 total_credits += CREDIT_COSTS.get("image", 3)
             except Exception as e:
                 log.warning("Image generation failed for step %s: %s", step.get("order"), e)
@@ -1711,12 +1739,12 @@ async def run_org_skill(
         row = await pool.fetchrow(
             "INSERT INTO staging.hub_content_items "
             "(org_id, agent_type, title, body, platform, hashtags, "
-            " image_url, status, credits_used, metadata, created_by) "
-            "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, 'draft', $8, $9::jsonb, $10) "
+            " image_url, image_key, status, credits_used, metadata, created_by) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, 'draft', $9, $10::jsonb, $11) "
             "RETURNING id",
             org_id, agent_type, title, result["text"],
             step.get("platform"), hashtags,
-            image_url, credits_cost,
+            image_url, image_key, credits_cost,
             json.dumps({"skill_run_id": str(run_id), "provider": result["provider"],
                          "model": result["model"], "step": step.get("order")}),
             user["user_id"],
@@ -2009,7 +2037,7 @@ async def generate_org_content(
     )
 
     # Image generation if requested
-    image_url = None
+    image_url, image_key = None, ""
     if body.generate_image:
         try:
             await deduct_org_credits(org_id, user["user_id"], "image")
@@ -2018,6 +2046,7 @@ async def generate_org_content(
                 prompt=img_prompt, aspect_ratio=body.aspect_ratio, org_id=org_id,
             )
             image_url = img_result["image_url"]
+            image_key = img_result.get("image_key") or ""
         except Exception as e:
             log.warning("Image generation failed: %s", e)
             await refund_org_credits(org_id, user["user_id"], "image",
@@ -2029,11 +2058,11 @@ async def generate_org_content(
 
     row = await pool.fetchrow(
         "INSERT INTO staging.hub_content_items "
-        "(org_id, agent_type, title, body, platform, hashtags, image_url, "
+        "(org_id, agent_type, title, body, platform, hashtags, image_url, image_key, "
         " status, credits_used, metadata, created_by) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, 'draft', $8, $9::jsonb, $10) RETURNING *",
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, 'draft', $9, $10::jsonb, $11) RETURNING *",
         org_id, body.agent_type, title, result["text"],
-        body.platform or None, hashtags, image_url,
+        body.platform or None, hashtags, image_url, image_key,
         CREDIT_COSTS.get(body.agent_type, 2),
         json.dumps({"provider": result["provider"], "model": result["model"],
                      "language": body.language}),
@@ -2074,11 +2103,9 @@ async def list_org_content(
     # the same pass so it cannot ride out on an item the frontend maps over.
     total = int(dict(rows[0]).get("_total", len(rows))) if rows else 0
     data = [dict(r) for r in rows]
-    from services.storage import refresh_signed_url
     for item in data:
         item.pop("_total", None)
-        if item.get("image_url") and not item["image_url"].startswith("data:"):
-            item["image_url"] = await refresh_signed_url(org_id, item["image_url"])
+    await sign_content_images(org_id, data)
     return {"data": data, "total": total, "limit": 100, "truncated": total > 100}
 
 
@@ -2345,6 +2372,7 @@ async def quick_generate(
         org_id=org_id,
     )
     result = {**text_result, "images": []}
+    image_url, image_key = None, ""
 
     # Generate image separately using Seedream (reliable, cheap)
     image_skills = ("social_post", "ad_copy", "festival_campaign", "email_campaign", "blog_post")
@@ -2377,6 +2405,13 @@ async def quick_generate(
             charged += CREDIT_COSTS.get("image", 3)
             img_result = await generate_image(prompt=img_prompt, org_id=org_id)
             result["images"] = [{"url": img_result["image_url"], "mime": "image/png"}]
+            # …and on the COLUMN, not only in `metadata.images`. The content
+            # library reads `image_url`; metadata is not a display surface. This
+            # path charged three credits for an image, stored it, and then never
+            # put it anywhere the Content tab looks — 34 of the 40 generated
+            # images in the live data were invisible for this reason alone.
+            image_url = img_result["image_url"]
+            image_key = img_result.get("image_key") or ""
         except Exception as e:
             log.warning("Image generation failed for %s: %s", body.skill, e)
             # Charging first is what stops concurrent runs raiding a wallet, so
@@ -2397,13 +2432,14 @@ async def quick_generate(
     # Save to content items
     content_row = await pool.fetchrow(
         "INSERT INTO staging.hub_content_items "
-        "(org_id, agent_type, title, body, platform, status, credits_used, "
-        " metadata, created_by) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, 'draft', $6, $7::jsonb, $8) RETURNING id",
+        "(org_id, agent_type, title, body, platform, image_url, image_key, status, "
+        " credits_used, metadata, created_by) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, 'draft', $8, $9::jsonb, $10) RETURNING id",
         org_id, skill_cfg["agent_type"],
         f"{body.skill}: {body.topic[:60]}",
         result["text"],
         body.platform,
+        image_url, image_key,
         charged,
         json.dumps({
             "skill": body.skill, "images": result.get("images", []),

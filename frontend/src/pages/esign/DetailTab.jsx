@@ -29,6 +29,16 @@ import {
  * The signed-certificate link is left as a link and never auto-opened: it is a
  * signed URL to a legal artefact, and a surface that fetches it on render puts
  * it in history and referrer logs for anyone who merely opened the page.
+ *
+ * **Two artefacts, two names.** This surface offered one button, "Signing
+ * certificate", pointed at `signed_file_url`. That column held a JSON audit
+ * blob — the backend never produced an executed PDF at all — so the one thing a
+ * signing product exists to hand back was missing, and the button that looked
+ * like it handed it back gave you machine-readable evidence instead. They are
+ * now separate and named for what they are: the **signed document** (the pages
+ * that were signed, with the signature page bound in) and the **audit
+ * certificate** (the JSON trail). A document completed before the pipeline
+ * existed shows the assemble action rather than a dead end.
  */
 export default function DetailTab({ docId, onBack }) {
   const toast = useToast();
@@ -40,6 +50,7 @@ export default function DetailTab({ docId, onBack }) {
   const [sending, setSending] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -79,6 +90,23 @@ export default function DetailTab({ docId, onBack }) {
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Could not cancel the document.');
     } finally { setCancelling(false); }
+  };
+
+  const handleRebuild = async () => {
+    setRebuilding(true);
+    try {
+      const r = await api.post(`/v1/esign/documents/${docId}/rebuild`);
+      // `appended_original` is reported rather than assumed. If the file that
+      // was signed is not a PDF it cannot be bound in, and the copy is the
+      // signature record alone — the person downloading it should know which
+      // of the two they are holding before they send it to a counterparty.
+      toast.success(r.data?.appended_original
+        ? 'Signed document assembled — the original with the signature page bound in.'
+        : 'Signature record assembled. The signed file is not a PDF, so it could not be bound in.');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Could not assemble the signed document.');
+    } finally { setRebuilding(false); }
   };
 
   const handleResend = async (signerId, name) => {
@@ -158,12 +186,34 @@ export default function DetailTab({ docId, onBack }) {
             </p>
           )}
 
-          {doc.status === 'completed' && doc.signed_file_url && (
-            <p style={{ marginTop: 'var(--sp-4)' }}>
-              <a className="btn btn--fill" href={doc.signed_file_url} target="_blank" rel="noopener noreferrer">
-                <Download size={14} aria-hidden="true" /> Signing certificate
-              </a>
-            </p>
+          {doc.status === 'completed' && (
+            <div className="docdet__artefacts">
+              {doc.signed_file_url ? (
+                <a className="btn btn--fill" href={doc.signed_file_url} target="_blank" rel="noopener noreferrer">
+                  <Download size={14} aria-hidden="true" /> Signed document (PDF)
+                </a>
+              ) : (
+                <Button variant="fill" onClick={handleRebuild} disabled={rebuilding}>
+                  <Download size={14} aria-hidden="true" />
+                  {rebuilding ? 'Assembling…' : 'Assemble signed document'}
+                </Button>
+              )}
+              {doc.certificate_file_url && (
+                <a className="btn btn--out" href={doc.certificate_file_url} target="_blank" rel="noopener noreferrer">
+                  <Download size={14} aria-hidden="true" /> Audit certificate (JSON)
+                </a>
+              )}
+            </div>
+          )}
+
+          {doc.status === 'completed' && !doc.signed_file_url && (
+            <div style={{ marginTop: 'var(--sp-3)' }}>
+              <Note variant="warn">
+                This document was completed before signed copies were generated. Everything
+                needed to assemble it — the file that was signed and every signature — is on
+                record, so it can be built now.
+              </Note>
+            </div>
           )}
 
           {doc.status === 'draft' && pending && (

@@ -193,6 +193,10 @@
 
 .docdet__acts { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-4); }
 
+/* The two completion artefacts sit together — the executed PDF filled, the
+   audit certificate outlined, so the primary one is unmistakable. */
+.docdet__artefacts { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-4); }
+
 /* ── Signers ───────────────────────────────────────────────────────────── */
 
 .docsg { display: flex; flex-direction: column; }

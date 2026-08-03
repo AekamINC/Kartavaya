@@ -259,6 +259,56 @@ async def check_storage_limit(org_id: str, file_size: int) -> bool:
         return True
 
 
+async def download_file(key: str, org_id: Optional[str] = None,
+                        url: Optional[str] = None) -> Optional[bytes]:
+    """Read an object back out of storage. Returns None when it cannot be read.
+
+    The mirror of `upload_file`, and it has to cover the same three backends:
+    local disk, R2, and the base64 data-URI fallback that `upload_file` returns
+    when an org has no R2 credentials. In that last case there is no key at all
+    and the bytes live in the stored URL, so `url` is accepted as a fallback
+    source — without it, every org that predates R2 provisioning would be
+    silently unreadable.
+
+    Returns None rather than raising: a caller rebuilding a derived artefact
+    should degrade, not 500.
+    """
+    if not key or key == "pending":
+        return _bytes_from_data_uri(url)
+
+    if LOCAL_STORAGE_PATH:
+        target = Path(LOCAL_STORAGE_PATH) / key
+        if target.exists():
+            return target.read_bytes()
+        return _bytes_from_data_uri(url)
+
+    client, bucket = (None, None)
+    if org_id:
+        client, bucket = await _get_org_r2(org_id)
+    if client is None:
+        return _bytes_from_data_uri(url)
+
+    try:
+        loop = asyncio.get_running_loop()
+        obj = await loop.run_in_executor(
+            None, lambda: client.get_object(Bucket=bucket, Key=key)
+        )
+        return obj["Body"].read()
+    except Exception as exc:
+        log.warning("R2 download failed for bucket=%s key=%s: %s", bucket, key, exc)
+        return _bytes_from_data_uri(url)
+
+
+def _bytes_from_data_uri(url: Optional[str]) -> Optional[bytes]:
+    if not url or not url.startswith("data:"):
+        return None
+    try:
+        import base64
+        return base64.b64decode(url.split(",", 1)[1])
+    except Exception:
+        return None
+
+
 async def delete_file(key: str, org_id: Optional[str] = None) -> bool:
     """Delete a single object from R2 by key."""
     if not key:

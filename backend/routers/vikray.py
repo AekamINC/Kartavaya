@@ -343,6 +343,21 @@ async def update_order_status(
 
 
 @router.post("/orders/{order_id}/invoice")
+# `balance_due` is written explicitly, and that is not cosmetic. The column
+# DEFAULTS to 0 and this INSERT omitted it, so an invoice generated from an
+# order was born reading as FULLY PAID against a non-zero total. Three
+# consequences, none of them visible at the point of creation:
+#
+#   · it never appeared in receivables or in ageing — the money owed was
+#     invisible to the firm that was owed it;
+#   · payment recording had nothing to reduce;
+#   · and it could not be EDITED, because editing is bounded by payment
+#     (owner's ruling: unpaid is amendable, paid is not). This is the second
+#     and independent cause of "I created an invoice from an order and I
+#     cannot edit it" — doc_status DEFAULT 'final' was the first.
+#
+# Measured on live data before the fix: every order-generated invoice in the
+# database had balance_due = 0 against a positive total.
 async def generate_invoice_from_order(
     order_id: str,
     user=Depends(require_user),
@@ -361,16 +376,40 @@ async def generate_invoice_from_order(
         raise HTTPException(400, "Confirm the order before generating an invoice")
     if order["invoice_id"]:
         raise HTTPException(400, "Invoice already generated for this order")
+
+    lines = order["line_items"] if isinstance(order["line_items"], list) \
+        else json.loads(order["line_items"])
+
+    # Rule 46 BEFORE the serial is drawn. This route minted a tax invoice with
+    # no check at all, riding `ganit_invoices.doc_status` DEFAULT 'final' — so a
+    # confirmed order whose lines carry no HSN produced a "final" tax invoice
+    # that Ganit's own PDF endpoint then refused to render. The customer could
+    # not be sent the document and the number was already spent.
+    #
+    # Refusing before `next_doc_number` is deliberate: a refusal that has
+    # already drawn a serial leaves a permanent gap in the invoice sequence,
+    # which is precisely what a tax auditor asks about.
+    from routers.ganit import _refuse_final_if_incomplete
+    await _refuse_final_if_incomplete(pool, org_id, {
+        "invoice_type": "tax_invoice",
+        "invoice_number": "pending",
+        "invoice_date": date.today(),
+        "line_items": lines,
+        "is_igst": order["is_igst"],
+        "subtotal": order["subtotal"], "cgst": order["cgst"],
+        "sgst": order["sgst"], "igst": order["igst"], "total": order["total"],
+    }, order["contact_id"])
+
     inv_number = await next_doc_number(pool, org_id, "ganit_invoices", "invoice_number", "INV")
     inv = await pool.fetchrow(
         "INSERT INTO staging.ganit_invoices "
         "(org_id, contact_id, invoice_number, invoice_type, invoice_date, "
         "place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, "
-        "discount, total, notes, created_by) "
+        "discount, total, balance_due, notes, created_by) "
         "VALUES ($1::uuid, $2, $3, 'tax_invoice', CURRENT_DATE, '', $4, "
-        "$5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id",
+        "$5::jsonb, $6, $7, $8, $9, $10, $11, $11, $12, $13) RETURNING id",
         org_id, order["contact_id"], inv_number, order["is_igst"],
-        json.dumps(order["line_items"] if isinstance(order["line_items"], list) else json.loads(order["line_items"])),
+        json.dumps(lines),
         order["subtotal"], order["cgst"], order["sgst"], order["igst"],
         order["discount"], order["total"], f"Generated from order {order['order_number']}",
         user["user_id"],

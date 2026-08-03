@@ -377,6 +377,11 @@ async def generate_image(
         org_id=org_id,
     )
     result["image_url"] = upload["url"]
+    # The KEY as well as the URL. `upload["url"]` is a presigned R2 link that
+    # dies in nine hours; the key is what lets any later read re-sign it. Stored
+    # by every caller, so re-signing never has to parse a key back out of an
+    # expired URL (`storage.refresh_signed_url`, deprecated for exactly this).
+    result["image_key"] = upload.get("key") or ""
     del result["image_b64"]
 
     await pool.execute(

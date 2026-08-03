@@ -37,6 +37,25 @@ async def _refresh_file_url(org_id: str, key: str, url: str) -> str:
     from services.storage import sign_key
     return await sign_key(org_id, key) or url or ""
 
+
+async def _refresh_artefact_urls(org_id: str, d: dict) -> dict:
+    """Re-sign every stored object on a document row.
+
+    Three of them now, and they are three different things: the file presented
+    for signature, the executed PDF, and the JSON audit certificate. Done in one
+    place so a new artefact cannot be added to the schema and then quietly
+    served with a nine-hour-expired presigned URL from one endpoint but not the
+    other — which is exactly the drift that let the certificate masquerade as
+    the signed file for as long as it did.
+    """
+    d["file_url"] = await _refresh_file_url(org_id, d.get("file_key"), d.get("file_url"))
+    for key_col, url_col in (("signed_file_key", "signed_file_url"),
+                             ("certificate_file_key", "certificate_file_url")):
+        if d.get(key_col):
+            d[url_col] = await _refresh_file_url(org_id, d[key_col], d.get(url_col))
+    return d
+
+
 _esign_gate = require_module("esign")
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://kartavya.com")
@@ -92,11 +111,7 @@ async def list_documents(
     rows = await pool.fetch(q, *args)
     docs = []
     for r in rows:
-        d = dict(r)
-        d["file_url"] = await _refresh_file_url(org_id, d.get("file_key"), d.get("file_url"))
-        if d.get("signed_file_key"):
-            d["signed_file_url"] = await _refresh_file_url(org_id, d["signed_file_key"], d.get("signed_file_url"))
-        docs.append(d)
+        docs.append(await _refresh_artefact_urls(org_id, dict(r)))
     return {"data": docs}
 
 
@@ -229,9 +244,7 @@ async def get_document(
     )
 
     doc_dict = dict(doc)
-    doc_dict["file_url"] = await _refresh_file_url(org_id, doc_dict.get("file_key"), doc_dict.get("file_url"))
-    if doc_dict.get("signed_file_key"):
-        doc_dict["signed_file_url"] = await _refresh_file_url(org_id, doc_dict["signed_file_key"], doc_dict.get("signed_file_url"))
+    await _refresh_artefact_urls(org_id, doc_dict)
     return {
         "document": doc_dict,
         "signers": [dict(s) for s in signers],
@@ -556,7 +569,7 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
     if all_signed:
         await _audit(pool, signer["doc_id"], None, "document_completed",
                      "system", None, None, {"all_signers": signer["signers_total"]})
-        await _generate_signed_certificate(pool, signer["doc_id"], signer["org_id"])
+        await _generate_completion_artefacts(pool, signer["doc_id"], signer["org_id"])
 
     return {
         "signed": True,
@@ -668,6 +681,70 @@ async def resend_to_signer(
     return {"resent": True}
 
 
+@router.post("/documents/{doc_id}/rebuild")
+async def rebuild_signed_document(
+    doc_id: str,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_esign_gate),
+):
+    """Produce the executed PDF for a document that completed without one.
+
+    Every document completed before the signed-PDF pipeline existed has a
+    signature trail in the database and its original file in storage, so the
+    executed copy can still be assembled — nothing about it is guessed. This
+    endpoint is that path, and it is also the recovery path when generation
+    failed at completion time (WeasyPrint down, storage timeout).
+
+    Refused on anything not completed: a signature page for a document that is
+    still collecting signatures would be a half-executed contract, and would be
+    indistinguishable from a finished one once downloaded.
+
+    Rebuilding is idempotent in effect but not in bytes — it writes a NEW object
+    and repoints the row. The old object is left in place rather than deleted,
+    because a superseded executed copy may already have been sent to a
+    counterparty and a dangling link is worse than an orphan file.
+    """
+    pool = await get_pool()
+    doc = await pool.fetchrow(
+        "SELECT id, status, file_key FROM staging.sign_documents "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        uuid.UUID(doc_id), org_id,
+    )
+    if not doc:
+        raise HTTPException(404, "Document not found")
+    if doc["status"] != "completed":
+        raise HTTPException(
+            409,
+            "Only a completed document has an executed copy. This one is "
+            f"{doc['status'].replace('_', ' ')} — it is still collecting signatures.",
+        )
+    if not doc["file_key"] or doc["file_key"] == "pending":
+        raise HTTPException(409, "The file presented for signature is no longer in storage, "
+                                 "so the executed copy cannot be assembled.")
+
+    try:
+        result = await _generate_signed_pdf(pool, uuid.UUID(doc_id), org_id)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:
+        log.error("esign rebuild failed for %s: %s", doc_id, exc)
+        raise HTTPException(500, "Could not assemble the executed copy.") from exc
+
+    await _audit(pool, uuid.UUID(doc_id), None, "signed_copy_rebuilt",
+                 user["user_id"], request.client.host if request.client else None, None,
+                 result or {})
+
+    row = await pool.fetchrow(
+        "SELECT signed_file_key, signed_file_url, signed_file_hash "
+        "FROM staging.sign_documents WHERE id=$1::uuid", uuid.UUID(doc_id),
+    )
+    out = await _refresh_artefact_urls(org_id, dict(row))
+    out["appended_original"] = (result or {}).get("appended_original", False)
+    return out
+
+
 @router.get("/documents/{doc_id}/audit")
 async def get_audit_trail(
     doc_id: str,
@@ -693,10 +770,27 @@ async def get_audit_trail(
     return {"audit_trail": [dict(r) for r in rows]}
 
 
-# ── Signed certificate generation ────────────────────────────
+# ── Completion artefacts ─────────────────────────────────────
+#
+# Completing a document produces TWO things, and for a long time it produced
+# only the second one under the first one's name:
+#
+#   1. The executed PDF — the original pages, unaltered, followed by a signature
+#      page naming each signatory with their signature, time, IP and
+#      verification method. This is the document. It lives in signed_file_*.
+#   2. A JSON certificate carrying the machine-readable audit trail. Useful, but
+#      it is evidence ABOUT the document, not the document. It lives in
+#      certificate_file_*.
+#
+# Neither is allowed to fail the signature itself: by the time this runs the
+# signer's row is already committed and the document is already complete. A
+# WeasyPrint outage must not turn a valid signature into a 500 that invites the
+# signer to sign again — so `_generate_completion_artefacts` swallows and logs,
+# and `POST /documents/{id}/rebuild` exists to produce the artefacts later.
+
 
 async def _generate_signed_certificate(pool, doc_id, org_id: str):
-    """Generate a signing certificate with SHA-256 hash and audit trail."""
+    """Build and store the JSON audit certificate."""
     doc = await pool.fetchrow("SELECT * FROM staging.sign_documents WHERE id=$1", doc_id)
     signers = await pool.fetch(
         "SELECT * FROM staging.sign_signers WHERE document_id=$1 ORDER BY sign_order", doc_id,
@@ -746,10 +840,66 @@ async def _generate_signed_certificate(pool, doc_id, org_id: str):
     )
 
     await pool.execute(
-        "UPDATE staging.sign_documents SET signed_file_key=$1, signed_file_url=$2, "
-        "signed_file_hash=$3, updated_at=NOW() WHERE id=$4",
+        "UPDATE staging.sign_documents SET certificate_file_key=$1, certificate_file_url=$2, "
+        "certificate_hash=$3, updated_at=NOW() WHERE id=$4",
         upload_result.get("key", ""), upload_result["url"], cert_hash, doc_id,
     )
+
+
+async def _generate_signed_pdf(pool, doc_id, org_id: str):
+    """Build and store the executed PDF — the original pages plus a signature page."""
+    from services.esign_signed_doc import build_signed_pdf
+    from services.storage import download_file
+
+    doc = await pool.fetchrow("SELECT * FROM staging.sign_documents WHERE id=$1", doc_id)
+    if not doc:
+        return
+    signers = [dict(s) for s in await pool.fetch(
+        "SELECT * FROM staging.sign_signers WHERE document_id=$1 ORDER BY sign_order", doc_id,
+    )]
+    org = await pool.fetchrow(
+        "SELECT name, gstin, pan, logo_url, billing_address, email, phone, website "
+        "FROM staging.organisations WHERE id=$1::uuid", org_id,
+    )
+
+    original = await download_file(doc["file_key"], org_id, doc["file_url"])
+
+    pdf_bytes, appended = build_signed_pdf(
+        dict(org) if org else {}, dict(doc), signers, original,
+        original_name=(doc["file_key"] or "").rsplit("/", 1)[-1],
+    )
+    pdf_hash = hashlib.sha256(pdf_bytes).hexdigest()
+
+    upload_result = await upload_file(
+        file_bytes=pdf_bytes,
+        filename=f"signed-{str(doc_id)[:8]}.pdf",
+        content_type="application/pdf",
+        user_id="system",
+        folder="esign/signed",
+        org_id=org_id,
+    )
+
+    await pool.execute(
+        "UPDATE staging.sign_documents SET signed_file_key=$1, signed_file_url=$2, "
+        "signed_file_hash=$3, updated_at=NOW() WHERE id=$4",
+        upload_result.get("key", ""), upload_result["url"], pdf_hash, doc_id,
+    )
+    if not appended:
+        log.warning("esign: signed PDF for %s carries the signature page only — "
+                    "the original could not be appended", doc_id)
+    return {"appended_original": appended, "size": len(pdf_bytes)}
+
+
+async def _generate_completion_artefacts(pool, doc_id, org_id: str):
+    """Both artefacts, neither allowed to break the signature that triggered them."""
+    try:
+        await _generate_signed_certificate(pool, doc_id, org_id)
+    except Exception as exc:
+        log.error("esign: certificate generation failed for %s: %s", doc_id, exc)
+    try:
+        await _generate_signed_pdf(pool, doc_id, org_id)
+    except Exception as exc:
+        log.error("esign: signed PDF generation failed for %s: %s", doc_id, exc)
 
 
 # ── Helpers ──────────────────────────────────────────────────
